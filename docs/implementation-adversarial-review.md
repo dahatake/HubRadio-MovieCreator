@@ -4,7 +4,7 @@
 **目的:** Windows 11ローカル優先アプリの全実装計画を、各タスクの検証・敵対的レビューを伴って実行すること  
 **レビュー方針:** 5軸を独立に監査し、実ファイル・実行結果で裏付けられない候補、未着手と明記された将来タスク、単なる好みを除外した。  
 
-未実行のST-003以降やアプリ本体は、現在の計画が未完了と明記しているため、それ自体を完成済み成果物の欠陥として水増ししていない。進捗表示や完了主張が実態と矛盾する箇所だけを問題にした。
+未実行と明記されたStage 0残件やアプリ本体は、それ自体を完成済み成果物の欠陥として水増ししていない。進捗表示や完了主張が実態と矛盾する箇所だけを問題にした。
 
 | No. | 軸 | 重大度 | 指摘箇所 | 問題の説明 | 修正案 |
 |-----|-----|--------|---------|-----------|--------|
@@ -93,3 +93,37 @@ metadataについては、source由来のglobal metadataが出力に残ってい
 - 未修正 Minor: 0件
 - 現動画の再render要否: 不要
 - 合格判定: **PASS**
+
+## ST-009 ショット検出の敵対的レビュー（2026年8月27日）
+
+**対象:** `benchmarks/stages/detect-shots.ps1`、`shot_detection.py`、ベンチハーネス、schema、raw run、`benchmarks/results/shot-detection.json`
+**採用raw証跡:** `20260826T2259012687261Z-shot-detection-5f160fd6`、SHA-256 `2be6879b2d3c964bca80ff86e3841a0d1b4abb7b37af3beadf11afa0a9b67bb3`
+**実測:** Content 27.0、Content 40.0、Adaptive 3.0はいずれもfixture上の境界0件。4、8、12秒に既知カットを持つ対照動画では全構成が3件すべてを検出した。
+
+| No. | 軸 | 重大度 | 指摘 | 修正と確認 |
+|-----|-----|--------|------|------------|
+| S9-1 | 内容の妥当性 | Major | PySceneDetectの`get_scene_list()`はカット0件時に既定で空配列を返すため、実際は全編1シーンなのに`sceneCount=0`と記録していた。 | **修正済み:** `start_in_scene=True`を指定した。カットなし3秒区間で既定0件、修正版1件を再現し、再測定で全構成が`sceneCount=1`、`boundaryCount=0`になった。 |
+| S9-2 | 根拠性・不確実性管理 | Major | 初回測定の境界0件だけでは、素材に検出対象がない場合と検出器が動作していない場合を区別できなかった。 | **修正済み:** 既知カット対照を同じ3構成で必須実行し、全構成が3/3件を検出したことをrawへ保存した。ハーネスも対照不合格を成功扱いしない。 |
+| S9-3 | 品質・運用性 | Major | PTS CSVが空でもfixtureの境界が0件なら写像処理へ入らず、成功結果を返せた。 | **修正済み:** sourceまたはproxyの観測PTSが0件ならPython側で即時失敗する。 |
+
+### 修正後の証拠照合
+
+- raw runのSHA-256、run ID、source hash、proxy hash、3構成の測定値、対照結果をcanonicalへ機械照合し、PASSを確認した。
+- PythonはPylance構文検査と`py_compile`、PowerShellはparser検査に合格した。VS Code選択環境には`scenedetect`がないためimport診断が残るが、固定された`benchmarks/.venv`ではPySceneDetect 0.7.1のimportと実行に成功している。
+- 正解注釈がないため、誤検出率・見逃し率と採用閾値は測定不能である。`selectedDetector`と`selectedThreshold`は`null`のまま、`openQuestions`へ残した。
+- fixture上の検出境界が0件のため、実境界を代理PTSから元PTSへ変換するend-to-end経路は未測定である。静的実装の存在を実測済みと表現していない。
+
+### 採用しなかった指摘
+
+- 子stage単体にfixture hash検査がないという指摘は、親ハーネスが子stageの実行前後にsource SHA-256を検査する設計境界を見落としていたため採用しなかった。
+- 対照生成のNVENC fallback不在は、ST-004の固定NVENC代理とP-004の記録済み検証機を前提にするStage 0測定の欠陥ではない。製品のfallbackはST-005のcanonicalに別途記録済みである。
+- JSON Schemaよりruntime validatorの必須項目が多い点は、過去raw互換を保つschemaと新規実行を厳格化するvalidatorの役割差であり、既存runを壊すrequired追加は行わなかった。
+- canonicalがrawの空`firstBoundaries`等を省略する点は、rawを保持したままレビュー済み非機密要約だけを追跡する既定方針に合致するため、データ消失とは扱わなかった。
+
+### ST-009 修正後判定
+
+- 未修正 Critical: 0件
+- 未修正 Major: 0件
+- 未修正 Minor: 0件
+- 閾値選定: **未測定（正例注釈待ち）**
+- 合格判定: **PASS（測定タスク完了、未測定値の捏造なし）**

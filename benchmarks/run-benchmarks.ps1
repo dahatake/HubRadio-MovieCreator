@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix")]
+    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection")]
     [string]$Stage = "hardware",
     [string]$FixtureManifest = (Join-Path $PSScriptRoot "fixtures\fixture-manifest.json"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "results\runs"),
@@ -202,6 +202,41 @@ function Assert-EncoderMatrixPayload {
     }
 }
 
+function Assert-ShotDetectionPayload {
+    param([Parameter(Mandatory)][object]$Payload)
+
+    foreach ($name in @(
+        "schemaVersion", "recordedAtUtc", "library", "detectors", "agreement",
+        "controlClip", "note", "samplePathConsumed"
+    )) {
+        if ($Payload.PSObject.Properties.Name -notcontains $name) {
+            throw "Shot detection payload is missing required property: $name"
+        }
+    }
+    if ($Payload.schemaVersion -ne "1.0.0") {
+        throw "Unsupported shot detection payload schemaVersion: $($Payload.schemaVersion)"
+    }
+    if (@($Payload.detectors).Count -lt 1) {
+        throw "Shot detection payload did not record any detector configuration."
+    }
+    $detectorNames = @($Payload.detectors | ForEach-Object { $_.detector })
+    foreach ($requiredDetector in @("content", "adaptive")) {
+        if ($detectorNames -notcontains $requiredDetector) {
+            throw "Shot detection payload did not compare the required detector: $requiredDetector"
+        }
+    }
+    if ($Payload.library.proxySha256 -notmatch '^[0-9a-f]{64}$') {
+        throw "Shot detection payload does not identify the analysed proxy by content hash."
+    }
+    if ($Payload.controlClip.PSObject.Properties.Name -notcontains "allConfigurationsDetectKnownCuts" -or
+        $Payload.controlClip.allConfigurationsDetectKnownCuts -ne $true) {
+        throw "Shot detection control clip did not confirm all detector configurations against known cuts."
+    }
+    if ($Payload.samplePathConsumed -ne $true) {
+        throw "Shot detection payload did not confirm fixture path consumption."
+    }
+}
+
 function Protect-SensitiveText {
     param(
         [Parameter(Mandatory)][string]$Text,
@@ -287,6 +322,10 @@ try {
         "encoder-matrix" {
             $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\measure-encoders.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
             Assert-EncoderMatrixPayload -Payload $payload
+        }
+        "shot-detection" {
+            $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\detect-shots.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
+            Assert-ShotDetectionPayload -Payload $payload
         }
         default {
             throw "Unsupported benchmark stage: $Stage"

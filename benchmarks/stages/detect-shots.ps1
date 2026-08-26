@@ -141,6 +141,24 @@ if ($proxyHash -ne $proxyMap.proxy.sha256) {
 
 $capabilities = Get-Content (Join-Path $PSScriptRoot "..\results\ffmpeg-capabilities.json") -Raw -Encoding utf8 | ConvertFrom-Json
 $ffprobePath = Find-ApprovedExecutable -PackageId $capabilities.package.id -ExecutableName "ffprobe.exe" -ExpectedSha256 $capabilities.executables.ffprobe.sha256
+$ffmpegPath = Find-ApprovedExecutable -PackageId $capabilities.package.id -ExecutableName "ffmpeg.exe" -ExpectedSha256 $capabilities.executables.ffmpeg.sha256
+
+# A zero boundary count is only interpretable when the same configuration is shown to find known cuts.
+$controlPath = Join-Path $workDirectory "shot-control.mp4"
+$controlCutSeconds = "4,8,12"
+$control = Invoke-CapturedProcess -FileName $ffmpegPath -TimeoutSeconds 600 -Arguments @(
+    "-nostdin", "-v", "error",
+    "-f", "lavfi", "-i", "color=c=red:s=640x360:r=30:d=4",
+    "-f", "lavfi", "-i", "color=c=green:s=640x360:r=30:d=4",
+    "-f", "lavfi", "-i", "color=c=blue:s=640x360:r=30:d=4",
+    "-f", "lavfi", "-i", "color=c=white:s=640x360:r=30:d=4",
+    "-filter_complex", "[0:v][1:v][2:v][3:v]concat=n=4:v=1:a=0,format=yuv420p[v]",
+    "-map", "[v]", "-c:v", "h264_nvenc", "-preset", "p4", "-cq", "23", "-b:v", "0", "-g", "30",
+    "-y", $controlPath
+)
+if ($control.exitCode -ne 0) {
+    throw "Control clip generation failed with exit code $($control.exitCode)."
+}
 
 $sourcePacketsPath = Join-Path $workDirectory "source-video-packet-pts.csv"
 $proxyPacketsPath = Join-Path $workDirectory "proxy-video-packet-pts.csv"
@@ -170,7 +188,9 @@ $detection = Invoke-CapturedProcess -FileName $pythonPath -TimeoutSeconds $detec
     "--source-packets", $sourcePacketsPath,
     "--source-time-base", $proxyMap.sourceTiming.timeBase,
     "--proxy-packets", $proxyPacketsPath,
-    "--proxy-time-base", $proxyMap.proxyTiming.timeBase
+    "--proxy-time-base", $proxyMap.proxyTiming.timeBase,
+    "--control-video", $controlPath,
+    "--control-cut-seconds", $controlCutSeconds
 )
 if ($detection.exitCode -ne 0) {
     throw "Shot detection failed with exit code $($detection.exitCode): $($detection.stderr)"
@@ -191,6 +211,7 @@ $sceneDetectVersion = (Invoke-CapturedProcess -FileName $pythonPath -TimeoutSeco
     }
     detectors = $report.detectors
     agreement = $report.agreement
+    controlClip = $report.controlClip
     note = $report.note
     samplePathConsumed = $true
 } | ConvertTo-Json -Depth 12

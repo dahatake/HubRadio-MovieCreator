@@ -1,0 +1,129 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260826T2259012687261Z-shot-detection-5f160fd6",
+  "benchmarkRunSha256": "2be6879b2d3c964bca80ff86e3841a0d1b4abb7b37af3beadf11afa0a9b67bb3",
+  "recordedAtUtc": "2026-08-26T23:01:35.0553592Z",
+  "fixture": {
+    "sourceAssetId": "source-ios-20260615-024326000",
+    "sourceSha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+    "sourceByteSize": 6494572403,
+    "humanShotAnnotationsAvailable": false
+  },
+  "analysisInput": {
+    "media": "proxy",
+    "proxySha256": "685cac74b29e6841358cf500cbb2b3ff6ce64f1f23ebdbd076f855f5179fb7a5",
+    "proxyBenchmarkRunId": "20260826T2102079908030Z-proxy-frame-map-5a725e5c",
+    "boundaryTimeline": "source presentation time mapped from observed proxy and source packet timestamps"
+  },
+  "library": {
+    "name": "PySceneDetect",
+    "version": "0.7.1"
+  },
+  "detectors": [
+    {
+      "detector": "content",
+      "threshold": 27.0,
+      "elapsedSeconds": 48.604,
+      "sceneCount": 1,
+      "boundaryCount": 0,
+      "shortestSceneSeconds": 1081.3803,
+      "longestSceneSeconds": 1081.3803,
+      "medianSceneSeconds": 1081.3803,
+      "boundariesUnderTwoSeconds": 0,
+      "allBoundarySourceSeconds": []
+    },
+    {
+      "detector": "content",
+      "threshold": 40.0,
+      "elapsedSeconds": 45.921,
+      "sceneCount": 1,
+      "boundaryCount": 0,
+      "shortestSceneSeconds": 1081.3803,
+      "longestSceneSeconds": 1081.3803,
+      "medianSceneSeconds": 1081.3803,
+      "boundariesUnderTwoSeconds": 0,
+      "allBoundarySourceSeconds": []
+    },
+    {
+      "detector": "adaptive",
+      "threshold": 3.0,
+      "elapsedSeconds": 43.492,
+      "sceneCount": 1,
+      "boundaryCount": 0,
+      "shortestSceneSeconds": 1081.3803,
+      "longestSceneSeconds": 1081.3803,
+      "medianSceneSeconds": 1081.3803,
+      "boundariesUnderTwoSeconds": 0,
+      "allBoundarySourceSeconds": []
+    }
+  ],
+  "agreement": {
+    "toleranceSeconds": 0.5,
+    "contentBoundaryCount": 0,
+    "adaptiveBoundaryCount": 0,
+    "contentBoundariesMatchedByAdaptive": 0,
+    "interpretation": "Agreement cannot discriminate the configurations because none produced a boundary on this fixture."
+  },
+  "controlClip": {
+    "purpose": "Confirm that every evaluated configuration detects known hard cuts before interpreting a zero-boundary fixture result.",
+    "expectedCutSeconds": [4.0, 8.0, 12.0],
+    "allConfigurationsDetectKnownCuts": true,
+    "detectors": [
+      {
+        "detector": "content",
+        "threshold": 27.0,
+        "detectedBoundarySeconds": [4.0, 8.0, 12.0],
+        "expectedCutsMatched": 3,
+        "expectedCutCount": 3
+      },
+      {
+        "detector": "content",
+        "threshold": 40.0,
+        "detectedBoundarySeconds": [4.0, 8.0, 12.0],
+        "expectedCutsMatched": 3,
+        "expectedCutCount": 3
+      },
+      {
+        "detector": "adaptive",
+        "threshold": 3.0,
+        "detectedBoundarySeconds": [4.0, 8.0, 12.0],
+        "expectedCutsMatched": 3,
+        "expectedCutCount": 3
+      }
+    ]
+  },
+  "thresholdSelection": {
+    "status": "not-selected",
+    "selectedDetector": null,
+    "selectedThreshold": null,
+    "reason": "The fixture contains no annotated positive boundary and all evaluated configurations returned zero boundaries, so selecting one configuration would not be evidence-based."
+  },
+  "summary": {
+    "evaluatedConfigurationCount": 3,
+    "fixtureBoundaryCountRange": [0, 0],
+    "fixtureSceneCountRange": [1, 1],
+    "detectorElapsedSecondsRange": [43.492, 48.604],
+    "allControlConfigurationsDetectKnownCuts": true
+  },
+  "stage0Implications": [
+    "No evaluated configuration detected a visual boundary in this fixture, while every configuration detected all three hard cuts in the synthetic control. This supports interpreting the fixture result as zero detected boundaries rather than a detector that did not run.",
+    "The result does not establish detector recall on the fixture because no human shot annotations exist. It must not be reported as proof that every real visual transition is absent.",
+    "A detector and threshold cannot be selected from this fixture. Topic segmentation and edit-transition suggestions must not depend exclusively on visual boundaries; audio, transcript, and manual boundaries remain the primary paths until positive annotated material is measured.",
+    "Each configuration processed the 1081-second proxy in 43.492 to 48.604 seconds on the recorded machine. This is a Stage 0 measurement, not a cross-machine performance guarantee.",
+    "No fixture boundary exercised the proxy-to-source boundary mapping in this run. The mapping implementation follows the observed-timestamp rule from ST-004, but a positive source-side boundary fixture is still required for end-to-end validation."
+  ],
+  "assessment": {
+    "interpretation": "The measured result is zero detected boundaries for all three configurations, not a selected production threshold.",
+    "measurementCorrections": [
+      "A synthetic clip with known cuts was added after the initial measurement so a zero result could be distinguished from a detector that was not operating.",
+      "PySceneDetect returns an empty scene list by default when no cut exists. The stage now requests start_in_scene=true, so the fixture is represented as one full-length scene with zero boundaries instead of zero scenes."
+    ],
+    "openQuestions": [
+      "Which detector and threshold should be adopted cannot be measured until a rights-approved fixture with human-annotated hard cuts, gradual transitions, and camera-motion negatives is available.",
+      "False-positive and false-negative rates are unmeasured because no human shot annotations exist for the current fixture.",
+      "End-to-end conversion of an actually detected proxy boundary to a verified source presentation time remains unmeasured on this fixture because its detected boundary count is zero."
+    ],
+    "curatedFields": ["thresholdSelection", "stage0Implications", "assessment", "recollectionCommand"]
+  },
+  "recollectionCommand": "pwsh.exe -NoLogo -NoProfile -File benchmarks/run-benchmarks.ps1 -Stage shot-detection -ChildTimeoutSeconds 10800"
+}

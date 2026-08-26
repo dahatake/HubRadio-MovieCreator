@@ -34,6 +34,8 @@ def load_presentation_seconds(csv_path: Path, time_base: Fraction) -> list[float
             if not token or token == "N/A":
                 continue
             values.append(int(token))
+    if not values:
+        raise ValueError(f"No presentation timestamps were loaded from {csv_path.name}.")
     values.sort()
     return [float(value * time_base) for value in values]
 
@@ -51,8 +53,8 @@ def detect(video_path: Path, detector_name: str, threshold: float) -> tuple[list
     started = time.perf_counter()
     manager.detect_scenes(video, show_progress=False)
     elapsed = time.perf_counter() - started
-    scenes = manager.get_scene_list()
-    return [(scene[0].get_seconds(), scene[1].get_seconds()) for scene in scenes], elapsed
+    scenes = manager.get_scene_list(start_in_scene=True)
+    return [(scene[0].seconds, scene[1].seconds) for scene in scenes], elapsed
 
 
 def summarise(
@@ -101,6 +103,8 @@ def main() -> int:
     parser.add_argument("--source-time-base", required=True)
     parser.add_argument("--proxy-packets", required=True, type=Path)
     parser.add_argument("--proxy-time-base", required=True)
+    parser.add_argument("--control-video", type=Path)
+    parser.add_argument("--control-cut-seconds", default="")
     arguments = parser.parse_args()
 
     source_times = load_presentation_seconds(arguments.source_packets, parse_rational(arguments.source_time_base))
@@ -132,10 +136,36 @@ def main() -> int:
             "contentBoundariesMatchedByAdaptive": matched,
         }
 
+    control = None
+    if arguments.control_video is not None and arguments.control_video.exists():
+        expected = [float(value) for value in arguments.control_cut_seconds.split(",") if value]
+        control_detectors = []
+        for detector_name, threshold in configurations:
+            scenes, _ = detect(arguments.control_video, detector_name, threshold)
+            boundaries = [round(start, 3) for start, _ in scenes][1:]
+            matched = sum(1 for value in expected if any(abs(value - found) <= 0.5 for found in boundaries))
+            control_detectors.append(
+                {
+                    "detector": detector_name,
+                    "threshold": threshold,
+                    "detectedBoundarySeconds": boundaries,
+                    "expectedCutsMatched": matched,
+                    "expectedCutCount": len(expected),
+                    "detectsKnownCuts": matched == len(expected) and len(expected) > 0,
+                }
+            )
+        control = {
+            "purpose": "A synthetic clip with known hard cuts confirms that a zero boundary count on the fixture reflects the content rather than a detector that is not running.",
+            "expectedCutSeconds": expected,
+            "detectors": control_detectors,
+            "allConfigurationsDetectKnownCuts": all(item["detectsKnownCuts"] for item in control_detectors),
+        }
+
     json.dump(
         {
             "detectors": detectors,
             "agreement": agreement,
+            "controlClip": control,
             "note": "Boundaries were detected on the proxy and converted to source presentation times through the observed-timestamp mapping.",
         },
         sys.stdout,
