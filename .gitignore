@@ -1,0 +1,35 @@
+# Rights-unconfirmed or large local media
+/sample/*
+!/sample/.gitkeep
+
+# Generated test media is local; manifests and problem reports remain visible
+/test/*.MOV
+/test/*.mov
+/test/*.mp4
+/test/.*.partial.*
+
+# Raw benchmark runs are local evidence; canonical summaries remain tracked
+/benchmarks/results/runs/
+
+# Generated benchmark working data
+/benchmarks/work/
+/benchmarks/cache/
+/benchmarks/logs/
+/benchmarks/models/
+/benchmarks/**/*.tmp
+
+# Application/runtime artifacts planned for later phases
+**/bin/
+**/obj/
+**/node_modules/
+**/.venv/
+**/__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+
+# Local IDE and OS files
+.vs/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hubradio.local/schemas/benchmark-result-1.0.0.json",
+  "title": "HubRadio benchmark result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "stage",
+    "status",
+    "startedAtUtc",
+    "finishedAtUtc",
+    "elapsedMilliseconds",
+    "fixture",
+    "payload"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^[0-9]{8}T[0-9]{13}Z-[a-z0-9-]+-[0-9a-f]{8}$"
+    },
+    "stage": {
+      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest"]
+    },
+    "status": {
+      "enum": ["succeeded", "failed"]
+    },
+    "startedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finishedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "elapsedMilliseconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifestPath",
+        "manifestSha256",
+        "sourceAssetId",
+        "sourceSha256",
+        "sourceByteSize"
+      ],
+      "properties": {
+        "manifestPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifestSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sourceAssetId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceSha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sourceByteSize": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "payload": {
+      "type": "object"
+    },
+    "error": {
+      "type": ["object", "null"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 }
+      },
+      "required": ["code", "message"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "hardware"
+          },
+          "status": {
+            "const": "succeeded"
+          }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/hardwarePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "ffmpeg-capabilities"
+          },
+          "status": {
+            "const": "succeeded"
+          }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/ffmpegPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "media-ingest"
+          },
+          "status": {
+            "const": "succeeded"
+          }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/mediaPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["error"]
+      }
+    }
+  ],
+  "$defs": {
+    "mediaPayload": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "recordedAtUtc",
+        "source",
+        "format",
+        "streams",
+        "packetStatistics",
+        "timingAssessment",
+        "audioVideo",
+        "fullDecode",
+        "warnings",
+        "privacy",
+        "samplePathConsumed"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "recordedAtUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source": {
+          "type": "object",
+          "required": ["fileName", "byteSize", "prefixHex"]
+        },
+        "format": {
+          "type": "object",
+          "required": ["names", "durationSeconds", "declaredByteSize", "probeScore"]
+        },
+        "streams": {
+          "type": "array"
+        },
+        "packetStatistics": {
+          "type": "array"
+        },
+        "timingAssessment": {
+          "type": "object"
+        },
+        "audioVideo": {
+          "type": "object"
+        },
+        "fullDecode": {
+          "type": "object",
+          "required": ["exitCode", "succeeded", "elapsedMilliseconds", "errorLineCount"]
+        },
+        "warnings": {
+          "type": "array"
+        },
+        "privacy": {
+          "type": "object"
+        },
+        "samplePathConsumed": {
+          "const": true
+        }
+      }
+    },
+    "ffmpegPayload": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "recordedAtUtc",
+        "package",
+        "executables",
+        "version",
+        "licenseAssessment",
+        "capabilities",
+        "samplePathConsumed"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "recordedAtUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "package": {
+          "type": "object"
+        },
+        "executables": {
+          "type": "object"
+        },
+        "version": {
+          "type": "object"
+        },
+        "licenseAssessment": {
+          "type": "object"
+        },
+        "capabilities": {
+          "type": "object"
+        },
+        "samplePathConsumed": {
+          "const": false
+        }
+      }
+    },
+    "hardwarePayload": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "recordedAtUtc",
+        "collection",
+        "operatingSystem",
+        "processor",
+        "memory",
+        "graphics",
+        "npuDevices",
+        "storage",
+        "runtimesAndTools",
+        "sampleAsset"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "recordedAtUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "collection": {
+          "type": "object"
+        },
+        "operatingSystem": {
+          "type": "object"
+        },
+        "processor": {
+          "type": "object"
+        },
+        "memory": {
+          "type": "object"
+        },
+        "graphics": {
+          "type": "array"
+        },
+        "npuDevices": {
+          "type": "array"
+        },
+        "storage": {
+          "type": "object"
+        },
+        "runtimesAndTools": {
+          "type": "object"
+        },
+        "sampleAsset": {
+          "type": "object",
+          "required": ["relativePath", "byteSize", "sha256"],
+          "properties": {
+            "relativePath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "byteSize": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

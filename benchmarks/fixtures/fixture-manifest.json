@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "1.0.0",
+  "recordedAtUtc": "2026-08-26T15:26:10.3072278Z",
+  "purpose": "Stage 0 technical evaluation and internal development only",
+  "sourceAssets": [
+    {
+      "id": "source-ios-20260615-024326000",
+      "relativePath": "../../sample/20260615_024326000_iOS.MOV",
+      "fileName": "20260615_024326000_iOS.MOV",
+      "byteSize": 6494572403,
+      "sha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+      "lastWriteTimeUtc": "2026-06-15T06:29:40Z",
+      "mediaInspection": {
+        "status": "pending-ST-003",
+        "container": null,
+        "duration": null,
+        "videoStreams": null,
+        "audioStreams": null,
+        "timingMode": null
+      },
+      "rights": {
+        "status": "unconfirmed",
+        "evidenceReference": null,
+        "allowedUse": "local-technical-evaluation-only",
+        "externalPublicationAllowed": false
+      }
+    }
+  ],
+  "developmentInputs": {
+    "contentName": "HubRadio Stage 0 Fixture",
+    "purpose": "Technical validation of ingest, analysis, editing, rendering, review, and traceability",
+    "audience": "development-team",
+    "publicationScope": "internal-only",
+    "requestedLanguage": "ja",
+    "performers": [],
+    "deadline": null,
+    "brandTemplate": {
+      "status": "not-provided",
+      "fallback": "development-only neutral template",
+      "approvedForPublication": false
+    },
+    "termDictionary": [],
+    "supportingDocuments": [],
+    "approvedLogos": [],
+    "approvedAudio": []
+  },
+  "requiredPilotOutputs": [
+    {
+      "kind": "internal-16x9-long",
+      "count": 1
+    },
+    {
+      "kind": "youtube-16x9-long",
+      "count": 1
+    },
+    {
+      "kind": "vertical-9x16-short",
+      "count": 3
+    },
+    {
+      "kind": "vertical-9x16-quiz",
+      "count": 1
+    }
+  ],
+  "expectedTotalVideoOutputs": 6,
+  "missingInputs": [
+    "confirmed performer names and titles",
+    "required publication deadline",
+    "approved brand template",
+    "approved logo and key visual",
+    "approved terminology dictionary",
+    "approved BGM, jingle, and sound effects",
+    "rights evidence for the source video"
+  ],
+  "gates": {
+    "externalOutput": "blocked-until-rights-and-brand-approval",
+    "performerReview": "required-before-external-candidate",
+    "measurements": "must-be-recorded-before-thresholds-are-approved"
+  }
+}

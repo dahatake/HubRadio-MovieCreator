@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "1.0.0",
+  "status": "succeeded",
+  "startedAtUtc": "2026-08-26T17:08:32.3290467Z",
+  "finishedAtUtc": "2026-08-26T17:53:53.7014081Z",
+  "elapsedMilliseconds": 2721372.361,
+  "source": {
+    "relativePath": "sample/20260615_024326000_iOS.MOV",
+    "byteSize": 6494572403,
+    "sha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+    "durationSeconds": 1081.420000
+  },
+  "operation": {
+    "kind": "internal-development-proxy-render",
+    "video": "H.264 NVENC, 1280x720, 30000/1001 fps, yuv420p",
+    "audio": "AAC 160 kbit/s when source audio is present",
+    "metadata": "source global metadata not copied (-map_metadata -1); muxer/codec technical tags may remain",
+    "externalPublicationAllowed": false
+  },
+  "tool": {
+    "packageId": "BtbN.FFmpeg.LGPL.8.1",
+    "packageVersion": "8.1.2-20260731",
+    "ffmpegSha256": "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb",
+    "ffprobeSha256": "4c2f730969c9551aec21c5ca07eb73f63bb0920204c9cd6c9a6e7be6be0458d2"
+  },
+  "validation": {
+    "fullDecode": {
+      "succeeded": true,
+      "ffmpegExitCode": 0,
+      "failOnDecodeError": true
+    }
+  },
+  "output": {
+    "relativePath": "test/20260615_024326000_iOS.MOV",
+    "byteSize": 374146177,
+    "sha256": "01f87fdc00dd4c4bcb73735b744dad52a3396a8242d1d40cd609de3a6dd31b95",
+    "durationSeconds": 1081.428000,
+    "absoluteDurationDifferenceSeconds": 0.008,
+    "streams": [
+      {
+        "index": 0,
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 1280,
+        "height": 720,
+        "pix_fmt": "yuv420p",
+        "r_frame_rate": "30000/1001"
+      },
+      {
+        "index": 1,
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2,
+        "r_frame_rate": "0/0"
+      }
+    ]
+  }
+}

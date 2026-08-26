@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260826T1637448588203Z-ffmpeg-capabilities-7ddd373d",
+  "benchmarkRunSha256": "11b9b63c656ac12eb4c4f945b64b851c9ac99a03959fc7308c3103ecb88b56df",
+  "recordedAtUtc": "2026-08-26T16:37:56.5062124Z",
+  "package": {
+    "id": "BtbN.FFmpeg.LGPL.8.1",
+    "version": "8.1.2-20260731",
+    "releaseTag": "autobuild-2026-07-31-14-10",
+    "archiveFile": "ffmpeg-n8.1.2-34-g9b6c8969e0-win64-lgpl-8.1.zip",
+    "archiveSha256": "089e4169e93b2b3f3acbfced3c0704d24276a225641bdda04d796d28b07a2a38",
+    "archiveSha256Provenance": "WinGet manifest and installer verification output; the downloaded archive was not retained or rehashed by this stage.",
+    "archiveBytesRehashedByStage": false,
+    "variant": "win64-lgpl-static",
+    "source": "https://github.com/BtbN/FFmpeg-Builds"
+  },
+  "executables": {
+    "ffmpeg": {
+      "fileName": "ffmpeg.exe",
+      "byteSize": 113536512,
+      "sha256": "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb"
+    },
+    "ffprobe": {
+      "fileName": "ffprobe.exe",
+      "byteSize": 113330688,
+      "sha256": "4c2f730969c9551aec21c5ca07eb73f63bb0920204c9cd6c9a6e7be6be0458d2"
+    }
+  },
+  "version": {
+    "firstLine": "ffmpeg version n8.1.2-34-g9b6c8969e0-20260731 Copyright (c) 2000-2026 the FFmpeg developers",
+    "configuration": "configuration: --prefix=/ffbuild/prefix --pkg-config-flags=--static --pkg-config=pkg-config --cross-prefix=x86_64-w64-mingw32- --arch=x86_64 --target-os=mingw32 --enable-version3 --disable-debug --disable-w32threads --enable-pthreads --enable-iconv --enable-zlib --enable-libxml2 --enable-libvmaf --enable-fontconfig --enable-libharfbuzz --enable-libfreetype --enable-libfribidi --enable-vulkan --enable-libshaderc --enable-libvorbis --disable-libxcb --disable-xlib --disable-libpulse --enable-gmp --enable-lzma --enable-liblcevc-dec --enable-opencl --enable-amf --enable-libaom --enable-libaribb24 --disable-avisynth --enable-chromaprint --enable-libdav1d --disable-libdavs2 --disable-libdvdread --disable-libdvdnav --disable-libfdk-aac --enable-ffnvcodec --enable-cuda-llvm --disable-frei0r --enable-libgme --enable-libkvazaar --enable-libaribcaption --enable-libass --enable-libbluray --enable-libjxl --enable-libmp3lame --enable-libopus --enable-libplacebo --enable-librist --enable-libssh --enable-libtheora --enable-libvpx --enable-libwebp --enable-libzmq --enable-lv2 --enable-libvpl --enable-openal --enable-liboapv --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopenmpt --enable-librav1e --disable-librubberband --enable-schannel --enable-sdl2 --enable-libsnappy --enable-libsoxr --enable-libsrt --enable-libsvtav1 --enable-libtwolame --enable-libuavs3d --disable-libdrm --enable-vaapi --disable-libvidstab --enable-libvvenc --disable-whisper --disable-libx264 --disable-libx265 --disable-libxavs2 --disable-libxvid --enable-libzimg --enable-libzvbi --extra-cflags=-DLIBTWOLAME_STATIC --extra-cxxflags= --extra-libs=-lgomp --extra-ldflags=-pthread --extra-ldexeflags= --cc=x86_64-w64-mingw32-gcc --cxx=x86_64-w64-mingw32-g++ --ar=x86_64-w64-mingw32-gcc-ar --ranlib=x86_64-w64-mingw32-gcc-ranlib --nm=x86_64-w64-mingw32-gcc-nm --extra-version=20260731"
+  },
+  "licenseAssessment": {
+    "enablesGpl": false,
+    "enablesNonFree": false,
+    "expectedVariant": "LGPL-2.1-or-later base; dependencies require separate verification"
+  },
+  "capabilities": {
+    "filters": {
+      "trim": true,
+      "atrim": true,
+      "concat": true,
+      "crop": true,
+      "scale": true,
+      "overlay": true,
+      "subtitles": true,
+      "xfade": true,
+      "acrossfade": true,
+      "loudnorm": true,
+      "silencedetect": true,
+      "drawtext": true
+    },
+    "encoders": {
+      "aac": true,
+      "h264_mf": true,
+      "h264_nvenc": true,
+      "hevc_mf": true,
+      "hevc_nvenc": true,
+      "libx264": false,
+      "libx265": false
+    },
+    "hardwareAccelerationMethodsListedByFfmpeg": [
+      "cuda",
+      "vaapi",
+      "dxva2",
+      "qsv",
+      "d3d11va",
+      "opencl",
+      "vulkan",
+      "d3d12va",
+      "amf"
+    ],
+    "runtimeEncodeSuccessMeasured": false
+  },
+  "samplePathConsumed": false
+}

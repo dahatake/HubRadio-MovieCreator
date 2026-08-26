@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260826T1548073271369Z-hardware-d1b1bd37",
+  "benchmarkRunSha256": "3e5b1e6ab9ce19795b8244bd433ab8882b534e4b06b9314d7d86ac67536775c7",
+  "recordedAtUtc": "2026-08-26T15:48:24.8872594Z",
+  "collection": {
+    "script": "../collect-hardware.ps1",
+    "shell": "pwsh.exe -NoLogo -NoProfile",
+    "powerShellVersion": "7.6.5",
+    "containsPersonalIdentifiers": false
+  },
+  "operatingSystem": {
+    "caption": "Microsoft Windows 11 Enterprise Insider Preview",
+    "version": "10.0.29648",
+    "buildNumber": "29648",
+    "architecture": "64 ビット"
+  },
+  "processor": {
+    "name": "13th Gen Intel(R) Core(TM) i7-13800H",
+    "physicalCores": 14,
+    "logicalProcessors": 20
+  },
+  "memory": {
+    "installedBytes": 68535443456
+  },
+  "graphics": [
+    {
+      "name": "Intel(R) Iris(R) Xe Graphics",
+      "wmiAdapterRamBytes": 2147479552,
+      "driverVersion": "32.0.101.6737"
+    },
+    {
+      "name": "NVIDIA GeForce RTX 4060 Laptop GPU",
+      "wmiAdapterRamBytes": 4293918720,
+      "nvidiaReportedMemoryMiB": 8188,
+      "driverVersionWmi": "32.0.16.1088",
+      "driverVersionNvidia": "610.88"
+    }
+  ],
+  "nvidia": {
+    "reportedMemoryMiB": 8188,
+    "driverVersion": "610.88",
+    "authority": "nvidia-smi is authoritative for NVIDIA dedicated memory; WMI AdapterRAM is retained only as an observed value."
+  },
+  "npuDevices": [
+    {
+      "class": "ComputeAccelerator",
+      "friendlyName": "Intel(R) NPU",
+      "status": "OK"
+    }
+  ],
+  "storage": {
+    "systemDrive": "C:",
+    "freeBytesAtCollection": 579345784832
+  },
+  "runtimesAndTools": {
+    "dotnetSdkDefault": "10.0.400",
+    "dotnetSdks": [
+      "8.0.424",
+      "10.0.302",
+      "10.0.400"
+    ],
+    "node": "v24.19.0",
+    "npm": "11.17.0",
+    "pythonDefault": "Python 3.14.7",
+    "ffmpeg": null,
+    "ffprobe": null,
+    "git": "git version 2.55.0.windows.3",
+    "winget": "v1.30.100-preview",
+    "foundryCommandAvailable": true,
+    "foundryVersion": null,
+    "azureCliCommandAvailable": true,
+    "azureCliVersion": null,
+    "webView2Runtime": "151.0.4129.107"
+  },
+  "sampleAsset": {
+    "relativePath": "../../sample/20260615_024326000_iOS.MOV",
+    "byteSize": 6494572403,
+    "sha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f"
+  },
+  "stage0Implications": [
+    "Install and pin Python 3.12 because the installed Python 3.14 is not assumed compatible with the selected ML wheels.",
+    "Install an LGPL FFmpeg build for development capability measurement; FFmpeg and ffprobe are currently absent.",
+    "Benchmark CUDA, DirectML or Windows ML, and CPU paths instead of assuming WMI adapter memory values are authoritative.",
+    "Validate the packaged app on a production-channel Windows 11 24H2 machine before release because this machine runs an Insider build."
+  ],
+  "assessment": {
+    "targetCompatibility": "The observed build number is newer than the Windows 11 24H2 baseline, but Insider behavior is not assumed identical to a production-channel build.",
+    "curatedFields": ["stage0Implications", "assessment", "recollectionCommand"]
+  },
+  "recollectionCommand": "pwsh.exe -NoLogo -NoProfile -File benchmarks/collect-hardware.ps1"
+}
