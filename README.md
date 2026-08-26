@@ -3,7 +3,7 @@
 Windows 11上で、企業向けトーク／インタビュー動画を**根拠付き・非破壊・人による承認付き**で複数形式へ展開する、ローカル優先の動画編集支援アプリケーションです。
 
 > [!IMPORTANT]
-> 現在は **Stage 0（技術検証・進行中）** です。P-001〜P-010、ST-001、ST-002と固定fixture向け動画生成ツールまでは完了していますが、ST-003〜ST-016とStage 0全体の承認（ST-015）は未完了です。WinUI 3 GUI、React編集画面、SQLite業務機能、Python MLワーカー、MSIXもまだ実装されておらず、クローン後に起動できる完成アプリケーションはありません。
+> 現在は **Stage 0（技術検証・進行中）** です。P-001〜P-010、ST-001〜ST-003と固定fixture向け動画生成ツールまでは完了していますが、ST-004〜ST-016とStage 0全体の承認（ST-015）は未完了です。WinUI 3 GUI、React編集画面、SQLite業務機能、Python MLワーカー、MSIXもまだ実装されておらず、クローン後に起動できる完成アプリケーションはありません。
 
 ![HubRadio MovieCreatorのアーキテクチャ。緑は実装済みStage 0、青は計画中のWindowsアプリ、紫の破線は条件付きAzure経路](docs/architecture.svg)
 
@@ -59,14 +59,14 @@ Windows 11上で、企業向けトーク／インタビュー動画を**根拠�
 | ハードウェア調査 | ✅ 実測済み | `benchmarks/results/hardware-inventory.json` |
 | FFmpeg調査 | ✅ 実測済み | LGPL buildの版、hash、filter／encoder一覧 |
 | 固定fixture動画生成 | ✅ 実行・全編QC済み | `tools/create-test-video.ps1`、manifest、問題レポート |
-| ST-003媒体取込の正本結果 | ⏳ 未完了 | stage scriptは存在するが、レビュー済みcanonical `media-ingest.json`は未作成 |
+| 媒体取込調査 | ✅ 実測済み | `benchmarks/results/media-ingest.json`（VFR判定、全編decode、A/V差）|
 | GUIデスクトップアプリ | ⬜ 未実装 | WinUI 3、WebView2、Reactは計画のみ |
 | 業務データ／編集機能 | ⬜ 未実装 | SQLite、非破壊タイムライン、レビュー、納品管理は計画のみ |
 | ML解析 | ⬜ 未実装 | ASR、話者、ショット、顔、トピック解析はPoC前 |
 | 配布 | ⬜ 未実装 | 署名済み社内MSIXは計画のみ |
 | Azure | ⏸ 条件付き・未作成 | ローカル不達と明示承認が揃った場合だけ検討 |
 
-現在の次タスクは [`docs/implementation-plan.md`](docs/implementation-plan.md) の **ST-003** です。Stage 0の全結果をST-015で承認するまで、アプリ本体のscaffold（F-001以降）へ進まない計画です。
+現在の次タスクは [`docs/implementation-plan.md`](docs/implementation-plan.md) の **ST-004** です。Stage 0の全結果をST-015で承認するまで、アプリ本体のscaffold（F-001以降）へ進まない計画です。
 
 ## クイックスタート
 
@@ -190,7 +190,7 @@ pwsh.exe -NoLogo -NoProfile -File tools\create-test-video.ps1 -SourcePath sample
 |---|---|---|
 | `hardware` | 利用可能 | OS、CPU、GPU/NPU、RAM、空き容量、tool版を収集 |
 | `ffmpeg-capabilities` | 利用可能 | FFmpeg build、license、filter、encoder、binary hashを収集 |
-| `media-ingest` | script利用可能／ST-003未完了 | metadata、packet timing、A/V差、全編decodeを検査 |
+| `media-ingest` | 利用可能 | metadata、packet timing、A/V差、全編decodeを検査 |
 
 `media-ingest`は大容量fixtureを全編処理します。実行する場合は十分な時間と空き容量を確保してください。
 
@@ -198,7 +198,7 @@ pwsh.exe -NoLogo -NoProfile -File tools\create-test-video.ps1 -SourcePath sample
 pwsh.exe -NoLogo -NoProfile -File benchmarks\run-benchmarks.ps1 -Stage media-ingest -ChildTimeoutSeconds 10800
 ```
 
-run JSONが成功しても、ST-003完了には結果レビューとcanonical `benchmarks/results/media-ingest.json`の作成が別途必要です。
+run JSONは生の実行証跡です。レビュー済みの要約は`benchmarks/results/media-ingest.json`に切り出して管理します。
 
 ### 固定fixture動画生成ツール
 
@@ -428,7 +428,7 @@ fixture、生成動画、ブランド素材、BGM等はMIT Licenseの対象と�
 
 | Stage | 内容 | 状態 |
 |---|---|---|
-| Stage 0 | 実素材で媒体、ASR、時刻、顔、shot、字幕、render、packageを測定 | **進行中**。P-001〜P-010、ST-001、ST-002完了 |
+| Stage 0 | 実素材で媒体、ASR、時刻、顔、shot、字幕、render、packageを測定 | **進行中**。P-001〜P-010、ST-001〜ST-003完了 |
 | Stage 1 | Must: 取込、文字起こし、手動編集、16:9／9:16、版、review、render、traceability | 未着手。ST-015承認後 |
 | Stage 2 | Should: 見どころ、hook、自動追尾、資料、音声補正、quiz、投稿文 | 未着手。G1-MUST後 |
 | Stage 3 | 公開履歴、運用改善、条件確定済みの外部連携 | 未着手 |

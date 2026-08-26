@@ -11,12 +11,13 @@
       "sha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
       "lastWriteTimeUtc": "2026-06-15T06:29:40Z",
       "mediaInspection": {
-        "status": "pending-ST-003",
-        "container": null,
-        "duration": null,
-        "videoStreams": null,
-        "audioStreams": null,
-        "timingMode": null
+        "status": "completed-ST-003",
+        "benchmarkRunId": "20260826T1945575983887Z-media-ingest-64a77bc8",
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": 1081.42,
+        "videoStreams": 1,
+        "audioStreams": 1,
+        "timingMode": "variable-timing-indicators-observed"
       },
       "rights": {
         "status": "unconfirmed",

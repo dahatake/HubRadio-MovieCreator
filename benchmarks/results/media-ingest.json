@@ -1,0 +1,132 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260826T1945575983887Z-media-ingest-64a77bc8",
+  "benchmarkRunSha256": "f47f5f89dacc86fc6c73acd83f6009347235af697b5d00837935693d705c0c09",
+  "recordedAtUtc": "2026-08-26T19:58:03.9149054Z",
+  "source": {
+    "fileName": "20260615_024326000_iOS.MOV",
+    "byteSize": 6494572403,
+    "sha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+    "containerPrefixHex": "0000001466747970717420200000000071742020000000016d64617400000001"
+  },
+  "format": {
+    "names": "mov,mp4,m4a,3gp,3g2,mj2",
+    "longName": "QuickTime / MOV",
+    "durationSeconds": 1081.42,
+    "declaredByteSize": 6494572403,
+    "bitRate": 48044773,
+    "probeScore": 100
+  },
+  "streams": [
+    {
+      "index": 0,
+      "codecType": "video",
+      "codecName": "hevc",
+      "profile": "Main",
+      "width": 3840,
+      "height": 2160,
+      "pixelFormat": "yuv420p",
+      "nominalFrameRate": "60000/1001",
+      "averageFrameRate": "37389600/648883",
+      "nominalFramesPerSecond": 59.94005994,
+      "averageFramesPerSecond": 57.621481839,
+      "timeBase": "1/600",
+      "startSeconds": 0,
+      "durationSeconds": 1081.401667
+    },
+    {
+      "index": 1,
+      "codecType": "audio",
+      "codecName": "aac",
+      "profile": "LC",
+      "timeBase": "1/48000",
+      "startSeconds": 0,
+      "durationSeconds": 1081.42,
+      "sampleRate": 48000,
+      "channels": 2,
+      "channelLayout": "stereo"
+    }
+  ],
+  "packetStatistics": [
+    {
+      "streamIndex": 0,
+      "packetCount": 62316,
+      "ptsCount": 62316,
+      "dtsCount": 62316,
+      "minPts": -50,
+      "maxPts": 648823,
+      "presentationReorderedPacketCount": 31160,
+      "nonMonotonicDtsCount": 0,
+      "distinctPacketDurationCount": 44,
+      "minPacketDuration": 10,
+      "maxPacketDuration": 381
+    },
+    {
+      "streamIndex": 1,
+      "packetCount": 50694,
+      "ptsCount": 50694,
+      "dtsCount": 50694,
+      "minPts": -2112,
+      "maxPts": 51907520,
+      "presentationReorderedPacketCount": 0,
+      "nonMonotonicDtsCount": 0,
+      "distinctPacketDurationCount": 1,
+      "minPacketDuration": 1024,
+      "maxPacketDuration": 1024
+    }
+  ],
+  "timingAssessment": {
+    "authority": "stream-time-base-and-observed-timestamps",
+    "nominalAndAverageRateDiffer": true,
+    "variablePacketDurationsObserved": true,
+    "classification": "variable-timing-indicators-observed",
+    "presentationReorderingIsNotTreatedAsDtsFailure": true,
+    "negativeStartTimestampsObserved": true,
+    "negativeStartSecondsVideo": -0.083333,
+    "negativeStartSecondsAudio": -0.044
+  },
+  "audioVideo": {
+    "videoStartSeconds": 0,
+    "videoEndSeconds": 1081.401667,
+    "audioStartSeconds": 0,
+    "audioEndSeconds": 1081.42,
+    "absoluteEndDifferenceSeconds": 0.018333
+  },
+  "fullDecode": {
+    "succeeded": true,
+    "exitCode": 0,
+    "elapsedMilliseconds": 686529.721,
+    "decoder": "software-default",
+    "failOnDecodeError": true,
+    "stderrLineCount": 61,
+    "stderrOrigin": "null-muxer",
+    "representativeStderrLines": [
+      "[null @ <address>] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 200 >= 200",
+      "[null @ <address>] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 64800 >= 64800"
+    ],
+    "decoderReportedErrorLineCount": 0
+  },
+  "warnings": [
+    "variable-frame-timing-indicator"
+  ],
+  "privacy": {
+    "metadataTagsPersisted": false,
+    "absolutePathPersisted": false
+  },
+  "stage0Implications": [
+    "Treat this fixture as variable frame timing. The nominal and average frame rates differ and 44 distinct video packet durations were observed, so ST-004 must map proxy frames through observed presentation timestamps instead of dividing a frame index by the nominal rate.",
+    "Both streams start before zero on their own time base, so the import path must preserve the container start offset rather than assuming the first presentation timestamp is zero.",
+    "Presentation reordering is normal for this HEVC stream. 31160 of 62316 video packets are reordered while no decode timestamp regression was observed, so reordering alone must not be reported as a corruption indicator.",
+    "Full software decode of the 6.49 GB source took about 11.4 minutes on the recorded machine. Stage 1 must not require a full decode for interactive editing and must rely on the proxy path measured in ST-004.",
+    "The 61 recorded stderr lines were emitted by the null muxer used for verification, and the run still exited zero under -xerror while the decoder reported no error lines. Whether the same messages appear for real render targets must be confirmed in ST-005 and ST-012 rather than assumed."
+  ],
+  "assessment": {
+    "sourceIntegrity": "The container reported a size matching the file on disk, the probe score reached the maximum value, and the full decode completed without a decoder error.",
+    "openQuestions": [
+      "The relationship between the null-muxer timestamp collisions and the variable frame timing is not yet measured. ST-004 and ST-012 provide the evidence.",
+      "No constant-frame-rate proxy has been produced yet, so the reversibility of the time mapping is unverified until ST-004."
+    ],
+    "curatedFields": ["stage0Implications", "assessment", "recollectionCommand"]
+  },
+  "recollectionCommand": "pwsh.exe -NoLogo -NoProfile -File benchmarks/run-benchmarks.ps1 -Stage media-ingest -ChildTimeoutSeconds 10800"
+}
