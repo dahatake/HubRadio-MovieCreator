@@ -24,7 +24,7 @@
       "pattern": "^[0-9]{8}T[0-9]{13}Z-[a-z0-9-]+-[0-9a-f]{8}$"
     },
     "stage": {
-      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest"]
+      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map"]
     },
     "status": {
       "enum": ["succeeded", "failed"]
@@ -148,6 +148,26 @@
     {
       "if": {
         "properties": {
+          "stage": {
+            "const": "proxy-frame-map"
+          },
+          "status": {
+            "const": "succeeded"
+          }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/proxyFrameMapPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "status": {
             "const": "failed"
           }
@@ -160,6 +180,56 @@
     }
   ],
   "$defs": {
+    "proxyFrameMapPayload": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "recordedAtUtc",
+        "proxy",
+        "sourceTiming",
+        "proxyTiming",
+        "mapping",
+        "roundTrip",
+        "visualCorrespondence",
+        "samplePathConsumed"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "recordedAtUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "proxy": {
+          "type": "object",
+          "required": ["width", "height", "frameRate", "encoder", "sha256", "byteSize"]
+        },
+        "sourceTiming": {
+          "type": "object",
+          "required": ["timeBase", "packetCount"]
+        },
+        "proxyTiming": {
+          "type": "object",
+          "required": ["timeBase", "packetCount"]
+        },
+        "mapping": {
+          "type": "object",
+          "required": ["rule", "proxyFrameCount", "distinctSourceFramesReferenced"]
+        },
+        "roundTrip": {
+          "type": "object",
+          "required": ["testedPointCount", "errorSecondsMax"]
+        },
+        "visualCorrespondence": {
+          "type": "object",
+          "required": ["sampleCount"]
+        },
+        "samplePathConsumed": {
+          "const": true
+        }
+      }
+    },
     "mediaPayload": {
       "type": "object",
       "required": [

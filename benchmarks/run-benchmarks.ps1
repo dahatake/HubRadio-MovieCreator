@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest")]
+    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map")]
     [string]$Stage = "hardware",
     [string]$FixtureManifest = (Join-Path $PSScriptRoot "fixtures\fixture-manifest.json"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "results\runs"),
@@ -156,6 +156,31 @@ function Assert-MediaPayload {
     }
 }
 
+function Assert-ProxyFrameMapPayload {
+    param([Parameter(Mandatory)][object]$Payload)
+
+    foreach ($name in @(
+        "schemaVersion", "recordedAtUtc", "proxy", "sourceTiming", "proxyTiming",
+        "mapping", "roundTrip", "visualCorrespondence", "samplePathConsumed"
+    )) {
+        if ($Payload.PSObject.Properties.Name -notcontains $name) {
+            throw "Proxy frame map payload is missing required property: $name"
+        }
+    }
+    if ($Payload.schemaVersion -ne "1.0.0") {
+        throw "Unsupported proxy frame map payload schemaVersion: $($Payload.schemaVersion)"
+    }
+    if ($Payload.proxy.sha256 -notmatch '^[0-9a-f]{64}$') {
+        throw "Proxy frame map payload does not carry a valid proxy content hash."
+    }
+    if ([int64]$Payload.mapping.proxyFrameCount -le 0 -or [int64]$Payload.mapping.distinctSourceFramesReferenced -le 0) {
+        throw "Proxy frame map payload does not describe a usable mapping."
+    }
+    if ($Payload.samplePathConsumed -ne $true) {
+        throw "Proxy frame map payload did not confirm fixture path consumption."
+    }
+}
+
 function Protect-SensitiveText {
     param(
         [Parameter(Mandatory)][string]$Text,
@@ -233,6 +258,10 @@ try {
         "media-ingest" {
             $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\inspect-media.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
             Assert-MediaPayload -Payload $payload
+        }
+        "proxy-frame-map" {
+            $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\build-proxy-frame-map.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
+            Assert-ProxyFrameMapPayload -Payload $payload
         }
         default {
             throw "Unsupported benchmark stage: $Stage"

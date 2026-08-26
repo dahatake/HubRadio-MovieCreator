@@ -1,0 +1,120 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260826T2102079908030Z-proxy-frame-map-5a725e5c",
+  "benchmarkRunSha256": "a581baa89950dfb231283ddf8fa958dc513e6dafc758625c7c05996d203cee69",
+  "recordedAtUtc": "2026-08-26T21:11:32.0000000Z",
+  "source": {
+    "fileName": "20260615_024326000_iOS.MOV",
+    "byteSize": 6494572403,
+    "sha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f"
+  },
+  "proxy": {
+    "relativePath": "benchmarks/work/proxy-640x360.mp4",
+    "trackedByGit": false,
+    "byteSize": 80042595,
+    "sha256": "685cac74b29e6841358cf500cbb2b3ff6ce64f1f23ebdbd076f855f5179fb7a5",
+    "shareOfSourceBytes": 0.012325,
+    "width": 640,
+    "height": 360,
+    "frameRate": "30000/1001",
+    "codec": "h264",
+    "pixelFormat": "yuv420p",
+    "encoder": "h264_nvenc",
+    "requestedGopSize": 30,
+    "generationElapsedMilliseconds": 477164.185,
+    "generationCommandShape": "scale then fps then format, encoded with h264_nvenc and AAC audio, source metadata not copied"
+  },
+  "sourceTiming": {
+    "timeBase": "1/600",
+    "packetCount": 62316,
+    "minPresentationSeconds": -0.083333,
+    "maxPresentationSeconds": 1081.371667
+  },
+  "proxyTiming": {
+    "timeBase": "1/30000",
+    "packetCount": 32409,
+    "minPresentationSeconds": 0.0,
+    "maxPresentationSeconds": 1081.346933,
+    "observedFrameDurationSeconds": 0.033366667
+  },
+  "mapping": {
+    "rule": "A proxy frame maps to the last source frame whose presentation timestamp is not later than the proxy frame timestamp.",
+    "derivedFrom": "presentation timestamps observed in both files, not from a nominal frame rate",
+    "proxyFrameCount": 32409,
+    "sourceFrameCount": 62316,
+    "distinctSourceFramesReferenced": 31456,
+    "sourceFramesNeverReferenced": 30860,
+    "proxyFramesRepeatingPreviousSourceFrame": 953,
+    "proxyFramesBeforeFirstSourceFrame": 0,
+    "firstReferencedSourceIndex": 5,
+    "lastReferencedSourceIndex": 62313
+  },
+  "roundTrip": {
+    "definition": "Each source frame time is treated as a candidate cut point, converted to the proxy frame that displays it, then converted back through the mapping.",
+    "testedPointCount": 62311,
+    "unrepresentablePointCount": 5,
+    "errorSecondsMean": 0.025816335,
+    "errorSecondsMedian": 0.033333333,
+    "errorSecondsP90": 0.033333333,
+    "errorSecondsP99": 0.035,
+    "errorSecondsMax": 0.635,
+    "boundaryPoints": [
+      {
+        "label": "first-source-frame",
+        "sourceSeconds": -0.083333,
+        "proxyFrameIndex": 0,
+        "proxySeconds": 0.0,
+        "recoveredSourceSeconds": 0.0,
+        "errorSeconds": 0.083333
+      },
+      {
+        "label": "last-source-frame",
+        "sourceSeconds": 1081.371667,
+        "proxyFrameIndex": 32408,
+        "proxySeconds": 1081.346933,
+        "recoveredSourceSeconds": 1081.338333,
+        "errorSeconds": 0.033333
+      }
+    ]
+  },
+  "visualCorrespondence": {
+    "metric": "Mean absolute difference of luminance after both frames are resized to a common comparison size.",
+    "comparisonWidth": 320,
+    "comparisonHeight": 180,
+    "sampleCount": 10,
+    "comparableSampleCount": 10,
+    "samplesWhereControlExceedsMapped": 10,
+    "mappedMeanAbsoluteDifferenceMean": 1.6007,
+    "mappedMeanAbsoluteDifferenceMax": 1.7675,
+    "controlMeanAbsoluteDifferenceMean": 5.4578,
+    "controlMeanAbsoluteDifferenceMin": 2.5945,
+    "controlSeparatesFromMapped": true,
+    "controlDesign": "A control frame is taken five seconds away from the mapped source time, moving backwards when a forward offset would be clamped at the end of the file."
+  },
+  "reproducibility": {
+    "runsCompared": 2,
+    "earlierRunId": "20260826T2051139213121Z-proxy-frame-map-fc02b040",
+    "proxyContentHashIdentical": true,
+    "mappingAndRoundTripIdentical": true,
+    "generationElapsedMillisecondsRange": [438737.664, 477164.185],
+    "note": "The second run repeated the measurement after the control-frame selection was corrected. The proxy bytes and every mapping statistic were identical, while wall-clock generation time varied."
+  },
+  "stage0Implications": [
+    "The mapping must be built from observed presentation timestamps. Dividing a proxy frame index by the nominal 59.94 frame rate would be wrong because the source presents 62316 frames across 1081.46 seconds while the nominal rate implies about 64822.",
+    "Cut precision on the proxy timeline is bounded by how long a source frame stays on screen. The median round-trip error is one proxy frame at 0.033333 seconds, and the maximum of 0.635 seconds equals the longest source frame duration recorded in ST-003.",
+    "Five source frames sit before the proxy timeline starts because the container begins at -0.083333 seconds. Import must carry the container start offset instead of assuming the first frame is at zero, and the editor must not offer those frames as proxy-selectable cut points.",
+    "About half of the source frames are never shown in the proxy, which is expected when 62316 source frames are resampled to 32409 constant-rate frames. Frame-exact work must resolve back to the source rather than treating the proxy as complete.",
+    "The proxy is 1.23 percent of the source size, so the proxy path is the practical basis for interactive editing that ST-003 showed a full source decode cannot support.",
+    "Two consecutive runs produced a byte-identical proxy, so this proxy profile is reproducible on the recorded machine. Reproducibility across different GPUs or driver versions is not covered by this measurement."
+  ],
+  "assessment": {
+    "mappingEvidence": "The round-trip error was computed over all 62311 representable source frame times, and every one of the ten sampled proxy frames matched its mapped source frame more closely than a control frame five seconds away.",
+    "measurementCorrection": "The first run reported that the control did not separate from the mapped frames. The cause was the control point being clamped at the end of the file for the last sample, which compared a frame against itself. The control selection now moves backwards in that case and the separation is unambiguous.",
+    "openQuestions": [
+      "Only the h264_nvenc proxy profile was measured. Whether a Media Foundation or software profile produces the same mapping behaviour is measured in ST-005.",
+      "Visual correspondence used ten stratified samples on a mostly static talk recording. Scene-change behaviour is measured in ST-009 rather than assumed here."
+    ],
+    "curatedFields": ["stage0Implications", "assessment", "recollectionCommand"]
+  },
+  "recollectionCommand": "pwsh.exe -NoLogo -NoProfile -File benchmarks/run-benchmarks.ps1 -Stage proxy-frame-map -ChildTimeoutSeconds 10800"
+}
