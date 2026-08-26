@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260826T2146550053095Z-encoder-matrix-bfe154ce",
+  "benchmarkRunSha256": "12f4bedf9d2aa1116b96dca736de0c8984222a9c0d81514b7a7f61f14295e445",
+  "recordedAtUtc": "2026-08-26T21:50:20.0000000Z",
+  "segment": {
+    "sourceFileName": "20260615_024326000_iOS.MOV",
+    "startSeconds": 300,
+    "durationSeconds": 30,
+    "videoFilter": "scale=1280:720:flags=lanczos,fps=30000/1001,format=yuv420p",
+    "outputWidth": 1280,
+    "outputHeight": 720,
+    "outputFrameRate": "30000/1001",
+    "audioCodec": "aac",
+    "audioBitrate": "160k",
+    "comparedFrameCount": 900
+  },
+  "build": {
+    "packageId": "BtbN.FFmpeg.LGPL.8.1",
+    "packageVersion": "8.1.2-20260731",
+    "ffmpegSha256": "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb",
+    "libx264Available": false,
+    "libx265Available": false
+  },
+  "candidates": [
+    {
+      "id": "h264_nvenc",
+      "family": "NVIDIA NVENC",
+      "requestedRateControl": "-c:v h264_nvenc -preset p4 -cq 23 -b:v 0",
+      "succeeded": true,
+      "decodeVerified": true,
+      "elapsedMilliseconds": 27311.254,
+      "byteSize": 10113517,
+      "sha256": "597f596a569073de3b5147fd7074d6f9d6983e27a4ca72c396e92ddc54ddc440",
+      "observedVideoCodec": "h264",
+      "observedVideoProfile": "Main",
+      "observedWidth": 1280,
+      "observedHeight": 720,
+      "observedPixelFormat": "yuv420p",
+      "observedFrameRate": "30000/1001",
+      "observedAudioCodec": "aac",
+      "observedAudioSampleRate": 48000,
+      "observedAudioChannels": 2,
+      "observedDurationSeconds": 30.03,
+      "vmafMeasured": true,
+      "vmafMean": 96.2248,
+      "vmafMinimum": 94.9659
+    },
+    {
+      "id": "h264_mf",
+      "family": "Windows Media Foundation",
+      "requestedRateControl": "-c:v h264_mf -b:v 4M",
+      "succeeded": true,
+      "decodeVerified": true,
+      "elapsedMilliseconds": 23917.493,
+      "byteSize": 15497724,
+      "sha256": "5da8330b6b6f6aadfe340c81d4c5b36c723ba064bcfda49654347140bf891fdf",
+      "observedVideoCodec": "h264",
+      "observedVideoProfile": "Constrained Baseline",
+      "observedWidth": 1280,
+      "observedHeight": 720,
+      "observedPixelFormat": "yuv420p",
+      "observedFrameRate": "30000/1001",
+      "observedAudioCodec": "aac",
+      "observedAudioSampleRate": 48000,
+      "observedAudioChannels": 2,
+      "observedDurationSeconds": 30.03,
+      "vmafMeasured": true,
+      "vmafMean": 95.4591,
+      "vmafMinimum": 91.5553
+    }
+  ],
+  "summary": {
+    "candidateCount": 2,
+    "succeededAndDecodedCount": 2,
+    "fastestSucceededId": "h264_mf",
+    "smallestOutputId": "h264_nvenc",
+    "highestVmafId": "h264_nvenc",
+    "vmafComparableCount": 2,
+    "deliveryPathAvailableWithoutGplEncoder": true
+  },
+  "comparison": {
+    "nvencSizeShareOfMediaFoundation": 0.652581,
+    "mediaFoundationSizeRatioToNvenc": 1.5324,
+    "nvencVmafMeanAdvantage": 0.7657,
+    "nvencVmafMinimumAdvantage": 3.4106,
+    "mediaFoundationSpeedAdvantageMilliseconds": 3393.761
+  },
+  "stage0Implications": [
+    "A delivery path exists without a GPL encoder. Both candidates produced H.264 video with AAC audio from the LGPL build that carries neither libx264 nor libx265, and both outputs decoded cleanly under -xerror.",
+    "The Media Foundation encoder produced Constrained Baseline while NVENC produced Main. Constrained Baseline omits B-frames and CABAC, which is consistent with the Media Foundation output being 53 percent larger at a lower measured quality.",
+    "NVENC is the better default for delivery on the recorded machine because it produced a smaller file at a higher VMAF mean and a substantially higher VMAF minimum, which matters for the worst frames rather than the average.",
+    "Media Foundation finished the segment about 3.4 seconds faster, so it remains the fallback worth keeping for machines without an NVIDIA encoder, but the profile difference must be recorded on any output produced through it.",
+    "These numbers describe one 30 second segment of one fixture on one machine. Encoder selection for release must be re-measured if the hardware, driver, or FFmpeg build changes."
+  ],
+  "assessment": {
+    "measurementCorrections": [
+      "The first attempt could not measure VMAF because the log path was passed to the filtergraph with a Windows drive colon, which the filter parser treats as an option separator. The stage now runs FFmpeg with the working directory set and addresses the log by a bare file name.",
+      "The second attempt reported the fastest candidate incorrectly. Sort-Object cannot resolve keys of an ordered dictionary as properties, so the sort silently returned the original first element. The stage now converts candidates to objects before sorting, and the corrected run reports h264_mf as fastest, which matches the recorded elapsed times."
+    ],
+    "openQuestions": [
+      "Whether the Media Foundation encoder can be configured to emit Main or High profile on this machine was not measured.",
+      "Only a constant quality setting for NVENC and a fixed bitrate for Media Foundation were compared, so the comparison is between two specific configurations rather than between the encoders at matched bitrates."
+    ],
+    "curatedFields": ["stage0Implications", "assessment", "recollectionCommand"]
+  },
+  "recollectionCommand": "pwsh.exe -NoLogo -NoProfile -File benchmarks/run-benchmarks.ps1 -Stage encoder-matrix -ChildTimeoutSeconds 5400"
+}

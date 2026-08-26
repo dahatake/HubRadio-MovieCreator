@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map")]
+    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix")]
     [string]$Stage = "hardware",
     [string]$FixtureManifest = (Join-Path $PSScriptRoot "fixtures\fixture-manifest.json"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "results\runs"),
@@ -181,6 +181,27 @@ function Assert-ProxyFrameMapPayload {
     }
 }
 
+function Assert-EncoderMatrixPayload {
+    param([Parameter(Mandatory)][object]$Payload)
+
+    foreach ($name in @(
+        "schemaVersion", "recordedAtUtc", "segment", "build", "candidates", "summary", "samplePathConsumed"
+    )) {
+        if ($Payload.PSObject.Properties.Name -notcontains $name) {
+            throw "Encoder matrix payload is missing required property: $name"
+        }
+    }
+    if ($Payload.schemaVersion -ne "1.0.0") {
+        throw "Unsupported encoder matrix payload schemaVersion: $($Payload.schemaVersion)"
+    }
+    if (@($Payload.candidates).Count -lt 1) {
+        throw "Encoder matrix payload did not record any candidate."
+    }
+    if ($Payload.samplePathConsumed -ne $true) {
+        throw "Encoder matrix payload did not confirm fixture path consumption."
+    }
+}
+
 function Protect-SensitiveText {
     param(
         [Parameter(Mandatory)][string]$Text,
@@ -262,6 +283,10 @@ try {
         "proxy-frame-map" {
             $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\build-proxy-frame-map.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
             Assert-ProxyFrameMapPayload -Payload $payload
+        }
+        "encoder-matrix" {
+            $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\measure-encoders.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
+            Assert-EncoderMatrixPayload -Payload $payload
         }
         default {
             throw "Unsupported benchmark stage: $Stage"
