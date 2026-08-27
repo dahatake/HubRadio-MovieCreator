@@ -31,12 +31,36 @@
 **/node_modules/
 **/.venv/
 **/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.vite/
+**/dist/
+**/coverage/
+**/TestResults/
 *.pyc
+*.trx
 .env
 .env.*
 !.env.example
 
+# Generated package and release artifacts
+/artifacts/
+**/AppPackages/
+*.appx
+*.appxbundle
+*.msix
+*.msixbundle
+*.msixupload
+
+# Signing keys are never source artifacts
+*.pfx
+*.p12
+*.snk
+
 # Local IDE and OS files
 .vs/
+*.suo
+*.user
 .DS_Store
 Thumbs.db
