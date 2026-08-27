@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection")]
+    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality")]
     [string]$Stage = "hardware",
     [string]$FixtureManifest = (Join-Path $PSScriptRoot "fixtures\fixture-manifest.json"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "results\runs"),
@@ -283,6 +283,72 @@ function Assert-FaceDetectionPayload {
     }
 }
 
+function Assert-AudioEventPayload {
+    param([Parameter(Mandatory)][object]$Payload)
+
+    foreach ($name in @(
+        "schemaVersion", "recordedAtUtc", "tooling", "analysisInput", "decodeEvidence",
+        "models", "controls", "methods", "agreement", "performance", "privacy",
+        "annotations", "automaticDeletionPerformed",
+        "candidateThresholdsAreStage0ConfigurationsNotProductionValues", "samplePathConsumed"
+    )) {
+        if ($Payload.PSObject.Properties.Name -notcontains $name) {
+            throw "Audio event payload is missing required property: $name"
+        }
+    }
+    if ($Payload.schemaVersion -ne "1.0.0") {
+        throw "Unsupported audio event payload schemaVersion: $($Payload.schemaVersion)"
+    }
+    foreach ($controlName in @("ffmpegSilencedetect", "waveformRules", "sileroVad", "yamnet")) {
+        if ($Payload.controls.PSObject.Properties.Name -notcontains $controlName -or
+            $Payload.controls.$controlName.passed -ne $true) {
+            throw "Audio event positive control did not pass: $controlName"
+        }
+    }
+    if ($Payload.models.yamnet.sha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.models.sileroVad.sha256 -notmatch '^[0-9a-f]{64}$') {
+        throw "Audio event payload does not identify both local models by content hash."
+    }
+    if ([int64]$Payload.analysisInput.decodedAnalysis.decodedSampleCountPerChannel -le 0 -or
+        [double]$Payload.analysisInput.decodedAnalysis.decodedDurationSeconds -le 0) {
+        throw "Audio event payload does not describe a usable decoded analysis input."
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$Payload.analysisInput.sourceAudio.timelineAuthority) -or
+        $Payload.analysisInput.decodedAnalysis.PSObject.Properties.Name -notcontains "decodedTimelineEvidence" -or
+        $Payload.analysisInput.decodedAnalysis.decodedTimelineEvidence.PSObject.Properties.Name -notcontains "firstDecodedFramePts" -or
+        $Payload.analysisInput.decodedAnalysis.decodedTimelineEvidence.PSObject.Properties.Name -notcontains "firstDecodedFrameSeconds") {
+        throw "Audio event payload does not preserve decoded-frame timeline evidence."
+    }
+    if ($Payload.methods.ffmpegSilencedetect.PSObject.Properties.Name -notcontains "configuration" -or
+        $Payload.methods.ffmpegSilencedetect.configuration.PSObject.Properties.Name -notcontains "noiseDb" -or
+        $Payload.methods.ffmpegSilencedetect.configuration.PSObject.Properties.Name -notcontains "minimumDurationSeconds" -or
+        $Payload.methods.ffmpegSilencedetect.configuration.thresholdIsProductionApproved -ne $false) {
+        throw "Audio event payload does not preserve the unapproved FFmpeg silencedetect configuration."
+    }
+    if ($Payload.decodeEvidence.fullDecodeSucceeded -ne $true -or
+        [int]$Payload.decodeEvidence.decoderReportedErrorLineCount -ne 0) {
+        throw "ST-003 decode evidence does not support a clean decoder result."
+    }
+    if ($Payload.annotations.removalReferenceAvailable -ne $false -or
+        $Payload.annotations.precisionRecallMeasured -ne $false) {
+        throw "Audio event payload unexpectedly claims removal annotations or precision/recall."
+    }
+    if ($Payload.automaticDeletionPerformed -ne $false) {
+        throw "Audio event stage must not automatically delete candidate intervals."
+    }
+    if ($Payload.candidateThresholdsAreStage0ConfigurationsNotProductionValues -ne $true) {
+        throw "Audio event payload did not mark thresholds as unapproved Stage 0 configurations."
+    }
+    if ($Payload.privacy.sourceAudioPersisted -ne $false -or
+        $Payload.privacy.sourceAudioSamplesIncludedInReport -ne $false -or
+        $Payload.privacy.sourceTranscriptIncludedInReport -ne $false) {
+        throw "Audio event payload persisted or reported source audio content."
+    }
+    if ($Payload.samplePathConsumed -ne $true) {
+        throw "Audio event payload did not confirm fixture path consumption."
+    }
+}
+
 function Protect-SensitiveText {
     param(
         [Parameter(Mandatory)][string]$Text,
@@ -306,7 +372,9 @@ function Get-SafeFailurePayload {
 
     foreach ($name in @(
         "schemaVersion", "library", "model", "control", "proxy",
-        "sampling", "detection", "privacy", "samplePathConsumed"
+        "sampling", "detection", "tooling", "decodeEvidence", "models", "controls",
+        "performance", "privacy", "annotations", "automaticDeletionPerformed",
+        "candidateThresholdsAreStage0ConfigurationsNotProductionValues", "samplePathConsumed"
     )) {
         if ($Payload.PSObject.Properties.Name -contains $name) {
             $safePayload[$name] = $Payload.$name
@@ -395,6 +463,10 @@ try {
         "face-detection" {
             $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\detect-faces.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
             Assert-FaceDetectionPayload -Payload $payload
+        }
+        "audio-event-and-recording-quality" {
+            $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\detect-audio-events.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
+            Assert-AudioEventPayload -Payload $payload
         }
         default {
             throw "Unsupported benchmark stage: $Stage"

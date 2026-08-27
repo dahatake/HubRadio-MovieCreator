@@ -166,3 +166,41 @@ metadataについては、source由来のglobal metadataが出力に残ってい
 - precision/recall・条件別miss率: **未測定（`visual-reference.jsonl`待ち）**
 - 構成推奨: **現行full-frame 640×360 short-range構成は自動リフレームへ非推奨。手動layout/keyframeを維持**
 - 合格判定: **PASS（測定タスク完了、最終採否はST-015承認待ち）**
+
+## ST-016 音響イベント・録画品質の敵対的レビュー（2026年8月27日）
+
+**対象:** `benchmarks/stages/detect-audio-events.ps1`、`audio_event_detection.py`、ベンチハーネス、schema、raw run、`benchmarks/results/audio-event-and-recording-quality.json`
+**採用raw証跡:** `20260827T0046465037091Z-audio-event-and-recording-quality-54f1f69b`、SHA-256 `c2a23164b490c197e2f225213bc9d8cd4ffef9bfcd1b990b7c6784663d3a6d73`
+**実測:** FFmpeg `silencedetect`、100 ms波形規則、Silero VAD、YAMNetを16 kHz解析音声上で比較。全方式の正例対照は合格した。fixtureではstrict silence 0件、低エネルギー1件、clipping 0件、channel差2件、Silero待ち1件、YAMNet咳1件・noise 0件・wait 1件だった。
+
+| No. | 軸 | 重大度 | 指摘 | 修正と確認 |
+|-----|-----|--------|------|------------|
+| S16-1 | 整合性 | Major | 初回runはST-003の最小audio packet PTS `-0.044`秒をdecoded PCMの開始時刻として加算したが、PyAV decoderはcodec delayを除去し最初のdecoded frameをPTS 0で返していたため、全候補時刻が44 ms早かった。 | **修正済み:** Pythonでstream time base、最初のdecoded frame PTS/time/sample数を実測し、期待値と不一致なら失敗する。修正版で候補時刻が+0.044秒補正された。初回rawは非書換えで保持した。 |
+| S16-2 | 根拠性・不確実性管理 | Major | 時刻補正後runは成功したが、FFmpeg `silencedetect`設定とdecoded-frame timing evidenceをpayloadへ投影しておらず、canonical主張をrawだけで再検証できなかった。 | **修正済み:** final rawへ両証拠を追加し、新規runのruntime validatorで`timelineAuthority`、`decodedTimelineEvidence`、FFmpeg設定を必須化した。schema 1.0は過去raw互換のためrequired追加せず、旧不完全payloadがruntimeで拒否されることを確認した。 |
+| S16-3 | 根拠性・不確実性管理 | Major | Python環境setupは3つのtop-level packageしかpinしていないのに「exact dependency set」へ追跡できると過大主張し、ST-016が直接使う`onnxruntime`、`av`、`numpy`はtransitive driftし得た。 | **修正済み:** 説明をdirect runtime pinへ限定し、3 packageをexact版へ昇格した。complete hash-locked transitive setはPK-001へ明示的に留保し、更新後setup実行で6 pinすべての一致を確認した。 |
+| S16-4 | 根拠性・不確実性管理 | Major | YAMNet、speech control、Silero VAD、親`faster-whisper` wheelとdirect runtime wheelのartifact hash／license／notice条件が受入台帳になかった。 | **修正済み:** model/control/wheelのbyte size・SHA-256、exact tag license本文のURL・SHA-256、notice条件を`third-party-intake.md`へ記録し、canonicalのmodel/control/toolingから同節を参照した。 |
+
+### 修正後の証拠照合
+
+- raw runのID/SHA-256、source/model/control hash、decoded sample数、全候補件数・総時間、方式間temporal Jaccard、処理時間をcanonicalへ機械照合し、PASSを確認した。
+- FFmpeg既知3秒silence、波形のlow-energy/clipping/channel差、Silero speech/silence、YAMNet speech/silence/white-noise対照はすべて合格した。rights-cleared cough正例は存在せず、`openQuestions`に残した。
+- ST-003は全編decode exit 0、decoder error 0件である。null muxer由来61行を録画破損と誤分類していない。
+- 終端待ちは波形・Silero・YAMNetが重なったがstrict silenceではない。channel差2件はSpeech区間、咳1件はYAMNet単独・低score・context依存であり、真偽ラベルではなく誤検出リスクとして分類した。
+- candidate時刻、audio sample、clip、transcriptはcanonicalから除外し、local raw/reviewだけへ保存した。source hash不変、schema、process cleanup、direct package版、license参照を確認した。
+
+### 採用しなかった指摘
+
+- schema 1.0でもnested timing/configをrequired化すべきという提案は、同版の過去rawを壊すため採用しなかった。新規runはruntime validatorで厳格化し、schemaは後方互換を維持した。
+- 直ちに全transitive dependencyをhash lockすべきという提案は、採用技術確定後のPK-001に明記された作業である。ST-016が直接importするruntime版とwheel hashは今回固定し、full lockだけを後続へ残した。
+- 正解注釈がないためST-016未完了という指摘は、実行プラン§5.1が分布・処理時間・対照実験を測り、精度を`openQuestions`へ残す完了方法を定義しているため採用しなかった。
+- candidate 0件をイベント不在の証拠とする解釈、YAMNet咳候補を真の咳とする解釈、自動削除への採用はいずれも証拠を超えるため採用しなかった。
+
+### ST-016 修正後判定
+
+- 未修正 Critical: 0件
+- 未修正 Major: 0件
+- 未修正 Minor: 0件
+- Precision/Recall・production閾値: **未測定（`removal-reference.jsonl`待ち）**
+- 推奨: **decoder/clipping/channel差はtechnical warning候補、waitはreview候補、YAMNet cough/noiseは手動試聴必須**
+- 自動削除: **禁止**
+- 合格判定: **PASS（測定タスク完了、最終採否はST-015承認待ち）**

@@ -1,0 +1,278 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260827T0046465037091Z-audio-event-and-recording-quality-54f1f69b",
+  "benchmarkRunSha256": "c2a23164b490c197e2f225213bc9d8cd4ffef9bfcd1b990b7c6784663d3a6d73",
+  "recordedAtUtc": "2026-08-27T00:47:34.7049751Z",
+  "fixture": {
+    "sourceAssetId": "source-ios-20260615-024326000",
+    "sourceSha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+    "sourceByteSize": 6494572403,
+    "humanRemovalAnnotationsAvailable": false
+  },
+  "analysisInput": {
+    "mediaIngestBenchmarkRunId": "20260826T1945575983887Z-media-ingest-64a77bc8",
+    "sourceAudio": {
+      "codec": "aac",
+      "profile": "LC",
+      "sampleRate": 48000,
+      "channels": 2,
+      "channelLayout": "stereo",
+      "minimumPacketPresentationSeconds": -0.044
+    },
+    "decodedAnalysis": {
+      "sampleRate": 16000,
+      "channels": 2,
+      "decodedSampleCountPerChannel": 17302848,
+      "decodedDurationSeconds": 1081.428,
+      "sourceTimelineStartSeconds": 0.0,
+      "timelineAuthority": "decoded audio frame PTS",
+      "firstDecodedFramePts": 0,
+      "firstDecodedFrameSeconds": 0.0,
+      "firstDecodedFrameSampleCount": 960,
+      "firstDecodedFrameSampleRate": 48000,
+      "sourceAudioPersisted": false
+    }
+  },
+  "tooling": {
+    "ffmpegPackageId": "BtbN.FFmpeg.LGPL.8.1",
+    "ffmpegSha256": "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb",
+    "pythonPackages": {
+      "mediapipe": "1.0.1",
+      "fasterWhisper": "1.2.1",
+      "onnxruntime": "1.29.0",
+      "av": "18.1.0",
+      "numpy": "2.5.2"
+    },
+    "licenseEvidenceRef": "docs/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)"
+  },
+  "models": {
+    "yamnet": {
+      "fileName": "yamnet_audio_classifier_with_metadata.tflite",
+      "byteSize": 4126810,
+      "sha256": "4d8b4a53282dc83ef04e3e7dbc4fbc98082e34e44ed798e16c3a0cdd4c584faf",
+      "sourceUrl": "https://storage.googleapis.com/mediapipe-models/audio_classifier/yamnet/float32/1/yamnet.tflite",
+      "license": "Apache-2.0",
+      "licenseEvidenceRef": "docs/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)"
+    },
+    "sileroVad": {
+      "fileName": "silero_vad_v6.onnx",
+      "byteSize": 1245151,
+      "sha256": "4cbf549b8326f60f80f2536d9eefeb450a9abe83365a098031c89719f1be17d2",
+      "source": "faster-whisper 1.2.1 package asset",
+      "license": "MIT",
+      "licenseEvidenceRef": "docs/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)"
+    }
+  },
+  "controls": {
+    "ffmpegSilencedetect": {
+      "knownSilenceStartSeconds": 2.0,
+      "knownSilenceEndSeconds": 5.0,
+      "detectedCandidateCount": 1,
+      "passed": true
+    },
+    "waveformRules": {
+      "expectedConditions": [
+        "lowEnergyOrWait",
+        "potentialClipping",
+        "channelImbalance"
+      ],
+      "detectedCandidateCounts": {
+        "lowEnergyOrWait": 1,
+        "potentialClipping": 1,
+        "channelImbalance": 1,
+        "highCrestTransient": 0
+      },
+      "passed": true
+    },
+    "sileroVad": {
+      "speechControlAssetSha256": "71caf50b8757d6ab9cad5eae4d36669d3c20c225a51660afd7fe0dc44cdb74f6",
+      "speechControlLicense": "Apache-2.0",
+      "speechControlLicenseEvidenceRef": "docs/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)",
+      "speechSpanCountOnSpeechControl": 1,
+      "speechSpanCountOnSilenceControl": 0,
+      "passed": true
+    },
+    "yamnet": {
+      "speechControlAssetSha256": "71caf50b8757d6ab9cad5eae4d36669d3c20c225a51660afd7fe0dc44cdb74f6",
+      "speechControlLicense": "Apache-2.0",
+      "speechControlLicenseEvidenceRef": "docs/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)",
+      "maximumSpeechScore": 0.996094,
+      "maximumSilenceScore": 0.800781,
+      "maximumMappedNoiseScore": 0.585938,
+      "coughPositiveControlAvailable": false,
+      "passed": true
+    }
+  },
+  "decodeEvidence": {
+    "fullDecodeSucceeded": true,
+    "fullDecodeExitCode": 0,
+    "decoderReportedErrorLineCount": 0,
+    "nullMuxerMessageCount": 61,
+    "interpretation": "ST-003 recorded no decoder error. Its 61 stderr lines originated from the null muxer and are not classified as recording corruption."
+  },
+  "methods": {
+    "ffmpegSilencedetect": {
+      "configuration": {
+        "noiseDb": -50.0,
+        "minimumDurationSeconds": 2.0,
+        "thresholdIsProductionApproved": false
+      },
+      "candidateCount": 0,
+      "totalCandidateSeconds": 0.0
+    },
+    "waveformRules": {
+      "configuration": {
+        "analysisSampleRate": 16000,
+        "windowMilliseconds": 100,
+        "lowEnergyDbfs": -50.0,
+        "lowEnergyMinimumSeconds": 2.0,
+        "clippingAmplitude": 0.999,
+        "clippingMinimumSamplesPerWindow": 3,
+        "imbalanceActiveFloorDbfs": -40.0,
+        "imbalanceDifferenceDb": 12.0,
+        "imbalanceMinimumSeconds": 2.0,
+        "transientPeakAmplitude": 0.98,
+        "transientMaximumRmsDbfs": -20.0,
+        "thresholdsAreProductionApproved": false
+      },
+      "global": {
+        "leftRmsDbfs": -24.689383,
+        "rightRmsDbfs": -23.967088,
+        "absoluteChannelDifferenceDb": 0.722295,
+        "peakAmplitude": 0.999969,
+        "nearFullScaleSampleCount": 1,
+        "windowRmsDbfs": {
+          "minimum": -61.779788,
+          "median": -29.365072,
+          "maximum": -15.471816
+        }
+      },
+      "candidateCounts": {
+        "lowEnergyOrWait": 1,
+        "potentialClipping": 0,
+        "channelImbalance": 2,
+        "highCrestTransient": 0
+      },
+      "totalCandidateSeconds": {
+        "lowEnergyOrWait": 2.3,
+        "potentialClipping": 0.0,
+        "channelImbalance": 4.3,
+        "highCrestTransient": 0.0
+      }
+    },
+    "sileroVad": {
+      "configuration": {
+        "threshold": 0.5,
+        "minimumSpeechMilliseconds": 250,
+        "minimumSilenceMilliseconds": 2000,
+        "speechPadMilliseconds": 0,
+        "thresholdIsProductionApproved": false
+      },
+      "speechSpanCount": 1,
+      "speechDurationSeconds": 1077.312,
+      "waitCandidateCount": 1,
+      "totalWaitCandidateSeconds": 4.084
+    },
+    "yamnet": {
+      "configuration": {
+        "scoreThreshold": 0.3,
+        "thresholdIsProductionApproved": false,
+        "mappedEventTypes": [
+          "cough",
+          "noise",
+          "wait"
+        ]
+      },
+      "classificationResultCount": 1110,
+      "nominalStepSeconds": 0.975,
+      "topCategoryDistribution": [
+        { "category": "Speech", "count": 1097 },
+        { "category": "Music", "count": 4 },
+        { "category": "Silence", "count": 3 },
+        { "category": "Inside, small room", "count": 2 },
+        { "category": "Beatboxing", "count": 1 },
+        { "category": "Crow", "count": 1 },
+        { "category": "Cough", "count": 1 },
+        { "category": "Laughter", "count": 1 }
+      ],
+      "candidateCounts": {
+        "cough": 1,
+        "noise": 0,
+        "wait": 1
+      },
+      "totalCandidateSeconds": {
+        "cough": 0.975,
+        "noise": 0.0,
+        "wait": 2.103
+      }
+    }
+  },
+  "agreement": {
+    "wait": {
+      "waveformAndSileroTemporalJaccard": 0.546512,
+      "waveformAndYamnetTemporalJaccard": 0.066618,
+      "sileroAndYamnetTemporalJaccard": 0.514936,
+      "ffmpegAndEveryOtherMethodTemporalJaccard": 0.0
+    },
+    "noise": {
+      "waveformAndYamnetCandidateCount": 0,
+      "temporalJaccard": null
+    },
+    "interpretation": "Method agreement is descriptive only. Without removal-reference annotations it cannot establish correctness."
+  },
+  "performance": {
+    "benchmarkElapsedMilliseconds": 65373.341,
+    "decodeSeconds": 6.418,
+    "waveformSeconds": 1.548,
+    "sileroVadSeconds": 3.245,
+    "yamnetSeconds": 5.787
+  },
+  "candidateRiskClassification": {
+    "localEvidenceRelativePath": "benchmarks/work/audio-candidate-classification.json",
+    "localEvidenceByteSize": 3427,
+    "localEvidenceSha256": "cf08982d7cc75ce7178aaaffdb9d730e81987e8375de77e4bf2922db0c1ee810",
+    "committedToGit": false,
+    "terminalWait": "Three non-speech/low-level methods overlap near the terminal tail, but strict FFmpeg silence does not; retain as a review candidate only.",
+    "channelImbalance": "Two rule-only speech intervals may be stereo content or balance issues rather than recording faults; present as technical warnings, not deletion candidates.",
+    "cough": "One YAMNet-only, context-sensitive low-score interval has no cough positive control or human annotation; manual listening is required.",
+    "zeroNoiseOrClippingCandidates": "Zero candidates with passing synthetic controls is not proof that the fixture contains no such event. Recall is unmeasured."
+  },
+  "configurationDisposition": {
+    "status": "partial-adoption-recommended",
+    "finalStage0DecisionPending": true,
+    "technicalIngestWarnings": "Retain objective decoder failures and deterministic clipping/channel warnings as explainable review signals. Do not map them directly to deletion.",
+    "waitCandidates": "Use multi-method wait/low-level intervals only as review candidates. The current thresholds are not production approved.",
+    "coughAndNoiseClassifier": "Hold YAMNet event candidates behind manual listening until independently annotated fixture events and a cough positive control are available.",
+    "automaticDeletion": "prohibited"
+  },
+  "stage0Implications": [
+    "ST-003 full-decode evidence shows no decoder error on this fixture; null-muxer timestamp messages must not be mislabeled as recording corruption.",
+    "The end-of-recording low-level interval is supported by waveform, Silero, and YAMNet evidence, but it remains a candidate for human review rather than an automatic cut.",
+    "The two channel-imbalance intervals occur in regions classified as Speech and may reflect intended stereo content or microphone balance. Treat them as recording-quality warnings, not proof of a fault.",
+    "The single YAMNet Cough candidate is model-only, low-score, and context-sensitive. It is not a confirmed cough and must not drive deletion without listening.",
+    "All measured thresholds are candidate Stage 0 configurations. Precision, recall, and production thresholds remain unset."
+  ],
+  "assessment": {
+    "interpretation": "The benchmark demonstrates working local mechanisms and sparse candidate distributions, not event-detection accuracy.",
+    "measurementCorrections": [
+      "Run 20260827T0039134367783Z-audio-event-and-recording-quality-14b74257 (SHA-256 f1f10ecde3dfa1bee69831dc41a715aec7c08bfdd27211bb3bcf5dc5ccc98fa5) mapped decoded PCM from the minimum packet PTS (-0.044 seconds). Direct PyAV inspection showed that decoder delay is removed and the first decoded audio frame has stream PTS 0, so the stage now derives candidate time from decoded frame PTS.",
+      "Run 20260827T0041550626160Z-audio-event-and-recording-quality-5b2546fa (SHA-256 99d20aea06775a06c104f56a737bcff98240e8955dabdd40f99ee17e8cacd915) corrected candidate times but omitted FFmpeg silencedetect configuration and explicit decoded-frame timing evidence from the method payload. The final run records both."
+    ],
+    "openQuestions": [
+      "Precision, recall, and false-positive rates for every candidate type remain unmeasured until removal-reference.jsonl is created independently of the detectors.",
+      "No rights-cleared cough positive-control audio was available. The YAMNet cough path has API/model execution evidence but no event-specific positive control.",
+      "No person listened to the candidate intervals during this automated review, so cough and recording-quality candidate truth remains unconfirmed.",
+      "Thresholds, label mappings, and whether any method is enabled in Stage 1 require ST-015 approval."
+    ],
+    "privacy": "The canonical summary excludes candidate source times, waveform samples, audio clips, and transcript content. Raw candidate times and review metrics remain local and ignored by Git.",
+    "curatedFields": [
+      "candidateRiskClassification",
+      "configurationDisposition",
+      "stage0Implications",
+      "assessment",
+      "recollectionCommand"
+    ]
+  },
+  "automaticDeletionPerformed": false,
+  "recollectionCommand": "pwsh.exe -NoLogo -NoProfile -File benchmarks/run-benchmarks.ps1 -Stage audio-event-and-recording-quality -ChildTimeoutSeconds 10800"
+}

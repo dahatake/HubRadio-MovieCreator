@@ -6,9 +6,9 @@ Creates the isolated Python 3.12 environment used by Stage 0 machine-learning be
 
 .DESCRIPTION
 The default interpreter on the development machine is newer than the versions the selected
-machine-learning wheels are published for, so Stage 0 pins its own interpreter and packages.
-Package versions are fixed here and recorded with their resolved metadata so that a benchmark
-result can be traced back to an exact dependency set.
+machine-learning wheels are published for, so Stage 0 pins its own interpreter and direct
+benchmark runtime packages. Resolved package metadata is recorded for traceability; the complete
+hash-locked transitive dependency set remains a PK-001 deliverable after Stage 0 technology choices.
 #>
 
 [CmdletBinding()]
@@ -27,7 +27,10 @@ if ($PSVersionTable.PSEdition -ne "Core") {
 $pinnedPackages = @(
     "faster-whisper==1.2.1",
     "scenedetect==0.7.1",
-    "mediapipe==1.0.1"
+    "mediapipe==1.0.1",
+    "onnxruntime==1.29.0",
+    "av==18.1.0",
+    "numpy==2.5.2"
 )
 
 function Invoke-Python {

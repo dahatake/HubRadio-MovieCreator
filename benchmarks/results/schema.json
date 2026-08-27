@@ -24,7 +24,7 @@
       "pattern": "^[0-9]{8}T[0-9]{13}Z-[a-z0-9-]+-[0-9a-f]{8}$"
     },
     "stage": {
-      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection"]
+      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality"]
     },
     "status": {
       "enum": ["succeeded", "failed"]
@@ -101,6 +101,26 @@
         "properties": {
           "payload": {
             "$ref": "#/$defs/hardwarePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "audio-event-and-recording-quality"
+          },
+          "status": {
+            "const": "succeeded"
+          }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/audioEventPayload"
           }
         }
       }
@@ -240,6 +260,96 @@
     }
   ],
   "$defs": {
+    "audioEventPayload": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "recordedAtUtc",
+        "tooling",
+        "analysisInput",
+        "decodeEvidence",
+        "models",
+        "controls",
+        "methods",
+        "agreement",
+        "performance",
+        "privacy",
+        "annotations",
+        "automaticDeletionPerformed",
+        "candidateThresholdsAreStage0ConfigurationsNotProductionValues",
+        "samplePathConsumed"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "recordedAtUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tooling": {
+          "type": "object",
+          "required": ["ffmpegPackageId", "ffmpegSha256", "pythonPackages"]
+        },
+        "analysisInput": {
+          "type": "object",
+          "required": ["sourceSha256", "mediaIngestBenchmarkRunId", "sourceAudio", "decodedAnalysis"]
+        },
+        "decodeEvidence": {
+          "type": "object",
+          "required": [
+            "fullDecodeSucceeded",
+            "fullDecodeExitCode",
+            "decoderReportedErrorLineCount",
+            "stderrOrigin",
+            "nullMuxerMessageCount",
+            "interpretation"
+          ]
+        },
+        "models": {
+          "type": "object",
+          "required": ["yamnet", "sileroVad"]
+        },
+        "controls": {
+          "type": "object",
+          "required": ["ffmpegSilencedetect", "waveformRules", "sileroVad", "yamnet"]
+        },
+        "methods": {
+          "type": "object",
+          "required": ["ffmpegSilencedetect", "waveformRules", "sileroVad", "yamnet"]
+        },
+        "agreement": {
+          "type": "object",
+          "required": ["waitCandidateComparisons", "noiseCandidateComparisons", "interpretationRequiresAnnotations"]
+        },
+        "performance": {
+          "type": "object",
+          "required": ["decodeSeconds", "waveformSeconds", "sileroVadSeconds", "yamnetSeconds"]
+        },
+        "privacy": {
+          "type": "object",
+          "required": [
+            "sourceAudioPersisted",
+            "sourceAudioSamplesIncludedInReport",
+            "sourceTranscriptIncludedInReport",
+            "candidateSourceTimesIncludedInRawReport"
+          ]
+        },
+        "annotations": {
+          "type": "object",
+          "required": ["removalReferenceAvailable", "precisionRecallMeasured"]
+        },
+        "automaticDeletionPerformed": {
+          "const": false
+        },
+        "candidateThresholdsAreStage0ConfigurationsNotProductionValues": {
+          "const": true
+        },
+        "samplePathConsumed": {
+          "const": true
+        }
+      }
+    },
     "faceDetectionPayload": {
       "type": "object",
       "required": [

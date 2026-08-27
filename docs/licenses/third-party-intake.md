@@ -48,6 +48,33 @@
 
 モデルと正例assetは取得後にbyte sizeとSHA-256を検査し、一致した場合だけ原子的にcacheへ昇格する。cacheがないclean環境では固定HTTPS配布元への到達が必要であり、offline bundle、silent update禁止、最終Model BOMはF-008/PK-004で実装する。ST-010の0件結果は自動顔リフレームの採用根拠にせず、ST-015の人判断まで手動layout/keyframeを推奨する。
 
+## ST-016 音響model・runtime受入記録
+
+取得・確認日: 2026年8月27日。以下はWindows x64 / Python 3.12上のStage 0評価に使用した実在成果物であり、最終配布物への採用記録ではない。
+
+| 種別 | 固定対象 | 配布元 | byte size | SHA-256 | license・条件 |
+|---|---|---|---:|---|---|
+| Audio classifier model | `yamnet_audio_classifier_with_metadata.tflite` (`float32/1`) | https://storage.googleapis.com/mediapipe-models/audio_classifier/yamnet/float32/1/yamnet.tflite | 4,126,810 | `4d8b4a53282dc83ef04e3e7dbc4fbc98082e34e44ed798e16c3a0cdd4c584faf` | Apache-2.0。Google YAMNet model cardとTensorFlow Model Gardenをlicense根拠とする。scoreはclass間でcalibrateされず、対象domainのannotationでthreshold調整が必要 |
+| Speech control | `speech_16000_hz_mono.wav` | https://storage.googleapis.com/mediapipe-assets/speech_16000_hz_mono.wav | 136,798 | `71caf50b8757d6ab9cad5eae4d36669d3c20c225a51660afd7fe0dc44cdb74f6` | MediaPipe audio testdata packageの`licenses = ["notice"]`（Apache-2.0）。benchmark正例だけに使用し、製品素材へ同梱しない |
+| VAD model | `silero_vad_v6.onnx` | `faster-whisper` 1.2.1 wheel内 `faster_whisper/assets/` | 1,245,151 | `4cbf549b8326f60f80f2536d9eefeb450a9abe83365a098031c89719f1be17d2` | upstream Silero VAD v6.0はMIT。copyright/permission noticeを配布物へ保持する。親wheelとasset hashを対で記録 |
+| Python wheel | `faster_whisper-1.2.1-py3-none-any.whl` | PyPI / https://github.com/SYSTRAN/faster-whisper/tree/v1.2.1 | 1,118,909 | `79a66ad50688c0b794dd501dc340a736992a6342f7f95e5811be60b5224a26a7` | MIT。wheelにSilero assetを含む。最終配布時はSYSTRANとSilero双方のnoticeを含める |
+| Python wheel | `onnxruntime-1.29.0-cp312-cp312-win_amd64.whl` | PyPI / https://onnxruntime.ai/ | 14,001,407 | `4acf2b4948b7ede87221ca6332344b8facdc8059d6ac751a7d367d04532b02dd` | MIT。Silero ONNX CPU推論runtime |
+| Python wheel | `av-18.1.0-cp311-abi3-win_amd64.whl` | PyPI / https://pyav.org/ | 27,595,679 | `ea1480b7a8d5405cb5f382b344731bf125fd2c1c6fae3964f6c48595628387ff` | package metadataはBSD-3-Clause。音声decode/resampleに使用。bundled FFmpeg library構成は最終SBOMで別途確認 |
+| Python wheel | `numpy-2.5.2-cp312-cp312-win_amd64.whl` | PyPI / https://numpy.org/ | 12,464,674 | `28ac63476ec7651484215ee7fa15a1f78b57c14621f01e392afe17b9a1390ce4` | package metadataのSPDX expressionは`BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0`。最終noticeはwheel同梱licenseを基準に生成 |
+
+license evidence:
+
+- TensorFlow Models `LICENSE`（Apache-2.0）: https://raw.githubusercontent.com/tensorflow/models/master/LICENSE — 11,512 bytes、SHA-256 `5b17814bf0de8cf65069bc6d7cc38cff19fcaa864d243423ad3ef3db01b52385`
+- Google YAMNet model card: https://www.kaggle.com/models/google/yamnet/tensorFlow2/yamnet/1 — Apache-2.0、521 audio event classes、score未calibrate・domain mismatchの制約を明記
+- MediaPipe audio testdata `BUILD`: https://raw.githubusercontent.com/google-ai-edge/mediapipe/master/mediapipe/tasks/testdata/audio/BUILD — 1,543 bytes、SHA-256 `97969e828f6fb4aadbb9810a36dc99e6f0b806f32bebaa8a846140fa0b85e1ab`
+- Silero VAD v6.0 `LICENSE`（MIT）: https://raw.githubusercontent.com/snakers4/silero-vad/v6.0/LICENSE — 1,075 bytes、SHA-256 `2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b`
+- faster-whisper v1.2.1 `LICENSE`（MIT）: https://raw.githubusercontent.com/SYSTRAN/faster-whisper/v1.2.1/LICENSE — 1,064 bytes、SHA-256 `af6798135e729f8aa6c853936d037dfdea449734d26b8ea6a89805fca758c0d5`
+- ONNX Runtime v1.29.0 `LICENSE`（MIT）: https://raw.githubusercontent.com/microsoft/onnxruntime/v1.29.0/LICENSE — 1,073 bytes、SHA-256 `2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c`
+- PyAV v18.1.0 `LICENSE.txt`（BSD-3-Clause）: https://raw.githubusercontent.com/PyAV-Org/PyAV/v18.1.0/LICENSE.txt — 1,505 bytes、SHA-256 `76af0461ffb92e19f1c14449e95557d83a2dfaa1baf202d49e5f1d8746c0da19`
+- NumPy v2.5.2 `LICENSE.txt`（BSD-3-Clause。wheel内の追加第三者licenseは最終notice生成時に別途収集）: https://raw.githubusercontent.com/numpy/numpy/v2.5.2/LICENSE.txt — 1,543 bytes、SHA-256 `1be1df33863f97a7bc1c4d67980bd6c69c9a6fef0a5ee76e6ad6cb91e56e8491`
+
+YAMNetとSileroのscore/thresholdはStage 0比較設定であり、productionの合否値ではない。YAMNetのcough候補は正例対照と人手annotationがないため、手動試聴なしに削除候補を確定しない。complete transitive hash lock、offline model bundle、全license noticeの生成はF-008/PK-001/PK-004/Q-010で完了させる。
+
 ## 追加確認済み一次資料
 
 - faster-whisper公式リポジトリ/README/License: https://github.com/SYSTRAN/faster-whisper （MIT、`v1.2.1`、Python 3.9+、現行GPU要件はCUDA 12 + cuDNN 9）
