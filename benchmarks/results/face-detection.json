@@ -1,0 +1,126 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260827T0008446257559Z-face-detection-df3aece7",
+  "benchmarkRunSha256": "cae1e0f0e4f25f02cf8959802a2302245951a543e48f16a582cd0c4fe120728e",
+  "recordedAtUtc": "2026-08-27T00:09:15.0938991Z",
+  "fixture": {
+    "sourceAssetId": "source-ios-20260615-024326000",
+    "sourceSha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+    "sourceByteSize": 6494572403,
+    "humanVisualAnnotationsAvailable": false
+  },
+  "analysisInput": {
+    "media": "proxy",
+    "proxySha256": "685cac74b29e6841358cf500cbb2b3ff6ce64f1f23ebdbd076f855f5179fb7a5",
+    "proxyBenchmarkRunId": "20260826T2102079908030Z-proxy-frame-map-5a725e5c",
+    "width": 640,
+    "height": 360,
+    "reportedFrameCount": 32409,
+    "observationTimeline": "source presentation time mapped from observed proxy and source packet timestamps"
+  },
+  "library": {
+    "name": "MediaPipe Face Detector",
+    "version": "1.0.1",
+    "runningMode": "VIDEO"
+  },
+  "model": {
+    "fileName": "blaze_face_short_range.tflite",
+    "byteSize": 229746,
+    "sha256": "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f",
+    "sourceUrl": "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite"
+  },
+  "positiveControl": {
+    "purpose": "Distinguish a zero-detection fixture result from a model or VIDEO-mode pipeline that is not operating.",
+    "assetFileName": "mediapipe-face-control-portrait.jpg",
+    "assetByteSize": 176561,
+    "assetSha256": "a6f11efaa834706db23f275b6115058fa87fc7f14362681e6abe14e82749de3e",
+    "sourceUrl": "https://storage.googleapis.com/mediapipe-assets/portrait.jpg",
+    "runningMode": "VIDEO",
+    "detectedFaceCount": 1,
+    "scores": [0.921886],
+    "detectionMilliseconds": 534.217,
+    "passed": true
+  },
+  "sampling": {
+    "requestedSampleCount": 300,
+    "attemptedSampleCount": 300,
+    "decodedSampleCount": 300,
+    "decodeFailureCount": 0,
+    "sampleShareOfProxyFrames": 0.009257,
+    "firstProxyFrameIndex": 0,
+    "lastProxyFrameIndex": 32408,
+    "minDetectionConfidence": 0.5,
+    "indexRule": "Round evenly spaced positions from the first through the last reported proxy frame."
+  },
+  "summary": {
+    "framesWithAtLeastOneFace": 0,
+    "framesWithNoFace": 300,
+    "framesWithMultipleFaces": 0,
+    "detectionRate": 0.0,
+    "detectedFaceCount": 0,
+    "totalDetectionSeconds": 1.154,
+    "meanDetectionMillisecondsPerFrame": 3.847,
+    "benchmarkElapsedMilliseconds": 48560.422
+  },
+  "failureClassification": {
+    "basis": {
+      "evidenceType": "qualitative-technical-visual-review",
+      "reviewedFrameCount": 12,
+      "localEvidenceRelativePath": "benchmarks/work/face-review.json",
+      "localEvidenceByteSize": 1643,
+      "localEvidenceSha256": "b9581d93faf88eafaec4839429552a63cb17b02519aab7db1cfa2458de74b78e",
+      "committedToGit": false,
+      "limitation": "visual-reference.jsonl does not yet exist; no condition-specific precision or recall is claimed."
+    },
+    "smallFaces": {
+      "status": "observed-in-reviewed-subset",
+      "interpretation": "Visible faces occupied a small part of the 640x360 frame in the reviewed subset. The full-frame short-range configuration returned no fixture detections, but the absence of bbox annotations prevents a condition-specific miss rate."
+    },
+    "profileOrNonFrontalFaces": {
+      "status": "observed-in-reviewed-subset",
+      "interpretation": "Non-frontal views were present in the reviewed subset. Their independent contribution to the zero result is unmeasured."
+    },
+    "multiplePeople": {
+      "status": "observed-in-reviewed-subset",
+      "interpretation": "Frames containing more than one visible person were present in the reviewed subset. No automatic multi-face result was produced, but the exact multi-person miss rate is unmeasured without annotations."
+    },
+    "screenShare": {
+      "status": "not-observed-in-reviewed-subset",
+      "interpretation": "The 12-frame review did not exercise a screen-share condition, so this failure class remains unmeasured."
+    }
+  },
+  "configurationDisposition": {
+    "status": "manual-fallback-recommended",
+    "configuration": "MediaPipe 1.0.1, short-range model, full 640x360 proxy frame, confidence 0.5, VIDEO mode",
+    "reason": "The pipeline passed a pinned positive control but supplied no face bbox for any of the 300 fixture samples. This configuration therefore cannot support face-driven reframing on the measured fixture.",
+    "finalStage0DecisionPending": true
+  },
+  "stage0Implications": [
+    "The fixture result is zero detected faces, not evidence that the fixture contains no faces. The positive control confirms that the pinned model and VIDEO-mode pipeline were operating.",
+    "The measured full-frame 640x360 short-range configuration must not be the sole input to automatic reframing, subtitle collision avoidance, or thumbnail face scoring for this fixture.",
+    "Manual layout modes and manual keyframes remain the required path. Any later automatic path must first measure a changed strategy such as higher-resolution input, a compatible long-range model, or tiled inference against visual-reference annotations.",
+    "The 1.154 seconds of model inference and 48.560 seconds of end-to-end benchmark time are measurements on the recorded machine, not cross-machine guarantees."
+  ],
+  "assessment": {
+    "interpretation": "The mechanism works on a pinned positive image, while the evaluated fixture configuration produces no usable face detections.",
+    "measurementCorrections": [
+      "Run 20260826T2325359389118Z-face-detection-59b47ff9 (SHA-256 05acb711364fccf669535c877e18e0a78e18c75966be5a0b58b4ce0cb6401482) returned zero fixture detections without a positive control. A hash-pinned MediaPipe portrait control was added and the stage was rerun so the zero result could be distinguished from a non-operating detector.",
+      "The harness now rejects a successful face-detection payload unless the positive control detects at least one face in VIDEO mode."
+    ],
+    "openQuestions": [
+      "Precision, recall, bbox error, and condition-specific miss rates remain unmeasured until visual-reference.jsonl is created independently of model output.",
+      "A compatible long-range model, source-resolution sampling, and tiled inference have not been benchmarked as canonical Stage 0 configurations.",
+      "Screen-share and material-dominant frames were not observed in the 12-frame technical review and require a separate rights-approved fixture or annotation set.",
+      "The final adoption, hold, or manual-only classification is reserved for ST-015 approval."
+    ],
+    "privacy": "The canonical summary excludes per-frame source times, face boxes, and image pixels. Raw observations remain local and ignored by Git.",
+    "curatedFields": [
+      "failureClassification",
+      "configurationDisposition",
+      "stage0Implications",
+      "assessment",
+      "recollectionCommand"
+    ]
+  },
+  "recollectionCommand": "pwsh.exe -NoLogo -NoProfile -File benchmarks/run-benchmarks.ps1 -Stage face-detection -ChildTimeoutSeconds 10800"
+}

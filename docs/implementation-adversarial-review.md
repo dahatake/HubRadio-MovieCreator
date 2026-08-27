@@ -127,3 +127,42 @@ metadataについては、source由来のglobal metadataが出力に残ってい
 - 未修正 Minor: 0件
 - 閾値選定: **未測定（正例注釈待ち）**
 - 合格判定: **PASS（測定タスク完了、未測定値の捏造なし）**
+
+## ST-010 顔検出の敵対的レビュー（2026年8月27日）
+
+**対象:** `benchmarks/stages/detect-faces.ps1`、`face_detection.py`、ベンチハーネス、schema、raw run、`benchmarks/results/face-detection.json`
+**採用raw証跡:** `20260827T0008446257559Z-face-detection-df3aece7`、SHA-256 `cae1e0f0e4f25f02cf8959802a2302245951a543e48f16a582cd0c4fe120728e`
+**実測:** MediaPipe 1.0.1、short-range model、640×360代理、VIDEO mode、confidence 0.5。300/300標本をdecodeし、fixtureの検出は0件。hash固定したMediaPipe portrait正例では1件、score 0.921886を検出した。
+
+| No. | 軸 | 重大度 | 指摘 | 修正と確認 |
+|-----|-----|--------|------|------------|
+| S10-1 | 品質・運用性 | Critical | 初期実装は取得したmodelのhashを記録するだけで、破損・差替えを使用前に拒否せず、直接最終pathへ保存していた。 | **修正済み:** byte sizeとSHA-256を定数固定し、GUID付き一時fileへ取得、検証後に原子的昇格する。既存cacheも毎回再検証し、不一致をfail closedにした。 |
+| S10-2 | 整合性 | Major | 観測PTS不足時に`frame index × 33ms`を代用でき、VFR素材の時刻を捏造する経路があった。 | **修正済み:** source/proxy PTSを必須化し、厳密単調性とproxy frame count一致を検査する。任意fps換算fallbackを削除した。 |
+| S10-3 | 根拠性・不確実性管理 | Major | 初回runはfixture 0件だけを記録し、顔が難しい内容なのかmodel/pipelineが動作していないのか区別できなかった。 | **修正済み:** byte size/SHA-256固定のMediaPipe portraitを同じmodel・VIDEO modeへ通す正例対照を必須化。対照0件ならstageを失敗させ、再測定で1件を検出した。 |
+| S10-4 | 根拠性・不確実性管理 | Major | 小顔・非正面・複数人の定性分類が12フレーム目視レビューを参照していたが、そのraw証跡path/hashがcanonicalになかった。 | **修正済み:** 権利未確認画像をcommitせず、`benchmarks/work/face-review.json`とmontageをlocal raw証跡として保存し、canonicalへJSONのbyte size/SHA-256を記録した。資料共有は未観測のまま`openQuestions`へ残した。 |
+| S10-5 | 品質・運用性 | Major | payload assertion失敗時、childが返した安全なmodel/library/sampling情報もfailed rawから全て失われた。 | **修正済み:** `Get-SafeFailurePayload`で安全なtop-level allowlistだけを将来のfailed payloadへ保存する。`observations`、bbox、source time、任意pathは除外した。修正前run `20260827T0007291076285Z-face-detection-f58ec3d1`の空payloadは履歴証跡として非書換えで保持し、修正後関数をASTから抽出した合成partial payloadとfailed envelopeでallowlist・schema回帰を確認した。 |
+| S10-6 | 根拠性・不確実性管理 | Major | `mediapipe==1.0.1`の版だけがあり、実際のWindows wheelと同梱license textのcontent hashが受入記録になかった。 | **修正済み:** `mediapipe-1.0.1-py3-none-win_amd64.whl`、同梱LICENSE、model、正例assetの配布元・byte size・SHA-256を`third-party-intake.md`へ実測記録した。 |
+| S10-7 | 整合性 | Major | 対照追加時に`schemaVersion 1.0.0`の`control`をrequiredへ加え、対照追加前の成功rawが同じschemaで再検証できなくなった。 | **修正済み:** schemaの`control`定義はoptionalな互換追加とし、新規runだけを`Assert-FaceDetectionPayload`で必須化した。対照追加前後の成功rawを同じschemaで再検証した。 |
+
+### 修正後の証拠照合
+
+- canonicalのrun ID/run hash、source/proxy/model/control hash、300標本、検出集計、処理時間をrawへ機械照合し、PASSを確認した。
+- 正例対照はshort-range modelでIMAGE/VIDEOとも1件を検出した。fixtureの0件を「顔が存在しない」と解釈していない。
+- 12枚の層化目視subsetでは小顔、非正面、複数人を定性的に確認したが、bbox正解注釈は作成していない。条件別precision/recallを算出せず、資料共有は未測定とした。
+- Pythonは固定`benchmarks/.venv`でcompile/import/実行、PowerShellはparser、raw/failed envelopeはJSON Schema、sourceは実行前後SHA-256、孤児processは0を確認した。
+- 修正前failed rawは書き換えていない。修正後の失敗経路は、`library`等の許可fieldを保持しながら`observations`と任意pathを除外する合成payloadを作り、failed envelopeがschemaを通ることを独立検証した。
+
+### 採用しなかった指摘
+
+- modelと正例assetをGitへ同梱すべきという指摘は、Stage 0ではhash固定cacheと取得証跡が完了条件であり、offline bundleはF-008/PK-004に明示された後続タスクであるため採用しなかった。clean環境で固定配布元への到達が必要な制約は受入記録へ明記した。
+- 資料共有が12枚のsubsetにないためST-010全体が未完了という指摘は、添付実行プラン§5.1が正解データ不在時に分布・処理時間・対照実験を記録し、必要指標を`openQuestions`へ残す完了方法を明記しているため採用しなかった。
+- rawの全300 observationsをcanonicalへ複製すべきという指摘は、source timeとbboxを含むlocal rawをGit対象外にし、レビュー済み非機密要約だけを追跡する方針に反するため採用しなかった。
+
+### ST-010 修正後判定
+
+- 未修正 Critical: 0件
+- 未修正 Major: 0件
+- 未修正 Minor: 0件
+- precision/recall・条件別miss率: **未測定（`visual-reference.jsonl`待ち）**
+- 構成推奨: **現行full-frame 640×360 short-range構成は自動リフレームへ非推奨。手動layout/keyframeを維持**
+- 合格判定: **PASS（測定タスク完了、最終採否はST-015承認待ち）**

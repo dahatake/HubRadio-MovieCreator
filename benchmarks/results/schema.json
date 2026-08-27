@@ -24,7 +24,7 @@
       "pattern": "^[0-9]{8}T[0-9]{13}Z-[a-z0-9-]+-[0-9a-f]{8}$"
     },
     "stage": {
-      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection"]
+      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection"]
     },
     "status": {
       "enum": ["succeeded", "failed"]
@@ -208,6 +208,26 @@
     {
       "if": {
         "properties": {
+          "stage": {
+            "const": "face-detection"
+          },
+          "status": {
+            "const": "succeeded"
+          }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/faceDetectionPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "status": {
             "const": "failed"
           }
@@ -220,6 +240,111 @@
     }
   ],
   "$defs": {
+    "faceDetectionPayload": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "recordedAtUtc",
+        "library",
+        "model",
+        "proxy",
+        "sampling",
+        "detection",
+        "observations",
+        "privacy",
+        "samplePathConsumed"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "recordedAtUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "library": {
+          "type": "object",
+          "required": ["name", "version", "analysedMedia", "proxySha256", "proxyBenchmarkRunId"]
+        },
+        "model": {
+          "type": "object",
+          "required": ["fileName", "byteSize", "sha256", "downloadedDuringThisRun", "sourceUrl"]
+        },
+        "control": {
+          "type": "object",
+          "required": [
+            "purpose",
+            "asset",
+            "runningMode",
+            "timestampMilliseconds",
+            "detectedFaceCount",
+            "scores",
+            "detectionMilliseconds",
+            "passed"
+          ],
+          "properties": {
+            "asset": {
+              "type": "object",
+              "required": ["fileName", "byteSize", "sha256", "downloadedDuringThisRun", "sourceUrl"]
+            },
+            "runningMode": {
+              "const": "VIDEO"
+            },
+            "detectedFaceCount": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "passed": {
+              "const": true
+            }
+          }
+        },
+        "proxy": {
+          "type": "object",
+          "required": ["reportedFrameCount", "width", "height"]
+        },
+        "sampling": {
+          "type": "object",
+          "required": [
+            "requestedSampleCount",
+            "attemptedSampleCount",
+            "decodedSampleCount",
+            "decodeFailureCount",
+            "sampleShareOfProxyFrames",
+            "indexRule",
+            "firstProxyFrameIndex",
+            "lastProxyFrameIndex",
+            "minDetectionConfidence",
+            "runningMode"
+          ]
+        },
+        "detection": {
+          "type": "object",
+          "required": [
+            "totalDetectionSeconds",
+            "meanDetectionMillisecondsPerFrame",
+            "framesWithAtLeastOneFace",
+            "framesWithNoFace",
+            "framesWithMultipleFaces",
+            "detectionRate",
+            "detectedFaceCount",
+            "maxFacesInOneFrame",
+            "meanFacesPerFrame"
+          ]
+        },
+        "observations": {
+          "type": "array",
+          "minItems": 1
+        },
+        "privacy": {
+          "type": "object",
+          "required": ["imagePixelsPersisted", "observationsContainSourceTimesAndFaceBoundingBoxes"]
+        },
+        "samplePathConsumed": {
+          "const": true
+        }
+      }
+    },
     "shotDetectionPayload": {
       "type": "object",
       "required": [

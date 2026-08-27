@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection")]
+    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection")]
     [string]$Stage = "hardware",
     [string]$FixtureManifest = (Join-Path $PSScriptRoot "fixtures\fixture-manifest.json"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "results\runs"),
@@ -237,6 +237,52 @@ function Assert-ShotDetectionPayload {
     }
 }
 
+function Assert-FaceDetectionPayload {
+    param([Parameter(Mandatory)][object]$Payload)
+
+    foreach ($name in @(
+        "schemaVersion", "recordedAtUtc", "library", "model", "control", "proxy",
+        "sampling", "detection", "observations", "privacy", "samplePathConsumed"
+    )) {
+        if ($Payload.PSObject.Properties.Name -notcontains $name) {
+            throw "Face detection payload is missing required property: $name"
+        }
+    }
+    if ($Payload.schemaVersion -ne "1.0.0") {
+        throw "Unsupported face detection payload schemaVersion: $($Payload.schemaVersion)"
+    }
+    if ($Payload.library.proxySha256 -notmatch '^[0-9a-f]{64}$') {
+        throw "Face detection payload does not identify the analysed proxy by content hash."
+    }
+    if ($Payload.model.sha256 -notmatch '^[0-9a-f]{64}$' -or [int64]$Payload.model.byteSize -le 0) {
+        throw "Face detection payload does not identify a usable model by content hash and byte size."
+    }
+    if ($Payload.sampling.runningMode -ne "VIDEO") {
+        throw "Face detection payload did not use MediaPipe VIDEO mode."
+    }
+    if ($Payload.control.runningMode -ne "VIDEO" -or
+        $Payload.control.passed -ne $true -or
+        [int]$Payload.control.detectedFaceCount -lt 1 -or
+        $Payload.control.asset.sha256 -notmatch '^[0-9a-f]{64}$') {
+        throw "Face detection positive control did not validate the pinned VIDEO-mode pipeline."
+    }
+    if ([int]$Payload.sampling.requestedSampleCount -ne 300 -or
+        [int]$Payload.sampling.attemptedSampleCount -ne 300 -or
+        [int]$Payload.sampling.decodedSampleCount -ne 300 -or
+        [int]$Payload.sampling.decodeFailureCount -ne 0) {
+        throw "Face detection payload did not decode all 300 required stratified samples."
+    }
+    if (@($Payload.observations).Count -ne [int]$Payload.sampling.decodedSampleCount) {
+        throw "Face detection observation count does not match the decoded sample count."
+    }
+    if ($Payload.privacy.imagePixelsPersisted -ne $false) {
+        throw "Face detection payload unexpectedly persisted sampled image pixels."
+    }
+    if ($Payload.samplePathConsumed -ne $true) {
+        throw "Face detection payload did not confirm fixture path consumption."
+    }
+}
+
 function Protect-SensitiveText {
     param(
         [Parameter(Mandatory)][string]$Text,
@@ -248,6 +294,25 @@ function Protect-SensitiveText {
     $safe = $safe.Replace($workspacePath, "<WORKSPACE>")
     if ($env:USERPROFILE) { $safe = $safe.Replace($env:USERPROFILE, "<USERPROFILE>") }
     return $safe
+}
+
+function Get-SafeFailurePayload {
+    param([AllowNull()][object]$Payload)
+
+    $safePayload = [ordered]@{}
+    if ($null -eq $Payload) {
+        return [pscustomobject]$safePayload
+    }
+
+    foreach ($name in @(
+        "schemaVersion", "library", "model", "control", "proxy",
+        "sampling", "detection", "privacy", "samplePathConsumed"
+    )) {
+        if ($Payload.PSObject.Properties.Name -contains $name) {
+            $safePayload[$name] = $Payload.$name
+        }
+    }
+    return [pscustomobject]$safePayload
 }
 
 function Write-BenchmarkResult {
@@ -327,6 +392,10 @@ try {
             $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\detect-shots.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
             Assert-ShotDetectionPayload -Payload $payload
         }
+        "face-detection" {
+            $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\detect-faces.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
+            Assert-FaceDetectionPayload -Payload $payload
+        }
         default {
             throw "Unsupported benchmark stage: $Stage"
         }
@@ -350,6 +419,7 @@ try {
 catch {
     $finishedAt = (Get-Date).ToUniversalTime()
     $safeMessage = Protect-SensitiveText -Text $_.Exception.Message -SourcePath $sourcePath
+    $safeFailurePayload = Get-SafeFailurePayload -Payload $payload
     $failureResult = [ordered]@{
         schemaVersion = "1.0.0"
         runId = $runId
@@ -365,7 +435,7 @@ catch {
             sourceSha256 = $sourceHash
             sourceByteSize = [int64]$sourceBefore.Length
         }
-        payload = [ordered]@{}
+        payload = $safeFailurePayload
         error = [ordered]@{
             code = "BENCHMARK_STAGE_FAILED"
             message = $safeMessage

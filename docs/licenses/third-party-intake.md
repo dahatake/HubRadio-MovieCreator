@@ -36,6 +36,18 @@
 
 上記は採用確定ではない。Windows x64 wheel、GPU/CPU実行、モデル取得、実素材精度、配布サイズを測定してからST-015で採否を決める。
 
+## ST-010 MediaPipe受入記録
+
+取得・確認日: 2026年8月27日。以下はWindows x64 / Python 3.12上のStage 0評価に使用した実在成果物であり、最終配布物への採用記録ではない。
+
+| 種別 | 固定対象 | 配布元 | byte size | SHA-256 | ライセンス・用途 |
+|---|---|---|---:|---|---|
+| Python wheel | `mediapipe-1.0.1-py3-none-win_amd64.whl` | https://pypi.org/project/mediapipe/1.0.1/ | 20,103,114 | `96dc9de6bd04a6315ef424fda5c48e0929f2d78317295e75bc32c0bceeab517b` | package metadataは`Apache 2.0`。同梱`LICENSE`は12,331 bytes、SHA-256 `8707eef0533987efc5b155d64761eeb6e20793f50b9bd1a68dad1cf4719d0ed8` |
+| Face Detector model | `blaze_face_short_range.tflite` (`float16/1`) | https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite | 229,746 | `b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f` | MediaPipe Tasks Face DetectorのStage 0入力。モデルカード相当の機能・制約資料は公式Face Detector documentationを参照 |
+| Positive-control image | `portrait.jpg` | https://storage.googleapis.com/mediapipe-assets/portrait.jpg | 176,561 | `a6f11efaa834706db23f275b6115058fa87fc7f14362681e6abe14e82749de3e` | benchmark正例だけに使用。MediaPipe vision testdataの`BUILD` packageは`licenses = ["notice"]`（Apache-2.0）を宣言。製品素材へ同梱しない |
+
+モデルと正例assetは取得後にbyte sizeとSHA-256を検査し、一致した場合だけ原子的にcacheへ昇格する。cacheがないclean環境では固定HTTPS配布元への到達が必要であり、offline bundle、silent update禁止、最終Model BOMはF-008/PK-004で実装する。ST-010の0件結果は自動顔リフレームの採用根拠にせず、ST-015の人判断まで手動layout/keyframeを推奨する。
+
 ## 追加確認済み一次資料
 
 - faster-whisper公式リポジトリ/README/License: https://github.com/SYSTRAN/faster-whisper （MIT、`v1.2.1`、Python 3.9+、現行GPU要件はCUDA 12 + cuDNN 9）
@@ -45,6 +57,7 @@
 - FFmpeg License and Legal Considerations: https://ffmpeg.org/legal.html （FFmpegはLGPL 2.1-or-laterが基本で、GPL部分を有効化するとGPLが適用）
 - PySceneDetect公式リポジトリ/ドキュメント: https://github.com/Breakthrough/PySceneDetect / https://www.scenedetect.com/docs/latest/ （BSD-3-Clause。採用時のexact版とPyAV/OpenCV依存を別途固定）
 - MediaPipe公式リポジトリ: https://github.com/google-ai-edge/mediapipe （Apache-2.0。Python packageとFace Detector model assetの版/hashを採用時に固定）
+- MediaPipe Face Detector documentation: https://ai.google.dev/edge/mediapipe/solutions/vision/face_detector （IMAGE/VIDEO/LIVE_STREAM、model、検出結果、構成option、制約の一次資料）
 
 `BtbN`はFFmpeg本体の開発者名ではなく、再現可能なbuild scriptsとWindows向け成果物を公開する配布プロジェクト名である。開発PoCで取得するzipと、最終配布で採用するFFmpeg構成を同一視しない。最終配布時は公式checklistに照らしてsource/configure/dependencyライセンスを別途固定する。
 
