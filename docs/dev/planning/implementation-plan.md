@@ -4,7 +4,7 @@
 **要求の正本（暫定既定）:** `docs/requirement-definition.md` 版 0.1 Draft  
 **設計根拠:** `docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **計画日:** 2026年8月26日  
-**計画状態:** Stage 0は2026年8月27日に人手承認済み。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009は完了し、ST-008は利用条件不同意のためcondition-falseとして閉じた。Stage 1では`A-010`と`A-015`をcondition-false、`A-012`と`A-013`を正例annotation・再評価待ちとして開始せず、[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)の手動fallbackを実装する。全203 taskの内訳は、完了34 + 先行条件不成立`ST-008` 1 + 後続168である。後続168 task IDのうち14件は条件不成立・保留（4件）またはAzure gate closed（10件）で、baseline実行対象は154件。Foundation scaffold、3言語のsmoke test、一括検証、fixture registry、BOM雛形、architecture制約は実装済みだが、編集機能、SQLite、WebView2統合、IaC、Azure resourceは未実装である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布は未承認。次の実行対象は相互独立な`D-001`と`D-002`
+**計画状態:** Stage 0は2026年8月27日に人手承認済み。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-004、D-008、J-003は完了し、ST-008は利用条件不同意のためcondition-falseとして閉じた。Stage 1では`A-010`と`A-015`をcondition-false、`A-012`と`A-013`を正例annotation・再評価待ちとして開始せず、[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)の手動fallbackを実装する。全203 taskの内訳は、完了40 + 先行条件不成立`ST-008` 1 + 後続162である。後続162 task IDのうち14件は条件不成立・保留（4件）またはAzure gate closed（10件）で、baseline実行対象は148件。Foundation scaffold、正規時刻・identity・provenance・project/rights・layout/output specification、およびshell-free ProcessRunnerは実装済みだが、編集機能、SQLite、WebView2統合、IaC、Azure resourceは未実装である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布は未承認。次の実行対象は相互独立な`D-005`、`J-009`、`J-010`である。
 
 ---
 
@@ -229,6 +229,8 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.4 D — 正規モデル、SQLite、成果物ストア
 
+**実行状態: D-001〜D-004、D-008は完了。** 次の依存解放対象は`D-005`である。
+
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
 | D-001 | 有理時刻と範囲演算を実装する | `CORE/Time/RationalTime.cs`、`TimeRange.cs`、unit tests | F-002 / `L-C` | 正規化、比較、加減、丸め、NTSC rate、overflowを検査 | FR-002/032、AR-2/4 | なし |
@@ -249,6 +251,8 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | D-016 | 起動時整合性検査と孤児staging清掃を実装する | `INFRA/Recovery/WorkspaceRecovery.cs`、tests | D-013〜D-015 / `L-C` | DB不整合を黙って修復せず、復旧候補と監査を出す | NFR-003 | なし |
 
 ### 5.5 J — 永続ジョブと子プロセス
+
+**実行状態: J-003は完了。** 次の依存解放対象は相互独立な`J-009`と`J-010`である。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -626,4 +630,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**次の未完了実行対象は、相互独立に開始できるD-001とD-002である。Azure作成はZ-001〜Z-004の条件成立とZ-005の別の明示指示後に限る。**
+**次の未完了実行対象は、相互独立に開始できるD-005、J-009、J-010である。Azure作成はZ-001〜Z-004の条件成立とZ-005の別の明示指示後に限る。**

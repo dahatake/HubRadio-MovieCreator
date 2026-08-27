@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、Windows 11 x64 の単一 PC で動作する、ローカル優先の動画編集支援アプリケーションとして設計しています。
 
 > [!IMPORTANT]
-> Stage 0 は2026年8月27日に人手承認済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。FoundationではWinUI 3、React、Python workerの最小scaffoldと検証基盤を実装済みです。WebView2統合、SQLite業務データ、編集・レビューUIは未実装です。
+> Stage 0 と Foundation は完了済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。正規model／process基盤では有理時刻、identity、provenance、project／rights、layout／render profile、shell-free process実行まで実装済みです。WebView2統合、SQLite業務データ、編集・レビューUIは未実装です。
 
 ![HubRadio MovieCreatorのローカル優先アーキテクチャ。緑はStage 0で実装済み、青はStage 1以降の計画、紫の破線は条件付きAzure経路](system-overview.svg)
 
@@ -97,7 +97,7 @@ Stage 0のPowerShell／Python検証実装に加え、Foundationでは製品ホ�
 | `RenderManifest` | 1回のレンダー入力、実行条件、結果を記録する |
 | `DeliveryManifest` | 動画、字幕、画像、文書を同じ承認版へ束ねる |
 
-これらは実装計画上の型であり、現時点で製品コードとして完成していません。
+`RationalTime`／`TimeRange`、`SourceSpan`／`OriginRef`、`LayoutSpec`／`RenderProfile`は実装済みです。`WorkingCopy`以降の編集版、TimelineMap、manifestは後続taskで実装します。表は最終構成を示すものであり、未実装項目を完成済みとは扱いません。
 
 ## 処理フロー
 

@@ -1,7 +1,7 @@
 # 残作業 実行プラン（ドキュメント再編完了後）
 
 **作成日:** 2026年8月27日
-**最終更新:** 2026年8月27日
+**最終更新:** 2026年8月28日
 **対象リポジトリ:** HubRadio-MovieCreator
 **正本:** `docs/dev/planning/implementation-plan.md`（全203タスク）
 **本書の位置付け:** 正本の実行順序を、これまでの実測結果に基づいて具体化した作業計画。要求・ADRを変更するものではない。
@@ -21,8 +21,10 @@
 | ST | ST-008 | 利用条件不同意のため条件不成立。手動話者割当を維持 |
 | ST | ST-015 | 14 canonicalを統合した承認資料のA〜Fを人手承認済み。commit `79ecdad` |
 | F | F-001〜F-009 | scaffold、3言語test、一括検証、fixture registry、BOM、architecture制約を個別review・commit済み |
+| D | D-001〜D-004、D-008 | 有理時刻、identity、provenance、project／rights、layout／render profileを個別review・commit済み |
+| J | J-003 | shell-free ProcessRunnerをtimeout／cancel／bounded UTF-8 capture付きでreview・commit済み |
 
-**完了: 34 / 203タスク**。全203 taskの内訳は、完了34 + 先行条件不成立`ST-008` 1 + 後続168である。後続168 task IDのうち、`A-010`と`A-015`はcondition-false、`A-012`と`A-013`は再評価保留、`Z-001〜Z-010`はAzure gate closedである。この14件を通常実行列へ入れないため、現在のbaseline実行対象は154件で、次は`D-001`と`D-002`を並列開始する。
+**完了: 40 / 203タスク**。全203 taskの内訳は、完了40 + 先行条件不成立`ST-008` 1 + 後続162である。後続162 task IDのうち、`A-010`と`A-015`はcondition-false、`A-012`と`A-013`は再評価保留、`Z-001〜Z-010`はAzure gate closedである。この14件を通常実行列へ入れないため、現在のbaseline実行対象は148件で、次は`D-005`、`J-009`、`J-010`を並列開始する。
 
 ### 1.2 直近の統合作業
 
@@ -31,6 +33,8 @@
 - ST-015 A〜Fの人手承認記録: commit `79ecdad`
 - ADR-0007、正本task dependency、navigation、hashの同期: ST-015-CLOSEとして完了
 - F-001〜F-009: commit `e47f095`、`f8582f1`、`420a558`、`33b0784`、`c14e6fb`、`6968d99`、`f90adfe`、`8738497`、`1749a9d`（補正`09bc76f`）
+- D-001〜D-004、D-008: commit `1e2e037`、`e0e84e1`、`66222bb`、`9d88284`、`068ec87`
+- J-003: commit `d02a170`
 
 旧ADR重複は削除済みで、`docs/dev/decisions/`だけがADR正本である。DOC-001〜DOC-004は敵対的レビュー、修正、再検証、commitまで完了した。
 
@@ -58,11 +62,11 @@
 | 検査 | 結果 | 扱い |
 |---|---:|---|
 | `docs/dev/**/*.md` | 25文書 | developer向け入口、architecture、benchmark、ADR、license、plan、research、reviewを分離済み |
-| Markdown相対リンク | 95件中broken 0件 | 再編後とFoundation追加文書の相対リンクは有効 |
-| Implementation plan SHA-256 | `7085dbade90181a5b65da25514bbe9b491d9714e9b08682cc4b85c022951d265` | `docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
+| Markdown相対リンク | 94件中broken 0件 | 再編後とFoundation追加文書の相対リンクは有効 |
+| Implementation plan SHA-256 | `9f40154f05ee37a56c5427612ff118613e2bbf2ae4fa1fc6a8e7cf6cd1aaceff` | `docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
 | `git diff --check` | staged / unstagedともexit 0 | whitespace errorなし |
 | 旧ADR重複 | 0件 | 削除済み。`docs/dev/decisions/`だけをADR正本として使用 |
-| Git staging | F-001〜F-009の個別commit後はclean | 本Foundation進捗同期だけを次のcommit対象にする |
+| Git staging | D-001〜D-004、D-008、J-003の個別commit後はclean | 本進捗同期だけを次のcommit対象にする |
 
 ---
 
@@ -241,9 +245,9 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. `D-001`の有理時刻・範囲演算と`D-002`のdigest・型付きIDを並列実装する。
-2. 両taskを個別に敵対的レビュー・修正・commitする。
-3. `D-001`と`D-002`の完了後に`D-003`を単独gateとして実装する。
+1. `D-005`のtranscript model、`J-009`のbounded/redacted diagnostic、`J-010`のbinary hash verifierを並列実装する。
+2. 3 taskを個別に敵対的レビュー・修正・commitする。
+3. `D-005`完了後に`D-006`、`J-010`完了後に`S-016`の依存解放を再評価する。
 
 各ステップで、実測できなかった項目は`openQuestions`に残し、推測で埋めない。
 
