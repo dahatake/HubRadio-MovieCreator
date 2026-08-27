@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical persisted ModelRun form. It records model identity, an explicit model-hash availability state, configuration and request digests, outcome, and local-versus-cloud transmission metadata. It stores digests rather than prompt or transcript content. Runtime validation additionally checks completion is not before start and DateTimeOffset parsing rejects calendar-invalid timestamps.",
+  "title": "ModelRun",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "provider",
+    "modelIdentifier",
+    "modelVersion",
+    "modelHashAvailability",
+    "configurationDigest",
+    "inputDigest",
+    "outcome",
+    "executionLocation",
+    "startedAt",
+    "completedAt"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/entityId"
+    },
+    "provider": {
+      "$ref": "#/$defs/nonBlankText"
+    },
+    "modelIdentifier": {
+      "$ref": "#/$defs/nonBlankText"
+    },
+    "modelVersion": {
+      "$ref": "#/$defs/nonBlankText"
+    },
+    "modelHash": {
+      "$ref": "#/$defs/nullableContentDigest"
+    },
+    "modelHashAvailability": {
+      "type": "string",
+      "enum": [
+        "available",
+        "notDisclosed"
+      ]
+    },
+    "configurationDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "inputDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "outputDigest": {
+      "$ref": "#/$defs/nullableContentDigest"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "succeeded",
+        "failed",
+        "timedOut",
+        "canceled"
+      ]
+    },
+    "errorCode": {
+      "$ref": "#/$defs/nullableErrorCode"
+    },
+    "executionLocation": {
+      "type": "string",
+      "enum": [
+        "local",
+        "cloud"
+      ]
+    },
+    "destination": {
+      "$ref": "#/$defs/nullableText"
+    },
+    "region": {
+      "$ref": "#/$defs/nullableText"
+    },
+    "sentDataClassification": {
+      "$ref": "#/$defs/nullableText"
+    },
+    "retentionPolicy": {
+      "$ref": "#/$defs/nullableText"
+    },
+    "startedAt": {
+      "$ref": "#/$defs/dateTimeOffset"
+    },
+    "completedAt": {
+      "$ref": "#/$defs/dateTimeOffset"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "modelHashAvailability": {
+            "const": "available"
+          }
+        },
+        "required": [
+          "modelHashAvailability"
+        ]
+      },
+      "then": {
+        "required": [
+          "modelHash"
+        ],
+        "properties": {
+          "modelHash": {
+            "$ref": "#/$defs/contentDigest"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "modelHash": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "executionLocation": {
+            "const": "cloud"
+          }
+        },
+        "required": [
+          "executionLocation"
+        ]
+      },
+      "then": {
+        "required": [
+          "destination",
+          "region",
+          "sentDataClassification",
+          "retentionPolicy"
+        ],
+        "properties": {
+          "destination": {
+            "$ref": "#/$defs/nonBlankText"
+          },
+          "region": {
+            "$ref": "#/$defs/nonBlankText"
+          },
+          "sentDataClassification": {
+            "$ref": "#/$defs/nonBlankText"
+          },
+          "retentionPolicy": {
+            "$ref": "#/$defs/nonBlankText"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "modelHashAvailability": {
+            "const": "available"
+          },
+          "destination": {
+            "type": "null"
+          },
+          "region": {
+            "type": "null"
+          },
+          "sentDataClassification": {
+            "type": "null"
+          },
+          "retentionPolicy": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outcome": {
+            "const": "succeeded"
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "then": {
+        "required": [
+          "outputDigest"
+        ],
+        "properties": {
+          "outputDigest": {
+            "$ref": "#/$defs/contentDigest"
+          },
+          "errorCode": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "errorCode"
+        ],
+        "properties": {
+          "outputDigest": {
+            "type": "null"
+          },
+          "errorCode": {
+            "$ref": "#/$defs/errorCode"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nullableContentDigest": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/contentDigest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nonBlankText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "nullableText": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "errorCode": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:\\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*)+$"
+    },
+    "nullableErrorCode": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/errorCode"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "dateTimeOffset": {
+      "type": "string",
+      "$comment": "The pattern bounds fields and requires an explicit offset. Draft 2020-12 format can be annotation-only, so the runtime deserialization boundary must also parse DateTimeOffset and reject calendar-invalid dates such as February 31.",
+      "format": "date-time",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,7})?(?:Z|[+-](?:(?:0\\d|1[0-3]):[0-5]\\d|14:00))$"
+    }
+  }
+}

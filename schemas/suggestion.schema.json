@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical persisted Suggestion form. Current suggestion kinds refer to a time-bounded SourceSpan. Proposed, reviewed, rejected, and adopted suggestions remain immutable audit records. A composition stores the suggestionReference shape with the same Suggestion ID and OriginRef; it does not copy or convert the suggestion into an EditorialRecord.",
+  "title": "Suggestion",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "modelRunId",
+    "kind",
+    "status",
+    "origin",
+    "reason"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/entityId"
+    },
+    "modelRunId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "deleteRange",
+        "topicBoundary",
+        "highlight"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "proposed",
+        "reviewed",
+        "rejected",
+        "adopted"
+      ]
+    },
+    "origin": {
+      "$ref": "#/$defs/sourceSpanOrigin"
+    },
+    "reason": {
+      "$ref": "#/$defs/nonBlankText"
+    },
+    "confidence": {
+      "$ref": "#/$defs/nullableConfidence"
+    },
+    "missingContext": {
+      "$ref": "#/$defs/nullableText"
+    },
+    "warning": {
+      "$ref": "#/$defs/nullableText"
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "nonBlankText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "nullableText": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "$comment": "Omission or null means confidence was not supplied. Runtime validation additionally rejects NaN and infinities.",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "nullableConfidence": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/confidence"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sourceSpanOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceSpanId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "sourceSpan"
+        },
+        "sourceSpanId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "suggestionReference": {
+      "type": "object",
+      "$comment": "Created only from an adopted Suggestion by the runtime model.",
+      "additionalProperties": false,
+      "required": [
+        "suggestionId",
+        "origin"
+      ],
+      "properties": {
+        "suggestionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "origin": {
+          "$ref": "#/$defs/sourceSpanOrigin"
+        }
+      }
+    }
+  }
+}

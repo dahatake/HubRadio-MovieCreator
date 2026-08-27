@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical persisted Detection form. A detection is an immutable machine observation tied to a ModelRun and a time-bounded SourceSpan. Asset-only and EditorialRecord origins are excluded because current detection kinds identify media intervals and independently authored human text is not a machine detection.",
+  "title": "Detection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "modelRunId",
+    "kind",
+    "origin",
+    "description"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/entityId"
+    },
+    "modelRunId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "silence",
+        "repetition",
+        "preparationConversation",
+        "recordingProblem",
+        "contextDeviation",
+        "audioEvent",
+        "editorialInstruction",
+        "topicBoundary"
+      ]
+    },
+    "origin": {
+      "$ref": "#/$defs/sourceSpanOrigin"
+    },
+    "description": {
+      "$ref": "#/$defs/nonBlankText"
+    },
+    "confidence": {
+      "$ref": "#/$defs/nullableConfidence"
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "nonBlankText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "confidence": {
+      "type": "number",
+      "$comment": "Omission or null means confidence was not supplied. Runtime validation additionally rejects NaN and infinities.",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "nullableConfidence": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/confidence"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sourceSpanOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceSpanId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "sourceSpan"
+        },
+        "sourceSpanId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    }
+  }
+}
