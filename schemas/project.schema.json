@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "This schema defines the canonical persisted Project shape. UUIDs and SHA-256 digests use lowercase canonical text; optional values may be omitted or represented by an explicit null. Array uniqueItems rejects duplicate objects; Project runtime validation additionally rejects duplicate asset or performer IDs when other fields differ.",
+  "title": "Project",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "contentName",
+    "purpose",
+    "audience",
+    "publicationScope",
+    "assets",
+    "performers"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contentName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "audience": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "publicationScope": {
+      "type": "string",
+      "enum": [
+        "internalOnly",
+        "specificGroupOnly",
+        "externalCandidate",
+        "externalPublicationApproved",
+        "publicationForbidden",
+        "pendingDecision"
+      ]
+    },
+    "deadline": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "assets": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "fileName",
+          "mediaType",
+          "contentDigest",
+          "byteSize",
+          "rights"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "fileName": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+          },
+          "mediaType": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+          },
+          "contentDigest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "byteSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807
+          },
+          "rights": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "allowedUse",
+              "externalPublicationAllowed"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "unconfirmed",
+                  "approved",
+                  "rejected"
+                ]
+              },
+              "evidenceReference": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1,
+                "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+              },
+              "allowedUse": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+              },
+              "externalPublicationAllowed": {
+                "type": "boolean"
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "approved"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "evidenceReference"
+                  ],
+                  "properties": {
+                    "evidenceReference": {
+                      "type": "string",
+                      "minLength": 1,
+                      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "required": [
+                    "status"
+                  ],
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "unconfirmed",
+                        "rejected"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "externalPublicationAllowed": {
+                      "const": false
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "performers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "displayName",
+          "role"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+          },
+          "titleConfirmedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,7})?(?:Z|[+-]\\d{2}:\\d{2})$"
+          }
+        }
+      }
+    }
+  }
+}
