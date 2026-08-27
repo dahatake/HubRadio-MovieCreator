@@ -3,7 +3,7 @@
 Windows 11上で、企業向けトーク／インタビュー動画を**根拠付き・非破壊・人による承認付き**で複数形式へ展開する、ローカル優先の動画編集支援アプリケーションです。
 
 > [!IMPORTANT]
-> 現在は **Stage 0（技術検証・進行中）** です。P-001〜P-010、ST-001〜ST-007、ST-009、ST-010、ST-014、ST-016は**測定タスクとして完了**していますが、production承認ではありません。ST-007ではCUDA版のword/utterance時刻を編集可能な候補とし、exact精度は未測定、parent外0.14秒のwordを各経路1件そのまま記録しました。自動clampせず、発話時刻＋手動字幕調整を必須fallbackとしています。Stage 0残件と全体承認（ST-015）は未完了で、完成アプリケーションはまだありません。
+> 現在は **Stage 0（技術検証・進行中）** です。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-011、ST-014、ST-016は**測定タスクとして完了**していますが、production承認ではありません。ST-007ではCUDA版のword/utterance時刻を編集可能な候補とし、exact精度は未測定、parent外0.14秒のwordを各経路1件そのまま記録しました。ST-011では実在するFoundry Local Qwen3 CUDA 2候補を測定しましたが、synthetic controlと3つのfixture windowを全て通過した候補は0件で、ローカル文章生成はmanual-onlyです。Stage 0残件と全体承認（ST-015）は未完了で、完成アプリケーションはまだありません。
 
 ![HubRadio MovieCreatorのアーキテクチャ。緑は実装済みStage 0、青は計画中のWindowsアプリ、紫の破線は条件付きAzure経路](docs/architecture.svg)
 
@@ -64,11 +64,11 @@ Windows 11上で、企業向けトーク／インタビュー動画を**根拠�
 | エンコーダ比較 | ✅ 実測済み | `benchmarks/results/encoder-matrix.json`（NVENCとMedia FoundationのVMAF・サイズ・速度）|
 | GUIデスクトップアプリ | ⬜ 未実装 | WinUI 3、WebView2、Reactは計画のみ |
 | 業務データ／編集機能 | ⬜ 未実装 | SQLite、非破壊タイムライン、レビュー、納品管理は計画のみ |
-| ML解析 | 🟨 一部実測 | ASR ST-006、時刻ST-007、ショットST-009、顔ST-010、音響イベント/録画品質ST-016を実測済み。ASR/時刻の正解精度、話者、トピックは未確定。word時刻のparent外0.14秒を非clampで保持し、人の確認・手動fallbackを維持 |
+| ML解析 | 🟨 一部実測 | ASR ST-006、時刻ST-007、ショットST-009、顔ST-010、文章モデルST-011、音響イベント/録画品質ST-016を実測済み。文章モデル2候補は採用条件未達でmanual-only。ASR/時刻・semantic groundednessの正解精度と話者は未確定で、人の確認・手動fallbackを維持 |
 | 配布 | 🟨 Stage 0 PoCのみ | 複数exe、FFmpeg/ffprobe、modelを含むunsigned MSIXのpack/unpackと展開後実行は実測済み。署名・install・upgrade・clean Windowsは未検証 |
 | Azure | ⏸ 条件付き・未作成 | ローカル不達と明示承認が揃った場合だけ検討 |
 
-現在の次タスクは [`docs/implementation-plan.md`](docs/implementation-plan.md) の **ST-011** です。Stage 0の全結果をST-015で承認するまで、アプリ本体のscaffold（F-001以降）へ進まない計画です。
+現在の次タスクは [`docs/implementation-plan.md`](docs/implementation-plan.md) の **ST-012** です。Stage 0の全結果をST-015で承認するまで、アプリ本体のscaffold（F-001以降）へ進まない計画です。
 
 ## クイックスタート
 
@@ -202,6 +202,7 @@ pwsh.exe -NoLogo -NoProfile -File tools\create-test-video.ps1 -SourcePath sample
 | `process-and-package` | 利用可能 | Job Objectのtimeout/close/crash/資源制限と、unsigned multi-executable MSIXのpack/unpack・codec/model読込を記録 |
 | `asr-benchmark` | 利用可能 | faster-whisper CPU/CUDAとFoundry Localを同一16 kHz音声で比較し、synthetic日本語control、時間、memory、時刻能力、privacy境界を記録 |
 | `alignment-benchmark` | 利用可能 | ST-006 CPU/CUDA artifactの時刻構造・descriptive一致度と独立TTS slot controlを測り、exact精度未測定と手動fallbackを記録 |
+| `local-text-model` | 利用可能 | Foundry Local Qwen3 CUDA 2候補を根拠ID付きJSON controlと3つのfixture windowで測り、schema/ID、時間、memory、privacy、state復元、手動fallbackを記録 |
 
 `media-ingest`は大容量fixtureを全編処理します。実行する場合は十分な時間と空き容量を確保してください。
 
@@ -439,7 +440,7 @@ fixture、生成動画、ブランド素材、BGM等はMIT Licenseの対象と�
 
 | Stage | 内容 | 状態 |
 |---|---|---|
-| Stage 0 | 実素材で媒体、ASR、時刻、顔、shot、字幕、render、packageを測定 | **進行中**。P-001〜P-010、ST-001〜ST-007、ST-009、ST-010、ST-014、ST-016完了 |
+| Stage 0 | 実素材で媒体、ASR、時刻、顔、shot、文章候補、字幕、render、packageを測定 | **進行中**。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-011、ST-014、ST-016完了。次はST-012 |
 | Stage 1 | Must: 取込、文字起こし、手動編集、16:9／9:16、版、review、render、traceability | 未着手。ST-015承認後 |
 | Stage 2 | Should: 見どころ、hook、自動追尾、資料、音声補正、quiz、投稿文 | 未着手。G1-MUST後 |
 | Stage 3 | 公開履歴、運用改善、条件確定済みの外部連携 | 未着手 |

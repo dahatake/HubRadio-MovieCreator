@@ -1,0 +1,333 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260827T1055523174852Z-local-text-model-b53e420a",
+  "benchmarkRunSha256": "6d8bc3275448e8a4528c62ab3d045c7756f63787b2d3415d10356701a76f1a36",
+  "recordedAtUtc": "2026-08-27T11:01:18.4915653Z",
+  "fixture": {
+    "sourceAssetId": "source-ios-20260615-024326000",
+    "sourceSha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+    "sourceByteSize": 6494572403,
+    "rightsStatus": "unconfirmed",
+    "allowedUse": "local-technical-evaluation-only",
+    "externalPublicationAllowed": false,
+    "sourcePostRunIntegrityChecked": true,
+    "sourceUnchanged": true
+  },
+  "host": {
+    "hardwareBenchmarkRunId": "20260826T1548073271369Z-hardware-d1b1bd37",
+    "hardwareBenchmarkRunSha256": "3e5b1e6ab9ce19795b8244bd433ab8882b534e4b06b9314d7d86ac67536775c7",
+    "operatingSystemVersion": "10.0.29648",
+    "processor": "13th Gen Intel(R) Core(TM) i7-13800H",
+    "graphics": [
+      "Intel(R) Iris(R) Xe Graphics",
+      "NVIDIA GeForce RTX 4060 Laptop GPU"
+    ],
+    "processArchitecture": "X64"
+  },
+  "implementation": {
+    "gitHead": "6a6c7ac01cd56af429f6cb88634d2dd0fe16f0cf",
+    "implementationFilesCleanAtRun": false,
+    "exactExecutedFilesRecordedByHash": true,
+    "files": [
+      {
+        "id": "benchmark-harness",
+        "fileName": "run-benchmarks.ps1",
+        "byteSize": 89617,
+        "sha256": "8d1fd971c5bbb3a1b2c865e092bf4a792294e9f95902d20024445c05e2025130"
+      },
+      {
+        "id": "local-text-wrapper",
+        "fileName": "measure-text-model.ps1",
+        "byteSize": 63648,
+        "sha256": "85638cda4455ba74204d06a7fbf6ed65d358d834d54b097f4348108085cc311c"
+      },
+      {
+        "id": "local-text-driver",
+        "fileName": "text_model_benchmark.py",
+        "byteSize": 40067,
+        "sha256": "a77411eae7cf6ebaa957858e6a183209d3dae4f19ead21a1f2a8a628062c9438"
+      },
+      {
+        "id": "benchmark-schema",
+        "fileName": "schema.json",
+        "byteSize": 110220,
+        "sha256": "8f711b8c52f7185c99095e614519e88feafe52699b3237cc09c8db0b0e608c5f"
+      },
+      {
+        "id": "local-text-output-schema",
+        "fileName": "local-text-model-output.schema.json",
+        "byteSize": 4295,
+        "sha256": "ac9c94c24a1079544dc133d2e9e38f7de7261effae0aab84a1e217ab427f5dbd"
+      },
+      {
+        "id": "local-text-control-config",
+        "fileName": "local-text-model-control.json",
+        "byteSize": 2889,
+        "sha256": "f3896afded46aa98b7d592f08e54c86083a3451ab2b2a6ad972b5ed65d639e64"
+      }
+    ]
+  },
+  "scope": {
+    "benchmarkIsFullRequirementAcceptance": false,
+    "representativeGroundedJsonContractOnly": true,
+    "fr006FieldsEvaluated": [
+      "topic-range",
+      "title",
+      "summary",
+      "keywords",
+      "evidence-token-ids"
+    ],
+    "fr006FieldsNotEvaluated": [
+      "primary-speaker",
+      "important-statement-candidates",
+      "audience",
+      "publication-warning-candidates"
+    ],
+    "fr011MeaningPreservationMeasured": false,
+    "fr022AnswerSupportMeasured": false,
+    "fr025FullArtifactSetMeasured": false,
+    "fullFixtureSemanticCoverageMeasured": false
+  },
+  "upstream": {
+    "asrCanonicalSha256": "b7564942f454a94dc533d36da474487d33e55ca05e71cf050acd4eb1c3be38f7",
+    "asrBenchmarkRunId": "20260827T0718012939475Z-asr-benchmark-1e66cc2c",
+    "asrBenchmarkRunSha256": "a92491fd5c956151b335171413289b59c0d9d4098cf765501c463728786faf3c",
+    "asrArtifactSha256": "8636826f918a42b4a9fc12e7b684bd18a021900b2ebc19189f74dfb4bd69776d",
+    "alignmentCanonicalSha256": "4f273035c68ac90e8c225f8cbb3b82c725a099fbc55fc3b618f2ed864c2b379d",
+    "alignmentBenchmarkRunId": "20260827T0947132960205Z-alignment-benchmark-cf2b2ab6",
+    "alignmentBenchmarkRunSha256": "521c1de8a8a371bc17cec2ca2a84df5a1d1e6368dcb3eef955f753c97290ffa0",
+    "privateEvidenceAclProtected": true,
+    "privateEvidenceCompletionMarkerPresent": true
+  },
+  "tooling": {
+    "pythonVersion": "Python 3.12.10",
+    "foundryLocal": {
+      "cliVersion": "0.10.3",
+      "packageVersion": "0.10.3.0",
+      "preview": true,
+      "signatureKind": "Developer",
+      "cliExecutableSha256": "53a805895debd297bc5fe424bdbf64f551efbe0c53ddae397ecae9f5bcc7db98",
+      "daemonExecutableSha256": "a49c23d4af9f470da7128c29eef3fb1c0a64cf8555c2a3500e8683855886f3d1",
+      "restApiStatus": "preview-and-subject-to-breaking-change",
+      "dynamicLoopbackEndpointUsed": true,
+      "proxyBypassEnforced": true,
+      "tokenCountEndpointAvailable": false
+    },
+    "cudaExecutionProvider": {
+      "fileCount": 14,
+      "totalBytes": 2423764787,
+      "manifestSha256": "8248ba49910e8fba56ddc8b4810a55cc9b3a069ca0dc2f7a23cd5f1f9a807021",
+      "versionFileSha256": "28236ce308e5232254f4f09ca8e6df0805b9a3608a79d9e4d09a4b459fb99640",
+      "releaseRedistributionApproved": false
+    }
+  },
+  "models": [
+    {
+      "candidateId": "foundry-local-qwen3-0.6b-cuda",
+      "alias": "qwen3-0.6b",
+      "modelId": "qwen3-0.6b-cuda-gpu:2",
+      "publisher": "Microsoft",
+      "licenseDeclaredByCatalog": "apache-2.0",
+      "independentDistributionLicenseReviewCompleted": false,
+      "executionProvider": "CUDAExecutionProvider",
+      "fileCount": 8,
+      "totalBytes": 516135598,
+      "manifestSha256": "38dc1ac88c6af4a684f96e8a9b4c30a6bca2671115a84e15189d93d57a10ebbe"
+    },
+    {
+      "candidateId": "foundry-local-qwen3-4b-cuda",
+      "alias": "qwen3-4b",
+      "modelId": "qwen3-4b-cuda-gpu:2",
+      "publisher": "Microsoft",
+      "licenseDeclaredByCatalog": "apache-2.0",
+      "independentDistributionLicenseReviewCompleted": false,
+      "executionProvider": "CUDAExecutionProvider",
+      "fileCount": 9,
+      "totalBytes": 2823706996,
+      "manifestSha256": "89d232e91d2c130e5ffd38f03776ad47c3b9779c8689e565fd4b2ea483f6e657"
+    }
+  ],
+  "analysisInput": {
+    "control": {
+      "controlId": "synthetic-grounded-id-json-and-prompt-injection-v1",
+      "configSha256": "f3896afded46aa98b7d592f08e54c86083a3451ab2b2a6ad972b5ed65d639e64",
+      "outputSchemaSha256": "ac9c94c24a1079544dc133d2e9e38f7de7261effae0aab84a1e217ab427f5dbd",
+      "tokenCount": 19,
+      "characterCount": 79,
+      "promptInjectionControlIncluded": true,
+      "controlIsAccuracyEvidence": false
+    },
+    "fixture": {
+      "sourceCandidateId": "faster-whisper-small-cuda-float16",
+      "sourceArtifactSha256": "8636826f918a42b4a9fc12e7b684bd18a021900b2ebc19189f74dfb4bd69776d",
+      "fullFixtureTokenCount": 5266,
+      "fullFixtureSegmentCount": 694,
+      "fullFixtureCharacterCount": 7707,
+      "sampledWindowCount": 3,
+      "sampledTokenCount": 501,
+      "windowTokenCounts": [178, 162, 161],
+      "pairwiseWindowTokenOverlapCount": 0,
+      "windowsArePairwiseDisjoint": true,
+      "fullFixtureSemanticCoverageClaimed": false
+    }
+  },
+  "evaluations": [
+    {
+      "candidateId": "foundry-local-qwen3-0.6b-cuda",
+      "status": "not-eligible-for-human-review",
+      "modelLoadMilliseconds": 2548.547,
+      "modelLoadPeakAggregateWorkingSetBytes": 3677605888,
+      "modelLoadSystemWideGpuMemoryUsedMiBPeak": 4503,
+      "datasetCount": 4,
+      "invocationSuccessCount": 0,
+      "outputSchemaValidCount": 0,
+      "structuralValidationPassCount": 0,
+      "totalInferenceProcessMilliseconds": 76380.817,
+      "maximumPeakAggregateWorkingSetBytes": 3138379776,
+      "maximumSystemWideGpuMemoryUsedMiBPeak": 7159,
+      "gpuMemorySamplingIntervalMilliseconds": 1000,
+      "control": {
+        "invocationStatus": "failed",
+        "errorCode": "BOUNDED_ADAPTER_OUTPUT_NOT_JSON",
+        "finishReason": "length",
+        "promptTokens": 1417,
+        "completionTokens": 1536
+      },
+      "fixtureWindows": {
+        "attemptedCount": 3,
+        "parseableJsonCount": 0,
+        "finishReasonLengthCount": 3,
+        "errorCode": "GENERATED_OUTPUT_NOT_DIRECT_JSON"
+      },
+      "controlMechanismPassed": false,
+      "allFixtureWindowsStructurallyValid": false,
+      "semanticGroundednessMeasured": false,
+      "generatedWordingAccuracyMeasured": false,
+      "productionThresholdApproved": false
+    },
+    {
+      "candidateId": "foundry-local-qwen3-4b-cuda",
+      "status": "not-eligible-for-human-review",
+      "modelLoadMilliseconds": 4246.772,
+      "modelLoadPeakAggregateWorkingSetBytes": 4751282176,
+      "modelLoadSystemWideGpuMemoryUsedMiBPeak": 7769,
+      "datasetCount": 4,
+      "invocationSuccessCount": 1,
+      "outputSchemaValidCount": 1,
+      "structuralValidationPassCount": 1,
+      "totalInferenceProcessMilliseconds": 191193.778,
+      "maximumPeakAggregateWorkingSetBytes": 5864386560,
+      "maximumSystemWideGpuMemoryUsedMiBPeak": 7801,
+      "gpuMemorySamplingIntervalMilliseconds": 1000,
+      "control": {
+        "invocationStatus": "succeeded",
+        "finishReason": "stop",
+        "promptTokens": 1417,
+        "completionTokens": 283,
+        "boundedAdapterUsed": true,
+        "outputSchemaValid": true,
+        "allReferencesKnown": true,
+        "topicRangesOrderedAndNonOverlapping": true,
+        "topicEvidenceWithinRanges": true,
+        "expectedTopicRangeCount": 3,
+        "observedTopicRangeCount": 1,
+        "expectedRangesMatch": false,
+        "candidateCountsMatch": false,
+        "requiredEvidenceMatch": true,
+        "injectionMarkerAbsent": true,
+        "injectionMarkerAbsenceIsRobustnessEvidence": false,
+        "controlMechanismPassed": false
+      },
+      "fixtureWindows": {
+        "attemptedCount": 3,
+        "parseableJsonCount": 0,
+        "finishReasonLengthCount": 3,
+        "errorCode": "GENERATED_OUTPUT_NOT_DIRECT_JSON"
+      },
+      "controlMechanismPassed": false,
+      "allFixtureWindowsStructurallyValid": false,
+      "semanticGroundednessMeasured": false,
+      "generatedWordingAccuracyMeasured": false,
+      "productionThresholdApproved": false
+    }
+  ],
+  "comparison": {
+    "candidateCount": 2,
+    "datasetCountPerCandidate": 4,
+    "successfulInvocationCount": 1,
+    "directJsonCount": 0,
+    "boundedAdapterCount": 1,
+    "structurallyEligibleCandidateCount": 0,
+    "performanceTrialCountPerModelAndDataset": 1,
+    "performanceDistributionMeasured": false,
+    "toolCallingDeclaredByCatalogButNotUsedAsSchemaGuarantee": true,
+    "schemaValidationIsSemanticGroundednessEvidence": false,
+    "groundedIdStructuralValidationIsSemanticGroundednessEvidence": false,
+    "fixtureHumanSemanticReferenceAvailable": false,
+    "semanticGroundednessMeasured": false,
+    "generatedWordingAccuracyMeasured": false,
+    "productionThresholdsApproved": false
+  },
+  "manualFallback": {
+    "required": true,
+    "automaticFallbackExecutedByBenchmark": false,
+    "manualEntryPathSpecifiedInImplementationPlan": true,
+    "manualEntryPathImplementedByBenchmark": false,
+    "manualEntryPathExecutedByBenchmark": false,
+    "method": "A human authors topic metadata and optional hook, quiz, and publishing wording while selecting source token spans.",
+    "generatedSuggestionsAutomaticallyAdopted": false
+  },
+  "stateRestoration": {
+    "serverWasReadyBefore": true,
+    "serverReadyAfter": true,
+    "preloadedModelCount": 0,
+    "loadedModelCountAfter": 0,
+    "preAndPostStateMatch": true,
+    "eachCandidateUnloadedBeforeNextCandidate": true
+  },
+  "configurationDisposition": {
+    "status": "manual-only",
+    "localTextModelAdoptedForProduction": false,
+    "candidateOutputsAreUnapprovedSuggestions": true,
+    "generatedSuggestionsAutomaticallyAdopted": false,
+    "reason": "Neither evaluated cached CUDA model passed the synthetic mechanism control and all three fixture-window structural gates. No candidate is eligible for human semantic review, so the planned manual authoring path remains required.",
+    "finalStage0DecisionPending": true
+  },
+  "stage0Implications": [
+    "Qwen3 0.6B did not produce an accepted JSON candidate for the synthetic control or any of the three fixture windows; all four responses reached the configured completion-token limit or failed bounded JSON parsing.",
+    "Qwen3 4B produced schema-valid grounded-ID JSON for the synthetic control, but returned one topic range where three exact ranges were required. The injection marker was absent, but this is not treated as robustness evidence because the control itself failed.",
+    "Neither model produced accepted JSON for any of the three disjoint fixture windows. All six fixture responses ended because the 1,536 completion-token limit was reached and did not begin with a bounded JSON object or approved adapter form.",
+    "The three fixture windows contain 501 of 5,266 emitted ASR words and sample the beginning, middle, and end without overlap. This is not full-fixture semantic coverage and no human semantic reference exists.",
+    "Timing and memory are single observations. GPU memory is sampled system-wide at 1,000 ms intervals under WDDM and may underestimate a short peak; it is not per-process attribution.",
+    "The Foundry Local server and loaded-model set were restored, both model cache manifests remained fixed, and exact request/generated-output probes were absent from the appended daemon log.",
+    "ST-011 tests a representative grounded JSON contract only. It does not accept the complete FR-006, FR-011, FR-022, or FR-025 behavior and does not establish semantic groundedness, meaning preservation, answer support, or production thresholds."
+  ],
+  "assessment": {
+    "interpretation": "ST-011 completes the local text-model measurement but does not approve either evaluated model. The evidence supports a manual-only disposition for the tested grounded-ID JSON path until a future model or prompt contract passes structural controls and human semantic review.",
+    "measurementCorrections": [
+      "The installed Foundry Local catalog was queried before selection. The benchmark uses the real cached qwen3-0.6b-cuda-gpu:2 and qwen3-4b-cuda-gpu:2 variants rather than an invented model ID.",
+      "The documented token-count REST endpoint returned HTTP 404 on Foundry Local CLI 0.10.3. The final driver records it as unavailable and relies on the completion response usage without treating the auxiliary endpoint failure as model failure.",
+      "PowerShell single-element pipeline unrolling initially caused a loaded model ID to be indexed as a string character. All loaded-model set call sites now force array semantics and verify zero preloaded and zero post-run models.",
+      "Failed generated responses now retain only finish reason, token counts, hashes, character counts, and bounded shape flags. Source and generated wording remain private and are not copied into the raw payload or canonical summary.",
+      "Adversarial review added endpoint masking, explicit 1,000 ms GPU sampling granularity, opaque expected/observed control range evidence, representative requirement scope, and explicit planned-but-unimplemented manual fallback flags.",
+      "Schema 1.0 review fields remain optional for historical compatibility, while the runtime validator requires them for new ST-011 runs. All historical raw files remained valid."
+    ],
+    "openQuestions": [
+      "Whether another local model or a materially smaller prompt/schema can produce valid grounded JSON without losing required fields is unmeasured and must be treated as a new candidate evaluation, not assumed from this run.",
+      "Semantic groundedness, topic boundary quality, hook meaning preservation, quiz answer support, and publishing metadata quality remain unmeasured until independent human references and review are available.",
+      "The planned manual entry path is specified but not implemented or executed by this benchmark; implementation remains A-014/A-020 and related UI work after Stage 0 approval.",
+      "The Foundry Local REST API and CLI 0.10.3 are preview, the installed Appx is Developer-signed, and clean-machine/release trust remain unverified.",
+      "Model and CUDA execution-provider redistribution remain unapproved. Catalog-declared Apache-2.0 is not an independent distribution license review.",
+      "Performance distributions, cold-cache behavior, concurrency, cross-machine behavior, and exact per-process GPU memory are not measured.",
+      "Final adoption, all thresholds, and any conditional cloud-necessity decision require ST-015 human approval."
+    ],
+    "privacy": "The canonical summary contains only opaque IDs, hashes, counts, timing, memory, structural flags, and bounded interpretations. Source transcript and generated wording remain in ignored local evidence protected by a non-inheriting three-principal ACL. The final daemon-log scan checked 146 exact probes and found zero matches; no endpoint or absolute host path is included.",
+    "curatedFields": [
+      "configurationDisposition",
+      "stage0Implications",
+      "assessment",
+      "recollectionCommand"
+    ]
+  },
+  "recollectionCommand": "pwsh.exe -NoLogo -NoProfile -File benchmarks/run-benchmarks.ps1 -Stage local-text-model -ChildTimeoutSeconds 7200"
+}

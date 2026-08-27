@@ -347,3 +347,57 @@ metadataについては、source由来のglobal metadataが出力に残ってい
 - parent overflow: **0.14秒を各経路1件、非clamp**
 - CUDA release配布: **未承認**
 - 合格判定: **PASS（測定タスク完了、最終採否・閾値はST-015承認待ち）**
+
+## ST-011 Foundry Local文章モデルの敵対的レビュー（2026年8月27日）
+
+**対象:** `benchmarks/stages/measure-text-model.ps1`、`text_model_benchmark.py`、`local-text-model-control.json`、生成output schema、ベンチハーネス、schema、ST-006 private artifact、raw run、`benchmarks/results/local-text-model.json`
+
+**採用raw証跡:** `20260827T1055523174852Z-local-text-model-b53e420a`、SHA-256 `6d8bc3275448e8a4528c62ab3d045c7756f63787b2d3415d10356701a76f1a36`
+
+**実測:** 実在catalog/cacheから`qwen3-0.6b-cuda-gpu:2`と`qwen3-4b-cuda-gpu:2`を選び、19-token synthetic controlと、ST-006 CUDA artifactから決定論的に切り出したstart/middle/end 3 window（計501/5,266 word）を逐次評価した。0.6Bはaccepted JSON 0/4、4Bはsynthetic 1/1だけschema・ID構造を通したが期待3 topicに対し1 topicでcontrol不合格、fixtureは0/3だった。semantic ground truthはなく、採用候補0件、manual-onlyとした。
+
+| No. | 軸 | 重大度 | 指摘 | 修正と確認 |
+|-----|-----|--------|------|------------|
+| S11-1 | 内容の妥当性 | Major | 当初はmodel IDを推測する余地があり、存在しないvariantで評価を捏造し得た。 | **修正済み:** installed CLI 0.10.3のJSON catalogを照会し、cache済みCUDA 2候補を実在確認。model info、個別file size/hash、manifest、publisher/license表示、execution providerを固定した。 |
+| S11-2 | 整合性 | Major | PowerShell functionの1要素出力がscalarへunrollされ、loaded model IDの`[0]`が先頭文字を返し、正常loadを失敗判定した。 | **修正済み:** loaded-model集合の全call siteを`@(...)`で配列化。候補間でloaded model 0件、終了後0件、前後集合hash一致を最終rawで確認した。 |
+| S11-3 | 根拠性・不確実性管理 | Major | 公式資料に記載されたtoken-count endpointが実機CLI 0.10.3でHTTP 404となり、補助endpoint失敗をmodel failureと誤分類した。 | **修正済み:** 404を`tokenCountEndpointAvailable=false`として記録しcompletionを継続。completion responseのusageを必須検証し、実機API差を能力結果から分離した。 |
+| S11-4 | セキュリティ | Major | fixture本文をCLI argumentへ渡すとprocess command lineへ露出し得た。proxy経由や非loopback endpointも避ける必要があった。 | **修正済み:** dynamic server statusからliteral loopback HTTP endpointだけを許可し、proxyを無効化したREST bodyで送信。process argumentはACL保護済みinput file pathだけとし、endpointもdiagnosticで秘匿した。 |
+| S11-5 | セキュリティ | Major | source/generated wordingがraw/canonicalやdaemon logへ残る可能性があった。 | **修正済み:** 3主体・非継承ACLのignored work directoryへinput/response/outputを隔離。payloadはhash/count/shapeだけにし、daemon log追記580 bytesをcanaryと146 exact probeで走査、match 0件を確認した。失敗payloadも空objectへ限定した。 |
+| S11-6 | 内容の妥当性 | Major | free textから最初の`{...}`を拾う緩いparserは、trailing proseや複数objectを黙って採用し得た。Qwen reasoning prefix/code fenceとの境界も必要だった。 | **修正済み:** direct JSON、または閉じた`<think>` prefix後の単一JSON／完全なcode fenceだけをbounded adapterで許可。trailing prose、未閉鎖fence、長さ打切りはfail closed。failed responseには本文を出さずfinish reason、usage、hash、shapeを記録した。 |
+| S11-7 | 根拠性・不確実性管理 | Major | JSON Schema適合と既知ID/range/subset検査をsemantic groundednessやFR完全受入と誤認できた。 | **修正済み:** schema、ID存在、重複、順序、non-overlap、topic内evidenceを構造検査として分離。semantic groundedness、hook意味保全、quiz回答support、FR-025全成果物は未測定、full requirement acceptanceではないとscope/raw/canonicalへ固定した。 |
+| S11-8 | 内容の妥当性 | Major | 4Bはsyntheticでschema-validだったが、期待3 topicに対し1件だけだった。marker不在だけをprompt-injection robustnessと過大評価できた。 | **修正済み:** expected/observed topic rangeをopaque IDだけでmachine-readable化し、range/count不一致でcontrol失敗。`controlInjectionMarkerAbsenceIsRobustnessEvidence=false`を必須化した。 |
+| S11-9 | 品質・運用性 | Major | memory観測不能時に`$null`を`[int64]`へcastすると0となり、未測定を0 MiBと誤記録し得た。GPU peakのpolling粒度も不明だった。 | **修正済み:** 空集合は`null`を保持。GPUはWDDM system-wide、1,000 ms sampling、短いpeakを過小観測し得ることをraw/canonicalへ記録した。 |
+| S11-10 | 整合性 | Major | 「manual entry path available」は、計画に存在するだけなのに実装済み・実行済みに読めた。 | **修正済み:** `specifiedInImplementationPlan=true`、`implementedByBenchmark=false`、`executedByBenchmark=false`へ分離。ST-011ではmanual-onlyを決めるだけで、A-014/A-020/UI実装済みとは主張しない。 |
+| S11-11 | 整合性 | Major | review追加fieldをschema 1.0のrequiredへ入れると、直前のimmutable rawを1件破壊した。 | **修正済み:** schema 1.0の追加fieldはoptionalへ戻し、新規runはruntime validatorで必須化。最終時点のhistorical raw 43件が全てschema-validであることを確認した。 |
+| S11-12 | 根拠性・不確実性管理 | Major | catalogの`supportsToolCalling=true`を強制function call成功保証と誤認できた。実機0.6Bはlegacy function指定を無視した。 | **修正済み:** tool callingはcatalog宣言だけとしschema保証に使わない。実際のcompletionをstrict output schemaとID validatorへ通し、失敗をそのまま記録した。 |
+
+### 修正後の証拠照合
+
+- final raw、source前後hash、ST-006/ST-007 upstream、実装6 file、model 17 file、CUDA EP manifestを照合し、全件一致した。
+- 0.6B load 2,548.547 ms、4B load 4,246.772 ms、4 dataset推論合計は76,380.817 ms / 191,193.778 msの単回観測。最大aggregate working setは3,138,379,776 / 5,864,386,560 bytes、system-wide GPU peakは7,159 / 7,801 MiBだった。
+- 0.6Bは4 responseすべてcompletion上限1,536 token到達。4Bもfixture 3件は上限到達し、syntheticだけ283 tokenでstopした。失敗response本文は公開せずsafe shape/usage/hashで分類した。
+- 3 fixture windowは178/162/161 word、pairwise overlap 0。全fixture semantic coverageは主張せず、human semantic referenceも存在しない。
+- Foundry serverは事前/事後ready、loaded modelは事前/事後0、候補間unload成功。model cache manifestの事後変化0件。
+- PowerShell parser、PSScriptAnalyzer 1.25.0（warning/error 0件）、Python `py_compile`、parent runtime validator、JSON Schema、全historical raw回帰、privacy負例、source不変、private Git境界を確認した。
+- 3軸レビュー反映後の最終再レビューで未解決指摘0件だった。
+
+### 採用しなかった指摘
+
+- code fence内の最初のJSONを見つけ、後続proseを無視して採用する提案は、複数objectや注釈を黙って受理してfail-closed境界を弱めるため採用しなかった。完全なsingle outputだけを許可する。
+- JSONを生成できなかったresponseをbest-effortで意味評価する提案は、schema契約を満たさない候補を部分採用可能に見せるため採用しなかった。safe response shapeは記録するがvalidationは`null`のまま失敗とする。
+- synthetic controlを通すため期待topic数やrangeを実測後に緩和する提案は、testを結果へ合わせることになるため採用しなかった。
+- fixture windowを19 tokenまで縮めて成功させる提案は、実用入力との差を隠すため採用しなかった。現在の失敗を保持し、別prompt/modelは新しい評価候補として扱う。
+- ST-011でFR-006/011/022/025の全fieldとsemantic accuracyを実装・承認すべきという指摘は、当taskが代表的な根拠ID付きJSON候補の技術spikeであり、完全実装はA/Eタスク、人手閾値承認はST-015であるため採用しなかった。代わりに未評価scopeを明示した。
+
+### ST-011 修正後判定
+
+- 未修正 Critical: 0件
+- 未修正 Major: 0件
+- 未修正 Minor: 0件
+- structurally eligible candidate: **0 / 2**
+- fixture accepted JSON: **0 / 6 model-window combinations**
+- semantic groundedness / wording accuracy: **未測定**
+- local text model: **不採用（manual-only）**
+- model/CUDA release配布: **未承認**
+- fallback: **手動topic metadata・hook・quiz・publishing wording作成を必須維持（実装は後続）**
+- 合格判定: **PASS（測定タスク完了、モデル採用のPASSではない。最終採否・閾値はST-015承認待ち）**

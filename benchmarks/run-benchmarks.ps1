@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark")]
+    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark", "local-text-model")]
     [string]$Stage = "hardware",
     [string]$FixtureManifest = (Join-Path $PSScriptRoot "fixtures\fixture-manifest.json"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "results\runs"),
@@ -573,7 +573,7 @@ function Assert-NoUnexpectedSensitiveProperties {
         "recognizedTextSetSha256", "transcriptTextIncludedInSummary",
         "localArtifactsContainTranscriptText", "textHashesIdentical", "transcriptionMilliseconds",
         "transcriptionInputMode", "exactUtteranceBoundaryAccuracyMeasured",
-        "utteranceTimingAndManualAdjustmentFallbackRequired"
+        "utteranceTimingAndManualAdjustmentFallbackRequired", "contextLength"
     )) {
         [void]$allowed.Add($name)
     }
@@ -807,7 +807,7 @@ function Assert-AlignmentPayload {
     param([Parameter(Mandatory)][object]$Payload)
 
     foreach ($name in @(
-        "schemaVersion", "recordedAtUtc", "host", "implementation", "upstream", "tooling",
+        "schemaVersion", "recordedAtUtc", "host", "implementation", "scope", "upstream", "tooling",
         "separatedSlotControl", "fixtureAnalysis", "timelineMapping", "annotations",
         "disposition", "privacy", "samplePathConsumed"
     )) {
@@ -841,6 +841,16 @@ function Assert-AlignmentPayload {
             $records[0].sha256 -ne (Get-FileHash -LiteralPath $expectedFile.Path -Algorithm SHA256).Hash.ToLowerInvariant()) {
             throw "Alignment implementation evidence does not match: $($expectedFile.Id)"
         }
+    }
+    if ($Payload.scope.benchmarkIsFullRequirementAcceptance -ne $false -or
+        $Payload.scope.representativeGroundedJsonContractOnly -ne $true -or
+        @($Payload.scope.fr006FieldsEvaluated).Count -lt 5 -or
+        @($Payload.scope.fr006FieldsNotEvaluated).Count -lt 4 -or
+        $Payload.scope.fr011MeaningPreservationMeasured -ne $false -or
+        $Payload.scope.fr022AnswerSupportMeasured -ne $false -or
+        $Payload.scope.fr025FullArtifactSetMeasured -ne $false -or
+        $Payload.scope.fullFixtureSemanticCoverageMeasured -ne $false) {
+        throw "Local text-model payload overstates its representative requirement coverage."
     }
     $asrCanonicalPath = Join-Path $PSScriptRoot "results\asr-benchmark.json"
     $asrRawPath = Join-Path $PSScriptRoot "results\runs\$($Payload.upstream.asrBenchmarkRunId).json"
@@ -961,6 +971,289 @@ function Assert-AlignmentPayload {
     }
 }
 
+function Assert-LocalTextModelPayload {
+    param([Parameter(Mandatory)][object]$Payload)
+
+    foreach ($name in @(
+        "schemaVersion", "recordedAtUtc", "host", "implementation", "upstream", "tooling",
+        "analysisInput", "models", "evaluations", "comparison", "stateRestoration",
+        "manualFallback", "disposition", "privacy", "samplePathConsumed"
+    )) {
+        if ($Payload.PSObject.Properties.Name -notcontains $name) {
+            throw "Local text-model payload is missing required property: $name"
+        }
+    }
+    if ($Payload.schemaVersion -ne "1.0.0") {
+        throw "Unsupported local text-model payload schemaVersion: $($Payload.schemaVersion)"
+    }
+    Assert-NoUnexpectedSensitiveProperties -Value $Payload
+    if ($Payload.host.hardwareBenchmarkRunSha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.host.currentOperatingSystemVersion -ne $Payload.host.recordedOperatingSystemVersion -or
+        @($Payload.host.graphics).Count -lt 1) {
+        throw "Local text-model payload does not identify the current measured host."
+    }
+
+    $expectedImplementationFiles = @(
+        @{ Id = "benchmark-harness"; FileName = "run-benchmarks.ps1"; Path = (Join-Path $PSScriptRoot "run-benchmarks.ps1") },
+        @{ Id = "local-text-wrapper"; FileName = "measure-text-model.ps1"; Path = (Join-Path $PSScriptRoot "stages\measure-text-model.ps1") },
+        @{ Id = "local-text-driver"; FileName = "text_model_benchmark.py"; Path = (Join-Path $PSScriptRoot "stages\text_model_benchmark.py") },
+        @{ Id = "benchmark-schema"; FileName = "schema.json"; Path = (Join-Path $PSScriptRoot "results\schema.json") },
+        @{ Id = "local-text-output-schema"; FileName = "local-text-model-output.schema.json"; Path = (Join-Path $PSScriptRoot "fixtures\local-text-model-output.schema.json") },
+        @{ Id = "local-text-control-config"; FileName = "local-text-model-control.json"; Path = (Join-Path $PSScriptRoot "fixtures\local-text-model-control.json") }
+    )
+    if ($Payload.implementation.gitHead -notmatch '^[0-9a-f]{40}$' -or
+        @($Payload.implementation.files).Count -ne $expectedImplementationFiles.Count) {
+        throw "Local text-model payload does not identify the exact implementation file set."
+    }
+    foreach ($expectedFile in $expectedImplementationFiles) {
+        $records = @($Payload.implementation.files | Where-Object id -eq $expectedFile.Id)
+        if ($records.Count -ne 1 -or $records[0].fileName -ne $expectedFile.FileName -or
+            [int64]$records[0].byteSize -ne [int64](Get-Item -LiteralPath $expectedFile.Path).Length -or
+            $records[0].sha256 -ne (Get-FileHash -LiteralPath $expectedFile.Path -Algorithm SHA256).Hash.ToLowerInvariant()) {
+            throw "Local text-model implementation evidence does not match: $($expectedFile.Id)"
+        }
+    }
+
+    $asrCanonicalPath = Join-Path $PSScriptRoot "results\asr-benchmark.json"
+    $asrRawPath = Join-Path $PSScriptRoot "results\runs\$($Payload.upstream.asrBenchmarkRunId).json"
+    $alignmentCanonicalPath = Join-Path $PSScriptRoot "results\alignment-benchmark.json"
+    if (-not (Test-Path -LiteralPath $asrRawPath -PathType Leaf) -or
+        $Payload.upstream.asrCanonical.sha256 -ne (Get-FileHash -LiteralPath $asrCanonicalPath -Algorithm SHA256).Hash.ToLowerInvariant() -or
+        $Payload.upstream.asrBenchmarkRunSha256 -ne (Get-FileHash -LiteralPath $asrRawPath -Algorithm SHA256).Hash.ToLowerInvariant() -or
+        $Payload.upstream.alignmentCanonical.sha256 -ne (Get-FileHash -LiteralPath $alignmentCanonicalPath -Algorithm SHA256).Hash.ToLowerInvariant() -or
+        $Payload.upstream.asrBenchmarkRunId -ne "20260827T0718012939475Z-asr-benchmark-1e66cc2c" -or
+        $Payload.upstream.asrBenchmarkRunSha256 -ne "a92491fd5c956151b335171413289b59c0d9d4098cf765501c463728786faf3c" -or
+        $Payload.upstream.asrArtifact.sha256 -ne "8636826f918a42b4a9fc12e7b684bd18a021900b2ebc19189f74dfb4bd69776d" -or
+        $Payload.upstream.asrPrivateEvidenceAcl.inheritanceProtected -ne $true -or
+        [int]$Payload.upstream.asrPrivateEvidenceAcl.unexpectedAccessRuleCount -ne 0 -or
+        $Payload.upstream.asrPrivateEvidenceCompletionMarkerPresent -ne $true -or
+        $Payload.upstream.alignmentCanonical.benchmarkRunId -ne "20260827T0947132960205Z-alignment-benchmark-cf2b2ab6" -or
+        $Payload.upstream.alignmentCanonical.benchmarkRunSha256 -ne "521c1de8a8a371bc17cec2ca2a84df5a1d1e6368dcb3eef955f753c97290ffa0") {
+        throw "Local text-model payload does not preserve the immutable ASR/alignment evidence chain."
+    }
+
+    if ($Payload.tooling.pythonVersion -ne "Python 3.12.10" -or
+        $Payload.tooling.pythonExternalPackagesRequired -ne $false -or
+        $Payload.tooling.foundryLocal.available -ne $true -or
+        $Payload.tooling.foundryLocal.cliVersion -ne "0.10.3" -or
+        $Payload.tooling.foundryLocal.packageVersion -ne "0.10.3.0" -or
+        $Payload.tooling.foundryLocal.cliExecutable.sha256 -ne "53a805895debd297bc5fe424bdbf64f551efbe0c53ddae397ecae9f5bcc7db98" -or
+        $Payload.tooling.foundryLocal.daemonExecutable.sha256 -ne "a49c23d4af9f470da7128c29eef3fb1c0a64cf8555c2a3500e8683855886f3d1" -or
+        $Payload.tooling.foundryLocal.preview -ne $true -or
+        $Payload.tooling.foundryLocal.dynamicLoopbackEndpointUsed -ne $true -or
+        $Payload.tooling.foundryLocal.endpointAddressIncludedInPayload -ne $false -or
+        $Payload.tooling.foundryLocal.proxyBypassEnforcedByDriver -ne $true -or
+        $Payload.tooling.cudaExecutionProvider.manifestSha256 -ne "8248ba49910e8fba56ddc8b4810a55cc9b3a069ca0dc2f7a23cd5f1f9a807021" -or
+        $Payload.tooling.cudaExecutionProvider.versionFileSha256 -ne "28236ce308e5232254f4f09ca8e6df0805b9a3608a79d9e4d09a4b459fb99640" -or
+        $Payload.tooling.cudaExecutionProvider.releaseRedistributionApproved -ne $false) {
+        throw "Local text-model payload does not identify the pinned preview runtime and redistribution boundary."
+    }
+
+    $controlConfigPath = Join-Path $PSScriptRoot "fixtures\local-text-model-control.json"
+    $outputSchemaPath = Join-Path $PSScriptRoot "fixtures\local-text-model-output.schema.json"
+    $fixtureInput = $Payload.analysisInput.fixture
+    if ($Payload.analysisInput.sourceSha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.analysisInput.samplePathReadOnlyHashValidated -ne $true -or
+        $Payload.analysisInput.modelInputDerivedFromFixtureArtifact -ne $true -or
+        $Payload.analysisInput.control.configSha256 -ne (Get-FileHash -LiteralPath $controlConfigPath -Algorithm SHA256).Hash.ToLowerInvariant() -or
+        $Payload.analysisInput.control.outputSchemaSha256 -ne (Get-FileHash -LiteralPath $outputSchemaPath -Algorithm SHA256).Hash.ToLowerInvariant() -or
+        [int]$Payload.analysisInput.control.tokenCount -ne 19 -or
+        $Payload.analysisInput.control.promptInjectionControlIncluded -ne $true -or
+        $Payload.analysisInput.control.controlIsAccuracyEvidence -ne $false -or
+        $fixtureInput.sourceCandidateId -ne "faster-whisper-small-cuda-float16" -or
+        $fixtureInput.sourceArtifactSha256 -ne $Payload.upstream.asrArtifact.sha256 -or
+        [int]$fixtureInput.fullFixtureTokenCount -ne 5266 -or
+        [int]$fixtureInput.fullFixtureSegmentCount -le 0 -or
+        @($fixtureInput.windows).Count -ne 3 -or
+        [int]$fixtureInput.pairwiseWindowTokenOverlapCount -ne 0 -or
+        $fixtureInput.windowsArePairwiseDisjoint -ne $true -or
+        $fixtureInput.fullFixtureSemanticCoverageClaimed -ne $false) {
+        throw "Local text-model input evidence is incomplete or overclaims fixture coverage."
+    }
+
+    $models = @($Payload.models)
+    $expectedModels = @{
+        "foundry-local-qwen3-0.6b-cuda" = @{
+            ModelId = "qwen3-0.6b-cuda-gpu:2"; FileCount = 8; TotalBytes = 516135598
+            Manifest = "38dc1ac88c6af4a684f96e8a9b4c30a6bca2671115a84e15189d93d57a10ebbe"
+        }
+        "foundry-local-qwen3-4b-cuda" = @{
+            ModelId = "qwen3-4b-cuda-gpu:2"; FileCount = 9; TotalBytes = 2823706996
+            Manifest = "89d232e91d2c130e5ffd38f03776ad47c3b9779c8689e565fd4b2ea483f6e657"
+        }
+    }
+    if ($models.Count -ne 2) {
+        throw "Local text-model payload must identify exactly two cached model variants."
+    }
+    foreach ($model in $models) {
+        $expected = $expectedModels[[string]$model.candidateId]
+        if ($null -eq $expected -or $model.modelId -ne $expected.ModelId -or
+            $model.publisher -ne "Microsoft" -or $model.licenseDeclaredByCatalog -ne "apache-2.0" -or
+            $model.independentDistributionLicenseReviewCompleted -ne $false -or
+            [int]$model.contextLength -ne 40960 -or
+            $model.supportsToolCallingDeclaredByCatalog -ne $true -or
+            $model.catalogCapabilityIsNotPerRequestSuccessEvidence -ne $true -or
+            $model.executionProvider -ne "CUDAExecutionProvider" -or $model.cachedBeforeRun -ne $true -or
+            [int]$model.fileCount -ne $expected.FileCount -or [int64]$model.totalBytes -ne $expected.TotalBytes -or
+            $model.manifestSha256 -ne $expected.Manifest -or @($model.files).Count -ne $expected.FileCount) {
+            throw "Local text-model payload contains an unexpected model manifest or catalog claim."
+        }
+    }
+
+    $evaluations = @($Payload.evaluations)
+    if ($evaluations.Count -ne 2) {
+        throw "Local text-model payload must contain two candidate evaluations."
+    }
+    $expectedDatasetIds = @("synthetic-control", "fixture-start", "fixture-middle", "fixture-end")
+    foreach ($evaluation in $evaluations) {
+        if ($expectedModels.Keys -notcontains [string]$evaluation.candidateId -or
+            $evaluation.semanticGroundednessMeasured -ne $false -or
+            $evaluation.generatedWordingAccuracyMeasured -ne $false -or
+            $evaluation.productionThresholdApproved -ne $false) {
+            throw "Local text-model candidate overstates semantic or production approval."
+        }
+        if ($evaluation.status -eq "model-load-failed") {
+            if ($evaluation.load.attempted -ne $true -or $evaluation.load.succeeded -ne $false -or
+                @($evaluation.datasets).Count -ne 0 -or $evaluation.structurallyEligibleForHumanReview -ne $false) {
+                throw "Local text-model load failure evidence is internally inconsistent."
+            }
+            continue
+        }
+        if ($evaluation.status -ne "evaluated" -or $evaluation.load.succeeded -ne $true -or
+            $evaluation.load.isolatedFromPreloadedModels -ne $true -or
+            [int]$evaluation.load.processMeasurement.observedProcessIdCount -lt 2 -or
+            @($evaluation.datasets).Count -ne 4) {
+            throw "Local text-model candidate did not record an isolated load and four datasets."
+        }
+        $datasetIds = @($evaluation.datasets | ForEach-Object { $_.datasetId })
+        if (@($datasetIds | Sort-Object -Unique).Count -ne 4 -or
+            @($expectedDatasetIds | Where-Object { $_ -notin $datasetIds }).Count -ne 0) {
+            throw "Local text-model candidate dataset set is incomplete."
+        }
+        foreach ($dataset in @($evaluation.datasets)) {
+            if ($dataset.invocation.generatedOutputIncludedInSummary -ne $false -or
+                [int]$dataset.processMeasurement.observedProcessIdCount -lt 2 -or
+                [int]$dataset.processMeasurement.gpuMemorySamplingIntervalMilliseconds -ne 1000 -or
+                [int64]$dataset.processMeasurement.peakAggregateWorkingSetBytes -lt [int64]$dataset.processMeasurement.baselineAggregateWorkingSetBytes) {
+                throw "Local text-model invocation leaks output or lacks process evidence."
+            }
+            if ($dataset.invocation.status -eq "succeeded") {
+                if ($dataset.invocation.responseModelMatches -ne $true -or
+                    $dataset.invocation.generatedOutputArtifact.sha256 -notmatch '^[0-9a-f]{64}$' -or
+                    ($dataset.invocation.tokenCountEndpointAvailable -eq $true -and [int]$dataset.invocation.tokenCountEndpointPromptTokens -lt 1) -or
+                    ($dataset.invocation.tokenCountEndpointAvailable -eq $false -and $null -ne $dataset.invocation.tokenCountEndpointPromptTokens) -or
+                    $null -eq $dataset.invocation.responseShape -or
+                    $null -eq $dataset.validation -or
+                    $dataset.validation.generatedOutputIncludedInSummary -ne $false -or
+                    $dataset.validation.humanSemanticReferenceAvailable -ne $false -or
+                    $dataset.validation.semanticGroundednessMeasured -ne $false -or
+                    $dataset.validation.generatedWordingAccuracyMeasured -ne $false -or
+                    $dataset.validation.productionThresholdApproved -ne $false) {
+                    throw "A successful local text-model invocation lacks bounded structural validation."
+                }
+            }
+            else {
+                if ($dataset.invocation.error.code -notmatch '^[A-Z0-9_]+$' -or $null -ne $dataset.validation) {
+                    throw "A failed local text-model invocation lacks a bounded error record."
+                }
+                if ($dataset.invocation.error.code -match '^(?:GENERATED_|BOUNDED_|UNTERMINATED_)') {
+                    if ($dataset.invocation.responseModelMatches -ne $true -or
+                        [string]::IsNullOrWhiteSpace([string]$dataset.invocation.finishReason) -or
+                        $dataset.invocation.responseArtifact.sha256 -notmatch '^[0-9a-f]{64}$' -or
+                        $null -eq $dataset.invocation.usage -or
+                        $null -eq $dataset.invocation.responseShape) {
+                        throw "A generated-output failure omitted its safe response shape and usage evidence."
+                    }
+                }
+            }
+        }
+        $control = $evaluation.datasets | Where-Object datasetId -eq "synthetic-control" | Select-Object -First 1
+        $fixtureDatasets = @($evaluation.datasets | Where-Object inputKind -eq "rights-unconfirmed-fixture-window")
+        $expectedEligibility = $null -ne $control.validation -and
+            $control.validation.controlMechanismPassed -eq $true -and
+            $fixtureDatasets.Count -eq 3 -and
+            @($fixtureDatasets | Where-Object { $null -ne $_.validation -and $_.validation.structuralValidationPassed -eq $true }).Count -eq 3
+        if ($evaluation.controlMechanismPassed -ne ($null -ne $control.validation -and $control.validation.controlMechanismPassed -eq $true) -or
+            $evaluation.allFixtureWindowsStructurallyValid -ne ($fixtureDatasets.Count -eq 3 -and @($fixtureDatasets | Where-Object { $null -ne $_.validation -and $_.validation.structuralValidationPassed -eq $true }).Count -eq 3) -or
+            $evaluation.structurallyEligibleForHumanReview -ne $expectedEligibility) {
+            throw "Local text-model candidate aggregate flags contradict dataset evidence."
+        }
+        if ($null -ne $control.validation -and
+            (@($control.validation.controlExpectedTopicRanges).Count -ne 3 -or
+                @($control.validation.controlObservedTopicRanges).Count -ne [int]$control.validation.counts.topics -or
+                $control.validation.controlInjectionMarkerAbsenceIsRobustnessEvidence -ne $false)) {
+            throw "Local text-model control omitted safe observed-ID diagnostics or overstated injection robustness."
+        }
+    }
+
+    $eligible = @($evaluations | Where-Object { $_.structurallyEligibleForHumanReview -eq $true })
+    $successfulInvocations = @($evaluations | ForEach-Object { @($_.datasets) } | Where-Object { $_.invocation.status -eq "succeeded" })
+    if ([int]$Payload.comparison.candidateCount -ne 2 -or
+        [int]$Payload.comparison.datasetCountPerEvaluatedCandidate -ne 4 -or
+        [int]$Payload.comparison.successfulInvocationCount -ne $successfulInvocations.Count -or
+        [int]$Payload.comparison.structurallyEligibleCandidateCount -ne $eligible.Count -or
+        @($Payload.comparison.structurallyEligibleCandidateIds).Count -ne $eligible.Count -or
+        [int]$Payload.comparison.performanceTrialCountPerModelAndDataset -ne 1 -or
+        $Payload.comparison.performanceDistributionMeasured -ne $false -or
+        $Payload.comparison.toolCallingDeclaredByCatalogButNotUsedAsSchemaGuarantee -ne $true -or
+        $Payload.comparison.controlInjectionMarkerAbsenceIsRobustnessEvidence -ne $false -or
+        $Payload.comparison.generatedOutputSchemaValidationIsSemanticGroundednessEvidence -ne $false -or
+        $Payload.comparison.groundedIdExistenceAndRangeValidationIsSemanticGroundednessEvidence -ne $false -or
+        $Payload.comparison.fixtureHumanSemanticReferenceAvailable -ne $false -or
+        $Payload.comparison.semanticGroundednessMeasured -ne $false -or
+        $Payload.comparison.generatedWordingAccuracyMeasured -ne $false -or
+        $Payload.comparison.productionThresholdsApproved -ne $false) {
+        throw "Local text-model comparison overstates or contradicts the measured evidence."
+    }
+    if ($Payload.stateRestoration.preloadedModelCount -ne 0 -or
+        $Payload.stateRestoration.loadedModelCountAfter -ne 0 -or
+        $Payload.stateRestoration.loadedModelSetHashBefore -ne $Payload.stateRestoration.loadedModelSetHashAfter -or
+        $Payload.stateRestoration.preAndPostStateMatch -ne $true -or
+        $Payload.stateRestoration.eachCandidateUnloadedBeforeNextCandidate -ne $true) {
+        throw "Foundry Local state was not restored after ST-011."
+    }
+    if ($Payload.manualFallback.required -ne $true -or
+        $Payload.manualFallback.automaticFallbackExecutedByBenchmark -ne $false -or
+        $Payload.manualFallback.manualEntryPathSpecifiedInImplementationPlan -ne $true -or
+        $Payload.manualFallback.manualEntryPathImplementedByBenchmark -ne $false -or
+        $Payload.manualFallback.manualEntryPathExecutedByBenchmark -ne $false -or
+        @($Payload.manualFallback.triggerConditions).Count -lt 5 -or
+        $Payload.manualFallback.generatedSuggestionsAutomaticallyAdopted -ne $false -or
+        $Payload.disposition.localModelAdoptedForProduction -ne $false -or
+        $Payload.disposition.candidateOutputsAreUnapprovedSuggestions -ne $true -or
+        $Payload.disposition.generatedSuggestionsAutomaticallyAdopted -ne $false -or
+        $Payload.disposition.semanticGroundednessMeasured -ne $false -or
+        $Payload.disposition.finalStage0DecisionPending -ne $true) {
+        throw "Local text-model payload removed the required human fallback or review boundary."
+    }
+    if ($Payload.privacy.sourceTranscriptTextIncludedInPayload -ne $false -or
+        $Payload.privacy.sourceTranscriptTextIncludedInCanonicalSummary -ne $false -or
+        $Payload.privacy.localArtifactsContainTranscriptText -ne $true -or
+        $Payload.privacy.localArtifactsContainGeneratedOutput -ne $true -or
+        $Payload.privacy.modelInputPlacedOnProcessCommandLine -ne $false -or
+        $Payload.privacy.restEndpointWasLoopbackOnly -ne $true -or
+        $Payload.privacy.proxyBypassEnforced -ne $true -or
+        $Payload.privacy.daemonLogScan.scanned -ne $true -or
+        $Payload.privacy.daemonLogScan.exactInputOrGeneratedProbeLeakObserved -ne $false -or
+        [int]$Payload.privacy.daemonLogScan.requestCanaryMatchCount -ne 0 -or
+        [int]$Payload.privacy.daemonLogScan.privateProbeMatchCount -ne 0 -or
+        $Payload.privacy.daemonLogAclControlledByBenchmark -ne $false -or
+        $Payload.privacy.absoluteHostPathsIncludedInPayload -ne $false -or
+        $Payload.privacy.privateEvidenceRemainsIgnored -ne $true -or
+        $Payload.privacy.workDirectoryWasEmptyAfterAclProtection -ne $true -or
+        $Payload.privacy.localEvidenceAcl.inheritanceProtected -ne $true -or
+        [int]$Payload.privacy.localEvidenceAcl.unexpectedAccessRuleCount -ne 0) {
+        throw "Local text-model payload violated the source/generated wording privacy boundary."
+    }
+    $payloadJson = $Payload | ConvertTo-Json -Depth 30 -Compress
+    if ($payloadJson -match '"(?:text|content|transcript|utterance|rawResponse|prompt)"\s*:') {
+        throw "Local text-model payload contains a forbidden content-bearing property."
+    }
+    if ($Payload.samplePathConsumed -ne $true) {
+        throw "Local text-model payload did not confirm fixture path consumption."
+    }
+}
+
 function Protect-SensitiveText {
     param(
         [Parameter(Mandatory)][AllowEmptyString()][string]$Text,
@@ -1001,7 +1294,7 @@ function Get-SafeFailurePayload {
         return [pscustomobject]$safePayload
     }
 
-    if ($Stage -in @("asr-benchmark", "alignment-benchmark")) {
+    if ($Stage -in @("asr-benchmark", "alignment-benchmark", "local-text-model")) {
         return [pscustomobject]$safePayload
     }
 
@@ -1120,6 +1413,10 @@ try {
         "alignment-benchmark" {
             $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\measure-alignment.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
             Assert-AlignmentPayload -Payload $payload
+        }
+        "local-text-model" {
+            $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\measure-text-model.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
+            Assert-LocalTextModelPayload -Payload $payload
         }
         default {
             throw "Unsupported benchmark stage: $Stage"

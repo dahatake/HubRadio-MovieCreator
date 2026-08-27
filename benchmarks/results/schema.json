@@ -24,7 +24,7 @@
       "pattern": "^[0-9]{8}T[0-9]{13}Z-[a-z0-9-]+-[0-9a-f]{8}$"
     },
     "stage": {
-      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark"]
+      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark", "local-text-model"]
     },
     "status": {
       "enum": ["succeeded", "failed"]
@@ -141,6 +141,23 @@
     {
       "if": {
         "properties": {
+          "stage": { "const": "local-text-model" },
+          "status": { "const": "failed" }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "maxProperties": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "stage": { "const": "asr-benchmark" },
           "status": { "const": "failed" }
         },
@@ -226,6 +243,20 @@
       "then": {
         "properties": {
           "payload": { "$ref": "#/$defs/alignmentPayload" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": { "const": "local-text-model" },
+          "status": { "const": "succeeded" }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "$ref": "#/$defs/localTextModelPayload" }
         }
       }
     },
@@ -364,6 +395,491 @@
     }
   ],
   "$defs": {
+    "localTextProcessMeasurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exitCode",
+        "elapsedMilliseconds",
+        "baselineAggregateWorkingSetBytes",
+        "peakAggregateWorkingSetBytes",
+        "systemWideGpuMemoryUsedMiBBaseline",
+        "systemWideGpuMemoryUsedMiBPeak",
+        "systemWideGpuMemoryUsedMiBPeakDelta",
+        "gpuMemoryScope",
+        "workingSetScope",
+        "observedProcessIdCount"
+      ],
+      "properties": {
+        "exitCode": { "type": "integer" },
+        "elapsedMilliseconds": { "type": "number", "minimum": 0 },
+        "baselineAggregateWorkingSetBytes": { "type": "integer", "minimum": 0 },
+        "peakAggregateWorkingSetBytes": { "type": "integer", "minimum": 0 },
+        "systemWideGpuMemoryUsedMiBBaseline": { "type": ["integer", "null"], "minimum": 0 },
+        "systemWideGpuMemoryUsedMiBPeak": { "type": ["integer", "null"], "minimum": 0 },
+        "systemWideGpuMemoryUsedMiBPeakDelta": { "type": ["integer", "null"], "minimum": 0 },
+        "gpuMemorySamplingIntervalMilliseconds": { "const": 1000 },
+        "gpuMemoryScope": { "type": "string", "minLength": 1 },
+        "workingSetScope": { "type": "string", "minLength": 1 },
+        "observedProcessIdCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "localTextInvocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "datasetId",
+        "modelId",
+        "inputSha256",
+        "outputSchemaSha256",
+        "responseArtifact",
+        "generatedOutputArtifact",
+        "generatedOutputIncludedInSummary"
+      ],
+      "properties": {
+        "status": { "enum": ["succeeded", "failed"] },
+        "datasetId": { "type": "string", "minLength": 1 },
+        "modelId": { "type": "string", "minLength": 1 },
+        "responseModel": { "type": "string", "minLength": 1 },
+        "responseModelMatches": { "type": "boolean" },
+        "finishReason": { "type": ["string", "null"] },
+        "inputSha256": { "$ref": "#/$defs/sha256" },
+        "outputSchemaSha256": { "$ref": "#/$defs/sha256" },
+        "tokenCountEndpointAvailable": { "type": "boolean" },
+        "tokenCountEndpointPromptTokens": { "type": ["integer", "null"], "minimum": 1 },
+        "usage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["promptTokens", "completionTokens", "totalTokens"],
+          "properties": {
+            "promptTokens": { "type": "integer", "minimum": 0 },
+            "completionTokens": { "type": "integer", "minimum": 0 },
+            "totalTokens": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "generatedCharacterCount": { "type": "integer", "minimum": 0 },
+        "generatedResponseSha256": { "$ref": "#/$defs/sha256" },
+        "directJson": { "type": "boolean" },
+        "boundedAdapterUsed": { "type": "boolean" },
+        "boundedAdapterKind": { "type": ["string", "null"] },
+        "reasoningCharacterCount": { "type": "integer", "minimum": 0 },
+        "reasoningSha256": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        },
+        "responseShape": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["startsWithQwenReasoningPrefix", "containsClosedQwenReasoningPrefix", "postReasoningStartsWithJsonObject", "postReasoningStartsWithJsonFence", "postReasoningEndsWithCodeFence"],
+          "properties": {
+            "startsWithQwenReasoningPrefix": { "type": "boolean" },
+            "containsClosedQwenReasoningPrefix": { "type": "boolean" },
+            "postReasoningStartsWithJsonObject": { "type": "boolean" },
+            "postReasoningStartsWithJsonFence": { "type": "boolean" },
+            "postReasoningEndsWithCodeFence": { "type": "boolean" }
+          }
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "httpStatus"],
+          "properties": {
+            "code": { "type": "string", "pattern": "^[A-Z0-9_]+$" },
+            "httpStatus": { "type": ["integer", "null"] }
+          }
+        },
+        "responseArtifact": {
+          "anyOf": [
+            { "$ref": "#/$defs/fileDescriptor" },
+            { "type": "null" }
+          ]
+        },
+        "generatedOutputArtifact": {
+          "anyOf": [
+            { "$ref": "#/$defs/fileDescriptor" },
+            { "type": "null" }
+          ]
+        },
+        "generatedOutputIncludedInSummary": { "const": false }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "succeeded" } },
+            "required": ["status"]
+          },
+          "then": {
+            "required": [
+              "responseModel",
+              "responseModelMatches",
+              "finishReason",
+              "tokenCountEndpointAvailable",
+              "tokenCountEndpointPromptTokens",
+              "usage",
+              "generatedCharacterCount",
+              "generatedResponseSha256",
+              "directJson",
+              "boundedAdapterUsed",
+              "boundedAdapterKind",
+              "reasoningCharacterCount",
+              "reasoningSha256"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": { "status": { "const": "failed" } },
+            "required": ["status"]
+          },
+          "then": { "required": ["error"] }
+        }
+      ]
+    },
+    "localTextValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "datasetId",
+        "inputKind",
+        "inputSha256",
+        "generatedOutputSha256",
+        "outputSchemaValid",
+        "counts",
+        "allCandidateIdsUnique",
+        "allReviewRequired",
+        "allReferencesKnown",
+        "evidenceArraysNonEmpty",
+        "evidenceIdsUnique",
+        "topicRangesOrderedAndNonOverlapping",
+        "topicEvidenceWithinRanges",
+        "controlExpectedRangesMatch",
+        "controlCandidateCountsMatch",
+        "controlRequiredEvidenceMatch",
+        "controlInjectionMarkerAbsent",
+        "structuralValidationPassed",
+        "controlMechanismPassed",
+        "humanSemanticReferenceAvailable",
+        "semanticGroundednessMeasured",
+        "generatedWordingAccuracyMeasured",
+        "productionThresholdApproved",
+        "generatedOutputIncludedInSummary"
+      ],
+      "properties": {
+        "status": { "const": "evaluated" },
+        "datasetId": { "type": "string", "minLength": 1 },
+        "inputKind": { "enum": ["synthetic-safe-mechanism-control", "rights-unconfirmed-fixture-window"] },
+        "inputSha256": { "$ref": "#/$defs/sha256" },
+        "generatedOutputSha256": { "$ref": "#/$defs/sha256" },
+        "outputSchemaValid": { "type": "boolean" },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["topics", "hookCandidates", "quizCandidates", "publishingCandidates"],
+          "properties": {
+            "topics": { "type": "integer", "minimum": 0, "maximum": 3 },
+            "hookCandidates": { "type": "integer", "minimum": 0, "maximum": 1 },
+            "quizCandidates": { "type": "integer", "minimum": 0, "maximum": 1 },
+            "publishingCandidates": { "type": "integer", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "allCandidateIdsUnique": { "type": "boolean" },
+        "allReviewRequired": { "type": "boolean" },
+        "allReferencesKnown": { "type": "boolean" },
+        "evidenceArraysNonEmpty": { "type": "boolean" },
+        "evidenceIdsUnique": { "type": "boolean" },
+        "topicRangesOrderedAndNonOverlapping": { "type": "boolean" },
+        "topicEvidenceWithinRanges": { "type": "boolean" },
+        "controlExpectedRangesMatch": { "type": ["boolean", "null"] },
+        "controlCandidateCountsMatch": { "type": ["boolean", "null"] },
+        "controlRequiredEvidenceMatch": { "type": ["boolean", "null"] },
+        "controlInjectionMarkerAbsent": { "type": ["boolean", "null"] },
+        "controlExpectedTopicRanges": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["startTokenId", "endTokenId"],
+            "properties": {
+              "startTokenId": { "type": "string", "pattern": "^tok-c[0-9]{3}$" },
+              "endTokenId": { "type": "string", "pattern": "^tok-c[0-9]{3}$" }
+            }
+          }
+        },
+        "controlObservedTopicRanges": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["startTokenId", "endTokenId", "evidenceTokenIds"],
+            "properties": {
+              "startTokenId": { "type": "string", "pattern": "^tok-c[0-9]{3}$" },
+              "endTokenId": { "type": "string", "pattern": "^tok-c[0-9]{3}$" },
+              "evidenceTokenIds": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "type": "string", "pattern": "^tok-c[0-9]{3}$" }
+              }
+            }
+          }
+        },
+        "controlInjectionMarkerAbsenceIsRobustnessEvidence": { "const": false },
+        "structuralValidationPassed": { "type": "boolean" },
+        "controlMechanismPassed": { "type": ["boolean", "null"] },
+        "humanSemanticReferenceAvailable": { "const": false },
+        "semanticGroundednessMeasured": { "const": false },
+        "generatedWordingAccuracyMeasured": { "const": false },
+        "productionThresholdApproved": { "const": false },
+        "generatedOutputIncludedInSummary": { "const": false }
+      }
+    },
+    "localTextDatasetEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["datasetId", "inputKind", "input", "invocation", "validation", "processMeasurement", "diagnostic"],
+      "properties": {
+        "datasetId": { "enum": ["synthetic-control", "fixture-start", "fixture-middle", "fixture-end"] },
+        "inputKind": { "enum": ["synthetic-safe-mechanism-control", "rights-unconfirmed-fixture-window"] },
+        "input": { "$ref": "#/$defs/fileDescriptor" },
+        "invocation": { "$ref": "#/$defs/localTextInvocation" },
+        "validation": {
+          "oneOf": [
+            { "$ref": "#/$defs/localTextValidation" },
+            { "type": "null" }
+          ]
+        },
+        "processMeasurement": { "$ref": "#/$defs/localTextProcessMeasurement" },
+        "diagnostic": { "$ref": "#/$defs/fileDescriptor" }
+      }
+    },
+    "localTextCandidateEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateId",
+        "modelId",
+        "status",
+        "load",
+        "datasets",
+        "controlMechanismPassed",
+        "allFixtureWindowsStructurallyValid",
+        "structurallyEligibleForHumanReview",
+        "semanticGroundednessMeasured",
+        "generatedWordingAccuracyMeasured",
+        "productionThresholdApproved"
+      ],
+      "properties": {
+        "candidateId": { "enum": ["foundry-local-qwen3-0.6b-cuda", "foundry-local-qwen3-4b-cuda"] },
+        "modelId": { "enum": ["qwen3-0.6b-cuda-gpu:2", "qwen3-4b-cuda-gpu:2"] },
+        "status": { "enum": ["evaluated", "model-load-failed"] },
+        "load": {
+          "type": "object",
+          "required": ["attempted", "succeeded", "processMeasurement", "diagnostic"],
+          "properties": {
+            "attempted": { "type": "boolean" },
+            "succeeded": { "type": "boolean" },
+            "isolatedFromPreloadedModels": { "type": "boolean" },
+            "processMeasurement": { "$ref": "#/$defs/localTextProcessMeasurement" },
+            "diagnostic": { "$ref": "#/$defs/fileDescriptor" }
+          }
+        },
+        "datasets": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/localTextDatasetEvaluation" }
+        },
+        "aggregate": { "type": "object" },
+        "controlMechanismPassed": { "type": "boolean" },
+        "allFixtureWindowsStructurallyValid": { "type": "boolean" },
+        "structurallyEligibleForHumanReview": { "type": "boolean" },
+        "semanticGroundednessMeasured": { "const": false },
+        "generatedWordingAccuracyMeasured": { "const": false },
+        "productionThresholdApproved": { "const": false }
+      }
+    },
+    "localTextModelRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateId",
+        "alias",
+        "modelId",
+        "modelDirectoryVersion",
+        "publisher",
+        "licenseDeclaredByCatalog",
+        "independentDistributionLicenseReviewCompleted",
+        "contextLength",
+        "supportsToolCallingDeclaredByCatalog",
+        "catalogCapabilityIsNotPerRequestSuccessEvidence",
+        "executionProvider",
+        "cachedBeforeRun",
+        "modelInfoOutputSha256",
+        "fileCount",
+        "totalBytes",
+        "manifestRule",
+        "manifestSha256",
+        "files"
+      ],
+      "properties": {
+        "candidateId": { "enum": ["foundry-local-qwen3-0.6b-cuda", "foundry-local-qwen3-4b-cuda"] },
+        "alias": { "enum": ["qwen3-0.6b", "qwen3-4b"] },
+        "modelId": { "enum": ["qwen3-0.6b-cuda-gpu:2", "qwen3-4b-cuda-gpu:2"] },
+        "modelDirectoryVersion": { "const": "v2" },
+        "publisher": { "const": "Microsoft" },
+        "licenseDeclaredByCatalog": { "const": "apache-2.0" },
+        "independentDistributionLicenseReviewCompleted": { "const": false },
+        "contextLength": { "const": 40960 },
+        "supportsToolCallingDeclaredByCatalog": { "const": true },
+        "catalogCapabilityIsNotPerRequestSuccessEvidence": { "const": true },
+        "executionProvider": { "const": "CUDAExecutionProvider" },
+        "cachedBeforeRun": { "const": true },
+        "modelInfoOutputSha256": { "$ref": "#/$defs/sha256" },
+        "fileCount": { "type": "integer", "minimum": 1 },
+        "totalBytes": { "type": "integer", "minimum": 1 },
+        "manifestRule": { "type": "string", "minLength": 1 },
+        "manifestSha256": { "$ref": "#/$defs/sha256" },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["relativePath", "byteSize", "sha256"],
+            "properties": {
+              "relativePath": { "type": "string", "minLength": 1 },
+              "byteSize": { "type": "integer", "minimum": 1 },
+              "sha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        }
+      }
+    },
+    "localTextModelPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "recordedAtUtc",
+        "host",
+        "implementation",
+        "upstream",
+        "tooling",
+        "analysisInput",
+        "models",
+        "evaluations",
+        "comparison",
+        "stateRestoration",
+        "manualFallback",
+        "disposition",
+        "privacy",
+        "samplePathConsumed"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "recordedAtUtc": { "type": "string", "format": "date-time" },
+        "host": {
+          "type": "object",
+          "required": ["hardwareBenchmarkRunId", "hardwareBenchmarkRunSha256", "recordedOperatingSystemVersion", "currentOperatingSystemVersion", "currentProcessArchitecture", "graphics"]
+        },
+        "implementation": {
+          "type": "object",
+          "required": ["gitHead", "implementationFilesCleanAtRun", "files"]
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["benchmarkIsFullRequirementAcceptance", "representativeGroundedJsonContractOnly", "fr006FieldsEvaluated", "fr006FieldsNotEvaluated", "fr011MeaningPreservationMeasured", "fr022AnswerSupportMeasured", "fr025FullArtifactSetMeasured", "fullFixtureSemanticCoverageMeasured"],
+          "properties": {
+            "benchmarkIsFullRequirementAcceptance": { "const": false },
+            "representativeGroundedJsonContractOnly": { "const": true },
+            "fr006FieldsEvaluated": { "type": "array", "minItems": 5, "items": { "type": "string", "minLength": 1 } },
+            "fr006FieldsNotEvaluated": { "type": "array", "minItems": 4, "items": { "type": "string", "minLength": 1 } },
+            "fr011MeaningPreservationMeasured": { "const": false },
+            "fr022AnswerSupportMeasured": { "const": false },
+            "fr025FullArtifactSetMeasured": { "const": false },
+            "fullFixtureSemanticCoverageMeasured": { "const": false }
+          }
+        },
+        "upstream": {
+          "type": "object",
+          "required": ["asrCanonical", "asrBenchmarkRunId", "asrBenchmarkRunSha256", "asrArtifact", "asrPrivateEvidenceAcl", "asrPrivateEvidenceCompletionMarkerPresent", "alignmentCanonical"]
+        },
+        "tooling": {
+          "type": "object",
+          "required": ["pythonVersion", "pythonExternalPackagesRequired", "foundryLocal", "cudaExecutionProvider"]
+        },
+        "analysisInput": {
+          "type": "object",
+          "required": ["sourceAssetId", "sourceSha256", "samplePathReadOnlyHashValidated", "modelInputDerivedFromFixtureArtifact", "control", "fixture"]
+        },
+        "models": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/localTextModelRecord" }
+        },
+        "evaluations": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/localTextCandidateEvaluation" }
+        },
+        "comparison": {
+          "type": "object",
+          "required": ["candidateCount", "datasetCountPerEvaluatedCandidate", "successfulInvocationCount", "directJsonCount", "boundedAdapterCount", "structurallyEligibleCandidateCount", "structurallyEligibleCandidateIds", "performanceTrialCountPerModelAndDataset", "performanceDistributionMeasured", "toolCallingDeclaredByCatalogButNotUsedAsSchemaGuarantee", "generatedOutputSchemaValidationIsSemanticGroundednessEvidence", "groundedIdExistenceAndRangeValidationIsSemanticGroundednessEvidence", "fixtureHumanSemanticReferenceAvailable", "semanticGroundednessMeasured", "generatedWordingAccuracyMeasured", "productionThresholdsApproved"]
+        },
+        "stateRestoration": {
+          "type": "object",
+          "required": ["serverWasReadyBefore", "serverStartedByStage", "serverReadyAfter", "preloadedModelCount", "loadedModelCountAfter", "loadedModelSetHashBefore", "loadedModelSetHashAfter", "preAndPostStateMatch", "eachCandidateUnloadedBeforeNextCandidate"]
+        },
+        "manualFallback": {
+          "type": "object",
+          "required": ["required", "automaticFallbackExecutedByBenchmark", "triggerConditions", "method", "generatedSuggestionsAutomaticallyAdopted"]
+        },
+        "disposition": {
+          "type": "object",
+          "required": ["status", "localModelAdoptedForProduction", "candidateOutputsAreUnapprovedSuggestions", "generatedSuggestionsAutomaticallyAdopted", "semanticGroundednessMeasured", "finalStage0DecisionPending"]
+        },
+        "privacy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["localEvidenceAcl", "sourceTranscriptTextIncludedInPayload", "sourceTranscriptTextIncludedInCanonicalSummary", "localArtifactsContainTranscriptText", "localArtifactsContainGeneratedOutput", "modelInputPlacedOnProcessCommandLine", "restEndpointWasLoopbackOnly", "proxyBypassEnforced", "daemonLogScan", "daemonLogAclControlledByBenchmark", "absoluteHostPathsIncludedInPayload", "privateEvidenceRemainsIgnored", "workDirectoryWasEmptyAfterAclProtection"],
+          "properties": {
+            "localEvidenceAcl": { "$ref": "#/$defs/alignmentAclEvidence" },
+            "sourceTranscriptTextIncludedInPayload": { "const": false },
+            "sourceTranscriptTextIncludedInCanonicalSummary": { "const": false },
+            "localArtifactsContainTranscriptText": { "const": true },
+            "localArtifactsContainGeneratedOutput": { "const": true },
+            "modelInputPlacedOnProcessCommandLine": { "const": false },
+            "restEndpointWasLoopbackOnly": { "const": true },
+            "proxyBypassEnforced": { "const": true },
+            "daemonLogScan": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["scanned", "appendedByteCount", "requestCanaryMatchCount", "privateProbeCount", "privateProbeMatchCount", "exactInputOrGeneratedProbeLeakObserved", "daemonLogAclControlledByBenchmark", "logPathIncludedInSummary"],
+              "properties": {
+                "scanned": { "const": true },
+                "appendedByteCount": { "type": "integer", "minimum": 0 },
+                "requestCanaryMatchCount": { "const": 0 },
+                "privateProbeCount": { "type": "integer", "minimum": 0 },
+                "privateProbeMatchCount": { "const": 0 },
+                "exactInputOrGeneratedProbeLeakObserved": { "const": false },
+                "daemonLogAclControlledByBenchmark": { "const": false },
+                "logPathIncludedInSummary": { "const": false }
+              }
+            },
+            "daemonLogAclControlledByBenchmark": { "const": false },
+            "absoluteHostPathsIncludedInPayload": { "const": false },
+            "privateEvidenceRemainsIgnored": { "const": true },
+            "workDirectoryWasEmptyAfterAclProtection": { "const": true }
+          }
+        },
+        "samplePathConsumed": { "const": true }
+      }
+    },
     "alignmentAclEvidence": {
       "type": "object",
       "additionalProperties": false,

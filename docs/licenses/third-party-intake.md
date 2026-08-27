@@ -63,6 +63,17 @@ license evidence:
 
 Windows Japanese TTS controlはインストール済み`Microsoft Haruka Desktop`でローカル生成した機構確認用であり、音声またはvoice componentを製品へ再配布する判断ではない。Foundry CUDA cacheのcopy、Appx/modelの同梱、完全なtransitive hash lock、notice生成は未承認であり、PK-001/PK-004/Q-010まで出荷対象にしない。
 
+## ST-011 Foundry Local文章model受入記録
+
+取得・確認日: 2026年8月27日。以下は対象PCのFoundry Local cacheに既に存在し、ST-011のローカル技術評価へ実際に使用した成果物である。新規downloadは行っていない。catalogのlicense表示は記録したが、model配布物の独立したlicense本文・notice・再配布審査ではない。
+
+| 種別 | 固定対象 | 配布元 | byte size | SHA-256 | license・条件 |
+|---|---|---|---:|---|---|
+| Foundry Local chat model | `qwen3-0.6b-cuda-gpu:2` / cache `v2` | Foundry Local catalog/cache、publisher表示 `Microsoft` | 516,135,598 | 8-file manifest `38dc1ac88c6af4a684f96e8a9b4c30a6bca2671115a84e15189d93d57a10ebbe` | catalogは`apache-2.0`、`reasoning,tool-calling`を宣言。独立配布license reviewは未完了。ST-011ではcontrol/fixture全4入力でaccepted JSON 0件 |
+| Foundry Local chat model | `qwen3-4b-cuda-gpu:2` / cache `v2` | Foundry Local catalog/cache、publisher表示 `Microsoft` | 2,823,706,996 | 9-file manifest `89d232e91d2c130e5ffd38f03776ad47c3b9779c8689e565fd4b2ea483f6e657` | catalogは`apache-2.0`、`reasoning,tool-calling`を宣言。独立配布license reviewは未完了。synthetic schema/IDは通過したがcontrol不合格、fixture accepted JSON 0件 |
+
+両modelは`CUDAExecutionProvider`で実行し、ST-006で固定したCUDA EP 14-file manifest `8248ba49910e8fba56ddc8b4810a55cc9b3a069ca0dc2f7a23cd5f1f9a807021`を使用した。Foundry Local CLI/REST API 0.10.3はpreview、AppxはDeveloper署名であり、model/EPのcache copy、offline bundle、製品同梱、再配布は未承認である。ST-011の不合格をlicense不備と混同せず、機能面ではmanual-only、供給網面ではPK-004/Q-010までblockを維持する。
+
 ## ST-010 MediaPipe受入記録
 
 取得・確認日: 2026年8月27日。以下はWindows x64 / Python 3.12上のStage 0評価に使用した実在成果物であり、最終配布物への採用記録ではない。
