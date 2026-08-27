@@ -143,8 +143,14 @@ internal static class DiagnosticTextSanitizer
         return result.Length == 0 ? "Exception" : result;
     }
 
-    private static bool IsAllowedExceptionTypeRune(Rune rune) =>
-        Rune.IsLetterOrDigit(rune) || rune.Value is '.' or '_' or '+' or '`';
+    private static bool IsAllowedExceptionTypeRune(Rune rune)
+    {
+        int value = rune.Value;
+        return (value >= 'A' && value <= 'Z') ||
+            (value >= 'a' && value <= 'z') ||
+            (value >= '0' && value <= '9') ||
+            value is '.' or '_' or '+' or '`';
+    }
 
     private static string TruncateUtf8(
         string value,

@@ -33,7 +33,7 @@
 - `exceptionTypeRedacted`
 - `exceptionContentOmitted`
 
-`component` と `operation` は現在の catalog に対応する enum allowlist であり、任意文字列ではない。コードとの不一致も constructor で拒否する。J-009 の persisted API は自由記述 message を受け付けない。`DiagnosticLogEntry.FromException` は例外型名だけを文字種 allowlist、秘密・Windows path の redaction、UTF-8 rune 境界の byte 上限へ通し、次を常に破棄する。
+`component` と `operation` は現在の catalog に対応する enum allowlist であり、任意文字列ではない。コードとの不一致も constructor で拒否する。J-009 の persisted API は自由記述 message を受け付けない。`DiagnosticLogEntry.FromException` は例外型名だけを ASCII 英数字と記号 `.`、`_`、`+`、`` ` `` の文字種 allowlist、秘密・Windows path の redaction、UTF-8 byte 上限へ通す。Unicode 同形文字を含むその他の文字は置換し、次を常に破棄する。
 
 - `Exception.Message`
 - stack trace と source file path

@@ -199,14 +199,14 @@ public sealed class LocalDiagnosticLogTests
     }
 
     [TestMethod]
-    public async Task WriteAsync_TruncatesExceptionTypeAtCompleteUtf8Rune()
+    public async Task WriteAsync_TruncatesExceptionTypeAtUtf8ByteLimit()
     {
         string directory = CreateTemporaryDirectory();
         string path = Path.Combine(directory, "utf8.jsonl");
 
         try
         {
-            Exception exception = CreateDynamicException(new string('例', 100));
+            Exception exception = CreateDynamicException(new string('A', 256));
             Assert.IsTrue(
                 Encoding.UTF8.GetByteCount(exception.GetType().Name) >
                 DiagnosticLogEntry.MaximumExceptionTypeUtf8Bytes);
@@ -229,9 +229,47 @@ public sealed class LocalDiagnosticLogTests
             Assert.AreEqual(
                 DiagnosticLogEntry.MaximumExceptionTypeUtf8Bytes,
                 Encoding.UTF8.GetByteCount(exceptionType));
-            Assert.IsTrue(exceptionType.All(character => character == '例'));
+            Assert.IsTrue(exceptionType.All(character => character == 'A'));
             Assert.IsFalse(exceptionType.Contains('\uFFFD'));
             Assert.IsTrue(record.GetProperty("exceptionTypeTruncated").GetBoolean());
+            Assert.IsFalse(record.GetProperty("exceptionTypeRedacted").GetBoolean());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task WriteAsync_ExceptionTypeMetadataRedactsUnicodeHomoglyphs()
+    {
+        string directory = CreateTemporaryDirectory();
+        string path = Path.Combine(directory, "unicode-type-redaction.jsonl");
+        const string fullWidthApi = "ＡＰＩ";
+        const string cyrillicA = "А";
+        const string nonAsciiSecret = "秘密";
+
+        try
+        {
+            Exception exception = CreateDynamicException(
+                $"DiagnosticException_{fullWidthApi}_{cyrillicA}PI_{nonAsciiSecret}");
+            LocalDiagnosticLog log = CreateLog(path);
+
+            await log.WriteAsync(DiagnosticLogEntry.FromException(
+                StableErrorCodes.ProcessStartFailed,
+                DiagnosticComponent.Process,
+                DiagnosticOperation.Start,
+                exception));
+
+            JsonElement record = ParseRecords(await File.ReadAllBytesAsync(path)).Single();
+            string exceptionType = record.GetProperty("exceptionType").GetString()
+                ?? throw new InvalidOperationException("The exception type was not persisted.");
+
+            Assert.IsTrue(record.GetProperty("exceptionTypeRedacted").GetBoolean());
+            Assert.IsTrue(exceptionType.All(character => character <= 0x7f));
+            Assert.IsFalse(exceptionType.Contains(fullWidthApi, StringComparison.Ordinal));
+            Assert.IsFalse(exceptionType.Contains(cyrillicA, StringComparison.Ordinal));
+            Assert.IsFalse(exceptionType.Contains(nonAsciiSecret, StringComparison.Ordinal));
         }
         finally
         {
