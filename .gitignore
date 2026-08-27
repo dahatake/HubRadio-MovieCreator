@@ -2,6 +2,9 @@
 /sample/*
 !/sample/.gitkeep
 
+# Local opening/closing assets and generation prompts remain untracked until rights are approved
+/video/
+
 # Generated test media is local; manifests and problem reports remain visible
 /test/*.MOV
 /test/*.mov
