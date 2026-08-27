@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark")]
+    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark")]
     [string]$Stage = "hardware",
     [string]$FixtureManifest = (Join-Path $PSScriptRoot "fixtures\fixture-manifest.json"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "results\runs"),
@@ -556,12 +556,12 @@ function Assert-ProcessAndPackagePayload {
     }
 }
 
-function Assert-NoUnexpectedAsrSensitiveProperties {
+function Assert-NoUnexpectedSensitiveProperties {
     param([AllowNull()][object]$Value)
 
     $allowed = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($name in @(
-        "textSha256", "referenceTextSha256", "recognizedTextSha256",
+        "textSha256", "fixtureTextSha256", "referenceTextSha256", "recognizedTextSha256",
         "referenceCharacterCount", "recognizedCharacterCount",
         "transcriptTextIncludedInPayload", "sourceTranscriptTextIncludedInPayload",
         "sourceTranscriptTextIncludedInCanonicalSummary", "localTranscriptArtifactsContainRightsUnconfirmedText",
@@ -569,7 +569,11 @@ function Assert-NoUnexpectedAsrSensitiveProperties {
         "missingReferenceRelativePath", "controlCerIsSyntheticMechanismEvidenceOnly",
         "fixtureProperNounErrorRateSubstitute", "pcmContentMatchesSource", "conditionOnPreviousText",
         "controlTranscriptionSeconds", "fixtureTranscriptionSeconds",
-        "controlTranscriptionMilliseconds", "chunkTranscriptionMilliseconds"
+        "controlTranscriptionMilliseconds", "chunkTranscriptionMilliseconds",
+        "recognizedTextSetSha256", "transcriptTextIncludedInSummary",
+        "localArtifactsContainTranscriptText", "textHashesIdentical", "transcriptionMilliseconds",
+        "transcriptionInputMode", "exactUtteranceBoundaryAccuracyMeasured",
+        "utteranceTimingAndManualAdjustmentFallbackRequired"
     )) {
         [void]$allowed.Add($name)
     }
@@ -584,7 +588,7 @@ function Assert-NoUnexpectedAsrSensitiveProperties {
             foreach ($key in $Current.Keys) {
                 $propertyName = [string]$key
                 if ($propertyName -match '(?i)(raw|text|transcript|utterance|content)' -and -not $allowed.Contains($propertyName)) {
-                    throw "ASR payload contains an unapproved sensitive property name: $propertyName"
+                    throw "Benchmark payload contains an unapproved sensitive property name: $propertyName"
                 }
                 Test-Value -Current $Current[$key]
             }
@@ -596,7 +600,7 @@ function Assert-NoUnexpectedAsrSensitiveProperties {
         }
         foreach ($property in $Current.PSObject.Properties) {
             if ($property.Name -match '(?i)(raw|text|transcript|utterance|content)' -and -not $allowed.Contains($property.Name)) {
-                throw "ASR payload contains an unapproved sensitive property name: $($property.Name)"
+                throw "Benchmark payload contains an unapproved sensitive property name: $($property.Name)"
             }
             Test-Value -Current $property.Value
         }
@@ -620,7 +624,7 @@ function Assert-AsrPayload {
     if ($Payload.schemaVersion -ne "1.0.0") {
         throw "Unsupported ASR payload schemaVersion: $($Payload.schemaVersion)"
     }
-    Assert-NoUnexpectedAsrSensitiveProperties -Value $Payload
+    Assert-NoUnexpectedSensitiveProperties -Value $Payload
     if ($Payload.host.hardwareBenchmarkRunSha256 -notmatch '^[0-9a-f]{64}$' -or
         $Payload.host.currentOperatingSystemVersion -ne $Payload.host.operatingSystemVersion -or
         $Payload.analysisInput.sourceSha256 -notmatch '^[0-9a-f]{64}$' -or
@@ -799,6 +803,164 @@ function Assert-AsrPayload {
     }
 }
 
+function Assert-AlignmentPayload {
+    param([Parameter(Mandatory)][object]$Payload)
+
+    foreach ($name in @(
+        "schemaVersion", "recordedAtUtc", "host", "implementation", "upstream", "tooling",
+        "separatedSlotControl", "fixtureAnalysis", "timelineMapping", "annotations",
+        "disposition", "privacy", "samplePathConsumed"
+    )) {
+        if ($Payload.PSObject.Properties.Name -notcontains $name) {
+            throw "Alignment payload is missing required property: $name"
+        }
+    }
+    if ($Payload.schemaVersion -ne "1.0.0") {
+        throw "Unsupported alignment payload schemaVersion: $($Payload.schemaVersion)"
+    }
+    Assert-NoUnexpectedSensitiveProperties -Value $Payload
+    if ($Payload.host.hardwareBenchmarkRunSha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.host.currentOperatingSystemVersion -ne $Payload.host.recordedOperatingSystemVersion) {
+        throw "Alignment payload does not identify the current host."
+    }
+    $expectedImplementationFiles = @(
+        @{ Id = "benchmark-harness"; FileName = "run-benchmarks.ps1"; Path = (Join-Path $PSScriptRoot "run-benchmarks.ps1") },
+        @{ Id = "alignment-wrapper"; FileName = "measure-alignment.ps1"; Path = (Join-Path $PSScriptRoot "stages\measure-alignment.ps1") },
+        @{ Id = "alignment-driver"; FileName = "alignment_benchmark.py"; Path = (Join-Path $PSScriptRoot "stages\alignment_benchmark.py") },
+        @{ Id = "asr-driver"; FileName = "asr_benchmark.py"; Path = (Join-Path $PSScriptRoot "stages\asr_benchmark.py") },
+        @{ Id = "benchmark-schema"; FileName = "schema.json"; Path = (Join-Path $PSScriptRoot "results\schema.json") },
+        @{ Id = "alignment-control-config"; FileName = "alignment-control.json"; Path = (Join-Path $PSScriptRoot "fixtures\alignment-control.json") }
+    )
+    if (@($Payload.implementation.files).Count -ne $expectedImplementationFiles.Count) {
+        throw "Alignment payload does not contain the exact implementation file set."
+    }
+    foreach ($expectedFile in $expectedImplementationFiles) {
+        $records = @($Payload.implementation.files | Where-Object id -eq $expectedFile.Id)
+        if ($records.Count -ne 1 -or $records[0].fileName -ne $expectedFile.FileName -or
+            [int64]$records[0].byteSize -ne [int64](Get-Item -LiteralPath $expectedFile.Path).Length -or
+            $records[0].sha256 -ne (Get-FileHash -LiteralPath $expectedFile.Path -Algorithm SHA256).Hash.ToLowerInvariant()) {
+            throw "Alignment implementation evidence does not match: $($expectedFile.Id)"
+        }
+    }
+    $asrCanonicalPath = Join-Path $PSScriptRoot "results\asr-benchmark.json"
+    $asrRawPath = Join-Path $PSScriptRoot "results\runs\$($Payload.upstream.asrBenchmarkRunId).json"
+    if (-not (Test-Path -LiteralPath $asrRawPath -PathType Leaf) -or
+        $Payload.upstream.asrCanonical.sha256 -ne (Get-FileHash -LiteralPath $asrCanonicalPath -Algorithm SHA256).Hash.ToLowerInvariant() -or
+        $Payload.upstream.asrBenchmarkRunSha256 -ne (Get-FileHash -LiteralPath $asrRawPath -Algorithm SHA256).Hash.ToLowerInvariant()) {
+        throw "Alignment upstream canonical or raw file hash does not match the local evidence."
+    }
+    if ($Payload.upstream.asrBenchmarkRunId -ne "20260827T0718012939475Z-asr-benchmark-1e66cc2c" -or
+        $Payload.upstream.asrBenchmarkRunSha256 -ne "a92491fd5c956151b335171413289b59c0d9d4098cf765501c463728786faf3c" -or
+        $Payload.upstream.normalizedFixtureAudioSha256 -ne "25f0f5eb86b07afc1e875e8c9cb157c6c5008e3386d01f839b3cfc4696f09b9c" -or
+        $Payload.upstream.cpuArtifact.sha256 -ne "715881eb1adc117659a2d2a41191ca57bcdd06f4dafb54b332646ff4119a8262" -or
+        $Payload.upstream.cudaArtifact.sha256 -ne "8636826f918a42b4a9fc12e7b684bd18a021900b2ebc19189f74dfb4bd69776d" -or
+        $Payload.upstream.privateEvidenceCompletionMarkerPresent -ne $true -or
+        $Payload.upstream.privateEvidenceAcl.inheritanceProtected -ne $true -or
+        [int]$Payload.upstream.privateEvidenceAcl.unexpectedAccessRuleCount -ne 0) {
+        throw "Alignment payload does not preserve the immutable ST-006 evidence chain."
+    }
+    if ($Payload.tooling.pythonPackages.'faster-whisper' -ne "1.2.1" -or
+        $Payload.tooling.pythonPackages.ctranslate2 -ne "4.8.1" -or
+        [int]$Payload.tooling.pythonPackages.cudaDeviceCount -lt 1 -or
+        $Payload.tooling.fasterWhisperModelRevision -ne "536b0662742c02347bc0e980a01041f333bce120" -or
+        $Payload.tooling.fasterWhisperModelManifestSha256 -ne "4e924b13871cadaa18f24bf888a6388e45d15da56e06b0b90141dc27d96e951f" -or
+        $Payload.tooling.cudaRuntimeManifestSha256 -ne "8248ba49910e8fba56ddc8b4810a55cc9b3a069ca0dc2f7a23cd5f1f9a807021" -or
+        $Payload.tooling.cudaRuntimePathInjectedOnlyForControlChild -ne $true -or
+        $Payload.tooling.cudaRuntimeReleaseRedistributionApproved -ne $false) {
+        throw "Alignment payload does not preserve the pinned runtime and distribution boundary."
+    }
+    $control = $Payload.separatedSlotControl
+    if ([int]$control.slotCount -ne 4 -or
+        $control.transcriptionInputMode -ne "independent-slot-clips-mapped-through-manifest-offsets" -or
+        $control.constructedControlAudioWasTranscribed -ne $false -or
+        $control.cpu.summary.status -ne "succeeded" -or
+        $control.cuda.summary.status -ne "succeeded" -or
+        $control.cpu.summary.transcriptionInputMode -ne $control.transcriptionInputMode -or
+        $control.cuda.summary.transcriptionInputMode -ne $control.transcriptionInputMode -or
+        $control.cpu.summary.constructedControlAudioWasTranscribed -ne $false -or
+        $control.cuda.summary.constructedControlAudioWasTranscribed -ne $false -or
+        $control.cpu.summary.allAssignedSlotsContainExactlyOneMappedTerm -ne $true -or
+        $control.cuda.summary.allAssignedSlotsContainExactlyOneMappedTerm -ne $true -or
+        $control.cpu.summary.allMappedTermsWithinAssignedSlots -ne $true -or
+        $control.cuda.summary.allMappedTermsWithinAssignedSlots -ne $true -or
+        $control.cpu.summary.allMappedTermsWithinSpeechClipRanges -ne $true -or
+        $control.cuda.summary.allMappedTermsWithinSpeechClipRanges -ne $true -or
+        $control.cpu.summary.timestampValidation.passed -ne $true -or
+        $control.cuda.summary.timestampValidation.passed -ne $true -or
+        @($control.cpu.summary.termWindowChecks).Count -ne 4 -or
+        @($control.cuda.summary.termWindowChecks).Count -ne 4 -or
+        @($control.cpu.summary.termWindowChecks | Where-Object { $_.assignedSlotOccurrenceCount -ne 1 -or $_.withinAssignedSlot -ne $true -or $_.withinSpeechClipRange -ne $true }).Count -ne 0 -or
+        @($control.cuda.summary.termWindowChecks | Where-Object { $_.assignedSlotOccurrenceCount -ne 1 -or $_.withinAssignedSlot -ne $true -or $_.withinSpeechClipRange -ne $true }).Count -ne 0 -or
+        $control.exactBoundaryAccuracyMeasured -ne $false -or
+        $control.accuracyThresholdApproved -ne $false) {
+        throw "Alignment separated-slot mechanism control did not pass without overclaiming accuracy."
+    }
+    $fixtureCandidates = @($Payload.fixtureAnalysis.candidates)
+    if ($fixtureCandidates.Count -ne 2) {
+        throw "Alignment fixture analysis must contain CPU and CUDA candidates."
+    }
+    foreach ($candidateId in @("faster-whisper-small-cpu-int8", "faster-whisper-small-cuda-float16")) {
+        $candidate = $fixtureCandidates | Where-Object candidateId -eq $candidateId | Select-Object -First 1
+        if ($null -eq $candidate -or
+            $candidate.inputAudioSha256 -ne $Payload.upstream.normalizedFixtureAudioSha256 -or
+            [double]$candidate.emittedWordTimestampCoverage -ne 1.0 -or
+            [int]$candidate.segmentStructuralViolationCount -ne 0 -or
+            [int]$candidate.wordStructuralViolationCount -ne 0 -or
+            [double]$candidate.parentContainmentObservationThresholdSeconds -ne 0.001 -or
+            $candidate.exactBoundaryAccuracyMeasured -ne $false -or
+            $candidate.humanTimingReferenceAvailable -ne $false) {
+            throw "Alignment fixture candidate lacks complete structural evidence: $candidateId"
+        }
+    }
+    $agreement = $Payload.fixtureAnalysis.crossDeviceAgreement
+    if ([int]$agreement.matchedExactTokenCount -le 0 -or
+        [int]$agreement.startAbsoluteDifferenceSeconds.count -ne [int]$agreement.matchedExactTokenCount -or
+        [int]$agreement.endAbsoluteDifferenceSeconds.count -ne [int]$agreement.matchedExactTokenCount -or
+        [int]$agreement.startDifferenceDiagnosticCounts.'over0.1Seconds' -lt [int]$agreement.startDifferenceDiagnosticCounts.'over0.5Seconds' -or
+        [int]$agreement.startDifferenceDiagnosticCounts.'over0.5Seconds' -lt [int]$agreement.startDifferenceDiagnosticCounts.'over1.0Seconds' -or
+        [int]$agreement.startDifferenceDiagnosticCounts.'over0.1Seconds' -gt [int]$agreement.matchedExactTokenCount -or
+        $agreement.startDifferenceDiagnosticCounts.thresholdsAreDescriptiveNotAcceptanceLimits -ne $true -or
+        $agreement.duplicateTokenPairingAmbiguityPossible -ne $true -or
+        $agreement.agreementIsAccuracyEvidence -ne $false) {
+        throw "Alignment cross-device agreement evidence is incomplete or overclaimed."
+    }
+    if ($Payload.timelineMapping.firstDecodedSourceAudioFramePts -ne 0 -or
+        [double]$Payload.timelineMapping.firstDecodedSourceAudioFrameSeconds -ne 0 -or
+        [double]$Payload.timelineMapping.observedMinimumPacketPresentationSeconds -ne -0.044 -or
+        $Payload.timelineMapping.exactSourceBoundaryErrorMeasured -ne $false) {
+        throw "Alignment decoded-audio timeline mapping is inconsistent with ST-016 evidence."
+    }
+    if ($Payload.annotations.transcriptReferenceAvailable -ne $false -or
+        $Payload.annotations.exactWordBoundaryAccuracyMeasured -ne $false -or
+        $Payload.annotations.exactUtteranceBoundaryAccuracyMeasured -ne $false -or
+        $Payload.annotations.crossDeviceAgreementIsAccuracyEvidence -ne $false -or
+        $Payload.disposition.productionWordTimingApproved -ne $false -or
+        $Payload.disposition.utteranceTimingAndManualAdjustmentFallbackRequired -ne $true -or
+        $Payload.disposition.clampWordTimesToParentSegments -ne $false -or
+        $Payload.disposition.crossDeviceOutputDivergence.selectionUsesOutputAccuracy -ne $false -or
+        $Payload.disposition.crossDeviceOutputDivergence.timingAccuracyImplication -ne "unknown-without-independent-reference" -or
+        $Payload.disposition.finalStage0DecisionPending -ne $true) {
+        throw "Alignment payload unexpectedly claims timing accuracy or removes the manual fallback."
+    }
+    if ($Payload.privacy.sourceTranscriptTextIncludedInPayload -ne $false -or
+        $Payload.privacy.sourceTranscriptTextIncludedInCanonicalSummary -ne $false -or
+        $Payload.privacy.localArtifactsContainTranscriptText -ne $true -or
+        $Payload.privacy.absoluteHostPathsIncludedInPayload -ne $false -or
+        $Payload.privacy.privateUpstreamEvidenceRemainsIgnored -ne $true -or
+        $Payload.privacy.workDirectoryWasEmptyAfterAclProtection -ne $true -or
+        $Payload.privacy.localEvidenceAcl.inheritanceProtected -ne $true -or
+        [int]$Payload.privacy.localEvidenceAcl.unexpectedAccessRuleCount -ne 0) {
+        throw "Alignment payload violated the transcript privacy boundary."
+    }
+    $payloadJson = $Payload | ConvertTo-Json -Depth 30 -Compress
+    if ($payloadJson -match '"(?:text|content|transcript|referenceText|spokenPhrase)"\s*:') {
+        throw "Alignment payload contains transcript content."
+    }
+    if ($Payload.samplePathConsumed -ne $true) {
+        throw "Alignment payload did not confirm fixture path consumption."
+    }
+}
+
 function Protect-SensitiveText {
     param(
         [Parameter(Mandatory)][AllowEmptyString()][string]$Text,
@@ -839,7 +1001,7 @@ function Get-SafeFailurePayload {
         return [pscustomobject]$safePayload
     }
 
-    if ($Stage -eq "asr-benchmark") {
+    if ($Stage -in @("asr-benchmark", "alignment-benchmark")) {
         return [pscustomobject]$safePayload
     }
 
@@ -954,6 +1116,10 @@ try {
         "asr-benchmark" {
             $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\measure-asr.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
             Assert-AsrPayload -Payload $payload
+        }
+        "alignment-benchmark" {
+            $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\measure-alignment.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
+            Assert-AlignmentPayload -Payload $payload
         }
         default {
             throw "Unsupported benchmark stage: $Stage"

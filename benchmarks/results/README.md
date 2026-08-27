@@ -7,3 +7,4 @@
 - Existing raw run JSON is validated with the schema version recorded in that run; historical run files are not rewritten.
 - Canonical summaries such as `hardware-inventory.json` and `ffmpeg-capabilities.json` must record the source `benchmarkRunId` and, when available, the raw run SHA-256.
 - Raw runs are local evidence and ignored by Git. Canonical summaries contain only reviewed, non-sensitive fields.
+- ASR/alignment structural validity, synthetic slot containment, and cross-device agreement do not establish boundary accuracy. Exact timing claims require independently authored timing annotations; otherwise the canonical result must keep accuracy and production thresholds unapproved.

@@ -1,0 +1,322 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260827T0947132960205Z-alignment-benchmark-cf2b2ab6",
+  "benchmarkRunSha256": "521c1de8a8a371bc17cec2ca2a84df5a1d1e6368dcb3eef955f753c97290ffa0",
+  "recordedAtUtc": "2026-08-27T09:48:12.7275103Z",
+  "fixture": {
+    "sourceAssetId": "source-ios-20260615-024326000",
+    "sourceSha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+    "sourceByteSize": 6494572403,
+    "rightsStatus": "unconfirmed",
+    "allowedUse": "local-technical-evaluation-only",
+    "externalPublicationAllowed": false,
+    "sourcePostRunIntegrityChecked": true,
+    "sourceUnchanged": true,
+    "humanTimingReferenceAvailable": false
+  },
+  "host": {
+    "hardwareBenchmarkRunId": "20260826T1548073271369Z-hardware-d1b1bd37",
+    "hardwareBenchmarkRunSha256": "3e5b1e6ab9ce19795b8244bd433ab8882b534e4b06b9314d7d86ac67536775c7",
+    "operatingSystemVersion": "10.0.29648",
+    "processArchitecture": "X64"
+  },
+  "implementation": {
+    "gitHead": "0ef9e5be393f94b2485586024e60d446f920af81",
+    "implementationFilesCleanAtRun": false,
+    "exactExecutedFilesRecordedByHash": true,
+    "files": [
+      {
+        "id": "benchmark-harness",
+        "fileName": "run-benchmarks.ps1",
+        "byteSize": 67927,
+        "sha256": "bf989bc395803dd3ea63fb1350b5638a4de7f7c29de9314523635c1508059106"
+      },
+      {
+        "id": "alignment-wrapper",
+        "fileName": "measure-alignment.ps1",
+        "byteSize": 40524,
+        "sha256": "7928e4546332db9a596405950bf008a562090c2e5d7593474dfcf3d2eab4449e"
+      },
+      {
+        "id": "alignment-driver",
+        "fileName": "alignment_benchmark.py",
+        "byteSize": 32162,
+        "sha256": "3f88a2de58033f38346df685e61289c00f8f2889d2d421093150b56164afaea6"
+      },
+      {
+        "id": "asr-driver",
+        "fileName": "asr_benchmark.py",
+        "byteSize": 39527,
+        "sha256": "c4a4bc7cb909dff6127310807559120ca159f7a0fb744f967004057b1b0f3250"
+      },
+      {
+        "id": "benchmark-schema",
+        "fileName": "schema.json",
+        "byteSize": 87193,
+        "sha256": "4d54f9b71cd967ea0e9b66076e3673c4c1df6ca01480313b8b5f24c8d92a941b"
+      },
+      {
+        "id": "alignment-control-config",
+        "fileName": "alignment-control.json",
+        "byteSize": 1229,
+        "sha256": "11ddf19c2504ce45417152cd3647b8dc50d3a82fa7bc1200cc9adbd59786168a"
+      }
+    ]
+  },
+  "upstream": {
+    "asrCanonicalSha256": "b7564942f454a94dc533d36da474487d33e55ca05e71cf050acd4eb1c3be38f7",
+    "asrBenchmarkRunId": "20260827T0718012939475Z-asr-benchmark-1e66cc2c",
+    "asrBenchmarkRunSha256": "a92491fd5c956151b335171413289b59c0d9d4098cf765501c463728786faf3c",
+    "normalizedFixtureAudio": {
+      "sha256": "25f0f5eb86b07afc1e875e8c9cb157c6c5008e3386d01f839b3cfc4696f09b9c",
+      "durationSeconds": 1081.428
+    },
+    "cpuArtifact": {
+      "byteSize": 607504,
+      "sha256": "715881eb1adc117659a2d2a41191ca57bcdd06f4dafb54b332646ff4119a8262"
+    },
+    "cudaArtifact": {
+      "byteSize": 583229,
+      "sha256": "8636826f918a42b4a9fc12e7b684bd18a021900b2ebc19189f74dfb4bd69776d"
+    },
+    "privateEvidenceCompletionMarkerPresent": true,
+    "privateEvidenceAclProtected": true
+  },
+  "tooling": {
+    "pythonVersion": "Python 3.12.10",
+    "fasterWhisperVersion": "1.2.1",
+    "ctranslate2Version": "4.8.1",
+    "ffmpegPackageId": "BtbN.FFmpeg.LGPL.8.1",
+    "ffmpegSha256": "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb",
+    "fasterWhisperModelRevision": "536b0662742c02347bc0e980a01041f333bce120",
+    "fasterWhisperModelManifestSha256": "4e924b13871cadaa18f24bf888a6388e45d15da56e06b0b90141dc27d96e951f",
+    "cudaRuntimeManifestSha256": "8248ba49910e8fba56ddc8b4810a55cc9b3a069ca0dc2f7a23cd5f1f9a807021",
+    "cudaRuntimePathInjectedOnlyForControlChild": true,
+    "cudaRuntimeReleaseRedistributionApproved": false
+  },
+  "separatedSlotControl": {
+    "controlId": "windows-ja-tts-separated-common-word-slots-v1",
+    "configSha256": "11ddf19c2504ce45417152cd3647b8dc50d3a82fa7bc1200cc9adbd59786168a",
+    "transcriptionInputMode": "independent-slot-clips-mapped-through-manifest-offsets",
+    "constructedControlAudioWasTranscribed": false,
+    "constructedAudio": {
+      "byteSize": 614742,
+      "sha256": "ba4b38be11fd46934585d304188913a2ea5d4d1faed92cd1568d11c6b909d26f",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSeconds": 19.209312
+    },
+    "slotCount": 4,
+    "cpu": {
+      "candidateId": "faster-whisper-small-cpu-int8",
+      "status": "succeeded",
+      "language": "ja",
+      "minimumLanguageProbability": 1.0,
+      "recognizedOutputSetSha256": "e99489ead37d80fe887e005e01832768daf9c4eb95d37fde07ab4a3dc4b0239f",
+      "recognizedCharacterCount": 42,
+      "segmentCount": 4,
+      "wordCount": 33,
+      "structuralViolationCount": 0,
+      "allAssignedSlotsContainExactlyOneMappedTerm": true,
+      "allMappedTermsWithinAssignedSlots": true,
+      "allMappedTermsWithinSpeechClipRanges": true,
+      "transcriptionMilliseconds": 10153.823,
+      "artifactSha256": "f2696dde1decb03eecfebe32d7c55920f9e2fe40d0d374572d8c2e1c665f9903"
+    },
+    "cuda": {
+      "candidateId": "faster-whisper-small-cuda-float16",
+      "status": "succeeded",
+      "language": "ja",
+      "minimumLanguageProbability": 1.0,
+      "recognizedOutputSetSha256": "1d97689da84c1453d7c785f600be1ccf9a06a9a424cd7abe1481f63a2779f1f7",
+      "recognizedCharacterCount": 43,
+      "segmentCount": 4,
+      "wordCount": 33,
+      "structuralViolationCount": 0,
+      "allAssignedSlotsContainExactlyOneMappedTerm": true,
+      "allMappedTermsWithinAssignedSlots": true,
+      "allMappedTermsWithinSpeechClipRanges": true,
+      "transcriptionMilliseconds": 1246.924,
+      "artifactSha256": "ba4b83ee3e3f4fbd30e5a6c94c6926b8befee31fa42e7077f00c733c5323539d"
+    },
+    "slotChecks": [
+      {
+        "id": "weather",
+        "referenceTermSha256": "bc79d84d3df7763a5abf9d8981e367c8d45d696c9051a3fe12c320a29e005585",
+        "cpuObservedRangeSeconds": [1.86, 2.26],
+        "cudaObservedRangeSeconds": [1.86, 2.26],
+        "speechClipRangeSeconds": [1.5, 4.078625],
+        "cpuAndCudaWithinSpeechClipRange": true
+      },
+      {
+        "id": "train",
+        "referenceTermSha256": "92e4d1d0c7a5087ac9e5c6128cf0305bee3f832416888b6370b817feefbbf096",
+        "cpuObservedRangeSeconds": [6.678625, 7.038625],
+        "cudaObservedRangeSeconds": [6.678625, 7.038625],
+        "speechClipRangeSeconds": [6.078625, 8.702063],
+        "cpuAndCudaWithinSpeechClipRange": true
+      },
+      {
+        "id": "music",
+        "referenceTermSha256": "14b31fd94b35c4117912a95244976fa707db68deb2665157e666ffeabd05ee17",
+        "cpuObservedRangeSeconds": [11.182063, 11.602063],
+        "cudaObservedRangeSeconds": [11.202063, 11.602063],
+        "speechClipRangeSeconds": [10.702063, 13.18575],
+        "cpuAndCudaWithinSpeechClipRange": true
+      },
+      {
+        "id": "meeting",
+        "referenceTermSha256": "6f7de8e48acebd27609b525168b5d3bc8f67c38b989f413859691215bb6f08c6",
+        "cpuObservedRangeSeconds": [15.82575, 16.12575],
+        "cudaObservedRangeSeconds": [15.82575, 16.12575],
+        "speechClipRangeSeconds": [15.18575, 17.709312],
+        "cpuAndCudaWithinSpeechClipRange": true
+      }
+    ],
+    "exactBoundaryAccuracyMeasured": false,
+    "accuracyThresholdApproved": false,
+    "interpretation": "Each independently transcribed common-word occurrence mapped through its manifest offset into the intended speech-clip range. This demonstrates coarse offset and slot assignment only, not exact boundary accuracy or vocabulary quality."
+  },
+  "fixtureAnalysis": {
+    "candidates": [
+      {
+        "candidateId": "faster-whisper-small-cpu-int8",
+        "fixtureOutputSha256": "abb10d81d8ba71e476a101af20a264c3be4aa873f358863353eb58067e4111f6",
+        "segmentCount": 861,
+        "wordCount": 5254,
+        "emittedWordsWithFiniteTimestamps": 5254,
+        "emittedWordTimestampCoverage": 1.0,
+        "segmentStructuralViolationCount": 0,
+        "wordStructuralViolationCount": 0,
+        "wordOutsideParentSegmentCount": 1,
+        "parentContainmentObservationThresholdSeconds": 0.001,
+        "parentSegmentOverflowMaximumSeconds": 0.14,
+        "wordProbabilityMedian": 0.935231,
+        "wordProbabilityP90": 0.996721,
+        "exactBoundaryAccuracyMeasured": false
+      },
+      {
+        "candidateId": "faster-whisper-small-cuda-float16",
+        "fixtureOutputSha256": "9e961b5037c529ece0d292cf801c90c7b4edb45775751e04f0862739ad487ed4",
+        "segmentCount": 694,
+        "wordCount": 5266,
+        "emittedWordsWithFiniteTimestamps": 5266,
+        "emittedWordTimestampCoverage": 1.0,
+        "segmentStructuralViolationCount": 0,
+        "wordStructuralViolationCount": 0,
+        "wordOutsideParentSegmentCount": 1,
+        "parentContainmentObservationThresholdSeconds": 0.001,
+        "parentSegmentOverflowMaximumSeconds": 0.14,
+        "wordProbabilityMedian": 0.939453,
+        "wordProbabilityP90": 0.99707,
+        "exactBoundaryAccuracyMeasured": false
+      }
+    ],
+    "crossDeviceAgreement": {
+      "algorithm": "Python difflib.SequenceMatcher over NFC whitespace-free emitted word tokens with autojunk disabled",
+      "matchedExactTokenCount": 4667,
+      "matchedShareOfCpuWords": 0.888276,
+      "matchedShareOfCudaWords": 0.886251,
+      "startAbsoluteDifferenceSeconds": {
+        "median": 0.0,
+        "p90": 0.04,
+        "p99": 0.54,
+        "maximum": 1.52
+      },
+      "endAbsoluteDifferenceSeconds": {
+        "median": 0.0,
+        "p90": 0.02,
+        "p99": 0.44,
+        "maximum": 3.08
+      },
+      "midpointAbsoluteDifferenceSeconds": {
+        "median": 0.01,
+        "p90": 0.03,
+        "p99": 0.4334,
+        "maximum": 1.54
+      },
+      "startDifferenceDiagnosticCounts": {
+        "over0.1Seconds": 304,
+        "over0.5Seconds": 52,
+        "over1.0Seconds": 11,
+        "thresholdsAreDescriptiveNotAcceptanceLimits": true
+      },
+      "fixtureOutputHashesIdentical": false,
+      "duplicateTokenPairingAmbiguityPossible": true,
+      "agreementIsAccuracyEvidence": false,
+      "interpretation": "CPU/CUDA output differs in text hash, segment count, and word count. SequenceMatcher can ambiguously pair repeated tokens, so distributions and diagnostic counts are descriptive observations only."
+    },
+    "localArtifact": {
+      "byteSize": 1033547,
+      "sha256": "1854e0002540f9a0d8cdfe46abd2a3cc2ca12be08f1a04fb333bbaddfd9a0149",
+      "committedToGit": false
+    }
+  },
+  "timelineMapping": {
+    "decodedAudioEvidenceBenchmarkRunId": "20260827T0046465037091Z-audio-event-and-recording-quality-54f1f69b",
+    "decodedAudioEvidenceBenchmarkRunSha256": "c2a23164b490c197e2f225213bc9d8cd4ffef9bfcd1b990b7c6784663d3a6d73",
+    "normalizedAudioTimelineStartSeconds": 0.0,
+    "firstDecodedSourceAudioFramePts": 0,
+    "firstDecodedSourceAudioFrameSeconds": 0.0,
+    "observedMinimumPacketPresentationSeconds": -0.044,
+    "mappingRule": "ASR timestamps are relative to normalized decoded PCM starting at decoded source-audio frame PTS 0. The negative AAC packet presentation time is codec-delay evidence and is not added to decoded timestamps.",
+    "exactSourceBoundaryErrorMeasured": false
+  },
+  "configurationDisposition": {
+    "status": "provisional-candidate-with-required-manual-fallback",
+    "alignmentEvaluationTarget": "faster-whisper-small-cuda-float16",
+    "emittedWordTimestampsMayBeStoredAsEditableCandidates": true,
+    "productionWordTimingApproved": false,
+    "utteranceTimingAndManualAdjustmentFallbackRequired": true,
+    "clampWordTimesToParentSegments": false,
+    "selectionUsesOutputAccuracy": false,
+    "crossDeviceOutputDivergence": {
+      "controlOutputHashesIdentical": false,
+      "cpuControlRecognizedCharacterCount": 42,
+      "cudaControlRecognizedCharacterCount": 43,
+      "fixtureOutputHashesIdentical": false,
+      "cpuFixtureSegmentCount": 861,
+      "cudaFixtureSegmentCount": 694,
+      "cpuFixtureWordCount": 5254,
+      "cudaFixtureWordCount": 5266,
+      "matchedExactTokenCount": 4667,
+      "timingAccuracyImplication": "unknown-without-independent-reference"
+    },
+    "reason": "CUDA emits structurally valid word and utterance timestamps, covered every emitted word, and passed the coarse independent-slot control. Exact boundary accuracy remains unmeasured, CPU/CUDA output diverges, and one 0.14-second parent-containment overflow remains observable.",
+    "finalStage0DecisionPending": true
+  },
+  "stage0Implications": [
+    "The separated-slot control passed all four common-word slots on CPU and CUDA, but its independently transcribed clips and manifest offsets test coarse assignment only. It is not exact word-boundary ground truth.",
+    "Both ST-006 artifacts assign finite timestamps to every emitted word and have zero segment or word structural violations. One word in each artifact extends 0.14 seconds beyond its parent segment and is not silently clamped.",
+    "CPU and CUDA fixture outputs differ: 861 versus 694 segments, 5,254 versus 5,266 words, and different output hashes. CUDA selection is based on capability and single-run speed from ST-006, not output accuracy.",
+    "Among 4,667 exact-token SequenceMatcher pairs, start differences have median 0 seconds and P90 0.04 seconds, while 304 exceed 0.1 seconds, 52 exceed 0.5 seconds, and 11 exceed 1 second. Duplicate-token pairing may be ambiguous, so these values are not accuracy evidence.",
+    "Decoded PCM starts at source-audio frame PTS 0. The -0.044-second AAC packet presentation time represents codec delay and is not added to ASR timestamps.",
+    "Stage 1 must retain utterance timing and manual subtitle adjustment. Word timestamps may be editable candidates only until independent annotation and ST-015 approval exist."
+  ],
+  "assessment": {
+    "interpretation": "ST-007 demonstrates timestamp availability, structural validity, coarse synthetic slot assignment, and CPU/CUDA descriptive agreement. It does not measure exact word or utterance boundary accuracy.",
+    "measurementCorrections": [
+      "Initial isolated named-term controls failed because two short terms were not recognized. Repeating the same branded sentence in one stream then triggered context suppression. The final control uses four common-word clips transcribed independently and maps their local timestamps through manifest offsets; vocabulary quality is outside this control.",
+      "The final control explicitly records that the constructed concatenated audio was not the transcription input, verifies each clip hash, byte size, duration, full-input coverage, and mapped occurrence against both slot and speech-clip ranges.",
+      "The first formal run 20260827T0917364241819Z-alignment-benchmark-629a6602 failed because the privacy property guard treated transcriptionMilliseconds as an unapproved content field. The safe timing/hash/fallback properties were explicitly allowlisted, while content-bearing aliases remain rejected.",
+      "Adversarial review identified CPU/CUDA output divergence, offset assumptions, duplicate-token pairing ambiguity, an undocumented parent-overflow observation threshold, and the empty-directory ACL window. The final run records divergence without using it for selection, verifies offset inputs and ranges, adds descriptive ambiguity counts, records the 0.001-second observation threshold, and confirms the directory was empty immediately after ACL protection."
+    ],
+    "openQuestions": [
+      "Exact word and utterance boundary error remains unmeasured until transcript-reference.jsonl contains independently authored timing annotations.",
+      "Whether the 0.14-second parent overflow should remain visible, be normalized into the parent utterance model, or trigger a manual warning requires annotated examples and ST-015 approval. It must not be silently clamped.",
+      "The cause and practical impact of CPU/CUDA output divergence are unknown without independent transcript and timing references.",
+      "Cross-device SequenceMatcher pairs involving repeated Japanese tokens may be ambiguous; the descriptive distributions must not become an acceptance threshold.",
+      "The directory exists briefly with inherited ACL before the restrictive ACL is applied, but no file or content is created before protection. The current .NET runtime exposes no Windows DirectorySecurity creation overload; product workspace creation remains S-003 work.",
+      "CUDA runtime redistribution remains unapproved; CPU timing remains the packaging-safe fallback candidate until PK-001/PK-004 decide the production runtime.",
+      "Final word-timing adoption and all thresholds require ST-015 human approval."
+    ],
+    "privacy": "The canonical contains hashes, counts, timing distributions, and bounded interpretations only. Exact comparison of 17 private control strings found zero raw-envelope leaks; no absolute path pattern was present. Private fixture and control artifacts remain ignored under a three-principal ACL.",
+    "curatedFields": [
+      "configurationDisposition",
+      "stage0Implications",
+      "assessment",
+      "recollectionCommand"
+    ]
+  },
+  "recollectionCommand": "pwsh.exe -NoLogo -NoProfile -File benchmarks/run-benchmarks.ps1 -Stage alignment-benchmark -ChildTimeoutSeconds 3600"
+}

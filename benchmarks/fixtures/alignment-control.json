@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0.0",
+  "controlId": "windows-ja-tts-separated-common-word-slots-v1",
+  "purpose": "Confirm that an independently transcribed occurrence of each assigned common Japanese word maps through its manifest offset into a non-overlapping global audio slot. Vocabulary accuracy and exact boundary accuracy are outside this coarse timing mechanism control.",
+  "voice": {
+    "name": "Microsoft Haruka Desktop",
+    "culture": "ja-JP"
+  },
+  "construction": {
+    "sampleRate": 16000,
+    "channels": 1,
+    "sampleWidthBytes": 2,
+    "initialSilenceSeconds": 1.0,
+    "slotLeadSilenceSeconds": 0.5,
+    "slotTrailSilenceSeconds": 0.5,
+    "interSlotSilenceSeconds": 1.0,
+    "finalSilenceSeconds": 1.0
+  },
+  "phrases": [
+    { "id": "weather", "referenceTerm": "天気", "spokenPhrase": "今日は天気を確認します。" },
+    { "id": "train", "referenceTerm": "電車", "spokenPhrase": "明日は電車で移動します。" },
+    { "id": "music", "referenceTerm": "音楽", "spokenPhrase": "午後に音楽を聞きます。" },
+    { "id": "meeting", "referenceTerm": "会議", "spokenPhrase": "夕方に会議を始めます。" }
+  ],
+  "accuracyThresholdApproved": false
+}

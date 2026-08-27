@@ -24,7 +24,7 @@
       "pattern": "^[0-9]{8}T[0-9]{13}Z-[a-z0-9-]+-[0-9a-f]{8}$"
     },
     "stage": {
-      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark"]
+      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark"]
     },
     "status": {
       "enum": ["succeeded", "failed"]
@@ -124,6 +124,23 @@
     {
       "if": {
         "properties": {
+          "stage": { "const": "alignment-benchmark" },
+          "status": { "const": "failed" }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "maxProperties": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "stage": { "const": "asr-benchmark" },
           "status": { "const": "failed" }
         },
@@ -195,6 +212,20 @@
           "payload": {
             "$ref": "#/$defs/asrPayload"
           }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": { "const": "alignment-benchmark" },
+          "status": { "const": "succeeded" }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "$ref": "#/$defs/alignmentPayload" }
         }
       }
     },
@@ -333,6 +364,253 @@
     }
   ],
   "$defs": {
+    "alignmentAclEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inheritanceProtected", "approvedPrincipalCount", "accessRuleCount", "unexpectedAccessRuleCount", "ownerIsCurrentPrincipal", "approvedRulesGrantFullControl", "principalIdentifiersIncludedInPayload"],
+      "properties": {
+        "inheritanceProtected": { "type": "boolean" },
+        "approvedPrincipalCount": { "type": "integer", "minimum": 1 },
+        "accessRuleCount": { "type": "integer", "minimum": 1 },
+        "unexpectedAccessRuleCount": { "type": "integer", "minimum": 0 },
+        "ownerIsCurrentPrincipal": { "type": "boolean" },
+        "approvedRulesGrantFullControl": { "type": "boolean" },
+        "principalIdentifiersIncludedInPayload": { "type": "boolean" }
+      }
+    },
+    "alignmentDistribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "minimum", "median", "p90", "p99", "maximum", "mean", "percentileMethod"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 0 },
+        "minimum": { "type": ["number", "null"] },
+        "median": { "type": ["number", "null"] },
+        "p90": { "type": ["number", "null"] },
+        "p99": { "type": ["number", "null"] },
+        "maximum": { "type": ["number", "null"] },
+        "mean": { "type": ["number", "null"] },
+        "percentileMethod": { "type": "string", "minLength": 1 }
+      }
+    },
+    "alignmentTermWindowCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "referenceTermSha256", "occurrenceCount", "assignedSlotOccurrenceCount", "mappedWordCount", "slotStartSeconds", "slotEndSeconds", "observedStartSeconds", "observedEndSeconds", "withinAssignedSlot"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "referenceTermSha256": { "$ref": "#/$defs/sha256" },
+        "occurrenceCount": { "type": "integer", "minimum": 0 },
+        "assignedSlotOccurrenceCount": { "type": "integer", "minimum": 0 },
+        "mappedWordCount": { "type": "integer", "minimum": 0 },
+        "slotStartSeconds": { "type": "number", "minimum": 0 },
+        "slotEndSeconds": { "type": "number", "minimum": 0 },
+        "speechClipStartSeconds": { "type": "number", "minimum": 0 },
+        "speechClipEndSeconds": { "type": "number", "minimum": 0 },
+        "observedStartSeconds": { "type": ["number", "null"], "minimum": 0 },
+        "observedEndSeconds": { "type": ["number", "null"], "minimum": 0 },
+        "withinAssignedSlot": { "type": "boolean" },
+        "withinSpeechClipRange": { "type": "boolean" }
+      }
+    },
+    "alignmentProcessMeasurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["elapsedMilliseconds", "baselineAggregateWorkingSetBytes", "peakAggregateWorkingSetBytes", "workingSetScope", "observedProcessIdCount"],
+      "properties": {
+        "elapsedMilliseconds": { "type": "number", "minimum": 0 },
+        "baselineAggregateWorkingSetBytes": { "type": "integer", "minimum": 0 },
+        "peakAggregateWorkingSetBytes": { "type": "integer", "minimum": 0 },
+        "workingSetScope": { "type": "string", "minLength": 1 },
+        "observedProcessIdCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "alignmentControlSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "candidateId", "model", "configuration", "controlAudioSha256", "controlDurationSeconds", "language", "minimumLanguageProbability", "recognizedTextSetSha256", "recognizedCharacterCount", "segmentCount", "wordCount", "timestampValidation", "termWindowChecks", "allAssignedSlotsContainExactlyOneMappedTerm", "allMappedTermsWithinAssignedSlots", "transcriptionMilliseconds", "accuracyThresholdApproved", "exactBoundaryAccuracyMeasured", "artifact", "transcriptTextIncludedInSummary"],
+      "properties": {
+        "status": { "enum": ["succeeded", "failed"] },
+        "candidateId": { "type": "string", "minLength": 1 },
+        "model": { "type": "object" },
+        "configuration": { "type": "object" },
+        "transcriptionInputMode": { "const": "independent-slot-clips-mapped-through-manifest-offsets" },
+        "constructedControlAudioWasTranscribed": { "const": false },
+        "controlAudioSha256": { "$ref": "#/$defs/sha256" },
+        "controlDurationSeconds": { "type": "number", "exclusiveMinimum": 0 },
+        "language": { "type": "string", "minLength": 1 },
+        "minimumLanguageProbability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "recognizedTextSetSha256": { "$ref": "#/$defs/sha256" },
+        "recognizedCharacterCount": { "type": "integer", "minimum": 0 },
+        "segmentCount": { "type": "integer", "minimum": 0 },
+        "wordCount": { "type": "integer", "minimum": 0 },
+        "timestampValidation": { "$ref": "#/$defs/asrTimestampValidation" },
+        "termWindowChecks": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/alignmentTermWindowCheck" } },
+        "allAssignedSlotsContainExactlyOneMappedTerm": { "type": "boolean" },
+        "allMappedTermsWithinAssignedSlots": { "type": "boolean" },
+        "allMappedTermsWithinSpeechClipRanges": { "type": "boolean" },
+        "transcriptionMilliseconds": { "type": "number", "minimum": 0 },
+        "accuracyThresholdApproved": { "const": false },
+        "exactBoundaryAccuracyMeasured": { "const": false },
+        "artifact": { "$ref": "#/$defs/fileDescriptor" },
+        "transcriptTextIncludedInSummary": { "const": false }
+      }
+    },
+    "alignmentControlCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "processMeasurement", "diagnostic"],
+      "properties": {
+        "summary": { "$ref": "#/$defs/alignmentControlSummary" },
+        "processMeasurement": { "$ref": "#/$defs/alignmentProcessMeasurement" },
+        "diagnostic": { "$ref": "#/$defs/fileDescriptor" }
+      }
+    },
+    "alignmentFixtureCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidateId", "fixtureTextSha256", "inputAudioSha256", "inputDurationSeconds", "segmentCount", "wordCount", "emittedWordsWithFiniteTimestamps", "emittedWordTimestampCoverage", "segmentStructuralViolationCount", "wordStructuralViolationCount", "wordOutsideParentSegmentCount", "parentSegmentOverflowSeconds", "wordProbability", "exactBoundaryAccuracyMeasured", "humanTimingReferenceAvailable"],
+      "properties": {
+        "candidateId": { "type": "string", "minLength": 1 },
+        "fixtureTextSha256": { "$ref": "#/$defs/sha256" },
+        "inputAudioSha256": { "$ref": "#/$defs/sha256" },
+        "inputDurationSeconds": { "type": "number", "exclusiveMinimum": 0 },
+        "segmentCount": { "type": "integer", "minimum": 1 },
+        "wordCount": { "type": "integer", "minimum": 1 },
+        "emittedWordsWithFiniteTimestamps": { "type": "integer", "minimum": 0 },
+        "emittedWordTimestampCoverage": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "segmentStructuralViolationCount": { "type": "integer", "minimum": 0 },
+        "wordStructuralViolationCount": { "type": "integer", "minimum": 0 },
+        "wordOutsideParentSegmentCount": { "type": "integer", "minimum": 0 },
+        "parentContainmentObservationThresholdSeconds": { "type": "number", "exclusiveMinimum": 0 },
+        "parentSegmentOverflowSeconds": { "$ref": "#/$defs/alignmentDistribution" },
+        "wordProbability": { "$ref": "#/$defs/alignmentDistribution" },
+        "exactBoundaryAccuracyMeasured": { "const": false },
+        "humanTimingReferenceAvailable": { "const": false }
+      }
+    },
+    "alignmentAgreement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "matchedExactTokenCount", "cpuWordCount", "cudaWordCount", "matchedShareOfCpuWords", "matchedShareOfCudaWords", "startAbsoluteDifferenceSeconds", "endAbsoluteDifferenceSeconds", "midpointAbsoluteDifferenceSeconds", "durationAbsoluteDifferenceSeconds", "textHashesIdentical", "agreementIsAccuracyEvidence", "interpretation"],
+      "properties": {
+        "algorithm": { "type": "string", "minLength": 1 },
+        "matchedExactTokenCount": { "type": "integer", "minimum": 0 },
+        "cpuWordCount": { "type": "integer", "minimum": 1 },
+        "cudaWordCount": { "type": "integer", "minimum": 1 },
+        "matchedShareOfCpuWords": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "matchedShareOfCudaWords": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "startAbsoluteDifferenceSeconds": { "$ref": "#/$defs/alignmentDistribution" },
+        "endAbsoluteDifferenceSeconds": { "$ref": "#/$defs/alignmentDistribution" },
+        "midpointAbsoluteDifferenceSeconds": { "$ref": "#/$defs/alignmentDistribution" },
+        "durationAbsoluteDifferenceSeconds": { "$ref": "#/$defs/alignmentDistribution" },
+        "startDifferenceDiagnosticCounts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["over0.1Seconds", "over0.5Seconds", "over1.0Seconds", "thresholdsAreDescriptiveNotAcceptanceLimits"],
+          "properties": {
+            "over0.1Seconds": { "type": "integer", "minimum": 0 },
+            "over0.5Seconds": { "type": "integer", "minimum": 0 },
+            "over1.0Seconds": { "type": "integer", "minimum": 0 },
+            "thresholdsAreDescriptiveNotAcceptanceLimits": { "const": true }
+          }
+        },
+        "textHashesIdentical": { "type": "boolean" },
+        "duplicateTokenPairingAmbiguityPossible": { "const": true },
+        "agreementIsAccuracyEvidence": { "const": false },
+        "interpretation": { "type": "string", "minLength": 1 }
+      }
+    },
+    "alignmentPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "recordedAtUtc", "host", "implementation", "upstream", "tooling", "separatedSlotControl", "fixtureAnalysis", "timelineMapping", "annotations", "disposition", "privacy", "samplePathConsumed"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "recordedAtUtc": { "type": "string", "format": "date-time" },
+        "host": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hardwareBenchmarkRunId", "hardwareBenchmarkRunSha256", "recordedOperatingSystemVersion", "currentOperatingSystemVersion", "currentProcessArchitecture"],
+          "properties": {
+            "hardwareBenchmarkRunId": { "type": "string", "minLength": 1 },
+            "hardwareBenchmarkRunSha256": { "$ref": "#/$defs/sha256" },
+            "recordedOperatingSystemVersion": { "type": "string", "minLength": 1 },
+            "currentOperatingSystemVersion": { "type": "string", "minLength": 1 },
+            "currentProcessArchitecture": { "type": "string", "minLength": 1 }
+          }
+        },
+        "implementation": { "type": "object", "required": ["gitHead", "implementationFilesCleanAtRun", "files"] },
+        "upstream": {
+          "type": "object",
+          "required": ["asrCanonical", "asrBenchmarkRunId", "asrBenchmarkRunSha256", "normalizedFixtureAudioSha256", "normalizedFixtureDurationSeconds", "cpuArtifact", "cudaArtifact", "privateEvidenceAcl", "privateEvidenceCompletionMarkerPresent", "privateStagePayload"],
+          "properties": {
+            "asrCanonical": { "type": "object", "required": ["fileName", "sha256"] },
+            "asrBenchmarkRunId": { "type": "string", "minLength": 1 },
+            "asrBenchmarkRunSha256": { "$ref": "#/$defs/sha256" },
+            "normalizedFixtureAudioSha256": { "$ref": "#/$defs/sha256" },
+            "normalizedFixtureDurationSeconds": { "type": "number", "exclusiveMinimum": 0 },
+            "cpuArtifact": { "$ref": "#/$defs/fileDescriptor" },
+            "cudaArtifact": { "$ref": "#/$defs/fileDescriptor" },
+            "privateEvidenceAcl": { "$ref": "#/$defs/alignmentAclEvidence" },
+            "privateEvidenceCompletionMarkerPresent": { "type": "boolean" },
+            "privateStagePayload": { "$ref": "#/$defs/fileDescriptor" }
+          }
+        },
+        "tooling": { "type": "object", "required": ["pythonVersion", "pythonPackages", "ffmpegPackageId", "ffmpegSha256", "fasterWhisperModelRevision", "fasterWhisperModelManifestSha256", "cudaRuntimeManifestSha256", "cudaRuntimePathInjectedOnlyForControlChild", "cudaRuntimeReleaseRedistributionApproved"] },
+        "separatedSlotControl": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["controlId", "configSha256", "manifest", "audio", "slotCount", "construction", "cpu", "cuda", "exactBoundaryAccuracyMeasured", "accuracyThresholdApproved", "interpretation"],
+          "properties": {
+            "controlId": { "type": "string", "minLength": 1 },
+            "configSha256": { "$ref": "#/$defs/sha256" },
+            "transcriptionInputMode": { "const": "independent-slot-clips-mapped-through-manifest-offsets" },
+            "constructedControlAudioWasTranscribed": { "const": false },
+            "manifest": { "$ref": "#/$defs/fileDescriptor" },
+            "audio": { "type": "object" },
+            "slotCount": { "type": "integer", "minimum": 1 },
+            "construction": { "type": "object" },
+            "cpu": { "$ref": "#/$defs/alignmentControlCandidate" },
+            "cuda": { "$ref": "#/$defs/alignmentControlCandidate" },
+            "exactBoundaryAccuracyMeasured": { "const": false },
+            "accuracyThresholdApproved": { "const": false },
+            "interpretation": { "type": "string", "minLength": 1 }
+          }
+        },
+        "fixtureAnalysis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["candidates", "crossDeviceAgreement", "localArtifact", "processMeasurement", "diagnostic", "transcriptTextIncludedInPayload"],
+          "properties": {
+            "candidates": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/alignmentFixtureCandidate" } },
+            "crossDeviceAgreement": { "$ref": "#/$defs/alignmentAgreement" },
+            "localArtifact": { "$ref": "#/$defs/fileDescriptor" },
+            "processMeasurement": { "$ref": "#/$defs/alignmentProcessMeasurement" },
+            "diagnostic": { "$ref": "#/$defs/fileDescriptor" },
+            "transcriptTextIncludedInPayload": { "const": false }
+          }
+        },
+        "timelineMapping": { "type": "object", "required": ["decodedAudioEvidenceBenchmarkRunId", "decodedAudioEvidenceBenchmarkRunSha256", "normalizedAudioTimelineStartSeconds", "firstDecodedSourceAudioFramePts", "firstDecodedSourceAudioFrameSeconds", "observedMinimumPacketPresentationSeconds", "mappingRule", "exactSourceBoundaryErrorMeasured"] },
+        "annotations": { "type": "object", "required": ["transcriptReferenceAvailable", "exactWordBoundaryAccuracyMeasured", "exactUtteranceBoundaryAccuracyMeasured", "crossDeviceAgreementIsAccuracyEvidence"] },
+        "disposition": { "type": "object", "required": ["status", "alignmentEvaluationTarget", "emittedWordTimestampsMayBeStoredAsEditableCandidates", "productionWordTimingApproved", "utteranceTimingAndManualAdjustmentFallbackRequired", "clampWordTimesToParentSegments", "reason", "finalStage0DecisionPending"] },
+        "privacy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["localEvidenceAcl", "sourceTranscriptTextIncludedInPayload", "sourceTranscriptTextIncludedInCanonicalSummary", "localArtifactsContainTranscriptText", "absoluteHostPathsIncludedInPayload", "privateUpstreamEvidenceRemainsIgnored"],
+          "properties": {
+            "localEvidenceAcl": { "$ref": "#/$defs/alignmentAclEvidence" },
+            "sourceTranscriptTextIncludedInPayload": { "const": false },
+            "sourceTranscriptTextIncludedInCanonicalSummary": { "const": false },
+            "localArtifactsContainTranscriptText": { "const": true },
+            "absoluteHostPathsIncludedInPayload": { "const": false },
+            "privateUpstreamEvidenceRemainsIgnored": { "const": true },
+            "workDirectoryWasEmptyAfterAclProtection": { "const": true }
+          }
+        },
+        "samplePathConsumed": { "const": true }
+      }
+    },
     "asrTimestampValidation": {
       "type": "object",
       "additionalProperties": false,

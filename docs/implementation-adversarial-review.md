@@ -298,3 +298,52 @@ metadataについては、source由来のglobal metadataが出力に残ってい
 - Foundry timed ASR: **保留（engine時刻・処理durationなし）**
 - CUDA release配布: **未承認**
 - 合格判定: **PASS（測定タスク完了、最終採否・閾値はST-015承認待ち）**
+
+## ST-007 日本語ASR時刻の敵対的レビュー（2026年8月27日）
+
+**対象:** `benchmarks/stages/measure-alignment.ps1`、`alignment_benchmark.py`、`alignment-control.json`、ベンチハーネス、schema、ST-006 private artifact、raw run、`benchmarks/results/alignment-benchmark.json`
+
+**採用raw証跡:** `20260827T0947132960205Z-alignment-benchmark-cf2b2ab6`、SHA-256 `521c1de8a8a371bc17cec2ca2a84df5a1d1e6368dcb3eef955f753c97290ffa0`
+
+**実測:** ST-006のCPU/CUDA artifactを再文字起こしせずhash固定で再解析。両方とも全emitted wordに有限時刻があり、segment/word構造違反0件、parent segment外へ0.14秒出たwordが各1件だった。独立4-slot TTS controlはCPU/CUDAとも4/4 slotを通過。CPU/CUDAのexact-token 4,667 pairではstart差中央値0秒、P90 0.04秒、P99 0.54秒、最大1.52秒だったが、正解注釈との誤差ではない。
+
+| No. | 軸 | 重大度 | 指摘 | 修正と確認 |
+|-----|-----|--------|------|------------|
+| S7-1 | 内容の妥当性 | Major | 初期controlは短い固有名詞を孤立発話させ、2語を認識できなかった。次に同一ブランド文を4回連結するとWhisperの文脈抑制で語が脱落し、時刻機構と語彙精度を混同した。 | **修正済み:** 一般的な日本語4語を別々のTTS clipとして独立transcribeし、local timestampをmanifest offsetでglobal slotへ写像。controlは4/4成功した。語彙品質とexact boundary精度はcontrol対象外と明記した。 |
+| S7-2 | 整合性 | Major | control manifestの`audio`は連結音声を示す一方、実際の成功controlは独立clipをtranscribeしており、入力を黙って連結音声と誤読できた。 | **修正済み:** `transcriptionInputMode=independent-slot-clips-mapped-through-manifest-offsets`と`constructedControlAudioWasTranscribed=false`をraw/schema/runtime/canonicalで必須化。各clipのhash、size、duration、full-input coverageを検証した。 |
+| S7-3 | 整合性 | Major | `speechClipStartSeconds + local word time`のoffset算術は、clip durationとmanifest rangeが一致しなければ小さい誤差をslot余白が隠し得た。 | **修正済み:** manifestのspeech clip durationと実WAV durationを1 µs以内、artifact size/hash、transcribe入力durationとWAV duration、whole-input coverageを検査。mapped termがslotだけでなくspeech clip range内にあることを4/4×2経路で確認した。 |
+| S7-4 | 根拠性・不確実性管理 | Major | CPU/CUDAはcontrol output hash・文字数、fixture output hash、segment/word countが異なるのに、CUDA選定が精度優位に読めた。 | **修正済み:** control 42/43文字、fixture 861/694 segment、5,254/5,266 word、output hash不一致を`crossDeviceOutputDivergence`へ明示。`selectionUsesOutputAccuracy=false`、時刻精度への含意は`unknown-without-independent-reference`とし、CUDAはST-006の能力・単回速度だけで暫定対象にした。 |
+| S7-5 | 根拠性・不確実性管理 | Major | 日本語の反復tokenを`SequenceMatcher`で対応付けるため、離れた同一tokenを誤pairする可能性があり、最大差をaccuracy誤差として読めた。 | **修正済み:** `duplicateTokenPairingAmbiguityPossible=true`と`agreementIsAccuracyEvidence=false`を必須化。start差が0.1秒超304件、0.5秒超52件、1秒超11件をdescriptive diagnosticsとして追加し、閾値ではないと明記した。 |
+| S7-6 | 内容の妥当性 | Minor | parent segment外wordの観測閾値1 msがcode上のmagic numberで、0.14秒の観測とsuccess/fallback判断の関係が不明だった。 | **修正済み:** `parentContainmentObservationThresholdSeconds=0.001`をraw/schema/canonicalへ記録。overflowをclampせず、word timingをeditable candidate、発話時刻＋手動調整を必須fallbackとした。 |
+| S7-7 | セキュリティ | Major | 初回formal runはsafeな`transcriptionMilliseconds`を敏感fieldと誤判定し、alignment stageなのに「ASR payload」エラーを出した。 | **修正済み:** 共通guardを`Assert-NoUnexpectedSensitiveProperties`へ改名し、安全なhash/timing/capability/fallback fieldだけを明示allowlist化。失敗raw `20260827T0917364241819Z-alignment-benchmark-629a6602`（SHA-256 `2f78d15a1398d57905c6cf5fbd0c4bdaacdc3df4aeb78297716f840db99211ea`）は非書換えで保持した。 |
+| S7-8 | セキュリティ | Minor | random work directoryは作成直後に親ACLを継承し、限定ACL設定まで短いwindowがある。 | **対応済み境界:** 現行.NET CoreにはWindows `DirectorySecurity`付き原子的directory作成overloadがないことを実機reflectionで確認。限定ACL設定完了直後にdirectoryが空であることを必須検査し、それ以前にfile/contentを作らない。最終directoryは3主体・非継承・広い主体0件。製品workspaceの原子的作成/別account試験はS-003で完了する。 |
+| S7-9 | 根拠性・不確実性管理 | Minor | schemaがST-006時点から増え、未commit実装でrunしたためGit commitだけでは再現できないという指摘があった。 | **修正済み既存契約:** schema 1.0はoptionalなstage追加を許す方針で、全historical rawを同時検証する。各runは実行時schemaを含む実装6 fileのsize/SHA-256を記録し、現在fileへ照合した。Git cleanとは偽らず`implementationFilesCleanAtRun=false`を保持した。 |
+
+### 修正後の証拠照合
+
+- final raw SHA-256、source前後/current hash、ST-006 raw/canonical、CPU/CUDA artifact、実装6 file、local artifact 4件を独立照合し、全件一致した。
+- final local evidence directoryはcompletion markerあり、ACL protected、3規則、広い主体0件、non-empty diagnostic 0件。alignment残存processとtracked private evidenceは0件だった。
+- private control文字列17件をraw envelopeへ完全一致検索し漏えい0件、raw/canonicalの絶対path pattern 0件を確認した。local/raw payloadは`recordedAtUtc`表記正規化以外で一致し、同じ時刻instantだった。
+- 4-slot controlはCPU/CUDAとも日本語、構造違反0、各assigned occurrence 1件、slot内・speech clip内を通過。連結音声をtranscribeしていないこともmachine-readableに固定した。
+- canonicalのrun/upstream/implementation/control/fixture/agreement/disposition/privacyを最終rawへ11集約項目で機械照合し、失敗0件だった。
+- PowerShell parser、PSScriptAnalyzer 1.25.0（warning/error 0件）、Python `py_compile`、parent runtime validator、JSON Schema、historical raw回帰を確認した。
+
+### 採用しなかった指摘
+
+- CPU/CUDAのoutput差の原因を特定しない限り未完了という提案は、正解文字起こしがなく原因を断定できないため採用しなかった。差自体と選定にaccuracyを使わないことを記録し、原因はopen questionへ残した。
+- `SequenceMatcher`差を時刻精度として合格判定すべき提案は、同一tokenの対応が正解spanを保証しないため採用しなかった。descriptive observationだけに限定した。
+- 0.14秒overflowをparentへ自動clampすべき提案は、元のmodel出力を隠し、意味のあるword/utterance境界を捏造し得るため採用しなかった。候補を保持して手動調整へ送る。
+- directory作成前に空DACLを設定する提案は、提示手順も作成後`Set-Acl`でraceを解消せず、空DACLは実行主体自身をlock outし得るため採用しなかった。content作成前の限定ACL検証を現Stage 0の境界とした。
+- schema hashがST-006と異なることをbreaking driftとする指摘は、stage enum拡張とoptional `$defs`追加が既存rawを狭めず、全historical rawが通ること、各runが実行schema hashを持つことを見落としていたため採用しなかった。
+
+### ST-007 修正後判定
+
+- 未修正 Critical: 0件
+- 未修正 Major: 0件
+- 未修正 Minor: 0件
+- exact word/utterance boundary error: **未測定（独立timing annotation待ち）**
+- word timing: **編集可能な候補として暫定利用可、production承認なし**
+- fallback: **発話時刻＋手動字幕調整を必須維持**
+- parent overflow: **0.14秒を各経路1件、非clamp**
+- CUDA release配布: **未承認**
+- 合格判定: **PASS（測定タスク完了、最終採否・閾値はST-015承認待ち）**

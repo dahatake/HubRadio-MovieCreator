@@ -24,7 +24,7 @@
 | `docs/requirement-definition.md` | 0.1 Draft | `f28c24f9c5f72859ebb71503a6242703ec5225b329e3aa3a7face56fd73e60a9` |
 | `docs/implementation-research.md` | 調査日 2026-08-26、Windows後続決定注記を反映 | `35cca8d661f8837b176e75a18a67a16113b34d9531b03307dc226f243f1b5c16` |
 | `docs/adversarial-review.md` | 修正後 PASS | `b0af2715b70dd3c322c6f4d293b8e6ed4c06f0bbcc7e02d1541fd9804b25a8a4` |
-| `docs/implementation-plan.md` | 計画日 2026-08-26、実行中 | `9a5f1cde0e9a56d2c2d1cbc1bbb1b573e57cb504ef6c4105e71a04d558fb4ba6` |
+| `docs/implementation-plan.md` | 計画日 2026-08-26、実行中 | `832299689277399bf78606366819b4435f2188186119cae99f11b4de44e6933a` |
 
 指定されていた `/hve-dev/requirement-definition.md` はリポジトリに存在しない。したがって、存在しないパスを推測して作成したり、別内容の要求定義として扱ったりしない。
 

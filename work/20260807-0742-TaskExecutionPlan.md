@@ -15,13 +15,14 @@
 |---|---|---|
 | P | P-001〜P-010 | 完了・コミット済み |
 | ST | ST-001〜ST-005、ST-009、ST-010、ST-014、ST-016 | 完了・コミット済み |
-| ST | ST-006 | 測定、canonical、敵対的レビュー、実在指摘の反映まで完了。コミット待ち |
+| ST | ST-006 | 測定、canonical、敵対的レビュー、実在指摘の反映、コミットまで完了 |
+| ST | ST-007 | 測定、canonical、敵対的レビュー、実在指摘の反映まで完了。コミット待ち |
 
-**完了: 20 / 203タスク**。Stage 0の未完了実行対象はST-007、ST-011、ST-012、ST-013、ST-015の5件（ST-008は利用条件不同意のため条件不成立）
+**完了: 21 / 203タスク**。Stage 0の未完了実行対象はST-011、ST-012、ST-013、ST-015の4件（ST-008は利用条件不同意のため条件不成立）
 
 ### 1.2 未コミットの作業
 
-- ST-006のharness、schema、Python/PowerShell stage、synthetic control、canonical、license/review/progress文書
+- ST-007のharness、schema、Python/PowerShell stage、separated-slot control、canonical、review/progress文書
 - private transcript、normalized audio、model、raw runはGit対象外のまま保持
 
 ### 1.3 後続計画を左右する実測事実
@@ -38,6 +39,7 @@
 | faster-whisper smallはCPU int8で384.895秒、CUDA float16で46.719秒。両方が全入力とsegment/word時刻を返した | `asr-benchmark.json` | ST-007はCUDA版を暫定対象、CPU版をfallback候補とする。単回実測であり精度・production閾値は未確定 |
 | Foundry Local 30秒adapterは41.579秒だがengine duration/segment/word時刻を返さない | `asr-benchmark.json` | submission coverageをengine coverageと扱わず、FR-002時刻providerとしては保留 |
 | CUDA成功はFoundry Local CUDA EP cacheのchild-only PATH注入に依存し、再配布承認はない | `asr-benchmark.json`、`third-party-intake.md` | Stage 1配布ではこのcacheを転用せず、CPU fallbackを維持してPK-001/PK-004で正規runtimeを決める |
+| CPU/CUDAは全emitted wordに有限時刻を返すがoutput自体が異なり、parent外0.14秒が各1件。exact boundary正解はない | `alignment-benchmark.json` | CUDA word timeはeditable candidateのみ。発話時刻＋手動調整fallbackを必須維持し、非clamp |
 
 ---
 
@@ -227,11 +229,10 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. ST-006の検証済み成果物をコミット
-2. ST-007を実装 → 実行 → canonical → 敵対的レビュー → コミット
-3. ST-011を実装 → 実行 → canonical → 敵対的レビュー → コミット
-4. ST-012を実装 → 実行 → canonical → 敵対的レビュー → コミット
-5. ST-013を実装 → 実行 → canonical → 敵対的レビュー → コミット
-6. ST-015報告書を作成し、**閾値・採用技術・fallbackの人手承認を依頼して停止**
+1. ST-007の検証済み成果物をコミット
+2. ST-011を実装 → 実行 → canonical → 敵対的レビュー → コミット
+3. ST-012を実装 → 実行 → canonical → 敵対的レビュー → コミット
+4. ST-013を実装 → 実行 → canonical → 敵対的レビュー → コミット
+5. ST-015報告書を作成し、**閾値・採用技術・fallbackの人手承認を依頼して停止**
 
 各ステップで、実測できなかった項目は`openQuestions`に残し、推測で埋めない。
