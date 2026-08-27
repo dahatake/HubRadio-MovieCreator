@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical persisted TranscriptRevision form. D-012 must emit lowercase UUIDs, reduced RationalTime values, and the explicit manualTimingAdjustmentRequired value. Runtime validation additionally rejects a self-parent revision, duplicate entity IDs when objects otherwise differ, inconsistent labels for one speaker ID, descending utterance starts, nonpositive ranges, timed tokens outside their parent utterance, and overlapping or out-of-order timed tokens. Draft 2020-12 cannot compare rational cross-fields or verify that sourceSpanId resolves to an existing SourceSpan; those checks remain runtime/storage-boundary constraints. Missing recognition confidence remains unknown and must never be fabricated.",
+  "title": "TranscriptRevision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "changeSource",
+    "createdAt",
+    "utterances"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/entityId"
+    },
+    "parentRevisionId": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/entityId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "changeSource": {
+      "type": "string",
+      "enum": [
+        "machine",
+        "human"
+      ]
+    },
+    "createdAt": {
+      "type": "string",
+      "$comment": "The pattern rejects out-of-range date/time fields even when a validator treats format as annotation. DateTimeOffset construction remains responsible for calendar-specific validity such as leap years and month length.",
+      "format": "date-time",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,7})?(?:Z|[+-](?:(?:0\\d|1[0-3]):[0-5]\\d|14:00))$"
+    },
+    "utterances": {
+      "type": "array",
+      "$comment": "uniqueItems rejects identical objects. Runtime validation enforces unique utterance, sentence, and token IDs by ID value and chronological utterance starts while allowing overlapping speakers.",
+      "items": {
+        "$ref": "#/$defs/utterance"
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "nonBlankText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "confidence": {
+      "type": "number",
+      "$comment": "The runtime model also rejects NaN and infinities. Omission or null means the recognizer supplied no confidence; no default is inferred.",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "nullableConfidence": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/confidence"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "positiveDuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "timeRange": {
+      "type": "object",
+      "$comment": "The runtime model validates positive duration and uses overflow-safe rational arithmetic for the end boundary.",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "duration"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "duration": {
+          "$ref": "#/$defs/positiveDuration"
+        }
+      }
+    },
+    "utterance": {
+      "type": "object",
+      "$comment": "sourceSpanId is a foreign-key reference only; the immutable transcript graph does not hold a mutable SourceSpan object. Runtime validation checks every supplied token range is contained by this utterance range.",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sourceSpanId",
+        "speakerId",
+        "speakerLabel",
+        "text",
+        "range",
+        "sentences"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "sourceSpanId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "speakerId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "speakerLabel": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "text": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "range": {
+          "$ref": "#/$defs/timeRange"
+        },
+        "recognitionConfidence": {
+          "$ref": "#/$defs/nullableConfidence"
+        },
+        "sentences": {
+          "type": "array",
+          "$comment": "Runtime validation enforces unique sentence IDs and unique token IDs across all sentences in the utterance.",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/sentence"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "sentence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text",
+        "tokens"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "text": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "tokens": {
+          "type": "array",
+          "$comment": "Runtime validation enforces unique token IDs and nonoverlapping chronological order for tokens that have word timing. Untimed tokens retain their textual order without invented boundaries.",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/token"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "token": {
+      "type": "object",
+      "$comment": "A missing or null range is intentional: editing resolves to the owning utterance range and manualTimingAdjustmentRequired must be true. A supplied range is never clamped or synthesized.",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text",
+        "manualTimingAdjustmentRequired"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "text": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "range": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/timeRange"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recognitionConfidence": {
+          "$ref": "#/$defs/nullableConfidence"
+        },
+        "manualTimingAdjustmentRequired": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "range"
+            ],
+            "properties": {
+              "range": {
+                "$ref": "#/$defs/timeRange"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "manualTimingAdjustmentRequired": {
+                "const": false
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "manualTimingAdjustmentRequired": {
+                "const": true
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
