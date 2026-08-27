@@ -1,0 +1,234 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260827T0302246003561Z-process-and-package-2ba57f42",
+  "benchmarkRunSha256": "691536494a83777cdaf3d930368bff7fa583e754305251d31a77f1bb8259521b",
+  "recordedAtUtc": "2026-08-27T03:04:02.5794955Z",
+  "fixture": {
+    "sourceAssetId": "source-ios-20260615-024326000",
+    "sourceSha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+    "sourceByteSize": 6494572403,
+    "sourceMediaIncludedInPackage": true,
+    "originalSourceFileIncludedInPackage": false,
+    "sourceDerivedMediaIncludedInPackage": true,
+    "sourceDerivedMediaDescription": "A stream-copied opening excerpt used only for local HEVC/AAC package verification.",
+    "rightsStatus": "unconfirmed",
+    "allowedUse": "local-technical-evaluation-only",
+    "externalPublicationAllowed": false
+  },
+  "host": {
+    "hardwareBenchmarkRunId": "20260826T1548073271369Z-hardware-d1b1bd37",
+    "hardwareBenchmarkRunSha256": "3e5b1e6ab9ce19795b8244bd433ab8882b534e4b06b9314d7d86ac67536775c7",
+    "recordedOperatingSystemVersion": "10.0.29648",
+    "currentOperatingSystemVersion": "10.0.29648",
+    "currentProcessArchitecture": "X64",
+    "recordedHostIsWindowsInsider": true
+  },
+  "tooling": {
+    "dotnet": {
+      "sdkVersion": "10.0.400",
+      "globalJsonSha256": "deb68fdcdf73ca5a9b4862010d170ebc117339887aa0aa72d22a04ade7437942",
+      "processProbeLockSha256": "9ce5026b024d1ed4a5fb3aea32b443e847c6aac41bb2b0c194418a5337721e80",
+      "workerProbeLockSha256": "9ce5026b024d1ed4a5fb3aea32b443e847c6aac41bb2b0c194418a5337721e80",
+      "selfContained": true,
+      "publishSingleFile": true
+    },
+    "winAppCli": {
+      "available": true,
+      "version": "0.6.1.0",
+      "executableByteSize": 31485312,
+      "executableSha256": "d661c306e1909fd54a3c0d2a3c0a6330ab470cbf5a5fb80598efffcf33968a5c",
+      "usedForPackaging": false,
+      "disposition": "optional-observation-only; implicit-buildtools-bootstrap-not-used"
+    },
+    "makeAppx": {
+      "fileVersion": "10.0.26100.1 (WinBuild.160101.0800)",
+      "byteSize": 567328,
+      "sha256": "9981418e9a18a9aa19bb69f835137a3bf8fe2e6fe7e18d5ca9b76191cc331f3f",
+      "buildToolsPackageVersion": "10.0.26100.1",
+      "buildToolsPackageContentHash": "ju02pHSp1LDEIvFgLIDbCbXGPpTTrXJrH90HxC6neclpbRpdS8RxeRbYOzPQFByUPCgT/Egbz4s/cpNMamW1Sg==",
+      "buildToolsRestoreSource": "https://packagefeedproxy.microsoft.io/nuget/v3/index.json",
+      "lockedRestoreSucceeded": true,
+      "invokedThroughWinAppCli": false
+    },
+    "ffmpegPackageId": "BtbN.FFmpeg.LGPL.8.1",
+    "ffmpegSha256": "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb",
+    "ffprobeSha256": "4c2f730969c9551aec21c5ca07eb73f63bb0920204c9cd6c9a6e7be6be0458d2"
+  },
+  "jobObject": {
+    "timeoutCleanup": {
+      "timeoutSeconds": 2,
+      "expectedTimeoutObserved": true,
+      "childPidRecorded": true,
+      "grandchildPidRecorded": true,
+      "childExitedAfterTimeout": true,
+      "grandchildExitedAfterTimeout": true,
+      "passed": true
+    },
+    "killOnClose": {
+      "childInJobBeforeClose": true,
+      "grandchildInJobBeforeClose": true,
+      "observedProcessIdCountBeforeClose": 3,
+      "childExitedAfterClose": true,
+      "grandchildExitedAfterClose": true,
+      "allObservedProcessIdsExitedAfterClose": true,
+      "observedProcessIdLeakCount": 0,
+      "elapsedMilliseconds": 8.132,
+      "passed": true
+    },
+    "hostCrash": {
+      "hostExitCode": -2146232797,
+      "childInJobBeforeCrash": true,
+      "grandchildInJobBeforeCrash": true,
+      "childExitedAfterHostCrash": true,
+      "grandchildExitedAfterHostCrash": true,
+      "passed": true
+    },
+    "activeProcessLimit": {
+      "configuredLimit": 1,
+      "secondAssignmentSucceeded": false,
+      "secondAssignmentWin32Error": 1816,
+      "secondInJobAfterAttempt": false,
+      "secondExitedAutomatically": false,
+      "callerCleanupRequired": true,
+      "secondExitedAfterCleanup": true,
+      "secondProcessAbsentAfterCleanup": true,
+      "processIdListCountBeforeCleanup": 2,
+      "accountingActiveProcessCountBeforeCleanup": 2,
+      "processIdListCountAfterCleanup": 2,
+      "accountingActiveProcessCountAfterCleanup": 2,
+      "cleanupAccountingConverged": false,
+      "documentedAutomaticTerminationObserved": false,
+      "safeCallerCleanupContractPassed": true,
+      "passed": false,
+      "disposition": "not-adopted-on-this-host-because-rejected-assignment-required-explicit-caller-cleanup"
+    },
+    "processMemoryLimit": {
+      "configuredLimitBytes": 134217728,
+      "allocationStartedAfterJobAssignment": true,
+      "allocationFailed": true,
+      "allocatedBytesBeforeFailure": 92274688,
+      "childReportedWorkingSetBytes": 125861888,
+      "peakProcessMemoryUsedBytes": 102117376,
+      "passed": true,
+      "productionApproved": false
+    },
+    "orphanProcessCountAfterTests": 0,
+    "officialBehaviorReference": "https://learn.microsoft.com/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject#remarks"
+  },
+  "model": {
+    "fileName": "blaze_face_short_range.tflite",
+    "byteSize": 229746,
+    "sha256": "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f"
+  },
+  "package": {
+    "fileName": "HubRadio.Stage0.msix",
+    "byteSize": 192170312,
+    "sha256": "6c1b16505f18d2329ebe7f613eebf9939e94fd51421ad20e9550df8de9823666",
+    "identityName": "HubRadio.Stage0.ProcessAndPackage",
+    "identityVersion": "1.0.0.0",
+    "processorArchitecture": "x64",
+    "applicationEntryPoint": "Windows.FullTrustApplication",
+    "firstPartyExecutableCount": 2,
+    "firstPartyExecutables": [
+      {
+        "fileName": "HubRadio.ProcessProbe.exe",
+        "byteSize": 100446961,
+        "sha256": "564d5c67610884dd3f2320d4ae1fe6b5f2195487d1cfd6072a84fe7e763efa6f"
+      },
+      {
+        "fileName": "HubRadio.WorkerProbe.exe",
+        "byteSize": 100405995,
+        "sha256": "d3ac0220190c818ae35ee243a35ace60318ee53283d2f79ac65fbacc9b11498d"
+      }
+    ],
+    "totalExecutableCount": 4,
+    "expectedFileCount": 12,
+    "missingExpectedFileCount": 0,
+    "selectedHashComparisonCount": 8,
+    "selectedHashMismatchCount": 0,
+    "packElapsedMilliseconds": 15413.709,
+    "unpackElapsedMilliseconds": 2086.72,
+    "signatureFilePresent": false,
+    "authenticodeStatus": "NotSigned",
+    "unsignedByDesignForStage0": true,
+    "packageBuildAndUnpackPassed": true
+  },
+  "unpackedVerification": {
+    "processProbe": {
+      "ffprobeExitCode": 0,
+      "codecNames": ["hevc", "aac"],
+      "expectedCodecsIdentified": true,
+      "ffmpegExitCode": 0,
+      "codecsDecoded": true,
+      "modelHashMatched": true,
+      "passed": true
+    },
+    "workerProbe": {
+      "modelByteSize": 229746,
+      "modelSha256": "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f",
+      "expectedModelSha256": "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f",
+      "passed": true
+    },
+    "executedFromUnpackedLayout": true
+  },
+  "appContainer": {
+    "packageApplicationEntryPoint": "Windows.FullTrustApplication",
+    "appContainerExecutionTested": false,
+    "candidateDisposition": "not-selected-by-this-spike",
+    "reason": "The unsigned package was not installed, so AppContainer launch and managed-workspace access were not measured. This PoC used a full-trust desktop entry point plus Job Object containment."
+  },
+  "distributionValidation": {
+    "packageBuilt": true,
+    "packageInstalled": false,
+    "packageLaunchThroughIdentityTested": false,
+    "signingTested": false,
+    "upgradeTested": false,
+    "uninstallTested": false,
+    "cleanProductionWindowsTested": false,
+    "blockingInputs": [
+      "No signing subject or certificate was provided.",
+      "No production-channel Windows 11 24H2 x64 clean test machine was provided.",
+      "The fixture rights status is unconfirmed and external publication is not allowed."
+    ]
+  },
+  "configurationDisposition": {
+    "killOnJobClose": "adopt-for-J-004",
+    "hostCrashCleanup": "adopt-for-J-004",
+    "processMemoryLimit": "candidate-only-pending-ST-015-approval",
+    "activeProcessLimit": "do-not-adopt-from-this-measurement",
+    "activeProcessAssignmentFailureHandling": "caller-must-kill-and-await-a-rejected-process; the measured Job accounting did not converge and the limit is not adopted",
+    "multiExecutableMsixLayout": "pack-and-unpack-feasible",
+    "appContainer": "hold-unmeasured",
+    "signedInstallation": "defer-to-PK-007"
+  },
+  "stage0Implications": [
+    "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE terminated the assigned child and inherited grandchild both when the last job handle was closed and when the host used Environment.FailFast.",
+    "The 128 MiB process-memory limit caused the controlled allocation probe to fail before the recorded peak exceeded the configured limit. This is a machine-specific candidate value, not a production-approved limit.",
+    "The active-process limit rejected the second assignment with Win32 error 1816 but did not automatically terminate that process on this host. Caller cleanup removed the process, while the Job PID list and ActiveProcesses count both remained 2 after a bounded 10-second wait. This limit is not adopted from this run.",
+    "One unsigned MSIX layout contained two first-party executables plus FFmpeg, ffprobe, a pinned model, and evidence files. After unpacking, HEVC/AAC identification and decode and both model-hash checks passed.",
+    "Package build and unpack do not establish signed installation, package-identity launch, AppContainer behavior, upgrade, uninstall, or clean production Windows compatibility."
+  ],
+  "assessment": {
+    "interpretation": "Job Object kill-on-close is supported for child-tree cleanup, while active-process-limit behavior requires an explicit caller cleanup contract. A multi-executable MSIX layout is mechanically feasible, but release distribution remains unvalidated.",
+    "measurementCorrections": [
+      "Run 20260827T0149407816151Z-process-and-package-5f9cc982 (SHA-256 88637626cb9a30da2da887cac4bd64fa0a053ad47d168b5dcce46d315f776933) did not verify every Job process ID, started memory allocation before an explicit assignment handshake, and reported the source-derived package clip as if no source media were included. The final run adds those controls and preserves the earlier raw run without rewriting it.",
+      "Run 20260827T0227346790812Z-process-and-package-faad6ba2 (SHA-256 53acd50f12a39bcc539881ce1bff809e5689a3dc3b0e2e5d6399a4509a0ba0c8) passed once, but post-run adversarial replay exposed a non-atomic PID marker and exception paths that could retain a rejected process or redirected pipe. The final code publishes markers atomically, separates descendant standard handles, performs bounded process cleanup and stream draining, and passed five consecutive self-test replays with zero orphan processes.",
+      "The final run fixes .NET SDK 10.0.400 with global.json, uses locked restores, records both first-party executable hashes, and requires the WorkerProbe to compare the model against the expected SHA-256."
+    ],
+    "openQuestions": [
+      "The production process-memory limit requires ST-015 approval and later workload-specific measurements; 128 MiB is only the controlled probe setting.",
+      "Why this Windows host neither automatically terminated the active-process-limit rejection nor decremented the Job accounting after caller cleanup as described by the API reference remains unresolved; production must not enable this limit from the measured configuration.",
+      "A real Packaging Project (.wapproj), WinUI host, self-contained Python worker, complete FFmpeg notices, and offline model catalog remain PK-002 through PK-006 work.",
+      "Signing, trust installation, package-identity launch, upgrade, rollback, uninstall, and clean production-channel Windows 11 24H2 validation require the inputs listed in ADR-0006 and remain PK-007 work.",
+      "AppContainer access to the managed workspace and packaged tools was not tested and must not be claimed as a security boundary."
+    ],
+    "privacy": "The canonical summary excludes local paths. The unsigned package contains a stream-copied source excerpt and is restricted to local technical evaluation because source rights are unconfirmed; the package and raw run remain local and ignored by Git.",
+    "curatedFields": [
+      "configurationDisposition",
+      "stage0Implications",
+      "assessment",
+      "recollectionCommand"
+    ]
+  },
+  "recollectionCommand": "pwsh.exe -NoLogo -NoProfile -File benchmarks/run-benchmarks.ps1 -Stage process-and-package -ChildTimeoutSeconds 10800"
+}

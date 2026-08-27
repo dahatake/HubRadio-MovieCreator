@@ -204,3 +204,47 @@ metadataについては、source由来のglobal metadataが出力に残ってい
 - 推奨: **decoder/clipping/channel差はtechnical warning候補、waitはreview候補、YAMNet cough/noiseは手動試聴必須**
 - 自動削除: **禁止**
 - 合格判定: **PASS（測定タスク完了、最終採否はST-015承認待ち）**
+
+## ST-014 Process・packageの敵対的レビュー（2026年8月27日）
+
+**対象:** `benchmarks/probes/`、`benchmarks/stages/measure-process-and-package.ps1`、ベンチハーネス、schema、raw run、`benchmarks/results/process-and-package.json`
+**採用raw証跡:** `20260827T0302246003561Z-process-and-package-2ba57f42`、SHA-256 `691536494a83777cdaf3d930368bff7fa583e754305251d31a77f1bb8259521b`
+**実測:** kill-on-close、host crash、2秒timeoutの子・孫終了は合格。128 MiB process-memory候補制限は割当後のallocationで合格した。active-process limitは2つ目の割当をWin32 error 1816で拒否したが自動終了せず、caller cleanup後もJob PID listと`ActiveProcesses`が10秒以内に1へ収束しなかったため不採用とした。unsigned MSIXは2つのfirst-party exe、FFmpeg/ffprobe、model、source由来codec clipを含み、pack/unpack、HEVC/AAC decode、model hash照合に合格した。
+
+| No. | 軸 | 重大度 | 指摘 | 修正と確認 |
+|-----|-----|--------|------|------------|
+| S14-1 | 品質・運用性 | Critical | active-process limitに拒否された2つ目のprocessが実機で自動終了せず、初期probeが孤児を残した。 | **修正済み:** assignment失敗と自動終了を別記録し、callerが必ず`Kill(entireProcessTree:true)`、bounded wait、process不在確認を行う。例外経路も`finally`で同じcleanupを実行する。final runと5回stress replayで孤児0を確認し、active-process limit自体は不採用とした。 |
+| S14-2 | 整合性 | Major | memory-hogがJob割当前にallocationを開始でき、128 MiB制限が失敗原因だと断定できない競合があった。 | **修正済み:** child ready → Job割当 → go marker → allocationのhandshakeへ変更し、`allocatedBytesBeforeFailure`、working set、Job peakをrawへ保存した。production値としては未承認のまま保持した。 |
+| S14-3 | 整合性 | Major | `JOBOBJECT_BASIC_PROCESS_ID_LIST`の件数をactive-process countとして扱い、拒否processのhandleが残る状態で1件への減少を期待していた。 | **修正済み:** PID listと`JOBOBJECT_BASIC_ACCOUNTING_INFORMATION.ActiveProcesses`を別々に取得し、cleanup前後を記録した。final runではprocess不在を確認した一方、両countは2のまま非収束であることを隠さず記録した。 |
+| S14-4 | 品質・運用性 | Major | kill-on-closeの`processCountBeforeClose`に3〜4 PIDがあっても、named child/grandchildの2件だけでleak 0を判定していた。 | **修正済み:** Jobが返した全PIDの終了を検査し、`allObservedProcessIdsExitedAfterClose=true`、leak 0を成功条件へ追加した。schema/runtime validatorも個別証拠との矛盾を拒否する。 |
+| S14-5 | 品質・運用性 | Major | PID markerを最終pathへ直接書き、readerは`File.Exists`直後に開くため、writer close前の共有違反を再現した。 | **修正済み:** PID markerをGUID付き一時fileへ書き、close後にatomic moveする。修正版self-testを5回連続実行し全回合格した。 |
+| S14-6 | 品質・運用性 | Major | timeout/例外時に親だけの終了を待ち、子孫がredirected pipeを保持すると`ReadToEndAsync`が無期限化し得た。 | **修正済み:** process tree PIDを観測してkill後に全件をbounded waitし、内部probe子の標準handleを外側pipeから分離した。stdout/stderr drainにも10秒上限とcleanup後の再上限を設け、2秒timeout対照で子・孫終了を必須化した。 |
+| S14-7 | 根拠性・不確実性管理 | Major | sourceを`-c copy`したcodec clipをMSIXへ含めながら`sourceMediaIncludedInPackage=false`と記録していた。 | **修正済み:** original全体は非同梱、source-derived excerptは同梱と分解し、aggregateをtrueへ訂正した。fixture rightsは`unconfirmed`、local technical evaluation限定、external publication不可をraw/canonicalとdistribution blockerへ保存した。 |
+| S14-8 | 根拠性・不確実性管理 | Major | host固有のactive-limit異常とmemory値を記録したが、hardware/OS証跡へのimmutable参照がなかった。 | **修正済み:** hardware benchmark run ID/SHA-256、記録OS build、current OS build、architecture、Insider状態をfinal rawへ追加し、一致しないhostをruntime validatorで拒否する。 |
+| S14-9 | 品質・運用性 | Major | ST-014 schemaはnested field名だけを要求し、hash文字列、負の時間、booleanの文字列化、host/rights/accounting欠落、PID証拠との矛盾を受理できた。 | **修正済み:** 型、範囲、SHA-256、URI、条件付きrequired、rights blocker、PID/active flag整合を追加した。6種類のnegative payloadと従来5種類の型負例を拒否し、過去raw 24件の後方互換を確認した。 |
+| S14-10 | 根拠性・不確実性管理 | Major | WinApp CLIの暗黙BuildTools取得がTLSで失敗し、.NET SDK/publish依存も事後記録だけだった。WorkerProbeの`passed`は非空fileだけを意味した。 | **修正済み:** SDK 10.0.400を`global.json`で固定、locked restoreを使用し、BuildTools 10.0.26100.1のNuGet content hashとx64 MakeAppx hashを固定した。WinApp CLIは任意観測だけにし、WorkerProbeはexpected SHA-256一致時だけ成功する。 |
+
+### 修正後の証拠照合
+
+- final rawのrun ID/SHA-256、host/tool/model/package/executable hash、Job Object全項目、codec/model検証、rightsと未測定flagをcanonicalへ照合し、PASSを確認した。
+- 修正版ProcessProbeを5回連続実行し、kill-on-close、caller cleanup、memory制限は5/5合格、自動終了は0/5、孤児processは0件だった。
+- source fixtureは実行前後SHA-256一致。packageは192,170,312 bytes、SHA-256 `6c1b16505f18d2329ebe7f613eebf9939e94fd51421ad20e9550df8de9823666`で、raw/canonical/local fileが一致した。
+- schemaは全historical raw 24件を受理しつつ、host欠落、rights欠落、空blocker、矛盾PID、active accounting欠落、矛盾`passed`の6負例と、型/hash/負値5負例を拒否した。
+- 署名、install、package identity launch、AppContainer、upgrade、uninstall、production-channel clean Windowsは全て`false`／未測定で、PK-006/PK-007の完了とは表現していない。
+
+### 採用しなかった指摘
+
+- unsigned packageをinstallしてAppContainerまで検証しなければST-014未完了という指摘は、署名主体・証明書・clean Windowsが外部入力であり、正本がPK-006/PK-007へ分離しているため採用しなかった。未測定境界はcanonicalに列挙した。
+- active-process limitの公式記述に合わせて結果を成功へ変更すべきという提案は、実機で自動終了もaccounting収束も観測できなかったため採用しなかった。結果を不採用として保持した。
+- source-derived clipにGPS等が残ったと断定する指摘は、metadata key検査で該当keyを観測していないため採用しなかった。ただしrights未確認である事実だけで外部配布をblockした。
+- MSIX、raw run、modelをGitへcommitすべきという指摘は、大容量・権利未確認・local rawを除外する既定方針に反するため採用しなかった。probe source、lock、schema、stage、canonicalだけを追跡する。
+
+### ST-014 修正後判定
+
+- 未修正 Critical: 0件
+- 未修正 Major: 0件
+- active-process limit: **不採用**
+- process-memory 128 MiB: **候補値のみ（ST-015承認待ち）**
+- package: **unsigned pack/unpack feasibilityのみ合格**
+- 署名・install・AppContainer・clean Windows: **未測定**
+- 合格判定: **PASS（測定タスク完了、release package完了の主張なし）**

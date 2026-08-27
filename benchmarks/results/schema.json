@@ -24,7 +24,7 @@
       "pattern": "^[0-9]{8}T[0-9]{13}Z-[a-z0-9-]+-[0-9a-f]{8}$"
     },
     "stage": {
-      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality"]
+      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package"]
     },
     "status": {
       "enum": ["succeeded", "failed"]
@@ -121,6 +121,26 @@
         "properties": {
           "payload": {
             "$ref": "#/$defs/audioEventPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "process-and-package"
+          },
+          "status": {
+            "const": "succeeded"
+          }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/processAndPackagePayload"
           }
         }
       }
@@ -260,6 +280,524 @@
     }
   ],
   "$defs": {
+    "processAndPackagePayload": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "recordedAtUtc",
+        "tooling",
+        "jobObject",
+        "model",
+        "package",
+        "unpackedVerification",
+        "appContainer",
+        "distributionValidation",
+        "privacy",
+        "samplePathConsumed"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "tooling": {
+                "required": ["dotnet"]
+              }
+            },
+            "required": ["tooling"]
+          },
+          "then": {
+            "required": ["host"],
+            "properties": {
+              "privacy": {
+                "required": [
+                  "sourceMediaIncludedInPackage",
+                  "generatedCodecSmokeClipIncluded",
+                  "originalSourceFileIncludedInPackage",
+                  "sourceDerivedMediaIncludedInPackage",
+                  "sourceDerivedMediaDescription",
+                  "fixtureRightsStatus",
+                  "fixtureAllowedUse",
+                  "fixtureExternalPublicationAllowed",
+                  "packageRestrictedToLocalTechnicalEvaluation",
+                  "sourcePathIncludedInReport",
+                  "packagePathsIncludedInReport"
+                ],
+                "properties": {
+                  "sourceMediaIncludedInPackage": { "const": true },
+                  "originalSourceFileIncludedInPackage": { "const": false },
+                  "sourceDerivedMediaIncludedInPackage": { "const": true },
+                  "fixtureExternalPublicationAllowed": { "const": false },
+                  "packageRestrictedToLocalTechnicalEvaluation": { "const": true }
+                }
+              },
+              "distributionValidation": {
+                "properties": {
+                  "blockingInputs": {
+                    "minItems": 1,
+                    "contains": {
+                      "const": "The fixture rights status is unconfirmed and external publication is not allowed."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "1.0.0"
+        },
+        "recordedAtUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "host": {
+          "type": "object",
+          "required": [
+            "hardwareBenchmarkRunId",
+            "hardwareBenchmarkRunSha256",
+            "recordedOperatingSystemVersion",
+            "currentOperatingSystemVersion",
+            "currentProcessArchitecture",
+            "recordedHostIsWindowsInsider"
+          ],
+          "properties": {
+            "hardwareBenchmarkRunId": { "type": "string", "minLength": 1 },
+            "hardwareBenchmarkRunSha256": { "$ref": "#/$defs/sha256" },
+            "recordedOperatingSystemVersion": { "type": "string", "minLength": 1 },
+            "currentOperatingSystemVersion": { "type": "string", "minLength": 1 },
+            "currentProcessArchitecture": { "type": "string", "minLength": 1 },
+            "recordedHostIsWindowsInsider": { "type": "boolean" }
+          }
+        },
+        "tooling": {
+          "type": "object",
+          "required": ["dotnetSdkVersion", "winAppCli", "makeAppx", "ffmpegPackageId", "ffmpegSha256", "ffprobeSha256"],
+          "properties": {
+            "dotnetSdkVersion": { "type": "string", "minLength": 1 },
+            "dotnet": {
+              "type": "object",
+              "required": [
+                "sdkVersion",
+                "globalJsonSha256",
+                "processProbeLockSha256",
+                "workerProbeLockSha256",
+                "selfContained",
+                "publishSingleFile"
+              ],
+              "properties": {
+                "sdkVersion": { "type": "string", "minLength": 1 },
+                "globalJsonSha256": { "$ref": "#/$defs/sha256" },
+                "processProbeLockSha256": { "$ref": "#/$defs/sha256" },
+                "workerProbeLockSha256": { "$ref": "#/$defs/sha256" },
+                "selfContained": { "type": "boolean" },
+                "publishSingleFile": { "type": "boolean" }
+              }
+            },
+            "winAppCli": {
+              "type": "object",
+              "properties": {
+                "available": { "type": "boolean" },
+                "packageName": { "type": "string" },
+                "version": { "type": ["string", "null"] },
+                "architecture": { "type": "string" },
+                "signatureKind": { "type": "string" },
+                "executableByteSize": { "type": ["integer", "null"], "minimum": 1 },
+                "executableSha256": {
+                  "anyOf": [
+                    { "$ref": "#/$defs/sha256" },
+                    { "type": "null" }
+                  ]
+                },
+                "usedForPackaging": { "type": "boolean" },
+                "disposition": { "type": "string", "minLength": 1 }
+              }
+            },
+            "makeAppx": {
+              "type": "object",
+              "required": [
+                "fileName",
+                "fileVersion",
+                "byteSize",
+                "sha256",
+                "buildToolsPackageVersion",
+                "buildToolsRestoreSource",
+                "lockedRestoreSucceeded",
+                "invokedThroughWinAppCli"
+              ],
+              "properties": {
+                "fileName": { "type": "string", "minLength": 1 },
+                "fileVersion": { "type": "string", "minLength": 1 },
+                "byteSize": { "type": "integer", "minimum": 1 },
+                "sha256": { "$ref": "#/$defs/sha256" },
+                "buildToolsPackageVersion": { "type": "string", "minLength": 1 },
+                "buildToolsPackageContentHash": { "type": "string", "minLength": 1 },
+                "buildToolsRestoreSource": { "type": "string", "format": "uri" },
+                "lockedRestoreSucceeded": { "type": "boolean" },
+                "invokedThroughWinAppCli": { "type": "boolean" },
+                "candidateCountInToolCaches": { "type": "integer", "minimum": 1 }
+              }
+            },
+            "ffmpegPackageId": { "type": "string", "minLength": 1 },
+            "ffmpegSha256": { "$ref": "#/$defs/sha256" },
+            "ffprobeSha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "jobObject": {
+          "type": "object",
+          "required": ["selfTest", "hostCrash", "candidateLimits", "officialBehaviorReference", "orphanProcessCountAfterTests"],
+          "properties": {
+            "timeoutCleanup": {
+              "type": "object",
+              "required": [
+                "timeoutSeconds",
+                "expectedTimeoutObserved",
+                "childPidRecorded",
+                "grandchildPidRecorded",
+                "childExitedAfterTimeout",
+                "grandchildExitedAfterTimeout",
+                "passed"
+              ],
+              "properties": {
+                "timeoutSeconds": { "type": "integer", "minimum": 1 },
+                "expectedTimeoutObserved": { "type": "boolean" },
+                "childPidRecorded": { "type": "boolean" },
+                "grandchildPidRecorded": { "type": "boolean" },
+                "childExitedAfterTimeout": { "type": "boolean" },
+                "grandchildExitedAfterTimeout": { "type": "boolean" },
+                "passed": { "type": "boolean" }
+              }
+            },
+            "selfTest": {
+              "type": "object",
+              "required": ["schemaVersion", "processId", "killOnClose", "activeProcessLimit", "processMemoryLimit"],
+              "properties": {
+                "schemaVersion": { "const": "1.0.0" },
+                "processId": { "type": "integer", "minimum": 1 },
+                "killOnClose": {
+                  "type": "object",
+                  "required": ["passed"],
+                  "allOf": [
+                    {
+                      "if": {
+                        "required": ["observedProcessIdCountBeforeClose"]
+                      },
+                      "then": {
+                        "required": [
+                          "childInJobBeforeClose",
+                          "grandchildInJobBeforeClose",
+                          "observedProcessIdCountBeforeClose",
+                          "childExitedAfterClose",
+                          "grandchildExitedAfterClose",
+                          "allObservedProcessIdsExitedAfterClose",
+                          "observedProcessIdLeakCount",
+                          "passed"
+                        ],
+                        "properties": {
+                          "childInJobBeforeClose": { "const": true },
+                          "grandchildInJobBeforeClose": { "const": true },
+                          "childExitedAfterClose": { "const": true },
+                          "grandchildExitedAfterClose": { "const": true },
+                          "allObservedProcessIdsExitedAfterClose": { "const": true },
+                          "observedProcessIdLeakCount": { "const": 0 },
+                          "passed": { "const": true }
+                        }
+                      }
+                    }
+                  ],
+                  "properties": {
+                    "limitFlags": { "type": "integer", "minimum": 0 },
+                    "childInJobBeforeClose": { "type": "boolean" },
+                    "grandchildInJobBeforeClose": { "type": "boolean" },
+                    "processCountBeforeClose": { "type": "integer", "minimum": 0 },
+                    "observedProcessIdCountBeforeClose": { "type": "integer", "minimum": 0 },
+                    "childExitedAfterClose": { "type": "boolean" },
+                    "grandchildExitedAfterClose": { "type": "boolean" },
+                    "allObservedProcessIdsExitedAfterClose": { "type": "boolean" },
+                    "descendantLeakCount": { "type": "integer", "minimum": 0 },
+                    "observedProcessIdLeakCount": { "type": "integer", "minimum": 0 },
+                    "elapsedMilliseconds": { "type": "number", "minimum": 0 },
+                    "passed": { "type": "boolean" }
+                  }
+                },
+                "activeProcessLimit": {
+                  "type": "object",
+                  "required": ["secondAssignmentSucceeded", "secondExitedAutomatically", "callerCleanupRequired", "secondExitedAfterCleanup", "passed"],
+                  "allOf": [
+                    {
+                      "if": {
+                        "required": ["safeCallerCleanupContractPassed"]
+                      },
+                      "then": {
+                        "required": [
+                          "secondAssignmentSucceeded",
+                          "secondExitedAutomatically",
+                          "callerCleanupRequired",
+                          "secondExitedAfterCleanup",
+                          "secondProcessAbsentAfterCleanup",
+                          "firstStillRunningAfterRejectedAssignment",
+                          "processIdListCountBeforeCleanup",
+                          "accountingActiveProcessCountBeforeCleanup",
+                          "processIdListCountAfterCleanup",
+                          "accountingActiveProcessCountAfterCleanup",
+                          "cleanupAccountingConverged",
+                          "documentedAutomaticTerminationObserved",
+                          "safeCallerCleanupContractPassed",
+                          "passed"
+                        ]
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "safeCallerCleanupContractPassed": { "const": true },
+                          "secondExitedAutomatically": { "const": false }
+                        },
+                        "required": ["safeCallerCleanupContractPassed", "secondExitedAutomatically"]
+                      },
+                      "then": {
+                        "properties": {
+                          "secondAssignmentSucceeded": { "const": false },
+                          "callerCleanupRequired": { "const": true },
+                          "secondExitedAfterCleanup": { "const": true },
+                          "secondProcessAbsentAfterCleanup": { "const": true },
+                          "documentedAutomaticTerminationObserved": { "const": false },
+                          "passed": { "const": false }
+                        }
+                      }
+                    }
+                  ],
+                  "properties": {
+                    "limitFlags": { "type": "integer", "minimum": 0 },
+                    "activeProcessLimit": { "type": "integer", "minimum": 1 },
+                    "firstAssignmentSucceeded": { "type": "boolean" },
+                    "secondAssignmentSucceeded": { "type": "boolean" },
+                    "secondAssignmentWin32Error": { "type": "integer", "minimum": 0 },
+                    "secondInJobAfterAttempt": { "type": "boolean" },
+                    "secondExitedAutomatically": { "type": "boolean" },
+                    "callerCleanupRequired": { "type": "boolean" },
+                    "secondExitedAfterCleanup": { "type": "boolean" },
+                    "secondProcessAbsentAfterCleanup": { "type": "boolean" },
+                    "firstStillRunningAfterRejectedAssignment": { "type": "boolean" },
+                    "activeProcessCountAfterAttempt": { "type": "integer", "minimum": 0 },
+                    "processIdListCountBeforeCleanup": { "type": "integer", "minimum": 0 },
+                    "accountingActiveProcessCountBeforeCleanup": { "type": "integer", "minimum": 0 },
+                    "processIdListCountAfterCleanup": { "type": "integer", "minimum": 0 },
+                    "accountingActiveProcessCountAfterCleanup": { "type": "integer", "minimum": 0 },
+                    "cleanupAccountingConverged": { "type": "boolean" },
+                    "documentedAutomaticTerminationObserved": { "type": "boolean" },
+                    "safeCallerCleanupContractPassed": { "type": "boolean" },
+                    "passed": { "type": "boolean" }
+                  }
+                },
+                "processMemoryLimit": {
+                  "type": "object",
+                  "required": ["processMemoryLimitBytes", "allocationFailed", "peakProcessMemoryUsedBytes", "passed"],
+                  "properties": {
+                    "limitFlags": { "type": "integer", "minimum": 0 },
+                    "processMemoryLimitBytes": { "type": "integer", "minimum": 1 },
+                    "childExited": { "type": "boolean" },
+                    "childExitCode": { "type": ["integer", "null"] },
+                    "allocationStartedAfterJobAssignment": { "type": "boolean" },
+                    "allocationFailed": { "type": "boolean" },
+                    "allocatedBytesBeforeFailure": { "type": ["integer", "null"], "minimum": 0 },
+                    "childReportedWorkingSetBytes": { "type": ["integer", "null"], "minimum": 0 },
+                    "peakProcessMemoryUsedBytes": { "type": "integer", "minimum": 0 },
+                    "passed": { "type": "boolean" }
+                  }
+                }
+              }
+            },
+            "hostCrash": {
+              "type": "object",
+              "required": ["hostExitCode", "childExitedAfterHostCrash", "grandchildExitedAfterHostCrash", "passed"],
+              "properties": {
+                "hostExitCode": { "type": "integer" },
+                "stateReady": { "type": "boolean" },
+                "childInJobBeforeCrash": { "type": "boolean" },
+                "grandchildInJobBeforeCrash": { "type": "boolean" },
+                "childExitedAfterHostCrash": { "type": "boolean" },
+                "grandchildExitedAfterHostCrash": { "type": "boolean" },
+                "stdoutLength": { "type": "integer", "minimum": 0 },
+                "stderrContainsIntentionalMarker": { "type": "boolean" },
+                "passed": { "type": "boolean" }
+              }
+            },
+            "candidateLimits": {
+              "type": "object",
+              "required": ["killOnJobClose", "processMemoryLimitBytes", "activeProcessLimit", "processMemoryLimitIsProductionApproved", "activeProcessLimitDisposition"],
+              "properties": {
+                "killOnJobClose": { "type": "boolean" },
+                "processMemoryLimitBytes": { "type": "integer", "minimum": 1 },
+                "activeProcessLimit": { "type": "integer", "minimum": 1 },
+                "processMemoryLimitIsProductionApproved": { "type": "boolean" },
+                "activeProcessLimitDisposition": { "type": "string", "minLength": 1 }
+              }
+            },
+            "officialBehaviorReference": { "type": "string", "format": "uri" },
+            "orphanProcessCountAfterTests": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "model": {
+          "type": "object",
+          "required": ["fileName", "byteSize", "sha256", "sourceUrl", "downloadedDuringThisRun"],
+          "properties": {
+            "fileName": { "type": "string", "minLength": 1 },
+            "byteSize": { "type": "integer", "minimum": 1 },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "sourceUrl": { "type": "string", "format": "uri" },
+            "downloadedDuringThisRun": { "type": "boolean" }
+          }
+        },
+        "package": {
+          "type": "object",
+          "required": [
+            "fileName",
+            "byteSize",
+            "sha256",
+            "identityName",
+            "identityVersion",
+            "processorArchitecture",
+            "applicationEntryPoint",
+            "firstPartyExecutableCount",
+            "totalExecutableCount",
+            "expectedFileCount",
+            "missingExpectedFileCount",
+            "selectedHashComparisonCount",
+            "selectedHashMismatchCount",
+            "packElapsedMilliseconds",
+            "unpackElapsedMilliseconds",
+            "signatureFilePresent",
+            "authenticodeStatus",
+            "unsignedByDesignForStage0",
+            "packageBuildAndUnpackPassed"
+          ],
+          "properties": {
+            "fileName": { "type": "string", "minLength": 1 },
+            "byteSize": { "type": "integer", "minimum": 1 },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "identityName": { "type": "string", "minLength": 1 },
+            "identityVersion": { "type": "string", "minLength": 1 },
+            "processorArchitecture": { "type": "string", "minLength": 1 },
+            "applicationEntryPoint": { "type": "string", "minLength": 1 },
+            "firstPartyExecutableCount": { "type": "integer", "minimum": 1 },
+            "firstPartyExecutables": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["fileName", "byteSize", "sha256"],
+                "properties": {
+                  "fileName": { "type": "string", "minLength": 1 },
+                  "byteSize": { "type": "integer", "minimum": 1 },
+                  "sha256": { "$ref": "#/$defs/sha256" }
+                }
+              }
+            },
+            "totalExecutableCount": { "type": "integer", "minimum": 1 },
+            "expectedFileCount": { "type": "integer", "minimum": 1 },
+            "missingExpectedFileCount": { "type": "integer", "minimum": 0 },
+            "selectedHashComparisonCount": { "type": "integer", "minimum": 1 },
+            "selectedHashMismatchCount": { "type": "integer", "minimum": 0 },
+            "packElapsedMilliseconds": { "type": "number", "minimum": 0 },
+            "unpackElapsedMilliseconds": { "type": "number", "minimum": 0 },
+            "signatureFilePresent": { "type": "boolean" },
+            "authenticodeStatus": { "type": "string", "minLength": 1 },
+            "unsignedByDesignForStage0": { "type": "boolean" },
+            "packageBuildAndUnpackPassed": { "type": "boolean" }
+          }
+        },
+        "unpackedVerification": {
+          "type": "object",
+          "required": ["processProbe", "workerProbe", "executedFromUnpackedLayout"],
+          "properties": {
+            "processProbe": {
+              "type": "object",
+              "required": ["ffprobeExitCode", "codecNames", "expectedCodecsIdentified", "ffmpegExitCode", "codecsDecoded", "modelHash", "modelHashMatched", "passed"],
+              "properties": {
+                "ffprobeExitCode": { "type": "integer" },
+                "ffprobeStderrLength": { "type": "integer", "minimum": 0 },
+                "codecNames": { "type": "array", "items": { "type": "string" } },
+                "expectedCodecsIdentified": { "type": "boolean" },
+                "ffmpegExitCode": { "type": "integer" },
+                "ffmpegStdoutLength": { "type": "integer", "minimum": 0 },
+                "ffmpegStderrLength": { "type": "integer", "minimum": 0 },
+                "codecsDecoded": { "type": "boolean" },
+                "modelHash": { "$ref": "#/$defs/sha256" },
+                "modelHashMatched": { "type": "boolean" },
+                "passed": { "type": "boolean" }
+              }
+            },
+            "workerProbe": {
+              "type": "object",
+              "required": ["schemaVersion", "modelFileName", "modelByteSize", "modelSha256", "passed"],
+              "properties": {
+                "schemaVersion": { "const": "1.0.0" },
+                "modelFileName": { "type": "string", "minLength": 1 },
+                "modelByteSize": { "type": "integer", "minimum": 1 },
+                "modelSha256": { "$ref": "#/$defs/sha256" },
+                "expectedModelSha256": { "$ref": "#/$defs/sha256" },
+                "passed": { "type": "boolean" }
+              }
+            },
+            "executedFromUnpackedLayout": { "type": "boolean" }
+          }
+        },
+        "appContainer": {
+          "type": "object",
+          "required": ["packageApplicationEntryPoint", "appContainerExecutionTested", "candidateDisposition", "reason"],
+          "properties": {
+            "packageApplicationEntryPoint": { "type": "string", "minLength": 1 },
+            "appContainerExecutionTested": { "type": "boolean" },
+            "candidateDisposition": { "type": "string", "minLength": 1 },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        },
+        "distributionValidation": {
+          "type": "object",
+          "required": [
+            "packageBuilt",
+            "packageInstalled",
+            "packageLaunchThroughIdentityTested",
+            "signingTested",
+            "upgradeTested",
+            "uninstallTested",
+            "cleanProductionWindowsTested",
+            "blockingInputs"
+          ],
+          "properties": {
+            "packageBuilt": { "type": "boolean" },
+            "packageInstalled": { "type": "boolean" },
+            "packageLaunchThroughIdentityTested": { "type": "boolean" },
+            "signingTested": { "type": "boolean" },
+            "upgradeTested": { "type": "boolean" },
+            "uninstallTested": { "type": "boolean" },
+            "cleanProductionWindowsTested": { "type": "boolean" },
+            "blockingInputs": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "privacy": {
+          "type": "object",
+          "required": ["sourceMediaIncludedInPackage", "generatedCodecSmokeClipIncluded", "sourcePathIncludedInReport", "packagePathsIncludedInReport"],
+          "properties": {
+            "sourceMediaIncludedInPackage": { "type": "boolean" },
+            "generatedCodecSmokeClipIncluded": { "type": "boolean" },
+            "originalSourceFileIncludedInPackage": { "type": "boolean" },
+            "sourceDerivedMediaIncludedInPackage": { "type": "boolean" },
+            "sourceDerivedMediaDescription": { "type": "string", "minLength": 1 },
+            "fixtureRightsStatus": { "type": "string", "minLength": 1 },
+            "fixtureAllowedUse": { "type": "string", "minLength": 1 },
+            "fixtureExternalPublicationAllowed": { "type": "boolean" },
+            "packageRestrictedToLocalTechnicalEvaluation": { "type": "boolean" },
+            "sourcePathIncludedInReport": { "type": "boolean" },
+            "packagePathsIncludedInReport": { "type": "boolean" }
+          }
+        },
+        "samplePathConsumed": {
+          "const": true
+        }
+      }
+    },
     "audioEventPayload": {
       "type": "object",
       "required": [

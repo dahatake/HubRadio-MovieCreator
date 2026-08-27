@@ -213,6 +213,6 @@
   <path d="M 930 943 L 975 943" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)"/>
   <path d="M 1230 943 L 1275 943" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)"/>
 
-  <text x="800" y="1062" text-anchor="middle" class="small">Current: P-001–P-010 and ST-001–ST-002 complete / ST-003–ST-016 in progress / Stage 1 app not started</text>
+  <text x="800" y="1062" text-anchor="middle" class="small">Current: P-001–P-010; ST-001–005, 009, 010, 014, 016 complete / Stage 0 in progress / Stage 1 app not started</text>
   <text x="800" y="1088" text-anchor="middle" class="small">Source of truth: requirement → adversarial review → Accepted ADR → research → implementation plan</text>
 </svg>

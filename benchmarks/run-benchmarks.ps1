@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality")]
+    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package")]
     [string]$Stage = "hardware",
     [string]$FixtureManifest = (Join-Path $PSScriptRoot "fixtures\fixture-manifest.json"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "results\runs"),
@@ -14,6 +14,66 @@ $ErrorActionPreference = "Stop"
 
 if ($PSVersionTable.PSEdition -ne "Core") {
     throw "PowerShell 7+ (Core) is required."
+}
+
+function Get-DescendantProcessIds {
+    param([Parameter(Mandatory)][int]$RootProcessId)
+
+    $processes = @(Get-CimInstance Win32_Process -ErrorAction Stop | Select-Object ProcessId, ParentProcessId)
+    $descendants = [Collections.Generic.HashSet[int]]::new()
+    $parents = [Collections.Generic.Queue[int]]::new()
+    $parents.Enqueue($RootProcessId)
+    while ($parents.Count -gt 0) {
+        $parent = $parents.Dequeue()
+        foreach ($child in $processes | Where-Object { [int]$_.ParentProcessId -eq $parent }) {
+            $childId = [int]$child.ProcessId
+            if ($descendants.Add($childId)) {
+                $parents.Enqueue($childId)
+            }
+        }
+    }
+    return @($descendants)
+}
+
+function Stop-ProcessTreeAndWait {
+    param(
+        [Parameter(Mandatory)][Diagnostics.Process]$Process,
+        [ValidateRange(1000, 60000)][int]$WaitMilliseconds = 10000
+    )
+
+    $observedIds = [Collections.Generic.HashSet[int]]::new()
+    [void]$observedIds.Add($Process.Id)
+    foreach ($processId in Get-DescendantProcessIds -RootProcessId $Process.Id) {
+        [void]$observedIds.Add($processId)
+    }
+    if (-not $Process.HasExited) {
+        $Process.Kill($true)
+    }
+    $Process.WaitForExit()
+    foreach ($processId in Get-DescendantProcessIds -RootProcessId $Process.Id) {
+        [void]$observedIds.Add($processId)
+    }
+
+    $remaining = [Collections.Generic.List[int]]::new()
+    foreach ($processId in $observedIds) {
+        try {
+            $observed = [Diagnostics.Process]::GetProcessById($processId)
+        }
+        catch [ArgumentException] {
+            continue
+        }
+        try {
+            if (-not $observed.HasExited -and -not $observed.WaitForExit($WaitMilliseconds)) {
+                $remaining.Add($processId)
+            }
+        }
+        finally {
+            $observed.Dispose()
+        }
+    }
+    if ($remaining.Count -gt 0) {
+        throw "Timed-out benchmark descendants did not exit: $($remaining.Count)."
+    }
 }
 
 function Get-RelativeSourcePath {
@@ -56,9 +116,21 @@ function Invoke-JsonChildProcess {
         $stdoutTask = $process.StandardOutput.ReadToEndAsync()
         $stderrTask = $process.StandardError.ReadToEndAsync()
         if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-            $process.Kill($true)
-            $process.WaitForExit()
+            Stop-ProcessTreeAndWait -Process $process
             throw "Benchmark child process exceeded the operational safety timeout of $TimeoutSeconds seconds."
+        }
+        $drainTask = [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($stdoutTask, $stderrTask))
+        try {
+            $drainTask.WaitAsync([TimeSpan]::FromSeconds(10)).GetAwaiter().GetResult()
+        }
+        catch [TimeoutException] {
+            Stop-ProcessTreeAndWait -Process $process
+            try {
+                $drainTask.WaitAsync([TimeSpan]::FromSeconds(10)).GetAwaiter().GetResult()
+            }
+            catch [TimeoutException] {
+                throw "Benchmark child process left redirected streams open after process-tree cleanup."
+            }
         }
         $stdout = $stdoutTask.GetAwaiter().GetResult()
         $stderr = $stderrTask.GetAwaiter().GetResult()
@@ -77,8 +149,7 @@ function Invoke-JsonChildProcess {
     }
     catch {
         if ($started -and -not $process.HasExited) {
-            $process.Kill($true)
-            $process.WaitForExit()
+            Stop-ProcessTreeAndWait -Process $process
         }
         throw
     }
@@ -349,6 +420,143 @@ function Assert-AudioEventPayload {
     }
 }
 
+function Assert-ProcessAndPackagePayload {
+    param([Parameter(Mandatory)][object]$Payload)
+
+    foreach ($name in @(
+        "schemaVersion", "recordedAtUtc", "host", "tooling", "jobObject", "model",
+        "package", "unpackedVerification", "appContainer", "distributionValidation",
+        "privacy", "samplePathConsumed"
+    )) {
+        if ($Payload.PSObject.Properties.Name -notcontains $name) {
+            throw "Process and package payload is missing required property: $name"
+        }
+    }
+    if ($Payload.schemaVersion -ne "1.0.0") {
+        throw "Unsupported process and package payload schemaVersion: $($Payload.schemaVersion)"
+    }
+    if ($Payload.host.hardwareBenchmarkRunSha256 -notmatch '^[0-9a-f]{64}$' -or
+        [string]::IsNullOrWhiteSpace([string]$Payload.host.currentOperatingSystemVersion) -or
+        $Payload.host.currentOperatingSystemVersion -ne $Payload.host.recordedOperatingSystemVersion) {
+        throw "Process and package payload does not link the current host to immutable hardware evidence."
+    }
+    if ($Payload.tooling.dotnetSdkVersion -ne "10.0.400" -or
+        $Payload.tooling.dotnet.sdkVersion -ne $Payload.tooling.dotnetSdkVersion -or
+        $Payload.tooling.dotnet.globalJsonSha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.tooling.dotnet.processProbeLockSha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.tooling.dotnet.workerProbeLockSha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.tooling.dotnet.selfContained -ne $true -or
+        $Payload.tooling.dotnet.publishSingleFile -ne $true) {
+        throw "Process and package payload does not identify the fixed .NET probe toolchain."
+    }
+    if ($Payload.tooling.winAppCli.usedForPackaging -ne $false) {
+        throw "Process and package payload unexpectedly used the optional WinApp CLI bootstrap."
+    }
+    if ($Payload.tooling.makeAppx.sha256 -notmatch '^[0-9a-f]{64}$' -or
+        [string]::IsNullOrWhiteSpace([string]$Payload.tooling.makeAppx.buildToolsPackageContentHash) -or
+        $Payload.tooling.makeAppx.lockedRestoreSucceeded -ne $true -or
+        $Payload.tooling.makeAppx.invokedThroughWinAppCli -ne $false) {
+        throw "Process and package payload does not identify a locked direct MakeAppx toolchain."
+    }
+    $killOnClose = $Payload.jobObject.selfTest.killOnClose
+    if ($Payload.jobObject.timeoutCleanup.passed -ne $true -or
+        $Payload.jobObject.timeoutCleanup.childExitedAfterTimeout -ne $true -or
+        $Payload.jobObject.timeoutCleanup.grandchildExitedAfterTimeout -ne $true -or
+        $killOnClose.childInJobBeforeClose -ne $true -or
+        $killOnClose.grandchildInJobBeforeClose -ne $true -or
+        $killOnClose.childExitedAfterClose -ne $true -or
+        $killOnClose.grandchildExitedAfterClose -ne $true -or
+        $killOnClose.allObservedProcessIdsExitedAfterClose -ne $true -or
+        [int]$killOnClose.observedProcessIdLeakCount -ne 0 -or
+        $killOnClose.passed -ne $true -or
+        $Payload.jobObject.selfTest.processMemoryLimit.passed -ne $true -or
+        $Payload.jobObject.hostCrash.passed -ne $true -or
+        [int]$Payload.jobObject.orphanProcessCountAfterTests -ne 0) {
+        throw "Job Object kill-on-close, crash, memory, or orphan-process evidence did not pass."
+    }
+    $activeLimit = $Payload.jobObject.selfTest.activeProcessLimit
+    foreach ($name in @(
+        "secondAssignmentSucceeded", "secondExitedAutomatically", "callerCleanupRequired",
+        "secondExitedAfterCleanup", "secondProcessAbsentAfterCleanup",
+        "processIdListCountBeforeCleanup", "accountingActiveProcessCountBeforeCleanup",
+        "processIdListCountAfterCleanup", "accountingActiveProcessCountAfterCleanup",
+        "cleanupAccountingConverged", "documentedAutomaticTerminationObserved",
+        "safeCallerCleanupContractPassed", "passed"
+    )) {
+        if ($activeLimit.PSObject.Properties.Name -notcontains $name) {
+            throw "Active-process-limit evidence is missing required property: $name"
+        }
+    }
+    if ($activeLimit.documentedAutomaticTerminationObserved -ne $activeLimit.secondExitedAutomatically -or
+        $activeLimit.passed -ne ($activeLimit.secondAssignmentSucceeded -eq $false -and
+            $activeLimit.secondExitedAutomatically -eq $true -and
+            $activeLimit.firstStillRunningAfterRejectedAssignment -eq $true -and
+            $activeLimit.cleanupAccountingConverged -eq $true -and
+            [int]$activeLimit.processIdListCountAfterCleanup -eq 1 -and
+            [int]$activeLimit.accountingActiveProcessCountAfterCleanup -eq 1)) {
+        throw "Active-process-limit aggregate flags contradict the measured fields."
+    }
+    if ($activeLimit.secondAssignmentSucceeded -ne $false -or
+        ($activeLimit.secondExitedAutomatically -ne $true -and
+            ($activeLimit.callerCleanupRequired -ne $true -or
+                $activeLimit.secondExitedAfterCleanup -ne $true -or
+                $activeLimit.secondProcessAbsentAfterCleanup -ne $true -or
+                $activeLimit.safeCallerCleanupContractPassed -ne $true)) -or
+        ($activeLimit.cleanupAccountingConverged -eq $true -and
+            ([int]$activeLimit.processIdListCountAfterCleanup -ne 1 -or
+                [int]$activeLimit.accountingActiveProcessCountAfterCleanup -ne 1))) {
+        throw "Active-process-limit rejection or caller cleanup evidence is incomplete."
+    }
+    if ($Payload.jobObject.selfTest.processMemoryLimit.allocationStartedAfterJobAssignment -ne $true -or
+        $null -eq $Payload.jobObject.selfTest.processMemoryLimit.allocatedBytesBeforeFailure) {
+        throw "Process memory limit evidence does not prove allocation started after Job assignment."
+    }
+    if ($Payload.jobObject.candidateLimits.processMemoryLimitIsProductionApproved -ne $false) {
+        throw "Stage 0 process memory limit must not be marked production-approved."
+    }
+    if ($Payload.package.packageBuildAndUnpackPassed -ne $true -or
+        [int]$Payload.package.firstPartyExecutableCount -lt 2 -or
+        [int]$Payload.package.missingExpectedFileCount -ne 0 -or
+        [int]$Payload.package.selectedHashMismatchCount -ne 0 -or
+        @($Payload.package.firstPartyExecutables).Count -ne 2 -or
+        @($Payload.package.firstPartyExecutables | Where-Object { $_.sha256 -notmatch '^[0-9a-f]{64}$' }).Count -ne 0 -or
+        $Payload.package.signatureFilePresent -ne $false -or
+        $Payload.package.unsignedByDesignForStage0 -ne $true) {
+        throw "Unsigned multi-executable package build, unpack, or hash verification did not pass."
+    }
+    if ($Payload.unpackedVerification.processProbe.passed -ne $true -or
+        $Payload.unpackedVerification.processProbe.expectedCodecsIdentified -ne $true -or
+        $Payload.unpackedVerification.processProbe.codecsDecoded -ne $true -or
+        $Payload.unpackedVerification.workerProbe.passed -ne $true -or
+        $Payload.unpackedVerification.workerProbe.modelSha256 -ne $Payload.unpackedVerification.workerProbe.expectedModelSha256 -or
+        $Payload.unpackedVerification.executedFromUnpackedLayout -ne $true) {
+        throw "Unpacked codec/model verification did not pass."
+    }
+    if ($Payload.appContainer.appContainerExecutionTested -ne $false -or
+        $Payload.distributionValidation.packageInstalled -ne $false -or
+        $Payload.distributionValidation.signingTested -ne $false -or
+        $Payload.distributionValidation.cleanProductionWindowsTested -ne $false) {
+        throw "Stage 0 payload unexpectedly claims AppContainer, installation, signing, or clean-machine validation."
+    }
+    if ($Payload.privacy.sourceMediaIncludedInPackage -ne $true -or
+        $Payload.privacy.originalSourceFileIncludedInPackage -ne $false -or
+        $Payload.privacy.sourceDerivedMediaIncludedInPackage -ne $true -or
+        $Payload.privacy.fixtureRightsStatus -ne "unconfirmed" -or
+        $Payload.privacy.fixtureExternalPublicationAllowed -ne $false -or
+        $Payload.privacy.packageRestrictedToLocalTechnicalEvaluation -ne $true -or
+        $Payload.privacy.sourcePathIncludedInReport -ne $false -or
+        $Payload.privacy.packagePathsIncludedInReport -ne $false) {
+        throw "Process and package payload included source media or local paths."
+    }
+    $rightsBlocker = "The fixture rights status is unconfirmed and external publication is not allowed."
+    if (@($Payload.distributionValidation.blockingInputs) -notcontains $rightsBlocker) {
+        throw "Process and package payload does not preserve the fixture-rights distribution blocker."
+    }
+    if ($Payload.samplePathConsumed -ne $true) {
+        throw "Process and package payload did not confirm fixture path consumption."
+    }
+}
+
 function Protect-SensitiveText {
     param(
         [Parameter(Mandatory)][string]$Text,
@@ -373,8 +581,9 @@ function Get-SafeFailurePayload {
     foreach ($name in @(
         "schemaVersion", "library", "model", "control", "proxy",
         "sampling", "detection", "tooling", "decodeEvidence", "models", "controls",
-        "performance", "privacy", "annotations", "automaticDeletionPerformed",
-        "candidateThresholdsAreStage0ConfigurationsNotProductionValues", "samplePathConsumed"
+        "performance", "privacy", "annotations", "automaticDeletionPerformed", "host",
+        "candidateThresholdsAreStage0ConfigurationsNotProductionValues", "jobObject", "package",
+        "unpackedVerification", "appContainer", "distributionValidation", "samplePathConsumed"
     )) {
         if ($Payload.PSObject.Properties.Name -contains $name) {
             $safePayload[$name] = $Payload.$name
@@ -467,6 +676,10 @@ try {
         "audio-event-and-recording-quality" {
             $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\detect-audio-events.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
             Assert-AudioEventPayload -Payload $payload
+        }
+        "process-and-package" {
+            $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\measure-process-and-package.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
+            Assert-ProcessAndPackagePayload -Payload $payload
         }
         default {
             throw "Unsupported benchmark stage: $Stage"
