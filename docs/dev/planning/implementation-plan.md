@@ -4,7 +4,7 @@
 **要求の正本（暫定既定）:** `docs/requirement-definition.md` 版 0.1 Draft  
 **設計根拠:** `docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **計画日:** 2026年8月26日  
-**計画状態:** Stage 0の測定タスクは完了し、ST-015の人手承認待ち。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-014、ST-016は完了し、ST-008は利用条件不同意のため未実行。ST-011はmanual-only、ST-012はrender機構と4点の元PTS逆引き、ST-013は同一LayoutSpec/Cueによるactual WebView2 Canvas/SVGとFFmpeg忠実区間の差分記録を実証した。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布は未承認。アプリケーション、IaC、Azureリソースは未完了
+**計画状態:** Stage 0は2026年8月27日に人手承認済み。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016は完了し、ST-008は利用条件不同意のためcondition-falseとして閉じた。Stage 1では`A-010`と`A-015`をcondition-false、`A-012`と`A-013`を正例annotation・再評価待ちとして開始せず、[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)の手動fallbackを実装する。全203 taskの内訳は、完了25 + 先行条件不成立`ST-008` 1 + 後続177である。後続177 task IDのうち14件は条件不成立・保留（4件）またはAzure gate closed（10件）で、baseline実行対象は163件。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布は未承認。製品アプリケーション、IaC、Azure resourceは未実装で、次の実行対象は`F-001`
 
 ---
 
@@ -209,7 +209,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | ST-013 | WebView2 Canvas/SVGと忠実区間レンダーを比較する | `BENCH/web-preview/`、`BENCH/results/preview-fidelity.json` | ST-004,ST-012 / `L-W` | 同一LayoutSpec/Cueで差分を記録できる | FR-026、RS§5.12 | ローカル処理 |
 | ST-014 | Job ObjectとAppContainer候補、MSIX複数実行ファイルを検証する | `BENCH/results/process-and-package.json` | ST-002,P-010 / `L-S` | kill-on-close、制限、codec/model読込、1パッケージ化の成否を記録 | NFR-003/004 | ローカル処理 |
 | ST-016 | 咳・雑音・待ち・録画トラブル候補のローカル検出方法を比較する | `BENCH/results/audio-event-and-recording-quality.json` | ST-001,ST-003 / `L-M` | audio event分類、波形規則、decode警告を比較し、採用/手動化と誤検出分類を記録 | FR-005 | ローカル処理 |
-| ST-015 | Stage 0結果を採用/保留/手動化へ分類する | `BENCH/results/stage-0-report.md`、ADR更新 | ST-004〜ST-014,ST-016 / 直列 | 関係者が閾値、採用技術、フォールバック、残余リスクを承認 | 全AC、RS§11/12 | 作成なし |
+| ST-015 | **完了。** Stage 0結果を採用/保留/手動化へ分類する | `BENCH/results/stage-0-report.md`、`docs/dev/decisions/ADR-0007-stage-0-technology-selection.md` | ST-004〜ST-014,ST-016 / 直列 | 関係者が閾値規則、採用技術、フォールバック、残余リスクを承認 | 全AC、RS§11/12 | 作成なし |
 
 ### 5.3 F — リポジトリとビルド基盤
 
@@ -291,17 +291,17 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | A-007 | ffmpeg silence/VAD結果を削除候補化する | `INFRA/Analysis/SilenceDetector.cs`、tests | A-002,D-006,J-003 / `L-M` | 理由、閾値版、SourceSpanを持ち自動削除しない | FR-005 | ローカル処理 |
 | A-008 | 「ここはカット」等の明示語句候補を実装する | `APP/Analysis/EditorialPhraseDetector.cs`、tests | A-004,D-006 / `L-C` | 辞書版と根拠tokenを持つ | FR-005 | なし |
 | A-009 | 近接反復/言い直し候補の決定論的baselineを実装する | `WORKER/tasks/repetition.py`、tests | A-004,J-005 / `L-M` | 誤削除せずSuggestionのみ。理由特徴を返す | FR-005 | ローカル処理 |
-| A-010 | pyannote採用時だけ話者分離taskを実装する | `WORKER/tasks/diarize.py`、model record/tests | ST-008,P-008 / 条件付き `L-M` | 条件不同意/品質不足時はtaskを配布せず手動経路を使う | FR-003 | ローカル処理 |
+| A-010 | **condition-false。** pyannote話者分離は実装しない | （成果物なし） | P-008 / 条件付き `L-M` | 利用条件不同意を記録済み。worker/modelを配布せず、A-011の手動speaker割当を使う。将来は明示同意、license/hash固定、別承認後に再計画 | FR-003 | ローカル処理 |
 | A-011 | 匿名speaker clusterを出演者へ手動割当する | `APP/Speakers/SpeakerAssignmentService.cs`、tests | D-005,A-003 / `L-C` | full/姓/役割/非表示と改訂履歴を保持 | FR-003、BR-002 | なし |
-| A-012 | shot境界taskを実装し元PTSへ正規化する | `WORKER/tasks/detect_shots.py`、tests | ST-009,J-005,M-007 / `L-M` | 採用detector/threshold版、SourceSpan、statsを保存 | FR-006/016 | ローカル処理 |
-| A-013 | face bboxのsampling taskを実装する | `WORKER/tasks/detect_faces.py`、tests | ST-010,J-005,M-009 / `L-M` | VIDEO mode、単調timestamp、bbox/confidenceを保存 | FR-010/014/021 | ローカル処理 |
-| A-014 | 発話とshotを使うtopic境界baselineを実装する | `APP/Analysis/TopicBoundaryService.cs`、tests | A-004,A-012,D-006 / `L-C` | 境界理由を表示し、人が開始/終了を修正可能 | FR-006 | なし |
-| A-015 | local text model採用時だけtopic名/要約候補を実装する | `INFRA/Analysis/LocalTextSuggestionClient.cs`、schema/tests | ST-011,A-014,D-006 / 条件付き `L-M` | token/span IDのみ採用し、schema違反は破棄。未採用なら手入力 | FR-006 | ローカル処理 |
+| A-012 | **再評価保留。** shot境界taskは正例annotation取得後に再評価する | （保留、成果物なし） | ST-009 + 正例annotation + 別承認 / 条件付き `L-M` | fixture 3構成の境界0件とcontrol成功を保持し、thresholdを選ばない。topic/transitionはtranscript規則、編集境界、手動操作を使う | FR-006/016 | ローカル処理 |
+| A-013 | **再評価保留。** face bbox taskは代表fixtureのannotation取得後に再評価する | （保留、成果物なし） | ST-010 + face annotation + 別承認 / 条件付き `L-M` | positive control 1件、fixture 300/300 frame検出0件を保持し、confidenceを選ばない。layout/字幕/thumbnailは手動領域と版付きsafe zoneを使う | FR-010/014/021 | ローカル処理 |
+| A-014 | 発話とtranscript規則を使うtopic境界baselineを実装する | `APP/Analysis/TopicBoundaryService.cs`、tests | A-004,D-006 / `L-C` | 境界理由を表示し、人が開始/終了を修正可能。shot境界はA-012が将来採用された場合だけ任意入力にする | FR-006 | なし |
+| A-015 | **condition-false。** local text modelによるtopic名/要約候補は実装しない | （成果物なし） | ST-011 / 条件付き `L-M` | accepted JSON 0件を記録済み。A-014/A-020の決定論的値と手入力を使い、model clientを作らない | FR-006 | ローカル処理 |
 | A-018 | 咳・雑音・操作待ち・録画品質問題を削除候補化する | `WORKER/tasks/detect_audio_events.py`または採用した決定論的実装、tests | ST-016,A-002,D-006 / `L-M` | 採用方式だけを実装し、SourceSpan・理由・確度を持つSuggestionとして出す | FR-005 | ローカル処理 |
 | A-019 | 準備会話とtopic逸脱区間を候補化する | `APP/Analysis/ContextDeviationDetector.cs`、tests | A-004,A-014,D-006 / `L-C` | 冒頭/末尾規則とtopic距離を理由表示し、自動削除しない | FR-005 | ローカル処理 |
 | A-020 | topic名、要約、主話者、keyword、重要発言、対象者、公開注意を編集可能にする | `APP/Analysis/TopicMetadataService.cs`、tests | A-004,A-011,A-014。A-015は任意 / `L-C` | 主話者等の決定論的値と手入力を常に提供し、model候補は採用まで分離 | FR-006 | なし |
 | A-021 | 結論、数値、製品名、注意、keyword、Q&Aから強調テロップ候補を抽出する | `APP/Analysis/EmphasisCandidateService.cs`、tests | A-004,A-005,A-020,D-006 / `L-C` | SourceSpan、候補理由、原文/要約区分を持ち、自動採用しない | FR-013 | なし |
-| A-016 | 提案の採用/却下/修正とstale表示を統合する | `APP/Analysis/SuggestionService.cs`、tests | A-006〜A-015,A-018〜A-021,J-007 / `L-C` | AI候補保存とComposition採用を分離 | FR-005〜007/013、BR-005 | なし |
+| A-016 | 提案の採用/却下/修正とstale表示を統合する | `APP/Analysis/SuggestionService.cs`、tests | A-006〜A-009,A-011,A-014,A-018〜A-021,J-007 / `L-C` | 実装対象producerだけを統合し、AI候補保存とComposition採用を分離。A-010/A-012/A-013/A-015を必須依存にしない | FR-005〜007/013、BR-005 | なし |
 | A-017 | transcript修正時の最小再処理DAGを実装する | `APP/Analysis/AnalysisDependencyGraph.cs`、tests | A-004,A-016,J-007 / `L-C` | ASRを再実行せず辞書/topic等だけstale化 | NFR-002、AR-3 | なし |
 
 ### 5.8 R — 非破壊編集、字幕、レンダー
@@ -315,10 +315,10 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | R-005 | 共通LayoutSpecからpreview/render座標を導出する | `CORE/Layout/LayoutResolver.cs`、tests | D-008 / `L-C` | pixel/aspect/DPIに依存しない正規化座標を持つ | FR-009/010/026 | なし |
 | R-006 | 16:9長尺/YouTube/横長短尺profileを定義する | `APP/Profiles/16x9/*.json`、validation tests | R-004,R-005,ST-005 / `L-M` | chapter、topic表示、speaker名、資料、CTA、end-card余白を含め、未確認の媒体値は設定せず版管理 | FR-008/009/031 | なし |
 | R-007 | 9:16短尺profileを定義する | `APP/Profiles/9x16/*.json`、tests | R-004,R-005,ST-005 / `L-M` | 解像度、safe zone、字幕領域を版付き定義 | FR-010/031 | なし |
-| R-008 | 手動レイアウト7種とフォールバックを実装する | `CORE/Layout/ManualLayoutResolver.cs`、tests | R-005,R-007,A-013 / `L-C` | 単一crop、二人上下、話者+資料、資料+小窓、拡大、blur背景、固定templateを選べる | FR-010、AR-15 | なし |
+| R-008 | 手動レイアウト7種とフォールバックを実装する | `CORE/Layout/ManualLayoutResolver.cs`、tests | R-005,R-007 / `L-C` | 単一crop、二人上下、話者+資料、資料+小窓、拡大、blur背景、固定templateを選べる。face候補はA-013が将来採用された場合だけ任意入力にする | FR-010、AR-15 | なし |
 | R-009 | crop/scale/positionの手動keyframe補間を実装する | `CORE/Layout/KeyframeTrack.cs`、tests | R-005,R-008 / `L-C` | shot境界、補間、範囲、preview/render一致を検査 | FR-010/014 | なし |
 | R-010 | 発話から字幕Cue候補を生成する | `CORE/Subtitles/SubtitleSegmenter.cs`、tests | D-005,D-008,A-004 / `L-C` | 日本語分割、話者変更、間、修正revisionを反映 | FR-012 | なし |
-| R-011 | 字幕hard/soft制約と解なし判定を実装する | `CORE/Subtitles/SubtitleLayoutEngine.cs`、tests | R-005,R-010,A-013 / `L-C` | 画面外/禁止領域はhard fail、解なしは手動へ送る | FR-012/014、AR-17 | なし |
+| R-011 | 字幕hard/soft制約と解なし判定を実装する | `CORE/Subtitles/SubtitleLayoutEngine.cs`、tests | R-005,R-010 / `L-C` | 版付きLayoutSpecのsafe zoneから判定し、画面外/禁止領域はhard fail、解なしは手動へ送る。face領域はA-013が将来採用された場合だけ任意入力にする | FR-012/014、AR-17 | なし |
 | R-012 | 字幕/強調/注意/引用の編集と版を実装する | `APP/Subtitles/SubtitleService.cs`、tests | R-010,R-011,R-003 / `L-C` | 時刻、文字、style変更を差分・OriginRef付き保存 | FR-012〜014 | なし |
 | R-013 | VTT/SRT/ASSを同じCueから出力する | `INFRA/Subtitles/*.cs`、round-trip tests | R-012 / `L-M` | encoding、escape、時刻順、範囲を検証 | FR-012/031 | ローカル処理 |
 | R-014 | 強調テロップ候補の採用、手動作成、配置を実装する | `APP/Graphics/EmphasisCueService.cs`、tests | D-003,A-021,R-011,R-012 / `L-C` | 根拠なし引用、過剰同時表示、発話先行を拒否/警告し、全候補を人が変更可能 | FR-013/014 | なし |
@@ -388,12 +388,12 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | E-002 | 見どころscore、理由、不足文脈を実装する | `APP/Highlights/HeuristicRanker.cs`、tests | E-001,P-009 / `L-C` | RS§5.5の特徴を版付きで出し、安全性を加重和へ入れない | FR-007、AR-16 | ローカル処理 |
 | E-003 | 近似重複除去と採否データ収集を実装する | `APP/Highlights/DiversityService.cs`、tests | E-002,A-016 / `L-C` | 異なる候補を残し、学習は十分なラベルと別承認まで行わない | FR-007/028 | ローカル処理 |
 | E-004 | 根拠span付きhook候補を生成する | `APP/Generation/HookService.cs`、schema/tests | E-001,A-004,S-013。A-015/Z-008は任意 / `L-C` | 結論、質問、誤解、数字、禁止、失敗談、意外な事実、問い、印象的発言の抽出候補を作り、model言換えは任意。引用/編集部文を区別 | FR-011 | ローカル優先 |
-| E-005 | thumbnail quality候補とtemplate合成を実装する | `APP/Thumbnails/`、tests | M-010,A-013,R-004 / `L-M` | blur/露出/顔/余白を理由表示し、人が選択可能 | FR-021 | ローカル処理 |
+| E-005 | thumbnail quality候補とtemplate合成を実装する | `APP/Thumbnails/`、tests | M-010,R-004 / `L-M` | blur/露出/余白を決定論的に理由表示し、人が選択可能。face scoreはA-013が将来採用された場合だけ任意入力にする | FR-021 | ローカル処理 |
 | E-006 | 音声検査・補正・A/B previewを実装する | `INFRA/Audio/`、`WEB/src/features/audio/`、tests | M-006,R-019,P-009 / `L-M` | 音量均一化、左右、noise/hum、無音、BGM balance、急変/clip、loudness/true peakをtoggle可能。声質評価を記録 | FR-020 | ローカル処理 |
 | E-007 | 資料ページ化、OCR、発話との対応候補を実装する | `WORKER/tasks/ocr_materials.py`、`APP/Materials/`、tests | D-004,A-004,S-004 / `L-M` | page/region/time/source/rightsを保持し、機密資料をgate | FR-018、BR-003 | ローカル処理 |
 | E-008 | 権利済みBGM/SFXとduckingを実装する | `APP/Audio/AudioCueService.cs`、`INFRA/Rendering/AudioEmitter.cs` | S-006,E-006,R-017 / `L-M` | RightsRecord未確認素材を参照せず、会話A/B可能 | FR-019 | ローカル処理 |
-| E-009 | active speakerと自動reframe候補を実装する | `WORKER/tasks/active_speaker.py`、`APP/Reframe/`、tests | A-010,A-013,R-008,R-009,P-009 / `L-M` | 離散layout選択後にのみcrop経路最適化し、失敗時手動へ戻る | FR-010、AR-15 | ローカル処理 |
-| E-010 | jump-cut差と承認素材による緩和候補を実装する | `APP/Editing/JumpCutService.cs`、tests | A-012,A-013,E-007,R-016 / `L-C` | 存在しない映像を事実映像として作らない | FR-017 | ローカル処理 |
+| E-009 | 発話speakerと手動subject keyframeからreframe候補を実装する | `APP/Reframe/TranscriptDrivenReframeService.cs`、tests | A-011,R-008,R-009,P-009 / `L-C` | transcriptのspeaker turnと人が指定したsubject領域から離散layout候補を作り、失敗時はmanual keyframeへ戻る。A-010/A-013は将来の任意入力 | FR-010、AR-15 | ローカル処理 |
+| E-010 | edit境界差と承認素材によるjump-cut緩和候補を実装する | `APP/Editing/JumpCutService.cs`、tests | R-001,R-002,E-007,R-016 / `L-C` | Compositionのedit境界を使い、存在しない映像を事実映像として作らない。A-012/A-013は将来の任意入力 | FR-017 | なし |
 | E-011 | 根拠必須quiz/puzzle候補を実装する | `APP/Generation/QuizService.cs`、schema/tests | A-004,A-016,S-013。A-015/Z-008は任意 / `L-C` | 人が根拠spanを選ぶ決定論的構成を常に提供し、model候補は任意。問い/待ち/答え/解説/CTAと曖昧時reviewRequiredを保持 | FR-022、AC-003 | ローカル優先 |
 | E-012 | 高関心型の構成templateを実装する | `APP/Templates/ShortForm/`、tests | E-001,E-004,E-011,R-004 / `L-C` | 教育、驚き、誤解訂正、失敗談、比較、ranking、Q&A、story、quiz、demo先出しを持ち、根拠のないrankingを拒否 | FR-023 | なし |
 | E-013 | title、概要、chapter、hashtag、投稿文候補を実装する | `APP/Generation/PublishingMetadataService.cs`、tests | A-014,S-013。A-015/Z-008は任意 / `L-C` | topic/出演者/CTAから編集可能なtemplate案を常に作り、model案は任意。固有名詞/URL/OriginRefを検査 | FR-025 | ローカル優先 |
@@ -425,10 +425,10 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
-| PK-001 | 採用ML wheelが共存するPython版を固定する | `WORKER/requirements.lock`または採用lockfile、wheel matrix | ST-006〜ST-010,F-004 / `L-S` | Windows x64 clean環境でhash固定依存を再現 | NFR-003/006 | なし |
+| PK-001 | 採用ML wheelが共存するPython版を固定する | `WORKER/requirements.lock`または採用lockfile、wheel matrix | ST-006,ST-007,ST-009,ST-010,ST-016,F-004 / `L-S` | Windows x64 clean環境でhash固定依存を再現し、不採用modelをlockへ含めない | NFR-003/006 | なし |
 | PK-002 | Python runtime/workerをself-contained配布物へ組み立てる | `packaging/python/`、build script、license | PK-001,J-005 / `L-S` | system Python/PATHへ依存せず、書込はworkspaceだけ | NFR-003/004 | なし |
 | PK-003 | FFmpeg LGPL build、source/build config、noticeを固定する | `packaging/ffmpeg/manifest.json`、build instructions | ST-002,ST-005,P-008 / `L-S` | binary hash、`-buildconf`、license、source入手方法を一致 | FR-031、RS[S48] | なし |
-| PK-004 | model取得、同意、hash、cache、offline起動を実装する | `packaging/models/catalog.json`、`APP/Models/ModelManager.cs` | F-008,ST-006〜ST-011 / `L-S` | silent upgradeせず、未取得/破損/不同意を明示 | NFR-003/006 | ローカル処理 |
+| PK-004 | model取得、同意、hash、cache、offline起動を実装する | `packaging/models/catalog.json`、`APP/Models/ModelManager.cs` | F-008,ST-006,ST-007,ST-009,ST-010,ST-011,ST-016 / `L-S` | silent upgradeせず、未取得/破損/不同意と採用/保留/不採用を明示。不採用modelを取得・同梱しない | NFR-003/006 | ローカル処理 |
 | PK-005 | React production assetsをApp packageへ組み込む | `APP/WebAssets/`生成規則、build integration | F-003,U-002 / `L-W` | CDN/remote scriptなし、source mapは配布方針に従う | NFR-004 | なし |
 | PK-006 | 複数実行ファイルを1つのMSIX Packaging Projectへ収める | `PKG/*.wapproj`、`Package.appxmanifest` | PK-002〜PK-005,ST-014 / `L-S` | WinUI、worker、FFmpeg、licenseをclean Windowsへinstall | Windows packaging公式 | なし |
 | PK-007 | package署名、upgrade、rollback、uninstall、cache保持を検証する | `docs/dev/release/package-runbook.md`、test records | PK-006,P-010 / 直列 | 署名信頼、上書きupgrade、DB migration、uninstall後の利用者データ方針を確認 | NFR-003/004 | 署名方式により条件付き |
@@ -459,7 +459,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 ```mermaid
 flowchart TD
     P[P-001..010 判断] --> ST[ST-001..015 技術スパイク]
-    ST --> G0{Stage 0承認}
+   ST --> G0{Stage 0承認済み}
     G0 --> F[F-001..009 基盤]
     F --> D[D-001..016 正規モデル/DB]
     D --> J[J-001..010 ジョブ/プロセス]
@@ -506,25 +506,25 @@ flowchart TD
 |---|---|---|
 | FR-001 | M-001〜M-012 | Q-001、M security tests |
 | FR-002 | A-001〜A-004、U-008 | Q-001 |
-| FR-003 | ST-008、A-010/A-011 | Q-001、手動fallback記録 |
+| FR-003 | ST-008/A-010はcondition-false、A-011 | Q-001、手動fallback記録 |
 | FR-004 | A-005/A-006、U-008 | Q-001 |
 | FR-005 | A-007〜A-009、A-016、A-018/A-019、U-016 | Q-001 |
-| FR-006 | A-012、A-014/A-015/A-020、U-016 | Q-001 |
+| FR-006 | A-012は再評価保留、A-015はcondition-false、A-014/A-020、U-016 | Q-001 |
 | FR-007 | E-001〜E-003、E-015 | Q-002、pilot採否記録 |
 | FR-008 | R-001〜R-006、R-015〜R-022 | Q-001 |
 | FR-009 | R-006、R-015〜R-022 | Q-001 |
-| FR-010 | R-007〜R-009、U-010、E-009/E-019 | Q-002 |
+| FR-010 | A-013は再評価保留、R-007〜R-009、U-010、E-009/E-019 | Q-002 |
 | FR-011 | E-004/E-015 | Q-002 |
 | FR-012 | R-010〜R-013、U-010 | Q-001/Q-002 |
 | FR-013 | A-021、R-014、U-010 | Q-001/Q-002 |
 | FR-014 | R-005、R-011/R-014、E-014 | Q-002 |
 | FR-015 | R-004、R-015 | Q-001/Q-002 |
-| FR-016 | A-012、R-016 | Q-001 |
+| FR-016 | A-012は再評価保留、R-016と手動edit境界 | Q-001 |
 | FR-017 | E-010/E-017 | Q-011 |
 | FR-018 | E-007/E-017、S-006/S-007 | Q-011 |
 | FR-019 | E-008/E-018、S-006 | Q-011 |
 | FR-020 | E-006/E-018、R-021 | Q-011 |
-| FR-021 | M-010、R-023、U-014、E-005 | Q-001/Q-011 |
+| FR-021 | A-013は再評価保留、M-010、R-023、U-014、E-005 | Q-001/Q-011 |
 | FR-022 | E-011/E-016 | Q-003 |
 | FR-023 | E-012/E-016 | Q-003/Q-011 |
 | FR-024 | R-015 | Q-001/Q-002 |
@@ -624,4 +624,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**次の未完了実行対象はST-015の人手承認である。F-001以降のscaffoldはST-015承認後、Azure作成はZ-005の明示指示後に限る。**
+**次の未完了実行対象はF-001である。Stage 0の採否はADR-0007で承認済みだが、Azure作成はZ-001〜Z-004の条件成立とZ-005の別の明示指示後に限る。**

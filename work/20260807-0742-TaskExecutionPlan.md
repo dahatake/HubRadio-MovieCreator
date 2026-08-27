@@ -19,18 +19,18 @@
 | ST | ST-006 | 測定、canonical、敵対的レビュー、実在指摘の反映、コミットまで完了 |
 | ST | ST-007、ST-011、ST-012、ST-013 | 測定、canonical、敵対的レビュー、実在指摘の反映、コミットまで完了 |
 | ST | ST-008 | 利用条件不同意のため条件不成立。手動話者割当を維持 |
-| ST | ST-015 | 14 canonicalを統合した承認資料を作成済み。A〜Fの人手承認待ち |
+| ST | ST-015 | 14 canonicalを統合した承認資料のA〜Fを人手承認済み。commit `79ecdad` |
 
-**完了: 24 / 203タスク**。ST-008は条件不成立として閉じ、現在実行できる次のgateはST-015の人手承認だけである。承認後に177個の後続task IDが残るが、現提案では`A-010`、`A-015`、`Z-001〜Z-010`の12件は条件未成立のまま開始しないため、現在のbaselineで実行対象となる後続taskは165件である。
+**完了: 25 / 203タスク**。全203 taskの内訳は、完了25 + 先行条件不成立`ST-008` 1 + 後続177である。後続177 task IDのうち、`A-010`と`A-015`はcondition-false、`A-012`と`A-013`は再評価保留、`Z-001〜Z-010`はAzure gate closedである。この14件を通常実行列へ入れないため、現在のbaseline実行対象は163件で、次のtaskは`F-001`である。
 
-### 1.2 未コミットの作業
+### 1.2 直近の統合作業
 
-- developer documentationを`docs/dev/`へ再編したrename、新規ガイド、リンク修正、状態更新
-- `benchmarks/results/stage-0-report.md`（ST-015承認案。A〜Fは全て未承認）
-- `benchmarks/results/audio-event-and-recording-quality.json`のlicense evidence参照先更新
-- 本実行プランの現状同期
+- developer documentation再編、canonical参照更新、ST-015 pending report: commit `840d1ab`
+- 新たに出現したlocal `video/`資産6件を削除せずGit対象外にする安全対策: commit `9deb319`
+- ST-015 A〜Fの人手承認記録: commit `79ecdad`
+- ADR-0007、正本task dependency、navigation、hashの同期: ST-015-CLOSEとして完了
 
-旧ADR重複は削除済みである。Git indexは文書移動、本文修正、新規guide、canonical参照更新、ST-015報告書、本計画の27 pathを一体としてstage済みで、unstaged/untrackedは0件である。DOC-003の敵対的レビューで検出した本節のstaleな状態記述を修正し、commit前検査を再実行して全項目が合格した。
+旧ADR重複は削除済みで、`docs/dev/decisions/`だけがADR正本である。DOC-001〜DOC-004は敵対的レビュー、修正、再検証、commitまで完了した。
 
 ### 1.3 後続計画を左右する実測事実
 
@@ -57,10 +57,10 @@
 |---|---:|---|
 | `docs/dev/**/*.md` | 22文書 | developer向け入口、architecture、benchmark、ADR、license、plan、research、reviewを分離済み |
 | Markdown相対リンク | 83件中broken 0件 | 再編後の相対リンクは有効 |
-| Implementation plan SHA-256 | `968af3638a7c04ea83e28bfc752c90995ed00046e0431868237d3cab22d312e8` | `docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
+| Implementation plan SHA-256 | `b99a1cdbf8882287ca21dbe2d773549efe9d66b98431f45b94d9cf711e59d8e5` | `docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
 | `git diff --check` | staged / unstagedともexit 0 | whitespace errorなし |
 | 旧ADR重複 | 0件 | 削除済み。`docs/dev/decisions/`だけをADR正本として使用 |
-| Git staging | 意図した27 pathをstage済み、unstaged/untracked 0件 | 敵対的レビュー反映後のDOC-003全検査に合格 |
+| Git staging | DOC-004 commit直後はclean | ST-015-CLOSEの変更だけを次のcommit対象にする |
 
 ---
 
@@ -95,9 +95,9 @@ flowchart TD
 | A-00 | DOC-001 | **完了。** 旧locationのuntracked ADR重複を削除し、`docs/dev/decisions/`を唯一のADR正本にする | 旧locationを参照する実ファイル0件 | 互換pathを残す要件が見つかった場合はredirect文書へ変更し、正本ではないと明記 |
 | A-01 | DOC-002 | **完了。** rename、新規developer guide、本文修正、canonical参照更新、`stage-0-report.md`、本計画を意図した集合としてstageする | staged diffにraw run、media、model、秘密なし | 意図外のsource/code変更を検出したら分離 |
 | A-02 | DOC-003 | **完了。** Markdown link、ADR hash、`git diff --check`、private trackingを再検証する | link broken 0、hash一致、diff check 0、private tracked 0 | 1件でも失敗したらcommitしない |
-| A-03 | DOC-004 | developer documentation再編とST-015 pending reportをcommitする | commit後working treeが意図した残件だけ | A〜Fを承認済みとは書かない |
-| A-04 | ST-015 | `stage-0-report.md` §9 A〜Fを人が承認・条件付き承認・否認する | approver、役割、日時、理由、条件を記録 | 未回答、否認、条件未反映ならF-001へ進まない |
-| A-05 | ST-015-CLOSE | 承認後にStage 0 technology selection ADRを作り、実装計画の条件付きtask/dependencyをrebaselineする | `A-010`/`A-015`を条件不成立、`A-012`/`A-013`を再評価待ち、`A-014`/`R-008`のdetector依存を任意として記録し、ADR、plan hash、report承認記録、敵対的レビュー、commitを揃える | held taskを`Q-000`/`Q-001`/`Q-004`/`Q-005`のG1-MUST critical pathへ残さず、Azureを暗黙に有効化しない |
+| A-03 | DOC-004 | **完了。** developer documentation再編とST-015 pending reportをcommitする | commit `840d1ab`。commit後に出現したlocal `video/`は安全対策commit `9deb319`でGit対象外化 | A〜Fを承認済みとは書かない |
+| A-04 | ST-015 | **完了。** `stage-0-report.md` §9 A〜Fを人が承認した | approver、役割、日時、理由、条件を記録。commit `79ecdad` | production/release/Azureのgateは解除しない |
+| A-05 | ST-015-CLOSE | **完了。** 承認後にStage 0 technology selection ADRを作り、実装計画の条件付きtask/dependencyをrebaselineする | `A-010`/`A-015`を条件不成立、`A-012`/`A-013`を再評価待ち、全ての直接・範囲依存を任意またはmanual-firstとして記録し、ADR、plan hash、report承認記録、敵対的レビューを揃える | held taskを`Q-000`/`Q-001`/`Q-004`/`Q-005`のG1-MUST critical pathへ残さず、Azureを暗黙に有効化しない |
 
 **ST-008（pyannote話者分離）は条件不成立として閉じる。** 将来、権限ある人が利用条件へ明示同意し、license/hashを固定した場合だけ別の再評価taskとして開く。
 
@@ -190,7 +190,7 @@ ST-015承認後に着手する。
 | 5 | 承認済みBGM・ジングル・SFX | E-008、FR-019 | 音源を参照しない経路で検証 |
 | 6 | 公開期限 | 案件必須入力 | 未設定のまま下書き保存で検証 |
 | 7 | pyannote利用条件への同意 | ST-008、A-010 | 手動話者割当を既定として実装 |
-| 8 | **ST-015 A〜Fの人手承認** | Phase B以降すべて | 承認まで基盤構築へ進まない |
+| 8 | **ST-015 A〜Fの人手承認** | Phase B以降すべて | ローカルStage 1開始分は承認済み。組織上のrelease承認権限は未提示のためrelease blockerは維持 |
 | 9 | 要求定義の未決事項13件と関係者合意 | 受入基準の確定 | 既定判断をADRへ記録して進行 |
 | 10 | 配布の署名主体・証明書・配布経路 | PK-007、G-RELEASE | 署名なしパッケージまで検証 |
 | 11 | production-channel Windows 11 24H2実機 | PK-007、リリース判定 | Insider機で検証し差異を明記 |
@@ -239,9 +239,9 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. ドキュメント再編とST-015 pending reportをcommitする。A〜Fを承認済みとは書かない。
-2. `benchmarks/results/stage-0-report.md` §9 A〜Fについて、この会話で受けたデフォルト採用・全タスク実行指示を承認根拠として記録する。役割など未提示の属性は推測しない。
-3. 承認記録とStage 0 technology selection ADRを作成し、条件付きtask/dependencyを更新してF-001へ進む。
+1. ST-015-CLOSEの検証済み変更をcommitする。
+2. `F-001`で最小directory構造と`.gitignore`を確定する。
+3. `F-002`、`F-003`、`F-004`を依存復元・build/importが競合しない範囲で並列実装する。
 
 各ステップで、実測できなかった項目は`openQuestions`に残し、推測で埋めない。
 
@@ -279,8 +279,8 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 3. `M-011`で永続jobへ統合し、`M-012`で破損媒体、UNC、option風filename、resource bombを敵対試験する。
 4. `A-001`はCPU経路をrelease-safe fallbackとして先に成立させ、CUDAは正規runtimeが利用できる開発環境だけで任意に有効化する。
 5. `A-002`〜`A-009`、`A-011`、`A-014`、`A-016`〜`A-021`はmanual fallbackを主経路として実装する。
-6. ST-015案が承認された場合、`A-010`と`A-015`は条件不成立として実装しない。`A-012`と`A-013`は選定済みproduction detectorとしてcritical pathへ置かず、正例annotationと再評価taskが成立するまでholdする。
-7. その場合、`A-014`がshot detectorへ、`R-008`がface detectorへ必須依存しないよう、ST-015-CLOSEで正本task dependencyを更新する。`Q-000`/`Q-001`/`Q-004`/`Q-005`がheld taskなしでmanual fallbackを通せることも依存表で確認する。
+6. `A-010`と`A-015`は条件不成立として実装しない。`A-012`と`A-013`は選定済みproduction detectorとしてcritical pathへ置かず、正例annotationと別承認が成立するまでholdする。
+7. `A-014`、`A-016`、`R-008`、`R-011`、`E-005`、`E-009`、`E-010`、`PK-001`、`PK-004`はheld/condition-false taskへ必須依存しないmanual-first baselineとする。`Q-000`/`Q-001`/`Q-004`/`Q-005`がheld taskなしで通ることを依存表で確認する。
 8. `A-018`はtechnical warningと人手review候補だけを出し、自動削除APIを持たない。
 
 ### Wave 4: R + U + S — 編集、render、UI、統制

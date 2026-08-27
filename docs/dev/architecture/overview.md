@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、Windows 11 x64 の単一 PC で動作する、ローカル優先の動画編集支援アプリケーションとして設計しています。
 
 > [!IMPORTANT]
-> Stage 0 の測定タスクは完了し、採用技術、閾値、フォールバック、残余リスクに対する ST-015 の人手承認待ちです。ベンチマーク、FFmpeg・Python の検証スクリプト、レンダーとパッケージの probe は存在しますが、WinUI 3／WebView2／React の製品アプリケーション、SQLite の業務データ、レビュー UI は未実装です。
+> Stage 0 は2026年8月27日に人手承認済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。ベンチマーク、FFmpeg・Python の検証スクリプト、レンダーとパッケージの probe は存在しますが、WinUI 3／WebView2／React の製品アプリケーション、SQLite の業務データ、レビュー UI は未実装です。
 
 ![HubRadio MovieCreatorのローカル優先アーキテクチャ。緑はStage 0で実装済み、青はStage 1以降の計画、紫の破線は条件付きAzure経路](system-overview.svg)
 
@@ -12,6 +12,8 @@ HubRadio MovieCreator は、Windows 11 x64 の単一 PC で動作する、ロー
 - **緑:** Stage 0 で実装・実測済みの検証経路
 - **青:** Stage 1 以降に実装する製品アプリケーション
 - **紫の破線:** ローカルで不達となり、利用者が送信内容と Azure 利用を明示承認した場合だけ追加する経路
+
+Stage 0で評価しても採用しなかったmodelや再評価保留のdetectorは、製品構成要素として図示していません。対応する要求はtranscript規則、手動speaker割当、manual layout/keyframe、版付きsafe zoneで実装します。
 
 現在の完了タスクと次の作業は、[詳細実装計画](../planning/implementation-plan.md)を正本とします。
 
@@ -51,9 +53,11 @@ React からファイルパス、SQL、FFmpeg 引数、任意コマンドは送�
 ### 子プロセス
 
 - **FFmpeg／ffprobe:** probe、代理生成、レンダー、全編 decode QC
-- **Python ML worker:** ASR、shot、face などのローカル解析
+- **Python ML worker:** ASRと、ADR-0007で採用したローカル解析
 
 製品版では両者を .NET ホストの子プロセスとして実行します。shell は使わず、timeout、取消、子孫終了、実行ファイル hash を検査します。Python は SQLite に直接接続せず、版付き NDJSON 契約とジョブ専用 staging を使います。
+
+Stage 0のshot、face、local text model用probeは不採用・保留判断の証拠として残しますが、現在の製品workerや配布依存には含めません。
 
 Stage 0 では、製品ホストへ統合する前の PowerShell／Python 検証実装だけが存在します。
 

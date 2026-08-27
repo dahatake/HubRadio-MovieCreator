@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1120" viewBox="0 0 1600 1120" role="img" aria-labelledby="title desc">
   <title id="title">HubRadio MovieCreator local-first architecture</title>
-  <desc id="desc">All eligible Stage 0 measurement tasks are complete and await ST-015 human approval. The diagram also shows the planned Stage 1 Windows desktop architecture. Green components are implemented, blue components are planned, and the purple dashed Azure path is conditional.</desc>
+  <desc id="desc">Stage 0 measurements and the local Stage 1 baseline are approved. The diagram also shows the planned Stage 1 Windows desktop architecture. Green components are implemented, blue components are planned, and the purple dashed Azure path is conditional. Models and detectors that were rejected or held are excluded from the product path.</desc>
 
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
@@ -142,8 +142,8 @@
     <rect x="1210" y="423" width="72" height="24" rx="12" fill="#2563eb"/>
     <text x="1246" y="440" text-anchor="middle" class="badge" fill="#ffffff">PLAN</text>
     <text x="1347" y="473" text-anchor="middle" class="box-title">Python ML Worker</text>
-    <text x="1347" y="500" text-anchor="middle" class="box-text">ASR / shot / face / local text model</text>
-    <text x="1347" y="523" text-anchor="middle" class="box-text">NDJSON only / SQLite accessなし</text>
+    <text x="1347" y="500" text-anchor="middle" class="box-text">ASR / adopted local analysis</text>
+    <text x="1347" y="523" text-anchor="middle" class="box-text">NDJSON / held models excluded</text>
   </g>
 
   <!-- Conditional Azure -->
@@ -213,6 +213,6 @@
   <path d="M 930 943 L 975 943" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)"/>
   <path d="M 1230 943 L 1275 943" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)"/>
 
-  <text x="800" y="1062" text-anchor="middle" class="small">Current: P-001–P-010; ST-001–007, 009–014, 016 complete / ST-008 not run (terms) / ST-015 approval pending</text>
-  <text x="800" y="1088" text-anchor="middle" class="small">Stage 1 app not started / Source of truth: requirement → review → Accepted ADR → research → implementation plan</text>
+  <text x="800" y="1062" text-anchor="middle" class="small">Current: Stage 0 approved / ST-008 condition-false / A-012 and A-013 held for re-evaluation</text>
+  <text x="800" y="1088" text-anchor="middle" class="small">Stage 1 app not started / Decision: ADR-0007 / Azure gate closed</text>
 </svg>

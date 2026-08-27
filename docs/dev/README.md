@@ -3,7 +3,7 @@
 HubRadio MovieCreator の開発、保守、技術検証、設計判断に関する入口です。
 
 > [!IMPORTANT]
-> Stage 0 の測定タスクは完了し、次の未完了タスクは人が採否・閾値・フォールバック・残余リスクを承認する ST-015 です。製品アプリケーションは未実装で、ST-015 が承認されるまでアプリケーション本体の scaffold へ進みません。
+> Stage 0 は2026年8月27日に承認済みです。[ADR-0007](decisions/ADR-0007-stage-0-technology-selection.md)で採用技術、手動fallback、condition-false、再評価保留、未承認閾値を固定しました。製品アプリケーションは未実装で、次のtaskは`F-001`です。
 
 ## 目的から探す
 
@@ -45,7 +45,8 @@ HubRadio MovieCreator の開発、保守、技術検証、設計判断に関す�
 2. [公開区分と AI 送信区分](decisions/ADR-0004-data-classification.md)
 3. [保存、保持、backup](decisions/ADR-0005-storage-retention.md)
 4. [Windows 配布と条件付き Azure](decisions/ADR-0006-distribution-and-azure.md)
-5. [第三者依存の受入状態](licenses/third-party-intake.md)
+5. [Stage 0技術選択と手動fallback](decisions/ADR-0007-stage-0-technology-selection.md)
+6. [第三者依存の受入状態](licenses/third-party-intake.md)
 
 ## 正本の優先順位
 
@@ -79,7 +80,7 @@ docs/
    │  ├─ annotation-policy.md
    │  ├─ metric-definitions.md
    │  └─ result-schema-policy.md
-   ├─ decisions/                       # ADR-0001〜0006
+   ├─ decisions/                       # ADR-0001〜0007
    ├─ licenses/
    │  └─ third-party-intake.md
    ├─ planning/

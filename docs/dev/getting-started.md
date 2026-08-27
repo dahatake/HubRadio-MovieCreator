@@ -116,7 +116,7 @@ pwsh.exe -NoLogo -NoProfile -File benchmarks\run-benchmarks.ps1 -Stage ffmpeg-ca
 pwsh.exe -NoLogo -NoProfile -File benchmarks\run-benchmarks.ps1 -Stage media-ingest -ChildTimeoutSeconds 10800
 ```
 
-対応 stage と現在の採否は、[詳細実装計画](planning/implementation-plan.md)と `benchmarks/results/` の canonical 結果を確認してください。Stage 0の測定結果は揃っていますが、採用技術、閾値、フォールバック、残余リスクはST-015の人手承認前には確定しません。
+対応 stage と現在の採否は、[詳細実装計画](planning/implementation-plan.md)、[ADR-0007](decisions/ADR-0007-stage-0-technology-selection.md)、`benchmarks/results/` の canonical 結果を確認してください。Stage 0の分類とfallbackは承認済みですが、production閾値、権利、再配布、release readinessは未承認です。
 
 ## 8. ローカル検証動画を生成する
 
