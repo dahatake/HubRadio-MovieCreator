@@ -24,7 +24,7 @@
       "pattern": "^[0-9]{8}T[0-9]{13}Z-[a-z0-9-]+-[0-9a-f]{8}$"
     },
     "stage": {
-      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark", "local-text-model", "manual-render"]
+      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark", "local-text-model", "manual-render", "preview-fidelity"]
     },
     "status": {
       "enum": ["succeeded", "failed"]
@@ -175,6 +175,23 @@
     {
       "if": {
         "properties": {
+          "stage": { "const": "preview-fidelity" },
+          "status": { "const": "failed" }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "maxProperties": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "stage": { "const": "asr-benchmark" },
           "status": { "const": "failed" }
         },
@@ -288,6 +305,20 @@
       "then": {
         "properties": {
           "payload": { "$ref": "#/$defs/manualRenderPayload" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": { "const": "preview-fidelity" },
+          "status": { "const": "succeeded" }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "$ref": "#/$defs/previewFidelityPayload" }
         }
       }
     },
@@ -426,6 +457,278 @@
     }
   ],
   "$defs": {
+    "previewFidelityPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "recordedAtUtc", "host", "implementation", "upstream", "contract",
+        "tooling", "sourceFrame", "faithfulInterval", "webView2Capture", "comparison",
+        "assessment", "privacy", "samplePathConsumed"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "recordedAtUtc": { "type": "string", "format": "date-time" },
+        "host": {
+          "type": "object",
+          "required": ["hardwareBenchmarkRunId", "hardwareBenchmarkRunSha256", "recordedOperatingSystemVersion", "currentOperatingSystemVersion", "currentProcessArchitecture"]
+        },
+        "implementation": {
+          "type": "object",
+          "required": ["gitHead", "implementationFilesCleanAtRun", "files"],
+          "properties": {
+            "gitHead": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+            "implementationFilesCleanAtRun": { "type": "boolean" },
+            "files": {
+              "type": "array",
+              "minItems": 9,
+              "maxItems": 10,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "fileName", "byteSize", "sha256"],
+                "properties": {
+                  "id": { "type": "string", "minLength": 1 },
+                  "fileName": { "type": "string", "minLength": 1 },
+                  "byteSize": { "type": "integer", "minimum": 1 },
+                  "sha256": { "$ref": "#/$defs/sha256" }
+                }
+              }
+            }
+          }
+        },
+        "upstream": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["manualRender", "proxyFrameMap", "ffmpegCapabilities"],
+          "properties": {
+            "manualRender": { "type": "object", "required": ["fileName", "sha256", "benchmarkRunId", "benchmarkRunSha256"] },
+            "proxyFrameMap": { "type": "object", "required": ["fileName", "sha256", "benchmarkRunId", "benchmarkRunSha256"] },
+            "ffmpegCapabilities": { "type": "object", "required": ["fileName", "sha256", "benchmarkRunId", "benchmarkRunSha256"] }
+          }
+        },
+        "contract": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["manifestId", "layoutSpecId", "manifest", "webPreviewHtml", "validation", "normalizedCoordinatesResolveToExactIntegerPixels", "cueTextSourceTranscriptDerived", "cueTextIncludedInPayload", "rights"],
+          "properties": {
+            "manifestId": { "const": "st-013-preview-fidelity-v1" },
+            "layoutSpecId": { "const": "preview-layout-landscape-v1" },
+            "manifest": { "$ref": "#/$defs/fileDescriptor" },
+            "webPreviewHtml": { "$ref": "#/$defs/fileDescriptor" },
+            "validation": { "type": "object" },
+            "normalizedCoordinatesResolveToExactIntegerPixels": { "const": true },
+            "cueTextSourceTranscriptDerived": { "const": false },
+            "cueTextIncludedInPayload": { "const": false },
+            "rights": {
+              "type": "object",
+              "required": ["status", "allowedUse", "externalPublicationAllowed", "cueTextSourceTranscriptDerived"],
+              "properties": {
+                "externalPublicationAllowed": { "const": false },
+                "cueTextSourceTranscriptDerived": { "const": false }
+              }
+            }
+          }
+        },
+        "tooling": {
+          "type": "object",
+          "required": ["ffmpegPackageId", "ffmpegSha256", "ffprobeSha256", "videoEncoder", "pythonVersion", "pythonPackages", "dotnetSdkVersion", "webView2", "windowsFont"],
+          "properties": {
+            "ffmpegSha256": { "$ref": "#/$defs/sha256" },
+            "ffprobeSha256": { "$ref": "#/$defs/sha256" },
+            "videoEncoder": { "const": "h264_mf" },
+            "webView2": {
+              "type": "object",
+              "required": ["sdkPackageVersion", "sdkPackageContentHash", "sdkPackage", "runtimeVersion", "environmentBrowserVersion", "runtimeExecutable", "evergreenRuntimeUsed", "runtimeBundledByBenchmark"],
+              "properties": {
+                "sdkPackageVersion": { "const": "1.0.4129.50" },
+                "sdkPackage": { "$ref": "#/$defs/fileDescriptor" },
+                "runtimeExecutable": { "$ref": "#/$defs/fileDescriptor" },
+                "evergreenRuntimeUsed": { "const": true },
+                "runtimeBundledByBenchmark": { "const": false }
+              }
+            },
+            "windowsFont": {
+              "type": "object",
+              "required": ["family", "file", "bundledByBenchmark"],
+              "properties": {
+                "family": { "const": "Segoe UI" },
+                "file": { "$ref": "#/$defs/fileDescriptor" },
+                "bundledByBenchmark": { "const": false }
+              }
+            }
+          }
+        },
+        "sourceFrame": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requestedSourceTime", "selectionRule", "exactSourceFrameSelectionAccuracyMeasured", "transform", "artifact", "process", "sourcePixelsIncludedInPayload"],
+          "properties": {
+            "requestedSourceTime": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value", "rate"],
+              "properties": {
+                "value": { "const": 37500 },
+                "rate": { "const": 600 }
+              }
+            },
+            "selectionRule": { "type": "string", "minLength": 1 },
+            "exactSourceFrameSelectionAccuracyMeasured": { "const": false },
+            "transform": { "type": "string", "minLength": 1 },
+            "artifact": { "$ref": "#/$defs/fileDescriptor" },
+            "process": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["exitCode", "elapsedMilliseconds"],
+              "properties": {
+                "exitCode": { "const": 0 },
+                "elapsedMilliseconds": { "type": "number", "minimum": 0 }
+              }
+            },
+            "sourcePixelsIncludedInPayload": { "const": false }
+          }
+        },
+        "faithfulInterval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["renderer", "staticSourceFrameInterval", "output", "process", "probe", "fullDecode", "diagnostic", "commandArgumentsIncludedInPayload"],
+          "properties": {
+            "renderer": { "const": "ffmpeg" },
+            "staticSourceFrameInterval": { "const": true },
+            "output": { "$ref": "#/$defs/fileDescriptor" },
+            "process": { "type": "object", "required": ["exitCode", "elapsedMilliseconds"] },
+            "probe": { "type": "object" },
+            "fullDecode": {
+              "type": "object",
+              "required": ["succeeded", "exitCode", "elapsedMilliseconds"],
+              "properties": { "succeeded": { "const": true }, "exitCode": { "const": 0 } }
+            },
+            "diagnostic": { "$ref": "#/$defs/fileDescriptor" },
+            "commandArgumentsIncludedInPayload": { "const": false }
+          }
+        },
+        "webView2Capture": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["actualWebView2Executed", "captureApi", "runtimeVersion", "sdkAssemblyVersion", "hostDpiScale", "devicePixelRatios", "cssViewports", "captureCount", "captures", "allCaptureDimensionsMatchProfile", "allRequestedFontsAvailable", "externalNavigationAllowed", "dynamicDataSentViaPostWebMessageAsJson", "process", "diagnostic", "sourcePixelsIncludedInPayload"],
+          "properties": {
+            "actualWebView2Executed": { "const": true },
+            "captureApi": { "const": "CoreWebView2.CapturePreviewAsync" },
+            "runtimeVersion": { "type": "string", "minLength": 1 },
+            "sdkAssemblyVersion": { "type": "string", "minLength": 1 },
+            "hostDpiScale": { "type": "number", "exclusiveMinimum": 0 },
+            "devicePixelRatios": {
+              "type": "array",
+              "minItems": 6,
+              "maxItems": 6,
+              "items": { "type": "number", "exclusiveMinimum": 0 }
+            },
+            "cssViewports": {
+              "type": "array",
+              "minItems": 6,
+              "maxItems": 6,
+              "items": {
+                "type": "object",
+                "required": ["width", "height"],
+                "properties": {
+                  "width": { "type": "integer", "minimum": 1 },
+                  "height": { "type": "integer", "minimum": 1 }
+                }
+              }
+            },
+            "captureCount": { "const": 6 },
+            "captures": { "type": "array", "minItems": 6, "maxItems": 6 },
+            "allCaptureDimensionsMatchProfile": { "const": true },
+            "allRequestedFontsAvailable": { "const": true },
+            "externalNavigationAllowed": { "const": false },
+            "dynamicDataSentViaPostWebMessageAsJson": { "const": true },
+            "sourcePixelsTransferredToLocalWebView2": { "const": true },
+            "externalSubresourceAndConnectAllowedByDocument": { "const": false },
+            "browserProcessExitObservedBeforeHostResult": { "const": true },
+            "userDataDirectoryRemoved": { "const": true },
+            "process": { "type": "object", "required": ["exitCode", "elapsedMilliseconds"] },
+            "diagnostic": { "$ref": "#/$defs/fileDescriptor" },
+            "sourcePixelsIncludedInPayload": { "const": false }
+          }
+        },
+        "comparison": {
+          "type": "object",
+          "required": ["status", "manifestValidation", "baseFrame", "faithfulInterval", "webView2", "comparisons", "canvasVersusSvg", "cueMechanismControls", "summary", "privacy"],
+          "properties": {
+            "status": { "const": "succeeded" },
+            "comparisons": { "type": "array", "minItems": 6, "maxItems": 6 },
+            "canvasVersusSvg": { "type": "array", "minItems": 3, "maxItems": 3 },
+            "cueMechanismControls": { "type": "array", "minItems": 3, "maxItems": 3 },
+            "summary": {
+              "type": "object",
+              "required": ["sharedLayoutSpecAndCueConsumedByAllRenderers", "comparisonCount", "canvasSvgComparisonCount", "allWebView2GeometryReportsMatchSharedSpec", "allWebView2CueStatesMatchSharedCue", "allRendererCueControlsSeparateFromOutsideRegion", "webView2VersusFaithfulDifferenceRecorded", "canvasVersusSvgDifferenceRecorded", "exactPixelEqualityRequired", "perceptualQualityMeasured", "movingVideoPlaybackMeasured", "audioPreviewMeasured", "crossRuntimeGpuDriverReproducibilityMeasured", "productionThresholdsApproved"],
+              "properties": {
+                "sharedLayoutSpecAndCueConsumedByAllRenderers": { "const": true },
+                "comparisonCount": { "const": 6 },
+                "canvasSvgComparisonCount": { "const": 3 },
+                "allWebView2GeometryReportsMatchSharedSpec": { "const": true },
+                "allWebView2CueStatesMatchSharedCue": { "const": true },
+                "allRendererCueControlsSeparateFromOutsideRegion": { "const": true },
+                "webView2VersusFaithfulDifferenceRecorded": { "const": true },
+                "canvasVersusSvgDifferenceRecorded": { "const": true },
+                "exactPixelEqualityRequired": { "const": false },
+                "perceptualQualityMeasured": { "const": false },
+                "movingVideoPlaybackMeasured": { "const": false },
+                "audioPreviewMeasured": { "const": false },
+                "crossDpiScaleReproducibilityMeasured": { "const": false },
+                "crossRuntimeGpuDriverReproducibilityMeasured": { "const": false },
+                "productionThresholdsApproved": { "const": false }
+              }
+            }
+          }
+        },
+        "assessment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["actualWebView2CanvasAndSvgCaptured", "faithfulIntervalRenderedAndDecoded", "sharedLayoutSpecAndCueConsumed", "geometryAndTimingEvidenceRecorded", "webView2VersusFaithfulDifferencesRecorded", "canvasVersusSvgDifferencesRecorded", "cueMechanismControlsPassed", "exactPixelEqualityRequired", "exactPixelEquivalenceClaimed", "perceptualQualityMeasured", "movingVideoPlaybackMeasured", "audioPreviewMeasured", "crossRuntimeGpuDriverReproducibilityMeasured", "faithfulPreviewProductionAcceptanceMeasured", "productionThresholdsApproved", "finalStage0DecisionPending"],
+          "properties": {
+            "actualWebView2CanvasAndSvgCaptured": { "const": true },
+            "faithfulIntervalRenderedAndDecoded": { "const": true },
+            "sharedLayoutSpecAndCueConsumed": { "const": true },
+            "geometryAndTimingEvidenceRecorded": { "const": true },
+            "webView2VersusFaithfulDifferencesRecorded": { "const": true },
+            "canvasVersusSvgDifferencesRecorded": { "const": true },
+            "cueMechanismControlsPassed": { "const": true },
+            "exactPixelEqualityRequired": { "const": false },
+            "exactPixelEquivalenceClaimed": { "const": false },
+            "perceptualQualityMeasured": { "const": false },
+            "movingVideoPlaybackMeasured": { "const": false },
+            "audioPreviewMeasured": { "const": false },
+            "crossDpiScaleReproducibilityMeasured": { "const": false },
+            "crossRuntimeGpuDriverReproducibilityMeasured": { "const": false },
+            "faithfulPreviewProductionAcceptanceMeasured": { "const": false },
+            "productionThresholdsApproved": { "const": false },
+            "finalStage0DecisionPending": { "const": true }
+          }
+        },
+        "privacy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["localEvidenceAcl", "sourceDerivedArtifactsPersistedOnlyInIgnoredWorkDirectory", "sourcePixelsIncludedInPayload", "sourceAudioSamplesIncludedInPayload", "sourceTranscriptTextIncludedInPayload", "neutralCueTextIncludedInTrackedFixture", "neutralCueTextIncludedInPayload", "webView2UserDataRemovedAfterCapture", "absoluteHostPathsIncludedInPayload", "externalPublicationAllowed", "commandArgumentsIncludedInPayload", "workDirectoryWasEmptyAfterAclProtection"],
+          "properties": {
+            "localEvidenceAcl": { "$ref": "#/$defs/alignmentAclEvidence" },
+            "sourceDerivedArtifactsPersistedOnlyInIgnoredWorkDirectory": { "const": true },
+            "sourcePixelsIncludedInPayload": { "const": false },
+            "sourceAudioSamplesIncludedInPayload": { "const": false },
+            "sourceTranscriptTextIncludedInPayload": { "const": false },
+            "neutralCueTextIncludedInTrackedFixture": { "const": true },
+            "neutralCueTextIncludedInPayload": { "const": false },
+            "sourcePixelsTransferredOnlyToLocalWebView2": { "const": true },
+            "webView2UserDataRemovedAfterCapture": { "const": true },
+            "absoluteHostPathsIncludedInPayload": { "const": false },
+            "externalPublicationAllowed": { "const": false },
+            "commandArgumentsIncludedInPayload": { "const": false },
+            "workDirectoryWasEmptyAfterAclProtection": { "const": true }
+          }
+        },
+        "samplePathConsumed": { "const": true }
+      }
+    },
     "manualRenderProbe": {
       "type": "object",
       "additionalProperties": false,

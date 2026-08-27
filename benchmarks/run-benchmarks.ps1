@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark", "local-text-model", "manual-render")]
+    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark", "local-text-model", "manual-render", "preview-fidelity")]
     [string]$Stage = "hardware",
     [string]$FixtureManifest = (Join-Path $PSScriptRoot "fixtures\fixture-manifest.json"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "results\runs"),
@@ -1432,6 +1432,219 @@ function Assert-ManualRenderPayload {
     }
 }
 
+function Assert-PreviewFidelityPayload {
+    param([Parameter(Mandatory)][object]$Payload)
+
+    foreach ($name in @(
+        "schemaVersion", "recordedAtUtc", "host", "implementation", "upstream", "contract",
+        "tooling", "sourceFrame", "faithfulInterval", "webView2Capture", "comparison",
+        "assessment", "privacy", "samplePathConsumed"
+    )) {
+        if ($Payload.PSObject.Properties.Name -notcontains $name) {
+            throw "Preview-fidelity payload is missing required property: $name"
+        }
+    }
+    if ($Payload.schemaVersion -ne "1.0.0") {
+        throw "Unsupported preview-fidelity payload schemaVersion: $($Payload.schemaVersion)"
+    }
+    $expectedImplementationFiles = @(
+        @{ Id = "benchmark-harness"; FileName = "run-benchmarks.ps1"; Path = (Join-Path $PSScriptRoot "run-benchmarks.ps1") },
+        @{ Id = "preview-fidelity-wrapper"; FileName = "measure-preview-fidelity.ps1"; Path = (Join-Path $PSScriptRoot "stages\measure-preview-fidelity.ps1") },
+        @{ Id = "preview-fidelity-driver"; FileName = "preview_fidelity_benchmark.py"; Path = (Join-Path $PSScriptRoot "stages\preview_fidelity_benchmark.py") },
+        @{ Id = "benchmark-schema"; FileName = "schema.json"; Path = (Join-Path $PSScriptRoot "results\schema.json") },
+        @{ Id = "preview-layout-manifest"; FileName = "preview-fidelity-layout.json"; Path = (Join-Path $PSScriptRoot "fixtures\preview-fidelity-layout.json") },
+        @{ Id = "web-preview-html"; FileName = "index.html"; Path = (Join-Path $PSScriptRoot "web-preview\index.html") },
+        @{ Id = "webview2-probe-project"; FileName = "WebPreviewProbe.csproj"; Path = (Join-Path $PSScriptRoot "probes\WebPreviewProbe\WebPreviewProbe.csproj") },
+        @{ Id = "webview2-probe-program"; FileName = "Program.cs"; Path = (Join-Path $PSScriptRoot "probes\WebPreviewProbe\Program.cs") },
+        @{ Id = "webview2-probe-lock"; FileName = "packages.lock.json"; Path = (Join-Path $PSScriptRoot "probes\WebPreviewProbe\packages.lock.json") },
+        @{ Id = "probe-dotnet-sdk-selector"; FileName = "global.json"; Path = (Join-Path $PSScriptRoot "probes\global.json") }
+    )
+    if ($Payload.implementation.gitHead -notmatch '^[0-9a-f]{40}$' -or
+        @($Payload.implementation.files).Count -ne $expectedImplementationFiles.Count) {
+        throw "Preview-fidelity payload does not identify the exact implementation file set."
+    }
+    foreach ($expectedFile in $expectedImplementationFiles) {
+        $records = @($Payload.implementation.files | Where-Object id -eq $expectedFile.Id)
+        if ($records.Count -ne 1 -or $records[0].fileName -ne $expectedFile.FileName -or
+            [int64]$records[0].byteSize -ne [int64](Get-Item -LiteralPath $expectedFile.Path).Length -or
+            $records[0].sha256 -ne (Get-FileHash -LiteralPath $expectedFile.Path -Algorithm SHA256).Hash.ToLowerInvariant()) {
+            throw "Preview-fidelity implementation evidence does not match: $($expectedFile.Id)"
+        }
+    }
+
+    $upstreamFiles = @{
+        manualRender = Join-Path $PSScriptRoot "results\manual-render.json"
+        proxyFrameMap = Join-Path $PSScriptRoot "results\proxy-frame-map.json"
+        ffmpegCapabilities = Join-Path $PSScriptRoot "results\ffmpeg-capabilities.json"
+    }
+    foreach ($property in $upstreamFiles.Keys) {
+        $rawPath = Join-Path $PSScriptRoot "results\runs\$($Payload.upstream.$property.benchmarkRunId).json"
+        if ($Payload.upstream.$property.sha256 -ne (Get-FileHash -LiteralPath $upstreamFiles[$property] -Algorithm SHA256).Hash.ToLowerInvariant() -or
+            -not (Test-Path -LiteralPath $rawPath -PathType Leaf) -or
+            $Payload.upstream.$property.benchmarkRunSha256 -ne (Get-FileHash -LiteralPath $rawPath -Algorithm SHA256).Hash.ToLowerInvariant()) {
+            throw "Preview-fidelity upstream evidence does not match: $property"
+        }
+    }
+
+    $manifestPath = Join-Path $PSScriptRoot "fixtures\preview-fidelity-layout.json"
+    $htmlPath = Join-Path $PSScriptRoot "web-preview\index.html"
+    if ($Payload.contract.manifestId -ne "st-013-preview-fidelity-v1" -or
+        $Payload.contract.layoutSpecId -ne "preview-layout-landscape-v1" -or
+        $Payload.contract.manifest.sha256 -ne (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant() -or
+        $Payload.contract.webPreviewHtml.sha256 -ne (Get-FileHash -LiteralPath $htmlPath -Algorithm SHA256).Hash.ToLowerInvariant() -or
+        $Payload.contract.validation.sampleCount -ne 3 -or
+        @($Payload.contract.validation.webRenderModes).Count -ne 2 -or
+        $Payload.contract.normalizedCoordinatesResolveToExactIntegerPixels -ne $true -or
+        $Payload.contract.cueTextSourceTranscriptDerived -ne $false -or
+        $Payload.contract.cueTextIncludedInPayload -ne $false -or
+        $Payload.contract.rights.externalPublicationAllowed -ne $false) {
+        throw "Preview-fidelity shared LayoutSpec/Cue evidence is incomplete or changed."
+    }
+    if ($Payload.tooling.ffmpegSha256 -ne "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb" -or
+        $Payload.tooling.ffprobeSha256 -ne "4c2f730969c9551aec21c5ca07eb73f63bb0920204c9cd6c9a6e7be6be0458d2" -or
+        $Payload.tooling.videoEncoder -ne "h264_mf" -or
+        $Payload.tooling.dotnetSdkVersion -ne "10.0.400" -or
+        $Payload.tooling.webView2.sdkPackageVersion -ne "1.0.4129.50" -or
+        $Payload.tooling.webView2.sdkPackage.sha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.tooling.webView2.runtimeVersion -ne $Payload.tooling.webView2.environmentBrowserVersion -or
+        $Payload.tooling.webView2.runtimeExecutable.sha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.tooling.webView2.evergreenRuntimeUsed -ne $true -or
+        $Payload.tooling.webView2.runtimeBundledByBenchmark -ne $false -or
+        $Payload.tooling.windowsFont.family -ne "Segoe UI" -or
+        $Payload.tooling.windowsFont.file.sha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.tooling.windowsFont.bundledByBenchmark -ne $false) {
+        throw "Preview-fidelity payload does not preserve the measured FFmpeg, WebView2, .NET, and font toolchain."
+    }
+    if ($Payload.sourceFrame.requestedSourceTime.value -ne 37500 -or
+        $Payload.sourceFrame.requestedSourceTime.rate -ne 600 -or
+        $Payload.sourceFrame.exactSourceFrameSelectionAccuracyMeasured -ne $false -or
+        $Payload.sourceFrame.artifact.sha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.sourceFrame.sourcePixelsIncludedInPayload -ne $false) {
+        throw "Preview-fidelity source-frame control is incomplete or overclaims selection accuracy."
+    }
+
+    $faithful = $Payload.faithfulInterval
+    if ($faithful.renderer -ne "ffmpeg" -or $faithful.staticSourceFrameInterval -ne $true -or
+        $faithful.output.sha256 -notmatch '^[0-9a-f]{64}$' -or
+        $faithful.process.exitCode -ne 0 -or $faithful.fullDecode.succeeded -ne $true -or
+        $faithful.fullDecode.exitCode -ne 0 -or $faithful.probe.video.codecName -ne "h264" -or
+        $faithful.probe.video.width -ne 1280 -or $faithful.probe.video.height -ne 720 -or
+        $faithful.probe.video.pixelFormat -ne "yuv420p" -or
+        $faithful.probe.video.frameRate -ne "30000/1001" -or
+        [int]$faithful.probe.video.decodedFrameCount -lt 59 -or [int]$faithful.probe.video.decodedFrameCount -gt 60 -or
+        $faithful.commandArgumentsIncludedInPayload -ne $false) {
+        throw "Preview-fidelity faithful interval failed its renderer, decode, or profile contract."
+    }
+
+    $capture = $Payload.webView2Capture
+    $captures = @($capture.captures)
+    if ($capture.actualWebView2Executed -ne $true -or
+        $capture.captureApi -ne "CoreWebView2.CapturePreviewAsync" -or
+        $capture.runtimeVersion -ne $Payload.tooling.webView2.runtimeVersion -or
+        $capture.sdkAssemblyVersion -ne $Payload.tooling.webView2.sdkPackageVersion -or
+        [double]$capture.hostDpiScale -le 0 -or [int]$capture.captureCount -ne 6 -or
+        $captures.Count -ne 6 -or $capture.allCaptureDimensionsMatchProfile -ne $true -or
+        $capture.allRequestedFontsAvailable -ne $true -or $capture.externalNavigationAllowed -ne $false -or
+        $capture.dynamicDataSentViaPostWebMessageAsJson -ne $true -or
+        $capture.sourcePixelsTransferredToLocalWebView2 -ne $true -or
+        $capture.externalSubresourceAndConnectAllowedByDocument -ne $false -or
+        $capture.browserProcessExitObservedBeforeHostResult -ne $true -or
+        $capture.userDataDirectoryRemoved -ne $true -or $capture.process.exitCode -ne 0 -or
+        $capture.sourcePixelsIncludedInPayload -ne $false) {
+        throw "Actual WebView2 capture evidence is incomplete."
+    }
+    $expectedRectangles = [ordered]@{
+        safeFrame = [ordered]@{ x = 48; y = 27; width = 1184; height = 666 }
+        topicPanel = [ordered]@{ x = 64; y = 50; width = 448; height = 90 }
+        topicAccent = [ordered]@{ x = 64; y = 50; width = 12; height = 90 }
+        cueBox = [ordered]@{ x = 160; y = 540; width = 960; height = 108 }
+    }
+    $captureKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($record in $captures) {
+        $key = "$($record.mode)/$($record.sampleId)"
+        $expectedCue = $record.sampleId -eq "active-middle"
+        if ($record.mode -notin @("canvas", "svg") -or
+            $record.sampleId -notin @("inactive-before", "active-middle", "inactive-after") -or
+            -not $captureKeys.Add($key) -or $record.cueExpected -ne $expectedCue -or
+            $record.cueVisible -ne $expectedCue -or
+            ($record.rectangles | ConvertTo-Json -Depth 10 -Compress) -ne ($expectedRectangles | ConvertTo-Json -Depth 10 -Compress) -or
+            $record.requestedFontsAvailable.topic -ne $true -or $record.requestedFontsAvailable.cue -ne $true -or
+            $record.capture.sha256 -notmatch '^[0-9a-f]{64}$' -or [int64]$record.capture.byteSize -le 0 -or
+            $record.capture.width -ne 1280 -or $record.capture.height -ne 720 -or
+            $record.sourcePixelsIncludedInHostResult -ne $false) {
+            throw "A WebView2 capture contradicts the shared LayoutSpec/Cue matrix."
+        }
+    }
+
+    $comparison = $Payload.comparison
+    if ($comparison.status -ne "succeeded" -or
+        $comparison.webView2.actualWebView2Executed -ne $true -or
+        [int]$comparison.faithfulInterval.observedFrameCount -lt 59 -or
+        @($comparison.faithfulInterval.sampledFrames).Count -ne 3 -or
+        @($comparison.comparisons).Count -ne 6 -or @($comparison.canvasVersusSvg).Count -ne 3 -or
+        @($comparison.cueMechanismControls).Count -ne 3 -or
+        @($comparison.comparisons | Where-Object { $_.webView2VersusFaithful.pixelCount -ne 921600 }).Count -ne 0 -or
+        @($comparison.canvasVersusSvg | Where-Object { $_.canvasVersusSvg.pixelCount -ne 921600 }).Count -ne 0 -or
+        @($comparison.cueMechanismControls | Where-Object {
+            $_.allCueRegionDifferencesExceedOutsideDifferences -ne $true -or
+            $_.relativeDifferenceIsMechanismEvidenceNotProductionThreshold -ne $true
+        }).Count -ne 0 -or
+        $comparison.summary.sharedLayoutSpecAndCueConsumedByAllRenderers -ne $true -or
+        $comparison.summary.webView2VersusFaithfulDifferenceRecorded -ne $true -or
+        $comparison.summary.canvasVersusSvgDifferenceRecorded -ne $true -or
+        $comparison.summary.exactPixelEqualityRequired -ne $false -or
+        $comparison.summary.perceptualQualityMeasured -ne $false -or
+        $comparison.summary.movingVideoPlaybackMeasured -ne $false -or
+        $comparison.summary.audioPreviewMeasured -ne $false -or
+        $comparison.summary.crossDpiScaleReproducibilityMeasured -ne $false -or
+        $comparison.summary.crossRuntimeGpuDriverReproducibilityMeasured -ne $false -or
+        $comparison.summary.productionThresholdsApproved -ne $false) {
+        throw "Preview-fidelity comparison is incomplete or overstates fidelity."
+    }
+    if ($Payload.assessment.actualWebView2CanvasAndSvgCaptured -ne $true -or
+        $Payload.assessment.faithfulIntervalRenderedAndDecoded -ne $true -or
+        $Payload.assessment.sharedLayoutSpecAndCueConsumed -ne $true -or
+        $Payload.assessment.geometryAndTimingEvidenceRecorded -ne $true -or
+        $Payload.assessment.webView2VersusFaithfulDifferencesRecorded -ne $true -or
+        $Payload.assessment.canvasVersusSvgDifferencesRecorded -ne $true -or
+        $Payload.assessment.cueMechanismControlsPassed -ne $true -or
+        $Payload.assessment.exactPixelEqualityRequired -ne $false -or
+        $Payload.assessment.exactPixelEquivalenceClaimed -ne $false -or
+        $Payload.assessment.perceptualQualityMeasured -ne $false -or
+        $Payload.assessment.movingVideoPlaybackMeasured -ne $false -or
+        $Payload.assessment.audioPreviewMeasured -ne $false -or
+        $Payload.assessment.crossDpiScaleReproducibilityMeasured -ne $false -or
+        $Payload.assessment.crossRuntimeGpuDriverReproducibilityMeasured -ne $false -or
+        $Payload.assessment.faithfulPreviewProductionAcceptanceMeasured -ne $false -or
+        $Payload.assessment.productionThresholdsApproved -ne $false -or
+        $Payload.assessment.finalStage0DecisionPending -ne $true) {
+        throw "Preview-fidelity aggregate assessment contradicts its bounded evidence."
+    }
+    if ($Payload.privacy.localEvidenceAcl.inheritanceProtected -ne $true -or
+        [int]$Payload.privacy.localEvidenceAcl.unexpectedAccessRuleCount -ne 0 -or
+        $Payload.privacy.sourceDerivedArtifactsPersistedOnlyInIgnoredWorkDirectory -ne $true -or
+        $Payload.privacy.sourcePixelsIncludedInPayload -ne $false -or
+        $Payload.privacy.sourceAudioSamplesIncludedInPayload -ne $false -or
+        $Payload.privacy.sourceTranscriptTextIncludedInPayload -ne $false -or
+        $Payload.privacy.neutralCueTextIncludedInPayload -ne $false -or
+        $Payload.privacy.sourcePixelsTransferredOnlyToLocalWebView2 -ne $true -or
+        $Payload.privacy.webView2UserDataRemovedAfterCapture -ne $true -or
+        $Payload.privacy.absoluteHostPathsIncludedInPayload -ne $false -or
+        $Payload.privacy.externalPublicationAllowed -ne $false -or
+        $Payload.privacy.commandArgumentsIncludedInPayload -ne $false -or
+        $Payload.privacy.workDirectoryWasEmptyAfterAclProtection -ne $true) {
+        throw "Preview-fidelity payload violated the local evidence or rights boundary."
+    }
+    $payloadJson = $Payload | ConvertTo-Json -Depth 40 -Compress
+    if ($payloadJson -match '[A-Za-z]:\\' -or
+        $payloadJson -match '"(?:sourcePath|outputPath|command|stderr|baseImageDataUrl|text)"\s*:') {
+        throw "Preview-fidelity payload contains a path, Cue text, pixel data, or forbidden process property."
+    }
+    if ($Payload.samplePathConsumed -ne $true) {
+        throw "Preview-fidelity payload did not confirm fixture path consumption."
+    }
+}
+
 function Protect-SensitiveText {
     param(
         [Parameter(Mandatory)][AllowEmptyString()][string]$Text,
@@ -1472,7 +1685,7 @@ function Get-SafeFailurePayload {
         return [pscustomobject]$safePayload
     }
 
-    if ($Stage -in @("asr-benchmark", "alignment-benchmark", "local-text-model", "manual-render")) {
+    if ($Stage -in @("asr-benchmark", "alignment-benchmark", "local-text-model", "manual-render", "preview-fidelity")) {
         return [pscustomobject]$safePayload
     }
 
@@ -1599,6 +1812,10 @@ try {
         "manual-render" {
             $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\measure-manual-render.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
             Assert-ManualRenderPayload -Payload $payload
+        }
+        "preview-fidelity" {
+            $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\measure-preview-fidelity.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
+            Assert-PreviewFidelityPayload -Payload $payload
         }
         default {
             throw "Unsupported benchmark stage: $Stage"

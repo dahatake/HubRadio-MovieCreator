@@ -1,0 +1,134 @@
+{
+  "schemaVersion": "1.0.0",
+  "manifestId": "st-013-preview-fidelity-v1",
+  "purpose": "Render one shared normalized LayoutSpec and neutral Cue through actual WebView2 Canvas/SVG and an FFmpeg faithful interval without asserting visual quality or pixel equivalence.",
+  "rights": {
+    "status": "unconfirmed",
+    "allowedUse": "local-technical-evaluation-only",
+    "externalPublicationAllowed": false,
+    "cueTextSourceTranscriptDerived": false
+  },
+  "profile": {
+    "profileId": "landscape-1280x720",
+    "width": 1280,
+    "height": 720,
+    "frameRate": "30000/1001",
+    "pixelFormat": "yuv420p",
+    "duration": { "value": 2000, "rate": 1000 }
+  },
+  "sourceFrame": {
+    "sourceTime": { "value": 37500, "rate": 600 },
+    "transform": "scale-to-profile-with-lanczos",
+    "selectionRule": "ffmpeg accurate output seek followed by one decoded frame",
+    "exactSourceFrameSelectionAccuracyMeasured": false
+  },
+  "palette": {
+    "theme": "light",
+    "roles": {
+      "pageBackground": "--cp-bg",
+      "surface": "--cp-surface",
+      "text": "--cp-text",
+      "accent": "--cp-accent",
+      "warning": "--cp-warning"
+    },
+    "resolvedLight": {
+      "--cp-bg": "#f7f4ef",
+      "--cp-surface": "#ffffff",
+      "--cp-text": "#242424",
+      "--cp-accent": "#b11f4b",
+      "--cp-warning": "#f59e0b"
+    }
+  },
+  "layoutSpec": {
+    "layoutSpecId": "preview-layout-landscape-v1",
+    "coordinateSystem": "normalized-rational",
+    "pixelRounding": "exact-integer-products-required",
+    "safeFrame": {
+      "x": { "value": 3, "rate": 80 },
+      "y": { "value": 3, "rate": 80 },
+      "width": { "value": 37, "rate": 40 },
+      "height": { "value": 37, "rate": 40 },
+      "strokeWidthPixels": 2,
+      "colorRole": "warning"
+    },
+    "topicPanel": {
+      "x": { "value": 1, "rate": 20 },
+      "y": { "value": 5, "rate": 72 },
+      "width": { "value": 7, "rate": 20 },
+      "height": { "value": 1, "rate": 8 },
+      "fillColorRole": "surface"
+    },
+    "topicAccent": {
+      "x": { "value": 1, "rate": 20 },
+      "y": { "value": 5, "rate": 72 },
+      "width": { "value": 3, "rate": 320 },
+      "height": { "value": 1, "rate": 8 },
+      "fillColorRole": "accent"
+    },
+    "topicLabel": {
+      "text": "LAYOUT 013",
+      "x": { "value": 11, "rate": 160 },
+      "centerY": { "value": 11, "rate": 72 },
+      "fontFamily": "Segoe UI",
+      "fontFileName": "segoeuib.ttf",
+      "fontSizePixels": 28,
+      "fontWeight": 700,
+      "colorRole": "text"
+    },
+    "cueBox": {
+      "x": { "value": 1, "rate": 8 },
+      "y": { "value": 3, "rate": 4 },
+      "width": { "value": 3, "rate": 4 },
+      "height": { "value": 3, "rate": 20 },
+      "borderWidthPixels": 3,
+      "fillColorRole": "surface",
+      "borderColorRole": "accent"
+    },
+    "cueText": {
+      "fontFamily": "Segoe UI",
+      "fontFileName": "segoeuib.ttf",
+      "fontSizePixels": 36,
+      "fontWeight": 700,
+      "colorRole": "text",
+      "horizontalAlignment": "center",
+      "verticalAlignment": "middle"
+    }
+  },
+  "cues": [
+    {
+      "cueId": "neutral-preview-cue",
+      "start": { "value": 500, "rate": 1000 },
+      "end": { "value": 1500, "rate": 1000 },
+      "endExclusive": true,
+      "text": "PREVIEW CONTROL",
+      "sourceTranscriptDerived": false,
+      "reviewRequired": true
+    }
+  ],
+  "samples": [
+    {
+      "sampleId": "inactive-before",
+      "outputTime": { "value": 250, "rate": 1000 },
+      "cueExpected": false
+    },
+    {
+      "sampleId": "active-middle",
+      "outputTime": { "value": 1000, "rate": 1000 },
+      "cueExpected": true
+    },
+    {
+      "sampleId": "inactive-after",
+      "outputTime": { "value": 1750, "rate": 1000 },
+      "cueExpected": false
+    }
+  ],
+  "comparison": {
+    "webRenderModes": ["canvas", "svg"],
+    "faithfulRenderer": "ffmpeg",
+    "exactPixelEqualityRequired": false,
+    "perceptualQualityMeasured": false,
+    "movingVideoPlaybackMeasured": false,
+    "audioPreviewMeasured": false,
+    "productionThresholdsApproved": false
+  }
+}

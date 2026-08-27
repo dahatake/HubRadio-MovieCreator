@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>ST-013 Preview Fidelity</title>
+  <script>
+    (() => {
+      const param = new URLSearchParams(window.location.search).get("scoutTheme");
+      const theme =
+        param || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+      --cp-bg: #f7f4ef;
+      --cp-bg-elevated: #fcfbf8;
+      --cp-surface: #ffffff;
+      --cp-surface-soft: #f5f5f5;
+      --cp-border: #dedede;
+      --cp-border-strong: #919191;
+      --cp-text: #242424;
+      --cp-text-muted: #5c5c5c;
+      --cp-text-soft: #6f6f6f;
+      --cp-accent: #b11f4b;
+      --cp-accent-hover: #9a1a41;
+      --cp-accent-soft: rgba(177, 31, 75, 0.08);
+      --cp-accent-fg: #ffffff;
+      --cp-success: #16a34a;
+      --cp-danger: #dc2626;
+      --cp-warning: #f59e0b;
+      --cp-link: #0078d4;
+      --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.12);
+      --cp-overlay: rgba(255, 255, 255, 0.8);
+      --cp-panel: rgba(255, 255, 255, 0.86);
+      --cp-panel-strong: rgba(255, 255, 255, 0.96);
+      --cp-sheen: rgba(255, 255, 255, 0.55);
+      --cp-highlight: rgba(177, 31, 75, 0.12);
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --cp-bg: #3d3b3a;
+      --cp-bg-elevated: #343231;
+      --cp-surface: #292929;
+      --cp-surface-soft: #2e2e2e;
+      --cp-border: #474747;
+      --cp-border-strong: #5f5f5f;
+      --cp-text: #dedede;
+      --cp-text-muted: #919191;
+      --cp-text-soft: #b0b0b0;
+      --cp-accent: #fd8ea1;
+      --cp-accent-hover: #fb7b91;
+      --cp-accent-soft: rgba(253, 142, 161, 0.14);
+      --cp-accent-fg: #1a1a1a;
+      --cp-success: #4ade80;
+      --cp-danger: #f87171;
+      --cp-warning: #fbbf24;
+      --cp-link: #4da6ff;
+      --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+      --cp-overlay: rgba(41, 41, 41, 0.88);
+      --cp-panel: rgba(41, 41, 41, 0.72);
+      --cp-panel-strong: rgba(41, 41, 41, 0.96);
+      --cp-sheen: rgba(255, 255, 255, 0.04);
+      --cp-highlight: rgba(253, 142, 161, 0.12);
+    }
+
+    * { box-sizing: border-box; }
+    html, body, #preview-root {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+    }
+    body {
+      background: var(--cp-bg);
+      color: var(--cp-text);
+      font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    canvas, svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .preview-surface { fill: var(--cp-surface); }
+    .preview-accent { fill: var(--cp-accent); }
+    .preview-warning-stroke { fill: none; stroke: var(--cp-warning); }
+    .preview-accent-stroke { stroke: var(--cp-accent); }
+    .preview-text { fill: var(--cp-text); }
+  </style>
+</head>
+<body>
+  <main id="preview-root" aria-label="ST-013 preview fidelity control"></main>
+  <script>
+    "use strict";
+
+    const root = document.getElementById("preview-root");
+    const svgNamespace = "http://www.w3.org/2000/svg";
+
+    function assert(condition, message) {
+      if (!condition) throw new Error(message);
+    }
+
+    function rational(value) {
+      assert(value && Number.isInteger(value.value) && Number.isInteger(value.rate) && value.rate > 0,
+        "Invalid rational value.");
+      return value.value / value.rate;
+    }
+
+    function pixel(value, extent) {
+      const scaled = value.value * extent;
+      assert(Number.isSafeInteger(scaled) && scaled % value.rate === 0,
+        "Layout value does not resolve to an integer pixel.");
+      return scaled / value.rate;
+    }
+
+    function rectangle(value, width, height) {
+      return {
+        x: pixel(value.x, width),
+        y: pixel(value.y, height),
+        width: pixel(value.width, width),
+        height: pixel(value.height, height)
+      };
+    }
+
+    function cssColor(manifest, role) {
+      const variableName = manifest.palette.roles[role];
+      assert(typeof variableName === "string" && variableName.startsWith("--cp-"), "Invalid color role.");
+      const value = getComputedStyle(document.documentElement).getPropertyValue(variableName).trim();
+      assert(value.length > 0, "Theme color could not be resolved.");
+      return value;
+    }
+
+    function canonicalCanvasColor(value) {
+      const probe = document.createElement("canvas").getContext("2d");
+      assert(probe, "Canvas color normalization is unavailable.");
+      probe.fillStyle = value;
+      return probe.fillStyle.toLowerCase();
+    }
+
+    function assertResolvedPalette(manifest) {
+      for (const variableName of Object.values(manifest.palette.roles)) {
+        const computed = getComputedStyle(document.documentElement).getPropertyValue(variableName).trim();
+        const declared = manifest.palette.resolvedLight[variableName];
+        assert(typeof declared === "string" && canonicalCanvasColor(computed) === canonicalCanvasColor(declared),
+          "The HTML theme and shared resolved palette differ.");
+      }
+    }
+
+    function appendSvgElement(parent, name, attributes, className) {
+      const element = document.createElementNS(svgNamespace, name);
+      for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+      if (className) element.setAttribute("class", className);
+      parent.appendChild(element);
+      return element;
+    }
+
+    function drawCanvas(manifest, image, cueVisible) {
+      const { width, height } = manifest.profile;
+      const layout = manifest.layoutSpec;
+      const safeFrame = rectangle(layout.safeFrame, width, height);
+      const topicPanel = rectangle(layout.topicPanel, width, height);
+      const topicAccent = rectangle(layout.topicAccent, width, height);
+      const cueBox = rectangle(layout.cueBox, width, height);
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.setAttribute("aria-label", "Canvas preview");
+      const context = canvas.getContext("2d", { alpha: false });
+      assert(context, "Canvas 2D context is unavailable.");
+      context.drawImage(image, 0, 0, width, height);
+      context.strokeStyle = cssColor(manifest, layout.safeFrame.colorRole);
+      context.lineWidth = layout.safeFrame.strokeWidthPixels;
+      context.strokeRect(
+        safeFrame.x + layout.safeFrame.strokeWidthPixels / 2,
+        safeFrame.y + layout.safeFrame.strokeWidthPixels / 2,
+        safeFrame.width - layout.safeFrame.strokeWidthPixels,
+        safeFrame.height - layout.safeFrame.strokeWidthPixels
+      );
+      context.fillStyle = cssColor(manifest, layout.topicPanel.fillColorRole);
+      context.fillRect(topicPanel.x, topicPanel.y, topicPanel.width, topicPanel.height);
+      context.fillStyle = cssColor(manifest, layout.topicAccent.fillColorRole);
+      context.fillRect(topicAccent.x, topicAccent.y, topicAccent.width, topicAccent.height);
+      context.fillStyle = cssColor(manifest, layout.topicLabel.colorRole);
+      context.font = `${layout.topicLabel.fontWeight} ${layout.topicLabel.fontSizePixels}px "${layout.topicLabel.fontFamily}", Aptos, Calibri, sans-serif`;
+      context.textAlign = "left";
+      context.textBaseline = "middle";
+      context.fillText(
+        layout.topicLabel.text,
+        pixel(layout.topicLabel.x, width),
+        pixel(layout.topicLabel.centerY, height)
+      );
+      if (cueVisible) {
+        context.fillStyle = cssColor(manifest, layout.cueBox.fillColorRole);
+        context.fillRect(cueBox.x, cueBox.y, cueBox.width, cueBox.height);
+        context.strokeStyle = cssColor(manifest, layout.cueBox.borderColorRole);
+        context.lineWidth = layout.cueBox.borderWidthPixels;
+        context.strokeRect(
+          cueBox.x + layout.cueBox.borderWidthPixels / 2,
+          cueBox.y + layout.cueBox.borderWidthPixels / 2,
+          cueBox.width - layout.cueBox.borderWidthPixels,
+          cueBox.height - layout.cueBox.borderWidthPixels
+        );
+        context.fillStyle = cssColor(manifest, layout.cueText.colorRole);
+        context.font = `${layout.cueText.fontWeight} ${layout.cueText.fontSizePixels}px "${layout.cueText.fontFamily}", Aptos, Calibri, sans-serif`;
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText(manifest.cues[0].text, cueBox.x + cueBox.width / 2, cueBox.y + cueBox.height / 2);
+      }
+      root.replaceChildren(canvas);
+      return { safeFrame, topicPanel, topicAccent, cueBox };
+    }
+
+    function drawSvg(manifest, image, cueVisible) {
+      const { width, height } = manifest.profile;
+      const layout = manifest.layoutSpec;
+      const safeFrame = rectangle(layout.safeFrame, width, height);
+      const topicPanel = rectangle(layout.topicPanel, width, height);
+      const topicAccent = rectangle(layout.topicAccent, width, height);
+      const cueBox = rectangle(layout.cueBox, width, height);
+      const svg = appendSvgElement(document.createDocumentFragment(), "svg", {
+        xmlns: svgNamespace, width, height, viewBox: `0 0 ${width} ${height}`,
+        role: "img", "aria-label": "SVG preview"
+      });
+      appendSvgElement(svg, "image", { href: image.src, x: 0, y: 0, width, height, preserveAspectRatio: "none" });
+      appendSvgElement(svg, "rect", {
+        x: safeFrame.x + layout.safeFrame.strokeWidthPixels / 2,
+        y: safeFrame.y + layout.safeFrame.strokeWidthPixels / 2,
+        width: safeFrame.width - layout.safeFrame.strokeWidthPixels,
+        height: safeFrame.height - layout.safeFrame.strokeWidthPixels,
+        "stroke-width": layout.safeFrame.strokeWidthPixels
+      }, "preview-warning-stroke");
+      appendSvgElement(svg, "rect", topicPanel, "preview-surface");
+      appendSvgElement(svg, "rect", topicAccent, "preview-accent");
+      const topicText = appendSvgElement(svg, "text", {
+        x: pixel(layout.topicLabel.x, width), y: pixel(layout.topicLabel.centerY, height),
+        "dominant-baseline": "middle", "text-anchor": "start",
+        "font-family": `${layout.topicLabel.fontFamily}, Aptos, Calibri, sans-serif`,
+        "font-size": layout.topicLabel.fontSizePixels,
+        "font-weight": layout.topicLabel.fontWeight
+      }, "preview-text");
+      topicText.textContent = layout.topicLabel.text;
+      if (cueVisible) {
+        appendSvgElement(svg, "rect", {
+          ...cueBox,
+          "stroke-width": layout.cueBox.borderWidthPixels
+        }, "preview-surface preview-accent-stroke");
+        const cueText = appendSvgElement(svg, "text", {
+          x: cueBox.x + cueBox.width / 2,
+          y: cueBox.y + cueBox.height / 2,
+          "dominant-baseline": "middle", "text-anchor": "middle",
+          "font-family": `${layout.cueText.fontFamily}, Aptos, Calibri, sans-serif`,
+          "font-size": layout.cueText.fontSizePixels,
+          "font-weight": layout.cueText.fontWeight
+        }, "preview-text");
+        cueText.textContent = manifest.cues[0].text;
+      }
+      root.replaceChildren(svg);
+      return { safeFrame, topicPanel, topicAccent, cueBox };
+    }
+
+    async function loadImage(dataUrl) {
+      assert(typeof dataUrl === "string" && dataUrl.startsWith("data:image/png;base64,"), "Invalid image payload.");
+      const image = new Image();
+      image.decoding = "sync";
+      const loaded = new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = () => reject(new Error("Base image could not be decoded."));
+      });
+      image.src = dataUrl;
+      await loaded;
+      return image;
+    }
+
+    async function render(message) {
+      const manifest = message.manifest;
+      assert(manifest.schemaVersion === "1.0.0" && manifest.manifestId === "st-013-preview-fidelity-v1",
+        "Unexpected preview manifest.");
+      assert(manifest.palette.theme === "light" && document.documentElement.dataset.theme === "light",
+        "The capture must use the declared light theme.");
+      assertResolvedPalette(manifest);
+      assert(message.mode === "canvas" || message.mode === "svg", "Unsupported renderer.");
+      assert(Number.isFinite(message.outputTimeSeconds), "Invalid output time.");
+      const cue = manifest.cues[0];
+      const cueVisible = message.outputTimeSeconds >= rational(cue.start) &&
+        message.outputTimeSeconds < rational(cue.end);
+      const image = await loadImage(message.baseImageDataUrl);
+      assert(image.naturalWidth === manifest.profile.width && image.naturalHeight === manifest.profile.height,
+        "Base image dimensions do not match the profile.");
+      const rectangles = message.mode === "canvas"
+        ? drawCanvas(manifest, image, cueVisible)
+        : drawSvg(manifest, image, cueVisible);
+      await document.fonts.ready;
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+      window.chrome.webview.postMessage({
+        type: "render-complete",
+        mode: message.mode,
+        sampleId: message.sampleId,
+        cueVisible,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        devicePixelRatio: window.devicePixelRatio,
+        rectangles,
+        requestedFontsAvailable: {
+          topic: document.fonts.check(`${manifest.layoutSpec.topicLabel.fontSizePixels}px "${manifest.layoutSpec.topicLabel.fontFamily}"`),
+          cue: document.fonts.check(`${manifest.layoutSpec.cueText.fontSizePixels}px "${manifest.layoutSpec.cueText.fontFamily}"`)
+        },
+        sourcePixelsIncludedInMessage: true,
+        sourcePixelsIncludedInHostResult: false
+      });
+    }
+
+    window.chrome.webview.addEventListener("message", event => {
+      render(event.data).catch(error => {
+        window.chrome.webview.postMessage({ type: "render-error", code: "WEB_RENDER_FAILED", message: error.message });
+      });
+    });
+    window.chrome.webview.postMessage({ type: "preview-ready" });
+  </script>
+</body>
+</html>

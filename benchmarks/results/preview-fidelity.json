@@ -1,0 +1,209 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260827T1233421361375Z-preview-fidelity-0ce91abd",
+  "benchmarkRunSha256": "51dac9064e0a9ab3d4e58ac035836dfd2ab927c904874e2d0afefa90d9c475a0",
+  "recordedAtUtc": "2026-08-27T12:35:46.2235018Z",
+  "fixture": {
+    "sourceAssetId": "source-ios-20260615-024326000",
+    "sourceSha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+    "sourceByteSize": 6494572403,
+    "rightsStatus": "unconfirmed",
+    "allowedUse": "local-technical-evaluation-only",
+    "externalPublicationAllowed": false,
+    "sourcePostRunIntegrityChecked": true,
+    "sourceUnchanged": true
+  },
+  "host": {
+    "operatingSystemVersion": "10.0.29648",
+    "processArchitecture": "X64",
+    "hostDpiScale": 1.25,
+    "cssViewport": { "width": 1024, "height": 576 },
+    "capturePixels": { "width": 1280, "height": 720 }
+  },
+  "implementation": {
+    "gitHead": "775464d2b6c398d8994a3666fb4a7e745ed39c10",
+    "implementationFilesCleanAtRun": false,
+    "exactExecutedFilesRecordedByHash": true,
+    "fileCount": 10
+  },
+  "upstream": {
+    "manualRenderCanonicalSha256": "dd589eecee38c8e3633d24ac759e43c708da52f6634d6306ad06b2068545c30b",
+    "manualRenderBenchmarkRunId": "20260827T1136430750369Z-manual-render-a94e7fa7",
+    "manualRenderBenchmarkRunSha256": "76a5041b9ba49cfea56cd59c0eb1f09c77037eb1cc682e5d3b6678bf3753f438",
+    "proxyFrameMapCanonicalSha256": "9c991f74a776ead6d3aec0d66daa7c5e5d23bffe14d58299ba33c4af53948127",
+    "proxyFrameMapBenchmarkRunId": "20260826T2102079908030Z-proxy-frame-map-5a725e5c",
+    "proxyFrameMapBenchmarkRunSha256": "a581baa89950dfb231283ddf8fa958dc513e6dafc758625c7c05996d203cee69",
+    "ffmpegCapabilitiesCanonicalSha256": "d13ab3e8483302844f1d755d57280c9fb74df293fb33c8d07fdaeb7842c140bc",
+    "ffmpegCapabilitiesBenchmarkRunId": "20260826T1637448588203Z-ffmpeg-capabilities-7ddd373d",
+    "ffmpegCapabilitiesBenchmarkRunSha256": "11b9b63c656ac12eb4c4f945b64b851c9ac99a03959fc7308c3103ecb88b56df"
+  },
+  "contract": {
+    "manifestId": "st-013-preview-fidelity-v1",
+    "layoutSpecId": "preview-layout-landscape-v1",
+    "manifestSha256": "4260412222b2a82cbfbe2aabab669b7749857253d5cf26eb45192469c9bf2d1e",
+    "webPreviewHtmlSha256": "245aea16a496b460566398e41c60893f869028972502754e9bb6d5731374802b",
+    "profile": "1280x720 at 30000/1001",
+    "coordinateSystem": "normalized-rational",
+    "normalizedCoordinatesResolveToExactIntegerPixels": true,
+    "cueTextSha256": "ce19b8ecd5f721b872f3ba00d70169ffe40223e68227787d7dae6e5cfe303053",
+    "cueTextSourceTranscriptDerived": false,
+    "cueTextIncludedInCanonical": false,
+    "samples": [
+      { "sampleId": "inactive-before", "outputTimeSeconds": 0.25, "cueExpected": false },
+      { "sampleId": "active-middle", "outputTimeSeconds": 1.0, "cueExpected": true },
+      { "sampleId": "inactive-after", "outputTimeSeconds": 1.75, "cueExpected": false }
+    ]
+  },
+  "tooling": {
+    "ffmpegPackageId": "BtbN.FFmpeg.LGPL.8.1",
+    "ffmpegSha256": "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb",
+    "ffprobeSha256": "4c2f730969c9551aec21c5ca07eb73f63bb0920204c9cd6c9a6e7be6be0458d2",
+    "videoEncoder": "h264_mf",
+    "pythonVersion": "Python 3.12.10",
+    "opencvVersion": "5.0.0",
+    "numpyVersion": "2.5.2",
+    "dotnetSdkVersion": "10.0.400",
+    "dotnetSdkSelectorSha256": "deb68fdcdf73ca5a9b4862010d170ebc117339887aa0aa72d22a04ade7437942",
+    "webView2SdkPackageVersion": "1.0.4129.50",
+    "webView2SdkPackageSha256": "d3934f482d484b89fb4825df720c710664e1143a1e90f7b3a60794ef33f473d2",
+    "webView2RuntimeVersion": "151.0.4129.107",
+    "webView2RuntimeExecutableSha256": "fe7922326f2a1d3188454ba5502861253223d5da10d9da0b858f9b10f3e01468",
+    "evergreenRuntimeUsed": true,
+    "runtimeBundledByBenchmark": false,
+    "fontFamily": "Segoe UI",
+    "fontFileSha256": "aeb9e4a6ec5cc59f4d72df8189032d7dbb28f45161cf1552174818b5465dac4e",
+    "fontBundledByBenchmark": false
+  },
+  "sourceFrameControl": {
+    "requestedSourceTimeSeconds": 62.5,
+    "selectionRule": "ffmpeg accurate output seek followed by one decoded frame",
+    "exactSourceFrameSelectionAccuracyMeasured": false,
+    "transform": "scale-to-profile-with-lanczos",
+    "byteSize": 1220792,
+    "sha256": "debf96a621011f86b22346687924b80b5932c215014e87f5ae6f3e06a6cdbfe8",
+    "pixelsIncludedInCanonical": false
+  },
+  "faithfulInterval": {
+    "renderer": "ffmpeg",
+    "staticSourceFrameInterval": true,
+    "videoCodec": "h264",
+    "videoProfile": "Constrained Baseline",
+    "pixelFormat": "yuv420p",
+    "frameRate": "30000/1001",
+    "durationSeconds": 2.002,
+    "decodedFrameCount": 60,
+    "byteSize": 452300,
+    "sha256": "d02691b9f0ded7d0c5979852fe86876a150fd97bb0a63a6e9e0b767acaa5824b",
+    "fullDecodeSucceeded": true
+  },
+  "webView2Capture": {
+    "actualWebView2Executed": true,
+    "captureApi": "CoreWebView2.CapturePreviewAsync",
+    "captureCount": 6,
+    "canvasCaptureCount": 3,
+    "svgCaptureCount": 3,
+    "allCaptureDimensionsMatchProfile": true,
+    "allRequestedFontsAvailable": true,
+    "allReportedRectanglesMatchSharedSpec": true,
+    "allCueStatesMatchSharedCue": true,
+    "externalNavigationAllowed": false,
+    "externalSubresourceAndConnectAllowedByDocument": false,
+    "dynamicDataSentViaPostWebMessageAsJson": true,
+    "sourcePixelsTransferredToLocalWebView2": true,
+    "sourcePixelsIncludedInCanonical": false,
+    "browserProcessExitObservedBeforeHostResult": true,
+    "userDataDirectoryRemoved": true,
+    "captures": [
+      { "mode": "canvas", "sampleId": "inactive-before", "byteSize": 1162846, "sha256": "7fd1bd3115189558f807810b37448afa625b7418befb237021cec90107c8e583" },
+      { "mode": "canvas", "sampleId": "active-middle", "byteSize": 1019333, "sha256": "17ca9a94df2616fd2c54c85111c038e2311f1330f05085e0a770ba9663b44832" },
+      { "mode": "canvas", "sampleId": "inactive-after", "byteSize": 1162846, "sha256": "7fd1bd3115189558f807810b37448afa625b7418befb237021cec90107c8e583" },
+      { "mode": "svg", "sampleId": "inactive-before", "byteSize": 1140445, "sha256": "181b362e5dd8c45b6d13ce8687dbc736543036558204914426e9cfc47c593a5e" },
+      { "mode": "svg", "sampleId": "active-middle", "byteSize": 996416, "sha256": "c115e9b03b69e693fa5c4ec8daf024b07b2558aea554b229b90918a3231d5d4d" },
+      { "mode": "svg", "sampleId": "inactive-after", "byteSize": 1140445, "sha256": "181b362e5dd8c45b6d13ce8687dbc736543036558204914426e9cfc47c593a5e" }
+    ]
+  },
+  "sampleTiming": {
+    "selectionRule": "first observed faithful-render frame not earlier than requested output time",
+    "count": 3,
+    "minimumDifferenceSeconds": 0.001,
+    "medianDifferenceSeconds": 0.016933,
+    "maximumDifferenceSeconds": 0.018433,
+    "productionThresholdApproved": false
+  },
+  "webView2VersusFaithful": [
+    { "mode": "canvas", "sampleId": "inactive-before", "cueExpected": false, "differingPixelFraction": 0.96609158, "meanAbsoluteChannelDifference": 8.369695, "grayscaleMeanAbsoluteDifference": 7.774195, "exactPixelEqualityObserved": false },
+    { "mode": "canvas", "sampleId": "active-middle", "cueExpected": true, "differingPixelFraction": 0.872530382, "meanAbsoluteChannelDifference": 7.861054, "grayscaleMeanAbsoluteDifference": 7.505779, "exactPixelEqualityObserved": false },
+    { "mode": "canvas", "sampleId": "inactive-after", "cueExpected": false, "differingPixelFraction": 0.963144531, "meanAbsoluteChannelDifference": 8.02238, "grayscaleMeanAbsoluteDifference": 7.554694, "exactPixelEqualityObserved": false },
+    { "mode": "svg", "sampleId": "inactive-before", "cueExpected": false, "differingPixelFraction": 0.966318359, "meanAbsoluteChannelDifference": 8.757368, "grayscaleMeanAbsoluteDifference": 7.836377, "exactPixelEqualityObserved": false },
+    { "mode": "svg", "sampleId": "active-middle", "cueExpected": true, "differingPixelFraction": 0.873263889, "meanAbsoluteChannelDifference": 9.204768, "grayscaleMeanAbsoluteDifference": 8.529171, "exactPixelEqualityObserved": false },
+    { "mode": "svg", "sampleId": "inactive-after", "cueExpected": false, "differingPixelFraction": 0.963413628, "meanAbsoluteChannelDifference": 8.451142, "grayscaleMeanAbsoluteDifference": 7.620804, "exactPixelEqualityObserved": false }
+  ],
+  "canvasVersusSvg": [
+    { "sampleId": "inactive-before", "meanAbsoluteChannelDifference": 2.331489, "grayscaleMeanAbsoluteDifference": 0.541067, "exactPixelEqualityObserved": false },
+    { "sampleId": "active-middle", "meanAbsoluteChannelDifference": 2.979348, "grayscaleMeanAbsoluteDifference": 1.523618, "exactPixelEqualityObserved": false },
+    { "sampleId": "inactive-after", "meanAbsoluteChannelDifference": 2.331489, "grayscaleMeanAbsoluteDifference": 0.541067, "exactPixelEqualityObserved": false }
+  ],
+  "cueMechanismControls": [
+    { "renderer": "webview2-canvas", "activeVersusBeforeCueRegionDifference": 152.796679, "activeVersusBeforeOutsideDifference": 0.0, "activeVersusAfterCueRegionDifference": 152.796679, "activeVersusAfterOutsideDifference": 0.0, "bothControlsSeparate": true },
+    { "renderer": "webview2-svg", "activeVersusBeforeCueRegionDifference": 154.247891, "activeVersusBeforeOutsideDifference": 0.23276, "activeVersusAfterCueRegionDifference": 154.247891, "activeVersusAfterOutsideDifference": 0.23276, "bothControlsSeparate": true },
+    { "renderer": "ffmpeg-faithful", "activeVersusBeforeCueRegionDifference": 145.858362, "activeVersusBeforeOutsideDifference": 2.455972, "activeVersusAfterCueRegionDifference": 145.815667, "activeVersusAfterOutsideDifference": 0.342822, "bothControlsSeparate": true }
+  ],
+  "configurationDisposition": {
+    "status": "preview-differences-recorded-awaiting-stage0-approval",
+    "actualWebView2CanvasAndSvgCaptured": true,
+    "faithfulIntervalRenderedAndDecoded": true,
+    "sharedLayoutSpecAndCueConsumed": true,
+    "geometryAndTimingEvidenceRecorded": true,
+    "cueMechanismControlsPassed": true,
+    "exactPixelEqualityRequired": false,
+    "exactPixelEquivalenceClaimed": false,
+    "perceptualQualityMeasured": false,
+    "movingVideoPlaybackMeasured": false,
+    "audioPreviewMeasured": false,
+    "crossDpiScaleReproducibilityMeasured": false,
+    "crossRuntimeGpuDriverReproducibilityMeasured": false,
+    "faithfulPreviewProductionAcceptanceMeasured": false,
+    "productionThresholdsApproved": false,
+    "finalStage0DecisionPending": true
+  },
+  "stage0Implications": [
+    "The same tracked normalized LayoutSpec and neutral Cue produced six actual WebView2 CapturePreviewAsync images across Canvas and SVG and one fully decoded two-second FFmpeg interval.",
+    "All six browser captures reported the same 1280x720 design rectangles and the expected inactive, active, and inactive Cue states. The physical captures were 1280x720 while this host exposed a 1024x576 CSS viewport at devicePixelRatio 1.25.",
+    "WebView2-versus-FFmpeg mean absolute eight-bit channel differences ranged from 7.861054 to 9.204768 across six samples. Canvas-versus-SVG means were 2.331489, 2.979348, and 2.331489. No compared pair was exactly pixel-identical.",
+    "For Canvas, SVG, and FFmpeg, active-versus-inactive differences were larger inside the declared Cue region than outside it for both inactive controls. This is a relative mechanism control, not a production acceptance threshold.",
+    "Source-derived pixels were sent only to the local WebView2 instance because displaying the preview requires them. CSP blocked external subresources and connections, navigation was restricted, captures stayed in protected ignored storage, and the dedicated WebView2 profile was deleted after BrowserProcessExited.",
+    "The faithful interval used a static source-derived frame and H.264 Media Foundation. It does not measure moving-video playback, audio preview, perception, cross-DPI behavior, or cross-runtime/GPU/driver reproducibility."
+  ],
+  "assessment": {
+    "interpretation": "ST-013 demonstrates that actual WebView2 Canvas/SVG and an FFmpeg faithful interval can consume one LayoutSpec/Cue and produce recordable geometry, timing, and raw pixel-difference evidence. The measured differences are observations on one static-frame, one-DPI, one-runtime setup and do not establish visual equivalence or production acceptance.",
+    "adversarialReview": {
+      "axes": ["measurement-validity", "security-privacy-process", "schema-code-reproducibility"],
+      "confirmedFindingCount": 1,
+      "resolvedFindingCount": 1,
+      "unresolvedFindingCount": 0,
+      "resolvedFinding": "The first reviewed rerun exposed a WebView2 user-data deletion race. The probe now waits for BrowserProcessExited, deletes its dedicated profile after resource release, and reports both exit observation and directory removal before returning.",
+      "additionalHardening": [
+        "Added a restrictive CSP and verified the shared resolved palette against the HTML theme.",
+        "Made the necessary local source-pixel transfer explicit while continuing to exclude pixels from raw and canonical JSON.",
+        "Added the exact .NET global.json selector to implementation hashes and marked cross-DPI reproducibility unmeasured.",
+        "Derived the user-profile redaction path from the Windows environment API and fail closed if unavailable."
+      ],
+      "rejectedFindings": [
+        "The claim that FFmpeg Cue output was unverified was rejected because two measured active-versus-inactive region controls pass for the FFmpeg output itself.",
+        "The claim that ST-013 required a 96-DPI-only run was rejected because no such threshold or constraint exists in the repository source of truth; the observed 1.25 scale is recorded and cross-DPI reproducibility remains false.",
+        "The two sourcePixelsTransferred field names are intentionally scoped: one records transfer to the local renderer and the other records that no destination beyond that local renderer was used."
+      ]
+    },
+    "openQuestions": [
+      "No human visual reference or approved numeric fidelity threshold exists, so the raw channel differences cannot be classified as acceptable or unacceptable.",
+      "Moving proxy-video playback, seeking, audio-only preview, subtitle-free variants, vertical profiles, platform UI masks, and timeline navigation were not exercised by this static-frame mechanism control.",
+      "Only host DPI scale 1.25, Evergreen WebView2 151.0.4129.107, the recorded GPU/driver environment, and Segoe UI Bold were observed. Cross-DPI, cross-runtime, cross-font-update, GPU, and driver behavior remains unmeasured.",
+      "The source frame uses an FFmpeg output seek at requested source time 62.5 seconds; independent exact source-frame selection accuracy was not measured.",
+      "The source fixture rights remain unconfirmed, so all source-derived frames, captures, videos, and browser profile data remain local and cannot be externally published.",
+      "Final preview architecture and all acceptance thresholds require ST-015 human approval."
+    ],
+    "privacy": "Source-derived pixels were transferred only to the local WebView2 process and local FFmpeg/Python processes required by the benchmark. All source-derived artifacts remained in an ignored directory with a protected three-principal ACL; the dedicated browser profile was removed. Raw and canonical JSON contain only hashes, dimensions, timing, geometry, aggregate differences, and bounded interpretations, with no pixels, audio, transcript, absolute path, command arguments, or Cue text.",
+    "curatedFields": ["configurationDisposition", "stage0Implications", "assessment", "recollectionCommand"]
+  },
+  "recollectionCommand": "pwsh.exe -NoLogo -NoProfile -File benchmarks/run-benchmarks.ps1 -Stage preview-fidelity -ChildTimeoutSeconds 3600"
+}
