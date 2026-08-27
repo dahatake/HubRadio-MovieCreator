@@ -1,0 +1,12 @@
+<Window
+    x:Class="HubRadio.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="HubRadio MovieCreator">
+    <Grid>
+        <TextBlock
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Text="HubRadio MovieCreator" />
+    </Grid>
+</Window>

@@ -1,0 +1,8 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Project Path="src/HubRadio.Core/HubRadio.Core.csproj" />
+  <Project Path="src/HubRadio.Infrastructure/HubRadio.Infrastructure.csproj" />
+  <Project Path="src/HubRadio.App/HubRadio.App.csproj" />
+</Solution>
