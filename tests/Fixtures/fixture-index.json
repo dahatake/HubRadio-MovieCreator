@@ -1,0 +1,309 @@
+{
+  "schemaVersion": "1.0.0",
+  "indexId": "hubradio-golden-fixtures-v1",
+  "purpose": "Repository-portable registry for golden media, tracked controls, and expectation references without storing private or large media in Git.",
+  "repositoryPathBase": ".",
+  "policy": {
+    "pathFormat": "repository-relative-forward-slash",
+    "largeOrOriginalMedia": "expected-local-gitignored",
+    "automaticDownload": "forbidden",
+    "hashAndSizeAuthority": "existing-manifests-only",
+    "expectedValues": "reference-only",
+    "rightsDefault": "unconfirmed-local-technical-evaluation-only",
+    "missingPrivateFixture": {
+      "defaultOutcome": "skip",
+      "resultCode": "private-fixture-unavailable",
+      "scope": "only tests that declare the missing fixture",
+      "controlOnlyTests": "run",
+      "silentPass": "forbidden",
+      "substituteMedia": "forbidden"
+    },
+    "integrityMismatch": {
+      "outcome": "fail",
+      "resultCode": "private-fixture-integrity-mismatch",
+      "automaticManifestUpdate": "forbidden"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "source-ios-20260615-024326000",
+      "kind": "original-private-media",
+      "localPath": "sample/20260615_024326000_iOS.MOV",
+      "tracking": "expected-local-gitignored",
+      "gitIgnore": {
+        "path": ".gitignore",
+        "pattern": "/sample/*"
+      },
+      "integrity": {
+        "algorithm": "sha256",
+        "sha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+        "byteSize": 6494572403,
+        "authority": {
+          "path": "benchmarks/fixtures/fixture-manifest.json",
+          "objectPointer": "/sourceAssets/0",
+          "sha256Pointer": "/sourceAssets/0/sha256",
+          "byteSizePointer": "/sourceAssets/0/byteSize"
+        },
+        "consistencyReferences": [
+          {
+            "path": "test/20260615_024326000_iOS.MOV.manifest.json",
+            "sha256Pointer": "/source/sha256",
+            "byteSizePointer": "/source/byteSize"
+          },
+          {
+            "path": "benchmarks/fixtures/manual-render-manifest.json",
+            "sha256Pointer": "/source/sha256",
+            "byteSizePointer": "/source/byteSize"
+          },
+          {
+            "path": "benchmarks/results/asr-benchmark.json",
+            "sha256Pointer": "/fixture/sourceSha256",
+            "byteSizePointer": "/fixture/sourceByteSize"
+          },
+          {
+            "path": "benchmarks/results/alignment-benchmark.json",
+            "sha256Pointer": "/fixture/sourceSha256",
+            "byteSizePointer": "/fixture/sourceByteSize"
+          }
+        ]
+      },
+      "rights": {
+        "status": "unconfirmed",
+        "allowedUse": "local-technical-evaluation-only",
+        "externalPublicationAllowed": false,
+        "valueSource": {
+          "path": "benchmarks/fixtures/fixture-manifest.json",
+          "jsonPointer": "/sourceAssets/0/rights"
+        }
+      },
+      "acquisition": {
+        "kind": "operator-supplied-private-copy",
+        "instructions": [
+          "Obtain the exact file through an authorized internal or rights-holder channel; this repository intentionally records no download location.",
+          "Place it at the repository-relative localPath without adding it to Git.",
+          "Verify byteSize and sha256 against every integrity reference before running dependent tests.",
+          "Do not interpret possession or hash agreement as publication or redistribution approval."
+        ]
+      },
+      "expectationSetIds": [
+        "stage-0-analysis-observations",
+        "stage-0-edit-render-observations"
+      ]
+    },
+    {
+      "id": "proxy-ios-20260615-024326000-720p",
+      "kind": "generated-private-media",
+      "localPath": "test/20260615_024326000_iOS.MOV",
+      "tracking": "expected-local-gitignored",
+      "derivedFromFixtureId": "source-ios-20260615-024326000",
+      "gitIgnore": {
+        "path": ".gitignore",
+        "pattern": "/test/*.MOV"
+      },
+      "integrity": {
+        "algorithm": "sha256",
+        "sha256": "01f87fdc00dd4c4bcb73735b744dad52a3396a8242d1d40cd609de3a6dd31b95",
+        "byteSize": 374146177,
+        "authority": {
+          "path": "test/20260615_024326000_iOS.MOV.manifest.json",
+          "objectPointer": "/output",
+          "sha256Pointer": "/output/sha256",
+          "byteSizePointer": "/output/byteSize"
+        }
+      },
+      "rights": {
+        "status": "unconfirmed",
+        "allowedUse": "local-technical-evaluation-only",
+        "externalPublicationAllowed": false,
+        "inheritedFromFixtureId": "source-ios-20260615-024326000",
+        "valueSources": [
+          {
+            "path": "benchmarks/fixtures/fixture-manifest.json",
+            "jsonPointer": "/sourceAssets/0/rights"
+          },
+          {
+            "path": "test/20260615_024326000_iOS.MOV.manifest.json",
+            "jsonPointer": "/operation/externalPublicationAllowed"
+          }
+        ]
+      },
+      "generation": {
+        "scriptPath": "tools/create-test-video.ps1",
+        "executable": "pwsh.exe",
+        "arguments": [
+          "-NoLogo",
+          "-NoProfile",
+          "-File",
+          "tools/create-test-video.ps1",
+          "-SourcePath",
+          "sample/20260615_024326000_iOS.MOV",
+          "-OutputPath",
+          "test/20260615_024326000_iOS.MOV"
+        ],
+        "preconditionReferences": [
+          {
+            "path": "benchmarks/results/ffmpeg-capabilities.json",
+            "jsonPointer": "/capabilities"
+          },
+          {
+            "path": "benchmarks/fixtures/fixture-manifest.json",
+            "jsonPointer": "/sourceAssets/0"
+          }
+        ],
+        "resultManifestPath": "test/20260615_024326000_iOS.MOV.manifest.json",
+        "byteIdenticalRegenerationGuaranteed": false
+      },
+      "expectationSetIds": [
+        "development-proxy-contract"
+      ]
+    }
+  ],
+  "trackedManifests": [
+    {
+      "id": "stage-0-private-source-manifest",
+      "path": "benchmarks/fixtures/fixture-manifest.json",
+      "tracking": "git",
+      "role": "source-integrity-rights-and-gates-authority"
+    },
+    {
+      "id": "development-proxy-generation-manifest",
+      "path": "test/20260615_024326000_iOS.MOV.manifest.json",
+      "tracking": "git",
+      "role": "generated-proxy-integrity-and-operation-authority"
+    }
+  ],
+  "trackedControlFixtures": [
+    {
+      "id": "asr-japanese-control",
+      "path": "benchmarks/fixtures/asr-control.json",
+      "tracking": "git",
+      "role": "synthetic-asr-mechanism-control",
+      "expectedValueReferences": [
+        { "path": "benchmarks/fixtures/asr-control.json", "jsonPointer": "/referenceText" },
+        { "path": "benchmarks/fixtures/asr-control.json", "jsonPointer": "/properNouns" },
+        { "path": "benchmarks/fixtures/asr-control.json", "jsonPointer": "/normalization" },
+        { "path": "benchmarks/fixtures/asr-control.json", "jsonPointer": "/accuracyThresholdApproved" }
+      ]
+    },
+    {
+      "id": "alignment-separated-slot-control",
+      "path": "benchmarks/fixtures/alignment-control.json",
+      "tracking": "git",
+      "role": "synthetic-alignment-mechanism-control",
+      "expectedValueReferences": [
+        { "path": "benchmarks/fixtures/alignment-control.json", "jsonPointer": "/construction" },
+        { "path": "benchmarks/fixtures/alignment-control.json", "jsonPointer": "/phrases" },
+        { "path": "benchmarks/fixtures/alignment-control.json", "jsonPointer": "/accuracyThresholdApproved" }
+      ]
+    },
+    {
+      "id": "local-text-model-grounding-control",
+      "path": "benchmarks/fixtures/local-text-model-control.json",
+      "tracking": "git",
+      "role": "synthetic-grounding-and-prompt-injection-control",
+      "expectedValueReferences": [
+        { "path": "benchmarks/fixtures/local-text-model-control.json", "jsonPointer": "/expected" },
+        { "path": "benchmarks/fixtures/local-text-model-control.json", "jsonPointer": "/generation" },
+        { "path": "benchmarks/fixtures/local-text-model-control.json", "jsonPointer": "/assessment" }
+      ]
+    },
+    {
+      "id": "local-text-model-output-contract",
+      "path": "benchmarks/fixtures/local-text-model-output.schema.json",
+      "tracking": "git",
+      "role": "synthetic-output-json-schema",
+      "expectedValueReferences": [
+        { "path": "benchmarks/fixtures/local-text-model-output.schema.json", "jsonPointer": "/required" },
+        { "path": "benchmarks/fixtures/local-text-model-output.schema.json", "jsonPointer": "/properties" },
+        { "path": "benchmarks/fixtures/local-text-model-output.schema.json", "jsonPointer": "/$defs" }
+      ]
+    },
+    {
+      "id": "manual-render-control",
+      "path": "benchmarks/fixtures/manual-render-manifest.json",
+      "tracking": "git",
+      "role": "edit-and-render-mechanism-control",
+      "expectedValueReferences": [
+        { "path": "benchmarks/fixtures/manual-render-manifest.json", "jsonPointer": "/renderProfiles" },
+        { "path": "benchmarks/fixtures/manual-render-manifest.json", "jsonPointer": "/compositions" },
+        { "path": "benchmarks/fixtures/manual-render-manifest.json", "jsonPointer": "/audioMechanism" },
+        { "path": "benchmarks/fixtures/manual-render-manifest.json", "jsonPointer": "/visualControl" },
+        { "path": "benchmarks/fixtures/manual-render-manifest.json", "jsonPointer": "/reproducibility" },
+        { "path": "benchmarks/fixtures/manual-render-manifest.json", "jsonPointer": "/assessment" }
+      ]
+    },
+    {
+      "id": "manual-render-subtitle-control",
+      "path": "benchmarks/fixtures/manual-render-subtitles.ass",
+      "tracking": "git",
+      "role": "neutral-subtitle-burn-in-control",
+      "integrity": {
+        "algorithm": "sha256",
+        "sha256": "1866c3fc8582eee03f9bd8e3e8f18bbcefcf6123c1dde23915ab72b66cd3635f",
+        "valueSource": {
+          "path": "benchmarks/fixtures/manual-render-manifest.json",
+          "jsonPointer": "/subtitle/sha256"
+        }
+      },
+      "expectedValueReferences": [
+        { "path": "benchmarks/fixtures/manual-render-manifest.json", "jsonPointer": "/subtitle" }
+      ]
+    },
+    {
+      "id": "preview-fidelity-layout-control",
+      "path": "benchmarks/fixtures/preview-fidelity-layout.json",
+      "tracking": "git",
+      "role": "shared-layout-and-cue-control",
+      "expectedValueReferences": [
+        { "path": "benchmarks/fixtures/preview-fidelity-layout.json", "jsonPointer": "/profile" },
+        { "path": "benchmarks/fixtures/preview-fidelity-layout.json", "jsonPointer": "/layoutSpec" },
+        { "path": "benchmarks/fixtures/preview-fidelity-layout.json", "jsonPointer": "/cues" },
+        { "path": "benchmarks/fixtures/preview-fidelity-layout.json", "jsonPointer": "/samples" },
+        { "path": "benchmarks/fixtures/preview-fidelity-layout.json", "jsonPointer": "/comparison" }
+      ]
+    }
+  ],
+  "expectationSets": [
+    {
+      "id": "development-proxy-contract",
+      "subjectFixtureIds": [
+        "proxy-ios-20260615-024326000-720p"
+      ],
+      "comparisonMode": "referenced-values-only",
+      "references": [
+        { "path": "test/20260615_024326000_iOS.MOV.manifest.json", "jsonPointer": "/source" },
+        { "path": "test/20260615_024326000_iOS.MOV.manifest.json", "jsonPointer": "/operation" },
+        { "path": "test/20260615_024326000_iOS.MOV.manifest.json", "jsonPointer": "/validation" },
+        { "path": "test/20260615_024326000_iOS.MOV.manifest.json", "jsonPointer": "/output" }
+      ]
+    },
+    {
+      "id": "stage-0-analysis-observations",
+      "subjectFixtureIds": [
+        "source-ios-20260615-024326000"
+      ],
+      "comparisonMode": "curated-canonical-references-not-production-thresholds",
+      "references": [
+        { "path": "benchmarks/results/media-ingest.json", "jsonPointers": ["/stage0Implications", "/assessment"] },
+        { "path": "benchmarks/results/proxy-frame-map.json", "jsonPointers": ["/stage0Implications", "/assessment"] },
+        { "path": "benchmarks/results/asr-benchmark.json", "jsonPointers": ["/configurationDisposition", "/stage0Implications", "/assessment"] },
+        { "path": "benchmarks/results/alignment-benchmark.json", "jsonPointers": ["/configurationDisposition", "/stage0Implications", "/assessment"] },
+        { "path": "benchmarks/results/shot-detection.json", "jsonPointers": ["/thresholdSelection", "/stage0Implications", "/assessment"] },
+        { "path": "benchmarks/results/face-detection.json", "jsonPointers": ["/failureClassification", "/configurationDisposition", "/stage0Implications", "/assessment"] },
+        { "path": "benchmarks/results/audio-event-and-recording-quality.json", "jsonPointers": ["/candidateRiskClassification", "/configurationDisposition", "/stage0Implications", "/assessment"] },
+        { "path": "benchmarks/results/local-text-model.json", "jsonPointers": ["/configurationDisposition", "/stage0Implications", "/assessment"] }
+      ]
+    },
+    {
+      "id": "stage-0-edit-render-observations",
+      "subjectFixtureIds": [
+        "source-ios-20260615-024326000"
+      ],
+      "comparisonMode": "curated-canonical-references-not-production-thresholds",
+      "references": [
+        { "path": "benchmarks/results/manual-render.json", "jsonPointers": ["/configurationDisposition", "/stage0Implications", "/assessment"] },
+        { "path": "benchmarks/results/preview-fidelity.json", "jsonPointers": ["/configurationDisposition", "/stage0Implications", "/assessment"] }
+      ]
+    }
+  ]
+}
