@@ -4,7 +4,7 @@
 **要求の正本（暫定既定）:** `docs/requirement-definition.md` 版 0.1 Draft  
 **設計根拠:** `docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **計画日:** 2026年8月26日  
-**計画状態:** Stage 0は2026年8月27日に人手承認済み。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-004、D-008、J-003は完了し、ST-008は利用条件不同意のためcondition-falseとして閉じた。Stage 1では`A-010`と`A-015`をcondition-false、`A-012`と`A-013`を正例annotation・再評価待ちとして開始せず、[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)の手動fallbackを実装する。全203 taskの内訳は、完了40 + 先行条件不成立`ST-008` 1 + 後続162である。後続162 task IDのうち14件は条件不成立・保留（4件）またはAzure gate closed（10件）で、baseline実行対象は148件。Foundation scaffold、正規時刻・identity・provenance・project/rights・layout/output specification、およびshell-free ProcessRunnerは実装済みだが、編集機能、SQLite、WebView2統合、IaC、Azure resourceは未実装である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布は未承認。次の実行対象は相互独立な`D-005`、`J-009`、`J-010`である。
+**計画状態:** Stage 0は2026年8月27日に人手承認済み。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-005、D-008、J-003、J-009、J-010は完了し、ST-008は利用条件不同意のためcondition-falseとして閉じた。Stage 1では`A-010`と`A-015`をcondition-false、`A-012`と`A-013`を正例annotation・再評価待ちとして開始せず、[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)の手動fallbackを実装する。全203 taskの内訳は、完了43 + 先行条件不成立`ST-008` 1 + 後続159である。後続159 task IDのうち14件は条件不成立・保留（4件）またはAzure gate closed（10件）で、baseline実行対象は145件。Foundation scaffold、正規時刻・identity・provenance・project/rights・transcript revision・layout/output specification、shell-free ProcessRunner、bounded local diagnostics、tool/model binary integrity verificationは実装済みだが、編集機能、SQLite、WebView2統合、IaC、Azure resourceは未実装である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布は未承認。次の依存解放対象は`D-006`、`J-004`、`M-001`、`R-004`、`R-005`、`U-001`、`S-001`、`PK-001`、`PK-003`、`PK-004`であり、変更境界が重ならないものを並列実行する。
 
 ---
 
@@ -229,7 +229,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.4 D — 正規モデル、SQLite、成果物ストア
 
-**実行状態: D-001〜D-004、D-008は完了。** 次の依存解放対象は`D-005`である。
+**実行状態: D-001〜D-005、D-008は完了。** 次の依存解放対象は`D-006`である。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -252,7 +252,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.5 J — 永続ジョブと子プロセス
 
-**実行状態: J-003は完了。** 次の依存解放対象は相互独立な`J-009`と`J-010`である。
+**実行状態: J-003、J-009、J-010は完了。** `J-004`は依存解放済みであり、`J-001`は`D-013`を待つ。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -630,4 +630,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**次の未完了実行対象は、相互独立に開始できるD-005、J-009、J-010である。Azure作成はZ-001〜Z-004の条件成立とZ-005の別の明示指示後に限る。**
+**次の未完了実行対象は、依存解放済みのD-006、J-004、M-001、R-004、R-005、U-001、S-001、PK-001、PK-003、PK-004である。変更境界が重ならないものを並列実行する。Azure作成はZ-001〜Z-004の条件成立とZ-005の別の明示指示後に限る。**

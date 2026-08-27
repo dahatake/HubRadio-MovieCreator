@@ -21,10 +21,10 @@
 | ST | ST-008 | 利用条件不同意のため条件不成立。手動話者割当を維持 |
 | ST | ST-015 | 14 canonicalを統合した承認資料のA〜Fを人手承認済み。commit `79ecdad` |
 | F | F-001〜F-009 | scaffold、3言語test、一括検証、fixture registry、BOM、architecture制約を個別review・commit済み |
-| D | D-001〜D-004、D-008 | 有理時刻、identity、provenance、project／rights、layout／render profileを個別review・commit済み |
-| J | J-003 | shell-free ProcessRunnerをtimeout／cancel／bounded UTF-8 capture付きでreview・commit済み |
+| D | D-001〜D-005、D-008 | 有理時刻、identity、provenance、project／rights、transcript revision、layout／render profileを個別review・commit済み |
+| J | J-003、J-009、J-010 | shell-free ProcessRunner、bounded local diagnostics、binary integrity verificationをreview・commit済み |
 
-**完了: 40 / 203タスク**。全203 taskの内訳は、完了40 + 先行条件不成立`ST-008` 1 + 後続162である。後続162 task IDのうち、`A-010`と`A-015`はcondition-false、`A-012`と`A-013`は再評価保留、`Z-001〜Z-010`はAzure gate closedである。この14件を通常実行列へ入れないため、現在のbaseline実行対象は148件で、次は`D-005`、`J-009`、`J-010`を並列開始する。
+**完了: 43 / 203タスク**。全203 taskの内訳は、完了43 + 先行条件不成立`ST-008` 1 + 後続159である。後続159 task IDのうち、`A-010`と`A-015`はcondition-false、`A-012`と`A-013`は再評価保留、`Z-001〜Z-010`はAzure gate closedである。この14件を通常実行列へ入れないため、現在のbaseline実行対象は145件で、次は依存解放済みの`D-006`、`J-004`、`M-001`、`R-004`、`R-005`、`U-001`、`S-001`、`PK-001`、`PK-003`、`PK-004`を変更境界ごとに並列実行する。
 
 ### 1.2 直近の統合作業
 
@@ -34,7 +34,10 @@
 - ADR-0007、正本task dependency、navigation、hashの同期: ST-015-CLOSEとして完了
 - F-001〜F-009: commit `e47f095`、`f8582f1`、`420a558`、`33b0784`、`c14e6fb`、`6968d99`、`f90adfe`、`8738497`、`1749a9d`（補正`09bc76f`）
 - D-001〜D-004、D-008: commit `1e2e037`、`e0e84e1`、`66222bb`、`9d88284`、`068ec87`
-- J-003: commit `d02a170`
+- D-005: commit `0020951`
+- J-003: commit `d02a170`。PID公開testの競合補正はcommit `791afb7`
+- J-009: commit `fd5229b`。Unicode同形文字の敵対的レビュー補正はcommit `6dfc063`
+- J-010: commit `99a93fa`
 
 旧ADR重複は削除済みで、`docs/dev/decisions/`だけがADR正本である。DOC-001〜DOC-004は敵対的レビュー、修正、再検証、commitまで完了した。
 
@@ -61,12 +64,12 @@
 
 | 検査 | 結果 | 扱い |
 |---|---:|---|
-| `docs/dev/**/*.md` | 25文書 | developer向け入口、architecture、benchmark、ADR、license、plan、research、reviewを分離済み |
-| Markdown相対リンク | 94件中broken 0件 | 再編後とFoundation追加文書の相対リンクは有効 |
-| Implementation plan SHA-256 | `9f40154f05ee37a56c5427612ff118613e2bbf2ae4fa1fc6a8e7cf6cd1aaceff` | `docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
+| `docs/dev/**/*.md` | 26文書 | developer向け入口、architecture、benchmark、ADR、license、plan、research、review、error catalogを分離済み |
+| Git対象Markdown相対リンク | 全32文書の94件中broken 0件 | 再編後、Foundation、J-009追加文書の相対リンクは有効 |
+| Implementation plan SHA-256 | `b05f4fb10e300079d47ef42e6ade52964bededbe84d13f6732c80e8f717b84e1` | `docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
 | `git diff --check` | staged / unstagedともexit 0 | whitespace errorなし |
 | 旧ADR重複 | 0件 | 削除済み。`docs/dev/decisions/`だけをADR正本として使用 |
-| Git staging | D-001〜D-004、D-008、J-003の個別commit後はclean | 本進捗同期だけを次のcommit対象にする |
+| Git staging | D-005、J-009、J-010と補正の個別commit後はclean | 本進捗同期だけを次のcommit対象にする |
 
 ---
 
@@ -114,8 +117,8 @@ ST-015承認後に着手する。
 | 群 | 件数 | 内容 | 並列化 |
 |---|---|---|---|
 | F-001〜F-009 | 9 | **完了。** ディレクトリ、.NET solution、React、Python worker、テスト、build.ps1、アーキテクチャ検査 | F-002/F-003/F-004とF-007/F-008/F-009を並列実行済み |
-| D-001〜D-016 | 16 | 有理時刻、SourceSpan、Project、Transcript、Suggestion、CompositionVersion、TimelineMap、SQLite、ArtifactStore | D-001〜D-006は型依存を守りつつ並列 |
-| J-001〜J-010 | 10 | ジョブ状態機械、ProcessRunner、Job Object、NDJSON protocol、cache、復旧、hash検証 | J-003/J-009/J-010は独立 |
+| D-001〜D-016 | 16 | D-001〜D-005/D-008完了。有理時刻、SourceSpan、Project、Transcript、Suggestion、CompositionVersion、TimelineMap、SQLite、ArtifactStore | 次はD-006。型依存を守りつつ他レーンと並列 |
+| J-001〜J-010 | 10 | J-003/J-009/J-010完了。ジョブ状態機械、ProcessRunner、Job Object、NDJSON protocol、cache、復旧、hash検証 | 次は依存解放済みJ-004。J-001はD-013待ち |
 
 **設計上の必須反映事項（Phase A実測より）**
 - `RationalTime`は有理数保持。浮動小数点秒を正本にしない
@@ -245,9 +248,9 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. `D-005`のtranscript model、`J-009`のbounded/redacted diagnostic、`J-010`のbinary hash verifierを並列実装する。
-2. 3 taskを個別に敵対的レビュー・修正・commitする。
-3. `D-005`完了後に`D-006`、`J-010`完了後に`S-016`の依存解放を再評価する。
+1. 依存解放済みの`D-006`、`J-004`、`M-001`、`R-004`、`R-005`、`U-001`、`S-001`、`PK-001`、`PK-003`、`PK-004`から、変更境界が重ならないtaskを並列実装する。
+2. 各taskを個別にbuild/testし、敵対的レビューの実在する指摘だけを反映して独立commitする。
+3. 完了ごとに依存DAGを再評価し、`D-007`、`R-006`、`R-007`、`R-016`、`U-002`、`S-003`など新たに解放されたtaskを次waveへ入れる。
 
 各ステップで、実測できなかった項目は`openQuestions`に残し、推測で埋めない。
 
@@ -273,12 +276,12 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 1. `D-001`と`D-002`を並列実装し、有理時刻、overflow、SHA-256、型付きIDを試験する。
 2. `D-003`を単独gateにし、架空spanとorigin欠落を拒否する。仮`ISourceSpan`は作らない。
-3. `D-004`、`D-005`、`D-008`を依存順に並行し、Project/Asset/Rights、Transcript、LayoutSpec/Cueを固定する。
+3. **完了。** `D-004`、`D-005`、`D-008`を依存順に並行し、Project/Asset/Rights、Transcript、LayoutSpec/Cueを固定した。
 4. `D-006`、`D-007`、`D-009`〜`D-012`でSuggestion来歴、不変版、TimelineMap、Manifest、Review/Audit、canonical JSONを完成する。
 5. `D-013`→`D-014`→`D-015`→`D-016`の順でmigration、store、atomic ArtifactStore、recoveryを実装する。
-6. Dのcritical pathと並行し、`J-003`（shellなしProcessRunner）と`J-009`（bounded/redacted diagnostic）を開始する。
-7. `J-010`はD-002/F-008後、`J-005`はD-012/F-004/J-003後、`J-001`以降はD-013完了後に実装する。
-8. `J-004`はkill-on-closeとcaller cleanupだけを採用し、active-process limitへ依存しない。timeout、割当拒否、host crashで孤児0を試験する。
+6. **完了。** Dのcritical pathと並行し、`J-003`（shellなしProcessRunner）と`J-009`（bounded/redacted diagnostic）を実装した。
+7. **J-010は完了。** `J-005`はD-012/F-004/J-003後、`J-001`以降はD-013完了後に実装する。
+8. 次の`J-004`はkill-on-closeとcaller cleanupだけを採用し、active-process limitへ依存しない。timeout、割当拒否、host crashで孤児0を試験する。
 
 ### Wave 3: M + approved A — 取込と解析
 

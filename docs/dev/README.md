@@ -3,7 +3,7 @@
 HubRadio MovieCreator の開発、保守、技術検証、設計判断に関する入口です。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation `F-001〜F-009`は完了済みです。正規model／process基盤では`D-001〜D-004`、`D-008`、`J-003`まで完了し、有理時刻、identity、provenance、project／rights、layout／render profile、shell-free process実行を実装しました。編集機能は未実装で、次のtaskは相互独立な`D-005`、`J-009`、`J-010`です。
+> Stage 0 と Foundation `F-001〜F-009`は完了済みです。正規model／process基盤では`D-001〜D-005`、`D-008`、`J-003`、`J-009`、`J-010`まで完了し、有理時刻、identity、provenance、project／rights、transcript revision、layout／render profile、shell-free process実行、bounded local diagnostics、binary integrity verificationを実装しました。編集機能は未実装で、次は依存解放済みtaskを変更境界ごとに並列実行します。
 
 ## 目的から探す
 
