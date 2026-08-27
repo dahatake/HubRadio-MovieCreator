@@ -1,7 +1,7 @@
 # Stage 0 採否・フォールバック・残余リスク報告
 
 - タスク: ST-015
-- 状態: **人手承認待ち**
+- 状態: **人手承認済み（ローカルStage 1開始可）**
 - 証拠基準日: 2026年8月27日
 - 対象: Windows 11 x64単一PC上のStage 0技術検証
 - 製品アプリケーション: 未実装
@@ -9,9 +9,9 @@
 
 ## 1. 判定の意味
 
-本報告は、Stage 0で実測した機構をStage 1の実装入力として採用、保留、手動化、禁止へ分類するための承認資料である。§3〜§6の分類と規則はすべて**未承認の提案**であり、§9の全項目が人に承認されるまで決定として扱わない。benchmarkの`status=succeeded`は測定処理が完了したことを示し、モデル精度、知覚品質、production閾値、外部公開、再配布、release readinessの承認を意味しない。
+本報告は、Stage 0で実測した機構をStage 1の実装入力として採用、保留、手動化、禁止へ分類するための承認資料である。§3〜§6の分類と規則は、§9に記録した人手判断により**ローカルStage 1の実装baselineとして承認済み**である。benchmarkの`status=succeeded`は測定処理が完了したことを示し、モデル精度、知覚品質、production閾値、外部公開、再配布、release readinessの承認を意味しない。
 
-現時点では、独立した文字起こし・時刻・shot・face・audio event正解注釈と、人による視聴品質基準がない。したがって、**数値のproduction合否閾値は設定しない**。Stage 1は、以下の手動fallbackとfail-closed条件を保持する場合に限って開始候補とする。production/release閾値は注釈・実装・受入試験が揃うまで未承認のまま維持する。
+現時点では、独立した文字起こし・時刻・shot・face・audio event正解注釈と、人による視聴品質基準がない。したがって、**数値のproduction合否閾値は設定しない**。Stage 1は、以下の手動fallbackとfail-closed条件を保持する場合に限って開始できる。production/release閾値は注釈・実装・受入試験が揃うまで未承認のまま維持する。
 
 ## 2. Evidence register
 
@@ -36,7 +36,7 @@ Raw runとsource-derived artifactはGit対象外であり、canonicalだけを�
 
 ## 3. 提案するStage 1分類
 
-以下は**未承認の承認案**であり、この文書だけでは確定しない。表中の「採用」「不採用」は承認後に適用する提案分類であり、現在の確定状態ではない。
+以下は§9-Aで承認された**Stage 1分類**である。「採用」は記載した境界とfallbackを伴うローカル実装baselineを意味し、production品質、外部公開、再配布、release readinessの承認を意味しない。
 
 | 対象 | 提案分類 | 実測根拠 | Stage 1の境界 |
 |---|---|---|---|
@@ -44,7 +44,7 @@ Raw runとsource-derived artifactはGit対象外であり、canonicalだけを�
 | 代理動画とframe map | **採用** | 640×360、30000/1001、80,042,595 bytes。62,311点の往復誤差は中央値`0.033333333`秒、最大`0.635`秒 | `0.635`秒をproduction合否値にしない。proxyで選択し、source側の観測PTSへ必ず解決する |
 | FFmpeg build | **条件付き採用** | 固定LGPL buildに必要filter、AAC、NVENC、Media Foundationが存在し、GPL encoderなしで出力可能 | Stage 1開発baseline。PK-003/Q-010でsource/config/notice/SBOM証拠を作り、指定された組織のrelease承認者が再配布義務・codec特許を承認するまで出荷不可 |
 | H.264 encoder | **NVENC優先候補 + Media Foundation必須fallback** | 30秒区間で両方decode成功。NVENCは10,113,517 bytes・VMAF平均96.2248、MFは15,497,724 bytes・平均95.4591。設定はCQ対固定bitrateで同条件ではない | hardware/runtime失敗時はMFへ戻し、実際のencoder・profileをRenderManifestへ記録。品質順位を他環境へ一般化しない |
-| Local ASR | **faster-whisper smallを条件付き採用** | CUDA 46.719秒、CPU 384.895秒の単回観測。両方が全入力とsegment/word timestampを返した | CUDAは測定機の暫定primary、CPUは必須fallback。CER/WER未測定。ST-015はCUDA配布を承認しない。PK-001/PK-004で権限あるlicense/package承認者と判断期限を記録し、正規の再配布可能runtimeを固定できなければrelease候補をCPU-onlyにする。現在のFoundry cacheはどちらの場合も無断copyしない |
+| Local ASR | **faster-whisper smallを条件付き採用** | CUDA 46.719秒、CPU 384.895秒の単回観測。両方が全入力とsegment/word timestampを返した | CUDAは測定機に既存のruntimeをcopyせず使うローカル開発・再測定だけの暫定primary、CPUは必須fallback。CER/WER未測定。ST-015はCUDA配布を承認しない。PK-001/PK-004で権限あるlicense/package承認者と判断期限を記録し、正規の再配布可能runtimeを固定できなければrelease候補をCPU-onlyにする。現在のFoundry cacheはどちらの場合も無断copy・同梱しない |
 | Word timing | **編集可能candidateとして採用** | emitted wordの有限timestamp coverage 100%、構造違反0。CPU/CUDA各1語でparent外`0.14`秒、output自体も不一致 | 自動確定・clampを禁止し、utterance timingと手動字幕調整を常設する |
 | Manual render mechanisms | **採用** | 16:9/9:16、trim/concat/crop/subtitle/audio gain、全4 output decode、4点の元PTS逆引き | typed Render IRの根拠にする。知覚品質、content-level OriginRef、cross-machine再現性は未承認 |
 | Preview architecture | **機構を条件付き採用** | actual WebView2 Canvas/SVG各3 captureとFFmpeg 2.002秒/60 frame区間が同一LayoutSpec/Cueを消費し、6組の差分を記録 | 直接previewは編集用、差がある場合の承認対象はfaithful interval。moving-video、audio、cross-DPI/runtime/GPU、知覚品質は後続試験まで未承認 |
@@ -70,7 +70,7 @@ Raw runとsource-derived artifactはGit対象外であり、canonicalだけを�
 
 ## 5. 手動fallback契約
 
-§9-Bで承認された場合、次をStage 1の**設計・受入契約**とする。これは現時点で実装済みという意味でも、F-001 scaffold前に8経路を実装するという意味でもない。各fallbackはStage 1で対応機能と同時に実装し、その機能を有効化する前か、遅くとも関連する`G1-MUST`受入前に試験する。
+§9-Bで承認された次の項目を、Stage 1の**設計・受入契約**とする。これは現時点で実装済みという意味でも、F-001 scaffold前に8経路を実装するという意味でもない。各fallbackはStage 1で対応機能と同時に実装し、**対応機能を初めて有効化する前に必ず試験する**。未試験または不合格なら対応機能を無効のままfail closedとし、関連する`G1-MUST`受入へ進めない。
 
 1. ASR word timestampは候補として表示し、utterance単位時刻と手動字幕調整を常に利用可能にする。
 2. speakerは手動割当を主経路にする。
@@ -81,7 +81,7 @@ Raw runとsource-derived artifactはGit対象外であり、canonicalだけを�
 7. Canvas/SVG previewと忠実区間に差がある場合、忠実区間を承認対象にする。
 8. NVENCを利用できない場合はMedia Foundationへfallbackし、encoder/profile差を記録する。
 
-## 6. 閾値の承認案
+## 6. 承認した閾値規則
 
 ### 今回承認できるもの
 
@@ -116,10 +116,11 @@ Raw runとsource-derived artifactはGit対象外であり、canonicalだけを�
 
 ### Stage 1開始前
 
-- [ ] 本報告の分類、必須fallback、閾値未承認の扱い、残余リスクを人が承認する。
-- [ ] F-001以降も外部公開・release完了ではなく、ローカル実装と受入準備であることを確認する。
-- [ ] ST-008を記録済みの利用条件不同意のままskipし、手動speaker割当で進むことを確認する。将来の同意は新しい記録と再評価を必要とする。
-- [ ] manual pathの作業量が未測定である残余リスクを受容し、追加のcloud necessity証拠と明示指示が出るまでAzure gateを閉じたまま進むことを確認する。
+- [x] 本報告の分類、必須fallback、閾値未承認の扱い、残余リスクを人が承認した。
+- [x] F-001以降も外部公開・release完了ではなく、ローカル実装と受入準備であることを確認した。
+- [x] ST-008を記録済みの利用条件不同意のままskipし、手動speaker割当で進むことを確認した。将来の同意は新しい記録と再評価を必要とする。
+- [x] manual pathの作業量が未測定である残余リスクを受容し、追加のcloud necessity証拠と明示指示が出るまでAzure gateを閉じたまま進むことを確認した。
+- [x] §5の8 fallbackについて、対応機能との同時実装、初回有効化前の試験、不合格時のfail-closedを実行計画として承認した。これはfallback試験が完了済みという意味ではない。
 
 fixture権利、署名証明書、clean production Windows、完全SBOMはStage 1のローカルscaffold開始条件ではない。ただし次のrelease blockerとして残す。
 
@@ -148,18 +149,28 @@ fixture権利、署名証明書、clean production Windows、完全SBOMはStage 
 
 ## 9. 承認記録
 
-次の全項目への人手判断が必要である。
+次の全項目は、この会話の依頼者による明示指示を根拠に承認された。ここで「デフォルトのプラン」は、一般的・未記載の既定値ではなく、Stage 0実測から導出して本報告§3〜§8に明記した分類、fallback、閾値規則、残余リスク、条件付き経路、release blockerを指す。
 
 | ID | 承認対象 | 提案 | 状態 |
 |---|---|---|---|
-| A | Stage 1技術baseline | §3の条件付き採用案を使用する | 未承認 |
-| B | 手動fallback | §5を必須契約にする | 未承認 |
-| C | 閾値 | §6の機械gateだけを採用し、production数値は後続へ保留する | 未承認 |
-| D | Residual risk | §8を受容してローカルStage 1を開始する | 未承認 |
-| E | Conditional paths | ST-008のskipを明示的な将来再評価可能状態として維持し、manual workload未測定を受容した上で、追加のcloud necessity証拠と利用者の明示指示までAzure gateを閉じる | 未承認 |
-| F | Release blocker | §7のrelease blockerはStage 1開始で免除されず、全件をrelease前に解消する | 未承認 |
+| A | Stage 1技術baseline | §3の条件付き採用案を使用する | 承認済み |
+| B | 手動fallback | §5を必須契約にする | 承認済み |
+| C | 閾値 | §6の機械gateだけを採用し、production数値は後続へ保留する | 承認済み |
+| D | Residual risk | §8を受容してローカルStage 1を開始する | 承認済み |
+| E | Conditional paths | ST-008のskipを明示的な将来再評価可能状態として維持し、manual workload未測定を受容した上で、追加のcloud necessity証拠と利用者の明示指示までAzure gateを閉じる | 承認済み |
+| F | Release blocker | §7のrelease blockerはStage 1開始で免除されず、全件をrelease前に解消する | 承認済み |
 
-承認者、役割、日時、変更条件は、人の回答後に記録する。承認前はST-015未完了であり、F-001以降を開始しない。
+| 記録項目 | 値 |
+|---|---|
+| 承認者 | 本会話の依頼者（氏名は未提示） |
+| 役割 | 実行依頼者（組織上の役割およびrelease承認権限は未提示） |
+| 日時 | 2026-08-27T23:08:06+09:00（Tokyo Standard Time） |
+| 判断根拠 | 「不明点はデフォルトのプランを採用」「全てのタスクを実行」という明示指示 |
+| 変更条件 | §3〜§8をそのまま採用する。数値のproduction閾値、外部公開、rights、再配布、署名、release readinessは承認対象外。CUDAは既存runtimeをcopyしないローカル開発・再測定だけを許し、配布は別承認とする。Azure gateは追加証拠と別の明示指示まで閉じる |
+
+この承認によりST-015を完了し、ローカルStage 1のF-001以降を開始できる。組織上の役割やrelease承認権限は提示されていないため、§7のrelease blockerを解除する根拠には使用しない。
+
+今回の「全てのタスクを実行」という指示は、各taskの記載済み依存条件とgateを満たした順に実行する指示として扱う。Z群の条件成立を示す追加証拠にはならず、Azure resource作成、subscription/region/model選択、データ送信を事前承認しない。
 
 ## 10. 敵対的レビュー
 
@@ -171,4 +182,4 @@ fixture権利、署名証明書、clean production Windows、完全SBOMはStage 
 - P-003の完了条件は権利状態と利用可否の記録であり、`unconfirmed`を隠さずlocal technical evaluationへ限定している。権利承認済みでなければStage 0/ローカルscaffoldを開始できない、という正本にない条件は追加しなかった。
 - ST-011のmodel不達だけでAzure分岐を自動開始する指摘は、manual path、Z-001のcloud necessity証拠、利用者の明示指示を無視するため採用しなかった。
 - 最終再レビューで、P-003が`unconfirmed`状態を記録して完了した境界、CUDAのCPU-only closure、page-level CSPとWebView2 runtime通信監査の差、Job Objectとcaller cleanupの責任分担を追記した。
-- 修正後の未解決指摘は0件。ただし§9の人手承認自体は未実施であり、ST-015は未完了である。
+- 承認後の敵対的レビューでは、「デフォルトのプラン」と§3〜§8の対応、fallback試験の初回有効化前gate、CUDAのローカル利用と再配布の分離、「全task実行」とAzure条件付きgateの関係を明確化した。修正後の再レビューはPASSで、未解決指摘は0件だった。
