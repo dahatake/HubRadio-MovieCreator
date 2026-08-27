@@ -36,6 +36,33 @@
 
 上記は採用確定ではない。Windows x64 wheel、GPU/CPU実行、モデル取得、実素材精度、配布サイズを測定してからST-015で採否を決める。
 
+## ST-006 ASR runtime・model受入記録
+
+取得・確認日: 2026年8月27日。以下はWindows x64 / Python 3.12上のStage 0評価に実際に使用または同一versionとして再取得した成果物であり、最終配布物への採用記録ではない。wheelは構成済みMicrosoft package feed proxy経由でPyPI package identityを指定して取得した。
+
+| 種別 | 固定対象 | 配布元 | byte size | SHA-256 | license・条件 |
+|---|---|---|---:|---|---|
+| Python wheel | `faster_whisper-1.2.1-py3-none-any.whl` | PyPI / https://github.com/SYSTRAN/faster-whisper/tree/v1.2.1 | 1,118,909 | `79a66ad50688c0b794dd501dc340a736992a6342f7f95e5811be60b5224a26a7` | METADATA classifierはMIT。wheelにlicense本文は同梱されないためexact tagのlicenseを別途固定 |
+| Python wheel | `ctranslate2-4.8.1-cp312-cp312-win_amd64.whl` | PyPI / https://github.com/OpenNMT/CTranslate2/tree/v4.8.1 | 19,220,789 | `49f96e861b57301f0b76a082109bde2cac8204a6b4fedc870883008271e82251` | wheel METADATAとwheel内にlicense表記・本文を確認できなかったため、exact tagのMIT licenseを別途固定 |
+| Python wheel | `huggingface_hub-1.28.0-py3-none-any.whl` | PyPI / https://github.com/huggingface/huggingface_hub/tree/v1.28.0 | 793,202 | `58a8bacb03072edfc38067065e9dc24bbb34805410fcd36a1632de0b329660bb` | METADATA classifierはApache Software License。同梱`licenses/LICENSE`は11,357 bytes、SHA-256 `c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4` |
+| Python wheel | `tokenizers-0.23.1-cp310-abi3-win_amd64.whl` | PyPI / https://github.com/huggingface/tokenizers/tree/v0.23.1 | 2,798,223 | `e7bfaf995c1bdbbd21d13539decb6650967013759318627d85daeb7881af16b7` | METADATA classifierはApache Software License。wheelにlicense本文は同梱されないためexact tagのlicenseを別途固定 |
+| ASR model | `Systran/faster-whisper-small` revision `536b0662742c02347bc0e980a01041f333bce120` | https://huggingface.co/Systran/faster-whisper-small/tree/536b0662742c02347bc0e980a01041f333bce120 | 486,212,372 | manifest `4e924b13871cadaa18f24bf888a6388e45d15da56e06b0b90141dc27d96e951f` | exact revision README front matterは`license: mit`。4 model fileの個別hashは`benchmarks/results/asr-benchmark.json`の参照rawに記録 |
+| Foundry Local Appx binary | CLI `0.10.3` / `foundry.exe` | installed `Microsoft.FoundryLocal` Appx | 10,967,040 | `53a805895debd297bc5fe424bdbf64f551efbe0c53ddae397ecae9f5bcc7db98` | preview。実機Appxの`SignatureKind`は`Developer`。製品配布の信頼性を示さない |
+| Foundry Local Appx binary | CLI `0.10.3` / `foundrylocald.exe` | installed `Microsoft.FoundryLocal` Appx | 12,513,792 | `a49c23d4af9f470da7128c29eef3fb1c0a64cf8555c2a3500e8683855886f3d1` | local daemon。model/serverの実行前後状態一致をST-006 rawで確認 |
+| Foundry Local model | `openai-whisper-small-cuda-gpu:3` | Foundry Local catalog/cache | 316,267,930 | manifest `003489877f5a82eccbaeb435e520fb1656780331f26ae7cb4f03bbb15f8f64f8` | catalogが`apache-2.0`と宣言したことだけを記録。独立した配布license審査は未完了 |
+| Foundry CUDA execution provider | 14-file CUDA EP cache | Foundry Local dynamic EP cache | 2,423,764,787 | manifest `8248ba49910e8fba56ddc8b4810a55cc9b3a069ca0dc2f7a23cd5f1f9a807021` | CUDA 12.8.3、cuDNN 9、ONNX Runtime CUDAを含む。Foundry公式資料はNVIDIA SDK EULA適用を明記。CTranslate2子processでのlocal評価は成功したが、再配布承認は**false** |
+
+license evidence:
+
+- faster-whisper v1.2.1 `LICENSE`（MIT）: https://raw.githubusercontent.com/SYSTRAN/faster-whisper/v1.2.1/LICENSE — 1,064 bytes、SHA-256 `af6798135e729f8aa6c853936d037dfdea449734d26b8ea6a89805fca758c0d5`
+- CTranslate2 v4.8.1 `LICENSE`（MIT）: https://raw.githubusercontent.com/OpenNMT/CTranslate2/v4.8.1/LICENSE — 1,115 bytes、SHA-256 `54aa79d9fe3c09e67a16dcd95b9e88676405a6ec174efda31036983cf7672ecb`
+- huggingface_hub v1.28.0 `LICENSE`（Apache-2.0）: https://raw.githubusercontent.com/huggingface/huggingface_hub/v1.28.0/LICENSE — 11,357 bytes、SHA-256 `c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4`
+- tokenizers v0.23.1 `LICENSE`（Apache-2.0）: https://raw.githubusercontent.com/huggingface/tokenizers/v0.23.1/LICENSE — 11,357 bytes、SHA-256 `c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4`
+- faster-whisper-small exact revision README/model card: https://huggingface.co/Systran/faster-whisper-small/resolve/536b0662742c02347bc0e980a01041f333bce120/README.md — 1,998 bytes、SHA-256 `329373481008c7c38654aff8ecdcf0163c211557cc7ba8e2ef6f2f84b4f75ec8`、front matter `license: mit`
+- Foundry Local CLI / execution provider reference: https://learn.microsoft.com/azure/foundry-local/reference/reference-cli — CLIはpreview、CUDA EPはNVIDIA SDK EULA対象と記載
+
+Windows Japanese TTS controlはインストール済み`Microsoft Haruka Desktop`でローカル生成した機構確認用であり、音声またはvoice componentを製品へ再配布する判断ではない。Foundry CUDA cacheのcopy、Appx/modelの同梱、完全なtransitive hash lock、notice生成は未承認であり、PK-001/PK-004/Q-010まで出荷対象にしない。
+
 ## ST-010 MediaPipe受入記録
 
 取得・確認日: 2026年8月27日。以下はWindows x64 / Python 3.12上のStage 0評価に使用した実在成果物であり、最終配布物への採用記録ではない。

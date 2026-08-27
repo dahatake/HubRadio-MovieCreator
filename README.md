@@ -3,7 +3,7 @@
 Windows 11上で、企業向けトーク／インタビュー動画を**根拠付き・非破壊・人による承認付き**で複数形式へ展開する、ローカル優先の動画編集支援アプリケーションです。
 
 > [!IMPORTANT]
-> 現在は **Stage 0（技術検証・進行中）** です。P-001〜P-010、ST-001〜ST-005、ST-009、ST-010、ST-014、ST-016と固定fixture向け動画生成ツールまでは完了しています。ST-014ではJob Objectの子孫終了、timeout、128 MiB候補制限と、複数実行ファイルを含むunsigned MSIXのpack/unpackを実測しました。active-process limit、署名、install、AppContainerは採用・検証済みとみなしません。Stage 0残件と全体承認（ST-015）は未完了で、完成アプリケーションはまだありません。
+> 現在は **Stage 0（技術検証・進行中）** です。P-001〜P-010、ST-001〜ST-006、ST-009、ST-010、ST-014、ST-016と固定fixture向け動画生成ツールまでは完了しています。ST-006ではfaster-whisper CPU/CUDAとFoundry Localを同一音声で比較し、fixture精度を未測定のまま、CUDA版を次の時刻評価対象、CPU版をfallback候補、Foundry版を時刻情報不足で保留としました。Stage 0残件と全体承認（ST-015）は未完了で、完成アプリケーションはまだありません。
 
 ![HubRadio MovieCreatorのアーキテクチャ。緑は実装済みStage 0、青は計画中のWindowsアプリ、紫の破線は条件付きAzure経路](docs/architecture.svg)
 
@@ -64,11 +64,11 @@ Windows 11上で、企業向けトーク／インタビュー動画を**根拠�
 | エンコーダ比較 | ✅ 実測済み | `benchmarks/results/encoder-matrix.json`（NVENCとMedia FoundationのVMAF・サイズ・速度）|
 | GUIデスクトップアプリ | ⬜ 未実装 | WinUI 3、WebView2、Reactは計画のみ |
 | 業務データ／編集機能 | ⬜ 未実装 | SQLite、非破壊タイムライン、レビュー、納品管理は計画のみ |
-| ML解析 | 🟨 一部実測 | ショットST-009、顔ST-010、音響イベント/録画品質ST-016を実測済み。音響候補は人の確認前提で自動削除なし。ASR、話者、トピック解析はPoC前 |
+| ML解析 | 🟨 一部実測 | ASR ST-006、ショットST-009、顔ST-010、音響イベント/録画品質ST-016を実測済み。ASR精度・時刻精度、話者、トピックは未確定で、人の確認・手動fallbackを維持 |
 | 配布 | 🟨 Stage 0 PoCのみ | 複数exe、FFmpeg/ffprobe、modelを含むunsigned MSIXのpack/unpackと展開後実行は実測済み。署名・install・upgrade・clean Windowsは未検証 |
 | Azure | ⏸ 条件付き・未作成 | ローカル不達と明示承認が揃った場合だけ検討 |
 
-現在の次タスクは [`docs/implementation-plan.md`](docs/implementation-plan.md) の **ST-006** です。Stage 0の全結果をST-015で承認するまで、アプリ本体のscaffold（F-001以降）へ進まない計画です。
+現在の次タスクは [`docs/implementation-plan.md`](docs/implementation-plan.md) の **ST-007** です。Stage 0の全結果をST-015で承認するまで、アプリ本体のscaffold（F-001以降）へ進まない計画です。
 
 ## クイックスタート
 
@@ -200,6 +200,7 @@ pwsh.exe -NoLogo -NoProfile -File tools\create-test-video.ps1 -SourcePath sample
 | `face-detection` | 利用可能 | MediaPipe VIDEO modeで代理300標本を測り、hash固定した正例対照と失敗分類を記録 |
 | `audio-event-and-recording-quality` | 利用可能 | FFmpeg、波形規則、Silero VAD、YAMNetを比較し、候補分布・対照・未測定精度を記録 |
 | `process-and-package` | 利用可能 | Job Objectのtimeout/close/crash/資源制限と、unsigned multi-executable MSIXのpack/unpack・codec/model読込を記録 |
+| `asr-benchmark` | 利用可能 | faster-whisper CPU/CUDAとFoundry Localを同一16 kHz音声で比較し、synthetic日本語control、時間、memory、時刻能力、privacy境界を記録 |
 
 `media-ingest`は大容量fixtureを全編処理します。実行する場合は十分な時間と空き容量を確保してください。
 
@@ -437,7 +438,7 @@ fixture、生成動画、ブランド素材、BGM等はMIT Licenseの対象と�
 
 | Stage | 内容 | 状態 |
 |---|---|---|
-| Stage 0 | 実素材で媒体、ASR、時刻、顔、shot、字幕、render、packageを測定 | **進行中**。P-001〜P-010、ST-001〜ST-005、ST-009、ST-010、ST-014、ST-016完了 |
+| Stage 0 | 実素材で媒体、ASR、時刻、顔、shot、字幕、render、packageを測定 | **進行中**。P-001〜P-010、ST-001〜ST-006、ST-009、ST-010、ST-014、ST-016完了 |
 | Stage 1 | Must: 取込、文字起こし、手動編集、16:9／9:16、版、review、render、traceability | 未着手。ST-015承認後 |
 | Stage 2 | Should: 見どころ、hook、自動追尾、資料、音声補正、quiz、投稿文 | 未着手。G1-MUST後 |
 | Stage 3 | 公開履歴、運用改善、条件確定済みの外部連携 | 未着手 |

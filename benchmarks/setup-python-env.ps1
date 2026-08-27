@@ -30,7 +30,10 @@ $pinnedPackages = @(
     "mediapipe==1.0.1",
     "onnxruntime==1.29.0",
     "av==18.1.0",
-    "numpy==2.5.2"
+    "numpy==2.5.2",
+    "ctranslate2==4.8.1",
+    "huggingface_hub==1.28.0",
+    "tokenizers==0.23.1"
 )
 
 function Invoke-Python {

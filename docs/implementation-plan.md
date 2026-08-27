@@ -4,7 +4,7 @@
 **要求の正本（暫定既定）:** `docs/requirement-definition.md` 版 0.1 Draft  
 **設計根拠:** `docs/implementation-research.md`、`docs/adversarial-review.md`  
 **計画日:** 2026年8月26日  
-**計画状態:** 実行中。P-001〜P-010、ST-001〜ST-005、ST-009、ST-010、ST-014、ST-016完了。ST-014はJob Objectのclose/crash/timeout cleanupと128 MiB候補制限、unsigned multi-executable MSIXのpack/unpackを実測した。active-process limitは不採用、署名・install・AppContainerは未測定。次はST-006。アプリケーション、IaC、Azureリソースは未完了
+**計画状態:** 実行中。P-001〜P-010、ST-001〜ST-006、ST-009、ST-010、ST-014、ST-016完了。ST-006はfaster-whisper CPU/CUDAとFoundry Localを同一音声で実測し、CUDA版をST-007評価対象、CPU版をfallback候補、engine時刻を返さないFoundry版を保留とした。fixture精度、production閾値、CUDA配布は未承認。次はST-007。アプリケーション、IaC、Azureリソースは未完了
 
 ---
 
@@ -624,4 +624,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**次の未完了実行対象はST-006である。F-001以降のscaffoldはST-015承認後、Azure作成はZ-005の明示指示後に限る。**
+**次の未完了実行対象はST-007である。F-001以降のscaffoldはST-015承認後、Azure作成はZ-005の明示指示後に限る。**

@@ -11,6 +11,10 @@
 # Raw benchmark runs are local evidence; canonical summaries remain tracked
 /benchmarks/results/runs/
 
+# Rights-unconfirmed transcript reference text stays in protected local storage
+/benchmarks/annotations/transcript-reference.jsonl
+/benchmarks/annotations/transcript-reference.manifest.json
+
 # Generated benchmark working data
 /benchmarks/work/
 /benchmarks/cache/

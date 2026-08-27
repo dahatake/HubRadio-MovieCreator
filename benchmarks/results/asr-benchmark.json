@@ -1,0 +1,410 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260827T0718012939475Z-asr-benchmark-1e66cc2c",
+  "benchmarkRunSha256": "a92491fd5c956151b335171413289b59c0d9d4098cf765501c463728786faf3c",
+  "recordedAtUtc": "2026-08-27T07:26:48.5266548Z",
+  "fixture": {
+    "sourceAssetId": "source-ios-20260615-024326000",
+    "sourceSha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+    "sourceByteSize": 6494572403,
+    "rightsStatus": "unconfirmed",
+    "allowedUse": "local-technical-evaluation-only",
+    "externalPublicationAllowed": false,
+    "sourcePostRunIntegrityChecked": true,
+    "sourceUnchanged": true,
+    "fixtureReferenceTranscriptAvailable": false
+  },
+  "host": {
+    "hardwareBenchmarkRunId": "20260826T1548073271369Z-hardware-d1b1bd37",
+    "hardwareBenchmarkRunSha256": "3e5b1e6ab9ce19795b8244bd433ab8882b534e4b06b9314d7d86ac67536775c7",
+    "operatingSystemVersion": "10.0.29648",
+    "processor": "13th Gen Intel(R) Core(TM) i7-13800H",
+    "logicalProcessors": 20,
+    "graphics": [
+      "Intel(R) Iris(R) Xe Graphics",
+      "NVIDIA GeForce RTX 4060 Laptop GPU"
+    ],
+    "processArchitecture": "X64"
+  },
+  "implementation": {
+    "gitHead": "12feee8803875e81b4d16e32475d875f52b94cab",
+    "implementationFilesCleanAtRun": false,
+    "files": [
+      {
+        "id": "benchmark-harness",
+        "fileName": "run-benchmarks.ps1",
+        "byteSize": 55372,
+        "sha256": "26a468fb6296a573591934765047d7175f272c052900670601ae7da45aa61c9e"
+      },
+      {
+        "id": "asr-wrapper",
+        "fileName": "measure-asr.ps1",
+        "byteSize": 65413,
+        "sha256": "10bf0e3209eecc9a2208003a29ba4e1dfff0510252177cb832c89b93eb660389"
+      },
+      {
+        "id": "asr-driver",
+        "fileName": "asr_benchmark.py",
+        "byteSize": 39527,
+        "sha256": "c4a4bc7cb909dff6127310807559120ca159f7a0fb744f967004057b1b0f3250"
+      },
+      {
+        "id": "benchmark-schema",
+        "fileName": "schema.json",
+        "byteSize": 69850,
+        "sha256": "59bf2e318e1c5e64f3bc4e79c4851d57896d9db6adc270356284c811c0d586fb"
+      },
+      {
+        "id": "python-environment-setup",
+        "fileName": "setup-python-env.ps1",
+        "byteSize": 4222,
+        "sha256": "0a4302d4453911948395e38612fbccc3338a08c71e02d3a114aa793ea59fda82"
+      },
+      {
+        "id": "asr-control-config",
+        "fileName": "asr-control.json",
+        "byteSize": 945,
+        "sha256": "6590f64a0a9496f8a5f63425c9e37234c3fa1d41e9704f667782f7434fc6c2af"
+      }
+    ]
+  },
+  "analysisInput": {
+    "mediaIngestBenchmarkRunId": "20260826T1945575983887Z-media-ingest-64a77bc8",
+    "mediaIngestBenchmarkRunSha256": "f47f5f89dacc86fc6c73acd83f6009347235af697b5d00837935693d705c0c09",
+    "sourceAudio": {
+      "streamIndex": 1,
+      "codecName": "aac",
+      "sourceTimeBase": "1/48000",
+      "sourceStartSeconds": 0.0,
+      "sourceDurationSeconds": 1081.42,
+      "sourceSampleRate": 48000,
+      "sourceChannels": 2,
+      "observedNegativePacketStartSeconds": -0.044
+    },
+    "normalizedFixtureAudio": {
+      "byteSize": 34605740,
+      "sha256": "25f0f5eb86b07afc1e875e8c9cb157c6c5008e3386d01f839b3cfc4696f09b9c",
+      "codecName": "pcm_s16le",
+      "sampleRate": 16000,
+      "channels": 1,
+      "durationSeconds": 1081.428,
+      "timelineStartSeconds": 0.0
+    },
+    "timelineAuthority": "ASR times are relative to the decoded normalized WAV. ST-003 remains authoritative for source packet timing; source mapping and timing accuracy are evaluated by ST-007."
+  },
+  "tooling": {
+    "ffmpegPackageId": "BtbN.FFmpeg.LGPL.8.1",
+    "ffmpegSha256": "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb",
+    "ffprobeSha256": "4c2f730969c9551aec21c5ca07eb73f63bb0920204c9cd6c9a6e7be6be0458d2",
+    "pythonVersion": "Python 3.12.10",
+    "pythonPackages": {
+      "fasterWhisper": "1.2.1",
+      "ctranslate2": "4.8.1",
+      "huggingfaceHub": "1.28.0",
+      "tokenizers": "0.23.1",
+      "cudaDeviceCount": 1
+    },
+    "foundryLocal": {
+      "available": true,
+      "cliVersion": "0.10.3",
+      "packageVersion": "0.10.3.0",
+      "preview": true,
+      "signatureKind": "Developer",
+      "cliExecutableSha256": "53a805895debd297bc5fe424bdbf64f551efbe0c53ddae397ecae9f5bcc7db98",
+      "daemonExecutableSha256": "a49c23d4af9f470da7128c29eef3fb1c0a64cf8555c2a3500e8683855886f3d1",
+      "modelAndServerPrePostStateMatch": true,
+      "modelLoadedAfter": false,
+      "serverReadyAfter": true
+    }
+  },
+  "models": {
+    "fasterWhisperSmall": {
+      "repository": "Systran/faster-whisper-small",
+      "revision": "536b0662742c02347bc0e980a01041f333bce120",
+      "license": "MIT",
+      "fileCount": 4,
+      "totalBytes": 486212372,
+      "manifestSha256": "4e924b13871cadaa18f24bf888a6388e45d15da56e06b0b90141dc27d96e951f"
+    },
+    "foundryLocalWhisperSmall": {
+      "modelId": "openai-whisper-small-cuda-gpu:3",
+      "licenseDeclaredByCatalog": "apache-2.0",
+      "fileCount": 17,
+      "totalBytes": 316267930,
+      "manifestSha256": "003489877f5a82eccbaeb435e520fb1656780331f26ae7cb4f03bbb15f8f64f8",
+      "executionProvider": "CUDAExecutionProvider",
+      "executionProviderFileCount": 14,
+      "executionProviderTotalBytes": 2423764787,
+      "executionProviderManifestSha256": "8248ba49910e8fba56ddc8b4810a55cc9b3a069ca0dc2f7a23cd5f1f9a807021",
+      "executionProviderVersionFileSha256": "28236ce308e5232254f4f09ca8e6df0805b9a3608a79d9e4d09a4b459fb99640"
+    }
+  },
+  "syntheticJapaneseControl": {
+    "controlId": "windows-ja-tts-haruka-v1",
+    "configSha256": "6590f64a0a9496f8a5f63425c9e37234c3fa1d41e9704f667782f7434fc6c2af",
+    "referenceTextSha256": "5563c9f779cb242650ae96578ab0a0dc6ac57dc73352cff7d64b35558f918b62",
+    "audioSha256": "52858acd78e4892bc3d0dac4b25bec299911161d64e4db9b5f196d4b042bb894",
+    "audioDurationSeconds": 11.444688,
+    "voice": "Microsoft Haruka Desktop",
+    "culture": "ja-JP",
+    "referenceCharacterCount": 59,
+    "recognizedCharacterCount": 57,
+    "editDistance": 9,
+    "cer": 0.152542,
+    "properNounCheckCount": 4,
+    "properNounMatchedCount": 4,
+    "allProperNounChecksMatched": true,
+    "accuracyThresholdApproved": false,
+    "interpretation": "This synthetic control demonstrates Japanese pipeline operation and four named-term checks only. It is not fixture accuracy evidence or a production threshold."
+  },
+  "candidates": [
+    {
+      "candidateId": "faster-whisper-small-cpu-int8",
+      "status": "succeeded",
+      "engine": "faster-whisper",
+      "configuration": {
+        "device": "cpu",
+        "computeType": "int8",
+        "beamSize": 5,
+        "wordTimestamps": true,
+        "vadFilter": false,
+        "conditionOnPreviousText": true
+      },
+      "control": {
+        "passed": true,
+        "language": "ja",
+        "segmentCount": 2,
+        "wordCount": 43,
+        "structuralViolationCount": 0,
+        "allProperNounChecksMatched": true
+      },
+      "fixture": {
+        "language": "ja",
+        "durationSeconds": 1081.428,
+        "wholeInputDurationCoverageVerified": true,
+        "textSha256": "abb10d81d8ba71e476a101af20a264c3be4aa873f358863353eb58067e4111f6",
+        "characterCount": 7728,
+        "segmentCount": 861,
+        "wordCount": 5254,
+        "segmentTimestampsAvailable": true,
+        "wordTimestampsAvailable": true,
+        "structuralViolationCount": 0,
+        "wordOutsideParentSegmentCount": 1,
+        "maxWordOutsideParentSegmentSeconds": 0.14,
+        "wordParentContainmentUsedAsSuccessGate": false
+      },
+      "performance": {
+        "modelLoadMilliseconds": 1020.0,
+        "controlTranscriptionMilliseconds": 2510.0,
+        "fixtureCoverageMilliseconds": 384895.0,
+        "fixtureRealTimeFactor": 0.355914,
+        "peakAggregateWorkingSetBytes": 868855808,
+        "peakAggregateWorkingSetMiB": 828.605,
+        "systemWideGpuMemoryUsedMiBPeakDelta": 0,
+        "observedProcessIdCount": 3,
+        "singleObservation": true
+      },
+      "artifact": {
+        "byteSize": 607504,
+        "sha256": "715881eb1adc117659a2d2a41191ca57bcdd06f4dafb54b332646ff4119a8262",
+        "containsRightsUnconfirmedTranscriptText": true,
+        "committedToGit": false
+      }
+    },
+    {
+      "candidateId": "faster-whisper-small-cuda-float16",
+      "status": "succeeded",
+      "engine": "faster-whisper",
+      "configuration": {
+        "device": "cuda",
+        "computeType": "float16",
+        "beamSize": 5,
+        "wordTimestamps": true,
+        "vadFilter": false,
+        "conditionOnPreviousText": true
+      },
+      "control": {
+        "passed": true,
+        "language": "ja",
+        "segmentCount": 2,
+        "wordCount": 43,
+        "structuralViolationCount": 0,
+        "allProperNounChecksMatched": true
+      },
+      "fixture": {
+        "language": "ja",
+        "durationSeconds": 1081.428,
+        "wholeInputDurationCoverageVerified": true,
+        "textSha256": "9e961b5037c529ece0d292cf801c90c7b4edb45775751e04f0862739ad487ed4",
+        "characterCount": 7707,
+        "segmentCount": 694,
+        "wordCount": 5266,
+        "segmentTimestampsAvailable": true,
+        "wordTimestampsAvailable": true,
+        "structuralViolationCount": 0,
+        "wordOutsideParentSegmentCount": 1,
+        "maxWordOutsideParentSegmentSeconds": 0.14,
+        "wordParentContainmentUsedAsSuccessGate": false
+      },
+      "performance": {
+        "modelLoadMilliseconds": 671.0,
+        "controlTranscriptionMilliseconds": 601.0,
+        "fixtureCoverageMilliseconds": 46719.0,
+        "fixtureRealTimeFactor": 0.043201,
+        "observedFixturePathSpeedupVersusCpu": 8.239,
+        "peakAggregateWorkingSetBytes": 1670639616,
+        "peakAggregateWorkingSetMiB": 1593.246,
+        "systemWideGpuMemoryUsedMiBPeakDelta": 933,
+        "observedProcessIdCount": 3,
+        "singleObservation": true,
+        "gpuMemoryScope": "system-wide; not per-process"
+      },
+      "cudaRuntime": {
+        "source": "Foundry Local CUDA execution-provider cache",
+        "pathInjectedOnlyForChildProcess": true,
+        "manifestSha256": "8248ba49910e8fba56ddc8b4810a55cc9b3a069ca0dc2f7a23cd5f1f9a807021",
+        "releaseRedistributionApproval": false
+      },
+      "artifact": {
+        "byteSize": 583229,
+        "sha256": "8636826f918a42b4a9fc12e7b684bd18a021900b2ebc19189f74dfb4bd69776d",
+        "containsRightsUnconfirmedTranscriptText": true,
+        "committedToGit": false
+      }
+    },
+    {
+      "candidateId": "foundry-local-whisper-small-cuda-30s-windows",
+      "status": "succeeded",
+      "engine": "Foundry Local CLI",
+      "configuration": {
+        "inputMode": "fixed-duration-window-adapter",
+        "chunkDurationSeconds": 30.0,
+        "chunkCount": 37,
+        "engineSegmentTimestampsRequested": false,
+        "engineWordTimestampsRequested": false
+      },
+      "control": {
+        "passed": true,
+        "language": "ja",
+        "allProperNounChecksMatched": true
+      },
+      "directWholeFileDiagnostic": {
+        "characterCount": 3,
+        "durationSecondsReportedByEngine": null,
+        "wholeInputCoverageVerified": false,
+        "excludedFromComparableTimingAndPrimaryResourceMeasurement": true
+      },
+      "fixture": {
+        "language": "ja",
+        "textSha256": "ae5439c85608b0e9c77777655eed822aae44c8ce709cead428ebbb3b7b439ee5",
+        "characterCount": 5206,
+        "inputWindowSubmissionCoverageVerified": true,
+        "engineWholeInputCoverageVerified": false,
+        "engineCoverageStatus": "unknown-no-engine-duration-or-timestamps",
+        "coveredDurationSeconds": 1081.428,
+        "coverageDifferenceSeconds": 0.0,
+        "pcmContentMatchesSource": true,
+        "windowSequenceViolationCount": 0,
+        "engineSegmentTimestampsAvailable": false,
+        "engineWordTimestampsAvailable": false,
+        "derivedChunkWindowsAvailable": true,
+        "derivedChunkWindowsAreNotSpeechBoundaries": true
+      },
+      "performance": {
+        "modelLoadMeasured": false,
+        "modelLoadBehavior": "The model was cached before timing and first used by the control invocation; an isolated Foundry model-load duration was not measured.",
+        "controlTranscriptionMilliseconds": 2288.995,
+        "adapterPreparationMilliseconds": 2724.828,
+        "engineInvocationMilliseconds": 38854.461,
+        "fixtureCoverageMilliseconds": 41579.289,
+        "fixtureAdapterRealTimeFactor": 0.038449,
+        "fixtureEngineInvocationRealTimeFactor": 0.035929,
+        "observedFixturePathSpeedupVersusCpu": 9.257,
+        "peakAggregateWorkingSetBytes": 502796288,
+        "peakAggregateWorkingSetMiB": 479.504,
+        "systemWideGpuMemoryUsedMiBPeakDelta": 1156,
+        "observedProcessIdCount": 6,
+        "singleObservation": true,
+        "gpuMemoryScope": "system-wide; includes the persistent Foundry daemon and is not per-process"
+      },
+      "artifact": {
+        "byteSize": 53382,
+        "sha256": "f2a6b5014307b109fbc7fc7f38ae049159c72c49b1bf350838a0ce29a9e99b5d",
+        "containsRightsUnconfirmedTranscriptText": true,
+        "committedToGit": false
+      }
+    }
+  ],
+  "comparison": {
+    "sameNormalizedFixtureAudioForAllCandidates": true,
+    "successfulCandidateCount": 3,
+    "successCriteriaEquivalentAcrossEngines": false,
+    "successCriteriaScope": "Each candidate must pass Japanese text and all four named-term controls. Timestamp and duration gates apply only where the engine exposes them; missing Foundry engine timestamps are recorded as a capability limitation, not silently treated as passing timing validation.",
+    "fixturePerformanceTrialCountPerCandidate": 1,
+    "performanceDistributionMeasured": false,
+    "timingComparisonStatus": "single-observation-with-documented-adapter-boundaries",
+    "crossCandidateEngineTimingComparable": false,
+    "timingComparisonScope": "Operational fixture paths only. Faster-whisper values are full-WAV engine calls; Foundry fixtureCoverageMilliseconds includes the required 30-second adapter preparation and separately reports engineInvocationMilliseconds. Foundry model-load time was not isolated.",
+    "fixtureCerMeasured": false,
+    "fixtureWerMeasured": false,
+    "fixtureProperNounErrorRateMeasured": false,
+    "fixtureAccuracyRankingAvailable": false,
+    "segmentAndWordTimestampComparisonAvailableFor": [
+      "faster-whisper-small-cpu-int8",
+      "faster-whisper-small-cuda-float16"
+    ],
+    "foundryDerivedWindowsAreComparableToSpeechBoundaries": false,
+    "productionThresholdsApproved": false
+  },
+  "configurationDisposition": {
+    "status": "provisional-for-ST-007-only",
+    "alignmentEvaluationTarget": "faster-whisper-small-cuda-float16",
+    "alignmentEvaluationReason": "It processed the full normalized fixture, returned segment and word timestamps with zero structural timestamp violations, passed all four synthetic named-term checks, and was 8.239 times faster than the CPU fixture path in this single observation.",
+    "cpuFallbackCandidate": "faster-whisper-small-cpu-int8",
+    "cpuFallbackReason": "It provides the same timestamp capabilities without requiring the injected CUDA runtime, but its single observed fixture path took 384.895 seconds.",
+    "foundryTimedAsrDisposition": "hold",
+    "foundryTimedAsrReason": "The 30-second adapter submitted PCM matching the full source, but CLI output supplied no engine segment or word timestamps and no engine duration. Submission coverage is not engine processing coverage.",
+    "cudaDistributionDisposition": "local-stage-0-only",
+    "cudaDistributionReason": "The successful CTranslate2 CUDA run used the Foundry Local CUDA execution-provider cache through a child-only PATH. Redistribution approval for those binaries is false and must not be inferred from local execution.",
+    "finalStage0DecisionPending": true
+  },
+  "stage0Implications": [
+    "All three local candidates passed the Japanese synthetic control and all four named-term checks, but this control is not a substitute for fixture accuracy annotation.",
+    "Both faster-whisper configurations covered the 1081.428-second normalized WAV and returned structurally valid segment and word timestamps. One word in each output extended 0.14 seconds outside its parent segment; this is measured but not treated as a timing-accuracy result and is evaluated in ST-007.",
+    "The CUDA faster-whisper fixture path took 46.719 seconds versus 384.895 seconds on CPU in one observation. No latency distribution or cross-machine guarantee is available.",
+    "Foundry Local processed 37 submitted windows in 38.854 seconds, with 2.725 seconds of required adapter preparation. The engine did not report duration or speech boundaries, so the result cannot satisfy FR-002 timing requirements by itself.",
+    "The three fixture transcript hashes and counts differ. Without an independently authored transcript reference, no candidate accuracy ranking or production threshold can be derived.",
+    "GPU memory values are system-wide observations under WDDM, not per-process attribution. Foundry working-set observations include its persistent daemon.",
+    "Private transcript artifacts, normalized audio, and raw runs remain in an ignored local directory protected by a non-inheriting three-principal ACL; none are committed to Git."
+  ],
+  "assessment": {
+    "interpretation": "ST-006 establishes local execution, capability, single-run performance, privacy controls, and failure boundaries. It does not establish fixture transcription accuracy or production acceptance thresholds.",
+    "measurementCorrections": [
+      "The initial Foundry catalog check parsed wrapped table output. The final stage uses JSON catalog output and verifies the exact model ID, device, execution provider, cache state, and declared license.",
+      "A one-shot Foundry invocation returned only three characters, a null duration, and no timestamps. The final stage records it as a diagnostic failure of whole-input coverage and separately verifies full PCM submission through 37 ordered windows without claiming engine processing coverage.",
+      "The first CUDA attempt lacked cuBLAS/cuDNN on the child PATH. The final run verifies an exact Foundry CUDA execution-provider manifest and injects it only into the CTranslate2 child process; release redistribution remains unapproved.",
+      "Process working-set measurement originally observed only a wrapper process. The final run dynamically tracks descendants and records the observed process count and aggregate peak.",
+      "Run 20260827T0600051061043Z-asr-benchmark-dfce3087 (SHA-256 e3924a8347389859048bc374bd5f3cda91a877c7a4929f9de1699107c2969c75) showed that a trap replaced the root exception with ScriptHalted. The final trap preserves the original ErrorRecord.",
+      "Run 20260827T0628006272622Z-asr-benchmark-9d367a5c (SHA-256 d2a5a2ef8439d9751dcd359a62b2626fcfc263009b99a8a5555e7c647fef7350) exposed a parser-valid inline if that PowerShell evaluated as a command. The CUDA post-processing branch is now precomputed and runtime-tested for success and failure.",
+      "Run 20260827T0643445992366Z-asr-benchmark-bc8fc87b (SHA-256 bc3474c1ae8f9d9a730e7927e3acb5a9b045e94e1cec7d0d0355f0f78d479126) showed that rewriting an already protected ACL requested SeSecurityPrivilege. ACL setup and read-only final verification are now separate and the setup function is idempotent.",
+      "Run 20260827T0703334900464Z-asr-benchmark-eb4f9db9 (SHA-256 f7bb760e7482c19c17ce3df3862aea195f8e3f8ffc6e91ddcbcd77750e1e3bbd) completed all three child candidates but the outer harness rejected empty stderr. Empty stderr is now an allowed normal value and a no-stderr JSON child regression test passed."
+    ],
+    "openQuestions": [
+      "CER, WER, fixture proper-noun error rate, and transcript correction effort remain unmeasured until transcript-reference.jsonl is authored independently of model output.",
+      "Word and utterance boundary accuracy remain unmeasured until ST-007 evaluates independently annotated timing. Structural validity alone is not timing accuracy.",
+      "Whether the single 0.14-second word-outside-parent observation is an acceptable representation or requires normalization must be decided from ST-007 evidence rather than hidden or clamped.",
+      "The production CUDA runtime and redistribution path remain unresolved. Foundry Local cache binaries must not be copied into a release without a separate license and packaging decision.",
+      "Foundry Local CLI 0.10.3 is preview software, and its Developer-signed package was measured only on this host. Release trust and clean-machine behavior remain unverified.",
+      "Performance distributions, cold-cache behavior, concurrent workload behavior, and cross-machine results are not measured by this single run.",
+      "Final adoption, fallback policy, and thresholds require ST-015 human approval."
+    ],
+    "privacy": "The canonical summary contains hashes, counts, timing, capability flags, and bounded interpretations only. An exact-value comparison of 927 private transcript strings against the raw envelope found zero leaks, and no absolute path pattern was present.",
+    "curatedFields": [
+      "configurationDisposition",
+      "stage0Implications",
+      "assessment",
+      "recollectionCommand"
+    ]
+  },
+  "recollectionCommand": "pwsh.exe -NoLogo -NoProfile -File benchmarks/run-benchmarks.ps1 -Stage asr-benchmark -ChildTimeoutSeconds 21600"
+}

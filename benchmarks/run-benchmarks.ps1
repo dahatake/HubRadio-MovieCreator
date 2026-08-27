@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package")]
+    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark")]
     [string]$Stage = "hardware",
     [string]$FixtureManifest = (Join-Path $PSScriptRoot "fixtures\fixture-manifest.json"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "results\runs"),
@@ -134,8 +134,7 @@ function Invoke-JsonChildProcess {
         }
         $stdout = $stdoutTask.GetAwaiter().GetResult()
         $stderr = $stderrTask.GetAwaiter().GetResult()
-        $safeError = $stderr.Replace($SourcePath, "<SOURCE>")
-        if ($env:USERPROFILE) { $safeError = $safeError.Replace($env:USERPROFILE, "<USERPROFILE>") }
+        $safeError = Protect-SensitiveText -Text $stderr -SourcePath $SourcePath
 
         if ($process.ExitCode -ne 0) {
             if ($safeError.Length -gt 2000) { $safeError = $safeError.Substring(0, 2000) + " [truncated]" }
@@ -557,24 +556,290 @@ function Assert-ProcessAndPackagePayload {
     }
 }
 
+function Assert-NoUnexpectedAsrSensitiveProperties {
+    param([AllowNull()][object]$Value)
+
+    $allowed = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($name in @(
+        "textSha256", "referenceTextSha256", "recognizedTextSha256",
+        "referenceCharacterCount", "recognizedCharacterCount",
+        "transcriptTextIncludedInPayload", "sourceTranscriptTextIncludedInPayload",
+        "sourceTranscriptTextIncludedInCanonicalSummary", "localTranscriptArtifactsContainRightsUnconfirmedText",
+        "fixtureTranscriptHashes", "fixtureReferenceTranscriptAvailable", "transcriptReferenceAvailable",
+        "missingReferenceRelativePath", "controlCerIsSyntheticMechanismEvidenceOnly",
+        "fixtureProperNounErrorRateSubstitute", "pcmContentMatchesSource", "conditionOnPreviousText",
+        "controlTranscriptionSeconds", "fixtureTranscriptionSeconds",
+        "controlTranscriptionMilliseconds", "chunkTranscriptionMilliseconds"
+    )) {
+        [void]$allowed.Add($name)
+    }
+
+    function Test-Value {
+        param([AllowNull()][object]$Current)
+
+        if ($null -eq $Current -or $Current -is [string] -or $Current -is [ValueType]) {
+            return
+        }
+        if ($Current -is [Collections.IDictionary]) {
+            foreach ($key in $Current.Keys) {
+                $propertyName = [string]$key
+                if ($propertyName -match '(?i)(raw|text|transcript|utterance|content)' -and -not $allowed.Contains($propertyName)) {
+                    throw "ASR payload contains an unapproved sensitive property name: $propertyName"
+                }
+                Test-Value -Current $Current[$key]
+            }
+            return
+        }
+        if ($Current -is [Collections.IEnumerable]) {
+            foreach ($item in $Current) { Test-Value -Current $item }
+            return
+        }
+        foreach ($property in $Current.PSObject.Properties) {
+            if ($property.Name -match '(?i)(raw|text|transcript|utterance|content)' -and -not $allowed.Contains($property.Name)) {
+                throw "ASR payload contains an unapproved sensitive property name: $($property.Name)"
+            }
+            Test-Value -Current $property.Value
+        }
+    }
+
+    Test-Value -Current $Value
+}
+
+function Assert-AsrPayload {
+    param([Parameter(Mandatory)][object]$Payload)
+
+    foreach ($name in @(
+        "schemaVersion", "recordedAtUtc", "host", "implementation", "tooling", "analysisInput",
+        "models", "control", "candidates", "comparison", "annotations", "privacy",
+        "samplePathConsumed"
+    )) {
+        if ($Payload.PSObject.Properties.Name -notcontains $name) {
+            throw "ASR payload is missing required property: $name"
+        }
+    }
+    if ($Payload.schemaVersion -ne "1.0.0") {
+        throw "Unsupported ASR payload schemaVersion: $($Payload.schemaVersion)"
+    }
+    Assert-NoUnexpectedAsrSensitiveProperties -Value $Payload
+    if ($Payload.host.hardwareBenchmarkRunSha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.host.currentOperatingSystemVersion -ne $Payload.host.operatingSystemVersion -or
+        $Payload.analysisInput.sourceSha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.analysisInput.normalizedFixtureAudio.sha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.analysisInput.mediaIngestBenchmarkRunSha256 -notmatch '^[0-9a-f]{64}$') {
+        throw "ASR payload does not identify its host and input by content hash."
+    }
+    if ($Payload.implementation.gitHead -notmatch '^[0-9a-f]{40}$' -or
+        @($Payload.implementation.files).Count -ne 6 -or
+        @($Payload.implementation.files | Where-Object { $_.sha256 -notmatch '^[0-9a-f]{64}$' }).Count -ne 0) {
+        throw "ASR payload does not identify the executed implementation and schema files."
+    }
+    $expectedImplementationFiles = @(
+        @{ Id = "benchmark-harness"; FileName = "run-benchmarks.ps1"; Path = (Join-Path $PSScriptRoot "run-benchmarks.ps1") },
+        @{ Id = "asr-wrapper"; FileName = "measure-asr.ps1"; Path = (Join-Path $PSScriptRoot "stages\measure-asr.ps1") },
+        @{ Id = "asr-driver"; FileName = "asr_benchmark.py"; Path = (Join-Path $PSScriptRoot "stages\asr_benchmark.py") },
+        @{ Id = "benchmark-schema"; FileName = "schema.json"; Path = (Join-Path $PSScriptRoot "results\schema.json") },
+        @{ Id = "python-environment-setup"; FileName = "setup-python-env.ps1"; Path = (Join-Path $PSScriptRoot "setup-python-env.ps1") },
+        @{ Id = "asr-control-config"; FileName = "asr-control.json"; Path = (Join-Path $PSScriptRoot "fixtures\asr-control.json") }
+    )
+    foreach ($expectedFile in $expectedImplementationFiles) {
+        $records = @($Payload.implementation.files | Where-Object { $_.id -eq $expectedFile.Id })
+        if ($records.Count -ne 1 -or $records[0].fileName -ne $expectedFile.FileName -or
+            [int64]$records[0].byteSize -ne [int64](Get-Item -LiteralPath $expectedFile.Path).Length -or
+            $records[0].sha256 -ne (Get-FileHash -LiteralPath $expectedFile.Path -Algorithm SHA256).Hash.ToLowerInvariant()) {
+            throw "ASR implementation evidence does not match the executed file: $($expectedFile.Id)"
+        }
+    }
+    if ($Payload.tooling.pythonPackages.'faster-whisper' -ne "1.2.1" -or
+        $Payload.tooling.pythonPackages.ctranslate2 -ne "4.8.1" -or
+        $Payload.tooling.pythonPackages.huggingface_hub -ne "1.28.0" -or
+        $Payload.tooling.pythonPackages.tokenizers -ne "0.23.1") {
+        throw "ASR payload does not carry the pinned direct Python runtime versions."
+    }
+    if ($Payload.models.fasterWhisperSmall.revision -ne "536b0662742c02347bc0e980a01041f333bce120" -or
+        $Payload.models.fasterWhisperSmall.manifestSha256 -ne "4e924b13871cadaa18f24bf888a6388e45d15da56e06b0b90141dc27d96e951f") {
+        throw "ASR payload does not identify the pinned faster-whisper model manifest."
+    }
+    $foundryAvailable = $Payload.tooling.foundryLocal.available -eq $true
+    if ($foundryAvailable) {
+        if ($Payload.models.foundryLocalWhisperSmall.available -ne $true -or
+            $Payload.models.foundryLocalWhisperSmall.modelId -ne "openai-whisper-small-cuda-gpu:3" -or
+            $Payload.models.foundryLocalWhisperSmall.manifestSha256 -ne "003489877f5a82eccbaeb435e520fb1656780331f26ae7cb4f03bbb15f8f64f8" -or
+            $Payload.models.foundryLocalWhisperSmall.executionProviderManifest.manifestSha256 -ne "8248ba49910e8fba56ddc8b4810a55cc9b3a069ca0dc2f7a23cd5f1f9a807021" -or
+            $Payload.models.foundryLocalWhisperSmall.executionProviderVersionFile.sha256 -ne "28236ce308e5232254f4f09ca8e6df0805b9a3608a79d9e4d09a4b459fb99640" -or
+            $Payload.tooling.foundryLocal.cliVersion -ne "0.10.3" -or
+            $Payload.tooling.foundryLocal.catalog.modelId -ne "openai-whisper-small-cuda-gpu:3" -or
+            $Payload.tooling.foundryLocal.catalog.licenseDeclaredByCatalog -ne "apache-2.0" -or
+            $Payload.tooling.foundryLocal.catalog.executionProvider -ne "CUDAExecutionProvider") {
+            throw "ASR payload does not identify the pinned Foundry Local model, catalog, and execution provider."
+        }
+        $foundryState = $Payload.tooling.foundryLocal.stateRestoration
+        if (($foundryState.modelWasLoadedBefore -ne $true -and
+                ($foundryState.modelUnloadAttempted -ne $true -or $foundryState.modelUnloadSucceeded -ne $true)) -or
+            ($foundryState.serverWasReadyBefore -ne $true -and
+                ($foundryState.serverStopAttempted -ne $true -or $foundryState.serverStopSucceeded -ne $true)) -or
+            $foundryState.preAndPostStateMatch -ne $true -or
+            $foundryState.modelLoadedAfter -ne $foundryState.modelWasLoadedBefore -or
+            $foundryState.serverReadyAfter -ne $foundryState.serverWasReadyBefore) {
+            throw "Foundry Local model or server state was not restored after the benchmark."
+        }
+    }
+    elseif ($Payload.models.foundryLocalWhisperSmall.available -ne $false) {
+        throw "ASR payload has inconsistent Foundry Local availability evidence."
+    }
+    if ($Payload.control.accuracyThresholdApproved -ne $false -or
+        $Payload.control.audio.sha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.control.PSObject.Properties.Name -contains "referenceText") {
+        throw "ASR control does not preserve its unapproved threshold status and content hash."
+    }
+    $candidates = @($Payload.candidates)
+    $candidateIds = @($candidates | ForEach-Object { $_.candidateId })
+    foreach ($candidateId in @(
+        "faster-whisper-small-cpu-int8",
+        "faster-whisper-small-cuda-float16",
+        "foundry-local-whisper-small-cuda-30s-windows"
+    )) {
+        if ($candidateIds -notcontains $candidateId) {
+            throw "ASR payload is missing candidate: $candidateId"
+        }
+    }
+    $cpu = $candidates | Where-Object { $_.candidateId -eq "faster-whisper-small-cpu-int8" } | Select-Object -First 1
+    if ($cpu.status -ne "succeeded" -or $cpu.control.passed -ne $true -or
+        $cpu.control.evaluation.properNouns.allMatched -ne $true -or
+        [int]$cpu.control.evaluation.properNouns.totalCount -lt 1 -or
+        $cpu.fixture.segmentTimestampsAvailable -ne $true -or
+        $cpu.fixture.wordTimestampsAvailable -ne $true -or
+        $cpu.fixture.wholeInputDurationCoverageVerified -ne $true -or
+        $cpu.fixture.timestampValidation.passed -ne $true -or
+        [int]$cpu.fixture.timestampValidation.structuralViolationCount -ne 0 -or
+        [int]$cpu.fixture.segmentCount -le 0 -or [int]$cpu.fixture.wordCount -le 0 -or
+        [double]$cpu.comparableTiming.fixtureCoverageMilliseconds -le 0 -or
+        $cpu.comparableTiming.singleObservation -ne $true -or
+        [int]$cpu.processMeasurement.observedProcessIdCount -lt 1 -or
+        $cpu.processMeasurement.peakAggregateWorkingSetBytes -le $cpu.processMeasurement.baselineAggregateWorkingSetBytes -or
+        [string]::IsNullOrWhiteSpace([string]$cpu.processMeasurement.workingSetScope) -or
+        $cpu.artifact.sha256 -notmatch '^[0-9a-f]{64}$') {
+        throw "faster-whisper CPU did not produce the required Japanese control, fixture, and timestamps."
+    }
+    $cuda = $candidates | Where-Object { $_.candidateId -eq "faster-whisper-small-cuda-float16" } | Select-Object -First 1
+    if ($cuda.status -ne "succeeded" -or $cuda.control.passed -ne $true -or
+        $cuda.control.evaluation.properNouns.allMatched -ne $true -or
+        $cuda.fixture.wholeInputDurationCoverageVerified -ne $true -or
+        $cuda.fixture.timestampValidation.passed -ne $true -or
+        [int]$cuda.fixture.timestampValidation.structuralViolationCount -ne 0 -or
+        $cuda.cudaRuntime.pathInjectedOnlyForChildProcess -ne $true -or
+        $cuda.cudaRuntime.manifestSha256 -ne "8248ba49910e8fba56ddc8b4810a55cc9b3a069ca0dc2f7a23cd5f1f9a807021" -or
+        $cuda.cudaRuntime.releaseRedistributionApproval -ne $false -or
+        [double]$cuda.comparableTiming.fixtureCoverageMilliseconds -le 0 -or
+        $cuda.comparableTiming.singleObservation -ne $true -or
+        [int]$cuda.processMeasurement.observedProcessIdCount -lt 1 -or
+        $cuda.artifact.sha256 -notmatch '^[0-9a-f]{64}$') {
+        throw "faster-whisper CUDA did not produce the required Japanese control, fixture, timestamps, and runtime evidence."
+    }
+    $foundry = $candidates | Where-Object { $_.candidateId -eq "foundry-local-whisper-small-cuda-30s-windows" } | Select-Object -First 1
+    if (-not $foundryAvailable) {
+        if ($foundry.status -ne "failed" -or $foundry.error.code -ne "FOUNDRY_LOCAL_NOT_AVAILABLE") {
+            throw "Unavailable Foundry Local was not recorded as an optional candidate failure."
+        }
+    }
+    elseif ($foundry.status -eq "succeeded") {
+        if ($foundry.control.passed -ne $true -or
+            $foundry.control.evaluation.properNouns.allMatched -ne $true -or
+            $foundry.fixture.inputWindowSubmissionCoverageVerified -ne $true -or
+            $foundry.fixture.engineWholeInputCoverageVerified -ne $false -or
+            $foundry.fixture.engineCoverageStatus -ne "unknown-no-engine-duration-or-timestamps" -or
+            $foundry.fixture.pcmContentMatchesSource -ne $true -or
+            [int]$foundry.fixture.windowSequenceViolationCount -ne 0 -or
+            $foundry.fixture.engineSegmentTimestampsAvailable -ne $false -or
+            $foundry.fixture.engineWordTimestampsAvailable -ne $false -or
+            $foundry.fixture.derivedChunkWindowsAvailable -ne $true -or
+            $foundry.fixture.derivedChunkWindowsAreNotSpeechBoundaries -ne $true -or
+            $foundry.directWholeFileDiagnostic.wholeInputCoverageVerified -ne $false -or
+            [double]$foundry.comparableTiming.fixtureCoverageMilliseconds -le 0 -or
+            [double]$foundry.comparableTiming.adapterPreparationMilliseconds -le 0 -or
+            [double]$foundry.comparableTiming.engineInvocationMilliseconds -le 0 -or
+            $foundry.comparableTiming.singleObservation -ne $true -or
+            $foundry.diagnosticWholeFileMeasurement.excludedFromComparableTimingAndPrimaryResourceMeasurement -ne $true -or
+            [int]$foundry.processMeasurement.observedProcessIdCount -lt 2 -or
+            $foundry.processMeasurement.peakAggregateWorkingSetBytes -le $foundry.processMeasurement.baselineAggregateWorkingSetBytes -or
+            [string]::IsNullOrWhiteSpace([string]$foundry.processMeasurement.workingSetScope) -or
+            $foundry.artifact.sha256 -notmatch '^[0-9a-f]{64}$') {
+            throw "Foundry Local ASR succeeded without complete chunk coverage and timestamp limitations."
+        }
+    }
+    elseif ([string]::IsNullOrWhiteSpace([string]$foundry.error.code)) {
+        throw "Foundry Local ASR failure is missing bounded evidence."
+    }
+    if ($Payload.comparison.fixtureReferenceTranscriptAvailable -ne $false -or
+        $Payload.comparison.fixtureCerMeasured -ne $false -or
+        $Payload.comparison.fixtureWerMeasured -ne $false -or
+        $Payload.comparison.fixtureProperNounErrorRateMeasured -ne $false -or
+        [int]$Payload.comparison.fixturePerformanceTrialCountPerCandidate -ne 1 -or
+        $Payload.comparison.performanceDistributionMeasured -ne $false -or
+        $Payload.comparison.productionThresholdsApproved -ne $false -or
+        $Payload.annotations.precisionOrAccuracyClaimedForFixture -ne $false) {
+        throw "ASR payload unexpectedly claims fixture accuracy or production thresholds."
+    }
+    if ($Payload.privacy.sourceTranscriptTextIncludedInPayload -ne $false -or
+        $Payload.privacy.sourceTranscriptTextIncludedInCanonicalSummary -ne $false -or
+        $Payload.privacy.localTranscriptArtifactsContainRightsUnconfirmedText -ne $true -or
+        $Payload.privacy.absoluteHostPathsIncludedInPayload -ne $false -or
+        $Payload.privacy.localEvidenceAcl.inheritanceProtected -ne $true -or
+        $Payload.privacy.localEvidenceAcl.ownerIsCurrentPrincipal -ne $true -or
+        $Payload.privacy.localEvidenceAcl.approvedRulesGrantFullControl -ne $true -or
+        [int]$Payload.privacy.localEvidenceAcl.unexpectedAccessRuleCount -ne 0 -or
+        $Payload.privacy.localEvidenceAcl.principalIdentifiersIncludedInPayload -ne $false) {
+        throw "ASR payload violated the local transcript privacy boundary."
+    }
+    $payloadJson = $Payload | ConvertTo-Json -Depth 20 -Compress
+    if ($payloadJson -match '"(?:text|content|transcript|referenceText|recognizedText)"\s*:') {
+        throw "ASR payload unexpectedly contains transcript text."
+    }
+    if ($Payload.samplePathConsumed -ne $true) {
+        throw "ASR payload did not confirm fixture path consumption."
+    }
+}
+
 function Protect-SensitiveText {
     param(
-        [Parameter(Mandatory)][string]$Text,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Text,
         [Parameter(Mandatory)][string]$SourcePath
     )
 
-    $safe = $Text.Replace($SourcePath, "<SOURCE>")
+    $safe = [regex]::Replace($Text, '\x1B\[[0-9;?]*[ -/]*[@-~]', '')
     $workspacePath = Split-Path -Parent $PSScriptRoot
-    $safe = $safe.Replace($workspacePath, "<WORKSPACE>")
-    if ($env:USERPROFILE) { $safe = $safe.Replace($env:USERPROFILE, "<USERPROFILE>") }
+    $replacements = [ordered]@{
+        $SourcePath = "<SOURCE>"
+        $workspacePath = "<WORKSPACE>"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+        $replacements[$env:USERPROFILE] = "<USERPROFILE>"
+    }
+    foreach ($path in @($replacements.Keys | Sort-Object { ([string]$_).Length } -Descending)) {
+        foreach ($variant in @([string]$path, ([string]$path).Replace('\', '/')) | Sort-Object -Unique) {
+            $replacement = [string]$replacements[$path]
+            $safe = [regex]::Replace(
+                $safe,
+                [regex]::Escape($variant),
+                [Text.RegularExpressions.MatchEvaluator]{ param($match) $replacement },
+                [Text.RegularExpressions.RegexOptions]::IgnoreCase
+            )
+        }
+    }
     return $safe
 }
 
 function Get-SafeFailurePayload {
-    param([AllowNull()][object]$Payload)
+    param(
+        [AllowNull()][object]$Payload,
+        [Parameter(Mandatory)][string]$Stage
+    )
 
     $safePayload = [ordered]@{}
     if ($null -eq $Payload) {
+        return [pscustomobject]$safePayload
+    }
+
+    if ($Stage -eq "asr-benchmark") {
         return [pscustomobject]$safePayload
     }
 
@@ -583,7 +848,8 @@ function Get-SafeFailurePayload {
         "sampling", "detection", "tooling", "decodeEvidence", "models", "controls",
         "performance", "privacy", "annotations", "automaticDeletionPerformed", "host",
         "candidateThresholdsAreStage0ConfigurationsNotProductionValues", "jobObject", "package",
-        "unpackedVerification", "appContainer", "distributionValidation", "samplePathConsumed"
+        "unpackedVerification", "appContainer", "distributionValidation", "analysisInput",
+        "candidates", "comparison", "samplePathConsumed"
     )) {
         if ($Payload.PSObject.Properties.Name -contains $name) {
             $safePayload[$name] = $Payload.$name
@@ -642,6 +908,10 @@ if ([int64]$sourceBefore.Length -ne [int64]$sourceSpec.byteSize) {
 
 $startedAt = (Get-Date).ToUniversalTime()
 $runId = "{0}-{1}-{2}" -f $startedAt.ToString("yyyyMMddTHHmmssfffffffZ"), $Stage, ([Guid]::NewGuid().ToString("N").Substring(0, 8))
+$sourcePostRunIntegrityChecked = $false
+$sourcePostRunSha256 = $null
+$sourcePostRunByteSize = $null
+$sourceUnchanged = $false
 
 try {
     switch ($Stage) {
@@ -681,6 +951,10 @@ try {
             $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\measure-process-and-package.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
             Assert-ProcessAndPackagePayload -Payload $payload
         }
+        "asr-benchmark" {
+            $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\measure-asr.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
+            Assert-AsrPayload -Payload $payload
+        }
         default {
             throw "Unsupported benchmark stage: $Stage"
         }
@@ -693,18 +967,35 @@ try {
         throw "Media payload does not describe the validated fixture source."
     }
     $sourceAfter = Get-Item -LiteralPath $sourcePath
+    $sourcePostRunByteSize = [int64]$sourceAfter.Length
     if ($sourceAfter.Length -ne $sourceBefore.Length -or $sourceAfter.LastWriteTimeUtc -ne $sourceBefore.LastWriteTimeUtc) {
         throw "The source fixture changed while the benchmark was running."
     }
-    $sourceHashAfter = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($sourceHashAfter -ne $sourceHash) {
+    $sourcePostRunSha256 = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sourcePostRunIntegrityChecked = $true
+    $sourceUnchanged = $sourcePostRunSha256 -eq $sourceHash
+    if (-not $sourceUnchanged) {
         throw "The source fixture content changed while the benchmark was running."
     }
 }
 catch {
+    $stageError = $_
+    try {
+        $sourceAfterFailure = Get-Item -LiteralPath $sourcePath -ErrorAction Stop
+        $sourcePostRunByteSize = [int64]$sourceAfterFailure.Length
+        $sourcePostRunSha256 = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+        $sourcePostRunIntegrityChecked = $true
+        $sourceUnchanged = $sourcePostRunByteSize -eq [int64]$sourceBefore.Length -and
+            $sourceAfterFailure.LastWriteTimeUtc -eq $sourceBefore.LastWriteTimeUtc -and
+            $sourcePostRunSha256 -eq $sourceHash
+    }
+    catch {
+        $sourcePostRunIntegrityChecked = $false
+        $sourceUnchanged = $false
+    }
     $finishedAt = (Get-Date).ToUniversalTime()
-    $safeMessage = Protect-SensitiveText -Text $_.Exception.Message -SourcePath $sourcePath
-    $safeFailurePayload = Get-SafeFailurePayload -Payload $payload
+    $safeMessage = Protect-SensitiveText -Text $stageError.Exception.Message -SourcePath $sourcePath
+    $safeFailurePayload = Get-SafeFailurePayload -Payload $payload -Stage $Stage
     $failureResult = [ordered]@{
         schemaVersion = "1.0.0"
         runId = $runId
@@ -719,6 +1010,10 @@ catch {
             sourceAssetId = $sourceSpec.id
             sourceSha256 = $sourceHash
             sourceByteSize = [int64]$sourceBefore.Length
+            sourcePostRunIntegrityChecked = $sourcePostRunIntegrityChecked
+            sourcePostRunSha256 = $sourcePostRunSha256
+            sourcePostRunByteSize = $sourcePostRunByteSize
+            sourceUnchanged = $sourceUnchanged
         }
         payload = $safeFailurePayload
         error = [ordered]@{
@@ -746,6 +1041,10 @@ $result = [ordered]@{
         sourceAssetId = $sourceSpec.id
         sourceSha256 = $sourceHash
         sourceByteSize = [int64]$sourceBefore.Length
+        sourcePostRunIntegrityChecked = $sourcePostRunIntegrityChecked
+        sourcePostRunSha256 = $sourcePostRunSha256
+        sourcePostRunByteSize = $sourcePostRunByteSize
+        sourceUnchanged = $sourceUnchanged
     }
     payload = $payload
     error = $null

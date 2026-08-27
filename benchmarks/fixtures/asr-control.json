@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0.0",
+  "controlId": "windows-ja-tts-haruka-v1",
+  "purpose": "Confirm non-empty Japanese text and named-term recognition; timestamp capability is evaluated separately for each candidate.",
+  "voice": {
+    "name": "Microsoft Haruka Desktop",
+    "culture": "ja-JP"
+  },
+  "referenceText": "ハブラジオ、マイクロソフト、アジュール、コパイロットの音声認識を確認します。今日の収録は二千二十六年八月二十七日です。",
+  "properNouns": [
+    { "id": "hubradio", "referenceText": "ハブラジオ" },
+    { "id": "microsoft", "referenceText": "マイクロソフト" },
+    { "id": "azure", "referenceText": "アジュール" },
+    { "id": "copilot", "referenceText": "コパイロット" }
+  ],
+  "normalization": {
+    "unicodeForm": "NFC",
+    "removeWhitespace": true,
+    "retainPunctuation": true
+  },
+  "accuracyThresholdApproved": false
+}

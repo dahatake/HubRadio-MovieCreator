@@ -248,3 +248,53 @@ metadataについては、source由来のglobal metadataが出力に残ってい
 - package: **unsigned pack/unpack feasibilityのみ合格**
 - 署名・install・AppContainer・clean Windows: **未測定**
 - 合格判定: **PASS（測定タスク完了、release package完了の主張なし）**
+
+## ST-006 日本語ASRの敵対的レビュー（2026年8月27日）
+
+**対象:** `benchmarks/stages/measure-asr.ps1`、`asr_benchmark.py`、ベンチハーネス、schema、synthetic control、raw run、`benchmarks/results/asr-benchmark.json`
+
+**採用raw証跡:** `20260827T0718012939475Z-asr-benchmark-1e66cc2c`、SHA-256 `a92491fd5c956151b335171413289b59c0d9d4098cf765501c463728786faf3c`
+
+**実測:** 同一の16 kHz mono PCM 1,081.428秒を比較。faster-whisper small CPU int8は384.895秒、CUDA float16は46.719秒、Foundry Local 30秒window adapterは41.579秒（adapter 2.725秒、engine呼出合計38.854秒）。全3候補が日本語synthetic controlと固有名詞4/4を通過した。fixture正解文字起こしは存在しない。
+
+| No. | 軸 | 重大度 | 指摘 | 修正と確認 |
+|-----|-----|--------|------|------------|
+| S6-1 | 根拠性・不確実性管理 | Critical | Foundry Localのone-shot長尺結果が3文字・duration `null`でも、非空textだけで全編処理と誤認できた。 | **修正済み:** one-shotは診断としてcoverage不成立に分類。30秒×37 windowの順序、総duration、元PCMとのbyte一致を検証した上で、`inputWindowSubmissionCoverageVerified=true`と`engineWholeInputCoverageVerified=false`を別記録した。submission coverageをengine処理coverageと表現しない。 |
+| S6-2 | 品質・運用性 | Major | faster-whisper CUDAは対象PCに必要なcuBLAS/cuDNNがPATH上になく、初回試行が失敗した。単に「GPU非対応」とすると実機能力を誤分類する。 | **修正済み:** Foundry Local CUDA EP cacheの14 file、2,423,764,787 bytes、manifest SHA-256を検証し、当該子processのPATHだけへ注入。CUDA control・全fixture処理に成功した。一方、同cacheのrelease再配布承認は`false`とし、Stage 0 local実行と出荷可否を分離した。 |
+| S6-3 | 整合性 | Major | 初期process計測はwrapper PID中心で、実際に推論する子Python/daemonのworking setを過小計測し得た。 | **修正済み:** rootと明示PIDから子孫を動的再探索し、aggregate working set、観測PID数、system-wide GPU memory scopeを記録。final rawはCPU 3 PID、CUDA 3 PID、Foundry最大6 PIDを観測した。GPU値はWDDMのsystem-wide観測でありper-process値と主張しない。 |
+| S6-4 | セキュリティ | Critical | private transcript/audio work directoryが親ACLを継承すると、Authenticated Users等の広い主体が読める実在状態を許し得た。既存保護ACLへの再書込みは`SeSecurityPrivilege`を要求して失敗した。 | **修正済み:** 現在SID、SYSTEM、Administratorsの3主体だけへ継承FullControlを設定し、owner、非継承、規則数、権利を検証。設定関数を冪等化し、終了時はread-only検証だけ行う。子process作成fileにも広い主体の規則0件を確認し、final evidence directoryは3規則で保護された。 |
+| S6-5 | 根拠性・不確実性管理 | Major | fixture正解文字起こしなしにCER/WERや固有名詞精度を比較できず、synthetic TTS controlをfixture精度の代替にする危険があった。 | **修正済み:** synthetic controlは機構確認と4固有名詞checkだけに限定し、`fixtureCerMeasured=false`、`fixtureWerMeasured=false`、`fixtureProperNounErrorRateMeasured=false`、production threshold未承認をraw/canonicalで強制。候補のfixture transcript hashが異なることも隠さず、精度順位を作らなかった。 |
+| S6-6 | 品質・運用性 | Major | formal rerunで、trapが元例外を`ScriptHalted`へ置換、parser-validなinline `if`がruntimeでcommand扱い、ACL再設定失敗、正常な空stderrのbinding失敗が順に露見した。 | **修正済み:** 元`ErrorRecord`保持、CUDA後処理の事前代入、ACL設定/検証分離と冪等化、`AllowEmptyString`を実装。success/failure分岐、同一directoryへのACL二重適用、子process file継承、空stderr JSON childを小型対照で実行確認した。失敗rawは非書換えで保持し、全件source事後SHA-256一致・孤児0を確認した。 |
+| S6-7 | セキュリティ | Major | ASR schemaが未知のnested propertyや失敗payloadを受理でき、`rawUtterance`等の別名で文字列を混入できる負例が成立した。 | **修正済み:** transcript近傍DTOを`additionalProperties=false`へ限定し、ASR失敗payloadは空objectだけを許可。runtimeでも敏感なproperty名をallowlist検査した。未知field付き成功payloadと内容付き失敗payloadをschemaが拒否し、最終時点の既存raw 32件の後方互換も維持した。 |
+| S6-8 | 整合性 | Major | 子stageが失敗した場合、外側harnessはsourceの事後hashを取らず、失敗時の元動画不変性が未確認になり得た。 | **修正済み:** 成功・失敗の両経路でsize、mtime、SHA-256を再取得し、machine-readable envelopeへ`sourcePostRunIntegrityChecked`と`sourceUnchanged`を保存。final成功rawと修正中の全失敗rawで一致した。 |
+| S6-9 | 根拠性・不確実性管理 | Major | 実行した未commit実装とST-003音声streamのimmutable参照がpayloadだけでは再構成できなかった。 | **修正済み:** Git HEADに加え、harness、wrapper、Python driver、schema、environment setup、control configのbyte size/SHA-256を記録。ST-003 raw run SHA-256と実audio stream値を参照し、final rawと現在fileを機械照合した。 |
+| S6-10 | 内容の妥当性 | Minor | engineごとに公開能力が異なる成功条件と、Foundryだけに必要なadapter込み時間が、単純なengine同士の比較に読めた。Foundry model loadも独立測定していない。 | **修正済み:** canonicalへ`successCriteriaEquivalentAcrossEngines=false`、`crossCandidateEngineTimingComparable=false`、operational path限定のscope、Foundry model-load未測定を明記。adapter準備とengine呼出は別値のまま保持した。rawはimmutable evidenceとして書き換えていない。 |
+| S6-11 | 根拠性・不確実性管理 | Major | ST-006が直接使うCTranslate2、huggingface_hub、tokenizers wheelとexact license本文、Foundry binary/model/EPの受入記録が不足していた。 | **修正済み:** 4 wheelのbyte size/SHA-256、exact tag license hash、faster-whisper model exact revision card、Foundry CLI/daemon/model/EP manifestを`third-party-intake.md`へ追加。Foundry catalogのlicense宣言と独立配布承認を区別し、CUDA EP再配布は未承認のままblockした。 |
+
+### 修正後の証拠照合
+
+- canonicalのrun ID/SHA-256、source/normalized audio/model/tool/implementation/artifact hash、候補件数・時間・memory・timestamp flagsをrawへ27項目で機械照合し、失敗0件だった。
+- private artifact 3件のsize/SHA-256はrawと一致。private transcript文字列927件をraw envelopeへ完全一致検索し漏えい0件、raw/canonicalの絶対path pattern 0件を確認した。
+- final evidence directoryには`stage-payload.json`とcompletion markerがあり、local payloadはraw payloadと意味的に一致した。work/raw/modelのtracked fileは0件だった。
+- sourceは実行前後およびレビュー時のSHA-256がmanifestと一致。ASR/FFmpeg残存processは0、Foundry Whisper modelは事後unloaded、事前に起動済みだったserverは事後もreadyだった。
+- PowerShell parser、Python `py_compile`、VS Code diagnostics、schema、全historical raw回帰、privacy負例、ACL lifecycle、空stderr childを検証した。
+
+### 採用しなかった指摘
+
+- 全engineへ同一のsegment/word timestamp成功条件を要求する提案は、時刻を返さないFoundryの能力不足を隠すか、評価対象から消すため採用しなかった。共通の日本語・固有名詞controlと、engine固有能力gateを分離し、FoundryはFR-002時刻providerとして保留した。
+- Foundryの`fixtureCoverageMilliseconds`からadapter時間を除くべきという提案は、30秒window化が当該candidateを長尺へ適用するための必須operational pathであるため採用しなかった。代わりにadapter 2.725秒とengine 38.854秒を別記録し、cross-engine timingを同等比較不可と明記した。
+- 子stage内でもJSON Schemaを再実行しなければ未検証という指摘は、外側harnessが成功rawの原子的保存前に`Test-Json -SchemaFile`を必須実行し、さらに`Assert-AsrPayload`を通す境界を見落としていたため採用しなかった。
+- nested artifactの`text`をregexが検出しないという指摘は、patternが階層に関係なく`"text":`を検出し、runtime property guardとstrict nested schemaも存在するため採用しなかった。local artifactにtextがあること自体は意図したprivate evidenceである。
+- complete transitive hash lock、clean Windows、署名、production CUDA bundleをST-006で完了すべきという提案は、PK-001/PK-004/PK-007/Q-010の後続範囲である。ST-006では直接runtime、model、実行binaryのhashと未承認境界までを固定した。
+
+### ST-006 修正後判定
+
+- 未修正 Critical: 0件
+- 未修正 Major: 0件
+- 未修正 Minor: 0件
+- fixture CER/WER/固有名詞誤り率: **未測定（`transcript-reference.jsonl`待ち）**
+- ST-007評価対象: **faster-whisper small CUDA float16（暫定）**
+- fallback候補: **faster-whisper small CPU int8**
+- Foundry timed ASR: **保留（engine時刻・処理durationなし）**
+- CUDA release配布: **未承認**
+- 合格判定: **PASS（測定タスク完了、最終採否・閾値はST-015承認待ち）**

@@ -24,7 +24,7 @@
       "pattern": "^[0-9]{8}T[0-9]{13}Z-[a-z0-9-]+-[0-9a-f]{8}$"
     },
     "stage": {
-      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package"]
+      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark"]
     },
     "status": {
       "enum": ["succeeded", "failed"]
@@ -69,6 +69,22 @@
         "sourceByteSize": {
           "type": "integer",
           "minimum": 1
+        },
+        "sourcePostRunIntegrityChecked": {
+          "type": "boolean"
+        },
+        "sourcePostRunSha256": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        },
+        "sourcePostRunByteSize": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "sourceUnchanged": {
+          "type": "boolean"
         }
       }
     },
@@ -101,6 +117,23 @@
         "properties": {
           "payload": {
             "$ref": "#/$defs/hardwarePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": { "const": "asr-benchmark" },
+          "status": { "const": "failed" }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "maxProperties": 0
           }
         }
       }
@@ -141,6 +174,26 @@
         "properties": {
           "payload": {
             "$ref": "#/$defs/processAndPackagePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "asr-benchmark"
+          },
+          "status": {
+            "const": "succeeded"
+          }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/asrPayload"
           }
         }
       }
@@ -280,6 +333,443 @@
     }
   ],
   "$defs": {
+    "asrTimestampValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkedSegmentCount", "checkedWordCount", "structuralViolationCount", "wordOutsideParentSegmentCount", "maxWordOutsideParentSegmentSeconds", "wordParentContainmentIsMeasuredNotSuccessGated", "passed"],
+      "properties": {
+        "checkedSegmentCount": { "type": "integer", "minimum": 0 },
+        "checkedWordCount": { "type": "integer", "minimum": 0 },
+        "structuralViolationCount": { "type": "integer", "minimum": 0 },
+        "wordOutsideParentSegmentCount": { "type": "integer", "minimum": 0 },
+        "maxWordOutsideParentSegmentSeconds": { "type": "number", "minimum": 0 },
+        "wordParentContainmentIsMeasuredNotSuccessGated": { "type": "boolean" },
+        "passed": { "type": "boolean" }
+      }
+    },
+    "asrControlEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["normalization", "referenceTextSha256", "recognizedTextSha256", "referenceCharacterCount", "recognizedCharacterCount", "substitutions", "deletions", "insertions", "editDistance", "cer", "accuracyThresholdApproved"],
+      "properties": {
+        "normalization": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["unicodeForm", "removeWhitespace", "retainPunctuation"],
+          "properties": {
+            "unicodeForm": { "const": "NFC" },
+            "removeWhitespace": { "type": "boolean" },
+            "retainPunctuation": { "type": "boolean" }
+          }
+        },
+        "referenceTextSha256": { "$ref": "#/$defs/sha256" },
+        "recognizedTextSha256": { "$ref": "#/$defs/sha256" },
+        "referenceCharacterCount": { "type": "integer", "minimum": 1 },
+        "recognizedCharacterCount": { "type": "integer", "minimum": 0 },
+        "substitutions": { "type": "integer", "minimum": 0 },
+        "deletions": { "type": "integer", "minimum": 0 },
+        "insertions": { "type": "integer", "minimum": 0 },
+        "editDistance": { "type": "integer", "minimum": 0 },
+        "cer": { "type": ["number", "null"], "minimum": 0 },
+        "properNouns": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["totalCount", "matchedCount", "allMatched", "checks", "fixtureProperNounErrorRateSubstitute"],
+          "properties": {
+            "totalCount": { "type": "integer", "minimum": 1 },
+            "matchedCount": { "type": "integer", "minimum": 0 },
+            "allMatched": { "type": "boolean" },
+            "checks": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "referenceTextSha256", "matched"],
+                "properties": {
+                  "id": { "type": "string", "minLength": 1 },
+                  "referenceTextSha256": { "$ref": "#/$defs/sha256" },
+                  "matched": { "type": "boolean" }
+                }
+              }
+            },
+            "fixtureProperNounErrorRateSubstitute": { "const": false }
+          }
+        },
+        "accuracyThresholdApproved": { "const": false }
+      }
+    },
+    "asrFasterControlSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "languageProbability", "durationSeconds", "durationAfterVadSeconds", "inputDurationSeconds", "durationDifferenceSeconds", "wholeInputDurationCoverageVerified", "textSha256", "characterCount", "segmentCount", "wordCount", "segmentTimestampsAvailable", "wordTimestampsAvailable", "timestampValidation", "evaluation", "passed"],
+      "properties": {
+        "language": { "type": "string", "minLength": 1 },
+        "languageProbability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "durationSeconds": { "type": "number", "minimum": 0 },
+        "durationAfterVadSeconds": { "type": "number", "minimum": 0 },
+        "inputDurationSeconds": { "type": "number", "minimum": 0 },
+        "durationDifferenceSeconds": { "type": "number", "minimum": 0 },
+        "wholeInputDurationCoverageVerified": { "type": "boolean" },
+        "textSha256": { "$ref": "#/$defs/sha256" },
+        "characterCount": { "type": "integer", "minimum": 0 },
+        "segmentCount": { "type": "integer", "minimum": 0 },
+        "wordCount": { "type": "integer", "minimum": 0 },
+        "segmentTimestampsAvailable": { "type": "boolean" },
+        "wordTimestampsAvailable": { "type": "boolean" },
+        "timestampValidation": { "$ref": "#/$defs/asrTimestampValidation" },
+        "evaluation": { "$ref": "#/$defs/asrControlEvaluation" },
+        "passed": { "type": "boolean" }
+      }
+    },
+    "asrFasterFixtureSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "languageProbability", "durationSeconds", "durationAfterVadSeconds", "inputDurationSeconds", "durationDifferenceSeconds", "wholeInputDurationCoverageVerified", "textSha256", "characterCount", "segmentCount", "wordCount", "segmentTimestampsAvailable", "wordTimestampsAvailable", "timestampValidation"],
+      "properties": {
+        "language": { "type": "string", "minLength": 1 },
+        "languageProbability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "durationSeconds": { "type": "number", "minimum": 0 },
+        "durationAfterVadSeconds": { "type": "number", "minimum": 0 },
+        "inputDurationSeconds": { "type": "number", "minimum": 0 },
+        "durationDifferenceSeconds": { "type": "number", "minimum": 0 },
+        "wholeInputDurationCoverageVerified": { "type": "boolean" },
+        "textSha256": { "$ref": "#/$defs/sha256" },
+        "characterCount": { "type": "integer", "minimum": 0 },
+        "segmentCount": { "type": "integer", "minimum": 0 },
+        "wordCount": { "type": "integer", "minimum": 0 },
+        "segmentTimestampsAvailable": { "type": "boolean" },
+        "wordTimestampsAvailable": { "type": "boolean" },
+        "timestampValidation": { "$ref": "#/$defs/asrTimestampValidation" }
+      }
+    },
+    "asrFoundryControlSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "textSha256", "characterCount", "evaluation", "passed"],
+      "properties": {
+        "language": { "type": "string", "minLength": 1 },
+        "textSha256": { "$ref": "#/$defs/sha256" },
+        "characterCount": { "type": "integer", "minimum": 0 },
+        "evaluation": { "$ref": "#/$defs/asrControlEvaluation" },
+        "passed": { "type": "boolean" }
+      }
+    },
+    "asrFoundryDirectDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "durationSecondsReportedByEngine", "textSha256", "characterCount", "wholeInputCoverageVerified", "interpretation"],
+      "properties": {
+        "language": { "type": "string", "minLength": 1 },
+        "durationSecondsReportedByEngine": { "type": ["number", "null"], "minimum": 0 },
+        "textSha256": { "$ref": "#/$defs/sha256" },
+        "characterCount": { "type": "integer", "minimum": 0 },
+        "wholeInputCoverageVerified": { "type": "boolean" },
+        "interpretation": { "type": "string", "minLength": 1 }
+      }
+    },
+    "asrFoundryFixtureSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "textSha256", "characterCount", "chunkCount", "coveredDurationSeconds", "coverageDifferenceSeconds", "pcmContentMatchesSource", "windowSequenceViolationCount", "engineSegmentTimestampsAvailable", "engineWordTimestampsAvailable", "derivedChunkWindowsAvailable", "derivedChunkWindowsAreNotSpeechBoundaries"],
+      "properties": {
+        "language": { "type": "string", "minLength": 1 },
+        "textSha256": { "$ref": "#/$defs/sha256" },
+        "characterCount": { "type": "integer", "minimum": 0 },
+        "chunkCount": { "type": "integer", "minimum": 1 },
+        "wholeInputWindowCoverageVerified": { "type": "boolean" },
+        "inputWindowSubmissionCoverageVerified": { "type": "boolean" },
+        "engineWholeInputCoverageVerified": { "type": "boolean" },
+        "engineCoverageStatus": { "type": "string", "minLength": 1 },
+        "coveredDurationSeconds": { "type": "number", "minimum": 0 },
+        "coverageDifferenceSeconds": { "type": "number", "minimum": 0 },
+        "pcmContentMatchesSource": { "type": "boolean" },
+        "windowSequenceViolationCount": { "type": "integer", "minimum": 0 },
+        "engineSegmentTimestampsAvailable": { "type": "boolean" },
+        "engineWordTimestampsAvailable": { "type": "boolean" },
+        "derivedChunkWindowsAvailable": { "type": "boolean" },
+        "derivedChunkWindowsAreNotSpeechBoundaries": { "type": "boolean" }
+      }
+    },
+    "asrPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "recordedAtUtc",
+        "host",
+        "tooling",
+        "analysisInput",
+        "models",
+        "control",
+        "candidates",
+        "comparison",
+        "annotations",
+        "privacy",
+        "samplePathConsumed"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "recordedAtUtc": { "type": "string", "format": "date-time" },
+        "host": {
+          "type": "object",
+          "required": ["hardwareBenchmarkRunId", "hardwareBenchmarkRunSha256", "operatingSystemVersion", "processor", "logicalProcessors", "graphics"],
+          "properties": {
+            "hardwareBenchmarkRunId": { "type": "string", "minLength": 1 },
+            "hardwareBenchmarkRunSha256": { "$ref": "#/$defs/sha256" },
+            "operatingSystemVersion": { "type": "string", "minLength": 1 },
+            "processor": { "type": "string", "minLength": 1 },
+            "logicalProcessors": { "type": "integer", "minimum": 1 },
+            "graphics": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+            "currentOperatingSystemVersion": { "type": "string", "minLength": 1 },
+            "currentProcessArchitecture": { "type": "string", "minLength": 1 }
+          }
+        },
+        "implementation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["gitHead", "implementationFilesCleanAtRun", "files"],
+          "properties": {
+            "gitHead": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+            "implementationFilesCleanAtRun": { "type": "boolean" },
+            "files": {
+              "type": "array",
+              "minItems": 6,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "fileName", "byteSize", "sha256"],
+                "properties": {
+                  "id": { "type": "string", "minLength": 1 },
+                  "fileName": { "type": "string", "minLength": 1 },
+                  "byteSize": { "type": "integer", "minimum": 1 },
+                  "sha256": { "$ref": "#/$defs/sha256" }
+                }
+              }
+            }
+          }
+        },
+        "tooling": {
+          "type": "object",
+          "required": ["ffmpegPackageId", "ffmpegSha256", "ffprobeSha256", "pythonVersion", "pythonPackages", "foundryLocal"],
+          "properties": {
+            "ffmpegPackageId": { "type": "string", "minLength": 1 },
+            "ffmpegSha256": { "$ref": "#/$defs/sha256" },
+            "ffprobeSha256": { "$ref": "#/$defs/sha256" },
+            "pythonVersion": { "type": "string", "minLength": 1 },
+            "pythonPackages": {
+              "type": "object",
+              "required": ["faster-whisper", "ctranslate2", "huggingface_hub", "tokenizers", "cudaDeviceCount"],
+              "properties": {
+                "faster-whisper": { "type": "string", "minLength": 1 },
+                "ctranslate2": { "type": "string", "minLength": 1 },
+                "huggingface_hub": { "type": "string", "minLength": 1 },
+                "tokenizers": { "type": "string", "minLength": 1 },
+                "cudaDeviceCount": { "type": "integer", "minimum": 0 }
+              }
+            },
+            "foundryLocal": {
+              "type": "object",
+              "required": ["available", "preview"],
+              "properties": {
+                "available": { "type": "boolean" },
+                "expectedCliVersion": { "type": "string", "minLength": 1 },
+                "reason": { "type": "string", "minLength": 1 },
+                "cliVersion": { "type": "string", "minLength": 1 },
+                "packageVersion": { "type": "string", "minLength": 1 },
+                "architecture": { "type": "string", "minLength": 1 },
+                "signatureKind": { "type": "string", "minLength": 1 },
+                "cliExecutable": { "$ref": "#/$defs/fileDescriptor" },
+                "daemonExecutable": { "$ref": "#/$defs/fileDescriptor" },
+                "modelInfoOutputSha256": { "$ref": "#/$defs/sha256" },
+                "catalog": { "type": "object" },
+                "stateRestoration": { "type": "object" },
+                "preview": { "type": "boolean" }
+              }
+            }
+          }
+        },
+        "analysisInput": {
+          "type": "object",
+          "required": ["sourceAssetId", "sourceSha256", "mediaIngestBenchmarkRunId", "sourceAudio", "normalizedFixtureAudio", "normalization"],
+          "properties": {
+            "sourceAssetId": { "type": "string", "minLength": 1 },
+            "sourceSha256": { "$ref": "#/$defs/sha256" },
+            "mediaIngestBenchmarkRunId": { "type": "string", "minLength": 1 },
+            "mediaIngestBenchmarkRunSha256": { "$ref": "#/$defs/sha256" },
+            "sourceAudio": { "type": "object" },
+            "normalizedFixtureAudio": { "$ref": "#/$defs/audioDescriptor" },
+            "normalization": { "type": "object" }
+          }
+        },
+        "models": {
+          "type": "object",
+          "required": ["fasterWhisperSmall", "foundryLocalWhisperSmall"],
+          "properties": {
+            "fasterWhisperSmall": { "$ref": "#/$defs/modelManifest" },
+            "foundryLocalWhisperSmall": {
+              "type": "object",
+              "required": ["available"],
+              "properties": {
+                "available": { "type": "boolean" },
+                "expectedModelId": { "type": "string", "minLength": 1 },
+                "expectedManifestSha256": { "$ref": "#/$defs/sha256" },
+                "modelId": { "type": "string", "minLength": 1 },
+                "modelDirectoryVersion": { "type": "string", "minLength": 1 },
+                "licenseDeclaredByCatalog": { "type": "string", "minLength": 1 },
+                "fileCount": { "type": "integer", "minimum": 1 },
+                "totalBytes": { "type": "integer", "minimum": 1 },
+                "manifestRule": { "type": "string", "minLength": 1 },
+                "manifestSha256": { "$ref": "#/$defs/sha256" },
+                "files": { "type": "array" },
+                "executionProvider": { "type": "string", "minLength": 1 },
+                "executionProviderManifest": { "$ref": "#/$defs/modelManifest" },
+                "executionProviderVersionFile": { "type": "object" }
+              }
+            }
+          }
+        },
+        "control": {
+          "type": "object",
+          "required": ["controlId", "configSha256", "referenceTextSha256", "voice", "audio", "accuracyThresholdApproved", "purpose"],
+          "properties": {
+            "controlId": { "type": "string", "minLength": 1 },
+            "configSha256": { "$ref": "#/$defs/sha256" },
+            "referenceTextSha256": { "$ref": "#/$defs/sha256" },
+            "voice": { "type": "object" },
+            "audio": { "$ref": "#/$defs/audioDescriptor" },
+            "accuracyThresholdApproved": { "type": "boolean" },
+            "purpose": { "type": "string", "minLength": 1 }
+          }
+        },
+        "candidates": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["candidateId", "status", "engine", "processMeasurement", "transcriptTextIncludedInPayload"],
+            "properties": {
+              "candidateId": { "type": "string", "minLength": 1 },
+              "status": { "enum": ["succeeded", "failed"] },
+              "engine": { "type": "string", "minLength": 1 },
+              "model": { "type": ["object", "null"] },
+              "configuration": { "type": "object" },
+              "control": {
+                "oneOf": [
+                  { "$ref": "#/$defs/asrFasterControlSummary" },
+                  { "$ref": "#/$defs/asrFoundryControlSummary" },
+                  { "type": "null" }
+                ]
+              },
+              "directWholeFileDiagnostic": {
+                "oneOf": [
+                  { "$ref": "#/$defs/asrFoundryDirectDiagnostic" },
+                  { "type": "null" }
+                ]
+              },
+              "diagnosticWholeFileMeasurement": { "type": ["object", "null"] },
+              "fixture": {
+                "oneOf": [
+                  { "$ref": "#/$defs/asrFasterFixtureSummary" },
+                  { "$ref": "#/$defs/asrFoundryFixtureSummary" },
+                  { "type": "null" }
+                ]
+              },
+              "timing": { "type": ["object", "null"] },
+              "comparableTiming": { "type": ["object", "null"] },
+              "cudaRuntime": { "type": ["object", "null"] },
+              "processMeasurement": { "type": "object" },
+              "artifact": {
+                "anyOf": [
+                  { "$ref": "#/$defs/fileDescriptor" },
+                  { "type": "null" }
+                ]
+              },
+              "error": { "type": ["object", "null"] },
+              "diagnostic": { "type": ["object", "null"] },
+              "transcriptTextIncludedInPayload": { "const": false }
+            }
+          }
+        },
+        "comparison": {
+          "type": "object",
+          "required": [
+            "sameNormalizedFixtureAudioForAllCandidates",
+            "normalizedFixtureAudioSha256",
+            "successfulCandidateCount",
+            "fixtureTranscriptHashes",
+            "fixtureReferenceTranscriptAvailable",
+            "fixtureCerMeasured",
+            "fixtureWerMeasured",
+            "fixtureProperNounErrorRateMeasured",
+            "controlCerIsSyntheticMechanismEvidenceOnly",
+            "segmentTimestampComparisonAvailable",
+            "wordTimestampComparisonAvailable",
+            "productionThresholdsApproved"
+          ],
+          "properties": {
+            "sameNormalizedFixtureAudioForAllCandidates": { "type": "boolean" },
+            "normalizedFixtureAudioSha256": { "$ref": "#/$defs/sha256" },
+            "successfulCandidateCount": { "type": "integer", "minimum": 0 },
+            "fixtureTranscriptHashes": { "type": "array" },
+            "fixtureReferenceTranscriptAvailable": { "type": "boolean" },
+            "fixtureCerMeasured": { "type": "boolean" },
+            "fixtureWerMeasured": { "type": "boolean" },
+            "fixtureProperNounErrorRateMeasured": { "type": "boolean" },
+            "controlCerIsSyntheticMechanismEvidenceOnly": { "type": "boolean" },
+            "fixturePerformanceTrialCountPerCandidate": { "type": "integer", "minimum": 1 },
+            "performanceDistributionMeasured": { "type": "boolean" },
+            "timingComparisonStatus": { "type": "string", "minLength": 1 },
+            "segmentTimestampComparisonAvailable": { "type": "boolean" },
+            "wordTimestampComparisonAvailable": { "type": "boolean" },
+            "productionThresholdsApproved": { "type": "boolean" }
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "required": ["transcriptReferenceAvailable", "precisionOrAccuracyClaimedForFixture", "missingReferenceRelativePath"],
+          "properties": {
+            "transcriptReferenceAvailable": { "type": "boolean" },
+            "precisionOrAccuracyClaimedForFixture": { "type": "boolean" },
+            "missingReferenceRelativePath": { "type": "string", "minLength": 1 }
+          }
+        },
+        "privacy": {
+          "type": "object",
+          "required": [
+            "sourceAudioPersistedOnlyInIgnoredWorkDirectory",
+            "sourceTranscriptTextIncludedInPayload",
+            "sourceTranscriptTextIncludedInCanonicalSummary",
+            "localTranscriptArtifactsContainRightsUnconfirmedText"
+          ],
+          "properties": {
+            "sourceAudioPersistedOnlyInIgnoredWorkDirectory": { "type": "boolean" },
+            "localEvidenceAcl": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["inheritanceProtected", "approvedPrincipalCount", "accessRuleCount", "unexpectedAccessRuleCount", "ownerIsCurrentPrincipal", "approvedRulesGrantFullControl", "principalIdentifiersIncludedInPayload"],
+              "properties": {
+                "inheritanceProtected": { "type": "boolean" },
+                "approvedPrincipalCount": { "type": "integer", "minimum": 1 },
+                "accessRuleCount": { "type": "integer", "minimum": 1 },
+                "unexpectedAccessRuleCount": { "type": "integer", "minimum": 0 },
+                "ownerIsCurrentPrincipal": { "type": "boolean" },
+                "approvedRulesGrantFullControl": { "type": "boolean" },
+                "principalIdentifiersIncludedInPayload": { "type": "boolean" }
+              }
+            },
+            "sourceTranscriptTextIncludedInPayload": { "type": "boolean" },
+            "sourceTranscriptTextIncludedInCanonicalSummary": { "type": "boolean" },
+            "localTranscriptArtifactsContainRightsUnconfirmedText": { "type": "boolean" },
+            "localPathsIncludedInPayload": { "type": "boolean" },
+            "absoluteHostPathsIncludedInPayload": { "type": "boolean" },
+            "repositoryRelativeEvidenceReferencesIncludedInPayload": { "type": "boolean" }
+          }
+        },
+        "samplePathConsumed": { "const": true }
+      }
+    },
     "processAndPackagePayload": {
       "type": "object",
       "required": [
@@ -1289,6 +1779,41 @@
     "sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "fileDescriptor": {
+      "type": "object",
+      "required": ["fileName", "byteSize", "sha256"],
+      "properties": {
+        "fileName": { "type": "string", "minLength": 1 },
+        "byteSize": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "audioDescriptor": {
+      "type": "object",
+      "required": ["fileName", "byteSize", "sha256", "codecName", "sampleRate", "channels", "timeBase", "startTimeSeconds", "durationSeconds"],
+      "properties": {
+        "fileName": { "type": "string", "minLength": 1 },
+        "byteSize": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "codecName": { "type": "string", "minLength": 1 },
+        "sampleRate": { "type": "integer", "minimum": 1 },
+        "channels": { "type": "integer", "minimum": 1 },
+        "timeBase": { "type": "string", "minLength": 1 },
+        "startTimeSeconds": { "type": "number" },
+        "durationSeconds": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "modelManifest": {
+      "type": "object",
+      "required": ["fileCount", "totalBytes", "manifestRule", "manifestSha256"],
+      "properties": {
+        "fileCount": { "type": "integer", "minimum": 1 },
+        "totalBytes": { "type": "integer", "minimum": 1 },
+        "manifestRule": { "type": "string", "minLength": 1 },
+        "manifestSha256": { "$ref": "#/$defs/sha256" },
+        "files": { "type": "array" }
+      }
     }
   }
 }
