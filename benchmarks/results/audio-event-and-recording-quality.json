@@ -43,7 +43,7 @@
       "av": "18.1.0",
       "numpy": "2.5.2"
     },
-    "licenseEvidenceRef": "docs/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)"
+    "licenseEvidenceRef": "docs/dev/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)"
   },
   "models": {
     "yamnet": {
@@ -52,7 +52,7 @@
       "sha256": "4d8b4a53282dc83ef04e3e7dbc4fbc98082e34e44ed798e16c3a0cdd4c584faf",
       "sourceUrl": "https://storage.googleapis.com/mediapipe-models/audio_classifier/yamnet/float32/1/yamnet.tflite",
       "license": "Apache-2.0",
-      "licenseEvidenceRef": "docs/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)"
+      "licenseEvidenceRef": "docs/dev/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)"
     },
     "sileroVad": {
       "fileName": "silero_vad_v6.onnx",
@@ -60,7 +60,7 @@
       "sha256": "4cbf549b8326f60f80f2536d9eefeb450a9abe83365a098031c89719f1be17d2",
       "source": "faster-whisper 1.2.1 package asset",
       "license": "MIT",
-      "licenseEvidenceRef": "docs/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)"
+      "licenseEvidenceRef": "docs/dev/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)"
     }
   },
   "controls": {
@@ -87,7 +87,7 @@
     "sileroVad": {
       "speechControlAssetSha256": "71caf50b8757d6ab9cad5eae4d36669d3c20c225a51660afd7fe0dc44cdb74f6",
       "speechControlLicense": "Apache-2.0",
-      "speechControlLicenseEvidenceRef": "docs/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)",
+      "speechControlLicenseEvidenceRef": "docs/dev/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)",
       "speechSpanCountOnSpeechControl": 1,
       "speechSpanCountOnSilenceControl": 0,
       "passed": true
@@ -95,7 +95,7 @@
     "yamnet": {
       "speechControlAssetSha256": "71caf50b8757d6ab9cad5eae4d36669d3c20c225a51660afd7fe0dc44cdb74f6",
       "speechControlLicense": "Apache-2.0",
-      "speechControlLicenseEvidenceRef": "docs/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)",
+      "speechControlLicenseEvidenceRef": "docs/dev/licenses/third-party-intake.md (ST-016 音響model・runtime受入記録)",
       "maximumSpeechScore": 0.996094,
       "maximumSilenceScore": 0.800781,
       "maximumMappedNoiseScore": 0.585938,

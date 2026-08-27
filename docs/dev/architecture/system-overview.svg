@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1120" viewBox="0 0 1600 1120" role="img" aria-labelledby="title desc">
   <title id="title">HubRadio MovieCreator local-first architecture</title>
-  <desc id="desc">Stage 0 implemented benchmark and FFmpeg tooling plus the planned Stage 1 Windows desktop architecture. Green components are implemented, blue components are planned, and the purple dashed Azure path is conditional.</desc>
+  <desc id="desc">All eligible Stage 0 measurement tasks are complete and await ST-015 human approval. The diagram also shows the planned Stage 1 Windows desktop architecture. Green components are implemented, blue components are planned, and the purple dashed Azure path is conditional.</desc>
 
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
@@ -213,6 +213,6 @@
   <path d="M 930 943 L 975 943" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)"/>
   <path d="M 1230 943 L 1275 943" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)"/>
 
-  <text x="800" y="1062" text-anchor="middle" class="small">Current: P-001–P-010; ST-001–005, 009, 010, 014, 016 complete / Stage 0 in progress / Stage 1 app not started</text>
-  <text x="800" y="1088" text-anchor="middle" class="small">Source of truth: requirement → adversarial review → Accepted ADR → research → implementation plan</text>
+  <text x="800" y="1062" text-anchor="middle" class="small">Current: P-001–P-010; ST-001–007, 009–014, 016 complete / ST-008 not run (terms) / ST-015 approval pending</text>
+  <text x="800" y="1088" text-anchor="middle" class="small">Stage 1 app not started / Source of truth: requirement → review → Accepted ADR → research → implementation plan</text>
 </svg>

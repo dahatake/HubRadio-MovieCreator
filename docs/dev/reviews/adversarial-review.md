@@ -1,8 +1,8 @@
 # 実現方式調査 敵対的レビュー
 
-**対象:** `docs/implementation-research.md`  
-**比較対象:** `docs/requirement-definition.md`  
-**レビュー日:** 2026年8月26日  
+**対象:** `docs/dev/research/implementation-research.md`
+**比較対象:** `docs/requirement-definition.md`
+**レビュー日:** 2026年8月26日
 **方針:** 5検証軸を独立に監査し、重複、要求の誤読、任意の数値目標、根拠のない推測を除外した。以下は修正前に実在した問題と、実施済みの修正である。
 
 | No. | 軸 | 重大度 | 指摘箇所 | 問題の説明 | 修正案 |

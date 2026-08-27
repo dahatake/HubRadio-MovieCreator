@@ -10,10 +10,10 @@
 実装判断の正本3文書と、そこから派生する実行計画を次の優先順位で固定する。
 
 1. `docs/requirement-definition.md` — 何を実現するか、優先順位、受入基準
-2. `docs/adversarial-review.md` — 調査書に対する確認済み問題と修正条件
-3. `docs/decisions/ADR-*.md` — 要求を変えない範囲で採用した具体的判断。後のAccepted ADRが同じ論点の古いADRを置き換える
-4. `docs/implementation-research.md` — 実現方式、候補技術、PoC条件。Accepted ADRと競合する候補記述はADRを優先する
-5. `docs/implementation-plan.md` — 上記文書から派生する実行順序、成果物、依存関係
+2. `docs/dev/reviews/adversarial-review.md` — 調査書に対する確認済み問題と修正条件
+3. `docs/dev/decisions/ADR-*.md` — 要求を変えない範囲で採用した具体的判断。後のAccepted ADRが同じ論点の古いADRを置き換える
+4. `docs/dev/research/implementation-research.md` — 実現方式、候補技術、PoC条件。Accepted ADRと競合する候補記述はADRを優先する
+5. `docs/dev/planning/implementation-plan.md` — 上記文書から派生する実行順序、成果物、依存関係
 
 上位文書と下位文書が矛盾する場合は上位を採用する。実測前の数値、未確認のモデル能力、未承認の外部サービス条件は正本とみなさない。
 
@@ -22,9 +22,9 @@
 | 文書 | 版・状態 | SHA-256（2026-08-27時点） |
 |---|---|---|
 | `docs/requirement-definition.md` | 0.1 Draft | `f28c24f9c5f72859ebb71503a6242703ec5225b329e3aa3a7face56fd73e60a9` |
-| `docs/implementation-research.md` | 調査日 2026-08-26、Windows後続決定注記を反映 | `35cca8d661f8837b176e75a18a67a16113b34d9531b03307dc226f243f1b5c16` |
-| `docs/adversarial-review.md` | 修正後 PASS | `b0af2715b70dd3c322c6f4d293b8e6ed4c06f0bbcc7e02d1541fd9804b25a8a4` |
-| `docs/implementation-plan.md` | 計画日 2026-08-26、実行中 | `08579c91c2590b78e4e76518b7eaf234d5baa5b6ab66120b4e7d13624ab2b7a8` |
+| `docs/dev/research/implementation-research.md` | 調査日 2026-08-26、Windows後続決定注記を反映 | `8ef0efdf1b4fccd9f144ec52dcc0b1bef2f8fd3335ea6c4bad1343ae2fb89c64` |
+| `docs/dev/reviews/adversarial-review.md` | 修正後 PASS | `09a85e34ea015fef2719075223aa89d45d3723d61ce38399dc182eea94166c71` |
+| `docs/dev/planning/implementation-plan.md` | 計画日 2026-08-26、Stage 0測定完了・ST-015承認待ち | `968af3638a7c04ea83e28bfc752c90995ed00046e0431868237d3cab22d312e8` |
 
 指定されていた `/hve-dev/requirement-definition.md` はリポジトリに存在しない。したがって、存在しないパスを推測して作成したり、別内容の要求定義として扱ったりしない。
 

@@ -20,7 +20,7 @@ FFmpegはメディアの解析・変換・フィルタリングに必要な機�
 
 ### 推奨する最初の技術構成
 
-> **Windows 11単一PC実装の後続決定:** 本表は調査時点の汎用候補である。現在の採用判断は`docs/decisions/ADR-0002-product-scope.md`を優先し、Stage 0/1のメタデータはSQLite、UIはWinUI 3 + WebView2/React、処理は単一.NETホストと子プロセスで実装する。
+> **Windows 11単一PC実装の後続決定:** 本表は調査時点の汎用候補である。現在の採用判断は`docs/dev/decisions/ADR-0002-product-scope.md`を優先し、Stage 0/1のメタデータはSQLite、UIはWinUI 3 + WebView2/React、処理は単一.NETホストと子プロセスで実装する。
 
 | 領域 | 推奨構成 | 理由 |
 | --- | --- | --- |

@@ -138,6 +138,18 @@ YAMNetとSileroのscore/thresholdはStage 0比較設定であり、productionの
 
 BuildToolsはexact NuGet lock（content hash `ju02pHSp1LDEIvFgLIDbCbXGPpTTrXJrH90HxC6neclpbRpdS8RxeRbYOzPQFByUPCgT/Egbz4s/cpNMamW1Sg==`）からrestoreした。WinApp CLI 0.6.1は実機に存在したが、暗黙のBuildTools取得が再現不能だったためfinal runのpackage構築には使用していない。完全な.NET runtime notice、Windows SDK license承認、FFmpeg/model notice、SBOMはPK-002/PK-003/PK-004/Q-010で完了させる。
 
+## ST-013 WebView2 preview runtime受入記録
+
+取得・確認日: 2026年8月27日。以下はactual WebView2 Canvas/SVG captureのStage 0評価に使用したSDK、host runtime、Windows標準fontであり、製品bundleや配布承認ではない。
+
+| 種別 | 固定対象 | 配布元 | byte size | SHA-256 | license・条件 |
+|---|---|---|---:|---|---|
+| NuGet package | `Microsoft.Web.WebView2` `1.0.4129.50` | Microsoft NuGet package | 9,245,553 | `d3934f482d484b89fb4825df720c710664e1143a1e90f7b3a60794ef33f473d2` | lock content hash `BuJC70c7SCl8wlvojLZbc/E5ONmGyG3fhAMmpftCpKerxae//TxgKOTELRK2QRD7m7jigNFQRf6cfVT3ZiIQoQ==`。同梱`LICENSE.txt`はBSD-style条件、1,487 bytes、SHA-256 `0af8f1b807512aae39c2ac1aa4d0cae65cabecb6fd554b8439a5162a0d6eca55`。binary再配布時はcopyright、条件、免責の保持が必要 |
+| Host runtime | Evergreen WebView2 `151.0.4129.107` / `msedgewebview2.exe` | 対象Windowsへinstalled | 4,477,256 | `fe7922326f2a1d3188454ba5502861253223d5da10d9da0b858f9b10f3e01468` | ST-013はhost runtimeを使用しbundleしていない。Evergreen更新後の同一出力は保証せず、versionをrunごとに記録 |
+| Windows font | Segoe UI Bold / `segoeuib.ttf` | 対象Windowsへinstalled | 947,092 | `aeb9e4a6ec5cc59f4d72df8189032d7dbb28f45161cf1552174818b5465dac4e` | browser/FFmpeg比較にhost fontを使用し、benchmarkへ同梱していない。製品動画への焼込・配布条件はブランドfont採用時に再審査 |
+
+ST-013のNuGet restoreはSDK `10.0.400`を`global.json`で固定し、`packages.lock.json --locked-mode`で実行した。WebView2 Runtimeとfontはhost dependencyであり、NuGet package hashだけではそれらを固定しない。製品のWebView2 bootstrap/install、offline環境、runtime更新時の回帰、fontライセンス、SBOMはU-001/PK-005〜PK-007/Q-010で完了する。
+
 ## 追加確認済み一次資料
 
 - faster-whisper公式リポジトリ/README/License: https://github.com/SYSTRAN/faster-whisper （MIT、`v1.2.1`、Python 3.9+、現行GPU要件はCUDA 12 + cuDNN 9）

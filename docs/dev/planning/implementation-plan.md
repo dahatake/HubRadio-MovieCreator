@@ -2,9 +2,9 @@
 
 **対象:** Windows 11 専用デスクトップアプリケーション  
 **要求の正本（暫定既定）:** `docs/requirement-definition.md` 版 0.1 Draft  
-**設計根拠:** `docs/implementation-research.md`、`docs/adversarial-review.md`  
+**設計根拠:** `docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **計画日:** 2026年8月26日  
-**計画状態:** 実行中。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-012、ST-014、ST-016は測定タスクとして完了。ST-011のFoundry Local Qwen3 CUDA 2候補は全gate通過0件でmanual-only。ST-012は手書きmanifestから16:9/9:16をrenderし、trim/concat/crop/subtitle/audio、全編decode、4点の元PTS逆引きを実証した。知覚品質、content-level OriginRef、production閾値、model/CUDA配布は未承認。次はST-013。アプリケーション、IaC、Azureリソースは未完了
+**計画状態:** Stage 0の測定タスクは完了し、ST-015の人手承認待ち。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-014、ST-016は完了し、ST-008は利用条件不同意のため未実行。ST-011はmanual-only、ST-012はrender機構と4点の元PTS逆引き、ST-013は同一LayoutSpec/Cueによるactual WebView2 Canvas/SVGとFFmpeg忠実区間の差分記録を実証した。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布は未承認。アプリケーション、IaC、Azureリソースは未完了
 
 ---
 
@@ -179,16 +179,16 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
-| P-001 | 実在する3文書を正本集合として固定する | `docs/decisions/ADR-0001-source-of-truth.md` | なし / 直列 | 文書パス、版、優先順位、`hve-dev`不在を記録 | 全要求、AR全件 | なし |
-| P-002 | Windows専用・単一PC・ローカル優先の範囲を固定する | `docs/decisions/ADR-0002-product-scope.md` | P-001 / 直列 | 採用範囲、対象外、Stage対応が要求レビュー済み | §4、§16〜19、RS§12 | なし |
+| P-001 | 実在する3文書を正本集合として固定する | `docs/dev/decisions/ADR-0001-source-of-truth.md` | なし / 直列 | 文書パス、版、優先順位、`hve-dev`不在を記録 | 全要求、AR全件 | なし |
+| P-002 | Windows専用・単一PC・ローカル優先の範囲を固定する | `docs/dev/decisions/ADR-0002-product-scope.md` | P-001 / 直列 | 採用範囲、対象外、Stage対応が要求レビュー済み | §4、§16〜19、RS§12 | なし |
 | P-003 | 初期検証4種類・計6本を作れる入力を集める | `BENCH/fixtures/fixture-manifest.json`、権利証憑参照 | P-001 / `L-G` | 元動画、ブランド、辞書、出演者、資料のハッシュと利用可否を記録 | §6、§18、BR-004 | なし |
 | P-004 | 対象PCのOS、CPU、GPU/NPU、RAM、空き容量、ドライバーを記録する | `BENCH/results/hardware-inventory.json` | P-002 / `L-G` | 再実行可能な取得手順と個人情報を除いた結果がある | NFR-002、RS§11 | ローカル処理 |
-| P-005 | 役割と最小承認経路を決める | `docs/decisions/ADR-0003-local-identity-and-review.md` | P-001 / `L-G` | Windows SID、役割兼任、内部/外部の必須レビュー表が合意済み | FR-029、NFR-004、AC-004 | なし |
-| P-006 | 公開区分とAI送信区分を決める | `docs/decisions/ADR-0004-data-classification.md` | P-005 / 直列 | 保存、プレビュー、出力、AI送信の許可表がある | §6.3、NFR-004、BR-003 | なし |
-| P-007 | ワークスペース、保持、バックアップ対象を決める | `docs/decisions/ADR-0005-storage-retention.md` | P-002 / `L-G` | 元/代理/解析/版/監査/納品を種類別に決定 | §13、NFR-003/006 | なし |
-| P-008 | FFmpeg、フォント、BGM、モデルの配布条件を決める | `docs/licenses/third-party-intake.md` | P-003 / `L-G` | GPL許容、フォント埋込、pyannote同意の可否を明記 | FR-019、BR-001/004、RS§13 | なし |
-| P-009 | Stage 0の正解データと測定方法を決める | `BENCH/annotations/README.md`、`BENCH/metrics/metric-definitions.md` | P-003,P-004 / 直列 | WER/CER等の算出、層別、評価者、閾値決定者を記録。値自体は実測後 | NFR-002、RS§11 | なし |
-| P-010 | 配布先、署名主体、Azureサブスクリプション/リージョン要件の有無を記録する | `docs/decisions/ADR-0006-distribution-and-azure.md` | P-006,P-008 / `L-G` | Azureは「非利用/存在/未定」と所在地要件だけを記録し、resource・region・modelは選択も作成もしない | NFR-004、RS§9.2 | 作成なし |
+| P-005 | 役割と最小承認経路を決める | `docs/dev/decisions/ADR-0003-local-identity-and-review.md` | P-001 / `L-G` | Windows SID、役割兼任、内部/外部の必須レビュー表が合意済み | FR-029、NFR-004、AC-004 | なし |
+| P-006 | 公開区分とAI送信区分を決める | `docs/dev/decisions/ADR-0004-data-classification.md` | P-005 / 直列 | 保存、プレビュー、出力、AI送信の許可表がある | §6.3、NFR-004、BR-003 | なし |
+| P-007 | ワークスペース、保持、バックアップ対象を決める | `docs/dev/decisions/ADR-0005-storage-retention.md` | P-002 / `L-G` | 元/代理/解析/版/監査/納品を種類別に決定 | §13、NFR-003/006 | なし |
+| P-008 | FFmpeg、フォント、BGM、モデルの配布条件を決める | `docs/dev/licenses/third-party-intake.md` | P-003 / `L-G` | GPL許容、フォント埋込、pyannote同意の可否を明記 | FR-019、BR-001/004、RS§13 | なし |
+| P-009 | Stage 0の正解データと測定方法を決める | `docs/dev/benchmarks/annotation-policy.md`、`docs/dev/benchmarks/metric-definitions.md` | P-003,P-004 / 直列 | WER/CER等の算出、層別、評価者、閾値決定者を記録。値自体は実測後 | NFR-002、RS§11 | なし |
+| P-010 | 配布先、署名主体、Azureサブスクリプション/リージョン要件の有無を記録する | `docs/dev/decisions/ADR-0006-distribution-and-azure.md` | P-006,P-008 / `L-G` | Azureは「非利用/存在/未定」と所在地要件だけを記録し、resource・region・modelは選択も作成もしない | NFR-004、RS§9.2 | 作成なし |
 
 ### 5.2 ST — Stage 0 技術スパイク
 
@@ -222,8 +222,8 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | F-005 | .NET、Web、Pythonのテストプロジェクトを作る | `TESTS/HubRadio.Core.Tests/`、`TESTS/HubRadio.Infrastructure.Tests/`、`WEB/vitest.config.ts` | F-002〜F-004 / 並列 | 空テストではなく各ランナーの1 smoke testが通る | NFR-003 | なし |
 | F-006 | PowerShell 7専用の一括検証を作る | `build.ps1`、`test.ps1` | F-005 / 直列 | 依存復元、build、lint、testをfail-fast実行 | 開発規約 | なし |
 | F-007 | ゴールデンクリップと期待値の管理形式を作る | `TESTS/Fixtures/README.md`、`fixture-index.json` | P-003,F-005 / `L-G` | 大容量原本をGitへ入れず、hashと取得手順を持つ | RS§11.6 | なし |
-| F-008 | 依存・モデル・ツールBOMの雛形を作る | `docs/licenses/dependencies.csv`、`models.csv`、`THIRD-PARTY-NOTICES.md` | F-002〜F-004,P-008 / `L-S` | 版、取得元、hash、license、条件を必須列にする | NFR-006、RS§13 | なし |
-| F-009 | 禁止依存方向と禁止技術を自動検査する | `TESTS/Architecture.Tests/`、`docs/architecture/constraints.md` | F-002 / `L-C` | Core→Infrastructure、shell実行、任意HTTP server導入を検出 | YAGNI方針 | なし |
+| F-008 | 依存・モデル・ツールBOMの雛形を作る | `docs/dev/licenses/dependencies.csv`、`models.csv`、`THIRD-PARTY-NOTICES.md` | F-002〜F-004,P-008 / `L-S` | 版、取得元、hash、license、条件を必須列にする | NFR-006、RS§13 | なし |
+| F-009 | 禁止依存方向と禁止技術を自動検査する | `TESTS/Architecture.Tests/`、`docs/dev/architecture/constraints.md` | F-002 / `L-C` | Core→Infrastructure、shell実行、任意HTTP server導入を検出 | YAGNI方針 | なし |
 
 ### 5.4 D — 正規モデル、SQLite、成果物ストア
 
@@ -258,7 +258,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | J-006 | progress、cancel、再試行UI通知を実装する | `APP/Jobs/JobCoordinator.cs`、bridge DTO | J-002,J-005 / `L-C` | 再試行可能/不可をerror codeで区別し、二重成果物を作らない | NFR-002/003 | ローカル処理 |
 | J-007 | cache hit、stale、再計算、採用差分を実装する | `APP/Jobs/ArtifactPlanner.cs`、tests | D-012,D-015,J-001 / `L-C` | upstream改訂時に旧成果物を残してstale表示 | NFR-002、AR-3 | なし |
 | J-008 | app強制終了後のrunning job復旧を実装する | `APP/Jobs/JobRecovery.cs`、integration tests | D-016,J-001,J-004 / `L-C` | kill→restartでinterruptedへ遷移し、安全なstageだけ再開 | NFR-003 | ローカル処理 |
-| J-009 | bounded local diagnostic logと安定error codeを実装する | `INFRA/Diagnostics/`、`docs/error-catalog.md` | J-003 / `L-S` | transcript/秘密を記録せず、サイズ上限とredactionをテスト | NFR-003/004 | なし |
+| J-009 | bounded local diagnostic logと安定error codeを実装する | `INFRA/Diagnostics/`、`docs/dev/error-catalog.md` | J-003 / `L-S` | transcript/秘密を記録せず、サイズ上限とredactionをテスト | NFR-003/004 | なし |
 | J-010 | tool/model起動前hash検証を実装する | `INFRA/Integrity/BinaryVerifier.cs`、tests | D-002,F-008 / `L-S` | package manifest不一致なら起動を拒否し監査する | NFR-003/006 | なし |
 
 ### 5.6 M — 動画取込、代理、プレビュー素材
@@ -411,9 +411,9 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
 | Z-001 | ローカル文章処理が不達である実測証拠を作る | `BENCH/results/cloud-necessity.md` | ST-011,E対象機能,P-009 / 条件付き | 品質/メモリ/時間/対応不能のどれが不達かを記録 | ユーザー制約 | 作成なし |
-| Z-002 | Foundry catalog、GPT-5.6/Opus 5、region、quotaを当日時点で照会する | `docs/azure/model-selection.md` | Z-001,P-010 / `L-AZ` | 実在model ID、GA/preview、Azure-hosted、Structured Output、日本語評価候補を記録 | Microsoft公式資料 | 読取のみ |
-| Z-003 | データ処理者、保持、residency、利用条件を確認する | `docs/azure/data-processing-review.md` | Z-002,P-006 / `L-AZ` | ClaudeはAzure-hostedでもAnthropic条件を明記し、承認のない選択をしない | NFR-004 | 読取のみ |
-| Z-004 | 最小Azure構成と権限を設計する | `docs/azure/resource-plan.md` | Z-002,Z-003 / `L-AZ` | RG名、region、model deployment、Entra/RBACだけ。DB/Storage/AKS等を含めない | YAGNI、Azure best practices | 作成なし |
+| Z-002 | Foundry catalog、GPT-5.6/Opus 5、region、quotaを当日時点で照会する | `docs/dev/azure/model-selection.md` | Z-001,P-010 / `L-AZ` | 実在model ID、GA/preview、Azure-hosted、Structured Output、日本語評価候補を記録 | Microsoft公式資料 | 読取のみ |
+| Z-003 | データ処理者、保持、residency、利用条件を確認する | `docs/dev/azure/data-processing-review.md` | Z-002,P-006 / `L-AZ` | ClaudeはAzure-hostedでもAnthropic条件を明記し、承認のない選択をしない | NFR-004 | 読取のみ |
+| Z-004 | 最小Azure構成と権限を設計する | `docs/dev/azure/resource-plan.md` | Z-002,Z-003 / `L-AZ` | RG名、region、model deployment、Entra/RBACだけ。DB/Storage/AKS等を含めない | YAGNI、Azure best practices | 作成なし |
 | Z-005 | ユーザーの明示的な「作成」指示後だけresourceを作る | `infra/`または実行記録（指示時に決定） | Z-004 + 明示承認 / 直列 | 作成前what-if、作成後endpoint/model/quota確認 | ユーザー制約 | **条件付き Azure** |
 | Z-006 | API keyを保存せずdesktop Entra認証/RBACを実装する | `INFRA/Azure/AzureCredentialProvider.cs`、auth tests | Z-005,S-001,S-002 / `L-AZ` | tokenをlog/DB/backupへ保存せず、sign-out/revokeを試験 | NFR-004 | 条件付き Azure |
 | Z-007 | 選択span、周辺最小文脈、mask、送信確認を実装する | `APP/Azure/CloudPayloadBuilder.cs`、tests | P-006,S-007,Z-006 / `L-AZ` | audio/video/path/内部IDを含めず、送信前diffを人が確認 | NFR-004、AR-19 | 条件付き Azure |
@@ -431,7 +431,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | PK-004 | model取得、同意、hash、cache、offline起動を実装する | `packaging/models/catalog.json`、`APP/Models/ModelManager.cs` | F-008,ST-006〜ST-011 / `L-S` | silent upgradeせず、未取得/破損/不同意を明示 | NFR-003/006 | ローカル処理 |
 | PK-005 | React production assetsをApp packageへ組み込む | `APP/WebAssets/`生成規則、build integration | F-003,U-002 / `L-W` | CDN/remote scriptなし、source mapは配布方針に従う | NFR-004 | なし |
 | PK-006 | 複数実行ファイルを1つのMSIX Packaging Projectへ収める | `PKG/*.wapproj`、`Package.appxmanifest` | PK-002〜PK-005,ST-014 / `L-S` | WinUI、worker、FFmpeg、licenseをclean Windowsへinstall | Windows packaging公式 | なし |
-| PK-007 | package署名、upgrade、rollback、uninstall、cache保持を検証する | `docs/release/package-runbook.md`、test records | PK-006,P-010 / 直列 | 署名信頼、上書きupgrade、DB migration、uninstall後の利用者データ方針を確認 | NFR-003/004 | 署名方式により条件付き |
+| PK-007 | package署名、upgrade、rollback、uninstall、cache保持を検証する | `docs/dev/release/package-runbook.md`、test records | PK-006,P-010 / 直列 | 署名信頼、上書きupgrade、DB migration、uninstall後の利用者データ方針を確認 | NFR-003/004 | 署名方式により条件付き |
 
 ### 5.14 Q — 受入、回帰、リリース判定
 
@@ -445,12 +445,12 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | Q-005 | 任意出力時刻、AI/人、素材権利の追跡を試験する | `TESTS/Acceptance/AC005_Traceability.*` | D-003,D-009,R-022,S-013 / 直列 | 逆引き不能/OriginRefなしを0件にして証跡を保存 | AC-005 | なし |
 | Q-006 | 部分再処理、UI応答、render、disk/DBを実測する | `BENCH/results/stage-1-performance.md` | J-007,A-017,R-019,R-020,U-015 / `L-G` | P-009/ST-015で承認した指標へ照合。未達は手動fallbackまたはblock | NFR-001/002 | ローカル処理 |
 | Q-007 | crash、disk full、process kill、DB/成果物restoreを試験する | `TESTS/Reliability/`、`BENCH/results/recovery.md` | J-008,D-016,S-015 / `L-S` | 元動画/承認版を失わず、再開または明確な手動復旧が可能 | NFR-003 | ローカル処理 |
-| Q-008 | media/bridge/worker/FFmpeg/promptの敵対試験をまとめる | `TESTS/Security/`、`docs/security/test-report.md` | M-012,S-014,Z-009該当時 / `L-S` | Critical未解決0。残余リスクは責任者承認 | NFR-004、BR-003 | ローカル/条件付き Azure |
-| Q-009 | accessibilityと字幕/音声なし理解を人が確認する | `docs/accessibility/test-report.md` | U-015,R-011,R-013 / `L-W` | keyboard、focus、contrast、色、字幕、mute flowを記録 | NFR-005 | なし |
-| Q-010 | SBOM/Model BOM/license/脆弱性をrelease候補で検査する | `artifacts/sbom.*`、`docs/licenses/release-review.md` | F-008,PK-001〜PK-006 / `L-S` | 未確認license/model/CVEを出荷しない | NFR-006、RS§13 | なし |
+| Q-008 | media/bridge/worker/FFmpeg/promptの敵対試験をまとめる | `TESTS/Security/`、`docs/dev/security/test-report.md` | M-012,S-014,Z-009該当時 / `L-S` | Critical未解決0。残余リスクは責任者承認 | NFR-004、BR-003 | ローカル/条件付き Azure |
+| Q-009 | accessibilityと字幕/音声なし理解を人が確認する | `docs/dev/accessibility/test-report.md` | U-015,R-011,R-013 / `L-W` | keyboard、focus、contrast、色、字幕、mute flowを記録 | NFR-005 | なし |
+| Q-010 | SBOM/Model BOM/license/脆弱性をrelease候補で検査する | `artifacts/sbom.*`、`docs/dev/licenses/release-review.md` | F-008,PK-001〜PK-006 / `L-S` | 未確認license/model/CVEを出荷しない | NFR-006、RS§13 | なし |
 | Q-013 | FR-031の全成果物種別を1つの承認版から生成・照合する | `TESTS/Acceptance/FR031_OutputMatrix.*`、artifact inventory | R-006/R-007/R-013/R-020〜R-026,E-013,E-016 / 直列 | 長尺/縦型/横長短尺、字幕有無、字幕、transcript、thumbnail、chapter、投稿文、編集指示、review、使用区間を検査 | FR-031 | ローカル優先 |
 | Q-011 | 要求定義§18の4種類・計6本を実素材で生成する | `BENCH/results/initial-pilot.md`、DeliveryManifests | Q-000〜Q-010,Q-013 / 直列 | 採用区間、字幕修正、固有名詞、画角、効果、承認修正を記録 | §18、AR-30 | ローカル優先 |
-| Q-012 | 要求traceability、未決、既知制限を最終レビューする | `docs/release/readiness-review.md`、本書status更新 | Q-011,PK-007 / 直列 | 全IDが実装/条件付き/対象外のどれかで証拠を持ち、`G-RELEASE`承認 | 全要求 | 作成なし |
+| Q-012 | 要求traceability、未決、既知制限を最終レビューする | `docs/dev/release/readiness-review.md`、本書status更新 | Q-011,PK-007 / 直列 | 全IDが実装/条件付き/対象外のどれかで証拠を持ち、`G-RELEASE`承認 | 全要求 | 作成なし |
 
 ---
 
@@ -624,4 +624,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**次の未完了実行対象はST-013である。F-001以降のscaffoldはST-015承認後、Azure作成はZ-005の明示指示後に限る。**
+**次の未完了実行対象はST-015の人手承認である。F-001以降のscaffoldはST-015承認後、Azure作成はZ-005の明示指示後に限る。**

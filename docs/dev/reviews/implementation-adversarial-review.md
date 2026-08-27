@@ -29,9 +29,9 @@
 | 19 | 整合性 | Major | 計画D-008/D-010/R-020 | RenderProfileとRenderManifestの版・役割境界が不明瞭で、最終render入力を取り違え得た。 | **修正済み:** RenderProfileは版ID/content digestを持つ出力仕様、RenderManifestは単一render実行記録と定義した。 |
 | 20 | 内容の妥当性 | Major | `inspect-media.ps1` format正規化 | `size`や`bit_rate`が欠落した場合に`[int64]$null`で0へ変換し、「不明」を実測0として記録し得た。 | **修正済み:** `Convert-OptionalInt64`で欠落/N/Aを`null`のまま保持する。 |
 | 21 | 品質・運用性 | Major | `run-benchmarks.ps1`失敗経路 | schemaは`failed`を許したが、実装は失敗時に何も保存せず、原因が端末だけに消えた。 | **修正済み:** 秘匿済みcode/messageを持つfailed JSONをschema検証後に原子的保存し、その後non-zero終了。timeout試験で生成・schema・孤児0を確認した。 |
-| 22 | 品質・運用性 | Minor | benchmark schema運用 | `1.0.0` schemaを将来どう変更するか規則がなく、過去runを同じ版の変更で壊す恐れがあった。 | **修正済み:** `benchmarks/results/README.md`で1.0内は任意追加のみ、breaking changeは新しいimmutable schema、過去run非書換えと定義した。 |
+| 22 | 品質・運用性 | Minor | benchmark schema運用 | `1.0.0` schemaを将来どう変更するか規則がなく、過去runを同じ版の変更で壊す恐れがあった。 | **修正済み:** `docs/dev/benchmarks/result-schema-policy.md`で1.0内は任意追加のみ、breaking changeは新しいimmutable schema、過去run非書換えと定義した。 |
 | 23 | 品質・運用性 | Minor | `schema.json`の`runId` | 任意文字列を許しており、時刻/stage/衝突回避suffixの形式を機械検査できなかった。 | **修正済み:** 現行生成規則に対応する正規表現patternを追加した。 |
-| 24 | 根拠性・不確実性管理 | Minor | `third-party-intake.md` | Stage 0候補のPySceneDetectとMediaPipeについて、方針表にはlicenseを記載したが一次資料URLが一覧になかった。 | **修正済み:** 公式repository/documentationとlicense識別子を追加し、exact package/model版は採用時に固定すると留保した。 |
+| 24 | 根拠性・不確実性管理 | Minor | `docs/dev/licenses/third-party-intake.md` | Stage 0候補のPySceneDetectとMediaPipeについて、方針表にはlicenseを記載したが一次資料URLが一覧になかった。 | **修正済み:** 公式repository/documentationとlicense識別子を追加し、exact package/model版は採用時に固定すると留保した。 |
 | 25 | 根拠性・不確実性管理 | Minor | ADR-0006 Azure subscription集計 | 86件/既定0の集計に取得方法がなく、保存しなかった個別IDとの境界も不明だった。 | **修正済み:** Azure MCP `subscription_list`のcredential/read-only実行による集計で、個別ID・tenant・名称は機密性のため保存しないと明記した。 |
 
 ## サマリー（検出時）
@@ -66,7 +66,7 @@
 - 2026年7月/4月のFFmpeg/C2PA日付はレビュー日2026年8月より過去であり、未来日付ではない。
 - Python 3.14.7は対象PCの実測値であり、公開時期の推測を理由に削除しなかった。ML wheel互換は別途Python 3.12隔離PoCで確認する。
 - fixture manifestとbenchmark resultは別schemaの成果物であり、`pending-ST-003`がresult stage enumに入らないことは矛盾ではない。
-- 修正前のraw FFmpeg runに、後から追加した任意のarchive来歴fieldがないことは履歴改変の理由にしない。`benchmarks/results/README.md`どおり過去runを非書換えで保持し、canonical summaryは修正後run ID/SHA-256を参照する。
+- 修正前のraw FFmpeg runに、後から追加した任意のarchive来歴fieldがないことは履歴改変の理由にしない。`docs/dev/benchmarks/result-schema-policy.md`どおり過去runを非書換えで保持し、canonical summaryは修正後run ID/SHA-256を参照する。
 - ST-003以降、正解注釈、Stage 0統合報告、アプリ本体の未完成は現在の計画で明示されており、完成済みと偽っていないため問題件数へ水増ししなかった。
 
 ## 実動画生成タスクの追加レビュー（2026年8月27日）
@@ -141,7 +141,7 @@ metadataについては、source由来のglobal metadataが出力に残ってい
 | S10-3 | 根拠性・不確実性管理 | Major | 初回runはfixture 0件だけを記録し、顔が難しい内容なのかmodel/pipelineが動作していないのか区別できなかった。 | **修正済み:** byte size/SHA-256固定のMediaPipe portraitを同じmodel・VIDEO modeへ通す正例対照を必須化。対照0件ならstageを失敗させ、再測定で1件を検出した。 |
 | S10-4 | 根拠性・不確実性管理 | Major | 小顔・非正面・複数人の定性分類が12フレーム目視レビューを参照していたが、そのraw証跡path/hashがcanonicalになかった。 | **修正済み:** 権利未確認画像をcommitせず、`benchmarks/work/face-review.json`とmontageをlocal raw証跡として保存し、canonicalへJSONのbyte size/SHA-256を記録した。資料共有は未観測のまま`openQuestions`へ残した。 |
 | S10-5 | 品質・運用性 | Major | payload assertion失敗時、childが返した安全なmodel/library/sampling情報もfailed rawから全て失われた。 | **修正済み:** `Get-SafeFailurePayload`で安全なtop-level allowlistだけを将来のfailed payloadへ保存する。`observations`、bbox、source time、任意pathは除外した。修正前run `20260827T0007291076285Z-face-detection-f58ec3d1`の空payloadは履歴証跡として非書換えで保持し、修正後関数をASTから抽出した合成partial payloadとfailed envelopeでallowlist・schema回帰を確認した。 |
-| S10-6 | 根拠性・不確実性管理 | Major | `mediapipe==1.0.1`の版だけがあり、実際のWindows wheelと同梱license textのcontent hashが受入記録になかった。 | **修正済み:** `mediapipe-1.0.1-py3-none-win_amd64.whl`、同梱LICENSE、model、正例assetの配布元・byte size・SHA-256を`third-party-intake.md`へ実測記録した。 |
+| S10-6 | 根拠性・不確実性管理 | Major | `mediapipe==1.0.1`の版だけがあり、実際のWindows wheelと同梱license textのcontent hashが受入記録になかった。 | **修正済み:** `mediapipe-1.0.1-py3-none-win_amd64.whl`、同梱LICENSE、model、正例assetの配布元・byte size・SHA-256を`docs/dev/licenses/third-party-intake.md`へ実測記録した。 |
 | S10-7 | 整合性 | Major | 対照追加時に`schemaVersion 1.0.0`の`control`をrequiredへ加え、対照追加前の成功rawが同じschemaで再検証できなくなった。 | **修正済み:** schemaの`control`定義はoptionalな互換追加とし、新規runだけを`Assert-FaceDetectionPayload`で必須化した。対照追加前後の成功rawを同じschemaで再検証した。 |
 
 ### 修正後の証拠照合
@@ -178,7 +178,7 @@ metadataについては、source由来のglobal metadataが出力に残ってい
 | S16-1 | 整合性 | Major | 初回runはST-003の最小audio packet PTS `-0.044`秒をdecoded PCMの開始時刻として加算したが、PyAV decoderはcodec delayを除去し最初のdecoded frameをPTS 0で返していたため、全候補時刻が44 ms早かった。 | **修正済み:** Pythonでstream time base、最初のdecoded frame PTS/time/sample数を実測し、期待値と不一致なら失敗する。修正版で候補時刻が+0.044秒補正された。初回rawは非書換えで保持した。 |
 | S16-2 | 根拠性・不確実性管理 | Major | 時刻補正後runは成功したが、FFmpeg `silencedetect`設定とdecoded-frame timing evidenceをpayloadへ投影しておらず、canonical主張をrawだけで再検証できなかった。 | **修正済み:** final rawへ両証拠を追加し、新規runのruntime validatorで`timelineAuthority`、`decodedTimelineEvidence`、FFmpeg設定を必須化した。schema 1.0は過去raw互換のためrequired追加せず、旧不完全payloadがruntimeで拒否されることを確認した。 |
 | S16-3 | 根拠性・不確実性管理 | Major | Python環境setupは3つのtop-level packageしかpinしていないのに「exact dependency set」へ追跡できると過大主張し、ST-016が直接使う`onnxruntime`、`av`、`numpy`はtransitive driftし得た。 | **修正済み:** 説明をdirect runtime pinへ限定し、3 packageをexact版へ昇格した。complete hash-locked transitive setはPK-001へ明示的に留保し、更新後setup実行で6 pinすべての一致を確認した。 |
-| S16-4 | 根拠性・不確実性管理 | Major | YAMNet、speech control、Silero VAD、親`faster-whisper` wheelとdirect runtime wheelのartifact hash／license／notice条件が受入台帳になかった。 | **修正済み:** model/control/wheelのbyte size・SHA-256、exact tag license本文のURL・SHA-256、notice条件を`third-party-intake.md`へ記録し、canonicalのmodel/control/toolingから同節を参照した。 |
+| S16-4 | 根拠性・不確実性管理 | Major | YAMNet、speech control、Silero VAD、親`faster-whisper` wheelとdirect runtime wheelのartifact hash／license／notice条件が受入台帳になかった。 | **修正済み:** model/control/wheelのbyte size・SHA-256、exact tag license本文のURL・SHA-256、notice条件を`docs/dev/licenses/third-party-intake.md`へ記録し、canonicalのmodel/control/toolingから同節を参照した。 |
 
 ### 修正後の証拠照合
 
@@ -269,7 +269,7 @@ metadataについては、source由来のglobal metadataが出力に残ってい
 | S6-8 | 整合性 | Major | 子stageが失敗した場合、外側harnessはsourceの事後hashを取らず、失敗時の元動画不変性が未確認になり得た。 | **修正済み:** 成功・失敗の両経路でsize、mtime、SHA-256を再取得し、machine-readable envelopeへ`sourcePostRunIntegrityChecked`と`sourceUnchanged`を保存。final成功rawと修正中の全失敗rawで一致した。 |
 | S6-9 | 根拠性・不確実性管理 | Major | 実行した未commit実装とST-003音声streamのimmutable参照がpayloadだけでは再構成できなかった。 | **修正済み:** Git HEADに加え、harness、wrapper、Python driver、schema、environment setup、control configのbyte size/SHA-256を記録。ST-003 raw run SHA-256と実audio stream値を参照し、final rawと現在fileを機械照合した。 |
 | S6-10 | 内容の妥当性 | Minor | engineごとに公開能力が異なる成功条件と、Foundryだけに必要なadapter込み時間が、単純なengine同士の比較に読めた。Foundry model loadも独立測定していない。 | **修正済み:** canonicalへ`successCriteriaEquivalentAcrossEngines=false`、`crossCandidateEngineTimingComparable=false`、operational path限定のscope、Foundry model-load未測定を明記。adapter準備とengine呼出は別値のまま保持した。rawはimmutable evidenceとして書き換えていない。 |
-| S6-11 | 根拠性・不確実性管理 | Major | ST-006が直接使うCTranslate2、huggingface_hub、tokenizers wheelとexact license本文、Foundry binary/model/EPの受入記録が不足していた。 | **修正済み:** 4 wheelのbyte size/SHA-256、exact tag license hash、faster-whisper model exact revision card、Foundry CLI/daemon/model/EP manifestを`third-party-intake.md`へ追加。Foundry catalogのlicense宣言と独立配布承認を区別し、CUDA EP再配布は未承認のままblockした。 |
+| S6-11 | 根拠性・不確実性管理 | Major | ST-006が直接使うCTranslate2、huggingface_hub、tokenizers wheelとexact license本文、Foundry binary/model/EPの受入記録が不足していた。 | **修正済み:** 4 wheelのbyte size/SHA-256、exact tag license hash、faster-whisper model exact revision card、Foundry CLI/daemon/model/EP manifestを`docs/dev/licenses/third-party-intake.md`へ追加。Foundry catalogのlicense宣言と独立配布承認を区別し、CUDA EP再配布は未承認のままblockした。 |
 
 ### 修正後の証拠照合
 
@@ -453,3 +453,46 @@ metadataについては、source由来のglobal metadataが出力に残ってい
 - same-session reproducibility: **encoded/decoded hash一致**
 - perceptual quality / content-level traceability / production thresholds: **未測定・未承認**
 - 合格判定: **PASS（測定タスク完了、最終profile採否はST-015承認待ち）**
+
+## ST-013 WebView2 preview fidelityの敵対的レビュー（2026年8月27日）
+
+**対象:** `benchmarks/web-preview/index.html`、`benchmarks/probes/WebPreviewProbe/`、`measure-preview-fidelity.ps1`、`preview_fidelity_benchmark.py`、共有LayoutSpec/Cue、ベンチハーネス、schema、raw run、`benchmarks/results/preview-fidelity.json`
+
+**採用raw証跡:** `20260827T1233421361375Z-preview-fidelity-0ce91abd`、SHA-256 `51dac9064e0a9ab3d4e58ac035836dfd2ab927c904874e2d0afefa90d9c475a0`
+
+**実測:** actual Evergreen WebView2 `151.0.4129.107`でCanvas/SVGを各3時点captureし、同じ正規化LayoutSpec/Cueから作った2.002秒・60 frameのFFmpeg H.264 Media Foundation区間と6組を比較した。WebView2対FFmpegの平均8-bit channel差は7.861054〜9.204768、Canvas対SVGは2.331489〜2.979348。いずれもpixel同一ではない。3 rendererすべてでactive/inactiveのCue領域差が領域外差を上回った。
+
+| No. | 軸 | 重大度 | 指摘 | 修正と確認 |
+|---|---|---|---|---|
+| S13-1 | セキュリティ・運用性 | Major | WebView2 capture完了直後に専用user-data directoryを削除すると、browser processが一時fileを保持して削除が失敗した。 | **修正済み:** probeが`BrowserProcessExited`をbounded waitし、resource解放後に専用profileを削除してから結果を返す。修正後formal rawで`browserProcessExitObservedBeforeHostResult=true`、`userDataDirectoryRemoved=true`、private evidence上のdirectory不在を確認した。 |
+| S13-2 | セキュリティ・根拠性 | Major | preview表示にはsource-derived pixelsをWebView2へ渡す必要がある一方、単に`sourcePixelsIncludedInPayload=false`と書くとlocal rendererへの転送まで否定したように読めた。 | **修正済み:** `sourcePixelsTransferredToLocalWebView2=true`を明示し、raw/canonicalへの非包含と区別した。documentへ`default-src 'none'`、`connect-src 'none'`等のCSPを追加し、単一file navigationとpopup遮断も維持した。 |
+| S13-3 | 整合性 | Minor | probe buildは`benchmarks/probes/global.json`でSDK 10.0.400を固定していたが、実装hash集合に同fileがなかった。 | **修正済み:** `global.json`を10件目のimplementation fileとしてbyte size/SHA-256照合し、rawへ保存した。 |
+| S13-4 | 根拠性・不確実性管理 | Minor | 125% DPIでCSS viewport 1024×576、physical capture 1280×720だったため、単一DPI観測を他のscaleへ一般化し得た。 | **修正済み:** host DPI/devicePixelRatio/CSS viewport/capture寸法を分離して記録し、`crossDpiScaleReproducibilityMeasured=false`をruntime/canonicalで必須化した。96 DPI限定という未承認条件は追加していない。 |
+| S13-5 | 整合性 | Minor | review追加fieldをschema 1.0のrequiredへすると、直前のimmutable ST-013 rawを破壊する。 | **修正済み:** schema上はoptional追加とし、current runtime validatorで10-file provenance、local pixel transfer、CSP境界、cross-DPI未測定を必須化した。全historical rawを再検証した。 |
+
+### 修正後の証拠照合
+
+- final raw、source前後hash、ST-004/ST-012/FFmpeg upstream、実装10 file、WebView2 SDK/runtime/font、private artifact 13 descriptorを照合し、失敗0件だった。
+- captureはCanvas/SVG各3件、全て1280×720。host DPIとdevicePixelRatioは1.25、CSS viewportは1024×576で、全reported rectangleとCue stateが共有contractへ一致した。
+- faithful intervalはH.264 Constrained Baseline、yuv420p、30000/1001、2.002秒、60 frameで全編decodeした。sample選択差は0.001〜0.018433秒だが、合否閾値には使用していない。
+- Cue機構対照はCanvas、SVG、FFmpegの全てで2つのinactive controlに対して分離した。これはCue表示機構の相対対照であり、知覚品質やproduction acceptanceではない。
+- source-derived frame、6 capture、3 faithful sample frame、interval video、diagnosticはignored work内の3主体・非継承ACLで保持し、WebView2 profileは削除した。raw/canonicalにpixel、audio、transcript、Cue text、絶対path、command argumentは含まない。
+- PowerShell parser、PSScriptAnalyzer 1.25.0、Python `py_compile`、.NET warning-as-error build、runtime validator、JSON Schema、historical raw回帰を確認した。3軸の最終再レビューで実在する未解決指摘は0件だった。
+
+### 採用しなかった指摘
+
+- FFmpeg Cueが実画像で未検証という指摘は、FFmpeg active frameと前後2つのinactive frameを比較したCue領域/領域外の相対対照がrawにあり、runtime validatorも3 renderer全件を要求するため採用しなかった。
+- 96 DPI以外を失敗にすべきという指摘は、正本にその閾値がなく、今回の目的は差分を記録可能にすることだから採用しなかった。観測scaleを固定せず記録し、cross-DPIを未測定とした。
+- source pixelsをWebView2へ渡さない提案は、preview自体がsource画像を表示する要件と矛盾する。外部通信を遮断したlocal rendererへの必要な転送と、raw/canonical・Git・外部への開示を分離した。
+- `sourcePixelsTransferredToLocalWebView2`と`sourcePixelsTransferredOnlyToLocalWebView2`は、capture事実とprivacy境界という異なるscopeを表すため統合しなかった。final rawには両方がありschema/runtime検証済みである。
+- 任意のpixel差、時間差、geometry差をproduction合否閾値にする提案は、人手承認済み基準がないため採用しなかった。値をdescriptive evidenceとして保持する。
+
+### ST-013 修正後判定
+
+- 未修正 Critical / Major / Minor: **0件**
+- actual WebView2 Canvas/SVG capture: **各3件**
+- FFmpeg faithful static-frame interval: **2.002秒、60 frame、全編decode成功**
+- WebView2対FFmpeg / Canvas対SVG差分: **記録済み、pixel同一性なし**
+- Cue active/inactive mechanism control: **3 renderer全て合格**
+- moving-video / audio / perceptual quality / cross-DPI/runtime/GPU / production threshold: **未測定・未承認**
+- 合格判定: **PASS（測定タスク完了、preview方式と閾値の採否はST-015人手承認待ち）**
