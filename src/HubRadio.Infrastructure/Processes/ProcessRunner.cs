@@ -31,6 +31,9 @@ public sealed class ProcessRunner
         {
             StartInfo = CreateStartInfo(request),
         };
+        using WindowsJobObject? jobObject = OperatingSystem.IsWindows()
+            ? WindowsJobObject.CreateKillOnClose()
+            : null;
         Stopwatch stopwatch = Stopwatch.StartNew();
 
         try
@@ -43,6 +46,11 @@ public sealed class ProcessRunner
             throw;
         }
 
+        if (jobObject is not null)
+        {
+            await AssignToJobOrStopAsync(process, jobObject).ConfigureAwait(false);
+        }
+
         using CancellationTokenSource captureCancellation = new();
         Stream standardOutput;
         Stream standardError;
@@ -53,6 +61,7 @@ public sealed class ProcessRunner
         }
         catch
         {
+            jobObject?.Dispose();
             TryKillProcessTree(process);
             await TryWaitForExitAsync(process).ConfigureAwait(false);
             throw;
@@ -73,6 +82,7 @@ public sealed class ProcessRunner
             try
             {
                 await process.WaitForExitAsync(waitCancellation.Token).ConfigureAwait(false);
+                jobObject?.Dispose();
                 captured = await WaitForCapturedOutputAsync(
                     standardOutputTask,
                     standardErrorTask,
@@ -83,6 +93,7 @@ public sealed class ProcessRunner
             {
                 await CleanupAsync(
                     process,
+                    jobObject,
                     captureCancellation,
                     standardOutputTask,
                     standardErrorTask).ConfigureAwait(false);
@@ -115,6 +126,7 @@ public sealed class ProcessRunner
             {
                 await CleanupAsync(
                     process,
+                    jobObject,
                     captureCancellation,
                     standardOutputTask,
                     standardErrorTask).ConfigureAwait(false);
@@ -273,10 +285,12 @@ public sealed class ProcessRunner
 
     private static async Task CleanupAsync(
         Process process,
+        WindowsJobObject? jobObject,
         CancellationTokenSource captureCancellation,
         Task<CapturedOutput> standardOutputTask,
         Task<CapturedOutput> standardErrorTask)
     {
+        jobObject?.Dispose();
         TryKillProcessTree(process);
         await TryWaitForExitAsync(process).ConfigureAwait(false);
 
@@ -291,6 +305,94 @@ public sealed class ProcessRunner
         await TryWaitForCaptureAsync(
             standardOutputTask,
             standardErrorTask).ConfigureAwait(false);
+    }
+
+    internal static async Task AssignToJobOrStopAsync(
+        Process process,
+        WindowsJobObject jobObject)
+    {
+        ArgumentNullException.ThrowIfNull(process);
+        ArgumentNullException.ThrowIfNull(jobObject);
+
+        // Process.Start does not provide atomic suspended launch through this API.
+        // Containment therefore begins only after this assignment succeeds.
+        try
+        {
+            jobObject.Assign(process);
+        }
+        catch (Exception assignmentException)
+        {
+            jobObject.Dispose();
+            try
+            {
+                await EnsureUncontainedProcessStoppedAsync(process).ConfigureAwait(false);
+            }
+            catch (Exception cleanupException)
+            {
+                throw new AggregateException(
+                    "Windows Job Object assignment and uncontained-process cleanup both failed.",
+                    assignmentException,
+                    cleanupException);
+            }
+
+            throw;
+        }
+    }
+
+    private static async Task EnsureUncontainedProcessStoppedAsync(Process process)
+    {
+        Exception? terminationException = null;
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch (Exception exception)
+            when (exception is InvalidOperationException or Win32Exception or NotSupportedException or AggregateException)
+        {
+            terminationException = exception;
+        }
+
+        await TryWaitForExitAsync(process).ConfigureAwait(false);
+
+        Exception? confirmationException = null;
+        try
+        {
+            if (!process.HasExited)
+            {
+                confirmationException = new InvalidOperationException(
+                    "A process that could not be contained remained alive after bounded cleanup.");
+            }
+        }
+        catch (Exception exception)
+            when (exception is InvalidOperationException or Win32Exception)
+        {
+            confirmationException = exception;
+        }
+
+        if (terminationException is not null && confirmationException is not null)
+        {
+            throw new AggregateException(
+                "Uncontained process-tree termination failed and root-process exit could not be confirmed.",
+                terminationException,
+                confirmationException);
+        }
+
+        if (terminationException is not null)
+        {
+            throw new InvalidOperationException(
+                "Uncontained process-tree termination reported a failure.",
+                terminationException);
+        }
+
+        if (confirmationException is not null)
+        {
+            throw new InvalidOperationException(
+                "The uncontained root process could not be confirmed stopped.",
+                confirmationException);
+        }
     }
 
     private static void TryKillProcessTree(Process process)

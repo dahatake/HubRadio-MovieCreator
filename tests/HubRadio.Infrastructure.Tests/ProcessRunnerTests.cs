@@ -375,6 +375,318 @@ public sealed class ProcessRunnerTests
     }
 
     [TestMethod]
+    public async Task WindowsJobObject_DisposeKillsAssignedProcessAndInheritedDescendant()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("Windows Job Objects require Windows.");
+            return;
+        }
+
+        string temporaryDirectory = CreateTemporaryDirectory();
+        string parentProcessIdPath = Path.Combine(temporaryDirectory, "parent.pid");
+        string startDescendantPath = Path.Combine(temporaryDirectory, "start-descendant");
+        string descendantProcessIdPath = Path.Combine(temporaryDirectory, "descendant.pid");
+        Process? parent = null;
+        Process? descendant = null;
+        WindowsJobObject? jobObject = null;
+
+        try
+        {
+            jobObject = WindowsJobObject.CreateKillOnClose();
+            parent = StartHelperProcess(
+                "spawn-descendant",
+                parentProcessIdPath,
+                startDescendantPath,
+                descendantProcessIdPath,
+                "wait");
+            await ReadProcessIdAsync(parentProcessIdPath);
+            jobObject.Assign(parent);
+            File.WriteAllText(startDescendantPath, string.Empty);
+            descendant = OpenRunningProcess(await ReadProcessIdAsync(descendantProcessIdPath));
+            AssertProcessIsRunning(parent);
+
+            jobObject.Dispose();
+
+            await AssertProcessExitedAsync(parent);
+            await AssertProcessExitedAsync(descendant);
+        }
+        finally
+        {
+            jobObject?.Dispose();
+            await TryTerminateProcessTreeAsync(parent);
+            parent?.Dispose();
+            await TryTerminateProcessTreeAsync(descendant);
+            descendant?.Dispose();
+            Directory.Delete(temporaryDirectory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task AssignToJobOrStopAsync_AssignmentFailureStopsProcessAndPreservesException()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("Windows Job Objects require Windows.");
+            return;
+        }
+
+        string temporaryDirectory = CreateTemporaryDirectory();
+        string processIdPath = Path.Combine(temporaryDirectory, "uncontained.pid");
+        Process? process = null;
+
+        try
+        {
+            using WindowsJobObject disposedJob = WindowsJobObject.CreateKillOnClose();
+            disposedJob.Dispose();
+            process = StartHelperProcess("wait", processIdPath);
+            await ReadProcessIdAsync(processIdPath);
+            AssertProcessIsRunning(process);
+
+            await Assert.ThrowsExactlyAsync<ObjectDisposedException>(
+                () => ProcessRunner.AssignToJobOrStopAsync(process, disposedJob));
+
+            await AssertProcessExitedAsync(process);
+        }
+        finally
+        {
+            await TryTerminateProcessTreeAsync(process);
+            process?.Dispose();
+            Directory.Delete(temporaryDirectory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task AssignToJobOrStopAsync_AssignmentAndCleanupFailurePreserveBothExceptions()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("Windows Job Objects require Windows.");
+            return;
+        }
+
+        using WindowsJobObject disposedJob = WindowsJobObject.CreateKillOnClose();
+        disposedJob.Dispose();
+        using Process unstartedProcess = new();
+
+        AggregateException exception = await Assert.ThrowsExactlyAsync<AggregateException>(
+            () => ProcessRunner.AssignToJobOrStopAsync(unstartedProcess, disposedJob));
+
+        Assert.HasCount(2, exception.InnerExceptions);
+        Assert.IsInstanceOfType<ObjectDisposedException>(exception.InnerExceptions[0]);
+        Assert.IsInstanceOfType<AggregateException>(exception.InnerExceptions[1]);
+    }
+
+    [TestMethod]
+    public async Task RunAsync_NormalRootExitClosesJobAndKillsRemainingDescendant()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("Windows Job Objects require Windows.");
+            return;
+        }
+
+        string temporaryDirectory = CreateTemporaryDirectory();
+        string parentProcessIdPath = Path.Combine(temporaryDirectory, "parent.pid");
+        string startDescendantPath = Path.Combine(temporaryDirectory, "start-descendant");
+        string descendantProcessIdPath = Path.Combine(temporaryDirectory, "descendant.pid");
+        string allowParentExitPath = Path.Combine(temporaryDirectory, "allow-parent-exit");
+        Process? parent = null;
+        Process? descendant = null;
+
+        try
+        {
+            ProcessRunner runner = new();
+            ProcessRunRequest request = CreateHelperRequest(
+                "spawn-descendant",
+                [
+                    parentProcessIdPath,
+                    startDescendantPath,
+                    descendantProcessIdPath,
+                    "exit",
+                    allowParentExitPath,
+                ]);
+            Task<ProcessRunResult> runTask = runner.RunAsync(request);
+            parent = OpenRunningProcess(await ReadProcessIdAsync(parentProcessIdPath));
+            File.WriteAllText(startDescendantPath, string.Empty);
+            descendant = OpenRunningProcess(await ReadProcessIdAsync(descendantProcessIdPath));
+            AssertProcessIsRunning(parent);
+            File.WriteAllText(allowParentExitPath, string.Empty);
+
+            ProcessRunResult result = await runTask;
+
+            Assert.AreEqual(0, result.ExitCode);
+            await AssertProcessExitedAsync(parent);
+            await AssertProcessExitedAsync(descendant);
+        }
+        finally
+        {
+            await TryTerminateProcessTreeAsync(parent);
+            parent?.Dispose();
+            await TryTerminateProcessTreeAsync(descendant);
+            descendant?.Dispose();
+            Directory.Delete(temporaryDirectory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunAsync_TimeoutKillsRootAndInheritedDescendant()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("Windows Job Objects require Windows.");
+            return;
+        }
+
+        string temporaryDirectory = CreateTemporaryDirectory();
+        string parentProcessIdPath = Path.Combine(temporaryDirectory, "parent.pid");
+        string startDescendantPath = Path.Combine(temporaryDirectory, "start-descendant");
+        string descendantProcessIdPath = Path.Combine(temporaryDirectory, "descendant.pid");
+        Process? parent = null;
+        Process? descendant = null;
+
+        try
+        {
+            ProcessRunner runner = new();
+            ProcessRunRequest request = CreateHelperRequest(
+                "spawn-descendant",
+                [
+                    parentProcessIdPath,
+                    startDescendantPath,
+                    descendantProcessIdPath,
+                    "wait",
+                ],
+                timeout: TimeSpan.FromSeconds(5));
+            Task<ProcessRunResult> runTask = runner.RunAsync(request);
+            parent = OpenRunningProcess(await ReadProcessIdAsync(parentProcessIdPath));
+            File.WriteAllText(startDescendantPath, string.Empty);
+            descendant = OpenRunningProcess(await ReadProcessIdAsync(descendantProcessIdPath));
+            AssertProcessIsRunning(parent);
+
+            await Assert.ThrowsExactlyAsync<TimeoutException>(() => runTask);
+
+            await AssertProcessExitedAsync(parent);
+            await AssertProcessExitedAsync(descendant);
+        }
+        finally
+        {
+            await TryTerminateProcessTreeAsync(parent);
+            parent?.Dispose();
+            await TryTerminateProcessTreeAsync(descendant);
+            descendant?.Dispose();
+            Directory.Delete(temporaryDirectory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunAsync_CancellationKillsRootAndInheritedDescendant()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("Windows Job Objects require Windows.");
+            return;
+        }
+
+        string temporaryDirectory = CreateTemporaryDirectory();
+        string parentProcessIdPath = Path.Combine(temporaryDirectory, "parent.pid");
+        string startDescendantPath = Path.Combine(temporaryDirectory, "start-descendant");
+        string descendantProcessIdPath = Path.Combine(temporaryDirectory, "descendant.pid");
+        Process? parent = null;
+        Process? descendant = null;
+
+        try
+        {
+            using CancellationTokenSource cancellation = new();
+            ProcessRunner runner = new();
+            ProcessRunRequest request = CreateHelperRequest(
+                "spawn-descendant",
+                [
+                    parentProcessIdPath,
+                    startDescendantPath,
+                    descendantProcessIdPath,
+                    "wait",
+                ],
+                timeout: TimeSpan.FromSeconds(30));
+            Task<ProcessRunResult> runTask = runner.RunAsync(request, cancellation.Token);
+            parent = OpenRunningProcess(await ReadProcessIdAsync(parentProcessIdPath));
+            File.WriteAllText(startDescendantPath, string.Empty);
+            descendant = OpenRunningProcess(await ReadProcessIdAsync(descendantProcessIdPath));
+            AssertProcessIsRunning(parent);
+
+            cancellation.Cancel();
+            OperationCanceledException exception =
+                await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => runTask);
+
+            Assert.AreEqual(cancellation.Token, exception.CancellationToken);
+            await AssertProcessExitedAsync(parent);
+            await AssertProcessExitedAsync(descendant);
+        }
+        finally
+        {
+            await TryTerminateProcessTreeAsync(parent);
+            parent?.Dispose();
+            await TryTerminateProcessTreeAsync(descendant);
+            descendant?.Dispose();
+            Directory.Delete(temporaryDirectory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunAsync_HostCrashClosesJobAndKillsRootAndInheritedDescendant()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("Windows Job Objects require Windows.");
+            return;
+        }
+
+        string temporaryDirectory = CreateTemporaryDirectory();
+        string parentProcessIdPath = Path.Combine(temporaryDirectory, "parent.pid");
+        string startDescendantPath = Path.Combine(temporaryDirectory, "start-descendant");
+        string descendantProcessIdPath = Path.Combine(temporaryDirectory, "descendant.pid");
+        string allowHostCrashPath = Path.Combine(temporaryDirectory, "allow-host-crash");
+        Process? crashHost = null;
+        Process? parent = null;
+        Process? descendant = null;
+
+        try
+        {
+            crashHost = StartHelperProcess(
+                "crash-runner-host",
+                parentProcessIdPath,
+                startDescendantPath,
+                descendantProcessIdPath,
+                allowHostCrashPath);
+            Task<string> standardOutputTask = crashHost.StandardOutput.ReadToEndAsync();
+            Task<string> standardErrorTask = crashHost.StandardError.ReadToEndAsync();
+            parent = OpenRunningProcess(await ReadProcessIdAsync(parentProcessIdPath));
+            descendant = OpenRunningProcess(await ReadProcessIdAsync(descendantProcessIdPath));
+            AssertProcessIsRunning(crashHost);
+            File.WriteAllText(allowHostCrashPath, string.Empty);
+            using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(15));
+
+            await crashHost.WaitForExitAsync(cancellation.Token);
+            await AssertProcessesExitedAsync(parent, descendant);
+            string standardOutput = await standardOutputTask.WaitAsync(TimeSpan.FromSeconds(5));
+            string standardError = await standardErrorTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.AreNotEqual(0, crashHost.ExitCode);
+            Assert.AreEqual(string.Empty, standardOutput);
+            Assert.IsFalse(standardError.Contains(temporaryDirectory, StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            await TryTerminateProcessTreeAsync(crashHost);
+            crashHost?.Dispose();
+            await TryTerminateProcessTreeAsync(parent);
+            parent?.Dispose();
+            await TryTerminateProcessTreeAsync(descendant);
+            descendant?.Dispose();
+            Directory.Delete(temporaryDirectory, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task RunAsync_PreCancelledToken_DoesNotStartProcess()
     {
         string temporaryDirectory = CreateTemporaryDirectory();
@@ -452,6 +764,45 @@ public sealed class ProcessRunnerTests
             maxCapturedBytes);
     }
 
+    private static Process StartHelperProcess(string mode, params string[] helperArguments)
+    {
+        Process process = new()
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = DotNetExecutable,
+                WorkingDirectory = TestWorkingDirectory,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            },
+        };
+        foreach (string argument in new[]
+        {
+            "exec",
+            TestAssemblyPath,
+            ProcessRunnerTestHelper.Marker,
+            mode,
+        })
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
+
+        foreach (string argument in helperArguments)
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
+
+        if (!process.Start())
+        {
+            process.Dispose();
+            throw new InvalidOperationException("The process test helper could not be started.");
+        }
+
+        return process;
+    }
+
     private static string ResolveDotNetExecutable()
     {
         string? dotNetHostPath = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
@@ -501,6 +852,52 @@ public sealed class ProcessRunnerTests
         return int.Parse(value, CultureInfo.InvariantCulture);
     }
 
+    private static Process OpenRunningProcess(int processId)
+    {
+        Process process = Process.GetProcessById(processId);
+        try
+        {
+            AssertProcessIsRunning(process);
+            return process;
+        }
+        catch
+        {
+            process.Dispose();
+            throw;
+        }
+    }
+
+    private static void AssertProcessIsRunning(Process process)
+    {
+        _ = process.SafeHandle;
+        Assert.IsFalse(
+            process.HasExited,
+            "The child process exited before the containment event was triggered.");
+    }
+
+    private static async Task AssertProcessExitedAsync(Process process)
+    {
+        if (!process.HasExited)
+        {
+            using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(5));
+            await process.WaitForExitAsync(cancellation.Token);
+        }
+
+        Assert.IsTrue(process.HasExited, "The child process remained alive after cleanup.");
+    }
+
+    private static async Task AssertProcessesExitedAsync(params Process[] processes)
+    {
+        using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(
+            processes.Select(process => process.WaitForExitAsync(cancellation.Token)));
+
+        foreach (Process process in processes)
+        {
+            Assert.IsTrue(process.HasExited, "A child process remained alive after cleanup.");
+        }
+    }
+
     private static async Task AssertProcessExitedAsync(int processId)
     {
         try
@@ -515,6 +912,28 @@ public sealed class ProcessRunnerTests
             Assert.IsTrue(process.HasExited, "The child process remained alive after cleanup.");
         }
         catch (ArgumentException)
+        {
+        }
+    }
+
+    private static async Task TryTerminateProcessTreeAsync(Process? process)
+    {
+        if (process is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+                using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(5));
+                await process.WaitForExitAsync(cancellation.Token);
+            }
+        }
+        catch (Exception exception)
+            when (exception is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
         }
     }
@@ -560,6 +979,8 @@ internal static class ProcessRunnerTestHelper
             "write-utf8" => WriteUtf8(arguments),
             "exit" => int.Parse(RequireArgument(arguments, 1), CultureInfo.InvariantCulture),
             "wait" => Wait(arguments),
+            "spawn-descendant" => SpawnDescendant(arguments),
+            "crash-runner-host" => CrashRunnerHost(arguments),
             _ => 98,
         };
     }
@@ -605,13 +1026,142 @@ internal static class ProcessRunnerTestHelper
     private static int Wait(string[] arguments)
     {
         string processIdPath = RequireArgument(arguments, 1);
+        WriteProcessIdAtomically(processIdPath);
+        Thread.Sleep(TimeSpan.FromSeconds(30));
+        return 0;
+    }
+
+    private static int SpawnDescendant(string[] arguments)
+    {
+        string parentProcessIdPath = RequireArgument(arguments, 1);
+        string startDescendantPath = RequireArgument(arguments, 2);
+        string descendantProcessIdPath = RequireArgument(arguments, 3);
+        string behavior = RequireArgument(arguments, 4);
+        WriteProcessIdAtomically(parentProcessIdPath);
+        WaitForFile(startDescendantPath);
+
+        using Process descendant = StartHelperProcess("wait", descendantProcessIdPath);
+        WaitForFile(descendantProcessIdPath);
+        if (string.Equals(behavior, "exit", StringComparison.Ordinal))
+        {
+            string allowParentExitPath = RequireArgument(arguments, 5);
+            WaitForFile(allowParentExitPath);
+            return 0;
+        }
+
+        if (!string.Equals(behavior, "wait", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The descendant helper behavior is invalid.");
+        }
+
+        descendant.WaitForExit();
+        return descendant.ExitCode;
+    }
+
+    private static int CrashRunnerHost(string[] arguments)
+    {
+        string parentProcessIdPath = RequireArgument(arguments, 1);
+        string startDescendantPath = RequireArgument(arguments, 2);
+        string descendantProcessIdPath = RequireArgument(arguments, 3);
+        string allowHostCrashPath = RequireArgument(arguments, 4);
+        ProcessRunner runner = new();
+        ProcessRunRequest request = CreateHelperRequest(
+            "spawn-descendant",
+            parentProcessIdPath,
+            startDescendantPath,
+            descendantProcessIdPath,
+            "wait");
+        _ = runner.RunAsync(request);
+        WaitForFile(parentProcessIdPath);
+        File.WriteAllText(startDescendantPath, string.Empty);
+        WaitForFile(descendantProcessIdPath);
+        WaitForFile(allowHostCrashPath);
+        Environment.FailFast("Intentional J-004 process containment test crash.");
+        return 99;
+    }
+
+    private static ProcessRunRequest CreateHelperRequest(
+        string mode,
+        params string[] helperArguments)
+    {
+        List<string> argumentList =
+        [
+            "exec",
+            typeof(ProcessRunnerTestHelper).Assembly.Location,
+            Marker,
+            mode,
+        ];
+        argumentList.AddRange(helperArguments);
+
+        return new ProcessRunRequest(
+            Environment.ProcessPath
+                ?? throw new InvalidOperationException("The dotnet host path is unavailable."),
+            argumentList,
+            AppContext.BaseDirectory,
+            TimeSpan.FromSeconds(30));
+    }
+
+    private static Process StartHelperProcess(string mode, params string[] helperArguments)
+    {
+        Process process = new()
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = Environment.ProcessPath
+                    ?? throw new InvalidOperationException("The dotnet host path is unavailable."),
+                WorkingDirectory = AppContext.BaseDirectory,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            },
+        };
+        foreach (string argument in new[]
+        {
+            "exec",
+            typeof(ProcessRunnerTestHelper).Assembly.Location,
+            Marker,
+            mode,
+        })
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
+
+        foreach (string argument in helperArguments)
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
+
+        if (!process.Start())
+        {
+            process.Dispose();
+            throw new InvalidOperationException("The descendant helper could not be started.");
+        }
+
+        return process;
+    }
+
+    private static void WriteProcessIdAtomically(string processIdPath)
+    {
         string temporaryPath = processIdPath + $".{Environment.ProcessId}.tmp";
         File.WriteAllText(
             temporaryPath,
             Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
         File.Move(temporaryPath, processIdPath);
-        Thread.Sleep(TimeSpan.FromSeconds(30));
-        return 0;
+    }
+
+    private static void WaitForFile(string path)
+    {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        while (!File.Exists(path))
+        {
+            if (stopwatch.Elapsed >= TimeSpan.FromSeconds(10))
+            {
+                throw new TimeoutException("A process test helper handshake timed out.");
+            }
+
+            Thread.Sleep(20);
+        }
     }
 
     private static string RequireArgument(string[] arguments, int index) =>

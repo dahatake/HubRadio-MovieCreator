@@ -34,7 +34,7 @@ FFmpeg、ffprobe、Python worker はホストが直接子プロセスとして�
 - `cmd`、`powershell`、`pwsh`、`sh`、`bash`、`zsh`、`dash`、`ksh`、`fish` とその `.exe`／絶対パスを process API から起動しません。
 - Python の `shell=True`、`os.system`、`os.popen`、`asyncio.create_subprocess_shell` など、暗黙に shell を使う API を使用しません。
 - Node の `child_process.exec`／`execSync` や process API の `shell: true` を製品 runtime に使用しません。
-- timeout、取消、標準出力と標準エラーの分離はJ-003、実行ファイルhashはJ-010で実装済みです。子孫終了と資源制限は後続J-004で実装します。F-009は未実装機能を先取りしません。
+- timeout、取消、標準出力と標準エラーの分離はJ-003、実行ファイルhashはJ-010で実装済みです。J-004はJob割当成功後の子孫へkill-on-closeを適用し、timeout、取消、割当拒否、例外時は明示的なprocess-tree終了とbounded waitを併用します。`Process.Start`からJob割当成功までの区間は原子的収容ではなく、active-process limit、未承認のmemory limit、Job accounting収束には依存しません。
 
 ## runtime server を置かない境界
 
