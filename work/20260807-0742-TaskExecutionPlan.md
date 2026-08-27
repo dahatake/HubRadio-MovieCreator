@@ -16,9 +16,9 @@
 | P | P-001〜P-010 | 完了・コミット済み |
 | ST | ST-001〜ST-005、ST-009、ST-010、ST-014、ST-016 | 完了・コミット済み |
 | ST | ST-006 | 測定、canonical、敵対的レビュー、実在指摘の反映、コミットまで完了 |
-| ST | ST-007、ST-011 | 測定、canonical、敵対的レビュー、実在指摘の反映、コミットまで完了 |
+| ST | ST-007、ST-011、ST-012 | 測定、canonical、敵対的レビュー、実在指摘の反映、コミットまで完了 |
 
-**完了: 22 / 203タスク**。Stage 0の未完了実行対象はST-012、ST-013、ST-015の3件（ST-008は利用条件不同意のため条件不成立）
+**完了: 23 / 203タスク**。Stage 0の未完了実行対象はST-013、ST-015の2件（ST-008は利用条件不同意のため条件不成立）
 
 ### 1.2 未コミットの作業
 
@@ -40,6 +40,7 @@
 | CUDA成功はFoundry Local CUDA EP cacheのchild-only PATH注入に依存し、再配布承認はない | `asr-benchmark.json`、`third-party-intake.md` | Stage 1配布ではこのcacheを転用せず、CPU fallbackを維持してPK-001/PK-004で正規runtimeを決める |
 | CPU/CUDAは全emitted wordに有限時刻を返すがoutput自体が異なり、parent外0.14秒が各1件。exact boundary正解はない | `alignment-benchmark.json` | CUDA word timeはeditable candidateのみ。発話時刻＋手動調整fallbackを必須維持し、非clamp |
 | Foundry Local Qwen3 0.6B/4B CUDAは根拠ID付きJSONの全gateを通過した候補0件。4Bはsynthetic schema/IDを通したが期待3 topic中1件、両候補ともfixture 3 windowはaccepted JSON 0件 | `local-text-model.json` | A-015は未採用。A-014/A-020と手入力を主経路にし、semantic groundedness・意味保全・quiz回答根拠を未測定のまま保持 |
+| 手書きmanifestの16:9/9:16はtrim/concat/crop/subtitle/audioを実行し、4 outputが全編decode、同一環境2回でbyte/decoded hash一致。4点のsource-frame選択誤差最大0.01417秒 | `manual-render.json` | typed render IRとobserved PTS mappingの実装根拠。知覚品質、subtitle内容traceability、cross-machine再現性、production閾値は未測定 |
 
 ---
 
@@ -229,8 +230,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. ST-012を実装 → 実行 → canonical → 敵対的レビュー → コミット
-2. ST-013を実装 → 実行 → canonical → 敵対的レビュー → コミット
-3. ST-015報告書を作成し、**閾値・採用技術・fallbackの人手承認を依頼して停止**
+1. ST-013を実装 → 実行 → canonical → 敵対的レビュー → コミット
+2. ST-015報告書を作成し、**閾値・採用技術・fallbackの人手承認を依頼して停止**
 
 各ステップで、実測できなかった項目は`openQuestions`に残し、推測で埋めない。

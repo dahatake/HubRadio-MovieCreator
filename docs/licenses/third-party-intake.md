@@ -74,6 +74,18 @@ Windows Japanese TTS controlはインストール済み`Microsoft Haruka Desktop
 
 両modelは`CUDAExecutionProvider`で実行し、ST-006で固定したCUDA EP 14-file manifest `8248ba49910e8fba56ddc8b4810a55cc9b3a069ca0dc2f7a23cd5f1f9a807021`を使用した。Foundry Local CLI/REST API 0.10.3はpreview、AppxはDeveloper署名であり、model/EPのcache copy、offline bundle、製品同梱、再配布は未承認である。ST-011の不合格をlicense不備と混同せず、機能面ではmanual-only、供給網面ではPK-004/Q-010までblockを維持する。
 
+## ST-012 render解析runtime受入記録
+
+取得・確認日: 2026年8月27日。ST-012のframe比較は既存の隔離Python環境に入っていたOpenCV/NumPyを使用した。以下のmanifest hashは、各installed distributionが列挙するfileのうち通常file（`__pycache__`と`.pyc`を除外）を、`relativePath NUL byteSize NUL fileSha256 LF`順で集約したStage 0証跡であり、wheel hashや完全なSBOMの代替ではない。
+
+| 種別 | 固定対象 | 配布元 | installed file count / bytes | installed manifest SHA-256 | license・条件 |
+|---|---|---|---:|---|---|
+| Python distribution | `opencv-contrib-python` `5.0.0.93` | package metadata: https://github.com/opencv/opencv-python | 111 / 144,937,256 | `17cb96114ad1770c1cc5f6e4a11270bd63c78c13a56b377414f839e30ce97030` | metadataはApache 2.0。ST-012ではgrayscale frame MADだけに使用 |
+| Python distribution | `opencv-python` `5.0.0.93` | package metadata: https://github.com/opencv/opencv-python | 47 / 144,683,896 | `88e81024645b0f27577ca20c93c340dbcd8f5c174bdf9bfd00fbfe816fbd57b0` | metadataはApache 2.0。同一`cv2` namespaceを共有するため、最終lockでは重複distributionを解消する |
+| Python distribution | `numpy` `2.5.2` | PyPI / https://numpy.org/ | ST-016記録を再利用 | ST-016 wheel SHA-256 `28ac63476ec7651484215ee7fa15a1f78b57c14621f01e392afe17b9a1390ce4` | SPDX expressionは`BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0` |
+
+OpenCV 2 distributionの同居はStage 0環境の観測事実であり、両方を製品へ含める判断ではない。PK-001で単一providerへ整理し、exact wheel hash・transitive license・noticeを固定する。ST-012のsource-derived renderは権利未確認のためlocal technical evaluationに限定し、FFmpeg/OpenCV/NumPyの利用がfixtureの外部公開許可を与えるものではない。
+
 ## ST-010 MediaPipe受入記録
 
 取得・確認日: 2026年8月27日。以下はWindows x64 / Python 3.12上のStage 0評価に使用した実在成果物であり、最終配布物への採用記録ではない。

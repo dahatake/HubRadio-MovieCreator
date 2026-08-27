@@ -4,7 +4,7 @@
 **要求の正本（暫定既定）:** `docs/requirement-definition.md` 版 0.1 Draft  
 **設計根拠:** `docs/implementation-research.md`、`docs/adversarial-review.md`  
 **計画日:** 2026年8月26日  
-**計画状態:** 実行中。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-011、ST-014、ST-016は測定タスクとして完了。ST-007はCUDA版のword/utterance時刻を編集可能な候補としつつexact boundary精度を未測定のまま保持し、発話時刻＋手動字幕調整を必須fallbackとした。ST-011のFoundry Local Qwen3 CUDA 2候補はsynthetic controlと3つのfixture windowを全て通過した候補が0件で、semantic groundednessも未測定のためmanual-onlyとした。production閾値、model/CUDA配布は未承認。次はST-012。アプリケーション、IaC、Azureリソースは未完了
+**計画状態:** 実行中。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-012、ST-014、ST-016は測定タスクとして完了。ST-011のFoundry Local Qwen3 CUDA 2候補は全gate通過0件でmanual-only。ST-012は手書きmanifestから16:9/9:16をrenderし、trim/concat/crop/subtitle/audio、全編decode、4点の元PTS逆引きを実証した。知覚品質、content-level OriginRef、production閾値、model/CUDA配布は未承認。次はST-013。アプリケーション、IaC、Azureリソースは未完了
 
 ---
 
@@ -624,4 +624,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**次の未完了実行対象はST-012である。F-001以降のscaffoldはST-015承認後、Azure作成はZ-005の明示指示後に限る。**
+**次の未完了実行対象はST-013である。F-001以降のscaffoldはST-015承認後、Azure作成はZ-005の明示指示後に限る。**

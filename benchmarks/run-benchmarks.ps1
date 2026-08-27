@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark", "local-text-model")]
+    [ValidateSet("hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark", "local-text-model", "manual-render")]
     [string]$Stage = "hardware",
     [string]$FixtureManifest = (Join-Path $PSScriptRoot "fixtures\fixture-manifest.json"),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot "results\runs"),
@@ -1254,6 +1254,184 @@ function Assert-LocalTextModelPayload {
     }
 }
 
+function Assert-ManualRenderPayload {
+    param([Parameter(Mandatory)][object]$Payload)
+
+    foreach ($name in @(
+        "schemaVersion", "recordedAtUtc", "host", "implementation", "upstream", "manifest",
+        "tooling", "sourceTiming", "renders", "reproducibility", "visualAndReverseMapping",
+        "audioMechanism", "assessment", "privacy", "samplePathConsumed"
+    )) {
+        if ($Payload.PSObject.Properties.Name -notcontains $name) {
+            throw "Manual-render payload is missing required property: $name"
+        }
+    }
+    if ($Payload.schemaVersion -ne "1.0.0") {
+        throw "Unsupported manual-render payload schemaVersion: $($Payload.schemaVersion)"
+    }
+    $expectedImplementationFiles = @(
+        @{ Id = "benchmark-harness"; FileName = "run-benchmarks.ps1"; Path = (Join-Path $PSScriptRoot "run-benchmarks.ps1") },
+        @{ Id = "manual-render-wrapper"; FileName = "measure-manual-render.ps1"; Path = (Join-Path $PSScriptRoot "stages\measure-manual-render.ps1") },
+        @{ Id = "manual-render-driver"; FileName = "manual_render_benchmark.py"; Path = (Join-Path $PSScriptRoot "stages\manual_render_benchmark.py") },
+        @{ Id = "benchmark-schema"; FileName = "schema.json"; Path = (Join-Path $PSScriptRoot "results\schema.json") },
+        @{ Id = "manual-render-manifest"; FileName = "manual-render-manifest.json"; Path = (Join-Path $PSScriptRoot "fixtures\manual-render-manifest.json") },
+        @{ Id = "manual-render-subtitle"; FileName = "manual-render-subtitles.ass"; Path = (Join-Path $PSScriptRoot "fixtures\manual-render-subtitles.ass") }
+    )
+    if ($Payload.implementation.gitHead -notmatch '^[0-9a-f]{40}$' -or
+        @($Payload.implementation.files).Count -ne $expectedImplementationFiles.Count) {
+        throw "Manual-render payload does not identify the exact implementation file set."
+    }
+    foreach ($expectedFile in $expectedImplementationFiles) {
+        $records = @($Payload.implementation.files | Where-Object id -eq $expectedFile.Id)
+        if ($records.Count -ne 1 -or $records[0].fileName -ne $expectedFile.FileName -or
+            [int64]$records[0].byteSize -ne [int64](Get-Item -LiteralPath $expectedFile.Path).Length -or
+            $records[0].sha256 -ne (Get-FileHash -LiteralPath $expectedFile.Path -Algorithm SHA256).Hash.ToLowerInvariant()) {
+            throw "Manual-render implementation evidence does not match: $($expectedFile.Id)"
+        }
+    }
+    $upstreamFiles = @{
+        mediaIngest = Join-Path $PSScriptRoot "results\media-ingest.json"
+        proxyFrameMap = Join-Path $PSScriptRoot "results\proxy-frame-map.json"
+        encoderMatrix = Join-Path $PSScriptRoot "results\encoder-matrix.json"
+        ffmpegCapabilities = Join-Path $PSScriptRoot "results\ffmpeg-capabilities.json"
+    }
+    foreach ($property in $upstreamFiles.Keys) {
+        if ($Payload.upstream.$property.sha256 -ne (Get-FileHash -LiteralPath $upstreamFiles[$property] -Algorithm SHA256).Hash.ToLowerInvariant() -or
+            $Payload.upstream.$property.benchmarkRunSha256 -notmatch '^[0-9a-f]{64}$') {
+            throw "Manual-render upstream evidence does not match: $property"
+        }
+    }
+    $manifestPath = Join-Path $PSScriptRoot "fixtures\manual-render-manifest.json"
+    $subtitlePath = Join-Path $PSScriptRoot "fixtures\manual-render-subtitles.ass"
+    if ($Payload.manifest.manifestId -ne "st-012-manual-render-v1" -or
+        $Payload.manifest.descriptor.sha256 -ne (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant() -or
+        $Payload.manifest.subtitle.sha256 -ne (Get-FileHash -LiteralPath $subtitlePath -Algorithm SHA256).Hash.ToLowerInvariant() -or
+        $Payload.manifest.validation.allRequiredOperationsDeclared -ne $true -or
+        $Payload.manifest.validation.verticalCropExactNineBySixteen -ne $true -or
+        $Payload.manifest.validation.sourceTextUsedBySubtitle -ne $false -or
+        $Payload.manifest.rights.externalPublicationAllowed -ne $false) {
+        throw "Manual-render handwritten manifest evidence is incomplete or changed."
+    }
+    if ($Payload.tooling.ffmpegSha256 -ne "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb" -or
+        $Payload.tooling.ffprobeSha256 -ne "4c2f730969c9551aec21c5ca07eb73f63bb0920204c9cd6c9a6e7be6be0458d2" -or
+        $Payload.tooling.videoEncoder -ne "h264_nvenc" -or $Payload.tooling.audioEncoder -ne "aac" -or
+        [string]::IsNullOrWhiteSpace([string]$Payload.tooling.pythonPackages.opencv) -or
+        [string]::IsNullOrWhiteSpace([string]$Payload.tooling.pythonPackages.numpy)) {
+        throw "Manual-render payload does not preserve the approved toolchain."
+    }
+    if ($Payload.sourceTiming.authority -ne "observed-source-presentation-timestamps" -or
+        $Payload.sourceTiming.timeBase -ne "1/600" -or [int]$Payload.sourceTiming.packetCount -ne 62316 -or
+        [double]$Payload.sourceTiming.maximumObservedFrameDurationSeconds -ne 0.635 -or
+        $Payload.sourceTiming.packetPtsArtifact.sha256 -notmatch '^[0-9a-f]{64}$' -or
+        $Payload.sourceTiming.nominalFrameRateUsedForSourceMapping -ne $false) {
+        throw "Manual-render payload did not use the observed source PTS authority."
+    }
+
+    $renders = @($Payload.renders)
+    if ($renders.Count -ne 4) {
+        throw "Manual-render payload must contain two runs for each of two compositions."
+    }
+    $expectedProfiles = @{
+        "landscape-trim-concat-subtitle-audio" = @{ Profile = "landscape-1280x720"; Width = 1280; Height = 720; Operations = @("trim", "concat", "scale", "subtitle", "audio-gain") }
+        "vertical-trim-center-crop" = @{ Profile = "vertical-1080x1920"; Width = 1080; Height = 1920; Operations = @("trim", "crop") }
+    }
+    foreach ($compositionId in $expectedProfiles.Keys) {
+        $records = @($renders | Where-Object compositionId -eq $compositionId | Sort-Object iteration)
+        $expected = $expectedProfiles[$compositionId]
+        if ($records.Count -ne 2 -or @($records | ForEach-Object iteration) -join ',' -ne '1,2') {
+            throw "Manual-render composition does not contain exactly two iterations: $compositionId"
+        }
+        foreach ($record in $records) {
+            if ($record.profileId -ne $expected.Profile -or
+                @($record.operations).Count -ne $expected.Operations.Count -or
+                @($expected.Operations | Where-Object { $_ -notin @($record.operations) }).Count -ne 0 -or
+                $record.output.sha256 -notmatch '^[0-9a-f]{64}$' -or [int64]$record.output.byteSize -le 0 -or
+                $record.process.exitCode -ne 0 -or $record.fullDecode.succeeded -ne $true -or $record.fullDecode.exitCode -ne 0 -or
+                $record.probe.video.codecName -ne "h264" -or $record.probe.video.width -ne $expected.Width -or
+                $record.probe.video.height -ne $expected.Height -or $record.probe.video.pixelFormat -ne "yuv420p" -or
+                $record.probe.video.frameRate -ne "30000/1001" -or $record.probe.video.decodedFrameCount -le 0 -or
+                $record.probe.audio.codecName -ne "aac" -or $record.probe.audio.sampleRate -ne 48000 -or
+                $record.probe.audio.channels -ne 2 -or $record.probe.audio.decodedFrameCount -le 0 -or
+                $record.probe.audioVideoEndDifferenceSeconds -gt 0.1 -or
+                $record.decodedVideoSha256 -notmatch '^[0-9a-f]{64}$' -or
+                $record.decodedAudioSha256 -notmatch '^[0-9a-f]{64}$' -or
+                $record.commandArgumentsIncludedInPayload -ne $false) {
+                throw "Manual-render output failed its profile, decode, hash, or command privacy contract."
+            }
+        }
+    }
+    $reproducibility = @($Payload.reproducibility)
+    if ($reproducibility.Count -ne 2 -or
+        @($reproducibility | Where-Object {
+            $_.runsCompared -ne 2 -or
+            $_.sameMachineGpuDriverObservation -ne $true -or
+            $_.crossMachineOrDriverReproducibilityMeasured -ne $false -or
+            $_.byteIdentityRequiredForTaskCompletion -ne $false
+        }).Count -ne 0) {
+        throw "Manual-render reproducibility observations are incomplete."
+    }
+    $visual = @($Payload.visualAndReverseMapping)
+    if ($visual.Count -ne 2 -or
+        @($visual | Where-Object {
+            $_.mappingAuthority -ne "observed-output-and-source-presentation-timestamps-plus-handwritten-piecewise-manifest" -or
+            [int]$_.sourcePtsCount -ne 62316 -or [int]$_.outputPtsCount -le 0 -or [int]$_.sampleCount -ne 2 -or
+            @($_.samples).Count -ne 2 -or $_.allSourceFrameSelectionErrorsWithinObservedMaximumDuration -ne $true -or
+            $_.allOffsetControlsExceedMappedDifferences -ne $true -or
+            $_.visualControlIsContentCorrespondenceNotQualityScore -ne $true -or
+            $_.sourcePixelsIncludedInSummary -ne $false -or $_.productionThresholdsApproved -ne $false
+        }).Count -ne 0) {
+        throw "Manual-render reverse-map or visual-control evidence did not pass."
+    }
+    $subtitleControls = @($visual | Where-Object { $null -ne $_.subtitleControl })
+    if ($subtitleControls.Count -ne 1 -or
+        $subtitleControls[0].subtitleControl.activeDifferenceExceedsInactive -ne $true -or
+        $subtitleControls[0].subtitleControl.subtitleTextContentIncludedInSummary -ne $false) {
+        throw "Manual-render subtitle mechanism control did not pass."
+    }
+    if ($Payload.audioMechanism.status -ne "succeeded" -or
+        $Payload.audioMechanism.linearGain -ne 0.5 -or
+        $Payload.audioMechanism.gainMechanismWithinStage0Tolerance -ne $true -or
+        $Payload.audioMechanism.outputIsNotSilent -ne $true -or
+        $Payload.audioMechanism.toleranceIsProductionApproved -ne $false -or
+        $Payload.audioMechanism.audioSamplesIncludedInSummary -ne $false) {
+        throw "Manual-render audio mechanism evidence did not pass."
+    }
+    if ($Payload.assessment.requiredOperationsExercised -ne $true -or
+        $Payload.assessment.landscapeAndVerticalOutputsProduced -ne $true -or
+        $Payload.assessment.allOutputsPassedFullDecode -ne $true -or
+        $Payload.assessment.allReverseMapSamplesWithinObservedFrameDuration -ne $true -or
+        $Payload.assessment.allVisualControlsSeparate -ne $true -or
+        $Payload.assessment.subtitleMechanismPassed -ne $true -or
+        $Payload.assessment.subtitleSourceSpeechTraceabilityMeasured -ne $false -or
+        $Payload.assessment.contentLevelOriginRefTraceabilityMeasured -ne $false -or
+        $Payload.assessment.audioGainMechanismPassed -ne $true -or
+        $Payload.assessment.perceptualQualityMeasured -ne $false -or
+        $Payload.assessment.productionThresholdsApproved -ne $false -or
+        $Payload.assessment.finalStage0DecisionPending -ne $true) {
+        throw "Manual-render aggregate assessment contradicts the measured evidence."
+    }
+    if ($Payload.privacy.localEvidenceAcl.inheritanceProtected -ne $true -or
+        [int]$Payload.privacy.localEvidenceAcl.unexpectedAccessRuleCount -ne 0 -or
+        $Payload.privacy.sourceDerivedVideoArtifactsPersistedOnlyInIgnoredWorkDirectory -ne $true -or
+        $Payload.privacy.sourcePixelsIncludedInPayload -ne $false -or
+        $Payload.privacy.sourceAudioSamplesIncludedInPayload -ne $false -or
+        $Payload.privacy.sourceTranscriptTextIncludedInPayload -ne $false -or
+        $Payload.privacy.sourceMetadataTagsCopiedToOutputs -ne $false -or
+        $Payload.privacy.absoluteHostPathsIncludedInPayload -ne $false -or
+        $Payload.privacy.externalPublicationAllowed -ne $false -or
+        $Payload.privacy.commandArgumentsIncludedInPayload -ne $false -or
+        $Payload.privacy.workDirectoryWasEmptyAfterAclProtection -ne $true) {
+        throw "Manual-render payload violated the local evidence or rights boundary."
+    }
+    $payloadJson = $Payload | ConvertTo-Json -Depth 30 -Compress
+    if ($payloadJson -match '[A-Za-z]:\\' -or $payloadJson -match '"(?:sourcePath|outputPath|command|stderr)"\s*:') {
+        throw "Manual-render payload contains an absolute path or forbidden process property."
+    }
+    if ($Payload.samplePathConsumed -ne $true) {
+        throw "Manual-render payload did not confirm fixture path consumption."
+    }
+}
+
 function Protect-SensitiveText {
     param(
         [Parameter(Mandatory)][AllowEmptyString()][string]$Text,
@@ -1294,7 +1472,7 @@ function Get-SafeFailurePayload {
         return [pscustomobject]$safePayload
     }
 
-    if ($Stage -in @("asr-benchmark", "alignment-benchmark", "local-text-model")) {
+    if ($Stage -in @("asr-benchmark", "alignment-benchmark", "local-text-model", "manual-render")) {
         return [pscustomobject]$safePayload
     }
 
@@ -1417,6 +1595,10 @@ try {
         "local-text-model" {
             $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\measure-text-model.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
             Assert-LocalTextModelPayload -Payload $payload
+        }
+        "manual-render" {
+            $payload = Invoke-JsonChildProcess -ScriptPath (Join-Path $PSScriptRoot "stages\measure-manual-render.ps1") -SourcePath $sourcePath -TimeoutSeconds $ChildTimeoutSeconds
+            Assert-ManualRenderPayload -Payload $payload
         }
         default {
             throw "Unsupported benchmark stage: $Stage"

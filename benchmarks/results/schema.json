@@ -24,7 +24,7 @@
       "pattern": "^[0-9]{8}T[0-9]{13}Z-[a-z0-9-]+-[0-9a-f]{8}$"
     },
     "stage": {
-      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark", "local-text-model"]
+      "enum": ["hardware", "ffmpeg-capabilities", "media-ingest", "proxy-frame-map", "encoder-matrix", "shot-detection", "face-detection", "audio-event-and-recording-quality", "process-and-package", "asr-benchmark", "alignment-benchmark", "local-text-model", "manual-render"]
     },
     "status": {
       "enum": ["succeeded", "failed"]
@@ -158,6 +158,23 @@
     {
       "if": {
         "properties": {
+          "stage": { "const": "manual-render" },
+          "status": { "const": "failed" }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "maxProperties": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "stage": { "const": "asr-benchmark" },
           "status": { "const": "failed" }
         },
@@ -257,6 +274,20 @@
       "then": {
         "properties": {
           "payload": { "$ref": "#/$defs/localTextModelPayload" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": { "const": "manual-render" },
+          "status": { "const": "succeeded" }
+        },
+        "required": ["stage", "status"]
+      },
+      "then": {
+        "properties": {
+          "payload": { "$ref": "#/$defs/manualRenderPayload" }
         }
       }
     },
@@ -395,6 +426,232 @@
     }
   ],
   "$defs": {
+    "manualRenderProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["durationSeconds", "byteSizeReported", "video", "audio", "audioVideoEndDifferenceSeconds"],
+      "properties": {
+        "durationSeconds": { "type": "number", "exclusiveMinimum": 0 },
+        "byteSizeReported": { "type": "integer", "minimum": 1 },
+        "video": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["codecName", "profile", "width", "height", "pixelFormat", "frameRate", "timeBase", "durationSeconds", "decodedFrameCount"],
+          "properties": {
+            "codecName": { "const": "h264" },
+            "profile": { "type": "string", "minLength": 1 },
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 },
+            "pixelFormat": { "const": "yuv420p" },
+            "frameRate": { "const": "30000/1001" },
+            "timeBase": { "type": "string", "minLength": 1 },
+            "durationSeconds": { "type": "number", "exclusiveMinimum": 0 },
+            "decodedFrameCount": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "audio": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["codecName", "sampleRate", "channels", "timeBase", "durationSeconds", "decodedFrameCount"],
+          "properties": {
+            "codecName": { "const": "aac" },
+            "sampleRate": { "const": 48000 },
+            "channels": { "const": 2 },
+            "timeBase": { "type": "string", "minLength": 1 },
+            "durationSeconds": { "type": "number", "exclusiveMinimum": 0 },
+            "decodedFrameCount": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "audioVideoEndDifferenceSeconds": { "type": "number", "minimum": 0 }
+      }
+    },
+    "manualRenderRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compositionId", "profileId", "iteration", "operations", "output", "process", "probe", "fullDecode", "decodedVideoSha256", "decodedAudioSha256", "diagnostic", "commandArgumentsIncludedInPayload"],
+      "properties": {
+        "compositionId": { "enum": ["landscape-trim-concat-subtitle-audio", "vertical-trim-center-crop"] },
+        "profileId": { "enum": ["landscape-1280x720", "vertical-1080x1920"] },
+        "iteration": { "type": "integer", "minimum": 1, "maximum": 2 },
+        "operations": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "enum": ["trim", "concat", "scale", "subtitle", "audio-gain", "crop"] } },
+        "output": { "$ref": "#/$defs/fileDescriptor" },
+        "process": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exitCode", "elapsedMilliseconds"],
+          "properties": {
+            "exitCode": { "const": 0 },
+            "elapsedMilliseconds": { "type": "number", "minimum": 0 }
+          }
+        },
+        "probe": { "$ref": "#/$defs/manualRenderProbe" },
+        "fullDecode": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["succeeded", "exitCode", "elapsedMilliseconds"],
+          "properties": {
+            "succeeded": { "const": true },
+            "exitCode": { "const": 0 },
+            "elapsedMilliseconds": { "type": "number", "minimum": 0 }
+          }
+        },
+        "decodedVideoSha256": { "$ref": "#/$defs/sha256" },
+        "decodedAudioSha256": { "$ref": "#/$defs/sha256" },
+        "diagnostic": { "$ref": "#/$defs/fileDescriptor" },
+        "commandArgumentsIncludedInPayload": { "const": false }
+      }
+    },
+    "manualRenderVisualAnalysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "compositionId", "mappingAuthority", "outputFrameSelectionRule", "sourceFrameSelectionRule", "sourcePtsArtifact", "outputPtsArtifact", "sourcePtsCount", "outputPtsCount", "sampleCount", "samples", "sourceFrameSelectionErrorSeconds", "maximumObservedSourceFrameDurationSeconds", "allSourceFrameSelectionErrorsWithinObservedMaximumDuration", "mappedFrameDifference", "controlFrameDifference", "allOffsetControlsExceedMappedDifferences", "visualControlIsContentCorrespondenceNotQualityScore", "subtitleControl", "sourcePixelsIncludedInSummary", "productionThresholdsApproved", "diagnostic"],
+      "properties": {
+        "status": { "const": "succeeded" },
+        "compositionId": { "enum": ["landscape-trim-concat-subtitle-audio", "vertical-trim-center-crop"] },
+        "mappingAuthority": { "const": "observed-output-and-source-presentation-timestamps-plus-handwritten-piecewise-manifest" },
+        "outputFrameSelectionRule": { "type": "string", "minLength": 1 },
+        "sourceFrameSelectionRule": { "type": "string", "minLength": 1 },
+        "sourcePtsArtifact": { "$ref": "#/$defs/fileDescriptor" },
+        "outputPtsArtifact": { "$ref": "#/$defs/fileDescriptor" },
+        "sourcePtsCount": { "type": "integer", "minimum": 1 },
+        "outputPtsCount": { "type": "integer", "minimum": 1 },
+        "sampleCount": { "const": 2 },
+        "samples": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sampleId", "segmentId", "requestedOutputSeconds", "observedOutputSeconds", "idealMappedSourceSeconds", "observedSourceFrameSeconds", "sourceFrameSelectionErrorSeconds", "controlOffsetSeconds", "mappedMeanAbsoluteDifference", "controlMeanAbsoluteDifference", "controlExceedsMapped"],
+            "properties": {
+              "sampleId": { "type": "string", "minLength": 1 },
+              "segmentId": { "type": "string", "minLength": 1 },
+              "requestedOutputSeconds": { "type": "number", "minimum": 0 },
+              "observedOutputSeconds": { "type": "number", "minimum": 0 },
+              "idealMappedSourceSeconds": { "type": "number", "minimum": 0 },
+              "observedSourceFrameSeconds": { "type": "number", "minimum": 0 },
+              "sourceFrameSelectionErrorSeconds": { "type": "number", "minimum": 0 },
+              "controlOffsetSeconds": { "type": "number" },
+              "mappedMeanAbsoluteDifference": { "type": "number", "minimum": 0 },
+              "controlMeanAbsoluteDifference": { "type": "number", "minimum": 0 },
+              "controlExceedsMapped": { "const": true }
+            }
+          }
+        },
+        "sourceFrameSelectionErrorSeconds": { "type": "object", "required": ["count", "minimum", "median", "p90", "maximum", "mean", "percentileMethod"] },
+        "maximumObservedSourceFrameDurationSeconds": { "type": "number", "exclusiveMinimum": 0 },
+        "allSourceFrameSelectionErrorsWithinObservedMaximumDuration": { "const": true },
+        "mappedFrameDifference": { "type": "object" },
+        "controlFrameDifference": { "type": "object" },
+        "allOffsetControlsExceedMappedDifferences": { "const": true },
+        "visualControlIsContentCorrespondenceNotQualityScore": { "const": true },
+        "subtitleControl": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["activeRequestedOutputSeconds", "activeObservedOutputSeconds", "inactiveRequestedOutputSeconds", "inactiveObservedOutputSeconds", "activeMappedFrameDifference", "inactiveMappedFrameDifference", "activeDifferenceExceedsInactive", "subtitleTextContentIncludedInSummary"],
+              "properties": {
+                "activeDifferenceExceedsInactive": { "const": true },
+                "subtitleTextContentIncludedInSummary": { "const": false }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "sourcePixelsIncludedInSummary": { "const": false },
+        "productionThresholdsApproved": { "const": false },
+        "diagnostic": { "$ref": "#/$defs/fileDescriptor" }
+      }
+    },
+    "manualRenderPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "recordedAtUtc", "host", "implementation", "upstream", "manifest", "tooling", "sourceTiming", "renders", "reproducibility", "visualAndReverseMapping", "audioMechanism", "assessment", "privacy", "samplePathConsumed"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "recordedAtUtc": { "type": "string", "format": "date-time" },
+        "host": { "type": "object", "required": ["currentOperatingSystemVersion", "currentProcessArchitecture"] },
+        "implementation": { "type": "object", "required": ["gitHead", "implementationFilesCleanAtRun", "files"] },
+        "upstream": { "type": "object", "required": ["mediaIngest", "proxyFrameMap", "encoderMatrix", "ffmpegCapabilities"] },
+        "manifest": { "type": "object", "required": ["manifestId", "descriptor", "subtitle", "validation", "rights"] },
+        "tooling": { "type": "object", "required": ["ffmpegPackageId", "ffmpegSha256", "ffprobeSha256", "videoEncoder", "audioEncoder", "pythonVersion", "pythonPackages"] },
+        "sourceTiming": { "type": "object", "required": ["authority", "timeBase", "packetCount", "maximumObservedFrameDurationSeconds", "packetPtsArtifact", "nominalFrameRateUsedForSourceMapping"] },
+        "renders": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "$ref": "#/$defs/manualRenderRecord" } },
+        "reproducibility": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["compositionId", "runsCompared", "outputBytesIdentical", "decodedVideoIdentical", "decodedAudioIdentical", "profileAndDurationIdentical", "byteIdentityRequiredForTaskCompletion"],
+            "properties": {
+              "compositionId": { "type": "string", "minLength": 1 },
+              "runsCompared": { "const": 2 },
+              "outputBytesIdentical": { "type": "boolean" },
+              "decodedVideoIdentical": { "type": "boolean" },
+              "decodedAudioIdentical": { "type": "boolean" },
+              "profileAndDurationIdentical": { "type": "boolean" },
+              "sameMachineGpuDriverObservation": { "const": true },
+              "crossMachineOrDriverReproducibilityMeasured": { "const": false },
+              "byteIdentityRequiredForTaskCompletion": { "const": false }
+            }
+          }
+        },
+        "visualAndReverseMapping": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "$ref": "#/$defs/manualRenderVisualAnalysis" } },
+        "audioMechanism": {
+          "type": "object",
+          "required": ["status", "compositionId", "linearGain", "expectedGainDecibels", "gainToleranceDecibels", "referenceMeanVolumeDecibels", "referenceMaximumVolumeDecibels", "outputMeanVolumeDecibels", "outputMaximumVolumeDecibels", "observedMeanVolumeGainDecibels", "absoluteGainErrorDecibels", "gainMechanismWithinStage0Tolerance", "outputIsNotSilent", "toleranceIsProductionApproved", "audioSamplesIncludedInSummary", "diagnostic"],
+          "properties": {
+            "status": { "const": "succeeded" },
+            "linearGain": { "const": 0.5 },
+            "gainMechanismWithinStage0Tolerance": { "const": true },
+            "outputIsNotSilent": { "const": true },
+            "toleranceIsProductionApproved": { "const": false },
+            "audioSamplesIncludedInSummary": { "const": false }
+          }
+        },
+        "assessment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["requiredOperationsExercised", "landscapeAndVerticalOutputsProduced", "allOutputsPassedFullDecode", "allReverseMapSamplesWithinObservedFrameDuration", "allVisualControlsSeparate", "subtitleMechanismPassed", "audioGainMechanismPassed", "perceptualQualityMeasured", "productionThresholdsApproved", "finalStage0DecisionPending"],
+          "properties": {
+            "requiredOperationsExercised": { "const": true },
+            "landscapeAndVerticalOutputsProduced": { "const": true },
+            "allOutputsPassedFullDecode": { "const": true },
+            "allReverseMapSamplesWithinObservedFrameDuration": { "const": true },
+            "allVisualControlsSeparate": { "const": true },
+            "subtitleMechanismPassed": { "const": true },
+            "subtitleSourceSpeechTraceabilityMeasured": { "const": false },
+            "contentLevelOriginRefTraceabilityMeasured": { "const": false },
+            "audioGainMechanismPassed": { "const": true },
+            "perceptualQualityMeasured": { "const": false },
+            "productionThresholdsApproved": { "const": false },
+            "finalStage0DecisionPending": { "const": true }
+          }
+        },
+        "privacy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["localEvidenceAcl", "sourceDerivedVideoArtifactsPersistedOnlyInIgnoredWorkDirectory", "sourcePixelsIncludedInPayload", "sourceAudioSamplesIncludedInPayload", "sourceTranscriptTextIncludedInPayload", "neutralSubtitleTextIncludedInTrackedFixture", "sourceMetadataTagsCopiedToOutputs", "absoluteHostPathsIncludedInPayload", "externalPublicationAllowed", "commandArgumentsIncludedInPayload", "workDirectoryWasEmptyAfterAclProtection"],
+          "properties": {
+            "localEvidenceAcl": { "$ref": "#/$defs/alignmentAclEvidence" },
+            "sourceDerivedVideoArtifactsPersistedOnlyInIgnoredWorkDirectory": { "const": true },
+            "sourcePixelsIncludedInPayload": { "const": false },
+            "sourceAudioSamplesIncludedInPayload": { "const": false },
+            "sourceTranscriptTextIncludedInPayload": { "const": false },
+            "neutralSubtitleTextIncludedInTrackedFixture": { "const": true },
+            "sourceMetadataTagsCopiedToOutputs": { "const": false },
+            "absoluteHostPathsIncludedInPayload": { "const": false },
+            "externalPublicationAllowed": { "const": false },
+            "commandArgumentsIncludedInPayload": { "const": false },
+            "workDirectoryWasEmptyAfterAclProtection": { "const": true }
+          }
+        },
+        "samplePathConsumed": { "const": true }
+      }
+    },
     "localTextProcessMeasurement": {
       "type": "object",
       "additionalProperties": false,

@@ -1,0 +1,130 @@
+{
+  "schemaVersion": "1.0.0",
+  "manifestId": "st-012-manual-render-v1",
+  "purpose": "Exercise trim, concat, exact-ratio crop, subtitle burn-in, audio gain, and output-to-source reverse mapping without asserting content quality.",
+  "source": {
+    "assetId": "source-ios-20260615-024326000",
+    "sha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+    "byteSize": 6494572403,
+    "videoTimeBase": { "numerator": 1, "denominator": 600 },
+    "width": 3840,
+    "height": 2160,
+    "durationSeconds": 1081.401667,
+    "timingAuthority": "observed-source-presentation-timestamps"
+  },
+  "rights": {
+    "status": "unconfirmed",
+    "allowedUse": "local-technical-evaluation-only",
+    "externalPublicationAllowed": false
+  },
+  "toolchain": {
+    "ffmpegPackageId": "BtbN.FFmpeg.LGPL.8.1",
+    "ffmpegSha256": "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb",
+    "ffprobeSha256": "4c2f730969c9551aec21c5ca07eb73f63bb0920204c9cd6c9a6e7be6be0458d2",
+    "videoEncoder": "h264_nvenc",
+    "videoPreset": "p4",
+    "constantQuality": 23,
+    "audioEncoder": "aac",
+    "audioBitrate": "160k",
+    "productionApproved": false
+  },
+  "subtitle": {
+    "relativePath": "manual-render-subtitles.ass",
+    "sha256": "1866c3fc8582eee03f9bd8e3e8f18bbcefcf6123c1dde23915ab72b66cd3635f",
+    "timeBase": "output",
+    "sourceTranscriptDerived": false
+  },
+  "audioMechanism": {
+    "linearGain": 0.5,
+    "expectedGainDecibels": -6.0206,
+    "gainToleranceDecibels": 1.0,
+    "toleranceIsProductionApproved": false
+  },
+  "visualControl": {
+    "offsetSeconds": 5.0,
+    "comparisonWidth": 320,
+    "comparisonHeight": 180,
+    "controlMustExceedMappedDifference": true,
+    "thresholdIsProductionApproved": false
+  },
+  "renderProfiles": [
+    {
+      "profileId": "landscape-1280x720",
+      "width": 1280,
+      "height": 720,
+      "frameRate": "30000/1001",
+      "pixelFormat": "yuv420p"
+    },
+    {
+      "profileId": "vertical-1080x1920",
+      "width": 1080,
+      "height": 1920,
+      "frameRate": "30000/1001",
+      "pixelFormat": "yuv420p"
+    }
+  ],
+  "compositions": [
+    {
+      "compositionId": "landscape-trim-concat-subtitle-audio",
+      "profileId": "landscape-1280x720",
+      "operations": ["trim", "concat", "scale", "subtitle", "audio-gain"],
+      "segments": [
+        {
+          "segmentId": "landscape-a",
+          "sourceStart": { "value": 36000, "rate": 600 },
+          "sourceDuration": { "value": 3000, "rate": 600 },
+          "outputStart": { "value": 0, "rate": 1000 },
+          "outputDuration": { "value": 5000, "rate": 1000 }
+        },
+        {
+          "segmentId": "landscape-b",
+          "sourceStart": { "value": 72000, "rate": 600 },
+          "sourceDuration": { "value": 3000, "rate": 600 },
+          "outputStart": { "value": 5000, "rate": 1000 },
+          "outputDuration": { "value": 5000, "rate": 1000 }
+        }
+      ],
+      "subtitleEnabled": true,
+      "audioGain": 0.5,
+      "reverseMapSamples": [
+        { "sampleId": "landscape-a-sample", "requestedOutput": { "value": 2500, "rate": 1000 } },
+        { "sampleId": "landscape-b-sample", "requestedOutput": { "value": 7500, "rate": 1000 } }
+      ],
+      "subtitleControl": {
+        "activeOutput": { "value": 1000, "rate": 1000 },
+        "inactiveOutput": { "value": 2500, "rate": 1000 }
+      }
+    },
+    {
+      "compositionId": "vertical-trim-center-crop",
+      "profileId": "vertical-1080x1920",
+      "operations": ["trim", "crop"],
+      "segments": [
+        {
+          "segmentId": "vertical-a",
+          "sourceStart": { "value": 120000, "rate": 600 },
+          "sourceDuration": { "value": 6000, "rate": 600 },
+          "outputStart": { "value": 0, "rate": 1000 },
+          "outputDuration": { "value": 10000, "rate": 1000 }
+        }
+      ],
+      "crop": { "x": 1380, "y": 120, "width": 1080, "height": 1920 },
+      "subtitleEnabled": false,
+      "audioGain": 1.0,
+      "reverseMapSamples": [
+        { "sampleId": "vertical-a-first", "requestedOutput": { "value": 2500, "rate": 1000 } },
+        { "sampleId": "vertical-a-second", "requestedOutput": { "value": 7500, "rate": 1000 } }
+      ]
+    }
+  ],
+  "reproducibility": {
+    "renderCountPerComposition": 2,
+    "byteIdentityIsRequiredForTaskCompletion": false,
+    "decodedOutputValidityIsRequired": true
+  },
+  "assessment": {
+    "perceptualQualityMeasured": false,
+    "visualControlIsContentCorrespondenceNotQualityScore": true,
+    "productionThresholdsApproved": false
+  }
+}

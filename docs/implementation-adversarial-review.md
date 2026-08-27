@@ -401,3 +401,55 @@ metadataについては、source由来のglobal metadataが出力に残ってい
 - model/CUDA release配布: **未承認**
 - fallback: **手動topic metadata・hook・quiz・publishing wording作成を必須維持（実装は後続）**
 - 合格判定: **PASS（測定タスク完了、モデル採用のPASSではない。最終採否・閾値はST-015承認待ち）**
+
+## ST-012 手書きmanifest renderの敵対的レビュー（2026年8月27日）
+
+**対象:** `benchmarks/stages/measure-manual-render.ps1`、`manual_render_benchmark.py`、`manual-render-manifest.json`、neutral ASS、ベンチハーネス、schema、raw run、`benchmarks/results/manual-render.json`
+
+**採用raw証跡:** `20260827T1136430750369Z-manual-render-a94e7fa7`、SHA-256 `76a5041b9ba49cfea56cd59c0eb1f09c77037eb1cc682e5d3b6678bf3753f438`
+
+**実測:** 16:9は5秒×2 source区間のtrim/concat、1280×720 scale、neutral ASS、0.5 audio gain、9:16はsource中央1080×1920 exact cropを実行。各compositionを2回renderし、4 output全てH.264 Main/AAC 48 kHz stereo、全編decode成功。同一session内でencoded bytesとdecoded video/audio hashが一致した。observed output/source PTSで4点を逆引きし、source-frame選択誤差は最大0.014166667秒、全点で5秒offset controlよりmapped frameのgrayscale MADが小さかった。
+
+| No. | 軸 | 重大度 | 指摘 | 修正と確認 |
+|-----|-----|--------|------|------------|
+| S12-1 | 内容の妥当性 | Critical | 初期設計案のcrop `1280x2160`は9:16ではなく、1080×1920へscaleすると歪みを生む。 | **修正済み:** source 3840×2160から中央`x=1380,y=120,w=1080,h=1920`を切り出すexact 9:16 cropへ変更。manifest validatorで値と比率を固定した。 |
+| S12-2 | 内容の妥当性 | Critical | 初期filter graphはconcat入力を全video後に全audioと並べたが、FFmpeg concatはsegmentごとの`[v][a]`交互入力を要求する。 | **修正済み:** `[v0][a0][v1][a1]concat=n=2:v=1:a=1`へ修正。output 7.5秒のsampleが第2 source区間へ逆引きされ、frame対照も通過した。 |
+| S12-3 | 整合性 | Major | 全10秒を丸めた300 frameを期待すると、各5秒segmentへ独立に`fps`を適用した実graphの298 frameを誤って失敗扱いした。 | **修正済み:** 各segmentの`floor(duration×rate)`を合計し、landscape 298、vertical 299をprofileの有理frame rateから導出。失敗rawは非書換えで保持した。 |
+| S12-4 | セキュリティ | Major | subtitle pathをfilter graphへ任意挿入するとpath traversal/filter injectionが可能になる。 | **修正済み:** exact basename `manual-render-subtitles.ass`だけを許可し、basename一致、file hash、source transcript非由来を検査。FFmpegはfixture directoryをworking directoryにして単一quoted filenameを使う。 |
+| S12-5 | 根拠性・不確実性管理 | Major | nominal fpsやmanifest算術だけで元時刻逆引きを「確認済み」とするとVFR sourceで循環論証になる。 | **修正済み:** 固定ffprobeでsource/output packet PTSを再採取し、observed output PTS→piecewise manifest→observed source PTSの4点を検査。独立にexpected transformed source frameと5秒offset controlを比較した。 |
+| S12-6 | 根拠性・不確実性管理 | Major | frame MADを知覚品質や全scene mapping精度として過大評価できる。 | **修正済み:** 320×180 grayscale MADは4点のcontent correspondence controlだけと明記。perceptual quality、全frame accuracy、production閾値は未測定。 |
+| S12-7 | 内容の妥当性 | Major | subtitle filterが実行成功しても、実際に表示された証拠にならない。 | **修正済み:** active 1.001秒とinactive 2.5025秒を、それぞれ同時刻のsubtitleなしsource transformと比較。active差2.214983、inactive差0.855069でmechanismを確認した。subtitle文はneutralで、source speech traceabilityは未測定。 |
+| S12-8 | 内容の妥当性 | Major | `volume=0.5`をargumentに含めるだけではaudio filter適用の証拠にならない。 | **修正済み:** 同じsource区間のno-gain referenceとoutputを`volumedetect`で比較し、期待-6.0206 dBに対し-6.1 dB、絶対差0.0794 dBを観測。1 dB toleranceはStage 0 control値でproduction未承認とした。 |
+| S12-9 | 根拠性・不確実性管理 | Major | 同一sessionでbyte一致してもcross-machine/GPU/driver再現性を保証しない。 | **修正済み:** `sameMachineGpuDriverObservation=true`、`crossMachineOrDriverReproducibilityMeasured=false`、byte identityはtask completion必須でないことをraw/canonicalへ明記した。 |
+| S12-10 | セキュリティ | Major | source-derived video/frame/audio、PTS、stderr、command lineがpublic payload/Gitへ漏れる可能性がある。 | **修正済み:** 3主体ACLのignored work directoryへ隔離し、payloadはhash/aggregateのみ。`-map_metadata -1`、absolute path/command/stderr拒否、source前後hash、private Git tracking 0を検査した。 |
+| S12-11 | 品質・運用性 | Minor | GPU memoryや画質閾値を本taskへ持ち込むと、render mechanismの合否とdelivery品質を混同する。 | **対応済み:** ST-012はrender時間、size、decode、hash、PTS、mechanism controlsを記録し、perceptual qualityとproduction thresholdsをST-015以降へ残した。 |
+| S12-12 | 根拠性・不確実性管理 | Minor | neutral subtitle controlをFR-032の字幕・要約content-level traceability完成と誤読できる。 | **修正済み:** `subtitleSourceSpeechTraceabilityMeasured=false`、`contentLevelOriginRefTraceabilityMeasured=false`を追加し、機械的なoutput→source時刻写像だけを実証範囲とした。 |
+
+### 修正後の証拠照合
+
+- landscape 2回は3,812,277 bytes、SHA-256 `b2410563edbc750bff60ef74c36b329dfdfbfbbcc9842a89dfe026af6d983b4c`で一致。vertical 2回は9,824,562 bytes、SHA-256 `2d4aa9f41f6650b92ca87be04f113bd7e6f853e4cafa64f1874014e2c47134e4`で一致。decoded video/audio hashも各composition内で一致した。
+- landscapeは298 frame/10.0秒、A/V end差0.023367秒。verticalは299 frame/9.976633秒、A/V end差0.014633秒。4 outputとも全編decode成功。
+- reverse-map error最大はlandscape 0.014166667秒、vertical 0.005833333秒。4/4 sampleで5秒offset controlがmapped MADを上回った。
+- subtitle active/inactive control、audio gain control、manifest全5 operation、exact 9:16 cropが通過した。
+- source-derived artifactはignored work内、ACL 3規則・非継承・unexpected 0。source前後hash一致、absolute path/command argument/source pixel/audio sample/transcriptのpayload混入0件。
+- PowerShell parser、PSScriptAnalyzer 1.25.0（warning/error 0件）、Python `py_compile`、parent runtime validator、JSON Schema、historical raw回帰を確認した。
+- 3軸レビューと反映後再レビューで未解決指摘0件だった。
+
+### 採用しなかった指摘
+
+- planning memoryにあったsynthetic color canaryを「実装必須」とする指摘は、正本taskの完了条件ではなく、tracked manifestにも含めていないため採用しなかった。実sourceのpiecewise sampleと5秒offset controlで今回のmappingを検査した。
+- byte identityをtask必須gateにする提案は、NVENC/driver差を超えて一般化できないため採用しなかった。同一sessionの観測としてのみ保存した。
+- MADへ普遍的数値thresholdを設定する提案は、知覚品質基準が未承認のため採用しなかった。各sampleでmapped/controlを相対比較し、値をそのまま保存した。
+- neutral subtitleを元発言へ結び付ける提案は、source transcriptをtracked fixtureへ入れ、ST-012のprivacy/scopeを越えるため採用しなかった。content-level OriginRefは後続D/R/Qタスクで検証する。
+
+### ST-012 修正後判定
+
+- 未修正 Critical: 0件
+- 未修正 Major: 0件
+- 未修正 Minor: 0件
+- required operations: **trim / concat / crop / subtitle / audio 全て実行**
+- 16:9 / 9:16 outputs: **各2回、全編decode成功**
+- output→source reverse map: **4/4 sample、source-frame選択誤差最大0.014166667秒**
+- same-session reproducibility: **encoded/decoded hash一致**
+- perceptual quality / content-level traceability / production thresholds: **未測定・未承認**
+- 合格判定: **PASS（測定タスク完了、最終profile採否はST-015承認待ち）**

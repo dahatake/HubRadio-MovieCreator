@@ -1,0 +1,216 @@
+{
+  "schemaVersion": "1.0.0",
+  "benchmarkRunId": "20260827T1136430750369Z-manual-render-a94e7fa7",
+  "benchmarkRunSha256": "76a5041b9ba49cfea56cd59c0eb1f09c77037eb1cc682e5d3b6678bf3753f438",
+  "recordedAtUtc": "2026-08-27T11:38:38.943462Z",
+  "fixture": {
+    "sourceAssetId": "source-ios-20260615-024326000",
+    "sourceSha256": "fe9c763fdf6fe7be4f368bfba926a1f3f2407ceaf044ec7d055e0869e65c1a9f",
+    "sourceByteSize": 6494572403,
+    "rightsStatus": "unconfirmed",
+    "allowedUse": "local-technical-evaluation-only",
+    "externalPublicationAllowed": false,
+    "sourcePostRunIntegrityChecked": true,
+    "sourceUnchanged": true
+  },
+  "host": {
+    "operatingSystemVersion": "10.0.29648",
+    "processArchitecture": "X64"
+  },
+  "implementation": {
+    "gitHead": "c9d3a41e21bf7519b72d6e6257dd61d1bf3c9a1e",
+    "implementationFilesCleanAtRun": false,
+    "exactExecutedFilesRecordedByHash": true,
+    "files": [
+      {
+        "id": "benchmark-harness",
+        "fileName": "run-benchmarks.ps1",
+        "byteSize": 102323,
+        "sha256": "3c5316c46b590de0cfe147e32d661ffa33e336fc8ab8f017bedffee33fa09908"
+      },
+      {
+        "id": "manual-render-wrapper",
+        "fileName": "measure-manual-render.ps1",
+        "byteSize": 42040,
+        "sha256": "f1eaed754011c008b96af03d607c9de6eaf5fb839a3623b9440b48f6985eea75"
+      },
+      {
+        "id": "manual-render-driver",
+        "fileName": "manual_render_benchmark.py",
+        "byteSize": 27112,
+        "sha256": "112f58e824ec09f447de0ed399f5ee285d95918bfa98761dd0957fb02a657635"
+      },
+      {
+        "id": "benchmark-schema",
+        "fileName": "schema.json",
+        "byteSize": 125414,
+        "sha256": "0ea67d96243a3b153dc09d222bd3211d1e54bb266e5287e03bea805b5bdab4c6"
+      },
+      {
+        "id": "manual-render-manifest",
+        "fileName": "manual-render-manifest.json",
+        "byteSize": 4649,
+        "sha256": "4cf960302ef2bff65ba745f13b684504c3d84e87a259a349f181c6ca20bd9d0f"
+      },
+      {
+        "id": "manual-render-subtitle",
+        "fileName": "manual-render-subtitles.ass",
+        "byteSize": 741,
+        "sha256": "1866c3fc8582eee03f9bd8e3e8f18bbcefcf6123c1dde23915ab72b66cd3635f"
+      }
+    ]
+  },
+  "upstream": {
+    "mediaIngestCanonicalSha256": "437c7d72b54812d3522e67f03c826749646e2af27521eb49feeaff3ff4b2c99f",
+    "mediaIngestBenchmarkRunId": "20260826T1945575983887Z-media-ingest-64a77bc8",
+    "mediaIngestBenchmarkRunSha256": "f47f5f89dacc86fc6c73acd83f6009347235af697b5d00837935693d705c0c09",
+    "proxyFrameMapCanonicalSha256": "9c991f74a776ead6d3aec0d66daa7c5e5d23bffe14d58299ba33c4af53948127",
+    "proxyFrameMapBenchmarkRunId": "20260826T2102079908030Z-proxy-frame-map-5a725e5c",
+    "proxyFrameMapBenchmarkRunSha256": "a581baa89950dfb231283ddf8fa958dc513e6dafc758625c7c05996d203cee69",
+    "encoderMatrixCanonicalSha256": "f9a8e2468f3bb406bb399ba455ef851d1643a2a51a5a077e8c265edac4e236df",
+    "encoderMatrixBenchmarkRunId": "20260826T2146550053095Z-encoder-matrix-bfe154ce",
+    "encoderMatrixBenchmarkRunSha256": "12f4bedf9d2aa1116b96dca736de0c8984222a9c0d81514b7a7f61f14295e445",
+    "ffmpegCapabilitiesCanonicalSha256": "d13ab3e8483302844f1d755d57280c9fb74df293fb33c8d07fdaeb7842c140bc",
+    "ffmpegCapabilitiesBenchmarkRunId": "20260826T1637448588203Z-ffmpeg-capabilities-7ddd373d",
+    "ffmpegCapabilitiesBenchmarkRunSha256": "11b9b63c656ac12eb4c4f945b64b851c9ac99a03959fc7308c3103ecb88b56df"
+  },
+  "manifest": {
+    "manifestId": "st-012-manual-render-v1",
+    "manifestSha256": "4cf960302ef2bff65ba745f13b684504c3d84e87a259a349f181c6ca20bd9d0f",
+    "subtitleSha256": "1866c3fc8582eee03f9bd8e3e8f18bbcefcf6123c1dde23915ab72b66cd3635f",
+    "profileCount": 2,
+    "compositionCount": 2,
+    "segmentCount": 3,
+    "reverseMapSampleCount": 4,
+    "requiredOperations": ["audio-gain", "concat", "crop", "subtitle", "trim"],
+    "verticalCrop": { "x": 1380, "y": 120, "width": 1080, "height": 1920, "exactNineBySixteen": true },
+    "sourceTextUsedBySubtitle": false
+  },
+  "tooling": {
+    "ffmpegPackageId": "BtbN.FFmpeg.LGPL.8.1",
+    "ffmpegSha256": "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb",
+    "ffprobeSha256": "4c2f730969c9551aec21c5ca07eb73f63bb0920204c9cd6c9a6e7be6be0458d2",
+    "videoEncoder": "h264_nvenc",
+    "audioEncoder": "aac",
+    "pythonVersion": "Python 3.12.10"
+  },
+  "renders": [
+    {
+      "compositionId": "landscape-trim-concat-subtitle-audio",
+      "profile": "1280x720 at 30000/1001",
+      "operations": ["trim", "concat", "scale", "subtitle", "audio-gain"],
+      "iterations": 2,
+      "outputByteSize": 3812277,
+      "outputSha256": "b2410563edbc750bff60ef74c36b329dfdfbfbbcc9842a89dfe026af6d983b4c",
+      "durationSeconds": 10.0,
+      "decodedVideoFrameCount": 298,
+      "audioVideoEndDifferenceSeconds": 0.023367,
+      "renderElapsedMilliseconds": [10955.998, 8575.022],
+      "fullDecodeSucceeded": true,
+      "outputBytesIdenticalAcrossTwoRuns": true,
+      "decodedVideoIdenticalAcrossTwoRuns": true,
+      "decodedAudioIdenticalAcrossTwoRuns": true
+    },
+    {
+      "compositionId": "vertical-trim-center-crop",
+      "profile": "1080x1920 at 30000/1001",
+      "operations": ["trim", "crop"],
+      "iterations": 2,
+      "outputByteSize": 9824562,
+      "outputSha256": "2d4aa9f41f6650b92ca87be04f113bd7e6f853e4cafa64f1874014e2c47134e4",
+      "durationSeconds": 9.976633,
+      "decodedVideoFrameCount": 299,
+      "audioVideoEndDifferenceSeconds": 0.014633,
+      "renderElapsedMilliseconds": [7236.382, 8936.204],
+      "fullDecodeSucceeded": true,
+      "outputBytesIdenticalAcrossTwoRuns": true,
+      "decodedVideoIdenticalAcrossTwoRuns": true,
+      "decodedAudioIdenticalAcrossTwoRuns": true
+    }
+  ],
+  "reproducibility": {
+    "sameMachineGpuDriverObservation": true,
+    "crossMachineOrDriverReproducibilityMeasured": false,
+    "byteIdentityRequiredForTaskCompletion": false
+  },
+  "reverseMapping": {
+    "authority": "observed-output-and-source-presentation-timestamps-plus-handwritten-piecewise-manifest",
+    "nominalFrameRateUsedForSourceMapping": false,
+    "sourcePtsCount": 62316,
+    "sampleCount": 4,
+    "landscapeSourceFrameSelectionErrorSeconds": {
+      "median": 0.009166667,
+      "maximum": 0.014166667
+    },
+    "verticalSourceFrameSelectionErrorSeconds": {
+      "median": 0.003333333,
+      "maximum": 0.005833333
+    },
+    "maximumObservedSourceFrameDurationSeconds": 0.635,
+    "allSamplesWithinObservedMaximumFrameDuration": true,
+    "allFiveSecondOffsetControlsExceedMappedDifferences": true,
+    "visualControlIsContentCorrespondenceNotQualityScore": true
+  },
+  "subtitleMechanism": {
+    "neutralTrackedSubtitleUsed": true,
+    "activeMappedFrameDifference": 2.214983,
+    "inactiveMappedFrameDifference": 0.855069,
+    "activeDifferenceExceedsInactive": true,
+    "subtitleTextIncludedInCanonical": false,
+    "subtitleSourceSpeechTraceabilityMeasured": false,
+    "contentLevelOriginRefTraceabilityMeasured": false
+  },
+  "audioMechanism": {
+    "linearGain": 0.5,
+    "expectedGainDecibels": -6.0206,
+    "observedMeanVolumeGainDecibels": -6.1,
+    "absoluteGainErrorDecibels": 0.0794,
+    "stage0ToleranceDecibels": 1.0,
+    "gainMechanismWithinStage0Tolerance": true,
+    "outputIsNotSilent": true,
+    "toleranceIsProductionApproved": false
+  },
+  "configurationDisposition": {
+    "status": "render-mechanisms-demonstrated-awaiting-stage0-approval",
+    "requiredOperationsExercised": true,
+    "landscapeAndVerticalOutputsProduced": true,
+    "allOutputsPassedFullDecode": true,
+    "perceptualQualityMeasured": false,
+    "productionThresholdsApproved": false,
+    "finalStage0DecisionPending": true
+  },
+  "stage0Implications": [
+    "The handwritten manifest produced both a 1280x720 landscape composition and an exact-ratio 1080x1920 center crop. Trim, concat, scale, neutral subtitle burn-in, and audio gain were exercised without a shell command or source overwrite.",
+    "All four outputs contained H.264 Main video and AAC 48 kHz stereo audio and completed full decode. Landscape A/V end difference was 0.023367 seconds and vertical was 0.014633 seconds.",
+    "Two iterations of each composition were byte-identical and decoded-stream-identical on this machine in one session. Cross-machine, cross-GPU, and driver-change reproducibility were not measured.",
+    "Four output samples were reverse-mapped through observed output PTS, the handwritten segment map, and observed source PTS. The maximum source-frame selection error was 0.014166667 seconds, below the previously observed 0.635-second maximum source frame duration.",
+    "Every mapped frame was closer in grayscale MAD to its expected transformed source frame than to a source frame five seconds away. This demonstrates content correspondence for four samples, not perceptual quality or universal mapping accuracy.",
+    "The neutral ASS active-frame difference exceeded the inactive control, and the half-amplitude audio control measured -6.1 dB versus -6.0206 dB expected. These are mechanism controls with unapproved Stage 0 tolerances.",
+    "The subtitle is not source-transcript-derived, so subtitle-to-source-speech and content-level OriginRef traceability remain unmeasured for later implementation tasks."
+  ],
+  "assessment": {
+    "interpretation": "ST-012 demonstrates the required local render mechanisms and piecewise output-to-source time lookup on two short handwritten compositions. It does not approve visual quality, audio delivery targets, subtitle content traceability, or production tolerances.",
+    "measurementCorrections": [
+      "The initial planning sketch used a 1280x2160 crop, which is not 9:16. The executed manifest uses an exact 1080x1920 centered crop at x=1380, y=120.",
+      "The first implementation concatenated all video labels before all audio labels. FFmpeg concat requires per-segment interleaving, so the executed graph uses [v0][a0][v1][a1].",
+      "The first formal run expected a rounded whole-composition frame count of 300. Because fps is applied independently to each five-second segment, the executed landscape graph emits floor(5*30000/1001) twice, or 298 frames; the validator now derives the expectation per segment.",
+      "Adversarial review added same-machine/GPU/driver reproducibility scope and explicit flags that neutral subtitle rendering does not establish source-speech or content-level OriginRef traceability."
+    ],
+    "openQuestions": [
+      "Human visual review and a production visual-quality threshold are not available; four MAD controls are mechanism evidence only.",
+      "The 1 dB audio-gain tolerance is a Stage 0 control parameter, not a delivery loudness requirement.",
+      "Cross-machine, cross-driver, CPU/Media Foundation fallback, and longer-composition reproducibility remain unmeasured.",
+      "Subtitle content traceability, safe-zone/layout quality, and output-to-source mapping for all future edit operation types remain later implementation and acceptance work.",
+      "Fixture rights remain unconfirmed, so rendered files stay in ignored local evidence and cannot be externally published.",
+      "Final render profile adoption and thresholds require ST-015 human approval."
+    ],
+    "privacy": "Source-derived videos, PTS files, frames, and audio remain in an ignored local directory protected by a non-inheriting three-principal ACL. The canonical contains only hashes, dimensions, codec data, timing, aggregate pixel/audio measurements, and bounded interpretations; no source pixels, audio samples, transcript, absolute path, or command arguments are included.",
+    "curatedFields": [
+      "configurationDisposition",
+      "stage0Implications",
+      "assessment",
+      "recollectionCommand"
+    ]
+  },
+  "recollectionCommand": "pwsh.exe -NoLogo -NoProfile -File benchmarks/run-benchmarks.ps1 -Stage manual-render -ChildTimeoutSeconds 7200"
+}
