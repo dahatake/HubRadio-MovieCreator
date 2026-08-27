@@ -1,0 +1,293 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical persisted forms for D-008 layout contracts. UUIDs and SHA-256 digests are lowercase, rationals use signed 64-bit integer components, and serializers must emit reduced rational forms.",
+  "title": "LayoutSpec",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "outputAspectWidth",
+    "outputAspectHeight",
+    "regions",
+    "safeZones"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/entityId"
+    },
+    "outputAspectWidth": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "outputAspectHeight": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "regions": {
+      "type": "array",
+      "$comment": "uniqueItems rejects duplicate objects. LayoutSpec runtime validation additionally requires unique region names when other fields differ.",
+      "items": {
+        "$ref": "#/$defs/layoutRegion"
+      },
+      "uniqueItems": true
+    },
+    "safeZones": {
+      "type": "array",
+      "$comment": "uniqueItems rejects duplicate objects. LayoutSpec runtime validation additionally requires unique safe-zone names when geometry differs.",
+      "items": {
+        "$ref": "#/$defs/safeZone"
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonBlankText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "normalizedCoordinate": {
+      "type": "object",
+      "$comment": "NormalizedRect runtime validation enforces the exact rational value is between zero and one. Draft 2020-12 cannot compare numerator with denominator.",
+      "additionalProperties": false,
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "positiveNormalizedExtent": {
+      "type": "object",
+      "$comment": "NormalizedRect runtime validation enforces the exact rational value is greater than zero and at most one. Draft 2020-12 cannot compare numerator with denominator.",
+      "additionalProperties": false,
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "normalizedRect": {
+      "type": "object",
+      "$comment": "NormalizedRect runtime validation uses BigInteger arithmetic to enforce x + width <= 1 and y + height <= 1; these cross-field rational constraints are not expressible in standard Draft 2020-12.",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": {
+          "$ref": "#/$defs/normalizedCoordinate"
+        },
+        "y": {
+          "$ref": "#/$defs/normalizedCoordinate"
+        },
+        "width": {
+          "$ref": "#/$defs/positiveNormalizedExtent"
+        },
+        "height": {
+          "$ref": "#/$defs/positiveNormalizedExtent"
+        }
+      }
+    },
+    "layoutRegion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "rect",
+        "role"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "rect": {
+          "$ref": "#/$defs/normalizedRect"
+        },
+        "role": {
+          "enum": [
+            "video",
+            "material",
+            "subtitle",
+            "graphic"
+          ]
+        }
+      }
+    },
+    "safeZone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "rect"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "rect": {
+          "$ref": "#/$defs/normalizedRect"
+        }
+      }
+    },
+    "nonNegativeTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "positiveTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "outputTimeRange": {
+      "type": "object",
+      "$comment": "Cue runtime validation enforces a nonnegative start and positive duration before this canonical shape is emitted.",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "duration"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/nonNegativeTime"
+        },
+        "duration": {
+          "$ref": "#/$defs/positiveTime"
+        }
+      }
+    },
+    "cue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "range"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "kind": {
+          "enum": [
+            "subtitle",
+            "graphic",
+            "audio"
+          ]
+        },
+        "range": {
+          "$ref": "#/$defs/outputTimeRange"
+        },
+        "regionName": {
+          "$ref": "#/$defs/nonBlankText"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "audio"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "regionName"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "templateReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "versionDigest"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "name": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "versionDigest": {
+          "$ref": "#/$defs/contentDigest"
+        }
+      }
+    }
+  }
+}

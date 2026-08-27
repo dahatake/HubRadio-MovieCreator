@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical persisted RenderProfile output specification. It records no render execution, result, quality measurement, or environment data.",
+  "title": "RenderProfile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "profileDigest",
+    "width",
+    "height",
+    "frameRate",
+    "layoutSpecId",
+    "templateId",
+    "templateVersionDigest",
+    "videoCodec",
+    "audioCodec",
+    "subtitleBurnIn"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/entityId"
+    },
+    "name": {
+      "$ref": "#/$defs/nonBlankText"
+    },
+    "profileDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "frameRate": {
+      "type": "object",
+      "$comment": "RationalNumber normalizes equivalent rates in memory; D-012 must emit the reduced canonical numerator and denominator.",
+      "additionalProperties": false,
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "layoutSpecId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "templateId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "templateVersionDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "videoCodec": {
+      "$ref": "#/$defs/nonBlankText"
+    },
+    "audioCodec": {
+      "$ref": "#/$defs/nonBlankText"
+    },
+    "subtitleBurnIn": {
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonBlankText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    }
+  }
+}
