@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、Windows 11 x64 の単一 PC で動作する、ローカル優先の動画編集支援アプリケーションとして設計しています。
 
 > [!IMPORTANT]
-> Stage 0 は2026年8月27日に人手承認済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。ベンチマーク、FFmpeg・Python の検証スクリプト、レンダーとパッケージの probe は存在しますが、WinUI 3／WebView2／React の製品アプリケーション、SQLite の業務データ、レビュー UI は未実装です。
+> Stage 0 は2026年8月27日に人手承認済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。FoundationではWinUI 3、React、Python workerの最小scaffoldと検証基盤を実装済みです。WebView2統合、SQLite業務データ、編集・レビューUIは未実装です。
 
 ![HubRadio MovieCreatorのローカル優先アーキテクチャ。緑はStage 0で実装済み、青はStage 1以降の計画、紫の破線は条件付きAzure経路](system-overview.svg)
 
@@ -32,7 +32,7 @@ Stage 0で評価しても採用しなかったmodelや再評価保留のdetector
 
 ### 単一 .NET ホスト
 
-計画中の `HubRadio.App.exe` が次を所有します。
+scaffold済みで機能実装中の `HubRadio.App.exe` が、最終的に次を所有します。
 
 - WinUI 3 ウィンドウと WebView2
 - ユースケースとジョブ調整
@@ -59,7 +59,7 @@ React からファイルパス、SQL、FFmpeg 引数、任意コマンドは送�
 
 Stage 0のshot、face、local text model用probeは不採用・保留判断の証拠として残しますが、現在の製品workerや配布依存には含めません。
 
-Stage 0 では、製品ホストへ統合する前の PowerShell／Python 検証実装だけが存在します。
+Stage 0のPowerShell／Python検証実装に加え、Foundationでは製品ホスト、Web UI、workerの最小buildable scaffoldを作成しました。ここでのscaffold成功は業務機能の完成を意味しません。
 
 ## 永続化
 

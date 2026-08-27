@@ -4,7 +4,7 @@
 **要求の正本（暫定既定）:** `docs/requirement-definition.md` 版 0.1 Draft  
 **設計根拠:** `docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **計画日:** 2026年8月26日  
-**計画状態:** Stage 0は2026年8月27日に人手承認済み。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016は完了し、ST-008は利用条件不同意のためcondition-falseとして閉じた。Stage 1では`A-010`と`A-015`をcondition-false、`A-012`と`A-013`を正例annotation・再評価待ちとして開始せず、[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)の手動fallbackを実装する。全203 taskの内訳は、完了25 + 先行条件不成立`ST-008` 1 + 後続177である。後続177 task IDのうち14件は条件不成立・保留（4件）またはAzure gate closed（10件）で、baseline実行対象は163件。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布は未承認。製品アプリケーション、IaC、Azure resourceは未実装で、次の実行対象は`F-001`
+**計画状態:** Stage 0は2026年8月27日に人手承認済み。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009は完了し、ST-008は利用条件不同意のためcondition-falseとして閉じた。Stage 1では`A-010`と`A-015`をcondition-false、`A-012`と`A-013`を正例annotation・再評価待ちとして開始せず、[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)の手動fallbackを実装する。全203 taskの内訳は、完了34 + 先行条件不成立`ST-008` 1 + 後続168である。後続168 task IDのうち14件は条件不成立・保留（4件）またはAzure gate closed（10件）で、baseline実行対象は154件。Foundation scaffold、3言語のsmoke test、一括検証、fixture registry、BOM雛形、architecture制約は実装済みだが、編集機能、SQLite、WebView2統合、IaC、Azure resourceは未実装である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布は未承認。次の実行対象は相互独立な`D-001`と`D-002`
 
 ---
 
@@ -212,6 +212,8 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | ST-015 | **完了。** Stage 0結果を採用/保留/手動化へ分類する | `BENCH/results/stage-0-report.md`、`docs/dev/decisions/ADR-0007-stage-0-technology-selection.md` | ST-004〜ST-014,ST-016 / 直列 | 関係者が閾値規則、採用技術、フォールバック、残余リスクを承認 | 全AC、RS§11/12 | 作成なし |
 
 ### 5.3 F — リポジトリとビルド基盤
+
+**実行状態: F-001〜F-009は完了。** 各taskはbuild/test、敵対的レビュー、修正確認、個別commitまで完了した。主なcommitは`e47f095`（F-001）、`f8582f1`（F-002）、`420a558`（F-003）、`33b0784`（F-004）、`c14e6fb`（F-005）、`6968d99`（F-006）、`f90adfe`（F-007）、`8738497`（F-008）、`1749a9d`（F-009）。生成Python metadataのignore補正は`09bc76f`である。以下の行は完了条件の正本として維持する。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -624,4 +626,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**次の未完了実行対象はF-001である。Stage 0の採否はADR-0007で承認済みだが、Azure作成はZ-001〜Z-004の条件成立とZ-005の別の明示指示後に限る。**
+**次の未完了実行対象は、相互独立に開始できるD-001とD-002である。Azure作成はZ-001〜Z-004の条件成立とZ-005の別の明示指示後に限る。**

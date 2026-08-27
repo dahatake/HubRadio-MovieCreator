@@ -3,7 +3,7 @@
 HubRadio MovieCreator の開発、保守、技術検証、設計判断に関する入口です。
 
 > [!IMPORTANT]
-> Stage 0 は2026年8月27日に承認済みです。[ADR-0007](decisions/ADR-0007-stage-0-technology-selection.md)で採用技術、手動fallback、condition-false、再評価保留、未承認閾値を固定しました。製品アプリケーションは未実装で、次のtaskは`F-001`です。
+> Stage 0 は2026年8月27日に承認済みです。[ADR-0007](decisions/ADR-0007-stage-0-technology-selection.md)で採用技術、手動fallback、condition-false、再評価保留、未承認閾値を固定しました。Foundation `F-001〜F-009`も完了し、WinUI 3／React／Python workerの最小scaffoldと検証基盤があります。編集機能は未実装で、次のtaskは`D-001`と`D-002`です。
 
 ## 目的から探す
 
@@ -74,6 +74,7 @@ docs/
    ├─ contributing.md                  # 変更手順
    ├─ architecture/
    │  ├─ overview.md
+   │  ├─ constraints.md
    │  └─ system-overview.svg
    ├─ benchmarks/
    │  ├─ README.md
@@ -82,7 +83,10 @@ docs/
    │  └─ result-schema-policy.md
    ├─ decisions/                       # ADR-0001〜0007
    ├─ licenses/
-   │  └─ third-party-intake.md
+   │  ├─ third-party-intake.md
+   │  ├─ dependencies.csv
+   │  ├─ models.csv
+   │  └─ THIRD-PARTY-NOTICES.md
    ├─ planning/
    │  └─ implementation-plan.md
    ├─ research/

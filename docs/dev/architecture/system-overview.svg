@@ -214,5 +214,5 @@
   <path d="M 1230 943 L 1275 943" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)"/>
 
   <text x="800" y="1062" text-anchor="middle" class="small">Current: Stage 0 approved / ST-008 condition-false / A-012 and A-013 held for re-evaluation</text>
-  <text x="800" y="1088" text-anchor="middle" class="small">Stage 1 app not started / Decision: ADR-0007 / Azure gate closed</text>
+  <text x="800" y="1088" text-anchor="middle" class="small">Foundation scaffold complete / Domain models next / Azure gate closed</text>
 </svg>

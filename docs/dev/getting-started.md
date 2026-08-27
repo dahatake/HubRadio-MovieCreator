@@ -3,7 +3,13 @@
 この手順は、現在の Stage 0 技術検証を再現する開発者向けです。一般利用者向けの完成アプリケーションをインストールする手順ではありません。
 
 > [!IMPORTANT]
-> 製品アプリケーションは未実装です。現在利用できるのは、固定 fixture を対象にした PowerShell／Python の検証ツールです。任意動画向けの一般的な編集 CLI ではありません。
+> Foundation scaffoldは実装済みですが、編集機能は未実装です。現在利用できるのは、最小WinUI 3／React／Python workerのbuild・smoke testと、固定fixture向けStage 0検証ツールです。任意動画向けの一般的な編集CLIではありません。
+
+Foundation全体の依存復元、静的解析、build、testはrepository rootで次を実行します。
+
+```powershell
+pwsh.exe -NoLogo -NoProfile -File .\test.ps1 -Configuration Release
+```
 
 ## 前提条件
 

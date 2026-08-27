@@ -20,8 +20,9 @@
 | ST | ST-007、ST-011、ST-012、ST-013 | 測定、canonical、敵対的レビュー、実在指摘の反映、コミットまで完了 |
 | ST | ST-008 | 利用条件不同意のため条件不成立。手動話者割当を維持 |
 | ST | ST-015 | 14 canonicalを統合した承認資料のA〜Fを人手承認済み。commit `79ecdad` |
+| F | F-001〜F-009 | scaffold、3言語test、一括検証、fixture registry、BOM、architecture制約を個別review・commit済み |
 
-**完了: 25 / 203タスク**。全203 taskの内訳は、完了25 + 先行条件不成立`ST-008` 1 + 後続177である。後続177 task IDのうち、`A-010`と`A-015`はcondition-false、`A-012`と`A-013`は再評価保留、`Z-001〜Z-010`はAzure gate closedである。この14件を通常実行列へ入れないため、現在のbaseline実行対象は163件で、次のtaskは`F-001`である。
+**完了: 34 / 203タスク**。全203 taskの内訳は、完了34 + 先行条件不成立`ST-008` 1 + 後続168である。後続168 task IDのうち、`A-010`と`A-015`はcondition-false、`A-012`と`A-013`は再評価保留、`Z-001〜Z-010`はAzure gate closedである。この14件を通常実行列へ入れないため、現在のbaseline実行対象は154件で、次は`D-001`と`D-002`を並列開始する。
 
 ### 1.2 直近の統合作業
 
@@ -29,6 +30,7 @@
 - 新たに出現したlocal `video/`資産6件を削除せずGit対象外にする安全対策: commit `9deb319`
 - ST-015 A〜Fの人手承認記録: commit `79ecdad`
 - ADR-0007、正本task dependency、navigation、hashの同期: ST-015-CLOSEとして完了
+- F-001〜F-009: commit `e47f095`、`f8582f1`、`420a558`、`33b0784`、`c14e6fb`、`6968d99`、`f90adfe`、`8738497`、`1749a9d`（補正`09bc76f`）
 
 旧ADR重複は削除済みで、`docs/dev/decisions/`だけがADR正本である。DOC-001〜DOC-004は敵対的レビュー、修正、再検証、commitまで完了した。
 
@@ -55,12 +57,12 @@
 
 | 検査 | 結果 | 扱い |
 |---|---:|---|
-| `docs/dev/**/*.md` | 22文書 | developer向け入口、architecture、benchmark、ADR、license、plan、research、reviewを分離済み |
-| Markdown相対リンク | 83件中broken 0件 | 再編後の相対リンクは有効 |
-| Implementation plan SHA-256 | `b99a1cdbf8882287ca21dbe2d773549efe9d66b98431f45b94d9cf711e59d8e5` | `docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
+| `docs/dev/**/*.md` | 25文書 | developer向け入口、architecture、benchmark、ADR、license、plan、research、reviewを分離済み |
+| Markdown相対リンク | 95件中broken 0件 | 再編後とFoundation追加文書の相対リンクは有効 |
+| Implementation plan SHA-256 | `7085dbade90181a5b65da25514bbe9b491d9714e9b08682cc4b85c022951d265` | `docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
 | `git diff --check` | staged / unstagedともexit 0 | whitespace errorなし |
 | 旧ADR重複 | 0件 | 削除済み。`docs/dev/decisions/`だけをADR正本として使用 |
-| Git staging | DOC-004 commit直後はclean | ST-015-CLOSEの変更だけを次のcommit対象にする |
+| Git staging | F-001〜F-009の個別commit後はclean | 本Foundation進捗同期だけを次のcommit対象にする |
 
 ---
 
@@ -107,7 +109,7 @@ ST-015承認後に着手する。
 
 | 群 | 件数 | 内容 | 並列化 |
 |---|---|---|---|
-| F-001〜F-009 | 9 | ディレクトリ、.NET solution、React、Python worker、テスト、build.ps1、アーキテクチャ検査 | F-002/F-003/F-004はF-001後に並列 |
+| F-001〜F-009 | 9 | **完了。** ディレクトリ、.NET solution、React、Python worker、テスト、build.ps1、アーキテクチャ検査 | F-002/F-003/F-004とF-007/F-008/F-009を並列実行済み |
 | D-001〜D-016 | 16 | 有理時刻、SourceSpan、Project、Transcript、Suggestion、CompositionVersion、TimelineMap、SQLite、ArtifactStore | D-001〜D-006は型依存を守りつつ並列 |
 | J-001〜J-010 | 10 | ジョブ状態機械、ProcessRunner、Job Object、NDJSON protocol、cache、復旧、hash検証 | J-003/J-009/J-010は独立 |
 
@@ -239,9 +241,9 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. ST-015-CLOSEの検証済み変更をcommitする。
-2. `F-001`で最小directory構造と`.gitignore`を確定する。
-3. `F-002`、`F-003`、`F-004`を依存復元・build/importが競合しない範囲で並列実装する。
+1. `D-001`の有理時刻・範囲演算と`D-002`のdigest・型付きIDを並列実装する。
+2. 両taskを個別に敵対的レビュー・修正・commitする。
+3. `D-001`と`D-002`の完了後に`D-003`を単独gateとして実装する。
 
 各ステップで、実測できなかった項目は`openQuestions`に残し、推測で埋めない。
 
@@ -249,7 +251,9 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 9. 承認後の詳細実行wave
 
-### Wave 1: F — repository/build基盤
+### Wave 1: F — repository/build基盤（完了）
+
+以下は完了済みの実行記録である。各taskは個別の敵対的レビュー、修正確認、commitまで完了した。
 
 | 順序 | Task | 実行 | Exit evidence |
 |---|---|---|---|

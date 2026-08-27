@@ -1,6 +1,6 @@
 # Stage 0 トラブルシューティング
 
-この文書は、現在の benchmark と固定 fixture 動画生成ツールを対象にします。製品アプリケーションは未実装のため、GUI の障害対応手順はまだありません。
+この文書は、現在のFoundation scaffold、benchmark、固定fixture動画生成ツールを対象にします。編集GUIは未実装のため、機能別のGUI障害対応手順はまだありません。
 
 最初に [開発を始める](getting-started.md) の前提条件を確認してください。
 
