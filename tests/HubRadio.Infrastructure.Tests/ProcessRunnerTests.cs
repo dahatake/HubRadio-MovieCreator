@@ -604,9 +604,12 @@ internal static class ProcessRunnerTestHelper
 
     private static int Wait(string[] arguments)
     {
+        string processIdPath = RequireArgument(arguments, 1);
+        string temporaryPath = processIdPath + $".{Environment.ProcessId}.tmp";
         File.WriteAllText(
-            RequireArgument(arguments, 1),
+            temporaryPath,
             Environment.ProcessId.ToString(CultureInfo.InvariantCulture));
+        File.Move(temporaryPath, processIdPath);
         Thread.Sleep(TimeSpan.FromSeconds(30));
         return 0;
     }
