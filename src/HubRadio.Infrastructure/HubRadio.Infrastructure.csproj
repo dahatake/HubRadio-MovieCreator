@@ -2,4 +2,10 @@
   <ItemGroup>
     <ProjectReference Include="..\HubRadio.Core\HubRadio.Core.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <EmbeddedResource Include="Database\Migrations\001_initial.sql"
+                      LogicalName="HubRadio.Infrastructure.Database.Migrations.001_initial.sql" />
+  </ItemGroup>
 </Project>
