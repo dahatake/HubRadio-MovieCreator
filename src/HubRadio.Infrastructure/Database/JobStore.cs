@@ -123,6 +123,42 @@ public sealed class JobStore
         return stored;
     }
 
+    public IReadOnlyList<StoredJob> ListJobs(JobState state)
+    {
+        string storedState = FormatJobState(state);
+        using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                id,
+                project_id,
+                kind,
+                state,
+                created_at,
+                updated_at,
+                current_attempt_number,
+                revision
+            FROM jobs
+            WHERE state = $state
+            ORDER BY created_at, id;
+            """;
+        SqliteStoreSupport.AddText(command, "$state", storedState);
+        using SqliteDataReader reader = command.ExecuteReader();
+        var jobs = new List<StoredJob>();
+        while (reader.Read())
+        {
+            StoredJob stored = ReadStoredJob(reader);
+            if (stored.Job.State != state)
+            {
+                throw SqliteStoreSupport.InvalidStoredData("job");
+            }
+
+            jobs.Add(stored);
+        }
+
+        return Array.AsReadOnly(jobs.ToArray());
+    }
+
     public StoredJob StartAttempt(
         EntityId<JobIdTag> jobId,
         int expectedRevision,

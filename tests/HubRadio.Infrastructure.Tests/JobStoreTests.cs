@@ -32,6 +32,97 @@ public sealed class JobStoreTests
     }
 
     [TestMethod]
+    public void ListJobsReturnsExactStateOrderedByCreatedAtThenIdAndReadOnly()
+    {
+        using StoreTestDatabase database = new();
+        (ProjectStore _, JobStore store, Project project) = CreateStores(database);
+        Job sameTimeHigherId = CreateJob(
+            project.Id,
+            kind: "running-higher",
+            id: EntityId<JobIdTag>.From(
+                Guid.Parse("22222222-2222-4222-8222-222222222222")),
+            createdAt: CreatedAt.AddMinutes(-1));
+        Job earliest = CreateJob(
+            project.Id,
+            kind: "running-earliest",
+            id: EntityId<JobIdTag>.From(
+                Guid.Parse("33333333-3333-4333-8333-333333333333")),
+            createdAt: CreatedAt.AddMinutes(-2));
+        Job sameTimeLowerId = CreateJob(
+            project.Id,
+            kind: "running-lower",
+            id: EntityId<JobIdTag>.From(
+                Guid.Parse("11111111-1111-4111-8111-111111111111")),
+            createdAt: CreatedAt.AddMinutes(-1));
+        Job queued = CreateJob(
+            project.Id,
+            kind: "queued",
+            createdAt: CreatedAt.AddMinutes(-3));
+
+        foreach (Job job in new[] { sameTimeHigherId, earliest, sameTimeLowerId })
+        {
+            store.CreateJob(job);
+            DateTimeOffset startedAt = job.CreatedAt.AddSeconds(1);
+            _ = store.StartAttempt(
+                job.Id,
+                expectedRevision: 0,
+                CreateRunningAttempt(
+                    job.Id,
+                    sequenceNumber: 1,
+                    queuedAt: job.CreatedAt,
+                    startedAt: startedAt),
+                startedAt);
+        }
+
+        store.CreateJob(queued);
+
+        IReadOnlyList<StoredJob> running = store.ListJobs(JobState.Running);
+        IReadOnlyList<StoredJob> queuedJobs = store.ListJobs(JobState.Queued);
+
+        CollectionAssert.AreEqual(
+            new[] { earliest.Id, sameTimeLowerId.Id, sameTimeHigherId.Id },
+            running.Select(static stored => stored.Job.Id).ToArray());
+        Assert.IsTrue(running.All(static stored =>
+            stored.Job.State == JobState.Running && stored.Revision == 1));
+        Assert.AreEqual(1, queuedJobs.Count);
+        Assert.AreEqual(queued.Id, queuedJobs[0].Job.Id);
+        Assert.ThrowsExactly<NotSupportedException>(
+            () => ((IList<StoredJob>)running).Clear());
+    }
+
+    [TestMethod]
+    public void ListJobsRejectsUndefinedStateBeforeQuerying()
+    {
+        using StoreTestDatabase database = new();
+        (ProjectStore _, JobStore store, Project _) = CreateStores(database);
+
+        ArgumentOutOfRangeException exception =
+            Assert.ThrowsExactly<ArgumentOutOfRangeException>(
+                () => store.ListJobs((JobState)int.MaxValue));
+
+        Assert.AreEqual("state", exception.ParamName);
+    }
+
+    [TestMethod]
+    public void ListJobsFailsClosedWhenMatchingStoredJobCannotBeStrictlyParsed()
+    {
+        using StoreTestDatabase database = new();
+        (ProjectStore _, JobStore store, Project project) = CreateStores(database);
+        Job job = CreateJob(project.Id);
+        store.CreateJob(job);
+        database.ExecuteNonQuery(
+            "UPDATE jobs SET updated_at = $updated_at WHERE id = $id;",
+            ("$updated_at", "not-a-canonical-timestamp"),
+            ("$id", job.Id.ToString()));
+
+        InvalidOperationException exception =
+            Assert.ThrowsExactly<InvalidOperationException>(
+                () => store.ListJobs(JobState.Queued));
+
+        Assert.AreEqual("Stored job data is invalid.", exception.Message);
+    }
+
+    [TestMethod]
     public void CreateJobRejectsNonInitialStateAndForeignKeyOrDuplicateRollsBack()
     {
         using StoreTestDatabase database = new();
@@ -566,15 +657,17 @@ public sealed class JobStoreTests
     private static Job CreateJob(
         EntityId<ProjectIdTag> projectId,
         string kind = "render",
-        EntityId<JobIdTag>? id = null)
+        EntityId<JobIdTag>? id = null,
+        DateTimeOffset? createdAt = null)
     {
+        DateTimeOffset actualCreatedAt = createdAt ?? CreatedAt;
         return new Job(
             id ?? EntityId<JobIdTag>.New(),
             projectId,
             kind,
             JobState.Queued,
-            CreatedAt,
-            CreatedAt,
+            actualCreatedAt,
+            actualCreatedAt,
             currentAttemptNumber: 0);
     }
 
