@@ -511,6 +511,7 @@ public sealed class LocalDiagnosticLog
     {
         DiagnosticComponent.Process => "process",
         DiagnosticComponent.DiagnosticLog => "diagnostic-log",
+        DiagnosticComponent.WebView => "webview",
         _ => throw new InvalidOperationException("The diagnostic component is invalid."),
     };
 
@@ -518,6 +519,8 @@ public sealed class LocalDiagnosticLog
     {
         DiagnosticOperation.Start => "start",
         DiagnosticOperation.Write => "write",
+        DiagnosticOperation.DetectRuntime => "detect-runtime",
+        DiagnosticOperation.Initialize => "initialize",
         _ => throw new InvalidOperationException("The diagnostic operation is invalid."),
     };
 
@@ -529,10 +532,11 @@ public sealed class LocalDiagnosticLog
         {
             "process" => DiagnosticComponent.Process,
             "diagnostic-log" => DiagnosticComponent.DiagnosticLog,
+            "webview" => DiagnosticComponent.WebView,
             _ => default,
         };
 
-        return value is "process" or "diagnostic-log";
+        return value is "process" or "diagnostic-log" or "webview";
     }
 
     private static bool TryParseOperation(
@@ -543,10 +547,12 @@ public sealed class LocalDiagnosticLog
         {
             "start" => DiagnosticOperation.Start,
             "write" => DiagnosticOperation.Write,
+            "detect-runtime" => DiagnosticOperation.DetectRuntime,
+            "initialize" => DiagnosticOperation.Initialize,
             _ => default,
         };
 
-        return value is "start" or "write";
+        return value is "start" or "write" or "detect-runtime" or "initialize";
     }
 
     private static bool IsStorageFailure(Exception exception) =>

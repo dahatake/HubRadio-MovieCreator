@@ -8,12 +8,14 @@ namespace HubRadio.Infrastructure.Tests;
 public sealed class DiagnosticErrorCodeTests
 {
     [TestMethod]
-    public void StableErrorCodes_DefineOnlyCurrentProcessAndDiagnosticFailures()
+    public void StableErrorCodes_DefineCurrentProcessDiagnosticAndWebViewFailures()
     {
         string[] expected =
         [
             "diagnostic.log_write_failed",
             "process.start_failed",
+            "webview.initialization_failed",
+            "webview.runtime_unavailable",
         ];
 
         CollectionAssert.AreEqual(expected, StableErrorCodes.DefinedCodes.ToArray());
@@ -27,13 +29,26 @@ public sealed class DiagnosticErrorCodeTests
             ReadStringConstant(
                 typeof(DiagnosticLogException),
                 nameof(DiagnosticLogException.StableErrorCode)));
-
         foreach (string code in expected)
         {
             Assert.IsTrue(StableErrorCodes.IsCanonical(code));
             Assert.IsTrue(StableErrorCodes.IsDefined(code));
             Assert.AreEqual(code, StableErrorCodes.Validate(code));
         }
+
+        DiagnosticLogEntry unavailable = new(
+            StableErrorCodes.WebViewRuntimeUnavailable,
+            DiagnosticComponent.WebView,
+            DiagnosticOperation.DetectRuntime);
+        DiagnosticLogEntry initialization = new(
+            StableErrorCodes.WebViewInitializationFailed,
+            DiagnosticComponent.WebView,
+            DiagnosticOperation.Initialize);
+
+        Assert.AreEqual(DiagnosticComponent.WebView, unavailable.Component);
+        Assert.AreEqual(DiagnosticOperation.DetectRuntime, unavailable.Operation);
+        Assert.AreEqual(DiagnosticComponent.WebView, initialization.Component);
+        Assert.AreEqual(DiagnosticOperation.Initialize, initialization.Operation);
     }
 
     [TestMethod]
@@ -94,6 +109,11 @@ public sealed class DiagnosticErrorCodeTests
                 DiagnosticComponent.DiagnosticLog,
                 DiagnosticOperation.Write));
         Assert.AreEqual("code", mismatch.ParamName);
+        Assert.ThrowsExactly<ArgumentException>(
+            () => new DiagnosticLogEntry(
+                StableErrorCodes.WebViewRuntimeUnavailable,
+                DiagnosticComponent.WebView,
+                DiagnosticOperation.Initialize));
 
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(
             () => new DiagnosticLogEntry(

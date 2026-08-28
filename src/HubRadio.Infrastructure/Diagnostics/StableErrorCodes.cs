@@ -8,18 +8,24 @@ public static class StableErrorCodes
 
     public const string DiagnosticLogWriteFailed = "diagnostic.log_write_failed";
     public const string ProcessStartFailed = ProcessStartException.StableErrorCode;
+    public const string WebViewInitializationFailed = "webview.initialization_failed";
+    public const string WebViewRuntimeUnavailable = "webview.runtime_unavailable";
 
     private static readonly IReadOnlyList<string> Codes = Array.AsReadOnly(
     [
         DiagnosticLogWriteFailed,
         ProcessStartFailed,
+        WebViewInitializationFailed,
+        WebViewRuntimeUnavailable,
     ]);
 
     public static IReadOnlyList<string> DefinedCodes => Codes;
 
     public static bool IsDefined(string? code) =>
         string.Equals(code, DiagnosticLogWriteFailed, StringComparison.Ordinal) ||
-        string.Equals(code, ProcessStartFailed, StringComparison.Ordinal);
+        string.Equals(code, ProcessStartFailed, StringComparison.Ordinal) ||
+        string.Equals(code, WebViewInitializationFailed, StringComparison.Ordinal) ||
+        string.Equals(code, WebViewRuntimeUnavailable, StringComparison.Ordinal);
 
     public static bool IsCanonical(string? code)
     {

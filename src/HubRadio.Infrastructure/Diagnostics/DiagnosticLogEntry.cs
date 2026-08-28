@@ -60,6 +60,9 @@ public sealed class DiagnosticLogEntry
                 nameof(code));
         }
 
+        Component = component;
+        Operation = operation;
+
         if (!Enum.IsDefined(severity))
         {
             throw new ArgumentOutOfRangeException(
@@ -141,17 +144,26 @@ public sealed class DiagnosticLogEntry
             operation == DiagnosticOperation.Start) ||
         (string.Equals(code, StableErrorCodes.DiagnosticLogWriteFailed, StringComparison.Ordinal) &&
             component == DiagnosticComponent.DiagnosticLog &&
-            operation == DiagnosticOperation.Write);
+            operation == DiagnosticOperation.Write) ||
+        (string.Equals(code, StableErrorCodes.WebViewRuntimeUnavailable, StringComparison.Ordinal) &&
+            component == DiagnosticComponent.WebView &&
+            operation == DiagnosticOperation.DetectRuntime) ||
+        (string.Equals(code, StableErrorCodes.WebViewInitializationFailed, StringComparison.Ordinal) &&
+            component == DiagnosticComponent.WebView &&
+            operation == DiagnosticOperation.Initialize);
 }
 
 public enum DiagnosticComponent
 {
     Process,
     DiagnosticLog,
+    WebView,
 }
 
 public enum DiagnosticOperation
 {
     Start,
     Write,
+    DetectRuntime,
+    Initialize,
 }

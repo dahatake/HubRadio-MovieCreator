@@ -6,6 +6,7 @@
   <Project Path="src/HubRadio.Infrastructure/HubRadio.Infrastructure.csproj" />
   <Project Path="src/HubRadio.App/HubRadio.App.csproj" />
   <Project Path="tests/Architecture.Tests/Architecture.Tests.csproj" />
+  <Project Path="tests/HubRadio.App.Tests/HubRadio.App.Tests.csproj" />
   <Project Path="tests/HubRadio.Core.Tests/HubRadio.Core.Tests.csproj" />
   <Project Path="tests/HubRadio.Infrastructure.Tests/HubRadio.Infrastructure.Tests.csproj" />
 </Solution>

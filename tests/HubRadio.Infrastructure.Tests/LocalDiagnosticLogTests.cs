@@ -52,6 +52,40 @@ public sealed class LocalDiagnosticLogTests
     }
 
     [TestMethod]
+    public async Task WriteAsync_WebViewContractsRoundTripThroughExistingRecordValidation()
+    {
+        string directory = CreateTemporaryDirectory();
+        string path = Path.Combine(directory, "webview-diagnostic.jsonl");
+
+        try
+        {
+            LocalDiagnosticLog log = CreateLog(path);
+            await log.WriteAsync(new DiagnosticLogEntry(
+                StableErrorCodes.WebViewRuntimeUnavailable,
+                DiagnosticComponent.WebView,
+                DiagnosticOperation.DetectRuntime));
+            await log.WriteAsync(new DiagnosticLogEntry(
+                StableErrorCodes.WebViewInitializationFailed,
+                DiagnosticComponent.WebView,
+                DiagnosticOperation.Initialize));
+
+            IReadOnlyList<JsonElement> records = ParseRecords(await File.ReadAllBytesAsync(path));
+
+            Assert.AreEqual(2, records.Count);
+            Assert.AreEqual("webview.runtime_unavailable", records[0].GetProperty("code").GetString());
+            Assert.AreEqual("webview", records[0].GetProperty("component").GetString());
+            Assert.AreEqual("detect-runtime", records[0].GetProperty("operation").GetString());
+            Assert.AreEqual("webview.initialization_failed", records[1].GetProperty("code").GetString());
+            Assert.AreEqual("webview", records[1].GetProperty("component").GetString());
+            Assert.AreEqual("initialize", records[1].GetProperty("operation").GetString());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task WriteAsync_RotatesOnlyAtRecordBoundariesAndEnforcesTotalLimit()
     {
         string directory = CreateTemporaryDirectory();
