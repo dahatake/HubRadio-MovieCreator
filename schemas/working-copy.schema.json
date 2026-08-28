@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical persisted WorkingCopy draft. SQLite persistence is implemented by a later store task; this contract contains the complete recoverable draft state and intentionally has no approval or content digest.",
+  "title": "WorkingCopy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "projectId",
+    "createdAt",
+    "updatedAt",
+    "elements"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/entityId"
+    },
+    "projectId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "baseVersionId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "createdAt": {
+      "$ref": "#/$defs/dateTimeOffset"
+    },
+    "updatedAt": {
+      "$ref": "#/$defs/dateTimeOffset"
+    },
+    "elements": {
+      "type": "array",
+      "$comment": "Runtime validation also requires unique composition element IDs.",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/compositionElement"
+      }
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "dateTimeOffset": {
+      "type": "string",
+      "$comment": "Runtime deserialization must parse DateTimeOffset, reject calendar-invalid values, and verify updatedAt is not before createdAt.",
+      "format": "date-time",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,7})?(?:Z|[+-](?:(?:0\\d|1[0-3]):[0-5]\\d|14:00))$"
+    },
+    "rationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "positiveDuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "outputTimeRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "duration"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "duration": {
+          "$ref": "#/$defs/positiveDuration"
+        }
+      }
+    },
+    "sourceSpanOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceSpanId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "sourceSpan"
+        },
+        "sourceSpanId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "assetOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "assetId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "asset"
+        },
+        "assetId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "editorialRecordOrigin": {
+      "type": "object",
+      "$comment": "Human-authored composition content uses an EditorialRecord origin rather than pretending to be a SourceSpan or an adopted Suggestion.",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "editorialRecordId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "editorialRecord"
+        },
+        "editorialRecordId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "originRef": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sourceSpanOrigin"
+        },
+        {
+          "$ref": "#/$defs/assetOrigin"
+        },
+        {
+          "$ref": "#/$defs/editorialRecordOrigin"
+        }
+      ]
+    },
+    "suggestionReference": {
+      "type": "object",
+      "$comment": "Runtime construction permits this reference only for an adopted Suggestion and preserves that Suggestion's ID and OriginRef.",
+      "additionalProperties": false,
+      "required": [
+        "suggestionId",
+        "origin"
+      ],
+      "properties": {
+        "suggestionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "origin": {
+          "$ref": "#/$defs/sourceSpanOrigin"
+        }
+      }
+    },
+    "compositionElement": {
+      "type": "object",
+      "$comment": "If adoptedSuggestion is present, runtime validation requires its OriginRef to equal origin exactly.",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "outputRange",
+        "origin"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "outputRange": {
+          "$ref": "#/$defs/outputTimeRange"
+        },
+        "origin": {
+          "$ref": "#/$defs/originRef"
+        },
+        "adoptedSuggestion": {
+          "$ref": "#/$defs/suggestionReference"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "adoptedSuggestion"
+            ]
+          },
+          "then": {
+            "properties": {
+              "origin": {
+                "$ref": "#/$defs/sourceSpanOrigin"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

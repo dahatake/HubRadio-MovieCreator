@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical immutable CompositionVersion snapshot. Approval is a separate record bound to contentDigest; changing content creates another version whose parentVersionId references this version.",
+  "title": "CompositionVersion",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "projectId",
+    "createdByActorId",
+    "createdAt",
+    "changeReason",
+    "contentDigest",
+    "elements"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/entityId"
+    },
+    "projectId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "parentVersionId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "createdByActorId": {
+      "$ref": "#/$defs/nonBlankText"
+    },
+    "createdAt": {
+      "$ref": "#/$defs/dateTimeOffset"
+    },
+    "changeReason": {
+      "$ref": "#/$defs/nonBlankText"
+    },
+    "contentDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "elements": {
+      "type": "array",
+      "$comment": "Runtime validation also requires unique composition element IDs.",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/compositionElement"
+      }
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonBlankText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "dateTimeOffset": {
+      "type": "string",
+      "$comment": "Runtime deserialization must also parse DateTimeOffset and reject calendar-invalid values.",
+      "format": "date-time",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d{1,7})?(?:Z|[+-](?:(?:0\\d|1[0-3]):[0-5]\\d|14:00))$"
+    },
+    "rationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "positiveDuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "outputTimeRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "duration"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "duration": {
+          "$ref": "#/$defs/positiveDuration"
+        }
+      }
+    },
+    "sourceSpanOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceSpanId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "sourceSpan"
+        },
+        "sourceSpanId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "assetOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "assetId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "asset"
+        },
+        "assetId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "editorialRecordOrigin": {
+      "type": "object",
+      "$comment": "Human-authored composition content uses an EditorialRecord origin.",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "editorialRecordId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "editorialRecord"
+        },
+        "editorialRecordId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "originRef": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sourceSpanOrigin"
+        },
+        {
+          "$ref": "#/$defs/assetOrigin"
+        },
+        {
+          "$ref": "#/$defs/editorialRecordOrigin"
+        }
+      ]
+    },
+    "suggestionReference": {
+      "type": "object",
+      "$comment": "Created only from an adopted Suggestion by the runtime model; the Suggestion remains a separate audit record.",
+      "additionalProperties": false,
+      "required": [
+        "suggestionId",
+        "origin"
+      ],
+      "properties": {
+        "suggestionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "origin": {
+          "$ref": "#/$defs/sourceSpanOrigin"
+        }
+      }
+    },
+    "compositionElement": {
+      "type": "object",
+      "$comment": "If adoptedSuggestion is present, runtime validation requires its OriginRef to equal origin exactly.",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "outputRange",
+        "origin"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "outputRange": {
+          "$ref": "#/$defs/outputTimeRange"
+        },
+        "origin": {
+          "$ref": "#/$defs/originRef"
+        },
+        "adoptedSuggestion": {
+          "$ref": "#/$defs/suggestionReference"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "adoptedSuggestion"
+            ]
+          },
+          "then": {
+            "properties": {
+              "origin": {
+                "$ref": "#/$defs/sourceSpanOrigin"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
