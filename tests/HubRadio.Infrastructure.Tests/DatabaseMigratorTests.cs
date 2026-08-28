@@ -514,6 +514,13 @@ public sealed class DatabaseMigratorTests
             () => InsertJob(connection, jobId, ProjectId, "kind", "queued", -1));
         AssertConstraintViolation(
             () => InsertJob(connection, jobId, ProjectId, "kind", "running", 0));
+        InsertJob(
+            connection,
+            Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture),
+            ProjectId,
+            "cancelled-before-start",
+            "cancelled",
+            0);
         AssertConstraintViolation(
             () => InsertJob(
                 connection,

@@ -249,8 +249,10 @@ public sealed class JobTests
 
         Job initial = CreateJob(JobState.Queued, currentAttemptNumber: 0);
         Job queuedRetry = CreateJob(JobState.Queued, currentAttemptNumber: 3);
+        Job cancelledBeforeStart = CreateJob(JobState.Cancelled, currentAttemptNumber: 0);
         Assert.AreEqual(0, initial.CurrentAttemptNumber);
         Assert.AreEqual(3, queuedRetry.CurrentAttemptNumber);
+        Assert.AreEqual(0, cancelledBeforeStart.CurrentAttemptNumber);
     }
 
     [TestMethod]
@@ -293,8 +295,13 @@ public sealed class JobTests
             "currentAttemptNumber",
             () => CreateJob(JobState.Queued, currentAttemptNumber: -1));
 
-        foreach (JobState state in Enum.GetValues<JobState>().Where(
-            static state => state != JobState.Queued))
+        foreach (JobState state in new[]
+        {
+            JobState.Running,
+            JobState.Succeeded,
+            JobState.Failed,
+            JobState.Interrupted,
+        })
         {
             AssertParamName<ArgumentOutOfRangeException>(
                 "currentAttemptNumber",

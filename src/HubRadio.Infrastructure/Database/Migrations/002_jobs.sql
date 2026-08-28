@@ -36,7 +36,10 @@ CREATE TABLE jobs (
     ),
     current_attempt_number INTEGER NOT NULL CHECK (
         current_attempt_number >= 0
-        AND (state = 'queued' OR current_attempt_number >= 1)
+        AND (
+            state IN ('queued', 'cancelled')
+            OR current_attempt_number >= 1
+        )
     ),
     revision INTEGER NOT NULL CHECK (revision >= 0),
     FOREIGN KEY (project_id) REFERENCES projects (id)

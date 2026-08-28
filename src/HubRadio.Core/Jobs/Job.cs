@@ -30,12 +30,16 @@ public sealed class Job
         }
 
         if (currentAttemptNumber < 0 ||
-            (state != JobState.Queued && currentAttemptNumber == 0))
+            (state is JobState.Running
+                or JobState.Succeeded
+                or JobState.Failed
+                or JobState.Interrupted
+                && currentAttemptNumber == 0))
         {
             throw new ArgumentOutOfRangeException(
                 nameof(currentAttemptNumber),
                 currentAttemptNumber,
-                "A queued job may have attempt number zero; every other job state requires a positive attempt number.");
+                "A job that started an attempt requires a positive attempt number.");
         }
 
         Id = id;
