@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical immutable evidence for one successful render. RenderProfile remains the output specification; job attempts, approval, QC workflow, and storage path policy are separate contracts.",
+  "title": "RenderManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "projectId",
+    "compositionVersionId",
+    "compositionVersionDigest",
+    "timelineMapId",
+    "timelineMapDigest",
+    "profileId",
+    "profileDigest",
+    "templateId",
+    "templateVersionDigest",
+    "configurationDigest",
+    "applicationVersion",
+    "applicationDigest",
+    "inputs",
+    "tools",
+    "models",
+    "fonts",
+    "outputs"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/entityId"
+    },
+    "projectId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "compositionVersionId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "compositionVersionDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "timelineMapId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "timelineMapDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "profileId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "profileDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "templateId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "templateVersionDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "configurationDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "applicationVersion": {
+      "$ref": "#/$defs/nonBlankText"
+    },
+    "applicationDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "inputs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/renderInputEvidence"
+      }
+    },
+    "tools": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/renderToolEvidence"
+      }
+    },
+    "models": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/renderModelEvidence"
+      }
+    },
+    "fonts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/renderFontEvidence"
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/manifestArtifact"
+      }
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonBlankText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "nullableContentDigest": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/contentDigest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullableNonBlankText": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "renderInputEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "contentDigest"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/contentDigest"
+        }
+      }
+    },
+    "renderToolEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "buildConfiguration",
+        "executableDigest",
+        "containerImageDigest"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "version": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "buildConfiguration": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "executableDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "containerImageDigest": {
+          "$ref": "#/$defs/nullableContentDigest"
+        }
+      }
+    },
+    "renderModelEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "modelIdentifier",
+        "modelVersion",
+        "weightsDigest"
+      ],
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "modelIdentifier": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "modelVersion": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "weightsDigest": {
+          "$ref": "#/$defs/contentDigest"
+        }
+      }
+    },
+    "renderFontEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "fileDigest"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "fileDigest": {
+          "$ref": "#/$defs/contentDigest"
+        }
+      }
+    },
+    "manifestArtifact": {
+      "type": "object",
+      "$comment": "storageReference is an opaque reference here. D-015 owns filesystem placement and traversal policy.",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "mediaType",
+        "language",
+        "byteSize",
+        "sha256",
+        "storageReference"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "mediaType": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "language": {
+          "$ref": "#/$defs/nullableNonBlankText"
+        },
+        "byteSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "sha256": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "storageReference": {
+          "$ref": "#/$defs/nonBlankText"
+        }
+      }
+    }
+  }
+}
