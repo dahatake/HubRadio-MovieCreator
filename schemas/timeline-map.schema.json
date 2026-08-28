@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical immutable TimelineMap for one CompositionVersion. Entries are persisted in ascending outputRange order; runtime validation rejects overlaps. SourceSpan entries use a one-to-one sourceRange with equal duration. Asset and EditorialRecord entries have no sourceRange.",
+  "title": "TimelineMap",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "compositionVersionId",
+    "entries"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/entityId"
+    },
+    "compositionVersionId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/timelineMapEntry"
+      }
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "rationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "positiveDuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "timeRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "duration"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "duration": {
+          "$ref": "#/$defs/positiveDuration"
+        }
+      }
+    },
+    "outputTimeRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "duration"
+      ],
+      "properties": {
+        "start": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "rate"
+          ],
+          "properties": {
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9223372036854775807
+            },
+            "rate": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9223372036854775807
+            }
+          }
+        },
+        "duration": {
+          "$ref": "#/$defs/positiveDuration"
+        }
+      }
+    },
+    "sourceSpanOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceSpanId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "sourceSpan"
+        },
+        "sourceSpanId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "assetOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "assetId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "asset"
+        },
+        "assetId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "editorialRecordOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "editorialRecordId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "editorialRecord"
+        },
+        "editorialRecordId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "sourceSpanEntry": {
+      "type": "object",
+      "$comment": "Runtime validation additionally requires sourceRange.duration to equal outputRange.duration exactly after RationalTime reduction.",
+      "additionalProperties": false,
+      "required": [
+        "outputRange",
+        "origin",
+        "sourceRange"
+      ],
+      "properties": {
+        "outputRange": {
+          "$ref": "#/$defs/outputTimeRange"
+        },
+        "origin": {
+          "$ref": "#/$defs/sourceSpanOrigin"
+        },
+        "sourceRange": {
+          "$ref": "#/$defs/timeRange"
+        }
+      }
+    },
+    "assetEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outputRange",
+        "origin"
+      ],
+      "properties": {
+        "outputRange": {
+          "$ref": "#/$defs/outputTimeRange"
+        },
+        "origin": {
+          "$ref": "#/$defs/assetOrigin"
+        }
+      }
+    },
+    "editorialRecordEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outputRange",
+        "origin"
+      ],
+      "properties": {
+        "outputRange": {
+          "$ref": "#/$defs/outputTimeRange"
+        },
+        "origin": {
+          "$ref": "#/$defs/editorialRecordOrigin"
+        }
+      }
+    },
+    "timelineMapEntry": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sourceSpanEntry"
+        },
+        {
+          "$ref": "#/$defs/assetEntry"
+        },
+        {
+          "$ref": "#/$defs/editorialRecordEntry"
+        }
+      ]
+    }
+  }
+}
