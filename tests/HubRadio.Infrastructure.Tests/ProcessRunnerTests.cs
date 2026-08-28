@@ -10,6 +10,9 @@ namespace HubRadio.Infrastructure.Tests;
 [TestClass]
 public sealed class ProcessRunnerTests
 {
+    private const int WindowsLockViolation = 33;
+    private const int WindowsSharingViolation = 32;
+
     private static readonly string TestAssemblyPath = typeof(ProcessRunnerTests).Assembly.Location;
     private static readonly string TestWorkingDirectory =
         Path.GetDirectoryName(TestAssemblyPath)
@@ -838,8 +841,20 @@ public sealed class ProcessRunnerTests
     private static async Task<int> ReadProcessIdAsync(string path)
     {
         Stopwatch stopwatch = Stopwatch.StartNew();
-        while (!File.Exists(path))
+        while (true)
         {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    string value = await File.ReadAllTextAsync(path);
+                    return int.Parse(value, CultureInfo.InvariantCulture);
+                }
+            }
+            catch (IOException exception) when (IsTransientProcessIdReadFailure(exception))
+            {
+            }
+
             if (stopwatch.Elapsed >= TimeSpan.FromSeconds(10))
             {
                 Assert.Fail("The child process did not publish its process identifier.");
@@ -847,9 +862,13 @@ public sealed class ProcessRunnerTests
 
             await Task.Delay(20);
         }
+    }
 
-        string value = await File.ReadAllTextAsync(path);
-        return int.Parse(value, CultureInfo.InvariantCulture);
+    private static bool IsTransientProcessIdReadFailure(IOException exception)
+    {
+        int nativeError = exception.HResult & 0xFFFF;
+        return OperatingSystem.IsWindows() &&
+            nativeError is WindowsSharingViolation or WindowsLockViolation;
     }
 
     private static Process OpenRunningProcess(int processId)
