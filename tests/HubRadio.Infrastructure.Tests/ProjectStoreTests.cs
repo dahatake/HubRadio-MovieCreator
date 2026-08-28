@@ -236,6 +236,143 @@ public sealed class ProjectStoreTests
     }
 
     [TestMethod]
+    public void CheckpointDuplicateVersionIdRollsBackWorkingCopy()
+    {
+        using StoreTestDatabase database = new();
+        var store = new ProjectStore(database.DatabasePath);
+        Project project = CreateProject();
+        store.CreateProject(project, "{\"project\":true}", InitialTime);
+        CompositionVersion existing = CreateVersion(project.Id);
+        store.AppendCompositionVersion(existing, "{\"existing\":true}");
+        WorkingCopy originalDraft = CreateWorkingCopy(project.Id, baseVersionId: null);
+        store.CreateWorkingCopy(originalDraft, "{\"draft\":0}");
+        var updatedDraft = new WorkingCopy(
+            originalDraft.Id,
+            project.Id,
+            existing.Id,
+            originalDraft.CreatedAt,
+            existing.CreatedAt,
+            elements: []);
+
+        SqliteException duplicate = Assert.ThrowsExactly<SqliteException>(
+            () => store.CheckpointWorkingCopy(
+                existing,
+                "{\"attempt\":true}",
+                updatedDraft,
+                "{\"draft\":1}",
+                expectedWorkingCopyRevision: 0));
+
+        Assert.AreEqual(19, duplicate.SqliteErrorCode);
+        StoredWorkingCopy storedDraft = store.GetWorkingCopy(project.Id)!;
+        Assert.AreEqual(0, storedDraft.Revision);
+        Assert.IsNull(storedDraft.BaseVersionId);
+        Assert.AreEqual("{\"draft\":0}", storedDraft.CanonicalJson);
+        Assert.AreEqual(1L, database.ExecuteScalarInt64(
+            "SELECT COUNT(*) FROM composition_versions;"));
+        Assert.AreEqual("{\"existing\":true}", store.GetCompositionVersion(existing.Id)!.CanonicalJson);
+    }
+
+    [TestMethod]
+    public void CheckpointParentForeignKeyFailureRollsBackWorkingCopy()
+    {
+        using StoreTestDatabase database = new();
+        var store = new ProjectStore(database.DatabasePath);
+        Project project = CreateProject();
+        store.CreateProject(project, "{\"project\":true}", InitialTime);
+        WorkingCopy originalDraft = CreateWorkingCopy(project.Id, baseVersionId: null);
+        store.CreateWorkingCopy(originalDraft, "{\"draft\":0}");
+        EntityId<CompositionVersionIdTag> missingParentId =
+            EntityId<CompositionVersionIdTag>.New();
+        using (SqliteConnection connection = database.OpenConnection())
+        {
+            using SqliteCommand disableForeignKeys = connection.CreateCommand();
+            disableForeignKeys.CommandText = "PRAGMA foreign_keys = OFF;";
+            disableForeignKeys.ExecuteNonQuery();
+            using SqliteCommand injectMissingBase = connection.CreateCommand();
+            injectMissingBase.CommandText = """
+                UPDATE working_copies
+                SET base_version_id = $base_version_id
+                WHERE id = $id;
+                """;
+            injectMissingBase.Parameters.AddWithValue(
+                "$base_version_id",
+                missingParentId.ToString());
+            injectMissingBase.Parameters.AddWithValue("$id", originalDraft.Id.ToString());
+            Assert.AreEqual(1, injectMissingBase.ExecuteNonQuery());
+        }
+
+        CompositionVersion version = CreateVersion(project.Id, missingParentId);
+        var updatedDraft = new WorkingCopy(
+            originalDraft.Id,
+            project.Id,
+            version.Id,
+            originalDraft.CreatedAt,
+            version.CreatedAt,
+            elements: []);
+
+        SqliteException foreignKey = Assert.ThrowsExactly<SqliteException>(
+            () => store.CheckpointWorkingCopy(
+                version,
+                "{\"version\":true}",
+                updatedDraft,
+                "{\"draft\":1}",
+                expectedWorkingCopyRevision: 0));
+
+        Assert.AreEqual(19, foreignKey.SqliteErrorCode);
+        StoredWorkingCopy storedDraft = store.GetWorkingCopy(project.Id)!;
+        Assert.AreEqual(0, storedDraft.Revision);
+        Assert.AreEqual(missingParentId, storedDraft.BaseVersionId);
+        Assert.AreEqual("{\"draft\":0}", storedDraft.CanonicalJson);
+        Assert.AreEqual(0L, database.ExecuteScalarInt64(
+            "SELECT COUNT(*) FROM composition_versions;"));
+        Assert.IsNull(store.GetCompositionVersion(version.Id));
+    }
+
+    [TestMethod]
+    public void CheckpointWorkingCopyUpdateFailureRollsBackInsertedVersion()
+    {
+        using StoreTestDatabase database = new();
+        var store = new ProjectStore(database.DatabasePath);
+        Project project = CreateProject();
+        store.CreateProject(project, "{\"project\":true}", InitialTime);
+        WorkingCopy originalDraft = CreateWorkingCopy(project.Id, baseVersionId: null);
+        store.CreateWorkingCopy(originalDraft, "{\"draft\":0}");
+        CompositionVersion version = CreateVersion(project.Id);
+        var updatedDraft = new WorkingCopy(
+            originalDraft.Id,
+            project.Id,
+            version.Id,
+            originalDraft.CreatedAt,
+            version.CreatedAt,
+            elements: []);
+        database.ExecuteNonQuery(
+            """
+            CREATE TRIGGER fail_checkpoint_working_copy_update
+            BEFORE UPDATE ON working_copies
+            BEGIN
+                SELECT RAISE(ABORT, 'injected working-copy update failure');
+            END;
+            """);
+
+        SqliteException injectedFailure = Assert.ThrowsExactly<SqliteException>(
+            () => store.CheckpointWorkingCopy(
+                version,
+                "{\"z\":2,\"a\":1}",
+                updatedDraft,
+                "{\"draft\":1}",
+                expectedWorkingCopyRevision: 0));
+
+        Assert.AreEqual(19, injectedFailure.SqliteErrorCode);
+        Assert.IsNull(store.GetCompositionVersion(version.Id));
+        Assert.AreEqual(0L, database.ExecuteScalarInt64(
+            "SELECT COUNT(*) FROM composition_versions;"));
+        StoredWorkingCopy storedDraft = store.GetWorkingCopy(project.Id)!;
+        Assert.AreEqual(0, storedDraft.Revision);
+        Assert.IsNull(storedDraft.BaseVersionId);
+        Assert.AreEqual("{\"draft\":0}", storedDraft.CanonicalJson);
+    }
+
+    [TestMethod]
     public void NonCanonicalOrInvalidStoredPayloadAndTimestampFailClosed()
     {
         using StoreTestDatabase database = new();
@@ -367,6 +504,23 @@ public sealed class ProjectStoreTests
 
         Assert.IsTrue(typeof(StoreConcurrencyException).IsPublic);
         Assert.IsTrue(typeof(StoreConcurrencyException).IsSealed);
+        MethodInfo checkpoint = typeof(ProjectStore).GetMethod(
+            nameof(ProjectStore.CheckpointWorkingCopy),
+            BindingFlags.Public | BindingFlags.Instance,
+            binder: null,
+            [
+                typeof(CompositionVersion),
+                typeof(string),
+                typeof(WorkingCopy),
+                typeof(string),
+                typeof(int),
+            ],
+            modifiers: null)
+            ?? throw new AssertFailedException("The specialized checkpoint method is missing.");
+        Assert.AreEqual(typeof(int), checkpoint.ReturnType);
+        Assert.IsFalse(typeof(ProjectStore).GetMethods(
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Any(static method => method.Name.Contains("Transaction", StringComparison.Ordinal)));
         CollectionAssert.AreEquivalent(
             new[] { "EntityKind", "EntityId", "ExpectedRevision", "ActualRevision" },
             typeof(StoreConcurrencyException)

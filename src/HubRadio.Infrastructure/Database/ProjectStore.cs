@@ -328,33 +328,89 @@ public sealed class ProjectStore
         }
 
         int newRevision = checked(current.Revision + 1);
-        using SqliteCommand command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            UPDATE working_copies
-            SET base_version_id = $base_version_id,
-                revision = $new_revision,
-                updated_at = $updated_at,
-                payload = $payload
-            WHERE id = $id
-              AND project_id = $project_id
-              AND revision = $expected_revision;
-            """;
-        SqliteStoreSupport.AddNullableText(
-            command,
-            "$base_version_id",
-            workingCopy.BaseVersionId?.ToString());
-        SqliteStoreSupport.AddInteger(command, "$new_revision", newRevision);
-        SqliteStoreSupport.AddText(command, "$updated_at", updatedAt);
-        SqliteStoreSupport.AddBlob(command, "$payload", payload);
-        SqliteStoreSupport.AddText(command, "$id", workingCopy.Id.ToString());
-        SqliteStoreSupport.AddText(command, "$project_id", workingCopy.ProjectId.ToString());
-        SqliteStoreSupport.AddInteger(command, "$expected_revision", expectedRevision);
-        if (command.ExecuteNonQuery() != 1)
+        UpdateWorkingCopyRow(
+            connection,
+            transaction,
+            workingCopy,
+            payload,
+            updatedAt,
+            expectedRevision,
+            newRevision);
+
+        transaction.Commit();
+        return newRevision;
+    }
+
+    public int CheckpointWorkingCopy(
+        CompositionVersion version,
+        string versionPayloadJson,
+        WorkingCopy updatedWorkingCopy,
+        string workingCopyPayloadJson,
+        int expectedWorkingCopyRevision)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+        ArgumentNullException.ThrowIfNull(updatedWorkingCopy);
+        ValidateExpectedRevision(expectedWorkingCopyRevision);
+        byte[] versionPayload = SqliteStoreSupport.CanonicalizePayload(
+            versionPayloadJson,
+            nameof(versionPayloadJson));
+        byte[] workingCopyPayload = SqliteStoreSupport.CanonicalizePayload(
+            workingCopyPayloadJson,
+            nameof(workingCopyPayloadJson));
+        string versionCreatedAt = SqliteStoreSupport.FormatTimestamp(
+            version.CreatedAt,
+            nameof(version));
+        string workingCopyUpdatedAt = SqliteStoreSupport.FormatTimestamp(
+            updatedWorkingCopy.UpdatedAt,
+            nameof(updatedWorkingCopy));
+
+        ValidateCheckpointAggregates(version, updatedWorkingCopy);
+
+        using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        StoredWorkingCopyIdentity current = ReadWorkingCopyIdentity(
+            connection,
+            transaction,
+            updatedWorkingCopy.Id);
+        if (current.ProjectId != updatedWorkingCopy.ProjectId)
         {
-            throw SqliteStoreSupport.InvalidStoredData("working copy");
+            throw new InvalidOperationException(
+                "The stored working copy does not match the supplied aggregate.");
         }
 
+        EnsureExpectedRevision(
+            "working copy",
+            updatedWorkingCopy.Id.ToString(),
+            expectedWorkingCopyRevision,
+            current.Revision);
+        if (current.BaseVersionId != version.ParentVersionId)
+        {
+            throw new InvalidOperationException(
+                "The composition version parent does not match the stored working-copy base.");
+        }
+
+        if (updatedWorkingCopy.UpdatedAt < current.UpdatedAt)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(updatedWorkingCopy),
+                "A working-copy update timestamp must not move backwards.");
+        }
+
+        int newRevision = checked(current.Revision + 1);
+        InsertCompositionVersion(
+            connection,
+            transaction,
+            version,
+            versionPayload,
+            versionCreatedAt);
+        UpdateWorkingCopyRow(
+            connection,
+            transaction,
+            updatedWorkingCopy,
+            workingCopyPayload,
+            workingCopyUpdatedAt,
+            expectedWorkingCopyRevision,
+            newRevision);
         transaction.Commit();
         return newRevision;
     }
@@ -399,42 +455,12 @@ public sealed class ProjectStore
 
         using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
-        using SqliteCommand command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO composition_versions (
-                id,
-                project_id,
-                parent_version_id,
-                content_digest,
-                created_at,
-                payload
-            )
-            VALUES (
-                $id,
-                $project_id,
-                $parent_version_id,
-                $content_digest,
-                $created_at,
-                $payload
-            );
-            """;
-        SqliteStoreSupport.AddText(command, "$id", compositionVersion.Id.ToString());
-        SqliteStoreSupport.AddText(
-            command,
-            "$project_id",
-            compositionVersion.ProjectId.ToString());
-        SqliteStoreSupport.AddNullableText(
-            command,
-            "$parent_version_id",
-            compositionVersion.ParentVersionId?.ToString());
-        SqliteStoreSupport.AddText(
-            command,
-            "$content_digest",
-            compositionVersion.ContentDigest.Hex);
-        SqliteStoreSupport.AddText(command, "$created_at", createdAt);
-        SqliteStoreSupport.AddBlob(command, "$payload", payload);
-        EnsureSingleMutation(command, "composition version");
+        InsertCompositionVersion(
+            connection,
+            transaction,
+            compositionVersion,
+            payload,
+            createdAt);
         transaction.Commit();
     }
 
@@ -601,7 +627,7 @@ public sealed class ProjectStore
         using SqliteCommand command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT project_id, revision, updated_at
+            SELECT project_id, base_version_id, revision, updated_at
             FROM working_copies
             WHERE id = $id;
             """;
@@ -614,15 +640,135 @@ public sealed class ProjectStore
 
         EntityId<ProjectIdTag> projectId =
             SqliteStoreSupport.ReadEntityId<ProjectIdTag>(reader, 0, "working copy");
-        int revision = SqliteStoreSupport.ReadInt32(reader, 1, "working copy");
+        EntityId<CompositionVersionIdTag>? baseVersionId =
+            SqliteStoreSupport.ReadNullableEntityId<CompositionVersionIdTag>(
+                reader,
+                1,
+                "working copy");
+        int revision = SqliteStoreSupport.ReadInt32(reader, 2, "working copy");
         DateTimeOffset updatedAt =
-            SqliteStoreSupport.ReadTimestamp(reader, 2, "working copy");
+            SqliteStoreSupport.ReadTimestamp(reader, 3, "working copy");
         if (revision < 0 || reader.Read())
         {
             throw SqliteStoreSupport.InvalidStoredData("working copy");
         }
 
-        return new StoredWorkingCopyIdentity(projectId, revision, updatedAt);
+        return new StoredWorkingCopyIdentity(projectId, baseVersionId, revision, updatedAt);
+    }
+
+    private static void ValidateCheckpointAggregates(
+        CompositionVersion version,
+        WorkingCopy updatedWorkingCopy)
+    {
+        if (version.ProjectId != updatedWorkingCopy.ProjectId)
+        {
+            throw new ArgumentException(
+                "The composition version and working copy must belong to the same project.",
+                nameof(updatedWorkingCopy));
+        }
+
+        if (updatedWorkingCopy.BaseVersionId != version.Id)
+        {
+            throw new ArgumentException(
+                "The updated working copy must be based on the new composition version.",
+                nameof(updatedWorkingCopy));
+        }
+
+        if (updatedWorkingCopy.UpdatedAt != version.CreatedAt)
+        {
+            throw new ArgumentException(
+                "The checkpoint version and working-copy update must have the same timestamp.",
+                nameof(updatedWorkingCopy));
+        }
+
+        if (!version.Elements.SequenceEqual(updatedWorkingCopy.Elements))
+        {
+            throw new ArgumentException(
+                "The checkpoint version and updated working copy must contain equivalent elements.",
+                nameof(updatedWorkingCopy));
+        }
+    }
+
+    private static void InsertCompositionVersion(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        CompositionVersion compositionVersion,
+        byte[] payload,
+        string createdAt)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO composition_versions (
+                id,
+                project_id,
+                parent_version_id,
+                content_digest,
+                created_at,
+                payload
+            )
+            VALUES (
+                $id,
+                $project_id,
+                $parent_version_id,
+                $content_digest,
+                $created_at,
+                $payload
+            );
+            """;
+        SqliteStoreSupport.AddText(command, "$id", compositionVersion.Id.ToString());
+        SqliteStoreSupport.AddText(
+            command,
+            "$project_id",
+            compositionVersion.ProjectId.ToString());
+        SqliteStoreSupport.AddNullableText(
+            command,
+            "$parent_version_id",
+            compositionVersion.ParentVersionId?.ToString());
+        SqliteStoreSupport.AddText(
+            command,
+            "$content_digest",
+            compositionVersion.ContentDigest.Hex);
+        SqliteStoreSupport.AddText(command, "$created_at", createdAt);
+        SqliteStoreSupport.AddBlob(command, "$payload", payload);
+        EnsureSingleMutation(command, "composition version");
+    }
+
+    private static void UpdateWorkingCopyRow(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        WorkingCopy workingCopy,
+        byte[] payload,
+        string updatedAt,
+        int expectedRevision,
+        int newRevision)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            UPDATE working_copies
+            SET base_version_id = $base_version_id,
+                revision = $new_revision,
+                updated_at = $updated_at,
+                payload = $payload
+            WHERE id = $id
+              AND project_id = $project_id
+              AND revision = $expected_revision;
+            """;
+        SqliteStoreSupport.AddNullableText(
+            command,
+            "$base_version_id",
+            workingCopy.BaseVersionId?.ToString());
+        SqliteStoreSupport.AddInteger(command, "$new_revision", newRevision);
+        SqliteStoreSupport.AddText(command, "$updated_at", updatedAt);
+        SqliteStoreSupport.AddBlob(command, "$payload", payload);
+        SqliteStoreSupport.AddText(command, "$id", workingCopy.Id.ToString());
+        SqliteStoreSupport.AddText(command, "$project_id", workingCopy.ProjectId.ToString());
+        SqliteStoreSupport.AddInteger(command, "$expected_revision", expectedRevision);
+        if (command.ExecuteNonQuery() != 1)
+        {
+            throw SqliteStoreSupport.InvalidStoredData("working copy");
+        }
     }
 
     private static void AddWorkingCopyIdentityParameters(
@@ -674,6 +820,7 @@ public sealed class ProjectStore
 
     private sealed record StoredWorkingCopyIdentity(
         EntityId<ProjectIdTag> ProjectId,
+        EntityId<CompositionVersionIdTag>? BaseVersionId,
         int Revision,
         DateTimeOffset UpdatedAt);
 }
