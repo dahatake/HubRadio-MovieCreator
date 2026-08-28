@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "1.0.0",
+  "evidenceSource": "benchmarks/fixtures/manual-render-manifest.json#/renderProfiles/0",
+  "profileContent": {
+    "id": "14b4f6b6-1ebc-55c3-9682-2c7e9ad226fa",
+    "name": "long-form-1280x720",
+    "width": 1280,
+    "height": 720,
+    "frameRate": {
+      "numerator": 30000,
+      "denominator": 1001
+    },
+    "videoCodec": "h264",
+    "audioCodec": "aac",
+    "subtitleBurnIn": true,
+    "pixelFormatEvidence": "yuv420p",
+    "layoutSpecId": "d95a6c34-359a-5c6d-8ed8-15ffd94966bc",
+    "templateId": "bf08c776-0f97-5373-a091-c70b60acd569",
+    "capabilities": [
+      "chapter",
+      "topic-display",
+      "speaker-name",
+      "material",
+      "call-to-action",
+      "end-card-margin",
+      "subtitle",
+      "graphic"
+    ],
+    "platformSafeZonesMeasured": false
+  },
+  "profileDigest": "3b507050583bd9909f8503b9bec50fb644bcd6a62d055b7c87ed58b986b5a0fe",
+  "layoutContent": {
+    "id": "d95a6c34-359a-5c6d-8ed8-15ffd94966bc",
+    "outputAspectWidth": 16,
+    "outputAspectHeight": 9,
+    "regions": [
+      {
+        "name": "primary-video",
+        "rect": {
+          "x": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "y": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "width": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "height": {
+            "numerator": 1,
+            "denominator": 1
+          }
+        },
+        "role": "video"
+      },
+      {
+        "name": "subtitle-placement",
+        "rect": {
+          "x": { "numerator": 0, "denominator": 1 },
+          "y": { "numerator": 0, "denominator": 1 },
+          "width": { "numerator": 1, "denominator": 1 },
+          "height": { "numerator": 1, "denominator": 1 }
+        },
+        "role": "subtitle"
+      }
+    ],
+    "safeZones": [
+      {
+        "name": "output-frame-bounds",
+        "rect": {
+          "x": { "numerator": 0, "denominator": 1 },
+          "y": { "numerator": 0, "denominator": 1 },
+          "width": { "numerator": 1, "denominator": 1 },
+          "height": { "numerator": 1, "denominator": 1 }
+        }
+      }
+    ]
+  },
+  "layoutDigest": "c1ab78336b68342dc7595666648d1b9f2f6848c2141af1c9e9a990e7cea605a9",
+  "templateContent": {
+    "id": "bf08c776-0f97-5373-a091-c70b60acd569",
+    "name": "development-neutral-long-form",
+    "status": "development-neutral-placeholder",
+    "requiredExternalBrandAssets": false
+  },
+  "templateVersionDigest": "2189c7f2f01cbb2b4b2f99b3067622b149a69ab2ca737d17462ea55dbf67b7aa",
+  "unmeasured": [
+    "brand-assets",
+    "cross-gpu-reproducibility",
+    "platform-safe-zone-geometry",
+    "production-quality-thresholds"
+  ]
+}

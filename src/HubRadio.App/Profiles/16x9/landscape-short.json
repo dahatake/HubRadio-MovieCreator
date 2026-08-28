@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "1.0.0",
+  "evidenceSource": "benchmarks/fixtures/manual-render-manifest.json#/renderProfiles/0",
+  "profileContent": {
+    "id": "de6aa4f5-bef9-5c29-98e0-f4e0289783ed",
+    "name": "landscape-short-1280x720",
+    "width": 1280,
+    "height": 720,
+    "frameRate": {
+      "numerator": 30000,
+      "denominator": 1001
+    },
+    "videoCodec": "h264",
+    "audioCodec": "aac",
+    "subtitleBurnIn": true,
+    "pixelFormatEvidence": "yuv420p",
+    "layoutSpecId": "9b8edad0-250e-5833-8adc-d6e9f93ac2a8",
+    "templateId": "3ed1c245-4856-5f81-a3a1-5102fda37494",
+    "capabilities": [
+      "topic-display",
+      "speaker-name",
+      "call-to-action",
+      "end-card-margin",
+      "subtitle",
+      "graphic"
+    ],
+    "platformSafeZonesMeasured": false
+  },
+  "profileDigest": "3739b04f809110fe86b8242e1af42f4abb332f724cedee0060d8e6cdf74b79c1",
+  "layoutContent": {
+    "id": "9b8edad0-250e-5833-8adc-d6e9f93ac2a8",
+    "outputAspectWidth": 16,
+    "outputAspectHeight": 9,
+    "regions": [
+      {
+        "name": "primary-video",
+        "rect": {
+          "x": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "y": {
+            "numerator": 0,
+            "denominator": 1
+          },
+          "width": {
+            "numerator": 1,
+            "denominator": 1
+          },
+          "height": {
+            "numerator": 1,
+            "denominator": 1
+          }
+        },
+        "role": "video"
+      },
+      {
+        "name": "subtitle-placement",
+        "rect": {
+          "x": { "numerator": 0, "denominator": 1 },
+          "y": { "numerator": 0, "denominator": 1 },
+          "width": { "numerator": 1, "denominator": 1 },
+          "height": { "numerator": 1, "denominator": 1 }
+        },
+        "role": "subtitle"
+      }
+    ],
+    "safeZones": [
+      {
+        "name": "output-frame-bounds",
+        "rect": {
+          "x": { "numerator": 0, "denominator": 1 },
+          "y": { "numerator": 0, "denominator": 1 },
+          "width": { "numerator": 1, "denominator": 1 },
+          "height": { "numerator": 1, "denominator": 1 }
+        }
+      }
+    ]
+  },
+  "layoutDigest": "b5e456d812dddf9d06a2e25954607f840cf3fe5704d800b0661f73152b803e3f",
+  "templateContent": {
+    "id": "3ed1c245-4856-5f81-a3a1-5102fda37494",
+    "name": "development-neutral-landscape-short",
+    "status": "development-neutral-placeholder",
+    "requiredExternalBrandAssets": false
+  },
+  "templateVersionDigest": "f357d900a248983d78d8dc5e1cc8fa09bc09af4ba78bbcda20b986498911e2df",
+  "unmeasured": [
+    "brand-assets",
+    "cross-gpu-reproducibility",
+    "platform-safe-zone-geometry",
+    "production-quality-thresholds"
+  ]
+}
