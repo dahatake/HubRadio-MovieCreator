@@ -1,5 +1,7 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using HubRadio.Core.Identity;
 using Microsoft.Data.Sqlite;
@@ -31,17 +33,28 @@ public sealed class DatabaseMigrationResult
 
 public static class DatabaseMigrator
 {
-    private const int InitialSchemaVersion = 1;
+    private const int LatestSchemaVersion = 2;
     private const int DefaultTimeoutSeconds = 5;
-    private const string InitialMigrationName = "001_initial";
-    private const string InitialMigrationResourceName =
-        "HubRadio.Infrastructure.Database.Migrations.001_initial.sql";
+    private const string SchemaDigestDomain =
+        "HubRadio.MovieCreator.DatabaseMigrationSet/v1";
     private const string TimestampFormat = "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'";
     private const string BackupTimestampFormat = "yyyyMMdd'T'HHmmssfffffff'Z'";
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
+
+    private static readonly MigrationResource[] MigrationResources =
+    [
+        new(
+            1,
+            "001_initial",
+            "HubRadio.Infrastructure.Database.Migrations.001_initial.sql"),
+        new(
+            2,
+            "002_jobs",
+            "HubRadio.Infrastructure.Database.Migrations.002_jobs.sql"),
+    ];
 
     public static DatabaseMigrationResult Migrate(
         string databasePath,
@@ -61,7 +74,8 @@ public static class DatabaseMigrator
         string normalizedBackupDirectory = ValidateLocalAbsolutePath(
             backupDirectory,
             nameof(backupDirectory));
-        MigrationDefinition migration = LoadInitialMigration();
+        IReadOnlyList<MigrationDefinition> migrations = LoadMigrations();
+        ContentDigest schemaDigest = ComputeSchemaDigest(migrations);
 
         using SqliteConnection connection = OpenConnection(
             normalizedDatabasePath,
@@ -70,7 +84,7 @@ public static class DatabaseMigrator
         SchemaState schemaState;
         try
         {
-            schemaState = InspectSchema(connection, migration);
+            schemaState = InspectSchema(connection, migrations);
         }
         catch (SqliteException exception)
         {
@@ -80,14 +94,15 @@ public static class DatabaseMigrator
                 exception);
         }
 
-        if (schemaState == SchemaState.Current)
+        if (schemaState.IsCompatible &&
+            schemaState.CurrentVersion == LatestSchemaVersion)
         {
             ValidateDatabase(connection);
             return new DatabaseMigrationResult(
                 applied: false,
                 backupPath: null,
-                InitialSchemaVersion,
-                migration.Digest);
+                LatestSchemaVersion,
+                schemaDigest);
         }
 
         string backupPath = CreateValidatedBackup(
@@ -95,56 +110,86 @@ public static class DatabaseMigrator
             normalizedBackupDirectory,
             timeProvider);
 
-        if (schemaState == SchemaState.Incompatible)
+        if (!schemaState.IsCompatible)
         {
             throw new InvalidOperationException(
                 "The database schema is not the expected migration version.");
         }
 
-        ApplyInitialMigration(connection, migration, timeProvider);
+        foreach (MigrationDefinition migration in migrations.Skip(schemaState.CurrentVersion))
+        {
+            ApplyMigration(connection, migration, timeProvider);
+        }
+
+        SchemaState migratedState = InspectSchema(connection, migrations);
+        if (!migratedState.IsCompatible ||
+            migratedState.CurrentVersion != LatestSchemaVersion)
+        {
+            throw new InvalidOperationException(
+                "The database schema did not reach the expected migration version.");
+        }
+
         ValidateDatabase(connection);
 
         return new DatabaseMigrationResult(
             applied: true,
             backupPath,
-            InitialSchemaVersion,
-            migration.Digest);
+            LatestSchemaVersion,
+            schemaDigest);
     }
 
-    private static MigrationDefinition LoadInitialMigration()
+    private static IReadOnlyList<MigrationDefinition> LoadMigrations()
     {
         Assembly assembly = typeof(DatabaseMigrator).Assembly;
-        using Stream stream = assembly.GetManifestResourceStream(InitialMigrationResourceName)
-            ?? throw new InvalidOperationException(
-                "The embedded initial database migration is unavailable.");
-        using var buffer = new MemoryStream();
-        stream.CopyTo(buffer);
-        byte[] bytes = buffer.ToArray();
+        var migrations = new MigrationDefinition[MigrationResources.Length];
 
-        if (bytes.Length == 0)
+        for (int index = 0; index < MigrationResources.Length; index++)
         {
-            throw new InvalidOperationException(
-                "The embedded initial database migration is empty.");
+            MigrationResource resource = MigrationResources[index];
+            if (resource.Version != index + 1)
+            {
+                throw new InvalidOperationException(
+                    "Embedded database migrations must form a contiguous ordered sequence.");
+            }
+
+            using Stream stream = assembly.GetManifestResourceStream(resource.ResourceName)
+                ?? throw new InvalidOperationException(
+                    $"The embedded database migration {resource.Name} is unavailable.");
+            using var buffer = new MemoryStream();
+            stream.CopyTo(buffer);
+            byte[] bytes = buffer.ToArray();
+
+            if (bytes.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    $"The embedded database migration {resource.Name} is empty.");
+            }
+
+            string sql;
+            try
+            {
+                sql = StrictUtf8.GetString(bytes);
+            }
+            catch (DecoderFallbackException exception)
+            {
+                throw new InvalidOperationException(
+                    $"The embedded database migration {resource.Name} is not valid UTF-8.",
+                    exception);
+            }
+
+            migrations[index] = new MigrationDefinition(
+                resource.Version,
+                resource.Name,
+                sql,
+                ContentDigest.Compute(bytes));
         }
 
-        string sql;
-        try
-        {
-            sql = StrictUtf8.GetString(bytes);
-        }
-        catch (DecoderFallbackException exception)
-        {
-            throw new InvalidOperationException(
-                "The embedded initial database migration is not valid UTF-8.",
-                exception);
-        }
-
-        return new MigrationDefinition(sql, ContentDigest.Compute(bytes));
+        return migrations;
     }
 
     private static SchemaState InspectSchema(
         SqliteConnection connection,
-        MigrationDefinition migration)
+        IReadOnlyList<MigrationDefinition> migrations)
     {
         using SqliteCommand objectCommand = connection.CreateCommand();
         objectCommand.CommandText = """
@@ -168,7 +213,7 @@ public static class DatabaseMigrator
                 countCommand.ExecuteScalar(),
                 CultureInfo.InvariantCulture);
             return userObjectCount == 0
-                ? SchemaState.Empty
+                ? SchemaState.Compatible(version: 0)
                 : SchemaState.Incompatible;
         }
 
@@ -177,46 +222,63 @@ public static class DatabaseMigrator
             return SchemaState.Incompatible;
         }
 
-        using SqliteCommand metadataCommand = connection.CreateCommand();
-        metadataCommand.CommandText = """
-            SELECT version, name, content_digest, applied_at
-            FROM schema_migrations
-            ORDER BY version;
-            """;
-        using SqliteDataReader reader = metadataCommand.ExecuteReader();
+        int migrationCount = 0;
+        using (SqliteCommand metadataCommand = connection.CreateCommand())
+        {
+            metadataCommand.CommandText = """
+                SELECT version, name, content_digest, applied_at
+                FROM schema_migrations
+                ORDER BY version;
+                """;
+            using SqliteDataReader reader = metadataCommand.ExecuteReader();
 
-        if (!reader.Read())
+            while (reader.Read())
+            {
+                if (migrationCount >= migrations.Count)
+                {
+                    return SchemaState.Incompatible;
+                }
+
+                MigrationDefinition expected = migrations[migrationCount];
+                bool isExactPrefixRow =
+                    reader.GetValue(0) is long version && version == expected.Version &&
+                    reader.GetValue(1) is string name &&
+                    string.Equals(name, expected.Name, StringComparison.Ordinal) &&
+                    reader.GetValue(2) is string digest &&
+                    string.Equals(digest, expected.Digest.Hex, StringComparison.Ordinal) &&
+                    reader.GetValue(3) is string appliedAt &&
+                    appliedAt.Length > 0 &&
+                    string.Equals(appliedAt, appliedAt.Trim(), StringComparison.Ordinal);
+
+                if (!isExactPrefixRow)
+                {
+                    return SchemaState.Incompatible;
+                }
+
+                migrationCount++;
+            }
+        }
+
+        if (migrationCount == 0 ||
+            !SchemaMatchesMigrations(connection, migrations.Take(migrationCount)))
         {
             return SchemaState.Incompatible;
         }
 
-        bool isCurrent =
-            reader.GetValue(0) is long version && version == InitialSchemaVersion &&
-            reader.GetValue(1) is string name &&
-            string.Equals(name, InitialMigrationName, StringComparison.Ordinal) &&
-            reader.GetValue(2) is string digest &&
-            string.Equals(digest, migration.Digest.Hex, StringComparison.Ordinal) &&
-            reader.GetValue(3) is string appliedAt &&
-            appliedAt.Length > 0 &&
-            string.Equals(appliedAt, appliedAt.Trim(), StringComparison.Ordinal);
-
-        return isCurrent
-            && !reader.Read()
-            && SchemaMatchesMigration(connection, migration.Sql)
-            ? SchemaState.Current
-            : SchemaState.Incompatible;
+        return SchemaState.Compatible(migrationCount);
     }
 
-    private static bool SchemaMatchesMigration(
+    private static bool SchemaMatchesMigrations(
         SqliteConnection current,
-        string migrationSql)
+        IEnumerable<MigrationDefinition> migrations)
     {
         using SqliteConnection expected = OpenConnection(
             ":memory:",
             SqliteOpenMode.ReadWriteCreate);
-        using (SqliteCommand command = expected.CreateCommand())
+        foreach (MigrationDefinition migration in migrations)
         {
-            command.CommandText = migrationSql;
+            using SqliteCommand command = expected.CreateCommand();
+            command.CommandText = migration.Sql;
             command.ExecuteNonQuery();
         }
 
@@ -251,7 +313,46 @@ public static class DatabaseMigrator
         return definitions;
     }
 
-    private static void ApplyInitialMigration(
+    private static ContentDigest ComputeSchemaDigest(
+        IReadOnlyList<MigrationDefinition> migrations)
+    {
+        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendUtf8Field(hash, tag: 1, SchemaDigestDomain);
+        AppendInt32Field(hash, tag: 2, migrations.Count);
+
+        foreach (MigrationDefinition migration in migrations)
+        {
+            AppendInt32Field(hash, tag: 3, migration.Version);
+            AppendUtf8Field(hash, tag: 4, migration.Name);
+            AppendField(hash, tag: 5, Convert.FromHexString(migration.Digest.Hex));
+        }
+
+        return ContentDigest.FromBytes(hash.GetHashAndReset());
+    }
+
+    private static void AppendUtf8Field(IncrementalHash hash, byte tag, string value) =>
+        AppendField(hash, tag, StrictUtf8.GetBytes(value));
+
+    private static void AppendInt32Field(IncrementalHash hash, byte tag, int value)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32BigEndian(bytes, value);
+        AppendField(hash, tag, bytes);
+    }
+
+    private static void AppendField(
+        IncrementalHash hash,
+        byte tag,
+        ReadOnlySpan<byte> value)
+    {
+        Span<byte> header = stackalloc byte[sizeof(byte) + sizeof(int)];
+        header[0] = tag;
+        BinaryPrimitives.WriteInt32BigEndian(header[1..], value.Length);
+        hash.AppendData(header);
+        hash.AppendData(value);
+    }
+
+    private static void ApplyMigration(
         SqliteConnection connection,
         MigrationDefinition migration,
         TimeProvider timeProvider)
@@ -278,8 +379,8 @@ public static class DatabaseMigrator
                 )
                 VALUES ($version, $name, $content_digest, $applied_at);
                 """;
-            metadataCommand.Parameters.AddWithValue("$version", InitialSchemaVersion);
-            metadataCommand.Parameters.AddWithValue("$name", InitialMigrationName);
+            metadataCommand.Parameters.AddWithValue("$version", migration.Version);
+            metadataCommand.Parameters.AddWithValue("$name", migration.Name);
             metadataCommand.Parameters.AddWithValue(
                 "$content_digest",
                 migration.Digest.Hex);
@@ -292,7 +393,7 @@ public static class DatabaseMigrator
             if (metadataCommand.ExecuteNonQuery() != 1)
             {
                 throw new InvalidOperationException(
-                    "The initial database migration metadata was not recorded.");
+                    $"Database migration metadata was not recorded for {migration.Name}.");
             }
         }
 
@@ -312,7 +413,7 @@ public static class DatabaseMigrator
             .UtcDateTime
             .ToString(BackupTimestampFormat, CultureInfo.InvariantCulture);
         string backupFileName = string.Concat(
-            "hubradio-before-schema-001-",
+            "hubradio-before-schema-002-",
             timestamp,
             "-",
             Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
@@ -499,21 +600,47 @@ public static class DatabaseMigrator
 
     private sealed class MigrationDefinition
     {
-        public MigrationDefinition(string sql, ContentDigest digest)
+        public MigrationDefinition(
+            int version,
+            string name,
+            string sql,
+            ContentDigest digest)
         {
+            Version = version;
+            Name = name;
             Sql = sql;
             Digest = digest;
         }
+
+        public int Version { get; }
+
+        public string Name { get; }
 
         public string Sql { get; }
 
         public ContentDigest Digest { get; }
     }
 
-    private enum SchemaState
+    private sealed class MigrationResource
     {
-        Empty,
-        Current,
-        Incompatible,
+        public MigrationResource(int version, string name, string resourceName)
+        {
+            Version = version;
+            Name = name;
+            ResourceName = resourceName;
+        }
+
+        public int Version { get; }
+
+        public string Name { get; }
+
+        public string ResourceName { get; }
+    }
+
+    private readonly record struct SchemaState(bool IsCompatible, int CurrentVersion)
+    {
+        public static SchemaState Incompatible => new(false, 0);
+
+        public static SchemaState Compatible(int version) => new(true, version);
     }
 }

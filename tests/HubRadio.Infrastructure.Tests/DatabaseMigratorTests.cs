@@ -1,5 +1,8 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using HubRadio.Core.Identity;
 using HubRadio.Infrastructure.Database;
@@ -44,7 +47,7 @@ public sealed class DatabaseMigratorTests
             timeProvider);
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(1, result.SchemaVersion);
+        Assert.AreEqual(2, result.SchemaVersion);
         Assert.AreEqual(64, result.SchemaDigest.Hex.Length);
         Assert.AreEqual(result.SchemaDigest.Hex, result.SchemaDigest.Hex.ToLowerInvariant());
         Assert.IsTrue(typeof(DatabaseMigrationResult).IsSealed);
@@ -60,7 +63,7 @@ public sealed class DatabaseMigratorTests
         Assert.IsTrue(
             Regex.IsMatch(
                 Path.GetFileName(backupPath),
-                "^hubradio-before-schema-001-20300102T0304056789012Z-[0-9a-f]{32}\\.db$",
+                "^hubradio-before-schema-002-20300102T0304056789012Z-[0-9a-f]{32}\\.db$",
                 RegexOptions.CultureInvariant));
         Assert.AreEqual(1, GetBackupFiles(temporary).Length);
 
@@ -77,6 +80,10 @@ public sealed class DatabaseMigratorTests
             "artifacts",
             "audit_events",
             "composition_versions",
+            "job_attempts",
+            "job_heartbeats",
+            "job_progress",
+            "jobs",
             "projects",
             "review_comments",
             "review_records",
@@ -92,6 +99,42 @@ public sealed class DatabaseMigratorTests
                 ["id", "revision", "publication_scope", "deadline", "payload", "updated_at"],
             ["composition_versions"] =
                 ["id", "project_id", "parent_version_id", "content_digest", "created_at", "payload"],
+            ["jobs"] =
+            [
+                "id",
+                "project_id",
+                "kind",
+                "state",
+                "created_at",
+                "updated_at",
+                "current_attempt_number",
+                "revision",
+            ],
+            ["job_attempts"] =
+            [
+                "id",
+                "job_id",
+                "sequence_number",
+                "state",
+                "queued_at",
+                "started_at",
+                "completed_at",
+                "error_code",
+            ],
+            ["job_progress"] =
+            [
+                "id",
+                "job_id",
+                "job_attempt_id",
+                "sequence_number",
+                "recorded_at",
+                "completed_units",
+                "total_units",
+                "phase",
+                "message",
+            ],
+            ["job_heartbeats"] =
+                ["id", "job_id", "job_attempt_id", "sequence_number", "recorded_at"],
             ["working_copies"] =
                 ["id", "project_id", "base_version_id", "revision", "updated_at", "payload"],
             ["review_records"] =
@@ -189,6 +232,11 @@ public sealed class DatabaseMigratorTests
             "idx_audit_events_project_occurred_at",
             "idx_composition_versions_content_digest",
             "idx_composition_versions_project_id",
+            "idx_job_attempts_job_id_sequence_number",
+            "idx_job_heartbeats_attempt_recorded_at",
+            "idx_job_progress_attempt_recorded_at",
+            "idx_jobs_project_id",
+            "idx_jobs_state_created_at",
             "idx_review_comments_project_id",
             "idx_review_comments_version",
             "idx_review_records_project_id",
@@ -211,20 +259,468 @@ public sealed class DatabaseMigratorTests
                 FROM schema_migrations;
                 """;
             using SqliteDataReader reader = metadata.ExecuteReader();
-            Assert.IsTrue(reader.Read());
-            Assert.AreEqual(1L, reader.GetInt64(0));
-            Assert.AreEqual("001_initial", reader.GetString(1));
-            Assert.AreEqual(result.SchemaDigest.Hex, reader.GetString(2));
-            Assert.AreEqual(Timestamp, reader.GetString(3));
+            (long Version, string Name, ContentDigest Digest)[] expectedMigrations =
+            [
+                (1, "001_initial", ReadEmbeddedMigrationDigest("001_initial")),
+                (2, "002_jobs", ReadEmbeddedMigrationDigest("002_jobs")),
+            ];
+            foreach ((long version, string name, ContentDigest digest) in expectedMigrations)
+            {
+                Assert.IsTrue(reader.Read());
+                Assert.AreEqual(version, reader.GetInt64(0));
+                Assert.AreEqual(name, reader.GetString(1));
+                Assert.AreEqual(digest.Hex, reader.GetString(2));
+                Assert.AreEqual(Timestamp, reader.GetString(3));
+            }
+
             Assert.IsFalse(reader.Read());
         }
 
-        using Stream resource = typeof(DatabaseMigrator).Assembly.GetManifestResourceStream(
-            "HubRadio.Infrastructure.Database.Migrations.001_initial.sql")
-            ?? throw new AssertFailedException("The migration resource was not embedded.");
-        using var bytes = new MemoryStream();
-        resource.CopyTo(bytes);
-        Assert.AreEqual(ContentDigest.Compute(bytes.ToArray()), result.SchemaDigest);
+        Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
+        Assert.AreNotEqual(ReadEmbeddedMigrationDigest("001_initial"), result.SchemaDigest);
+        Assert.AreNotEqual(ReadEmbeddedMigrationDigest("002_jobs"), result.SchemaDigest);
+        AssertDatabaseChecksPass(connection);
+    }
+
+    [TestMethod]
+    public void Migrate_ExactVersionOneDatabaseCreatesOneBackupAndAppliesOnlyVersionTwo()
+    {
+        using TemporaryDatabase temporary = new();
+        CreateExactVersionOneDatabase(temporary);
+
+        DatabaseMigrationResult result = DatabaseMigrator.Migrate(
+            temporary.DatabasePath,
+            temporary.BackupDirectory,
+            new FixedTimeProvider(FixedUtcNow.AddMinutes(1)));
+
+        Assert.IsTrue(result.Applied);
+        Assert.AreEqual(2, result.SchemaVersion);
+        Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
+
+        string backupPath = result.BackupPath
+            ?? throw new AssertFailedException("An upgrade must return its backup path.");
+        CollectionAssert.AreEqual(new[] { backupPath }, GetBackupFiles(temporary));
+
+        string[] versionOneTables =
+        [
+            "approvals",
+            "artifacts",
+            "audit_events",
+            "composition_versions",
+            "projects",
+            "review_comments",
+            "review_records",
+            "schema_migrations",
+            "working_copies",
+        ];
+        using (SqliteConnection backup = OpenConnection(backupPath, SqliteOpenMode.ReadOnly))
+        {
+            CollectionAssert.AreEqual(versionOneTables, GetUserTableNames(backup));
+            Assert.AreEqual(
+                1L,
+                ExecuteScalarInt64(backup, "SELECT COUNT(*) FROM schema_migrations;"));
+            Assert.AreEqual(
+                1L,
+                ExecuteScalarInt64(backup, "SELECT COUNT(*) FROM projects;"));
+            Assert.AreEqual(
+                Timestamp,
+                ExecuteScalarString(
+                    backup,
+                    "SELECT applied_at FROM schema_migrations WHERE version = 1;"));
+            AssertDatabaseChecksPass(backup);
+        }
+
+        using SqliteConnection upgraded = OpenConnection(temporary.DatabasePath);
+        CollectionAssert.AreEquivalent(
+            new[] { "job_attempts", "job_heartbeats", "job_progress", "jobs" },
+            GetUserTableNames(upgraded).Except(versionOneTables).ToArray());
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "idx_job_attempts_job_id_sequence_number",
+                "idx_job_heartbeats_attempt_recorded_at",
+                "idx_job_progress_attempt_recorded_at",
+                "idx_jobs_project_id",
+                "idx_jobs_state_created_at",
+            },
+            GetExplicitIndexNames(upgraded)
+                .Except(GetVersionOneExplicitIndexNames())
+                .ToArray());
+        Assert.AreEqual(
+            1L,
+            ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM projects;"));
+        Assert.AreEqual(
+            2L,
+            ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
+        Assert.AreEqual(
+            "001_initial",
+            ExecuteScalarString(
+                upgraded,
+                "SELECT name FROM schema_migrations WHERE version = 1;"));
+        Assert.AreEqual(
+            ReadEmbeddedMigrationDigest("001_initial").Hex,
+            ExecuteScalarString(
+                upgraded,
+                "SELECT content_digest FROM schema_migrations WHERE version = 1;"));
+        Assert.AreEqual(
+            Timestamp,
+            ExecuteScalarString(
+                upgraded,
+                "SELECT applied_at FROM schema_migrations WHERE version = 1;"));
+        Assert.AreEqual(
+            "002_jobs",
+            ExecuteScalarString(
+                upgraded,
+                "SELECT name FROM schema_migrations WHERE version = 2;"));
+        Assert.AreEqual(
+            ReadEmbeddedMigrationDigest("002_jobs").Hex,
+            ExecuteScalarString(
+                upgraded,
+                "SELECT content_digest FROM schema_migrations WHERE version = 2;"));
+        AssertDatabaseChecksPass(upgraded);
+    }
+
+    [TestMethod]
+    public void Migration002_DefinesOnlyTheRequiredStrictTablesColumnsForeignKeysAndIndexes()
+    {
+        using TemporaryDatabase temporary = CreateMigratedDatabase();
+        using SqliteConnection connection = OpenConnection(temporary.DatabasePath);
+
+        Dictionary<string, string[]> expectedColumns = new(StringComparer.Ordinal)
+        {
+            ["jobs"] =
+            [
+                "id",
+                "project_id",
+                "kind",
+                "state",
+                "created_at",
+                "updated_at",
+                "current_attempt_number",
+                "revision",
+            ],
+            ["job_attempts"] =
+            [
+                "id",
+                "job_id",
+                "sequence_number",
+                "state",
+                "queued_at",
+                "started_at",
+                "completed_at",
+                "error_code",
+            ],
+            ["job_progress"] =
+            [
+                "id",
+                "job_id",
+                "job_attempt_id",
+                "sequence_number",
+                "recorded_at",
+                "completed_units",
+                "total_units",
+                "phase",
+                "message",
+            ],
+            ["job_heartbeats"] =
+                ["id", "job_id", "job_attempt_id", "sequence_number", "recorded_at"],
+        };
+
+        foreach ((string table, string[] columns) in expectedColumns)
+        {
+            CollectionAssert.AreEqual(columns, GetTableColumns(connection, table), table);
+            Assert.AreEqual(
+                1L,
+                ExecuteScalarInt64(
+                    connection,
+                    """
+                        SELECT strict
+                        FROM pragma_table_list
+                        WHERE schema = 'main' AND type = 'table' AND name = $table;
+                        """,
+                    ("$table", table)),
+                table);
+        }
+
+        CollectionAssert.AreEqual(
+            new[] { "projects:project_id->id:RESTRICT:RESTRICT" },
+            GetForeignKeyBindings(connection, "jobs"));
+        CollectionAssert.AreEqual(
+            new[] { "jobs:job_id->id:RESTRICT:RESTRICT" },
+            GetForeignKeyBindings(connection, "job_attempts"));
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "job_attempts:job_id->job_id:RESTRICT:RESTRICT",
+                "job_attempts:job_attempt_id->id:RESTRICT:RESTRICT",
+                "job_attempts:sequence_number->sequence_number:RESTRICT:RESTRICT",
+            },
+            GetForeignKeyBindings(connection, "job_progress"));
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "job_attempts:job_id->job_id:RESTRICT:RESTRICT",
+                "job_attempts:job_attempt_id->id:RESTRICT:RESTRICT",
+                "job_attempts:sequence_number->sequence_number:RESTRICT:RESTRICT",
+            },
+            GetForeignKeyBindings(connection, "job_heartbeats"));
+
+        Dictionary<string, string[]> expectedIndexes = new(StringComparer.Ordinal)
+        {
+            ["idx_jobs_state_created_at"] = ["state", "created_at"],
+            ["idx_jobs_project_id"] = ["project_id"],
+            ["idx_job_attempts_job_id_sequence_number"] = ["job_id", "sequence_number"],
+            ["idx_job_progress_attempt_recorded_at"] = ["job_attempt_id", "recorded_at"],
+            ["idx_job_heartbeats_attempt_recorded_at"] = ["job_attempt_id", "recorded_at"],
+        };
+        foreach ((string index, string[] columns) in expectedIndexes)
+        {
+            CollectionAssert.AreEqual(columns, GetIndexColumns(connection, index), index);
+        }
+
+        Assert.AreEqual(
+            1L,
+            ExecuteScalarInt64(
+                connection,
+                """
+                    SELECT [unique]
+                    FROM pragma_index_list('job_attempts')
+                    WHERE name = 'idx_job_attempts_job_id_sequence_number';
+                    """));
+        Assert.AreEqual(
+            0L,
+            ExecuteScalarInt64(
+                connection,
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type IN ('view', 'trigger');"));
+    }
+
+    [TestMethod]
+    public void Migration002_ChecksMirrorJobSnapshotsAndCompositeAttemptBindings()
+    {
+        using TemporaryDatabase temporary = CreateMigratedDatabase();
+        using SqliteConnection connection = OpenConnection(temporary.DatabasePath);
+        InsertProject(connection, ProjectId);
+        InsertProject(connection, OtherProjectId);
+
+        string jobId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+        string otherJobId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+        AssertConstraintViolation(
+            () => InsertJob(connection, jobId, OtherVersionId, "kind", "queued", 0));
+        AssertConstraintViolation(
+            () => InsertJob(connection, jobId, ProjectId, " kind", "queued", 0));
+        AssertConstraintViolation(
+            () => InsertJob(connection, jobId, ProjectId, "kind", "unknown", 0));
+        AssertConstraintViolation(
+            () => InsertJob(connection, jobId, ProjectId, "kind", "queued", -1));
+        AssertConstraintViolation(
+            () => InsertJob(connection, jobId, ProjectId, "kind", "running", 0));
+        AssertConstraintViolation(
+            () => InsertJob(
+                connection,
+                jobId,
+                ProjectId,
+                "kind",
+                "queued",
+                0,
+                updatedAt: "2029-01-02T03:04:05.6789012Z"));
+        AssertConstraintViolation(
+            () => InsertJob(connection, jobId, ProjectId, "kind", "queued", 0, revision: -1));
+
+        InsertJob(connection, jobId, ProjectId, "kind", "queued", 0);
+        InsertJob(connection, otherJobId, OtherProjectId, "kind", "running", 1);
+
+        (string State, string? StartedAt, string? CompletedAt, string? ErrorCode)[] snapshots =
+        [
+            ("queued", null, null, null),
+            ("running", Timestamp, null, null),
+            ("succeeded", Timestamp, Timestamp, null),
+            ("failed", Timestamp, Timestamp, "worker.process_failed"),
+            ("cancelled", null, Timestamp, null),
+            ("interrupted", Timestamp, Timestamp, "worker.process_interrupted"),
+        ];
+        var attemptIds = new List<string>();
+        for (int index = 0; index < snapshots.Length; index++)
+        {
+            string attemptId = Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture);
+            attemptIds.Add(attemptId);
+            (string state, string? startedAt, string? completedAt, string? errorCode) =
+                snapshots[index];
+            InsertJobAttempt(
+                connection,
+                attemptId,
+                jobId,
+                index + 1,
+                state,
+                startedAt,
+                completedAt,
+                errorCode);
+        }
+
+        string invalidAttemptId = Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture);
+        AssertConstraintViolation(
+            () => InsertJobAttempt(
+                connection, invalidAttemptId, jobId, 0, "queued", null, null, null));
+        AssertConstraintViolation(
+            () => InsertJobAttempt(
+                connection, invalidAttemptId, jobId, 7, "queued", Timestamp, null, null));
+        AssertConstraintViolation(
+            () => InsertJobAttempt(
+                connection, invalidAttemptId, jobId, 7, "running", null, null, null));
+        AssertConstraintViolation(
+            () => InsertJobAttempt(
+                connection, invalidAttemptId, jobId, 7, "succeeded", Timestamp, null, null));
+        AssertConstraintViolation(
+            () => InsertJobAttempt(
+                connection, invalidAttemptId, jobId, 7, "failed", Timestamp, Timestamp, null));
+        AssertConstraintViolation(
+            () => InsertJobAttempt(
+                connection, invalidAttemptId, jobId, 7, "failed", Timestamp, Timestamp, "Worker.failed"));
+        AssertConstraintViolation(
+            () => InsertJobAttempt(
+                connection, invalidAttemptId, jobId, 7, "failed", Timestamp, Timestamp, "worker..failed"));
+        AssertConstraintViolation(
+            () => InsertJobAttempt(
+                connection, invalidAttemptId, jobId, 7, "failed", Timestamp, Timestamp, "worker.run__failed"));
+        AssertConstraintViolation(
+            () => InsertJobAttempt(
+                connection, invalidAttemptId, jobId, 7, "cancelled", null, null, null));
+        AssertConstraintViolation(
+            () => InsertJobAttempt(
+                connection,
+                invalidAttemptId,
+                jobId,
+                7,
+                "interrupted",
+                null,
+                Timestamp,
+                "worker.interrupted"));
+        AssertConstraintViolation(
+            () => InsertJobAttempt(
+                connection,
+                invalidAttemptId,
+                jobId,
+                7,
+                "running",
+                "2029-01-02T03:04:05.6789012Z",
+                null,
+                null));
+        AssertConstraintViolation(
+            () => InsertJobAttempt(
+                connection,
+                invalidAttemptId,
+                jobId,
+                7,
+                "succeeded",
+                Timestamp,
+                "2029-01-02T03:04:05.6789012Z",
+                null));
+        AssertConstraintViolation(
+            () => InsertJobAttempt(
+                connection,
+                Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture),
+                jobId,
+                1,
+                "queued",
+                null,
+                null,
+                null));
+
+        string progressId = Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture);
+        InsertJobProgress(connection, progressId, jobId, attemptIds[1], 2, 3, 10, "decode", "Working");
+        AssertConstraintViolation(
+            () => InsertJobProgress(
+                connection,
+                Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture),
+                otherJobId,
+                attemptIds[1],
+                2,
+                0,
+                null,
+                null,
+                null));
+        AssertConstraintViolation(
+            () => InsertJobProgress(
+                connection,
+                Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture),
+                jobId,
+                attemptIds[1],
+                3,
+                0,
+                null,
+                null,
+                null));
+        AssertConstraintViolation(
+            () => InsertJobProgress(
+                connection,
+                Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture),
+                jobId,
+                attemptIds[1],
+                2,
+                -1,
+                null,
+                null,
+                null));
+        AssertConstraintViolation(
+            () => InsertJobProgress(
+                connection,
+                Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture),
+                jobId,
+                attemptIds[1],
+                2,
+                2,
+                1,
+                null,
+                null));
+        AssertConstraintViolation(
+            () => InsertJobProgress(
+                connection,
+                Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture),
+                jobId,
+                attemptIds[1],
+                2,
+                0,
+                0,
+                null,
+                null));
+        AssertConstraintViolation(
+            () => InsertJobProgress(
+                connection,
+                Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture),
+                jobId,
+                attemptIds[1],
+                2,
+                0,
+                null,
+                " phase",
+                null));
+
+        string heartbeatId = Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture);
+        InsertJobHeartbeat(connection, heartbeatId, jobId, attemptIds[1], 2);
+        AssertConstraintViolation(
+            () => InsertJobHeartbeat(
+                connection,
+                Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture),
+                otherJobId,
+                attemptIds[1],
+                2));
+        AssertConstraintViolation(
+            () => InsertJobHeartbeat(
+                connection,
+                Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture),
+                jobId,
+                attemptIds[1],
+                1));
+
+        AssertConstraintViolation(
+            () => ExecuteNonQuery(
+                connection,
+                "DELETE FROM job_attempts WHERE id = $id;",
+                ("$id", attemptIds[1])));
+        AssertConstraintViolation(
+            () => ExecuteNonQuery(
+                connection,
+                "DELETE FROM jobs WHERE id = $id;",
+                ("$id", jobId)));
         AssertDatabaseChecksPass(connection);
     }
 
@@ -252,7 +748,7 @@ public sealed class DatabaseMigratorTests
 
         Assert.IsFalse(second.Applied);
         Assert.IsNull(second.BackupPath);
-        Assert.AreEqual(1, second.SchemaVersion);
+        Assert.AreEqual(2, second.SchemaVersion);
         Assert.AreEqual(first.SchemaDigest, second.SchemaDigest);
         CollectionAssert.AreEqual(originalBackups, GetBackupFiles(temporary));
 
@@ -551,8 +1047,9 @@ public sealed class DatabaseMigratorTests
     [DataRow("name")]
     [DataRow("digest")]
     [DataRow("missing")]
+    [DataRow("gap")]
     [DataRow("future")]
-    public void Migrate_TamperedOrUnknownMetadataCreatesBackupThenFailsClosed(string mutation)
+    public void Migrate_TamperedGapOrUnknownMetadataCreatesBackupThenFailsClosed(string mutation)
     {
         using TemporaryDatabase temporary = CreateMigratedDatabase();
         using (SqliteConnection connection = OpenConnection(temporary.DatabasePath))
@@ -562,23 +1059,37 @@ public sealed class DatabaseMigratorTests
                 case "name":
                     ExecuteNonQuery(
                         connection,
-                        "UPDATE schema_migrations SET name = $name;",
+                        "UPDATE schema_migrations SET name = $name WHERE version = 2;",
                         ("$name", "001_changed"));
                     break;
                 case "digest":
                     ExecuteNonQuery(
                         connection,
-                        "UPDATE schema_migrations SET content_digest = $digest;",
+                        "UPDATE schema_migrations SET content_digest = $digest WHERE version = 2;",
                         ("$digest", DigestB));
                     break;
                 case "missing":
                     ExecuteNonQuery(connection, "DELETE FROM schema_migrations;");
                     break;
+                case "gap":
+                    ExecuteNonQuery(
+                        connection,
+                        "DELETE FROM schema_migrations WHERE version = 1;");
+                    break;
                 case "future":
                     ExecuteNonQuery(
                         connection,
-                        "UPDATE schema_migrations SET version = $version;",
-                        ("$version", 2));
+                        """
+                            INSERT INTO schema_migrations (
+                                version,
+                                name,
+                                content_digest,
+                                applied_at
+                            )
+                            VALUES (3, '003_unknown', $digest, $applied_at);
+                            """,
+                        ("$digest", DigestA),
+                        ("$applied_at", Timestamp));
                     break;
                 default:
                     throw new AssertFailedException("Unknown test mutation.");
@@ -607,6 +1118,8 @@ public sealed class DatabaseMigratorTests
     [TestMethod]
     [DataRow("table")]
     [DataRow("index")]
+    [DataRow("jobs-table")]
+    [DataRow("jobs-index")]
     public void Migrate_CurrentMetadataWithAlteredSchemaCreatesBackupThenFailsClosed(
         string mutation)
     {
@@ -615,9 +1128,14 @@ public sealed class DatabaseMigratorTests
         {
             ExecuteNonQuery(
                 connection,
-                mutation == "table"
-                    ? "DROP TABLE artifacts;"
-                    : "DROP INDEX idx_artifacts_content_digest;");
+                mutation switch
+                {
+                    "table" => "DROP TABLE artifacts;",
+                    "index" => "DROP INDEX idx_artifacts_content_digest;",
+                    "jobs-table" => "DROP TABLE job_heartbeats;",
+                    "jobs-index" => "DROP INDEX idx_jobs_state_created_at;",
+                    _ => throw new AssertFailedException("Unknown schema mutation."),
+                });
             AssertDatabaseChecksPass(connection);
         }
 
@@ -723,7 +1241,7 @@ public sealed class DatabaseMigratorTests
         Assert.IsTrue(retry.Applied);
         Assert.AreEqual(2, GetBackupFiles(temporary).Length);
         using SqliteConnection migrated = OpenConnection(temporary.DatabasePath);
-        Assert.AreEqual(9, GetUserTableNames(migrated).Length);
+        Assert.AreEqual(13, GetUserTableNames(migrated).Length);
         AssertDatabaseChecksPass(migrated);
     }
 
@@ -744,9 +1262,9 @@ public sealed class DatabaseMigratorTests
             0L,
             ExecuteScalarInt64(connection, "SELECT COUNT(*) FROM projects;"));
         Assert.AreEqual(
-            1L,
+            2L,
             ExecuteScalarInt64(connection, "SELECT COUNT(*) FROM schema_migrations;"));
-        Assert.AreEqual(9, GetUserTableNames(connection).Length);
+        Assert.AreEqual(13, GetUserTableNames(connection).Length);
         AssertDatabaseChecksPass(connection);
     }
 
@@ -803,6 +1321,29 @@ public sealed class DatabaseMigratorTests
             temporary.Dispose();
             throw;
         }
+    }
+
+    private static void CreateExactVersionOneDatabase(TemporaryDatabase temporary)
+    {
+        using SqliteConnection connection = OpenConnection(
+            temporary.DatabasePath,
+            SqliteOpenMode.ReadWriteCreate);
+        ExecuteNonQuery(connection, ReadEmbeddedMigrationSql("001_initial"));
+        ExecuteNonQuery(
+            connection,
+            """
+                INSERT INTO schema_migrations (
+                    version,
+                    name,
+                    content_digest,
+                    applied_at
+                )
+                VALUES (1, '001_initial', $digest, $applied_at);
+                """,
+            ("$digest", ReadEmbeddedMigrationDigest("001_initial").Hex),
+            ("$applied_at", Timestamp));
+        InsertProject(connection, ProjectId);
+        AssertDatabaseChecksPass(connection);
     }
 
     private static SqliteConnection OpenConnection(
@@ -900,6 +1441,48 @@ public sealed class DatabaseMigratorTests
 
         return names.ToArray();
     }
+
+    private static string[] GetForeignKeyBindings(SqliteConnection connection, string table)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT [table], [from], [to], on_update, on_delete
+            FROM pragma_foreign_key_list($table)
+            ORDER BY id, seq;
+            """;
+        command.Parameters.AddWithValue("$table", table);
+        using SqliteDataReader reader = command.ExecuteReader();
+        var bindings = new List<string>();
+        while (reader.Read())
+        {
+            bindings.Add(string.Concat(
+                reader.GetString(0),
+                ":",
+                reader.GetString(1),
+                "->",
+                reader.GetString(2),
+                ":",
+                reader.GetString(3),
+                ":",
+                reader.GetString(4)));
+        }
+
+        return bindings.ToArray();
+    }
+
+    private static string[] GetVersionOneExplicitIndexNames() =>
+    [
+        "idx_approvals_project_id",
+        "idx_approvals_version",
+        "idx_artifacts_content_digest",
+        "idx_audit_events_project_occurred_at",
+        "idx_composition_versions_content_digest",
+        "idx_composition_versions_project_id",
+        "idx_review_comments_project_id",
+        "idx_review_comments_version",
+        "idx_review_records_project_id",
+        "idx_review_records_version",
+    ];
 
     private static void AssertNoCascadeForeignKeys(
         SqliteConnection connection,
@@ -1249,6 +1832,174 @@ public sealed class DatabaseMigratorTests
             ("$created_at", Timestamp));
     }
 
+    private static void InsertJob(
+        SqliteConnection connection,
+        string id,
+        string projectId,
+        string kind,
+        string state,
+        long currentAttemptNumber,
+        string updatedAt = Timestamp,
+        long revision = 0)
+    {
+        ExecuteNonQuery(
+            connection,
+            """
+                INSERT INTO jobs (
+                    id,
+                    project_id,
+                    kind,
+                    state,
+                    created_at,
+                    updated_at,
+                    current_attempt_number,
+                    revision
+                )
+                VALUES (
+                    $id,
+                    $project_id,
+                    $kind,
+                    $state,
+                    $created_at,
+                    $updated_at,
+                    $current_attempt_number,
+                    $revision
+                );
+                """,
+            ("$id", id),
+            ("$project_id", projectId),
+            ("$kind", kind),
+            ("$state", state),
+            ("$created_at", Timestamp),
+            ("$updated_at", updatedAt),
+            ("$current_attempt_number", currentAttemptNumber),
+            ("$revision", revision));
+    }
+
+    private static void InsertJobAttempt(
+        SqliteConnection connection,
+        string id,
+        string jobId,
+        long sequenceNumber,
+        string state,
+        string? startedAt,
+        string? completedAt,
+        string? errorCode)
+    {
+        ExecuteNonQuery(
+            connection,
+            """
+                INSERT INTO job_attempts (
+                    id,
+                    job_id,
+                    sequence_number,
+                    state,
+                    queued_at,
+                    started_at,
+                    completed_at,
+                    error_code
+                )
+                VALUES (
+                    $id,
+                    $job_id,
+                    $sequence_number,
+                    $state,
+                    $queued_at,
+                    $started_at,
+                    $completed_at,
+                    $error_code
+                );
+                """,
+            ("$id", id),
+            ("$job_id", jobId),
+            ("$sequence_number", sequenceNumber),
+            ("$state", state),
+            ("$queued_at", Timestamp),
+            ("$started_at", startedAt),
+            ("$completed_at", completedAt),
+            ("$error_code", errorCode));
+    }
+
+    private static void InsertJobProgress(
+        SqliteConnection connection,
+        string id,
+        string jobId,
+        string jobAttemptId,
+        long sequenceNumber,
+        long completedUnits,
+        long? totalUnits,
+        string? phase,
+        string? message)
+    {
+        ExecuteNonQuery(
+            connection,
+            """
+                INSERT INTO job_progress (
+                    id,
+                    job_id,
+                    job_attempt_id,
+                    sequence_number,
+                    recorded_at,
+                    completed_units,
+                    total_units,
+                    phase,
+                    message
+                )
+                VALUES (
+                    $id,
+                    $job_id,
+                    $job_attempt_id,
+                    $sequence_number,
+                    $recorded_at,
+                    $completed_units,
+                    $total_units,
+                    $phase,
+                    $message
+                );
+                """,
+            ("$id", id),
+            ("$job_id", jobId),
+            ("$job_attempt_id", jobAttemptId),
+            ("$sequence_number", sequenceNumber),
+            ("$recorded_at", Timestamp),
+            ("$completed_units", completedUnits),
+            ("$total_units", totalUnits),
+            ("$phase", phase),
+            ("$message", message));
+    }
+
+    private static void InsertJobHeartbeat(
+        SqliteConnection connection,
+        string id,
+        string jobId,
+        string jobAttemptId,
+        long sequenceNumber)
+    {
+        ExecuteNonQuery(
+            connection,
+            """
+                INSERT INTO job_heartbeats (
+                    id,
+                    job_id,
+                    job_attempt_id,
+                    sequence_number,
+                    recorded_at
+                )
+                VALUES (
+                    $id,
+                    $job_id,
+                    $job_attempt_id,
+                    $sequence_number,
+                    $recorded_at
+                );
+                """,
+            ("$id", id),
+            ("$job_id", jobId),
+            ("$job_attempt_id", jobAttemptId),
+            ("$sequence_number", sequenceNumber),
+            ("$recorded_at", Timestamp));
+    }
+
     private static void ExecuteNonQuery(
         SqliteConnection connection,
         string sql,
@@ -1289,6 +2040,71 @@ public sealed class DatabaseMigratorTests
         AddParameters(command, parameters);
         return Convert.ToString(command.ExecuteScalar(), CultureInfo.InvariantCulture)
             ?? throw new AssertFailedException("The scalar query returned null.");
+    }
+
+    private static ContentDigest ReadEmbeddedMigrationDigest(string migrationName)
+    {
+        using Stream resource = typeof(DatabaseMigrator).Assembly.GetManifestResourceStream(
+            $"HubRadio.Infrastructure.Database.Migrations.{migrationName}.sql")
+            ?? throw new AssertFailedException(
+                $"The {migrationName} migration resource was not embedded.");
+        using var bytes = new MemoryStream();
+        resource.CopyTo(bytes);
+        return ContentDigest.Compute(bytes.ToArray());
+    }
+
+    private static string ReadEmbeddedMigrationSql(string migrationName)
+    {
+        using Stream resource = typeof(DatabaseMigrator).Assembly.GetManifestResourceStream(
+            $"HubRadio.Infrastructure.Database.Migrations.{migrationName}.sql")
+            ?? throw new AssertFailedException(
+                $"The {migrationName} migration resource was not embedded.");
+        using var reader = new StreamReader(
+            resource,
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
+            detectEncodingFromByteOrderMarks: false);
+        return reader.ReadToEnd();
+    }
+
+    private static ContentDigest ComputeExpectedSchemaDigest()
+    {
+        const string domain = "HubRadio.MovieCreator.DatabaseMigrationSet/v1";
+        (int Version, string Name, ContentDigest Digest)[] migrations =
+        [
+            (1, "001_initial", ReadEmbeddedMigrationDigest("001_initial")),
+            (2, "002_jobs", ReadEmbeddedMigrationDigest("002_jobs")),
+        ];
+
+        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        AppendField(hash, tag: 1, Encoding.UTF8.GetBytes(domain));
+        AppendInt32Field(hash, tag: 2, migrations.Length);
+        foreach ((int version, string name, ContentDigest digest) in migrations)
+        {
+            AppendInt32Field(hash, tag: 3, version);
+            AppendField(hash, tag: 4, Encoding.UTF8.GetBytes(name));
+            AppendField(hash, tag: 5, Convert.FromHexString(digest.Hex));
+        }
+
+        return ContentDigest.FromBytes(hash.GetHashAndReset());
+    }
+
+    private static void AppendInt32Field(IncrementalHash hash, byte tag, int value)
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32BigEndian(bytes, value);
+        AppendField(hash, tag, bytes);
+    }
+
+    private static void AppendField(
+        IncrementalHash hash,
+        byte tag,
+        ReadOnlySpan<byte> value)
+    {
+        Span<byte> header = stackalloc byte[sizeof(byte) + sizeof(int)];
+        header[0] = tag;
+        BinaryPrimitives.WriteInt32BigEndian(header[1..], value.Length);
+        hash.AppendData(header);
+        hash.AppendData(value);
     }
 
     private static void AddParameters(
