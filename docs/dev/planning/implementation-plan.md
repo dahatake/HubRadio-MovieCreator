@@ -4,7 +4,7 @@
 **要求の正本（暫定既定）:** `docs/requirement-definition.md` 版 0.1 Draft  
 **設計根拠:** `docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **計画日:** 2026年8月26日  
-**計画状態:** Stage 0は2026年8月27日に人手承認済み。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-005、D-008、J-003、J-009、J-010は完了し、ST-008は利用条件不同意のためcondition-falseとして閉じた。Stage 1では`A-010`と`A-015`をcondition-false、`A-012`と`A-013`を正例annotation・再評価待ちとして開始せず、[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)の手動fallbackを実装する。全203 taskの内訳は、完了43 + 先行条件不成立`ST-008` 1 + 後続159である。後続159 task IDのうち14件は条件不成立・保留（4件）またはAzure gate closed（10件）で、baseline実行対象は145件。Foundation scaffold、正規時刻・identity・provenance・project/rights・transcript revision・layout/output specification、shell-free ProcessRunner、bounded local diagnostics、tool/model binary integrity verificationは実装済みだが、編集機能、SQLite、WebView2統合、IaC、Azure resourceは未実装である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布は未承認。次の依存解放対象は`D-006`、`J-004`、`M-001`、`R-004`、`R-005`、`U-001`、`S-001`、`PK-001`、`PK-003`、`PK-004`であり、変更境界が重ならないものを並列実行する。
+**計画状態:** Stage 0は2026年8月27日に人手承認済み。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-010、D-012、J-003、J-004、J-009、J-010、M-001、R-004、R-005、U-001〜U-003、S-001は完了し、ST-008は利用条件不同意のためcondition-falseとして閉じた。Stage 1では`A-010`と`A-015`をcondition-false、`A-012`と`A-013`を正例annotation・再評価待ちとして開始せず、[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)の手動fallbackを実装する。全203 taskの内訳は、完了56 + 先行条件不成立`ST-008` 1 + 後続146である。後続146 task IDのうち14件は条件不成立・保留（4件）またはAzure gate closed（10件）で、baseline実行残は132件。Foundation scaffold、正規時刻・identity・provenance・project/rights・transcript revision・analysis provenance・layout/output specification・不変CompositionVersion・TimelineMap・render/delivery manifest・canonical JSON/cache key、shell-free ProcessRunner、Windows Job Object、bounded local diagnostics、tool/model binary integrity verification、token化file picker、版付きbrand template/layout resolver、Windows actor SID、WebView2 startup/secure bundled host/typed ping bridgeは実装済みである。SQLite、編集操作、業務UI、製品worker protocol、配布、IaC、Azure resourceは未実装であり、read-only install先での起動はpackage完成後の受入を待つ。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布は未承認。次の依存解放対象は`D-011`、`D-015`、`J-005`、`R-001`、`R-006`、`R-007`、`R-016`、`U-004`、`S-003`、`PK-001`、`PK-003`、`PK-004`、`PK-005`であり、変更境界が重ならないものを並列実行する。
 
 ---
 
@@ -229,7 +229,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.4 D — 正規モデル、SQLite、成果物ストア
 
-**実行状態: D-001〜D-005、D-008は完了。** 次の依存解放対象は`D-006`である。
+**実行状態: D-001〜D-010、D-012は完了。** `D-011`と`D-015`は依存解放済みである。`D-013`は`D-011`を待ち、WorkingCopyのSQLite永続化はD-013/D-014で実装する。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -252,7 +252,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.5 J — 永続ジョブと子プロセス
 
-**実行状態: J-003、J-009、J-010は完了。** `J-004`は依存解放済みであり、`J-001`は`D-013`を待つ。
+**実行状態: J-003、J-004、J-009、J-010は完了。** `J-005`は依存解放済みであり、`J-001`は`D-013`を待つ。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -268,6 +268,8 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | J-010 | tool/model起動前hash検証を実装する | `INFRA/Integrity/BinaryVerifier.cs`、tests | D-002,F-008 / `L-S` | package manifest不一致なら起動を拒否し監査する | NFR-003/006 | なし |
 
 ### 5.6 M — 動画取込、代理、プレビュー素材
+
+**実行状態: M-001は完了。** native pickerのpathはWeb UIへ返さず、host内の一時的な型付きasset candidate IDへ変換する。`M-002`は`D-015`と`J-001`を待つ。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -312,6 +314,8 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.8 R — 非破壊編集、字幕、レンダー
 
+**実行状態: R-004、R-005は完了。** 版付きbrand templateと正規化座標からのexact layout解決を実装した。`R-001`、`R-006`、`R-007`、`R-016`は依存解放済みである。
+
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
 | R-001 | keep/delete/split/moveを型付きEditOperationで実装する | `CORE/Compositions/EditOperation.cs`、`CompositionEditor.cs` | D-007,D-009 / `L-C` | 範囲外、逆転、overlap、OriginRef欠落を拒否 | FR-027/032 | なし |
@@ -343,6 +347,8 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.9 U — Windows UI
 
+**実行状態: U-001〜U-003は完了。** Evergreen Runtime検出と失敗表示、`%LOCALAPPDATA%`配下のprofile、strict CSPと仮想hostによるbundled UI、外部navigation/popup/download遮断、origin/size/schema/methodを検証するtyped ping bridgeを実装した。raw host objectは公開していない。`U-004`は依存解放済みである。
+
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
 | U-001 | WinUI 3 shellとWebView2 startup/recovery画面を作る | `APP/App.xaml*`、`MainWindow.xaml*` | F-002,F-003 / `L-W` | Evergreen runtime有無を検査し、欠落時も診断表示可能 | NFR-001、WebView2公式 | なし |
@@ -364,6 +370,8 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | U-017 | 横/縦、字幕有無、UI mask、thumbnail縮小、mobile、音声のみpreviewを切り替える | `WEB/src/features/preview-modes/`、tests | U-007,U-010,U-014。E-014は任意 / `L-W` | 全preview modeから同じtimeline時刻へ移動し、generic maskはAzure/外部APIなしで動く | FR-026 | なし |
 
 ### 5.10 S — ポリシー、レビュー、セキュリティ、復旧
+
+**実行状態: S-001は完了。** Windows SIDをfail-closedで取得する。`S-003`は実装着手可能だが、完了には別の非管理者Windows accountからのACL試験が必要である。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -428,6 +436,8 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | Z-010 | local/cloud比較、fallback、ModelRun監査、利用停止を実装する | `BENCH/results/azure-evaluation.md`、`APP/Azure/CloudFeatureGate.cs` | Z-008,Z-009,S-013 / `L-AZ` | offline/auth/quota失敗時に手動またはlocalへ戻り、編集を失わない | NFR-003/004/006 | 条件付き Azure |
 
 ### 5.13 PK — 配布と供給網
+
+**実行状態: PK群は未完了。** `PK-001`、`PK-003`、`PK-004`、`PK-005`は依存解放済みである。現在のunpackaged開発出力を、MSIXまたはread-only install先の受入証拠として扱わない。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -607,8 +617,9 @@ flowchart TD
 
 ### 現時点で確認できた事実と計画上の扱い
 
-- WinUI 3は新規Windowsデスクトップアプリの推奨native UIである。Windows App SDKの正確なstable版は実装開始時に固定する。
-- WebView2のEvergreen RuntimeはWindows 11に含まれるが、起動時の存在・互換性検査を行う。
+- WinUI 3は新規Windowsデスクトップアプリの推奨native UIである。製品projectはWindows App SDK `2.4.0`を維持している。隔離した最小`ProgressRing` probeでは`2.4.0`が10秒以内にmain windowを作らず`Compatible=false`、`2.4.1-experimental`が`Compatible=true`だった。この差だけを理由にexperimental SDKへ製品依存を更新せず、現行startup画面はtext表示を使う。
+- WebView2のEvergreen RuntimeはWindows 11に含まれるが、U-001は起動時の存在・利用可能版を検査し、欠落時もnative診断画面を表示する。U-002/U-003はbundled originだけを許可し、bridgeは現時点で`bridge.ping`だけを公開する。
+- unpackaged実プロセスsmokeではReady、runtime unavailable recovery、起動前後のinstall tree不変、実行ファイル隣接profile不在を確認した。実行場所は開発build出力であり、Program Filesまたはインストール済みMSIXのread-only境界は未試験であるため、PK-006/PK-007の受入を置き換えない。
 - Single-project MSIXは単一実行ファイルに制限されるため、本構成はPackaging Projectで複数実行ファイルを1パッケージへ収めるPoCを先に行う。
 - Foundry Localは入力を端末内で処理し、model取得後はoffline実行できる。model downloadと実行providerの取得は別途ネットワークを使い得る。
 - Windows MLはONNX Runtimeを基盤にCPU/GPU/NPUを扱う。特定modelが対象PCで動くことは個別PoCで確認する。
@@ -630,4 +641,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**次の未完了実行対象は、依存解放済みのD-006、J-004、M-001、R-004、R-005、U-001、S-001、PK-001、PK-003、PK-004である。変更境界が重ならないものを並列実行する。Azure作成はZ-001〜Z-004の条件成立とZ-005の別の明示指示後に限る。**
+**次の未完了実行対象は、依存解放済みのD-011、D-015、J-005、R-001、R-006、R-007、R-016、U-004、S-003、PK-001、PK-003、PK-004、PK-005である。変更境界が重ならないものを並列実行する。S-003の完了には別の非管理者Windows accountによるACL試験が必要である。Azure作成はZ-001〜Z-004の条件成立とZ-005の別の明示指示後に限る。**

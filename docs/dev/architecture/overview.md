@@ -3,14 +3,14 @@
 HubRadio MovieCreator は、Windows 11 x64 の単一 PC で動作する、ローカル優先の動画編集支援アプリケーションとして設計しています。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation は完了済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。正規model／process基盤では有理時刻、identity、provenance、project／rights、transcript revision、layout／render profile、shell-free process実行、bounded local diagnostics、binary integrity verificationまで実装済みです。WebView2統合、SQLite業務データ、編集・レビューUIは未実装です。
+> Stage 0 と Foundation は完了済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。Stage 1では正規時刻・identity・provenance・analysis、CompositionVersion、TimelineMap、render/delivery manifest、canonical JSON/cache key、process制限、token化file picker、brand/layout、Windows actor SIDに加え、WinUI/WebView2 startup、secure bundled host、typed ping bridgeまで実装済みです。SQLite業務データ、編集操作、業務UI、製品worker protocol、配布は未実装です。
 
-![HubRadio MovieCreatorのローカル優先アーキテクチャ。緑はStage 0で実装済み、青はStage 1以降の計画、紫の破線は条件付きAzure経路](system-overview.svg)
+![HubRadio MovieCreatorのローカル優先アーキテクチャ。緑は実装済み、青は一部実装または計画中、紫の破線は条件付きAzure経路](system-overview.svg)
 
 ## 図の読み方
 
-- **緑:** Stage 0 で実装・実測済みの検証経路
-- **青:** Stage 1 以降に実装する製品アプリケーション
+- **緑:** 現在実装・実測済みの経路
+- **青:** 一部実装または Stage 1 以降に実装する製品経路
 - **紫の破線:** ローカルで不達となり、利用者が送信内容と Azure 利用を明示承認した場合だけ追加する経路
 
 Stage 0で評価しても採用しなかったmodelや再評価保留のdetectorは、製品構成要素として図示していません。対応する要求はtranscript規則、手動speaker割当、manual layout/keyframe、版付きsafe zoneで実装します。
@@ -32,7 +32,7 @@ Stage 0で評価しても採用しなかったmodelや再評価保留のdetector
 
 ### 単一 .NET ホスト
 
-scaffold済みで機能実装中の `HubRadio.App.exe` が、最終的に次を所有します。
+startup shellとWebView境界まで実装済みの `HubRadio.App.exe` が、最終的に次を所有します。
 
 - WinUI 3 ウィンドウと WebView2
 - ユースケースとジョブ調整
@@ -44,11 +44,17 @@ ASP.NET Core、localhost HTTP サーバー、Windows Service、別の業務 API 
 
 ### WinUI 3 と React
 
-- **WinUI 3:** ウィンドウ、ネイティブファイル選択、起動、障害表示
-- **WebView2 内の React:** 案件一覧、解析、タイムライン、字幕、レイアウト、レビュー
-- **通信:** 許可リスト化した型付き WebMessage
+- **WinUI 3:** ウィンドウ、起動、障害表示、token化するネイティブファイル選択は実装済み
+- **WebView2 内の React:** secureなbundled shellは実装済み。案件一覧、解析、タイムライン、字幕、レイアウト、レビューは未実装
+- **通信:** origin、UTF-8 byte size、closed schema、methodを検査する型付き WebMessage。現時点のallowlistは`bridge.ping`だけ
 
 React からファイルパス、SQL、FFmpeg 引数、任意コマンドは送信しません。
+
+WebView2のprofileは`%LOCALAPPDATA%\HubRadio.MovieCreator\WebView2`へ置き、bundled entry pointは`https://appassets.example/index.html`だけを許可します。same-origin以外のresource、任意top-level navigation、popup、downloadを遮断し、raw host objectは公開しません。
+
+unpackaged実プロセスsmokeでは、Web UI Ready、Runtime欠落時のnative recovery、起動前後のinstall tree不変、実行ファイル隣接profile不在を確認済みです。ただし実行場所は開発build出力であり、Program Filesまたはinstalled MSIXのread-only境界ではありません。package install後のread-only受入はPK-006/PK-007に残します。
+
+製品projectはWindows App SDK `2.4.0`を維持します。隔離した最小`ProgressRing` probeでは`2.4.0`がmain windowを作れず`Compatible=false`、`2.4.1-experimental`が`Compatible=true`でした。単一controlの差だけでexperimental SDKへ更新せず、現行startup画面はtext表示を使います。
 
 ### 子プロセス
 
@@ -97,7 +103,7 @@ Stage 0のPowerShell／Python検証実装に加え、Foundationでは製品ホ�
 | `RenderManifest` | 1回のレンダー入力、実行条件、結果を記録する |
 | `DeliveryManifest` | 動画、字幕、画像、文書を同じ承認版へ束ねる |
 
-`RationalTime`／`TimeRange`、`SourceSpan`／`OriginRef`、`TranscriptRevision`、`LayoutSpec`／`RenderProfile`は実装済みです。`WorkingCopy`以降の編集版、TimelineMap、manifestは後続taskで実装します。表は最終構成を示すものであり、未実装項目を完成済みとは扱いません。
+表の全概念は型として実装済みです。`WorkingCopy`は現時点ではin-memory domain modelであり、SQLiteへの復旧可能な保存は未実装です。EditOperation、TimelineMap再構築、Render IR、render実行、review/export flowも後続taskで実装するため、型の存在を完成済み操作フローとは扱いません。
 
 ## 処理フロー
 
@@ -127,11 +133,11 @@ Stage 0のPowerShell／Python検証実装に加え、Foundationでは製品ホ�
 
 ## 信頼境界
 
-| 境界 | 計画する強制策 |
+| 境界 | 強制策と現在状態 |
 |---|---|
-| React → .NET | origin、size、schema、method の許可リスト検査 |
-| .NET → FFmpeg | shell 無効、引数配列、型付き Render IR、timeout、binary hash |
-| .NET → Python | NDJSON schema、message 上限、timeout、SQLite 直接接続禁止 |
+| React → .NET | **実装済み:** origin、strict UTF-8 byte size、closed schema、methodの許可リスト検査。現在は`bridge.ping`だけ |
+| .NET → FFmpeg | **一部実装:** shell無効、引数配列、timeout、子孫終了、binary hash。型付きRender IRは未実装 |
+| .NET → Python | **未実装:** NDJSON schema、message上限、timeout、SQLite直接接続禁止 |
 | ホスト → workspace | path 正規化、ID lookup、staging、hash、atomic move、Windows ACL |
 | ホスト → SQLite | parameterized query、transaction、foreign key、migration 前 backup |
 | ホスト → Azure | 既定無効。選択・マスク・確認済み文字起こし span だけ |

@@ -21,10 +21,14 @@
 | ST | ST-008 | 利用条件不同意のため条件不成立。手動話者割当を維持 |
 | ST | ST-015 | 14 canonicalを統合した承認資料のA〜Fを人手承認済み。commit `79ecdad` |
 | F | F-001〜F-009 | scaffold、3言語test、一括検証、fixture registry、BOM、architecture制約を個別review・commit済み |
-| D | D-001〜D-005、D-008 | 有理時刻、identity、provenance、project／rights、transcript revision、layout／render profileを個別review・commit済み |
-| J | J-003、J-009、J-010 | shell-free ProcessRunner、bounded local diagnostics、binary integrity verificationをreview・commit済み |
+| D | D-001〜D-010、D-012 | 有理時刻、identity、provenance、project／rights、transcript/analysis、layout、CompositionVersion、TimelineMap、manifest、canonical JSON/cache keyを個別review・commit済み |
+| J | J-003、J-004、J-009、J-010 | shell-free ProcessRunner、Windows Job Object、bounded local diagnostics、binary integrity verificationをreview・commit済み |
+| M | M-001 | native pickerのpathをhost内の型付きasset candidate IDへ変換し、Web UIへpathを返さない境界をreview・commit済み |
+| R | R-004、R-005 | 版付きbrand templateとexact layout resolverをreview・commit済み |
+| U | U-001〜U-003 | WinUI/WebView2 startup、secure bundled host、allowlisted typed ping bridgeをreview・commit済み |
+| S | S-001 | Windows actor SIDのfail-closed取得をreview・commit済み |
 
-**完了: 43 / 203タスク**。全203 taskの内訳は、完了43 + 先行条件不成立`ST-008` 1 + 後続159である。後続159 task IDのうち、`A-010`と`A-015`はcondition-false、`A-012`と`A-013`は再評価保留、`Z-001〜Z-010`はAzure gate closedである。この14件を通常実行列へ入れないため、現在のbaseline実行対象は145件で、次は依存解放済みの`D-006`、`J-004`、`M-001`、`R-004`、`R-005`、`U-001`、`S-001`、`PK-001`、`PK-003`、`PK-004`を変更境界ごとに並列実行する。
+**完了: 56 / 203タスク**。全203 taskの内訳は、完了56 + 先行条件不成立`ST-008` 1 + 後続146である。後続146 task IDのうち、`A-010`と`A-015`はcondition-false、`A-012`と`A-013`は再評価保留、`Z-001〜Z-010`はAzure gate closedである。この14件を通常実行列へ入れないため、現在のbaseline実行残は132件である。次は依存解放済みの`D-011`、`D-015`、`J-005`、`R-001`、`R-006`、`R-007`、`R-016`、`U-004`、`S-003`、`PK-001`、`PK-003`、`PK-004`、`PK-005`を変更境界ごとに並列実行する。
 
 ### 1.2 直近の統合作業
 
@@ -38,6 +42,14 @@
 - J-003: commit `d02a170`。PID公開testの競合補正はcommit `791afb7`
 - J-009: commit `fd5229b`。Unicode同形文字の敵対的レビュー補正はcommit `6dfc063`
 - J-010: commit `99a93fa`
+- D-006: commit `c1f27f5`
+- J-004: commit `e02dff0`
+- M-001: commit `f8ce851`
+- R-004、R-005: commit `69456ac`、`6cd0576`。formatting gate補正はcommit `7287c7a`
+- S-001: commit `b730713`
+- U-001: commit `0e5bb09`。WebView2 profile配置補正はcommit `cad5dca`、実プロセス保証追加はcommit `8d6936c`
+- U-002、U-003: commit `d40ed75`、`f39427a`
+- D-007、D-009、D-010、D-012: commit `c889ba6`、`31fda38`、`2452ccf`、`b6cc7b8`
 
 旧ADR重複は削除済みで、`docs/dev/decisions/`だけがADR正本である。DOC-001〜DOC-004は敵対的レビュー、修正、再検証、commitまで完了した。
 
@@ -59,6 +71,10 @@
 | Foundry Local Qwen3 0.6B/4B CUDAは根拠ID付きJSONの全gateを通過した候補0件。4Bはsynthetic schema/IDを通したが期待3 topic中1件、両候補ともfixture 3 windowはaccepted JSON 0件 | `local-text-model.json` | A-015は未採用。A-014/A-020と手入力を主経路にし、semantic groundedness・意味保全・quiz回答根拠を未測定のまま保持 |
 | 手書きmanifestの16:9/9:16はtrim/concat/crop/subtitle/audioを実行し、4 outputが全編decode、同一環境2回でbyte/decoded hash一致。4点のsource-frame選択誤差最大0.01417秒 | `manual-render.json` | typed render IRとobserved PTS mappingの実装根拠。知覚品質、subtitle内容traceability、cross-machine再現性、production閾値は未測定 |
 | actual WebView2 Canvas/SVG各3 captureとFFmpeg 2.002秒/60 frame区間が同一LayoutSpec/Cueを消費し、6組の差分を記録した | `preview-fidelity.json` | 直接previewと忠実区間を同じcontractへ結べる。pixel同一性、moving-video、audio、cross-DPI/runtime/GPU、知覚品質は未測定 |
+| unpackaged実プロセスでWeb UI Ready、Runtime欠落時のnative recovery、起動前後のinstall tree不変、実行ファイル隣接profile不在がすべてtrue | `tests/smoke/Test-WebViewStartup.ps1`、commit `8d6936c` | U-001〜U-003の開発build保証。実行場所は書込み可能なbuild出力であり、Program Files／installed MSIXのread-only受入ではない。後者はPK-006/PK-007で実施 |
+| WebView2は`https://appassets.example/index.html`だけをtop-level許可し、same-origin resource以外、popup、downloadを遮断。bridgeはstrict UTF-8、128-byte上限、closed schema、lowercase nonzero UUID、`bridge.ping`だけを許可 | `WebViewHost.cs`、`Bridge.cs`、`web-bridge.schema.json`、commit `d40ed75`/`f39427a` | localhost serverやraw host objectを追加せず、業務RPCは必要なtaskで別途追加する |
+| 隔離`ProgressRing` probeはWindows App SDK `2.4.0`で`Compatible=false`・main window未作成、`2.4.1-experimental`で`Compatible=true` | `tests/smoke/Test-ProgressRingCompatibility.ps1` | 製品projectは`2.4.0`を維持しstartupをtext表示する。単一controlの差だけでexperimental SDKへ更新しない |
+| U-003統合後のRelease一括検証は.NET 507件中504 pass/3 environment skip、Web 10/10、Python 3/3 | `test.ps1`、commit `f39427a`直後のlocal run | 既知3 skipはreparse point 2件とnon-Windows SID経路1件。機能成功へ読み替えず、対応環境で別途実行する |
 
 ### 1.4 ドキュメント再編の検証結果
 
@@ -66,7 +82,7 @@
 |---|---:|---|
 | `docs/dev/**/*.md` | 26文書 | developer向け入口、architecture、benchmark、ADR、license、plan、research、review、error catalogを分離済み |
 | Git対象Markdown相対リンク | 全32文書の94件中broken 0件 | 再編後、Foundation、J-009追加文書の相対リンクは有効 |
-| Implementation plan SHA-256 | `b05f4fb10e300079d47ef42e6ade52964bededbe84d13f6732c80e8f717b84e1` | `docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
+| Implementation plan SHA-256 | `90f860382a62d7a2ab3c5c69ab8cff34252729ca89f8611b425558462a67759d` | `docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
 | `git diff --check` | staged / unstagedともexit 0 | whitespace errorなし |
 | 旧ADR重複 | 0件 | 削除済み。`docs/dev/decisions/`だけをADR正本として使用 |
 | Git staging | D-005、J-009、J-010と補正の個別commit後はclean | 本進捗同期だけを次のcommit対象にする |
@@ -117,8 +133,8 @@ ST-015承認後に着手する。
 | 群 | 件数 | 内容 | 並列化 |
 |---|---|---|---|
 | F-001〜F-009 | 9 | **完了。** ディレクトリ、.NET solution、React、Python worker、テスト、build.ps1、アーキテクチャ検査 | F-002/F-003/F-004とF-007/F-008/F-009を並列実行済み |
-| D-001〜D-016 | 16 | D-001〜D-005/D-008完了。有理時刻、SourceSpan、Project、Transcript、Suggestion、CompositionVersion、TimelineMap、SQLite、ArtifactStore | 次はD-006。型依存を守りつつ他レーンと並列 |
-| J-001〜J-010 | 10 | J-003/J-009/J-010完了。ジョブ状態機械、ProcessRunner、Job Object、NDJSON protocol、cache、復旧、hash検証 | 次は依存解放済みJ-004。J-001はD-013待ち |
+| D-001〜D-016 | 16 | D-001〜D-010/D-012完了。有理時刻、SourceSpan、Project、Transcript/Analysis、CompositionVersion、TimelineMap、Manifest、canonical JSON/cache key | 次は依存解放済みD-011/D-015。D-013はD-011待ち |
+| J-001〜J-010 | 10 | J-003/J-004/J-009/J-010完了。ProcessRunner、Job Object、diagnostics、hash検証 | 次は依存解放済みJ-005。J-001はD-013待ち |
 
 **設計上の必須反映事項（Phase A実測より）**
 - `RationalTime`は有理数保持。浮動小数点秒を正本にしない
@@ -130,7 +146,7 @@ ST-015承認後に着手する。
 
 | 群 | 件数 | 内容 |
 |---|---|---|
-| M-001〜M-012 | 12 | file picker、stream取込、ffprobe検証、全編decode検査、PTS index、代理生成、波形・sprite、セキュリティ試験 |
+| M-001〜M-012 | 12 | M-001完了。file pickerのpath非公開境界を実装済み。stream取込以降はD-015/J-001待ち |
 | A-001〜A-021 | 21 | ASR、用語辞書、無音・言い直し・咳検出、話者割当、shot、顔、トピック、強調候補、採否管理、再処理DAG |
 
 **Phase Aの結果に依存する分岐**
@@ -142,16 +158,16 @@ ST-015承認後に着手する。
 
 | 群 | 件数 | 内容 |
 |---|---|---|
-| R-001〜R-026 | 26 | EditOperation、TimelineMap再構築、版管理、テンプレート、レイアウト、字幕、テロップ、トランジション、Render IR、FFmpegコンパイラ、QC、納品 |
-| U-001〜U-017 | 17 | WinUI shell、WebView2、bridge、状態管理、案件一覧、解析画面、タイムライン、字幕編集、比較、レビュー、納品、サムネイル、アクセシビリティ |
+| R-001〜R-026 | 26 | R-004/R-005完了。版付きbrand templateとexact layout resolverを実装済み。次はR-001/R-006/R-007/R-016 |
+| U-001〜U-017 | 17 | U-001〜U-003完了。WinUI/WebView2 startup、secure bundled host、typed ping bridgeを実装済み。次はU-004 |
 
 ### Phase E: 統制・受入・配布（S・Q・PK、37タスク）
 
 | 群 | 件数 | 内容 |
 |---|---|---|
-| S-001〜S-016 | 16 | Windows SID、権限、ACL、公開区分、権利、機密検出、レビュー状態機械、承認digest、出力ゲート、監査、backup |
+| S-001〜S-016 | 16 | S-001完了。Windows actor SIDを実装済み。次はS-003だが、完了には別の非管理者accountによるACL試験が必要 |
 | Q-000〜Q-013 | 14 | Must受入、長尺・縦型・クイズ、セキュリティ、追跡性、性能、復旧、敵対試験、アクセシビリティ、SBOM、初期パイロット |
-| PK-001〜PK-007 | 7 | Python固定、self-contained worker、FFmpeg固定、モデル管理、React組込、MSIX、署名・upgrade検証 |
+| PK-001〜PK-007 | 7 | 未完了。PK-001/PK-003/PK-004/PK-005は依存解放済み。Python固定、FFmpeg固定、モデル管理、React組込、MSIX、署名・upgrade検証を順次実施 |
 
 ### Phase F: Stage 2 Should機能（E、19タスク）
 
@@ -172,7 +188,7 @@ ST-015承認後に着手する。
 | D-004 / D-008 | D-002またはD-003完了後に別集約として進められる |
 | J-003 / J-009 | F-002後のprocess/diagnostic基盤としてDB critical pathと並行可能 |
 | F-007 / F-008 / F-009 | 各依存が揃えばfixture索引、BOM、architecture testを並行可能 |
-| U-001〜U-004 / Dのpure core | mock bridgeを使い、業務store統合前まで並行可能 |
+| U-004 / Dのpure core | U-001〜U-003の安全なping bridgeを使い、業務store統合前まで並行可能 |
 | S-001〜S-007 | Core型とSQLite schemaが揃った後は相互依存を確認して並行可能 |
 
 | 並列化しない対象 | 理由 |
@@ -248,9 +264,9 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. 依存解放済みの`D-006`、`J-004`、`M-001`、`R-004`、`R-005`、`U-001`、`S-001`、`PK-001`、`PK-003`、`PK-004`から、変更境界が重ならないtaskを並列実装する。
+1. 依存解放済みの`D-011`、`D-015`、`J-005`、`R-001`、`R-006`、`R-007`、`R-016`、`U-004`、`S-003`、`PK-001`、`PK-003`、`PK-004`、`PK-005`から、変更境界が重ならないtaskを並列実装する。
 2. 各taskを個別にbuild/testし、敵対的レビューの実在する指摘だけを反映して独立commitする。
-3. 完了ごとに依存DAGを再評価し、`D-007`、`R-006`、`R-007`、`R-016`、`U-002`、`S-003`など新たに解放されたtaskを次waveへ入れる。
+3. 完了ごとに依存DAGを再評価する。特に`D-011`完了後の`D-013`、`R-001`完了後の`R-002`/`R-003`、`R-007`完了後の`R-008`を次waveへ入れる。
 
 各ステップで、実測できなかった項目は`openQuestions`に残し、推測で埋めない。
 
@@ -277,11 +293,11 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 1. `D-001`と`D-002`を並列実装し、有理時刻、overflow、SHA-256、型付きIDを試験する。
 2. `D-003`を単独gateにし、架空spanとorigin欠落を拒否する。仮`ISourceSpan`は作らない。
 3. **完了。** `D-004`、`D-005`、`D-008`を依存順に並行し、Project/Asset/Rights、Transcript、LayoutSpec/Cueを固定した。
-4. `D-006`、`D-007`、`D-009`〜`D-012`でSuggestion来歴、不変版、TimelineMap、Manifest、Review/Audit、canonical JSONを完成する。
-5. `D-013`→`D-014`→`D-015`→`D-016`の順でmigration、store、atomic ArtifactStore、recoveryを実装する。
+4. **D-006、D-007、D-009、D-010、D-012は完了。** Suggestion来歴、不変版、双方向TimelineMap、Render/Delivery Manifest、canonical JSON/cache keyを実装した。次にD-011でReview/Audit modelを定義する。
+5. `D-015`は明記された依存だけで先行可能。`D-011`完了後に`D-013`→`D-014`、その後`D-016`でmigration、store、ArtifactStore、recoveryを統合する。
 6. **完了。** Dのcritical pathと並行し、`J-003`（shellなしProcessRunner）と`J-009`（bounded/redacted diagnostic）を実装した。
 7. **J-010は完了。** `J-005`はD-012/F-004/J-003後、`J-001`以降はD-013完了後に実装する。
-8. 次の`J-004`はkill-on-closeとcaller cleanupだけを採用し、active-process limitへ依存しない。timeout、割当拒否、host crashで孤児0を試験する。
+8. **J-004は完了。** kill-on-closeとcaller cleanupを採用し、active-process limitへ依存しない。次はJ-005のclosed NDJSON protocolを実装する。
 
 ### Wave 3: M + approved A — 取込と解析
 
@@ -298,9 +314,9 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 | Lane | 先行可能部分 | 統合gate |
 |---|---|---|
-| R | R-001〜R-005のpure core、R-006/R-007 profile | D-009とapproved manual fallback |
-| U | U-001〜U-004 shell/bridge/stateをmock backendで開始 | origin/size/schema/methodのsecurity review |
-| S | S-001〜S-007 identity/permission/ACL/policyをCore/DB完成後に並行 | 別非管理者account ACL試験と公開範囲拡大時の再承認 |
+| R | R-004/R-005完了。次はR-001、R-006/R-007 profile、R-016 | D-009とapproved manual fallback |
+| U | U-001〜U-003完了。次はU-004 state同期をping-only bridge上で開始 | 業務method追加ごとのorigin/size/schema/method review |
+| S | S-001完了。S-003 ACLは着手可能、S-002以降はD-013等の依存を待つ | 別非管理者account ACL試験と公開範囲拡大時の再承認 |
 
 統合順は、`R-008〜R-016`（manual layout、subtitle、graphic、transition）→`R-017`（typed Render IR gate）→`R-018`（FFmpeg compiler）→`R-019/R-020`（preview/final jobs）→`R-021/R-022`（QC/delivery）とする。UIは対応service完成ごとにU-005〜U-017へ接続し、S-008〜S-016のreview/export/audit/backup gateを通す。
 

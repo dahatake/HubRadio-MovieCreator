@@ -31,6 +31,8 @@ Any `pending-PK-*`, held, condition-false, benchmark-only, unreviewed host compo
 | React DOM 19.2.8 | `package.json` plus exact `package-lock.json` entry | MIT declared by lock | Obtain artifact SHA-256 and complete the production transitive notice set at PK-005/Q-010. |
 | CPython worker runtime | `requires-python >=3.12`; no exact runtime distribution is selected | Pending PK-002 | Fix the Windows x64 runtime, hashes, bundled components, and notices before self-contained packaging. |
 
+An isolated `ProgressRing` compatibility probe observed `Compatible=false` with Windows App SDK 2.4.0 and `Compatible=true` with `2.4.1-experimental`. The product dependency remains 2.4.0; the experimental package was probe-only and is not a declared product or release dependency.
+
 The current worker declares no product runtime Python packages. Stage 0 Python packages listed below are not silently promoted into the worker dependency graph.
 
 ## Conditional Stage 1 runtime candidates

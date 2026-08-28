@@ -19,12 +19,12 @@
 
 ## 実在確認
 
-| 文書 | 版・状態 | SHA-256（2026-08-27時点） |
+| 文書 | 版・状態 | SHA-256（各記録時点） |
 |---|---|---|
 | `docs/requirement-definition.md` | 0.1 Draft | `f28c24f9c5f72859ebb71503a6242703ec5225b329e3aa3a7face56fd73e60a9` |
 | `docs/dev/research/implementation-research.md` | 調査日 2026-08-26、Windows後続決定注記を反映 | `8ef0efdf1b4fccd9f144ec52dcc0b1bef2f8fd3335ea6c4bad1343ae2fb89c64` |
 | `docs/dev/reviews/adversarial-review.md` | 修正後 PASS | `09a85e34ea015fef2719075223aa89d45d3723d61ce38399dc182eea94166c71` |
-| `docs/dev/planning/implementation-plan.md` | 計画日 2026-08-26、43/203完了・次は依存解放済み10 task | `b05f4fb10e300079d47ef42e6ade52964bededbe84d13f6732c80e8f717b84e1` |
+| `docs/dev/planning/implementation-plan.md` | 計画日 2026-08-26、56/203完了・次は依存解放済み13 task | `90f860382a62d7a2ab3c5c69ab8cff34252729ca89f8611b425558462a67759d` |
 
 指定されていた `/hve-dev/requirement-definition.md` はリポジトリに存在しない。したがって、存在しないパスを推測して作成したり、別内容の要求定義として扱ったりしない。
 
