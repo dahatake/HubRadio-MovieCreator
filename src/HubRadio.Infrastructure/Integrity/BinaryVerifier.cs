@@ -65,12 +65,12 @@ public sealed class BinaryVerificationRequest
                 nameof(filePath));
         }
 
-            if (OperatingSystem.IsWindows() && IsUnsafeWindowsPath(fullPath))
-            {
-                throw new ArgumentException(
+        if (OperatingSystem.IsWindows() && IsUnsafeWindowsPath(fullPath))
+        {
+            throw new ArgumentException(
                 "The artifact file path must not use a device namespace or alternate data stream.",
                 nameof(filePath));
-            }
+        }
 
         ComponentIdentity = componentIdentity;
         FilePath = fullPath;
