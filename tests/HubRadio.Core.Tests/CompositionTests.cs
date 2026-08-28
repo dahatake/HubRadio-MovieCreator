@@ -29,7 +29,8 @@ public sealed class CompositionTests
             "Id",
             "OutputRange",
             "Origin",
-            "AdoptedSuggestion");
+            "AdoptedSuggestion",
+            "SourceRange");
         AssertPublicGetOnlyProperties(
             typeof(CompositionVersion),
             "Id",
@@ -212,6 +213,66 @@ public sealed class CompositionTests
             () => CreateElement(duration: new RationalTime(0, 1)));
     }
 
+    [TestMethod]
+    public void CompositionElementRequiresOriginSpecificEqualDurationSourceRange()
+    {
+        EntityId<CompositionElementIdTag> id = EntityId<CompositionElementIdTag>.New();
+        EntityId<SourceSpanIdTag> sourceSpanId = EntityId<SourceSpanIdTag>.New();
+        OriginRef source = OriginRef.FromSourceSpan(sourceSpanId);
+        TimeRange outputRange = new(default, new RationalTime(2, 1));
+
+        AssertParamName<ArgumentNullException>(
+            "sourceRange",
+            () => new CompositionElement(id, outputRange, source));
+        AssertParamName<ArgumentOutOfRangeException>(
+            "sourceRange",
+            () => new CompositionElement(
+                id,
+                outputRange,
+                source,
+                sourceRange: new TimeRange(new RationalTime(-1, 1), default)));
+        AssertParamName<ArgumentException>(
+            "sourceRange",
+            () => new CompositionElement(
+                id,
+                outputRange,
+                source,
+                sourceRange: new TimeRange(default, new RationalTime(3, 1))));
+
+        TimeRange negativeStart = new(
+            new RationalTime(-5, 2),
+            outputRange.Duration);
+        CompositionElement element = new(
+            id,
+            outputRange,
+            source,
+            sourceRange: negativeStart);
+
+        Assert.AreEqual(negativeStart, element.SourceRange);
+        Assert.AreNotEqual(
+            element,
+            new CompositionElement(
+                EntityId<CompositionElementIdTag>.From(id.Value),
+                outputRange,
+                OriginRef.FromSourceSpan(EntityId<SourceSpanIdTag>.From(sourceSpanId.Value)),
+                sourceRange: new TimeRange(default, outputRange.Duration)));
+
+        foreach (OriginRef origin in new[]
+        {
+            OriginRef.FromAsset(EntityId<AssetIdTag>.New()),
+            OriginRef.FromEditorialRecord(EntityId<EditorialRecordIdTag>.New()),
+        })
+        {
+            AssertParamName<ArgumentException>(
+                "sourceRange",
+                () => new CompositionElement(
+                    EntityId<CompositionElementIdTag>.New(),
+                    outputRange,
+                    origin,
+                    sourceRange: negativeStart));
+        }
+    }
+
     private static WorkingCopy CreateWorkingCopy(
         DateTimeOffset createdAt,
         DateTimeOffset updatedAt,
@@ -249,13 +310,21 @@ public sealed class CompositionTests
         OriginRef? origin = null,
         SuggestionReference? adoptedSuggestion = null,
         RationalTime? start = null,
-        RationalTime? duration = null)
+        RationalTime? duration = null,
+        TimeRange? sourceRange = null)
     {
+        OriginRef actualOrigin =
+            origin ?? OriginRef.FromSourceSpan(EntityId<SourceSpanIdTag>.New());
+        RationalTime actualDuration = duration ?? new RationalTime(1, 1);
+
         return new CompositionElement(
             id ?? EntityId<CompositionElementIdTag>.New(),
-            new TimeRange(start ?? default, duration ?? new RationalTime(1, 1)),
-            origin ?? OriginRef.FromSourceSpan(EntityId<SourceSpanIdTag>.New()),
-            adoptedSuggestion);
+            new TimeRange(start ?? default, actualDuration),
+            actualOrigin,
+            adoptedSuggestion,
+            sourceRange ?? (actualOrigin.Kind == OriginKind.SourceSpan
+                ? new TimeRange(default, actualDuration)
+                : null));
     }
 
     private static Suggestion CreateSuggestion(SuggestionStatus status)

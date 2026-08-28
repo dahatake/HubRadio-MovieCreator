@@ -120,6 +120,40 @@
         }
       }
     },
+    "sourceTimeRange": {
+      "type": "object",
+      "$comment": "Source time starts may be negative. Runtime validation additionally requires duration to equal the composition element outputRange duration exactly after RationalTime reduction.",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "duration"
+      ],
+      "properties": {
+        "start": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "value",
+            "rate"
+          ],
+          "properties": {
+            "value": {
+              "type": "integer",
+              "minimum": -9223372036854775808,
+              "maximum": 9223372036854775807
+            },
+            "rate": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9223372036854775807
+            }
+          }
+        },
+        "duration": {
+          "$ref": "#/$defs/positiveDuration"
+        }
+      }
+    },
     "sourceSpanOrigin": {
       "type": "object",
       "additionalProperties": false,
@@ -201,7 +235,7 @@
     },
     "compositionElement": {
       "type": "object",
-      "$comment": "If adoptedSuggestion is present, runtime validation requires its OriginRef to equal origin exactly.",
+      "$comment": "If adoptedSuggestion is present, runtime validation requires its OriginRef to equal origin exactly. SourceSpan elements require a sourceRange with duration equal to outputRange; other origins prohibit sourceRange.",
       "additionalProperties": false,
       "required": [
         "id",
@@ -217,6 +251,9 @@
         },
         "origin": {
           "$ref": "#/$defs/originRef"
+        },
+        "sourceRange": {
+          "$ref": "#/$defs/sourceTimeRange"
         },
         "adoptedSuggestion": {
           "$ref": "#/$defs/suggestionReference"
@@ -234,6 +271,35 @@
               "origin": {
                 "$ref": "#/$defs/sourceSpanOrigin"
               }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "origin"
+            ],
+            "properties": {
+              "origin": {
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "const": "sourceSpan"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "sourceRange"
+            ]
+          },
+          "else": {
+            "properties": {
+              "sourceRange": false
             }
           }
         }

@@ -88,6 +88,33 @@ public sealed class CompositionSchemaTests
             new[] { "id", "outputRange", "origin" },
             GetStringArray(element.GetProperty("required")));
         Assert.IsTrue(properties.TryGetProperty("adoptedSuggestion", out _));
+        Assert.AreEqual(
+            "#/$defs/sourceTimeRange",
+            properties.GetProperty("sourceRange").GetProperty("$ref").GetString());
+
+        JsonElement sourceRangeRule = element.GetProperty("allOf")
+            .EnumerateArray()
+            .Single(static rule => rule.TryGetProperty("else", out _));
+        Assert.AreEqual(
+            "sourceSpan",
+            sourceRangeRule
+                .GetProperty("if")
+                .GetProperty("properties")
+                .GetProperty("origin")
+                .GetProperty("properties")
+                .GetProperty("kind")
+                .GetProperty("const")
+                .GetString());
+        CollectionAssert.AreEqual(
+            new[] { "sourceRange" },
+            GetStringArray(sourceRangeRule.GetProperty("then").GetProperty("required")));
+        Assert.AreEqual(
+            JsonValueKind.False,
+            sourceRangeRule
+                .GetProperty("else")
+                .GetProperty("properties")
+                .GetProperty("sourceRange")
+                .ValueKind);
 
         JsonElement origin = definitions.GetProperty("originRef");
         string[] variants = origin.GetProperty("oneOf")
@@ -128,6 +155,41 @@ public sealed class CompositionSchemaTests
         AssertAdditionalPropertiesFalse(range);
         AssertRational(definitions.GetProperty("rationalTime"), 0);
         AssertRational(definitions.GetProperty("positiveDuration"), 1);
+    }
+
+    [TestMethod]
+    [DataRow("schemas/working-copy.schema.json")]
+    [DataRow("schemas/composition-version.schema.json")]
+    public void SourceTimeRangesAllowNegativeStartsAndRequirePositiveDurations(
+        string relativePath)
+    {
+        using JsonDocument document = LoadSchema(relativePath);
+        JsonElement definitions = document.RootElement.GetProperty("$defs");
+        JsonElement sourceRange = definitions.GetProperty("sourceTimeRange");
+
+        AssertAdditionalPropertiesFalse(sourceRange);
+        CollectionAssert.AreEquivalent(
+            new[] { "start", "duration" },
+            GetStringArray(sourceRange.GetProperty("required")));
+
+        JsonElement start = sourceRange.GetProperty("properties").GetProperty("start");
+        AssertRational(start, long.MinValue);
+        Assert.AreEqual(
+            "#/$defs/positiveDuration",
+            sourceRange
+                .GetProperty("properties")
+                .GetProperty("duration")
+                .GetProperty("$ref")
+                .GetString());
+        Assert.AreEqual(
+            1L,
+            definitions
+                .GetProperty("positiveDuration")
+                .GetProperty("properties")
+                .GetProperty("value")
+                .GetProperty("minimum")
+                .GetInt64());
+        StringAssert.Contains(GetRequiredString(sourceRange, "$comment"), "equal");
     }
 
     private static void AssertRational(JsonElement rational, long minimumValue)

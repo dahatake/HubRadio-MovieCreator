@@ -11,7 +11,8 @@ public sealed class CompositionElement : IEquatable<CompositionElement>
         EntityId<CompositionElementIdTag> id,
         TimeRange outputRange,
         OriginRef origin,
-        SuggestionReference? adoptedSuggestion = null)
+        SuggestionReference? adoptedSuggestion = null,
+        TimeRange? sourceRange = null)
     {
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(origin);
@@ -32,6 +33,35 @@ public sealed class CompositionElement : IEquatable<CompositionElement>
                 "A composition element must have a positive output duration.");
         }
 
+        if (origin.Kind == OriginKind.SourceSpan)
+        {
+            if (sourceRange is null)
+            {
+                throw new ArgumentNullException(nameof(sourceRange));
+            }
+
+            if (sourceRange.Value.Duration <= default(RationalTime))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(sourceRange),
+                    sourceRange,
+                    "A SourceSpan composition element must have a positive source duration.");
+            }
+
+            if (sourceRange.Value.Duration != outputRange.Duration)
+            {
+                throw new ArgumentException(
+                    "A one-to-one SourceSpan composition element requires equal source and output durations.",
+                    nameof(sourceRange));
+            }
+        }
+        else if (sourceRange is not null)
+        {
+            throw new ArgumentException(
+                "Asset and EditorialRecord composition elements do not have source time ranges.",
+                nameof(sourceRange));
+        }
+
         if (adoptedSuggestion is not null && adoptedSuggestion.Origin != origin)
         {
             throw new ArgumentException(
@@ -43,6 +73,7 @@ public sealed class CompositionElement : IEquatable<CompositionElement>
         OutputRange = outputRange;
         Origin = origin;
         AdoptedSuggestion = adoptedSuggestion;
+        SourceRange = sourceRange;
     }
 
     public EntityId<CompositionElementIdTag> Id { get; }
@@ -53,13 +84,16 @@ public sealed class CompositionElement : IEquatable<CompositionElement>
 
     public SuggestionReference? AdoptedSuggestion { get; }
 
+    public TimeRange? SourceRange { get; }
+
     public bool Equals(CompositionElement? other)
     {
         return other is not null
             && Id == other.Id
             && OutputRange == other.OutputRange
             && Origin == other.Origin
-            && SuggestionReferencesEqual(AdoptedSuggestion, other.AdoptedSuggestion);
+            && SuggestionReferencesEqual(AdoptedSuggestion, other.AdoptedSuggestion)
+            && SourceRange == other.SourceRange;
     }
 
     public override bool Equals(object? obj)
@@ -73,7 +107,8 @@ public sealed class CompositionElement : IEquatable<CompositionElement>
             Id,
             OutputRange,
             Origin,
-            AdoptedSuggestion?.SuggestionId);
+            AdoptedSuggestion?.SuggestionId,
+            SourceRange);
     }
 
     private static bool SuggestionReferencesEqual(
