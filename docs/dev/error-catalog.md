@@ -1,6 +1,6 @@
 # 安定エラーコードとローカル診断ログ
 
-本書は J-009 で実装済みの安定エラーコードだけを列挙する。将来機能のコードを先取りして予約しない。
+本書は実装済みの安定エラーコードだけを列挙する。将来機能のコードを先取りして予約しない。
 
 ## エラーコード規約
 
@@ -15,8 +15,10 @@
 |---|---|---|---|
 | `process.start_failed` | `ProcessStartException` | shell を介さない子 process を開始できなかった | nullable な OS native error code |
 | `diagnostic.log_write_failed` | `DiagnosticLogException` | bounded local diagnostic log の作成、読取り、rotation、置換のいずれかに失敗した | なし。失敗 path や inner exception は公開しない |
-| `webview.runtime_unavailable` | `WebViewStartupResult` | Evergreen WebView2 Runtime の版を検出できず、Web UI 初期化を開始しなかった | なし。検出例外、path、環境変数は公開しない |
-| `webview.initialization_failed` | `WebViewStartupResult` | Runtime 検出後に WebView2 control を初期化できなかった | なし。初期化例外、user data path、内容は公開しない |
+| `webview.runtime_unavailable` | `WebViewStartupResult`（起動画面表示） | Evergreen WebView2 Runtime の版を検出できず、Web UI 初期化を開始しなかった | なし。検出例外、path、環境変数は公開しない |
+| `webview.initialization_failed` | `WebViewStartupResult`（起動画面表示） | Runtime 検出後に WebView2 control を初期化できなかった | なし。初期化例外、user data path、内容は公開しない |
+
+U-001 の WebView2 の 2 コードは起動・復旧画面へ表示するだけで、例外としては投げず、現時点では診断ログへ書かない。下記の enum 対応は catalog との一致を保つために定義してある。
 
 ## 診断ログ契約
 

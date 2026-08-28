@@ -1,12 +1,12 @@
 using HubRadio.App.Web;
 using HubRadio.Infrastructure.Diagnostics;
 using Microsoft.UI.Xaml;
+using Microsoft.Web.WebView2.Core;
 
 namespace HubRadio.App;
 
 public sealed partial class MainWindow : Window
 {
-    private Task? startupTask;
     private bool isClosed;
 
     public MainWindow()
@@ -21,8 +21,7 @@ public sealed partial class MainWindow : Window
 
         try
         {
-            startupTask ??= InitializeWebViewAsync();
-            await startupTask;
+            await InitializeWebViewAsync();
         }
         catch (Exception)
         {
@@ -39,7 +38,20 @@ public sealed partial class MainWindow : Window
     private async Task InitializeWebViewAsync()
     {
         WebViewStartupResult result = await WebViewStartupCoordinator.StartAsync(
-            async () => await WebApplicationView.EnsureCoreWebView2Async());
+            async () =>
+            {
+                // The install directory can be read-only, so the profile stays under the user's local data.
+                string userDataFolder = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "HubRadio.MovieCreator",
+                    "WebView2");
+                CoreWebView2Environment environment =
+                    await CoreWebView2Environment.CreateWithOptionsAsync(
+                        string.Empty,
+                        userDataFolder,
+                        new CoreWebView2EnvironmentOptions());
+                await WebApplicationView.EnsureCoreWebView2Async(environment);
+            });
 
         if (isClosed)
         {
@@ -50,7 +62,6 @@ public sealed partial class MainWindow : Window
         {
             StartupTitleText.Text = "Web UI ホストの準備ができました";
             StartupDetailText.Text = $"WebView2 Runtime {result.RuntimeVersion} を確認しました。";
-            StartupDiagnosticCodeText.Visibility = Visibility.Collapsed;
             return;
         }
 

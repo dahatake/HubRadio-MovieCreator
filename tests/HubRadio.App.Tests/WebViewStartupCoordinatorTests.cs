@@ -48,7 +48,6 @@ public sealed class WebViewStartupCoordinatorTests
             result,
             WebViewStartupStatus.RuntimeUnavailable,
             StableErrorCodes.WebViewRuntimeUnavailable);
-        Assert.IsFalse(result.DiagnosticCode!.Contains("episode.mov", StringComparison.Ordinal));
         Assert.AreEqual(0, initializationCount);
     }
 
@@ -73,32 +72,23 @@ public sealed class WebViewStartupCoordinatorTests
     }
 
     [TestMethod]
-    public async Task StartAsync_RuntimeDisappearsBeforeInitialization_ReturnsInitializationFailure()
+    public async Task StartAsync_InitializationThrows_ReportsFailureWithoutExceptionDetail()
     {
+        int initializationCount = 0;
+
         WebViewStartupResult result = await WebViewStartupCoordinator.StartAsync(
             () => "123.0.4567.8",
-            () => Task.FromException(new InvalidOperationException("runtime removed")));
+            () =>
+            {
+                initializationCount++;
+                return Task.FromException(new UnauthorizedAccessException("C:\\private\\profile"));
+            });
 
         AssertFailure(
             result,
             WebViewStartupStatus.InitializationFailed,
             StableErrorCodes.WebViewInitializationFailed);
-    }
-
-    [TestMethod]
-    public async Task StartAsync_InitializationFailure_DoesNotExposeException()
-    {
-        const string SensitiveText = "C:\\private\\profile";
-
-        WebViewStartupResult result = await WebViewStartupCoordinator.StartAsync(
-            () => "123.0.4567.8",
-            () => Task.FromException(new UnauthorizedAccessException(SensitiveText)));
-
-        AssertFailure(
-            result,
-            WebViewStartupStatus.InitializationFailed,
-            StableErrorCodes.WebViewInitializationFailed);
-        Assert.IsFalse(result.DiagnosticCode!.Contains(SensitiveText, StringComparison.Ordinal));
+        Assert.AreEqual(1, initializationCount);
     }
 
     [TestMethod]
