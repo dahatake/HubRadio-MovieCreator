@@ -8,24 +8,27 @@ namespace HubRadio.App;
 public sealed partial class MainWindow : Window
 {
     private readonly CancellationTokenSource lifetimeCancellation = new();
+    private readonly MainWindowStartupLifecycle startupLifecycle = new();
     private WebViewHost? webViewHost;
-    private bool isClosed;
 
     public MainWindow()
     {
         InitializeComponent();
         Closed += (_, _) =>
         {
-            isClosed = true;
+            startupLifecycle.Close();
             lifetimeCancellation.Cancel();
             webViewHost?.Dispose();
-            lifetimeCancellation.Dispose();
         };
     }
 
     private async void OnRootGridLoaded(object sender, RoutedEventArgs args)
     {
         RootGrid.Loaded -= OnRootGridLoaded;
+        if (!startupLifecycle.TryStart())
+        {
+            return;
+        }
 
         try
         {
@@ -33,7 +36,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception)
         {
-            if (!isClosed)
+            if (startupLifecycle.CanUpdateUi)
             {
                 ShowStartupFailure(
                     "Web UI を開始できませんでした",
@@ -67,7 +70,7 @@ public sealed partial class MainWindow : Window
                 {
                     WebApplicationView.Visibility = Visibility.Visible;
                     await host.StartAsync(lifetimeCancellation.Token);
-                    if (isClosed)
+                    if (!startupLifecycle.CanUpdateUi)
                     {
                         host.Dispose();
                     }
@@ -83,7 +86,7 @@ public sealed partial class MainWindow : Window
                 }
             });
 
-        if (isClosed)
+        if (!startupLifecycle.CanUpdateUi)
         {
             return;
         }
