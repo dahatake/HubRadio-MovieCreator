@@ -60,15 +60,58 @@ h1 {
   gap: 0.625rem;
   align-items: center;
   margin: 2rem 0 0;
-  color: #205c39;
+  color: #4a5568;
   font-weight: 700;
 }
 
 .status-indicator {
   width: 0.75rem;
   height: 0.75rem;
-  background: #2b8a53;
+  background: #718096;
   border-radius: 50%;
+}
+
+.status[data-sync-status="pending"] {
+  color: #3158a6;
+}
+
+.status[data-sync-status="pending"] .status-indicator {
+  background: #4c6fc0;
+}
+
+.status[data-sync-status="acknowledged"] {
+  color: #205c39;
+}
+
+.status[data-sync-status="acknowledged"] .status-indicator {
+  background: #2b8a53;
+}
+
+.status[data-sync-status="error"] {
+  color: #a33a3a;
+}
+
+.status[data-sync-status="error"] .status-indicator {
+  background: #c94b4b;
+}
+
+.bridge-button {
+  display: block;
+  min-height: 2.75rem;
+  margin: 1.25rem auto 0;
+  padding: 0.625rem 1.125rem;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 700;
+  background: #3158a6;
+  border: 0;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.bridge-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .description {
