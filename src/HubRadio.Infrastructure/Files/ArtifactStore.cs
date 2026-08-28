@@ -147,62 +147,7 @@ public sealed class ArtifactPromotionRequest
     public DateTimeOffset CreatedAt { get; }
 
     internal static bool IsValidRelativePath(string? relativePath)
-    {
-        if (string.IsNullOrEmpty(relativePath) ||
-            Path.IsPathRooted(relativePath) ||
-            relativePath.Contains('\\', StringComparison.Ordinal) ||
-            relativePath.Contains(':', StringComparison.Ordinal) ||
-            relativePath.Any(char.IsControl))
-        {
-            return false;
-        }
-
-        string[] segments = relativePath.Split('/');
-        foreach (string segment in segments)
-        {
-            if (segment.Length == 0 ||
-                segment is "." or ".." ||
-                segment[^1] is '.' or ' ' ||
-                HasInvalidWindowsFileNameCharacter(segment) ||
-                IsReservedWindowsDeviceSegment(segment))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static bool HasInvalidWindowsFileNameCharacter(string segment) =>
-        segment.Any(static character => character is '<' or '>' or '"' or '|' or '?' or '*');
-
-    private static bool IsReservedWindowsDeviceSegment(string segment)
-    {
-        int extensionIndex = segment.IndexOf('.');
-        string deviceName = extensionIndex < 0
-            ? segment
-            : segment[..extensionIndex];
-
-        if (deviceName.Equals("CON", StringComparison.OrdinalIgnoreCase) ||
-            deviceName.Equals("PRN", StringComparison.OrdinalIgnoreCase) ||
-            deviceName.Equals("AUX", StringComparison.OrdinalIgnoreCase) ||
-            deviceName.Equals("NUL", StringComparison.OrdinalIgnoreCase) ||
-            deviceName.Equals("CLOCK$", StringComparison.OrdinalIgnoreCase) ||
-            deviceName.Equals("CONIN$", StringComparison.OrdinalIgnoreCase) ||
-            deviceName.Equals("CONOUT$", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        if (deviceName.Length != 4 ||
-            (!deviceName.StartsWith("COM", StringComparison.OrdinalIgnoreCase) &&
-                !deviceName.StartsWith("LPT", StringComparison.OrdinalIgnoreCase)))
-        {
-            return false;
-        }
-
-        return deviceName[3] is >= '1' and <= '9' or '\u00b9' or '\u00b2' or '\u00b3';
-    }
+        => WorkspacePathSafety.IsValidPortableRelativePath(relativePath);
 }
 
 public sealed class StoredArtifact
@@ -246,9 +191,7 @@ public sealed class ArtifactStore
     private const int Sha256ByteLength = 32;
 
     private static readonly StringComparison PathComparison =
-        OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
+        WorkspacePathSafety.PathComparison;
 
     private readonly string _databasePath;
     private readonly string _workspacePath;
@@ -396,39 +339,51 @@ public sealed class ArtifactStore
         {
             using SqliteConnection connection =
                 SqliteStoreSupport.OpenConnection(_databasePath);
-            using SqliteCommand command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT
-                    id,
-                    project_id,
-                    kind,
-                    storage_reference,
-                    content_digest,
-                    byte_size,
-                    created_at
-                FROM artifacts
-                WHERE id = $id;
-                """;
-            SqliteStoreSupport.AddText(command, "$id", artifactId.ToString());
-            using SqliteDataReader reader = command.ExecuteReader();
-            if (!reader.Read())
-            {
-                return null;
-            }
-
-            StoredArtifact stored = ReadStoredArtifact(reader);
-            if (reader.Read() || stored.Id != artifactId)
-            {
-                throw SqliteStoreSupport.InvalidStoredData("artifact");
-            }
-
-            return stored;
+            return ReadArtifact(connection, transaction: null, artifactId);
         }
         catch (Exception exception)
             when (IsDatabaseFailure(exception))
         {
             throw Failure(ArtifactStoreFailureReason.DatabaseRejected);
         }
+    }
+
+    internal static StoredArtifact? ReadArtifact(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        EntityId<ArtifactIdTag> artifactId)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(artifactId);
+
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT
+                id,
+                project_id,
+                kind,
+                storage_reference,
+                content_digest,
+                byte_size,
+                created_at
+            FROM artifacts
+            WHERE id = $id;
+            """;
+        SqliteStoreSupport.AddText(command, "$id", artifactId.ToString());
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        StoredArtifact stored = ReadStoredArtifact(reader);
+        if (reader.Read() || stored.Id != artifactId)
+        {
+            throw SqliteStoreSupport.InvalidStoredData("artifact");
+        }
+
+        return stored;
     }
 
     public IReadOnlyList<StoredArtifact> ListProjectArtifacts(
@@ -530,26 +485,15 @@ public sealed class ArtifactStore
 
     private static void ValidateWorkspaceChain(string workspacePath)
     {
-        string? current = workspacePath;
-        while (current is not null)
+        try
         {
-            FileAttributes attributes = GetRequiredAttributes(
-                current,
-                ArtifactStoreFailureReason.UnsafePath);
-            ValidateDirectoryAttributes(attributes);
-
-            DirectoryInfo? parent;
-            try
-            {
-                parent = Directory.GetParent(current);
-            }
-            catch (Exception exception)
-                when (exception is IOException or UnauthorizedAccessException or SecurityException)
-            {
-                throw Failure(ArtifactStoreFailureReason.UnsafePath);
-            }
-
-            current = parent?.FullName;
+            WorkspacePathSafety.ValidateExistingDirectoryAncestorChain(workspacePath);
+        }
+        catch (WorkspacePathSafetyException exception)
+        {
+            throw Failure(MapPathFailure(
+                exception.Failure,
+                ArtifactStoreFailureReason.UnsafePath));
         }
     }
 
@@ -560,32 +504,19 @@ public sealed class ArtifactStore
             throw Failure(ArtifactStoreFailureReason.UnsafePath);
         }
 
-        string? current = stagingPath;
-        bool isFile = true;
-        while (current is not null)
+        try
         {
-            FileAttributes attributes = GetRequiredAttributes(
-                current,
-                ArtifactStoreFailureReason.StagingMissing);
-            if (isFile)
-            {
-                ValidateRegularFileAttributes(attributes);
-            }
-            else
-            {
-                ValidateDirectoryAttributes(attributes);
-            }
-
-            if (string.Equals(current, _workspacePath, PathComparison))
-            {
-                return;
-            }
-
-            current = Path.GetDirectoryName(current);
-            isFile = false;
+            WorkspacePathSafety.ValidateExistingPathChain(
+                _workspacePath,
+                stagingPath,
+                targetIsDirectory: false);
         }
-
-        throw Failure(ArtifactStoreFailureReason.UnsafePath);
+        catch (WorkspacePathSafetyException exception)
+        {
+            throw Failure(MapPathFailure(
+                exception.Failure,
+                ArtifactStoreFailureReason.StagingMissing));
+        }
     }
 
     private void EnsureDestinationDirectoryChain(
@@ -898,7 +829,7 @@ public sealed class ArtifactStore
         }
     }
 
-    private static StoredArtifact ReadStoredArtifact(SqliteDataReader reader)
+    internal static StoredArtifact ReadStoredArtifact(SqliteDataReader reader)
     {
         const string entityKind = "artifact";
         EntityId<ArtifactIdTag> id =
@@ -967,58 +898,55 @@ public sealed class ArtifactStore
         string path,
         ArtifactStoreFailureReason missingReason)
     {
-        if (TryGetAttributes(path, out FileAttributes attributes))
+        try
         {
-            return attributes;
+            return WorkspacePathSafety.GetRequiredAttributes(path);
         }
-
-        throw Failure(missingReason);
+        catch (WorkspacePathSafetyException exception)
+        {
+            throw Failure(MapPathFailure(exception.Failure, missingReason));
+        }
     }
 
     private static bool TryGetAttributes(string path, out FileAttributes attributes)
     {
         try
         {
-            attributes = File.GetAttributes(path);
-            return true;
+            return WorkspacePathSafety.TryGetAttributes(path, out attributes);
         }
-        catch (Exception exception)
-            when (exception is FileNotFoundException or DirectoryNotFoundException)
+        catch (WorkspacePathSafetyException exception)
         {
-            attributes = default;
-            return false;
-        }
-        catch (Exception exception)
-            when (IsFileFailure(exception))
-        {
-            throw Failure(ArtifactStoreFailureReason.UnsafePath);
+            throw Failure(MapPathFailure(
+                exception.Failure,
+                ArtifactStoreFailureReason.UnsafePath));
         }
     }
 
     private static void ValidateDirectoryAttributes(FileAttributes attributes)
     {
-        if ((attributes & FileAttributes.ReparsePoint) != 0)
+        try
         {
-            throw Failure(ArtifactStoreFailureReason.ReparsePoint);
+            WorkspacePathSafety.ValidateDirectoryAttributes(attributes);
         }
-
-        if ((attributes & FileAttributes.Directory) == 0 ||
-            (attributes & FileAttributes.Device) != 0)
+        catch (WorkspacePathSafetyException exception)
         {
-            throw Failure(ArtifactStoreFailureReason.UnsafePath);
+            throw Failure(MapPathFailure(
+                exception.Failure,
+                ArtifactStoreFailureReason.UnsafePath));
         }
     }
 
     private static void ValidateRegularFileAttributes(FileAttributes attributes)
     {
-        if ((attributes & FileAttributes.ReparsePoint) != 0)
+        try
         {
-            throw Failure(ArtifactStoreFailureReason.ReparsePoint);
+            WorkspacePathSafety.ValidateRegularFileAttributes(attributes);
         }
-
-        if ((attributes & (FileAttributes.Directory | FileAttributes.Device)) != 0)
+        catch (WorkspacePathSafetyException exception)
         {
-            throw Failure(ArtifactStoreFailureReason.NotRegularFile);
+            throw Failure(MapPathFailure(
+                exception.Failure,
+                ArtifactStoreFailureReason.NotRegularFile));
         }
     }
 
@@ -1050,52 +978,15 @@ public sealed class ArtifactStore
     }
 
     private static bool PathEntryExistsWithoutThrowing(string path)
-    {
-        try
-        {
-            _ = File.GetAttributes(path);
-            return true;
-        }
-        catch (Exception exception)
-            when (exception is FileNotFoundException or DirectoryNotFoundException)
-        {
-            return false;
-        }
-        catch (Exception exception)
-            when (IsFileFailure(exception))
-        {
-            return true;
-        }
-    }
+        => WorkspacePathSafety.PathEntryExistsConservatively(path);
 
     private static bool IsStrictDescendant(string root, string candidate)
-    {
-        if (string.Equals(root, candidate, PathComparison))
-        {
-            return false;
-        }
-
-        string prefix = Path.EndsInDirectorySeparator(root)
-            ? root
-            : string.Concat(root, Path.DirectorySeparatorChar);
-        return candidate.StartsWith(prefix, PathComparison);
-    }
+        => WorkspacePathSafety.IsStrictDescendant(root, candidate);
 
     private static bool HasSameWindowsDriveRoot(string first, string second)
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return true;
-        }
+        => WorkspacePathSafety.HasSameWindowsDriveRoot(first, second);
 
-        string? firstRoot = Path.GetPathRoot(first);
-        string? secondRoot = Path.GetPathRoot(second);
-        return !string.IsNullOrEmpty(firstRoot) &&
-            !string.IsNullOrEmpty(secondRoot) &&
-            string.Equals(firstRoot, secondRoot, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string GetKindFolder(ArtifactKind kind) =>
+    internal static string GetKindFolder(ArtifactKind kind) =>
         kind switch
         {
             ArtifactKind.Original => "original",
@@ -1107,6 +998,17 @@ public sealed class ArtifactStore
             ArtifactKind.Delivery => "deliveries",
             ArtifactKind.Evidence => "evidence",
             _ => throw Failure(ArtifactStoreFailureReason.DatabaseRejected),
+        };
+
+    private static ArtifactStoreFailureReason MapPathFailure(
+        WorkspacePathSafetyFailure failure,
+        ArtifactStoreFailureReason missingReason) =>
+        failure switch
+        {
+            WorkspacePathSafetyFailure.Missing => missingReason,
+            WorkspacePathSafetyFailure.ReparsePoint => ArtifactStoreFailureReason.ReparsePoint,
+            WorkspacePathSafetyFailure.NotRegularFile => ArtifactStoreFailureReason.NotRegularFile,
+            _ => ArtifactStoreFailureReason.UnsafePath,
         };
 
     private static ArtifactStoreFailureReason ClassifyFailure(Exception exception) =>

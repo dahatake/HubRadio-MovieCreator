@@ -138,6 +138,27 @@ public static class DatabaseMigrator
             schemaDigest);
     }
 
+    internal static void ValidateCurrentDatabase(string databasePath)
+    {
+        string normalizedDatabasePath = ValidateLocalAbsolutePath(
+            databasePath,
+            nameof(databasePath));
+        IReadOnlyList<MigrationDefinition> migrations = LoadMigrations();
+
+        using SqliteConnection connection = OpenConnection(
+            normalizedDatabasePath,
+            SqliteOpenMode.ReadOnly);
+        SchemaState schemaState = InspectSchema(connection, migrations);
+        if (!schemaState.IsCompatible ||
+            schemaState.CurrentVersion != LatestSchemaVersion)
+        {
+            throw new InvalidOperationException(
+                "The database schema is not the expected migration version.");
+        }
+
+        ValidateDatabase(connection);
+    }
+
     private static IReadOnlyList<MigrationDefinition> LoadMigrations()
     {
         Assembly assembly = typeof(DatabaseMigrator).Assembly;

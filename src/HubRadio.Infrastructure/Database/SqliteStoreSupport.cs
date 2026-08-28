@@ -49,11 +49,24 @@ internal static class SqliteStoreSupport
     }
 
     internal static SqliteConnection OpenConnection(string databasePath)
+        => OpenConnection(databasePath, SqliteOpenMode.ReadWrite);
+
+    internal static SqliteConnection OpenConnection(
+        string databasePath,
+        SqliteOpenMode mode)
     {
+        if (mode is not (SqliteOpenMode.ReadWrite or SqliteOpenMode.ReadOnly))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(mode),
+                mode,
+                "A store connection must be read-only or read-write.");
+        }
+
         var connectionString = new SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWrite,
+            Mode = mode,
             Cache = SqliteCacheMode.Private,
             Pooling = false,
             ForeignKeys = true,

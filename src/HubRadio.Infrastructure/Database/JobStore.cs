@@ -530,10 +530,23 @@ public sealed class JobStore
         using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: true);
 
+        StoredJobAggregate? aggregate = ReadJobAggregate(connection, transaction, jobId);
+        transaction.Commit();
+        return aggregate;
+    }
+
+    internal static StoredJobAggregate? ReadJobAggregate(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        EntityId<JobIdTag> jobId)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
+        ArgumentNullException.ThrowIfNull(jobId);
+
         StoredJob? storedJob = ReadOptionalJob(connection, transaction, jobId);
         if (storedJob is null)
         {
-            transaction.Commit();
             return null;
         }
 
@@ -541,7 +554,6 @@ public sealed class JobStore
         IReadOnlyList<JobProgress> progress = ReadProgress(connection, transaction, jobId);
         IReadOnlyList<JobHeartbeat> heartbeats = ReadHeartbeats(connection, transaction, jobId);
         ValidateAggregate(storedJob.Job, attempts, progress, heartbeats);
-        transaction.Commit();
         return new StoredJobAggregate(
             storedJob.Job,
             storedJob.Revision,
