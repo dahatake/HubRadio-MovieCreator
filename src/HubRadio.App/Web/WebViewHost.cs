@@ -9,6 +9,7 @@ internal sealed class WebViewHost : IDisposable
 
     private readonly CoreWebView2 coreWebView;
     private readonly string webAssetsDirectory;
+    private Bridge? bridge;
     private TaskCompletionSource? initialNavigation;
     private bool isStarted;
     private bool isDisposed;
@@ -71,6 +72,11 @@ internal sealed class WebViewHost : IDisposable
                     () => navigation.TrySetCanceled(cancellationToken));
             coreWebView.Navigate(EntryPoint);
             await navigation.Task;
+            cancellationToken.ThrowIfCancellationRequested();
+
+            Bridge startedBridge = new(coreWebView);
+            startedBridge.Start();
+            bridge = startedBridge;
         }
         catch
         {
@@ -86,7 +92,9 @@ internal sealed class WebViewHost : IDisposable
         string.IsNullOrEmpty(uri.Query) &&
         string.IsNullOrEmpty(uri.Fragment);
 
-    internal static bool IsAllowedResourceUri(string? value) =>
+    internal static bool IsAllowedResourceUri(string? value) => IsAllowedOrigin(value);
+
+    internal static bool IsAllowedOrigin(string? value) =>
         TryParseAllowedOrigin(value, out _);
 
     public void Dispose()
@@ -97,6 +105,8 @@ internal sealed class WebViewHost : IDisposable
         }
 
         isDisposed = true;
+        bridge?.Dispose();
+        bridge = null;
         if (!isStarted)
         {
             return;

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts request messages only from the bundled HTTPS origin and rejects messages over 128 UTF-8 bytes before parsing. Version 1 intentionally exposes only the technical bridge.ping method and no business RPC methods or raw host objects.",
+  "title": "WebBridgeMessage",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/pingRequest"
+    },
+    {
+      "$ref": "#/$defs/pingResponse"
+    }
+  ],
+  "$defs": {
+    "protocolVersion": {
+      "const": 1
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "method": {
+      "enum": [
+        "bridge.ping"
+      ]
+    },
+    "emptyObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "pingRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "requestId",
+        "method",
+        "params"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "requestId": {
+          "$ref": "#/$defs/requestId"
+        },
+        "method": {
+          "$ref": "#/$defs/method"
+        },
+        "params": {
+          "$ref": "#/$defs/emptyObject"
+        }
+      }
+    },
+    "pingResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocolVersion"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        }
+      }
+    },
+    "pingResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "requestId",
+        "method",
+        "result"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "requestId": {
+          "$ref": "#/$defs/requestId"
+        },
+        "method": {
+          "$ref": "#/$defs/method"
+        },
+        "result": {
+          "$ref": "#/$defs/pingResult"
+        }
+      }
+    }
+  }
+}
