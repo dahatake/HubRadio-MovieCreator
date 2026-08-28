@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "R-004 canonical brand-template contract. The version digest identifies exact content but is not by itself a cryptographic signature or approval record. Runtime validation enforces unique parameter names and editor values against the selected immutable version.",
+  "title": "BrandTemplateVersion",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "seriesId",
+    "reference",
+    "kind",
+    "parameterDefinitions"
+  ],
+  "properties": {
+    "seriesId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "reference": {
+      "$ref": "#/$defs/templateReference"
+    },
+    "kind": {
+      "$ref": "#/$defs/brandTemplateKind"
+    },
+    "parameterDefinitions": {
+      "type": "array",
+      "$comment": "uniqueItems rejects duplicate objects. BrandTemplateVersion runtime validation additionally requires unique parameter names when other fields differ.",
+      "items": {
+        "$ref": "#/$defs/templateParameterDefinition"
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000(?![\\s\\S]))[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![\\s\\S])"
+    },
+    "contentDigest": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "nonBlankText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "parameterName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?![\\s\\S])"
+    },
+    "brandTemplateKind": {
+      "enum": [
+        "long-form",
+        "youtube-landscape",
+        "youtube-shorts",
+        "tiktok",
+        "quiz",
+        "announcement",
+        "thumbnail",
+        "opening",
+        "ending",
+        "telop",
+        "subtitle",
+        "topic-card",
+        "call-to-action",
+        "publication-scope-indicator"
+      ]
+    },
+    "templateReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "versionDigest"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "name": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "versionDigest": {
+          "$ref": "#/$defs/contentDigest"
+        }
+      }
+    },
+    "rationalNumber": {
+      "type": "object",
+      "$comment": "RationalNumber runtime construction reduces the value. D-012 canonical serialization must emit the reduced form; Draft 2020-12 cannot express a greatest-common-divisor constraint.",
+      "additionalProperties": false,
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "templateParameterValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "textValue"
+          ],
+          "properties": {
+            "kind": {
+              "const": "text"
+            },
+            "textValue": {
+              "$ref": "#/$defs/nonBlankText"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "integerValue"
+          ],
+          "properties": {
+            "kind": {
+              "const": "integer"
+            },
+            "integerValue": {
+              "type": "integer",
+              "minimum": -9223372036854775808,
+              "maximum": 9223372036854775807
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "booleanValue"
+          ],
+          "properties": {
+            "kind": {
+              "const": "boolean"
+            },
+            "booleanValue": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "rationalValue"
+          ],
+          "properties": {
+            "kind": {
+              "const": "rational"
+            },
+            "rationalValue": {
+              "$ref": "#/$defs/rationalNumber"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "assetId",
+            "assetDigest"
+          ],
+          "properties": {
+            "kind": {
+              "const": "asset-reference"
+            },
+            "assetId": {
+              "$ref": "#/$defs/entityId"
+            },
+            "assetDigest": {
+              "$ref": "#/$defs/contentDigest"
+            }
+          }
+        }
+      ]
+    },
+    "templateParameterDefinition": {
+      "type": "object",
+      "$comment": "editorOverrideAllowed controls whether an editor may change this named parameter. An optional editorValueAllowlist further restricts brand-sensitive parameters to a finite set. Runtime validation always requires an override to have the same kind as defaultValue and each allowlist value to be unique and of that kind.",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "defaultValue",
+        "editorOverrideAllowed"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/parameterName"
+        },
+        "defaultValue": {
+          "$ref": "#/$defs/templateParameterValue"
+        },
+        "editorOverrideAllowed": {
+          "type": "boolean"
+        },
+        "editorValueAllowlist": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/templateParameterValue"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "editorOverrideAllowed"
+            ],
+            "properties": {
+              "editorOverrideAllowed": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "editorValueAllowlist"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "templateParameterAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/parameterName"
+        },
+        "value": {
+          "$ref": "#/$defs/templateParameterValue"
+        }
+      }
+    },
+    "appliedBrandTemplate": {
+      "type": "object",
+      "$comment": "This shape is emitted only after BrandTemplateVersion runtime validation has resolved defaults and accepted editor overrides.",
+      "additionalProperties": false,
+      "required": [
+        "seriesId",
+        "reference",
+        "kind",
+        "parameters"
+      ],
+      "properties": {
+        "seriesId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "reference": {
+          "$ref": "#/$defs/templateReference"
+        },
+        "kind": {
+          "$ref": "#/$defs/brandTemplateKind"
+        },
+        "parameters": {
+          "type": "array",
+          "$comment": "AppliedBrandTemplate runtime construction guarantees one resolved assignment for each unique definition name.",
+          "items": {
+            "$ref": "#/$defs/templateParameterAssignment"
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}
