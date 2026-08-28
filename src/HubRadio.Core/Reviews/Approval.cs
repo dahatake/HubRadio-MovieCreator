@@ -1,5 +1,6 @@
 using HubRadio.Core.Compositions;
 using HubRadio.Core.Identity;
+using HubRadio.Core.Projects;
 
 namespace HubRadio.Core.Reviews;
 
@@ -28,6 +29,7 @@ public sealed class Approval
         }
 
         Id = id;
+        ProjectId = compositionVersion.ProjectId;
         CompositionVersionId = compositionVersion.Id;
         CompositionVersionDigest = compositionVersion.ContentDigest;
         ActorId = ReviewValidation.RequireNonBlank(
@@ -43,6 +45,8 @@ public sealed class Approval
     }
 
     public EntityId<ApprovalIdTag> Id { get; }
+
+    public EntityId<ProjectIdTag> ProjectId { get; }
 
     public EntityId<CompositionVersionIdTag> CompositionVersionId { get; }
 

@@ -1,5 +1,6 @@
 using HubRadio.Core.Compositions;
 using HubRadio.Core.Identity;
+using HubRadio.Core.Projects;
 using HubRadio.Core.Provenance;
 using HubRadio.Core.Time;
 
@@ -32,6 +33,7 @@ public sealed class ReviewComment
         ReviewValidation.ValidateDefined(actorRole, nameof(actorRole), "review actor role");
 
         Id = id;
+        ProjectId = compositionVersion.ProjectId;
         CompositionVersionId = compositionVersion.Id;
         CompositionVersionDigest = compositionVersion.ContentDigest;
         OutputTime = outputTime;
@@ -49,6 +51,8 @@ public sealed class ReviewComment
     }
 
     public EntityId<ReviewCommentIdTag> Id { get; }
+
+    public EntityId<ProjectIdTag> ProjectId { get; }
 
     public EntityId<CompositionVersionIdTag> CompositionVersionId { get; }
 

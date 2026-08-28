@@ -79,6 +79,7 @@ public sealed class ReviewAndAuditTests
         AssertPublicGetOnlyProperties(
             typeof(ReviewRecord),
             "Id",
+            "ProjectId",
             "CompositionVersionId",
             "CompositionVersionDigest",
             "State",
@@ -89,6 +90,7 @@ public sealed class ReviewAndAuditTests
         AssertPublicGetOnlyProperties(
             typeof(Approval),
             "Id",
+            "ProjectId",
             "CompositionVersionId",
             "CompositionVersionDigest",
             "ActorId",
@@ -98,6 +100,7 @@ public sealed class ReviewAndAuditTests
         AssertPublicGetOnlyProperties(
             typeof(ReviewComment),
             "Id",
+            "ProjectId",
             "CompositionVersionId",
             "CompositionVersionDigest",
             "OutputTime",
@@ -173,6 +176,9 @@ public sealed class ReviewAndAuditTests
             Assert.AreSame(version.ContentDigest, binding.Digest);
         }
 
+        Assert.AreSame(version.ProjectId, record.ProjectId);
+        Assert.AreSame(version.ProjectId, approval.ProjectId);
+        Assert.AreSame(version.ProjectId, comment.ProjectId);
         Assert.AreEqual(ReviewState.ChangesRequested, record.State);
         Assert.AreEqual(ReviewActorRole.ContentApprover, approval.ActorRole);
         Assert.AreEqual(new RationalTime(15, 2), comment.OutputTime);
