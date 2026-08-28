@@ -7,12 +7,20 @@ namespace HubRadio.App;
 
 public sealed partial class MainWindow : Window
 {
+    private readonly CancellationTokenSource lifetimeCancellation = new();
+    private WebViewHost? webViewHost;
     private bool isClosed;
 
     public MainWindow()
     {
         InitializeComponent();
-        Closed += (_, _) => isClosed = true;
+        Closed += (_, _) =>
+        {
+            isClosed = true;
+            lifetimeCancellation.Cancel();
+            webViewHost?.Dispose();
+            lifetimeCancellation.Dispose();
+        };
     }
 
     private async void OnRootGridLoaded(object sender, RoutedEventArgs args)
@@ -51,6 +59,28 @@ public sealed partial class MainWindow : Window
                         userDataFolder,
                         new CoreWebView2EnvironmentOptions());
                 await WebApplicationView.EnsureCoreWebView2Async(environment);
+
+                WebViewHost host = new(
+                    WebApplicationView.CoreWebView2,
+                    Path.Combine(AppContext.BaseDirectory, "WebAssets"));
+                try
+                {
+                    WebApplicationView.Visibility = Visibility.Visible;
+                    await host.StartAsync(lifetimeCancellation.Token);
+                    if (isClosed)
+                    {
+                        host.Dispose();
+                    }
+                    else
+                    {
+                        webViewHost = host;
+                    }
+                }
+                catch
+                {
+                    host.Dispose();
+                    throw;
+                }
             });
 
         if (isClosed)
@@ -60,8 +90,10 @@ public sealed partial class MainWindow : Window
 
         if (result.Status == WebViewStartupStatus.Ready)
         {
-            StartupTitleText.Text = "Web UI ホストの準備ができました";
-            StartupDetailText.Text = $"WebView2 Runtime {result.RuntimeVersion} を確認しました。";
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+                WebApplicationView,
+                "Bundled Web UI ready");
+            StartupPanel.Visibility = Visibility.Collapsed;
             return;
         }
 

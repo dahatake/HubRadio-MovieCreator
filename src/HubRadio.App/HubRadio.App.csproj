@@ -19,4 +19,18 @@
     <ProjectReference Include="..\HubRadio.Core\HubRadio.Core.csproj" />
     <ProjectReference Include="..\HubRadio.Infrastructure\HubRadio.Infrastructure.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\HubRadio.Web\dist\**\*">
+      <Link>WebAssets\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="EnsureBundledWebAssets" BeforeTargets="PrepareForBuild">
+    <Error
+      Condition="!Exists('..\HubRadio.Web\dist\index.html')"
+      Text="Bundled web assets are missing. Run npm ci and npm run build in src/HubRadio.Web before building HubRadio.App." />
+  </Target>
 </Project>

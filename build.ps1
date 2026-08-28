@@ -154,6 +154,11 @@ Invoke-CheckedCommand -FilePath $workerPython -ArgumentList @(
     '-m', 'pip', 'install', '--disable-pip-version-check', '-e', '.[test]'
 ) -WorkingDirectory $workerRoot -Description 'Python dependency restore'
 
+Invoke-CheckedCommand -FilePath $npm -ArgumentList @('run', 'typecheck') `
+    -WorkingDirectory $webRoot -Description 'Web TypeScript verification'
+Invoke-CheckedCommand -FilePath $npm -ArgumentList @('run', 'build') `
+    -WorkingDirectory $webRoot -Description 'Web production build'
+
 $pythonVersionJson = & $workerPython -c 'import json, sys; print(json.dumps({"major": sys.version_info.major, "minor": sys.version_info.minor}))'
 if ($LASTEXITCODE -ne 0) {
     throw 'Unable to inspect the worker Python version.'
@@ -186,11 +191,6 @@ Invoke-CheckedCommand -FilePath $dotnet -ArgumentList @(
     '-warnaserror',
     '--verbosity', 'minimal'
 ) -WorkingDirectory $repoRoot -Description '.NET build'
-
-Invoke-CheckedCommand -FilePath $npm -ArgumentList @('run', 'typecheck') `
-    -WorkingDirectory $webRoot -Description 'Web TypeScript verification'
-Invoke-CheckedCommand -FilePath $npm -ArgumentList @('run', 'build') `
-    -WorkingDirectory $webRoot -Description 'Web production build'
 
 $pythonFiles = @(& $git -C $repoRoot ls-files -- '*.py')
 if ($LASTEXITCODE -ne 0) {

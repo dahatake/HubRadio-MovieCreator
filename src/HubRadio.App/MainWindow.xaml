@@ -9,11 +9,13 @@
         Loaded="OnRootGridLoaded">
         <WebView2
             x:Name="WebApplicationView"
+            AutomationProperties.AutomationId="BundledWebApplication"
             HorizontalAlignment="Stretch"
             VerticalAlignment="Stretch"
             Visibility="Collapsed" />
 
         <Border
+            x:Name="StartupPanel"
             MaxWidth="640"
             Margin="32"
             Padding="32"
