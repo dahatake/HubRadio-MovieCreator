@@ -359,7 +359,7 @@ internal static class SqliteStoreSupport
             string.Equals(name, expectedName, StringComparison.Ordinal);
     }
 
-    private static string ValidateLocalAbsolutePath(
+    internal static string ValidateLocalAbsolutePath(
         string path,
         string parameterName)
     {
