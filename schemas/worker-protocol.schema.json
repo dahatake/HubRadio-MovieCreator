@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Protocol v1 is one request per process, strict UTF-8 without BOM, LF-only NDJSON, and at most 512 UTF-8 bytes per JSON record excluding LF. Runtime validation rejects duplicate properties, CR, additional input, invalid record ordering, noncontiguous progress, completedUnits greater than totalUnits, and mismatched requestId, method, or version values across records.",
+  "title": "WorkerProtocolMessage",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/progress"
+    },
+    {
+      "$ref": "#/$defs/response"
+    },
+    {
+      "$ref": "#/$defs/error"
+    }
+  ],
+  "$defs": {
+    "protocolVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "method": {
+      "type": "string",
+      "const": "worker.ping",
+      "maxLength": 11
+    },
+    "emptyParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 5,
+      "required": [
+        "version",
+        "type",
+        "requestId",
+        "method",
+        "params"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "type": {
+          "type": "string",
+          "const": "request",
+          "maxLength": 7
+        },
+        "requestId": {
+          "$ref": "#/$defs/requestId"
+        },
+        "method": {
+          "$ref": "#/$defs/method"
+        },
+        "params": {
+          "$ref": "#/$defs/emptyParams"
+        }
+      }
+    },
+    "progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 7,
+      "required": [
+        "version",
+        "type",
+        "requestId",
+        "sequence",
+        "completedUnits",
+        "totalUnits",
+        "phase"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "type": {
+          "type": "string",
+          "const": "progress",
+          "maxLength": 8
+        },
+        "requestId": {
+          "$ref": "#/$defs/requestId"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "completedUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "totalUnits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "phase": {
+          "type": "string",
+          "const": "worker.ping",
+          "maxLength": 11
+        }
+      }
+    },
+    "pingResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 1,
+      "required": [
+        "protocolVersion"
+      ],
+      "properties": {
+        "protocolVersion": {
+          "$ref": "#/$defs/protocolVersion"
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 5,
+      "required": [
+        "version",
+        "type",
+        "requestId",
+        "method",
+        "result"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "type": {
+          "type": "string",
+          "const": "response",
+          "maxLength": 8
+        },
+        "requestId": {
+          "$ref": "#/$defs/requestId"
+        },
+        "method": {
+          "$ref": "#/$defs/method"
+        },
+        "result": {
+          "$ref": "#/$defs/pingResult"
+        }
+      }
+    },
+    "errorCode": {
+      "type": "string",
+      "maxLength": 24,
+      "enum": [
+        "worker.invalid_message",
+        "worker.message_too_large",
+        "worker.unknown_method",
+        "worker.processing_failed"
+      ]
+    },
+    "errorBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 1,
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/errorCode"
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 4,
+      "required": [
+        "version",
+        "type",
+        "requestId",
+        "error"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "type": {
+          "type": "string",
+          "const": "error",
+          "maxLength": 5
+        },
+        "requestId": {
+          "$ref": "#/$defs/requestId"
+        },
+        "error": {
+          "$ref": "#/$defs/errorBody"
+        }
+      }
+    }
+  }
+}

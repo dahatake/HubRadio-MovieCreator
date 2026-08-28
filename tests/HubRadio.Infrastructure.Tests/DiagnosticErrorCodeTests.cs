@@ -8,7 +8,7 @@ namespace HubRadio.Infrastructure.Tests;
 public sealed class DiagnosticErrorCodeTests
 {
     [TestMethod]
-    public void StableErrorCodes_DefineCurrentProcessDiagnosticAndWebViewFailures()
+    public void StableErrorCodes_DefineCurrentProcessDiagnosticWebViewAndWorkerFailures()
     {
         string[] expected =
         [
@@ -16,6 +16,10 @@ public sealed class DiagnosticErrorCodeTests
             "process.start_failed",
             "webview.initialization_failed",
             "webview.runtime_unavailable",
+            "worker.invalid_message",
+            "worker.message_too_large",
+            "worker.processing_failed",
+            "worker.unknown_method",
         ];
 
         CollectionAssert.AreEqual(expected, StableErrorCodes.DefinedCodes.ToArray());

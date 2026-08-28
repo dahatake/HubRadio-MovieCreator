@@ -17,6 +17,10 @@
 | `diagnostic.log_write_failed` | `DiagnosticLogException` | bounded local diagnostic log の作成、読取り、rotation、置換のいずれかに失敗した | なし。失敗 path や inner exception は公開しない |
 | `webview.runtime_unavailable` | `WebViewStartupResult`（起動画面表示） | Evergreen WebView2 Runtime の版を検出できず、Web UI 初期化を開始しなかった | なし。検出例外、path、環境変数は公開しない |
 | `webview.initialization_failed` | `WebViewStartupResult`（起動画面表示） | Runtime 検出後に WebView2 control を初期化できなかった | なし。初期化例外、user data path、内容は公開しない |
+| `worker.invalid_message` | `WorkerProtocolException` | worker の NDJSON、順序、相関、終了状態のいずれかが閉じた v1 契約に適合しなかった | なし。標準入出力、request、path、例外内容は公開しない |
+| `worker.message_too_large` | `WorkerProtocolException` | worker protocol の単一 JSON record が 512 UTF-8 bytes を超えた | なし。超過 record は公開しない |
+| `worker.unknown_method` | `WorkerProtocolException` | v1 で許可した `worker.ping` 以外の method を拒否した | なし。入力 method は公開しない |
+| `worker.processing_failed` | `WorkerProtocolException` | worker が要求を処理できず、内容を伴わない固定 error envelope で終了した | なし。Python 例外や入力内容は公開しない |
 
 U-001 の WebView2 の 2 コードは起動・復旧画面へ表示するだけで、例外としては投げず、現時点では診断ログへ書かない。下記の enum 対応は catalog との一致を保つために定義してある。
 

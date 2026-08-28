@@ -14,6 +14,9 @@ public sealed class ProcessRunner
     private static readonly Encoding OutputEncoding = new UTF8Encoding(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: false);
+    private static readonly Encoding InputEncoding = new UTF8Encoding(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
 
     public async Task<ProcessRunResult> RunAsync(
         ProcessRunRequest request,
@@ -81,6 +84,14 @@ public sealed class ProcessRunner
             CapturedOutput[] captured;
             try
             {
+                if (request.StandardInput is not null)
+                {
+                    await WriteStandardInputAsync(
+                        process,
+                        request.StandardInput,
+                        waitCancellation.Token).ConfigureAwait(false);
+                }
+
                 await process.WaitForExitAsync(waitCancellation.Token).ConfigureAwait(false);
                 jobObject?.Dispose();
                 captured = await WaitForCapturedOutputAsync(
@@ -152,7 +163,13 @@ public sealed class ProcessRunner
             RedirectStandardError = true,
             StandardOutputEncoding = OutputEncoding,
             StandardErrorEncoding = OutputEncoding,
+            RedirectStandardInput = request.StandardInput is not null,
         };
+
+        if (request.StandardInput is not null)
+        {
+            startInfo.StandardInputEncoding = InputEncoding;
+        }
 
         foreach (string argument in request.ArgumentList)
         {
@@ -160,6 +177,19 @@ public sealed class ProcessRunner
         }
 
         return startInfo;
+    }
+
+    private static async Task WriteStandardInputAsync(
+        Process process,
+        string standardInput,
+        CancellationToken cancellationToken)
+    {
+        StreamWriter writer = process.StandardInput;
+        await writer.WriteAsync(
+            standardInput.AsMemory(),
+            cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+        writer.Close();
     }
 
     private static void Start(Process process)

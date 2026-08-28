@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace HubRadio.Infrastructure.Processes;
 
 public sealed class ProcessRunRequest
@@ -7,12 +9,17 @@ public sealed class ProcessRunRequest
     public static readonly TimeSpan MaximumTimeout =
         TimeSpan.FromMilliseconds(uint.MaxValue - 1d);
 
+    private static readonly UTF8Encoding StrictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
+
     public ProcessRunRequest(
         string executable,
         IReadOnlyList<string> argumentList,
         string workingDirectory,
         TimeSpan timeout,
-        int maxCapturedBytes = DefaultMaxCapturedBytes)
+        int maxCapturedBytes = DefaultMaxCapturedBytes,
+        string? standardInput = null)
     {
         ArgumentNullException.ThrowIfNull(executable);
         ArgumentNullException.ThrowIfNull(argumentList);
@@ -51,6 +58,28 @@ public sealed class ProcessRunRequest
                 $"The capture limit must be between 1 and {MaximumMaxCapturedBytes} bytes per stream.");
         }
 
+        if (standardInput is not null)
+        {
+            int standardInputBytes;
+            try
+            {
+                standardInputBytes = StrictUtf8.GetByteCount(standardInput);
+            }
+            catch (EncoderFallbackException)
+            {
+                throw new ArgumentException(
+                    "Standard input must contain valid UTF-16 that can be encoded as strict UTF-8.",
+                    nameof(standardInput));
+            }
+
+            if (standardInputBytes > maxCapturedBytes)
+            {
+                throw new ArgumentException(
+                    "Standard input must not exceed the configured byte limit.",
+                    nameof(standardInput));
+            }
+        }
+
         string[] arguments = new string[argumentList.Count];
         for (int index = 0; index < argumentList.Count; index++)
         {
@@ -70,6 +99,7 @@ public sealed class ProcessRunRequest
         WorkingDirectory = workingDirectory;
         Timeout = timeout;
         MaxCapturedBytes = maxCapturedBytes;
+        StandardInput = standardInput;
     }
 
     public string Executable { get; }
@@ -81,4 +111,6 @@ public sealed class ProcessRunRequest
     public TimeSpan Timeout { get; }
 
     public int MaxCapturedBytes { get; }
+
+    public string? StandardInput { get; }
 }

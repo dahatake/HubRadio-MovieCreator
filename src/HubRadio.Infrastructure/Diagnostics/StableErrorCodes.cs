@@ -10,6 +10,10 @@ public static class StableErrorCodes
     public const string ProcessStartFailed = ProcessStartException.StableErrorCode;
     public const string WebViewInitializationFailed = "webview.initialization_failed";
     public const string WebViewRuntimeUnavailable = "webview.runtime_unavailable";
+    public const string WorkerInvalidMessage = "worker.invalid_message";
+    public const string WorkerMessageTooLarge = "worker.message_too_large";
+    public const string WorkerProcessingFailed = "worker.processing_failed";
+    public const string WorkerUnknownMethod = "worker.unknown_method";
 
     private static readonly IReadOnlyList<string> Codes = Array.AsReadOnly(
     [
@@ -17,6 +21,10 @@ public static class StableErrorCodes
         ProcessStartFailed,
         WebViewInitializationFailed,
         WebViewRuntimeUnavailable,
+        WorkerInvalidMessage,
+        WorkerMessageTooLarge,
+        WorkerProcessingFailed,
+        WorkerUnknownMethod,
     ]);
 
     public static IReadOnlyList<string> DefinedCodes => Codes;
@@ -25,7 +33,11 @@ public static class StableErrorCodes
         string.Equals(code, DiagnosticLogWriteFailed, StringComparison.Ordinal) ||
         string.Equals(code, ProcessStartFailed, StringComparison.Ordinal) ||
         string.Equals(code, WebViewInitializationFailed, StringComparison.Ordinal) ||
-        string.Equals(code, WebViewRuntimeUnavailable, StringComparison.Ordinal);
+        string.Equals(code, WebViewRuntimeUnavailable, StringComparison.Ordinal) ||
+        string.Equals(code, WorkerInvalidMessage, StringComparison.Ordinal) ||
+        string.Equals(code, WorkerMessageTooLarge, StringComparison.Ordinal) ||
+        string.Equals(code, WorkerProcessingFailed, StringComparison.Ordinal) ||
+        string.Equals(code, WorkerUnknownMethod, StringComparison.Ordinal);
 
     public static bool IsCanonical(string? code)
     {

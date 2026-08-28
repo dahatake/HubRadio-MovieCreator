@@ -38,6 +38,7 @@ public sealed class ProcessRunnerTests
         Assert.AreEqual(TestWorkingDirectory, request.WorkingDirectory);
         Assert.AreEqual(TimeSpan.FromSeconds(10), request.Timeout);
         Assert.AreEqual(ProcessRunRequest.DefaultMaxCapturedBytes, request.MaxCapturedBytes);
+        Assert.IsNull(request.StandardInput);
 
         IList<string> exposed = (IList<string>)request.ArgumentList;
         Assert.ThrowsExactly<NotSupportedException>(() => exposed.Add("mutation"));
@@ -101,6 +102,43 @@ public sealed class ProcessRunnerTests
                 [],
                 null!,
                 TimeSpan.FromSeconds(1)));
+    }
+
+    [TestMethod]
+    public void Request_StandardInputIsRetainedAndStrictlyBoundedAsUtf8()
+    {
+        const string standardInput = "line one\n日本語\n";
+        ProcessRunRequest request = new(
+            DotNetExecutable,
+            [],
+            TestWorkingDirectory,
+            TimeSpan.FromSeconds(1),
+            maxCapturedBytes: 64,
+            standardInput: standardInput);
+
+        Assert.AreEqual(standardInput, request.StandardInput);
+
+        ArgumentException invalidUtf16 = Assert.ThrowsExactly<ArgumentException>(
+            () => new ProcessRunRequest(
+                DotNetExecutable,
+                [],
+                TestWorkingDirectory,
+                TimeSpan.FromSeconds(1),
+                maxCapturedBytes: 64,
+                standardInput: "\uD800"));
+        Assert.AreEqual("standardInput", invalidUtf16.ParamName);
+        Assert.IsFalse(invalidUtf16.ToString().Contains("\uD800", StringComparison.Ordinal));
+
+        ArgumentException tooLarge = Assert.ThrowsExactly<ArgumentException>(
+            () => new ProcessRunRequest(
+                DotNetExecutable,
+                [],
+                TestWorkingDirectory,
+                TimeSpan.FromSeconds(1),
+                maxCapturedBytes: 5,
+                standardInput: "ああ"));
+        Assert.AreEqual("standardInput", tooLarge.ParamName);
+        Assert.IsFalse(tooLarge.ToString().Contains("ああ", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -268,6 +306,39 @@ public sealed class ProcessRunnerTests
     }
 
     [TestMethod]
+    public async Task RunAsync_StandardInputIsWrittenExactlyAndClosedAtEof()
+    {
+        const string standardInput = "first line\n日本語 & ; $(literal)\nlast\0value";
+        ProcessRunner runner = new();
+        ProcessRunRequest request = CreateHelperRequest(
+            "echo-standard-input",
+            standardInput: standardInput);
+
+        ProcessRunResult result = await runner.RunAsync(request);
+
+        Assert.AreEqual(0, result.ExitCode);
+        Assert.AreEqual(standardInput, result.StandardOutput);
+        Assert.AreEqual(string.Empty, result.StandardError);
+        Assert.IsFalse(result.Truncated);
+    }
+
+    [TestMethod]
+    public async Task RunAsync_EmptyStandardInputStillClosesChildInput()
+    {
+        ProcessRunner runner = new();
+        ProcessRunRequest request = CreateHelperRequest(
+            "echo-standard-input",
+            standardInput: string.Empty);
+
+        ProcessRunResult result = await runner.RunAsync(request);
+
+        Assert.AreEqual(0, result.ExitCode);
+        Assert.AreEqual(string.Empty, result.StandardOutput);
+        Assert.AreEqual(string.Empty, result.StandardError);
+        Assert.IsFalse(result.Truncated);
+    }
+
+    [TestMethod]
     public async Task RunAsync_NonzeroExitCode_IsReturnedWithoutException()
     {
         ProcessRunner runner = new();
@@ -369,6 +440,43 @@ public sealed class ProcessRunnerTests
                 await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => runTask);
 
             Assert.AreEqual(cancellation.Token, exception.CancellationToken);
+            await AssertProcessExitedAsync(processId);
+        }
+        finally
+        {
+            Directory.Delete(temporaryDirectory, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task RunAsync_CancellationDuringBlockedStandardInputWriteKillsProcessWithoutLeakingInput()
+    {
+        string temporaryDirectory = CreateTemporaryDirectory();
+        string processIdPath = Path.Combine(temporaryDirectory, "stdin-cancel.pid");
+        const string sensitiveMarker = "sensitive-standard-input";
+        string standardInput = string.Concat(
+            Enumerable.Repeat(
+                sensitiveMarker,
+                (ProcessRunRequest.DefaultMaxCapturedBytes / sensitiveMarker.Length) - 1));
+
+        try
+        {
+            using CancellationTokenSource cancellation = new();
+            ProcessRunner runner = new();
+            ProcessRunRequest request = CreateHelperRequest(
+                "wait",
+                [processIdPath],
+                timeout: TimeSpan.FromSeconds(30),
+                standardInput: standardInput);
+            Task<ProcessRunResult> runTask = runner.RunAsync(request, cancellation.Token);
+            int processId = await ReadProcessIdAsync(processIdPath);
+
+            cancellation.Cancel();
+            OperationCanceledException exception =
+                await Assert.ThrowsExactlyAsync<OperationCanceledException>(() => runTask);
+
+            Assert.AreEqual(cancellation.Token, exception.CancellationToken);
+            Assert.IsFalse(exception.ToString().Contains(sensitiveMarker, StringComparison.Ordinal));
             await AssertProcessExitedAsync(processId);
         }
         finally
@@ -745,7 +853,8 @@ public sealed class ProcessRunnerTests
         string mode,
         IReadOnlyList<string>? helperArguments = null,
         TimeSpan? timeout = null,
-        int maxCapturedBytes = ProcessRunRequest.DefaultMaxCapturedBytes)
+        int maxCapturedBytes = ProcessRunRequest.DefaultMaxCapturedBytes,
+        string? standardInput = null)
     {
         List<string> argumentList =
         [
@@ -764,7 +873,8 @@ public sealed class ProcessRunnerTests
             argumentList,
             TestWorkingDirectory,
             timeout ?? TimeSpan.FromSeconds(30),
-            maxCapturedBytes);
+            maxCapturedBytes,
+            standardInput);
     }
 
     private static Process StartHelperProcess(string mode, params string[] helperArguments)
@@ -993,6 +1103,7 @@ internal static class ProcessRunnerTestHelper
         return mode switch
         {
             "echo-arguments" => EchoArguments(arguments[1..]),
+            "echo-standard-input" => EchoStandardInput(),
             "write-streams" => WriteStreams(arguments),
             "write-huge-output" => WriteHugeOutput(arguments),
             "write-utf8" => WriteUtf8(arguments),
@@ -1007,6 +1118,14 @@ internal static class ProcessRunnerTestHelper
     private static int EchoArguments(string[] arguments)
     {
         Console.Out.Write(JsonSerializer.Serialize(arguments));
+        return 0;
+    }
+
+    private static int EchoStandardInput()
+    {
+        using Stream input = Console.OpenStandardInput();
+        using Stream output = Console.OpenStandardOutput();
+        input.CopyTo(output);
         return 0;
     }
 
