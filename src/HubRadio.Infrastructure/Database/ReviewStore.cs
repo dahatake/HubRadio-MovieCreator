@@ -4,6 +4,7 @@ using HubRadio.Core.Identity;
 using HubRadio.Core.Projects;
 using HubRadio.Core.Provenance;
 using HubRadio.Core.Reviews;
+using HubRadio.Core.Security;
 using HubRadio.Core.Time;
 using HubRadio.Infrastructure.Audit;
 using Microsoft.Data.Sqlite;
@@ -227,109 +228,131 @@ public sealed class ReviewStore
     public void AppendReviewRecord(ReviewRecord reviewRecord)
     {
         ArgumentNullException.ThrowIfNull(reviewRecord);
-        string recordedAt = SqliteStoreSupport.FormatTimestamp(
-            reviewRecord.RecordedAt,
-            nameof(reviewRecord));
 
         using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
-        using SqliteCommand command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO review_records (
-                id,
-                project_id,
-                composition_version_id,
-                composition_version_digest,
-                state,
-                actor_id,
-                actor_role,
-                recorded_at,
-                reason
-            )
-            VALUES (
-                $id,
-                $project_id,
-                $composition_version_id,
-                $composition_version_digest,
-                $state,
-                $actor_id,
-                $actor_role,
-                $recorded_at,
-                $reason
-            );
-            """;
-        AddVersionEvidenceBinding(
-            command,
-            reviewRecord.Id.ToString(),
-            reviewRecord.ProjectId,
-            reviewRecord.CompositionVersionId,
-            reviewRecord.CompositionVersionDigest);
-        SqliteStoreSupport.AddText(command, "$state", reviewRecord.State.ToString());
-        SqliteStoreSupport.AddText(command, "$actor_id", reviewRecord.ActorId);
-        SqliteStoreSupport.AddText(command, "$actor_role", reviewRecord.ActorRole.ToString());
-        SqliteStoreSupport.AddText(command, "$recorded_at", recordedAt);
-        SqliteStoreSupport.AddText(command, "$reason", reviewRecord.Reason);
-        EnsureSingleMutation(command, "review record");
+        InsertReviewRecord(connection, transaction, reviewRecord);
         transaction.Commit();
     }
 
     public void AppendReviewComment(ReviewComment reviewComment)
     {
         ArgumentNullException.ThrowIfNull(reviewComment);
-        string createdAt = SqliteStoreSupport.FormatTimestamp(
-            reviewComment.CreatedAt,
-            nameof(reviewComment));
 
         using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
-        using SqliteCommand command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO review_comments (
-                id,
-                project_id,
-                composition_version_id,
-                composition_version_digest,
-                output_value,
-                output_rate,
-                source_span_id,
-                actor_id,
-                actor_role,
-                created_at,
-                text
-            )
-            VALUES (
-                $id,
-                $project_id,
-                $composition_version_id,
-                $composition_version_digest,
-                $output_value,
-                $output_rate,
-                $source_span_id,
-                $actor_id,
-                $actor_role,
-                $created_at,
-                $text
-            );
-            """;
-        AddVersionEvidenceBinding(
-            command,
-            reviewComment.Id.ToString(),
-            reviewComment.ProjectId,
-            reviewComment.CompositionVersionId,
-            reviewComment.CompositionVersionDigest);
-        SqliteStoreSupport.AddInteger(command, "$output_value", reviewComment.OutputTime.Value);
-        SqliteStoreSupport.AddInteger(command, "$output_rate", reviewComment.OutputTime.Rate);
-        SqliteStoreSupport.AddText(
-            command,
-            "$source_span_id",
-            reviewComment.SourceSpanId.ToString());
-        SqliteStoreSupport.AddText(command, "$actor_id", reviewComment.ActorId);
-        SqliteStoreSupport.AddText(command, "$actor_role", reviewComment.ActorRole.ToString());
-        SqliteStoreSupport.AddText(command, "$created_at", createdAt);
-        SqliteStoreSupport.AddText(command, "$text", reviewComment.Text);
-        EnsureSingleMutation(command, "review comment");
+        InsertReviewComment(connection, transaction, reviewComment);
+        transaction.Commit();
+    }
+
+    public void AppendAuthorizedReviewComment(
+        ReviewComment reviewComment,
+        AuthorizationRole authorizationRole,
+        AuthorizationOperation authorizationOperation)
+    {
+        ArgumentNullException.ThrowIfNull(reviewComment);
+        ValidateCommentAuthorization(
+            reviewComment.ActorRole,
+            authorizationRole,
+            authorizationOperation);
+
+        using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        RoleAssignmentStore.DemandCurrentAuthorization(
+            connection,
+            transaction,
+            reviewComment.ActorId,
+            authorizationRole,
+            authorizationOperation);
+        InsertReviewComment(connection, transaction, reviewComment);
+        transaction.Commit();
+    }
+
+    public void AppendChangeRequest(
+        ReviewComment reviewComment,
+        ReviewRecord reviewRecord,
+        ReviewState expectedCurrentState)
+    {
+        AppendChangeRequestCore(
+            reviewComment,
+            reviewRecord,
+            expectedCurrentState,
+            authorizationRole: null,
+            authorizationOperation: null);
+    }
+
+    public void AppendAuthorizedChangeRequest(
+        ReviewComment reviewComment,
+        ReviewRecord reviewRecord,
+        ReviewState expectedCurrentState,
+        AuthorizationRole authorizationRole,
+        AuthorizationOperation authorizationOperation)
+    {
+        AppendChangeRequestCore(
+            reviewComment,
+            reviewRecord,
+            expectedCurrentState,
+            authorizationRole,
+            authorizationOperation);
+    }
+
+    private void AppendChangeRequestCore(
+        ReviewComment reviewComment,
+        ReviewRecord reviewRecord,
+        ReviewState expectedCurrentState,
+        AuthorizationRole? authorizationRole,
+        AuthorizationOperation? authorizationOperation)
+    {
+        ArgumentNullException.ThrowIfNull(reviewComment);
+        ArgumentNullException.ThrowIfNull(reviewRecord);
+        ValidateChangeRequest(
+            reviewComment,
+            reviewRecord,
+            expectedCurrentState,
+            authorizationRole,
+            authorizationOperation);
+
+        using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        if (authorizationRole is AuthorizationRole role
+            && authorizationOperation is AuthorizationOperation operation)
+        {
+            RoleAssignmentStore.DemandCurrentAuthorization(
+                connection,
+                transaction,
+                reviewRecord.ActorId,
+                role,
+                operation);
+        }
+
+        StoredVersionBinding binding = ReadVersionBinding(
+            connection,
+            transaction,
+            reviewRecord.CompositionVersionId)
+            ?? throw new InvalidOperationException(
+                "The change request composition version does not exist.");
+        ValidateIncomingVersionBinding(binding, reviewComment, reviewRecord);
+
+        IReadOnlyList<StoredReviewRecord> persistedRecords = ReadReviewRecords(
+            connection,
+            transaction,
+            binding);
+        StoredReviewRecord current = GetCurrentReviewRecord(persistedRecords);
+        if (current.State != expectedCurrentState)
+        {
+            throw new InvalidOperationException(
+                "The persisted review state does not match the expected current state.");
+        }
+
+        if (reviewRecord.RecordedAt <= current.RecordedAt)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(reviewRecord),
+                "A change request must be recorded after the current review state.");
+        }
+
+        InsertReviewComment(connection, transaction, reviewComment);
+        InsertReviewRecord(connection, transaction, reviewRecord);
         transaction.Commit();
     }
 
@@ -446,6 +469,230 @@ public sealed class ReviewStore
             command,
             "$composition_version_digest",
             compositionVersionDigest.Hex);
+    }
+
+    private static void InsertReviewRecord(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ReviewRecord reviewRecord)
+    {
+        string recordedAt = SqliteStoreSupport.FormatTimestamp(
+            reviewRecord.RecordedAt,
+            nameof(reviewRecord));
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO review_records (
+                id,
+                project_id,
+                composition_version_id,
+                composition_version_digest,
+                state,
+                actor_id,
+                actor_role,
+                recorded_at,
+                reason
+            )
+            VALUES (
+                $id,
+                $project_id,
+                $composition_version_id,
+                $composition_version_digest,
+                $state,
+                $actor_id,
+                $actor_role,
+                $recorded_at,
+                $reason
+            );
+            """;
+        AddVersionEvidenceBinding(
+            command,
+            reviewRecord.Id.ToString(),
+            reviewRecord.ProjectId,
+            reviewRecord.CompositionVersionId,
+            reviewRecord.CompositionVersionDigest);
+        SqliteStoreSupport.AddText(command, "$state", reviewRecord.State.ToString());
+        SqliteStoreSupport.AddText(command, "$actor_id", reviewRecord.ActorId);
+        SqliteStoreSupport.AddText(command, "$actor_role", reviewRecord.ActorRole.ToString());
+        SqliteStoreSupport.AddText(command, "$recorded_at", recordedAt);
+        SqliteStoreSupport.AddText(command, "$reason", reviewRecord.Reason);
+        EnsureSingleMutation(command, "review record");
+    }
+
+    private static void InsertReviewComment(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        ReviewComment reviewComment)
+    {
+        string createdAt = SqliteStoreSupport.FormatTimestamp(
+            reviewComment.CreatedAt,
+            nameof(reviewComment));
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO review_comments (
+                id,
+                project_id,
+                composition_version_id,
+                composition_version_digest,
+                output_value,
+                output_rate,
+                source_span_id,
+                actor_id,
+                actor_role,
+                created_at,
+                text
+            )
+            VALUES (
+                $id,
+                $project_id,
+                $composition_version_id,
+                $composition_version_digest,
+                $output_value,
+                $output_rate,
+                $source_span_id,
+                $actor_id,
+                $actor_role,
+                $created_at,
+                $text
+            );
+            """;
+        AddVersionEvidenceBinding(
+            command,
+            reviewComment.Id.ToString(),
+            reviewComment.ProjectId,
+            reviewComment.CompositionVersionId,
+            reviewComment.CompositionVersionDigest);
+        SqliteStoreSupport.AddInteger(command, "$output_value", reviewComment.OutputTime.Value);
+        SqliteStoreSupport.AddInteger(command, "$output_rate", reviewComment.OutputTime.Rate);
+        SqliteStoreSupport.AddText(
+            command,
+            "$source_span_id",
+            reviewComment.SourceSpanId.ToString());
+        SqliteStoreSupport.AddText(command, "$actor_id", reviewComment.ActorId);
+        SqliteStoreSupport.AddText(command, "$actor_role", reviewComment.ActorRole.ToString());
+        SqliteStoreSupport.AddText(command, "$created_at", createdAt);
+        SqliteStoreSupport.AddText(command, "$text", reviewComment.Text);
+        EnsureSingleMutation(command, "review comment");
+    }
+
+    private static void ValidateChangeRequest(
+        ReviewComment reviewComment,
+        ReviewRecord reviewRecord,
+        ReviewState expectedCurrentState,
+        AuthorizationRole? authorizationRole,
+        AuthorizationOperation? authorizationOperation)
+    {
+        if (!Enum.IsDefined(expectedCurrentState))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(expectedCurrentState),
+                expectedCurrentState,
+                "Unknown expected review state.");
+        }
+
+        ReviewTransitionDecision decision = ReviewStateMachine.Evaluate(
+            expectedCurrentState,
+            ReviewTransitionRequest.RequestChanges());
+        if (decision.Disposition != ReviewTransitionDisposition.Allowed
+            || decision.To != reviewRecord.State
+            || decision.RequiredReviewActorRole != reviewRecord.ActorRole
+            || (authorizationRole is null) != (authorizationOperation is null)
+            || authorizationRole is not null
+                && (decision.RequiredAuthorizationRole != authorizationRole
+                    || decision.RequiredAuthorizationOperation
+                        != authorizationOperation))
+        {
+            throw new ArgumentException(
+                "The review record does not represent the allowed change request.",
+                nameof(reviewRecord));
+        }
+
+        if (reviewComment.ProjectId != reviewRecord.ProjectId
+            || reviewComment.CompositionVersionId != reviewRecord.CompositionVersionId
+            || reviewComment.CompositionVersionDigest
+                != reviewRecord.CompositionVersionDigest
+            || reviewComment.CreatedAt != reviewRecord.RecordedAt
+            || !string.Equals(
+                reviewComment.ActorId,
+                reviewRecord.ActorId,
+                StringComparison.Ordinal)
+            || reviewComment.ActorRole != reviewRecord.ActorRole)
+        {
+            throw new ArgumentException(
+                "The review comment and review record must have matching version, time, and actor bindings.",
+                nameof(reviewRecord));
+        }
+    }
+
+    private static void ValidateCommentAuthorization(
+        ReviewActorRole reviewActorRole,
+        AuthorizationRole authorizationRole,
+        AuthorizationOperation authorizationOperation)
+    {
+        bool isExactMapping = (reviewActorRole, authorizationRole,
+            authorizationOperation) switch
+        {
+            (ReviewActorRole.Editor, AuthorizationRole.Editor,
+                AuthorizationOperation.SubmitForReview) => true,
+            (ReviewActorRole.PerformerReviewer,
+                AuthorizationRole.PerformerReviewer,
+                AuthorizationOperation.RecordPerformerReview) => true,
+            (ReviewActorRole.ContentApprover,
+                AuthorizationRole.ContentApprover,
+                AuthorizationOperation.RecordContentReview) => true,
+            (ReviewActorRole.BrandApprover,
+                AuthorizationRole.BrandApprover,
+                AuthorizationOperation.RecordBrandReview) => true,
+            (ReviewActorRole.RightsApprover,
+                AuthorizationRole.RightsApprover,
+                AuthorizationOperation.RecordRightsDecision) => true,
+            _ => false,
+        };
+
+        if (!isExactMapping)
+        {
+            throw new ArgumentException(
+                "The review actor role and authorization do not form an allowed comment-authoring mapping.",
+                nameof(authorizationRole));
+        }
+    }
+
+    private static void ValidateIncomingVersionBinding(
+        StoredVersionBinding binding,
+        ReviewComment reviewComment,
+        ReviewRecord reviewRecord)
+    {
+        if (reviewComment.ProjectId != binding.ProjectId
+            || reviewComment.CompositionVersionId != binding.CompositionVersionId
+            || reviewComment.CompositionVersionDigest != binding.CompositionVersionDigest
+            || reviewRecord.ProjectId != binding.ProjectId
+            || reviewRecord.CompositionVersionId != binding.CompositionVersionId
+            || reviewRecord.CompositionVersionDigest != binding.CompositionVersionDigest)
+        {
+            throw new InvalidOperationException(
+                "The change request does not match the stored composition version.");
+        }
+    }
+
+    private static StoredReviewRecord GetCurrentReviewRecord(
+        IReadOnlyList<StoredReviewRecord> persistedRecords)
+    {
+        if (persistedRecords.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "A change request requires a persisted current review state.");
+        }
+
+        StoredReviewRecord current = persistedRecords[^1];
+        if (persistedRecords.Count > 1
+            && persistedRecords[^2].RecordedAt == current.RecordedAt)
+        {
+            throw new InvalidOperationException(
+                "The persisted review state order is ambiguous.");
+        }
+
+        return current;
     }
 
     private static StoredVersionBinding? ReadVersionBinding(

@@ -4,6 +4,7 @@ using HubRadio.Core.Identity;
 using HubRadio.Core.Projects;
 using HubRadio.Core.Provenance;
 using HubRadio.Core.Reviews;
+using HubRadio.Core.Security;
 using HubRadio.Core.Time;
 using HubRadio.Infrastructure.Database;
 using Microsoft.Data.Sqlite;
@@ -13,6 +14,11 @@ namespace HubRadio.Infrastructure.Tests;
 [TestClass]
 public sealed class ReviewStoreTests
 {
+    private const string AdministratorSid =
+        "S-1-5-21-1111111111-2222222222-3333333333-3001";
+    private const string ReviewerSid =
+        "S-1-5-21-1111111111-2222222222-3333333333-3002";
+
     private static readonly DateTimeOffset VersionTime =
         new(2032, 3, 4, 5, 6, 7, TimeSpan.Zero);
 
@@ -201,6 +207,427 @@ public sealed class ReviewStoreTests
         Assert.AreEqual(
             1L,
             database.ExecuteScalarInt64("SELECT COUNT(*) FROM audit_chain_entries;"));
+    }
+
+    [TestMethod]
+    public void AppendChangeRequestAtomicallyPersistsBoundUnicodeSqlText()
+    {
+        using StoreTestDatabase database = new();
+        (ReviewStore store, _, CompositionVersion version) = CreateStores(database);
+        DateTimeOffset currentTime = VersionTime.AddMinutes(1);
+        store.AppendReviewRecord(
+            new ReviewRecord(
+                EntityId<ReviewRecordIdTag>.New(),
+                version,
+                ReviewState.PerformerReview,
+                "performer-reviewer",
+                ReviewActorRole.PerformerReviewer,
+                currentTime,
+                "Begin performer review."));
+        const string text = "00:05 を修正: Robert'); DROP TABLE review_records;-- 🎙️";
+        DateTimeOffset requestTime = currentTime.AddSeconds(1);
+        (ReviewComment comment, ReviewRecord record) = CreateChangeRequest(
+            version,
+            ReviewActorRole.PerformerReviewer,
+            "performer-reviewer",
+            requestTime,
+            text);
+
+        store.AppendChangeRequest(
+            comment,
+            record,
+            ReviewState.PerformerReview);
+
+        StoredVersionEvidence evidence = store.GetVersionEvidence(version.Id)
+            ?? throw new AssertFailedException("The version evidence was not loaded.");
+        Assert.AreEqual(2, evidence.ReviewRecords.Count);
+        Assert.AreEqual(record.Id, evidence.ReviewRecords[^1].Id);
+        Assert.AreEqual(ReviewState.ChangesRequested, evidence.ReviewRecords[^1].State);
+        Assert.AreEqual(text, evidence.ReviewRecords[^1].Reason);
+        StoredReviewComment storedComment = evidence.ReviewComments.Single();
+        Assert.AreEqual(comment.Id, storedComment.Id);
+        Assert.AreEqual(comment.OutputTime, storedComment.OutputTime);
+        Assert.AreEqual(comment.SourceSpanId, storedComment.SourceSpanId);
+        Assert.AreEqual(text, storedComment.Text);
+        Assert.AreEqual(
+            1L,
+            database.ExecuteScalarInt64(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'review_records';"));
+    }
+
+    [TestMethod]
+    public void AppendChangeRequestRollsBackCommentWhenRecordInsertFails()
+    {
+        using StoreTestDatabase database = new();
+        (ReviewStore store, _, CompositionVersion version) = CreateStores(database);
+        DateTimeOffset currentTime = VersionTime.AddMinutes(1);
+        store.AppendReviewRecord(
+            CreateReviewRecord(
+                version,
+                EntityId<ReviewRecordIdTag>.New(),
+                currentTime,
+                ReviewState.EditorReview,
+                "Begin editor review."));
+        database.ExecuteNonQuery(
+            """
+            CREATE TRIGGER fail_change_request_record
+            BEFORE INSERT ON review_records
+            WHEN NEW.state = 'ChangesRequested'
+            BEGIN
+                SELECT RAISE(ABORT, 'injected review-record failure');
+            END;
+            """);
+        (ReviewComment comment, ReviewRecord record) = CreateChangeRequest(
+            version,
+            ReviewActorRole.Editor,
+            "reviewer-'one'",
+            currentTime.AddSeconds(1),
+            "Injected failure must roll back both rows.");
+
+        SqliteException failure = Assert.ThrowsExactly<SqliteException>(() =>
+            store.AppendChangeRequest(comment, record, ReviewState.EditorReview));
+
+        Assert.AreEqual(19, failure.SqliteErrorCode);
+        Assert.AreEqual(0L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM review_comments;"));
+        Assert.AreEqual(1L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM review_records;"));
+    }
+
+    [TestMethod]
+    public void DuplicateChangeRequestRecordIdRollsBackNewComment()
+    {
+        using StoreTestDatabase database = new();
+        (ReviewStore store, _, CompositionVersion version) = CreateStores(database);
+        DateTimeOffset currentTime = VersionTime.AddMinutes(1);
+        EntityId<ReviewRecordIdTag> duplicateRecordId = EntityId<ReviewRecordIdTag>.New();
+        store.AppendReviewRecord(
+            CreateReviewRecord(
+                version,
+                duplicateRecordId,
+                currentTime,
+                ReviewState.EditorReview,
+                "Begin editor review."));
+        ReviewComment comment = new(
+            EntityId<ReviewCommentIdTag>.New(),
+            version,
+            default,
+            EntityId<SourceSpanIdTag>.New(),
+            "reviewer-'one'",
+            ReviewActorRole.Editor,
+            currentTime.AddSeconds(1),
+            "Duplicate record ID.");
+        ReviewRecord duplicateRecord = CreateReviewRecord(
+            version,
+            duplicateRecordId,
+            currentTime.AddSeconds(1),
+            ReviewState.ChangesRequested,
+            "Duplicate record ID.");
+
+        AssertConstraintViolation(() =>
+            store.AppendChangeRequest(
+                comment,
+                duplicateRecord,
+                ReviewState.EditorReview));
+
+        Assert.AreEqual(0L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM review_comments;"));
+        Assert.AreEqual(1L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM review_records;"));
+    }
+
+    [TestMethod]
+    public void ChangeRequestRejectsMismatchedPairIllegalStateAndStoredDigest()
+    {
+        using StoreTestDatabase database = new();
+        (ReviewStore store, _, CompositionVersion version) = CreateStores(database);
+        DateTimeOffset currentTime = VersionTime.AddMinutes(1);
+        store.AppendReviewRecord(
+            new ReviewRecord(
+                EntityId<ReviewRecordIdTag>.New(),
+                version,
+                ReviewState.ContentReview,
+                "content-approver",
+                ReviewActorRole.ContentApprover,
+                currentTime,
+                "Begin content review."));
+        DateTimeOffset requestTime = currentTime.AddSeconds(1);
+        ReviewComment validComment = new(
+            EntityId<ReviewCommentIdTag>.New(),
+            version,
+            default,
+            EntityId<SourceSpanIdTag>.New(),
+            "content-approver",
+            ReviewActorRole.ContentApprover,
+            requestTime,
+            "Request correction.");
+
+        CompositionVersion wrongProject = CopyVersion(
+            version,
+            projectId: EntityId<ProjectIdTag>.New());
+        CompositionVersion wrongVersion = CopyVersion(
+            version,
+            id: EntityId<CompositionVersionIdTag>.New());
+        CompositionVersion wrongDigest = CopyVersion(
+            version,
+            digest: new ContentDigest(new string('f', 64)));
+        Action[] inconsistentPairs =
+        [
+            () => store.AppendChangeRequest(
+                validComment,
+                CreateChangeRecord(wrongProject, requestTime),
+                ReviewState.ContentReview),
+            () => store.AppendChangeRequest(
+                validComment,
+                CreateChangeRecord(wrongVersion, requestTime),
+                ReviewState.ContentReview),
+            () => store.AppendChangeRequest(
+                validComment,
+                CreateChangeRecord(wrongDigest, requestTime),
+                ReviewState.ContentReview),
+            () => store.AppendChangeRequest(
+                validComment,
+                CreateChangeRecord(version, requestTime.AddTicks(1)),
+                ReviewState.ContentReview),
+            () => store.AppendChangeRequest(
+                validComment,
+                CreateChangeRecord(version, requestTime, actorId: "other-approver"),
+                ReviewState.ContentReview),
+        ];
+        foreach (Action inconsistentPair in inconsistentPairs)
+        {
+            ArgumentException exception =
+                Assert.ThrowsExactly<ArgumentException>(inconsistentPair);
+            Assert.AreEqual("reviewRecord", exception.ParamName);
+        }
+
+        ReviewRecord illegalStateRecord = new(
+            EntityId<ReviewRecordIdTag>.New(),
+            version,
+            ReviewState.ChangesRequested,
+            "reviewer-'one'",
+            ReviewActorRole.Editor,
+            requestTime,
+            "Illegal transition.");
+        ReviewComment illegalStateComment = new(
+            EntityId<ReviewCommentIdTag>.New(),
+            version,
+            default,
+            EntityId<SourceSpanIdTag>.New(),
+            "reviewer-'one'",
+            ReviewActorRole.Editor,
+            requestTime,
+            "Illegal transition.");
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            store.AppendChangeRequest(
+                illegalStateComment,
+                illegalStateRecord,
+                ReviewState.QualityControl));
+
+        (ReviewComment forgedComment, ReviewRecord forgedRecord) =
+            CreateChangeRequest(
+                wrongDigest,
+                ReviewActorRole.ContentApprover,
+                "content-approver",
+                requestTime,
+                "Stored digest mismatch.");
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            store.AppendChangeRequest(
+                forgedComment,
+                forgedRecord,
+                ReviewState.ContentReview));
+
+        Assert.AreEqual(0L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM review_comments;"));
+        Assert.AreEqual(1L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM review_records;"));
+    }
+
+    [TestMethod]
+    public void ChangeRequestRejectsReverseTimeAndAmbiguousLatestState()
+    {
+        using StoreTestDatabase database = new();
+        (ReviewStore store, _, CompositionVersion version) = CreateStores(database);
+        DateTimeOffset currentTime = VersionTime.AddMinutes(1);
+        store.AppendReviewRecord(
+            new ReviewRecord(
+                EntityId<ReviewRecordIdTag>.New(),
+                version,
+                ReviewState.ContentReview,
+                "content-approver",
+                ReviewActorRole.ContentApprover,
+                currentTime,
+                "First current state."));
+        (ReviewComment reverseComment, ReviewRecord reverseRecord) =
+            CreateChangeRequest(
+                version,
+                ReviewActorRole.ContentApprover,
+                "content-approver",
+                currentTime.AddTicks(-1),
+                "Reverse chronology.");
+
+        ArgumentOutOfRangeException reverse =
+            Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+                store.AppendChangeRequest(
+                    reverseComment,
+                    reverseRecord,
+                    ReviewState.ContentReview));
+        Assert.AreEqual("reviewRecord", reverse.ParamName);
+
+        store.AppendReviewRecord(
+            new ReviewRecord(
+                EntityId<ReviewRecordIdTag>.New(),
+                version,
+                ReviewState.ContentReview,
+                "content-approver",
+                ReviewActorRole.ContentApprover,
+                currentTime,
+                "Ambiguous current state."));
+        (ReviewComment ambiguousComment, ReviewRecord ambiguousRecord) =
+            CreateChangeRequest(
+                version,
+                ReviewActorRole.ContentApprover,
+                "content-approver",
+                currentTime.AddSeconds(1),
+                "Ambiguous ordering.");
+
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            store.AppendChangeRequest(
+                ambiguousComment,
+                ambiguousRecord,
+                ReviewState.ContentReview));
+        Assert.AreEqual(0L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM review_comments;"));
+        Assert.AreEqual(2L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM review_records;"));
+    }
+
+    [TestMethod]
+    public async Task ConcurrentChangeRequestsAllowExactlyOneExpectedStateWinner()
+    {
+        using StoreTestDatabase database = new();
+        (ReviewStore firstStore, _, CompositionVersion version) = CreateStores(database);
+        var secondStore = new ReviewStore(database.DatabasePath);
+        DateTimeOffset currentTime = VersionTime.AddMinutes(1);
+        firstStore.AppendReviewRecord(
+            CreateReviewRecord(
+                version,
+                EntityId<ReviewRecordIdTag>.New(),
+                currentTime,
+                ReviewState.EditorReview,
+                "Begin editor review."));
+        using var release = new ManualResetEventSlim(initialState: false);
+
+        Task<bool> first = Task.Run(() => TryAppendChangeRequest(
+            firstStore,
+            version,
+            currentTime.AddSeconds(1),
+            "First concurrent request.",
+            release));
+        Task<bool> second = Task.Run(() => TryAppendChangeRequest(
+            secondStore,
+            version,
+            currentTime.AddSeconds(2),
+            "Second concurrent request.",
+            release));
+        release.Set();
+        bool[] outcomes = await Task.WhenAll(first, second);
+
+        Assert.AreEqual(1, outcomes.Count(static succeeded => succeeded));
+        StoredVersionEvidence evidence = firstStore.GetVersionEvidence(version.Id)
+            ?? throw new AssertFailedException("The version evidence was not loaded.");
+        Assert.AreEqual(1, evidence.ReviewComments.Count);
+        Assert.AreEqual(2, evidence.ReviewRecords.Count);
+        Assert.AreEqual(ReviewState.ChangesRequested, evidence.ReviewRecords[^1].State);
+    }
+
+    [TestMethod]
+    public void AuthorizedReviewWritesRecheckCurrentRoleInsideWriteTransaction()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive(
+                "Current Windows role assignments require a Windows runner.");
+            return;
+        }
+
+        using StoreTestDatabase database = new();
+        (ReviewStore store, _, CompositionVersion version) = CreateStores(database);
+        var assignments = new RoleAssignmentStore(database.DatabasePath);
+        Assert.IsTrue(assignments.BootstrapInitialRoles(AdministratorSid));
+        assignments.Assign(
+            ReviewerSid,
+            AuthorizationRole.ContentApprover,
+            AdministratorSid,
+            "Assign the content approver for transaction-bound review tests.");
+        DateTimeOffset currentTime = VersionTime.AddMinutes(1);
+        store.AppendReviewRecord(
+            new ReviewRecord(
+                EntityId<ReviewRecordIdTag>.New(),
+                version,
+                ReviewState.ContentReview,
+                ReviewerSid,
+                ReviewActorRole.ContentApprover,
+                currentTime,
+                "Begin content review."));
+
+        assignments.Revoke(
+            ReviewerSid,
+            AuthorizationRole.ContentApprover,
+            AdministratorSid);
+        ReviewComment comment = new(
+            EntityId<ReviewCommentIdTag>.New(),
+            version,
+            default,
+            EntityId<SourceSpanIdTag>.New(),
+            ReviewerSid,
+            ReviewActorRole.ContentApprover,
+            currentTime.AddSeconds(1),
+            "This write follows a revoked role.");
+        ReviewRecord record = new(
+            EntityId<ReviewRecordIdTag>.New(),
+            version,
+            ReviewState.ChangesRequested,
+            ReviewerSid,
+            ReviewActorRole.ContentApprover,
+            currentTime.AddSeconds(1),
+            "This write follows a revoked role.");
+
+        Assert.ThrowsExactly<UnauthorizedAccessException>(() =>
+            store.AppendAuthorizedReviewComment(
+                comment,
+                AuthorizationRole.ContentApprover,
+                AuthorizationOperation.RecordContentReview));
+        Assert.ThrowsExactly<UnauthorizedAccessException>(() =>
+            store.AppendAuthorizedChangeRequest(
+                comment,
+                record,
+                ReviewState.ContentReview,
+                AuthorizationRole.ContentApprover,
+                AuthorizationOperation.RecordContentReview));
+
+        StoredVersionEvidence evidence = store.GetVersionEvidence(version.Id)
+            ?? throw new AssertFailedException("The version evidence was not loaded.");
+        Assert.AreEqual(0, evidence.ReviewComments.Count);
+        Assert.AreEqual(1, evidence.ReviewRecords.Count);
+    }
+
+    [TestMethod]
+    public void AuthorizedReviewCommentRejectsMismatchedRoleOperationMapping()
+    {
+        using StoreTestDatabase database = new();
+        (ReviewStore store, _, CompositionVersion version) = CreateStores(database);
+        ReviewComment comment = new(
+            EntityId<ReviewCommentIdTag>.New(),
+            version,
+            default,
+            EntityId<SourceSpanIdTag>.New(),
+            ReviewerSid,
+            ReviewActorRole.ContentApprover,
+            VersionTime.AddMinutes(1),
+            "Reject a mismatched authorization mapping.");
+
+        ArgumentException exception = Assert.ThrowsExactly<ArgumentException>(() =>
+            store.AppendAuthorizedReviewComment(
+                comment,
+                AuthorizationRole.Editor,
+                AuthorizationOperation.SubmitForReview));
+
+        Assert.AreEqual("authorizationRole", exception.ParamName);
+        Assert.AreEqual(0L, database.ExecuteScalarInt64(
+            "SELECT COUNT(*) FROM review_comments;"));
     }
 
     [TestMethod]
@@ -504,6 +931,90 @@ public sealed class ReviewStoreTests
             actorRole,
             approvedAt,
             reason);
+    }
+
+    private static (ReviewComment Comment, ReviewRecord Record) CreateChangeRequest(
+        CompositionVersion version,
+        ReviewActorRole actorRole,
+        string actorId,
+        DateTimeOffset recordedAt,
+        string text)
+    {
+        return (
+            new ReviewComment(
+                EntityId<ReviewCommentIdTag>.New(),
+                version,
+                new RationalTime(5, 1),
+                EntityId<SourceSpanIdTag>.New(),
+                actorId,
+                actorRole,
+                recordedAt,
+                text),
+            new ReviewRecord(
+                EntityId<ReviewRecordIdTag>.New(),
+                version,
+                ReviewState.ChangesRequested,
+                actorId,
+                actorRole,
+                recordedAt,
+                text));
+    }
+
+    private static ReviewRecord CreateChangeRecord(
+        CompositionVersion version,
+        DateTimeOffset recordedAt,
+        string actorId = "content-approver")
+    {
+        return new ReviewRecord(
+            EntityId<ReviewRecordIdTag>.New(),
+            version,
+            ReviewState.ChangesRequested,
+            actorId,
+            ReviewActorRole.ContentApprover,
+            recordedAt,
+            "Request correction.");
+    }
+
+    private static CompositionVersion CopyVersion(
+        CompositionVersion version,
+        EntityId<CompositionVersionIdTag>? id = null,
+        EntityId<ProjectIdTag>? projectId = null,
+        ContentDigest? digest = null)
+    {
+        return new CompositionVersion(
+            id ?? version.Id,
+            projectId ?? version.ProjectId,
+            parentVersionId: null,
+            version.CreatedByActorId,
+            version.CreatedAt,
+            version.ChangeReason,
+            digest ?? version.ContentDigest,
+            version.Elements);
+    }
+
+    private static bool TryAppendChangeRequest(
+        ReviewStore store,
+        CompositionVersion version,
+        DateTimeOffset recordedAt,
+        string text,
+        ManualResetEventSlim release)
+    {
+        (ReviewComment comment, ReviewRecord record) = CreateChangeRequest(
+            version,
+            ReviewActorRole.Editor,
+            "reviewer-'one'",
+            recordedAt,
+            text);
+        release.Wait();
+        try
+        {
+            store.AppendChangeRequest(comment, record, ReviewState.EditorReview);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     private static void AssertConstraintViolation(Action action)

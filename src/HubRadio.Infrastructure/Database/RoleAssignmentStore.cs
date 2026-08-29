@@ -240,6 +240,27 @@ public sealed class RoleAssignmentStore
         return true;
     }
 
+    internal static void DemandCurrentAuthorization(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string actorSid,
+        AuthorizationRole role,
+        AuthorizationOperation operation)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
+        string canonicalActorSid = ValidateCanonicalSid(actorSid, nameof(actorSid));
+        ValidateRole(role, nameof(role));
+        ValidateOperation(operation, nameof(operation));
+
+        if (!PermissionMatrix.CanPerform(role, operation)
+            || !AssignmentExists(connection, transaction, canonicalActorSid, role))
+        {
+            throw new UnauthorizedAccessException(
+                "The actor has no current assignment authorizing the review operation.");
+        }
+    }
+
     private static StoredRoleAssignment ReadAssignment(SqliteDataReader reader)
     {
         string actorSid = ReadCanonicalSid(reader, 0);
@@ -515,6 +536,19 @@ public sealed class RoleAssignmentStore
                 parameterName,
                 role,
                 "Unknown authorization role.");
+        }
+    }
+
+    private static void ValidateOperation(
+        AuthorizationOperation operation,
+        string parameterName)
+    {
+        if (!Enum.IsDefined(operation))
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                operation,
+                "Unknown authorization operation.");
         }
     }
 
