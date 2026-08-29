@@ -359,12 +359,51 @@ public sealed class ReviewStore
     public void AppendApproval(Approval approval)
     {
         ArgumentNullException.ThrowIfNull(approval);
-        string approvedAt = SqliteStoreSupport.FormatTimestamp(
-            approval.ApprovedAt,
-            nameof(approval));
 
         using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        InsertApproval(connection, transaction, approval);
+        transaction.Commit();
+    }
+
+    public void AppendAuthorizedApproval(
+        Approval approval,
+        AuthorizationRole authorizationRole,
+        AuthorizationOperation authorizationOperation)
+    {
+        ArgumentNullException.ThrowIfNull(approval);
+        ValidateApprovalAuthorization(
+            approval.ActorRole,
+            authorizationRole,
+            authorizationOperation);
+
+        using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        RoleAssignmentStore.DemandCurrentAuthorization(
+            connection,
+            transaction,
+            approval.ActorId,
+            authorizationRole,
+            authorizationOperation);
+        StoredVersionBinding binding = ReadVersionBinding(
+            connection,
+            transaction,
+            approval.CompositionVersionId)
+            ?? throw new InvalidOperationException(
+                "The approval composition version does not exist.");
+        ValidateIncomingVersionBinding(binding, approval);
+        InsertApproval(connection, transaction, approval);
+        transaction.Commit();
+    }
+
+    private static void InsertApproval(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Approval approval)
+    {
+        string approvedAt = SqliteStoreSupport.FormatTimestamp(
+            approval.ApprovedAt,
+            nameof(approval));
         using SqliteCommand command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -400,7 +439,6 @@ public sealed class ReviewStore
         SqliteStoreSupport.AddText(command, "$approved_at", approvedAt);
         SqliteStoreSupport.AddText(command, "$reason", approval.Reason);
         EnsureSingleMutation(command, "approval");
-        transaction.Commit();
     }
 
     public void AppendAuditEvent(AuditEvent auditEvent)
@@ -658,6 +696,34 @@ public sealed class ReviewStore
         }
     }
 
+    private static void ValidateApprovalAuthorization(
+        ReviewActorRole reviewActorRole,
+        AuthorizationRole authorizationRole,
+        AuthorizationOperation authorizationOperation)
+    {
+        bool isExactMapping = (reviewActorRole, authorizationRole,
+            authorizationOperation) switch
+        {
+            (ReviewActorRole.ContentApprover,
+                AuthorizationRole.ContentApprover,
+                AuthorizationOperation.RecordContentReview) => true,
+            (ReviewActorRole.BrandApprover,
+                AuthorizationRole.BrandApprover,
+                AuthorizationOperation.RecordBrandReview) => true,
+            (ReviewActorRole.RightsApprover,
+                AuthorizationRole.RightsApprover,
+                AuthorizationOperation.RecordRightsDecision) => true,
+            _ => false,
+        };
+
+        if (!isExactMapping)
+        {
+            throw new ArgumentException(
+                "The approval actor role and authorization do not form an allowed approval mapping.",
+                nameof(authorizationRole));
+        }
+    }
+
     private static void ValidateIncomingVersionBinding(
         StoredVersionBinding binding,
         ReviewComment reviewComment,
@@ -672,6 +738,19 @@ public sealed class ReviewStore
         {
             throw new InvalidOperationException(
                 "The change request does not match the stored composition version.");
+        }
+    }
+
+    private static void ValidateIncomingVersionBinding(
+        StoredVersionBinding binding,
+        Approval approval)
+    {
+        if (approval.ProjectId != binding.ProjectId
+            || approval.CompositionVersionId != binding.CompositionVersionId
+            || approval.CompositionVersionDigest != binding.CompositionVersionDigest)
+        {
+            throw new InvalidOperationException(
+                "The approval does not match the stored composition version.");
         }
     }
 

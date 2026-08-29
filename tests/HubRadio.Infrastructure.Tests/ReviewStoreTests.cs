@@ -631,6 +631,95 @@ public sealed class ReviewStoreTests
     }
 
     [TestMethod]
+    public void AuthorizedApprovalRejectsWrongRoleOperationAdministratorAndViewerMappings()
+    {
+        using StoreTestDatabase database = new();
+        (ReviewStore store, _, CompositionVersion version) = CreateStores(database);
+        Approval approval = CreateApproval(
+            version,
+            EntityId<ApprovalIdTag>.New(),
+            VersionTime.AddMinutes(1),
+            ReviewActorRole.ContentApprover,
+            "Require the exact approval authorization mapping.");
+        (AuthorizationRole Role, AuthorizationOperation Operation)[] invalidMappings =
+        [
+            (AuthorizationRole.BrandApprover,
+                AuthorizationOperation.RecordBrandReview),
+            (AuthorizationRole.ContentApprover,
+                AuthorizationOperation.RecordBrandReview),
+            (AuthorizationRole.Administrator,
+                AuthorizationOperation.ManageRoleAssignments),
+            (AuthorizationRole.Viewer,
+                AuthorizationOperation.ViewProject),
+        ];
+
+        foreach ((AuthorizationRole role, AuthorizationOperation operation)
+            in invalidMappings)
+        {
+            ArgumentException exception = Assert.ThrowsExactly<ArgumentException>(() =>
+                store.AppendAuthorizedApproval(approval, role, operation));
+            Assert.AreEqual("authorizationRole", exception.ParamName);
+        }
+
+        Assert.AreEqual(0L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM approvals;"));
+    }
+
+    [TestMethod]
+    public void AuthorizedApprovalRequiresCurrentAssignmentAndExactStoredVersionBinding()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive(
+                "Current Windows role assignments require a Windows runner.");
+            return;
+        }
+
+        using StoreTestDatabase database = new();
+        (ReviewStore store, _, CompositionVersion version) = CreateStores(database);
+        var assignments = new RoleAssignmentStore(database.DatabasePath);
+        Assert.IsTrue(assignments.BootstrapInitialRoles(AdministratorSid));
+        assignments.Assign(
+            ReviewerSid,
+            AuthorizationRole.ContentApprover,
+            AdministratorSid,
+            "Assign content approval for the authorized store test.");
+        CompositionVersion forgedDigest = CopyVersion(
+            version,
+            digest: new ContentDigest(new string('f', 64)));
+        var forgedApproval = new Approval(
+            EntityId<ApprovalIdTag>.New(),
+            forgedDigest,
+            ReviewerSid,
+            ReviewActorRole.ContentApprover,
+            VersionTime.AddMinutes(1),
+            "Reject a forged digest before storage.");
+
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            store.AppendAuthorizedApproval(
+                forgedApproval,
+                AuthorizationRole.ContentApprover,
+                AuthorizationOperation.RecordContentReview));
+
+        var validApproval = new Approval(
+            EntityId<ApprovalIdTag>.New(),
+            version,
+            ReviewerSid,
+            ReviewActorRole.ContentApprover,
+            VersionTime.AddMinutes(2),
+            "Persist the exact stored version binding.");
+        store.AppendAuthorizedApproval(
+            validApproval,
+            AuthorizationRole.ContentApprover,
+            AuthorizationOperation.RecordContentReview);
+
+        StoredApproval stored = store.GetVersionEvidence(version.Id)!.Approvals.Single();
+        Assert.AreEqual(validApproval.Id, stored.Id);
+        Assert.AreEqual(version.ProjectId, stored.ProjectId);
+        Assert.AreEqual(version.Id, stored.CompositionVersionId);
+        Assert.AreEqual(version.ContentDigest, stored.CompositionVersionDigest);
+    }
+
+    [TestMethod]
     public void AllVersionBoundEvidenceRequiresExactProjectVersionAndDigest()
     {
         using StoreTestDatabase database = new();
