@@ -77,6 +77,7 @@ private networkは、接続元networkとDNS要件が提供されていない状�
 - `disableLocalAuth=true`。
 - `ContentLogging=false`が存在する場合だけmodified abuse monitoring適用済みと記録する。field不在は作成失敗ではなく、既定abuse monitoringが適用される状態として記録する。
 - deploymentは`Succeeded`、`gpt-5.6-sol` / `2026-07-09` / `DataZoneStandard` / capacity `10`。
+- RAI policyは`Microsoft.DefaultV2`。
 - resource scopeに現在principalの`Cognitive Services OpenAI User`が1件ある。
 - key list APIを呼んでいない。
 - synthetic requestがEntra IDで成功し、closed JSON schemaへ適合する。
@@ -97,6 +98,7 @@ private networkは、接続元networkとDNS要件が提供されていない状�
 - PTU、ProvisionedManaged、reservationは作成しない。
 - traffic、token数、予算が未測定のため費用保証をしない。
 - model評価後、不要ならdeploymentとresourceを明示削除する。
+- model versionは自動更新せず、catalogのinference retirement `2028-01-11`より前に後継versionのmodel/SKU/quota/品質を再評価する。
 
 ## 公式根拠
 
