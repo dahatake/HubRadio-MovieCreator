@@ -3,7 +3,7 @@
 HubRadio MovieCreator の開発、保守、技術検証、設計判断に関する入口です。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation `F-001〜F-009`は完了済みで、2026年8月30日時点で全203 task中93件を完了しました。`D-001〜D-016`、`J-001〜J-010`、`M-001〜M-010`、`R-001〜R-009/R-016`、`U-001〜U-004`、主要なS系統制を実装済みです。`S-003`は別account受入待ち、`M-011`はdurable restart checkpoint未達で監査中です。業務UI、解析後段、Render IR以降、配布は未完了です。最新状態は[詳細実装計画](planning/implementation-plan.md)を参照してください。
+> Stage 0 と Foundation `F-001〜F-009`は完了済みで、2026年8月30日時点で全203 task中99件を完了しました。`D-001〜D-016`、`J-001〜J-010`、`M-001〜M-010`、`R-001〜R-009/R-016`、`U-001〜U-004`、主要なS系統制、`Z-001〜Z-006`を実装済みです。Japan Eastの限定Azure評価resourceとdesktop Entra authenticationは存在しますが、実コンテンツ送信機能は未提供です。`S-003`は別account受入待ち、`M-011`はdurable restart checkpoint未達です。業務UI、解析後段、Render IR以降、配布は未完了です。最新状態は[詳細実装計画](planning/implementation-plan.md)を参照してください。
 
 ## 目的から探す
 
@@ -46,7 +46,8 @@ HubRadio MovieCreator の開発、保守、技術検証、設計判断に関す�
 3. [保存、保持、backup](decisions/ADR-0005-storage-retention.md)
 4. [Windows 配布と条件付き Azure](decisions/ADR-0006-distribution-and-azure.md)
 5. [Stage 0技術選択と手動fallback](decisions/ADR-0007-stage-0-technology-selection.md)
-6. [第三者依存の受入状態](licenses/third-party-intake.md)
+6. [限定Azure評価経路の有効化](decisions/ADR-0008-bounded-azure-evaluation.md)
+7. [第三者依存の受入状態](licenses/third-party-intake.md)
 
 ## 正本の優先順位
 
@@ -81,7 +82,7 @@ docs/
    │  ├─ annotation-policy.md
    │  ├─ metric-definitions.md
    │  └─ result-schema-policy.md
-   ├─ decisions/                       # ADR-0001〜0007
+   ├─ decisions/                       # ADR-0001〜0008
    ├─ licenses/
    │  ├─ third-party-intake.md
    │  ├─ dependencies.csv

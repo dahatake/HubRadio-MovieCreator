@@ -27,8 +27,9 @@
 | R | R-001〜R-009、R-016 | typed edit、version、profile、manual layout/keyframe、transitionまでreview・commit済み |
 | U | U-001〜U-004 | WinUI/WebView2 startup、secure host/bridge、React state同期までreview・commit済み |
 | S | S-001、S-002、S-004、S-006、S-008〜S-010、S-012、S-015 | actor/role/review/approval/audit/backup制御をreview・commit済み。S-003はcode済み・別account受入待ち |
+| Z | Z-001〜Z-006 | cloud necessity、28 Region/model/quota、data processing、最小Japan East resource、desktop Entra authenticationをreview済み |
 
-**完了: 93 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ち、`M-011`はdurable restart checkpoint未達のため監査中であり、いずれも完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留、`Z-001〜Z-010`はAzure gate closedである。通常実行残は95件。現在の直列対象は`M-011`、次が`M-012`で、独立レーンでは`A-001`、`A-005`、`S-014`、`PK-001`、`PK-003`、`PK-004`、`PK-005`を再評価する。
+**完了: 99 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ち、`M-011`はdurable restart checkpointとAsset/warning persistence未達のため、いずれも完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了104件のうち5件が現在condition-falseまたは保留である。次は`A-001`〜`A-005`→`S-007`→`Z-007`を依存順に進め、並行して`M-011`→`M-012`、`S-014`、`PK-001`、`PK-003`〜`PK-005`を各gate確認後に進める。
 
 ### 1.2 直近の統合作業
 
@@ -51,6 +52,7 @@
 - U-002、U-003: commit `d40ed75`、`f39427a`
 - D-007、D-009、D-010、D-012: commit `c889ba6`、`31fda38`、`2452ccf`、`b6cc7b8`
 - 以後のD/J/M/R/U/S完了taskは各独立commitとして`git log`に記録済み。M-011は未commit・監査中のためこの一覧へ完了記録を追加しない
+- Z-001〜Z-005: commit `10c3b2a`、`f4efbb3`、`2c51182`、`84012a4`、`449cc0b`。Z-006は本同期と同じtask境界でcommitする
 
 旧ADR重複は削除済みで、`docs/dev/decisions/`だけがADR正本である。DOC-001〜DOC-004は敵対的レビュー、修正、再検証、commitまで完了した。
 
@@ -97,7 +99,7 @@
 3. **0件・失敗・想定外の結果は対照実験で解釈可能にしてから記録する。** ST-009で確立した方式を全ML系タスクへ適用する。
 4. **成果物はcanonical（レビュー済み要約）とraw run（ローカル証跡）を分離する。** rawはGit対象外。
 5. **文書更新時は`docs/dev/planning/implementation-plan.md`・`README.md`・`docs/dev/decisions/ADR-0001-source-of-truth.md`のhashを同時に同期する。**
-6. **Azureはローカル不達の実測とユーザーの明示指示が揃うまで着手しない。**
+6. **Azureは確認したlocal model不達とユーザーの明示指示が揃った限定評価範囲だけ実行する。** Z-001はcloud necessityを未証明のまま保持しており、Z-001〜Z-006完了をproduction必要性へ読み替えない。実コンテンツ送信はZ-007〜Z-010の個別gate完了まで行わない。
 
 ---
 
@@ -176,7 +178,7 @@ ST-015承認後に着手する。
 
 ### Phase G: 条件付きAzure（Z、10タスク）
 
-**着手条件が未成立。** Z-001（ローカル不達の実測）とユーザーの明示指示が揃うまで全件skip。
+**Z-001〜Z-006完了。** Japan Eastの最小resourceとdesktop Entra authenticationまで成立した。Z-007はA-004/A-005/S-007待ちで、実コンテンツ送信、response採用、fallback、ModelRun監査は未実装である。
 
 ---
 
@@ -220,7 +222,7 @@ ST-015承認後に着手する。
 | 9 | 要求定義の未決事項13件と関係者合意 | 受入基準の確定 | 既定判断をADRへ記録して進行 |
 | 10 | 配布の署名主体・証明書・配布経路 | PK-007、G-RELEASE | 署名なしパッケージまで検証 |
 | 11 | production-channel Windows 11 24H2実機 | PK-007、リリース判定 | Insider機で検証し差異を明記 |
-| 12 | Azure着手指示 | Z群全件 | ローカル経路のみで完結させる |
+| 12 | Azure着手指示 | Z-001〜Z-006 | 2026-08-30に成立。後続は各payloadの人による送信確認とtask依存を別途満たす |
 | 13 | 保持期間の未確定（ADR-0005は日数を設定せず、時間だけを理由とする自動削除を禁じている） | S-015、Phase Eの削除・バックアップ範囲 | 明示削除のみ実装し、期限基準の自動削除は実装しない |
 
 ### 5.1 正解データ（annotation）の不在
@@ -265,9 +267,9 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. `M-011`のdurable request/checkpoint・Asset/warning persistenceを直列で閉じ、次に`M-012`へ進む。独立レーンでは`A-001`、`A-005`、`S-014`、`PK-001`、`PK-003`、`PK-004`、`PK-005`を各gate確認後に実装する。
+1. `A-001`〜`A-005`を依存順に実装し、`S-007`のtext sensitivity gateを成立させてから`Z-007`へ進む。並行して`M-011`のdurable request/checkpoint・Asset/warning persistenceを閉じ、次に`M-012`へ進む。`S-014`、`PK-001`、`PK-003`〜`PK-005`は各gate確認後に実装する。
 2. 各taskを個別にbuild/testし、敵対的レビューの実在する指摘だけを反映して独立commitする。
-3. 完了ごとに依存DAGを再評価する。`S-003`、held/condition-false task、Azure gateは外部証拠または別承認なしに完了・着手扱いにしない。
+3. 完了ごとに依存DAGを再評価する。`S-003`とheld/condition-false taskは外部証拠または別承認なしに完了扱いにせず、Azure後続はpayload/validation/fallbackの個別gateを省略しない。
 
 各ステップで、実測できなかった項目は`openQuestions`に残し、推測で埋めない。
 
@@ -335,7 +337,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ### Conditional Azure
 
-`Z-001〜Z-010`は通常実行列に入れない。manual/local経路では要件を現実的に満たせない追加証拠、送信spanと分類、data processor/residency/利用条件、subscription/region/model候補、利用者の明示的なresource作成指示が全て揃った場合だけ順に実行する。Azureを開始してもaudio/video/image/path/SID/project IDは送信対象にしない。
+`Z-001〜Z-006`は評価したlocal modelの不達、cloud necessity未証明、data processor/residency、Subscription/Region/model、利用者の限定評価指示を分離して完了した。`Z-007〜Z-010`は依存が揃った順に実行し、選択・mask・diff確認済みspan以外を送信しない。Azure resourceが存在してもaudio/video/image/path/SID/project IDは送信対象にしない。
 
 ---
 

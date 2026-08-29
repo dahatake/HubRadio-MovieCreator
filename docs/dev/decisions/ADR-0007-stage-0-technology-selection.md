@@ -79,7 +79,7 @@ heldまたはcondition-false taskを通常critical pathへ残さない。
 
 ## Azure
 
-Azureは非採用でgate closedを維持する。今回の「全task実行」指示は、`Z-001`のcloud necessity証拠や`Z-005`のresource作成指示を代替しない。追加証拠と別の明示指示が揃うまで、subscription、region、modelを選択せず、resourceを作成せず、データを送信しない。
+本ADRの決定時点ではAzureを非採用とし、gate closedを維持した。当時の「全task実行」指示は、`Z-001`のcloud necessity証拠や`Z-005`のresource作成指示を代替しなかった。その後に証拠と別の明示指示が成立したため、[ADR-0008](ADR-0008-bounded-azure-evaluation.md)がZ-001〜Z-006に限ってこの状態を置き換える。実コンテンツ送信とend-user cloud featureはZ-007〜Z-010完了まで閉じたままである。
 
 ## 敵対的レビュー
 

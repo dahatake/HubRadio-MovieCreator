@@ -73,12 +73,12 @@ Azure は通常の処理経路ではありません。次の条件がすべて�
 
 送信候補にできるのは、選択・マスク・確認済みの根拠付き文字起こし span だけです。動画、音声、画像、file path、Windows SID、内部案件 ID、全文文字起こしを送りません。
 
-現在は Azure resource、region、model deployment が未選択であり、`.env` や Azure 設定ファイルを作りません。詳細は [ADR-0006](decisions/ADR-0006-distribution-and-azure.md) を参照してください。
+Z-001〜Z-006で全28利用可能Regionを評価し、単一Region `japaneast`（表示名Japan East）に最小評価resourceとmodel deploymentを作成し、single-tenant desktop Entra authenticationを実装しました。API key、client secret、certificate、connection stringは作成・取得・保存していません。実コンテンツのpayload builder、送信前diff確認、response validation、fallbackは未実装のため、end-user cloud featureは未提供です。詳細は [ADR-0008](decisions/ADR-0008-bounded-azure-evaluation.md) を参照してください。
 
 ## 秘密情報
 
 - API key を source、設定、SQLite、log、backup へ保存しません。
-- Azure 経路を実装する場合は desktop 向け Entra 認証と RBAC を使用する計画です。
+- Azure 経路は desktop 向けEntra user認証とresource-scope RBACを使用し、process終了を越えるtoken cacheを有効化しません。
 - token、認証情報、文字起こし本文を通常 log へ出しません。
 - 問題調査では、必要な値をそのまま転載せず、存在、分類、hash、秘匿済み error code を優先します。
 
