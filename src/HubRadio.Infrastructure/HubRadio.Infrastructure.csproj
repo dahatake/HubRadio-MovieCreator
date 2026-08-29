@@ -11,5 +11,7 @@
                       LogicalName="HubRadio.Infrastructure.Database.Migrations.002_jobs.sql" />
     <EmbeddedResource Include="Database\Migrations\003_audit_chain.sql"
                       LogicalName="HubRadio.Infrastructure.Database.Migrations.003_audit_chain.sql" />
+    <EmbeddedResource Include="Database\Migrations\004_role_assignments.sql"
+                      LogicalName="HubRadio.Infrastructure.Database.Migrations.004_role_assignments.sql" />
   </ItemGroup>
 </Project>

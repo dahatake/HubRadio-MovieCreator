@@ -34,7 +34,7 @@ public sealed class DatabaseMigrationResult
 
 public static class DatabaseMigrator
 {
-    private const int LatestSchemaVersion = 3;
+    private const int LatestSchemaVersion = 4;
     private const int DefaultTimeoutSeconds = 5;
     private const string SchemaDigestDomain =
         "HubRadio.MovieCreator.DatabaseMigrationSet/v1";
@@ -59,6 +59,10 @@ public static class DatabaseMigrator
             3,
             "003_audit_chain",
             "HubRadio.Infrastructure.Database.Migrations.003_audit_chain.sql"),
+        new(
+            4,
+            "004_role_assignments",
+            "HubRadio.Infrastructure.Database.Migrations.004_role_assignments.sql"),
     ];
 
     public static DatabaseMigrationResult Migrate(
@@ -453,7 +457,7 @@ public static class DatabaseMigrator
             .UtcDateTime
             .ToString(BackupTimestampFormat, CultureInfo.InvariantCulture);
         string backupFileName = string.Concat(
-            "hubradio-before-schema-003-",
+            "hubradio-before-schema-004-",
             timestamp,
             "-",
             Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),

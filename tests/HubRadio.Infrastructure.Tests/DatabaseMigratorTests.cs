@@ -52,7 +52,7 @@ public sealed class DatabaseMigratorTests
             timeProvider);
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(3, result.SchemaVersion);
+        Assert.AreEqual(4, result.SchemaVersion);
         Assert.AreEqual(64, result.SchemaDigest.Hex.Length);
         Assert.AreEqual(result.SchemaDigest.Hex, result.SchemaDigest.Hex.ToLowerInvariant());
         Assert.IsTrue(typeof(DatabaseMigrationResult).IsSealed);
@@ -68,7 +68,7 @@ public sealed class DatabaseMigratorTests
         Assert.IsTrue(
             Regex.IsMatch(
                 Path.GetFileName(backupPath),
-                "^hubradio-before-schema-003-20300102T0304056789012Z-[0-9a-f]{32}\\.db$",
+                "^hubradio-before-schema-004-20300102T0304056789012Z-[0-9a-f]{32}\\.db$",
                 RegexOptions.CultureInvariant));
         Assert.AreEqual(1, GetBackupFiles(temporary).Length);
 
@@ -93,6 +93,7 @@ public sealed class DatabaseMigratorTests
             "projects",
             "review_comments",
             "review_records",
+            "role_assignments",
             "schema_migrations",
             "working_copies",
         ];
@@ -169,6 +170,8 @@ public sealed class DatabaseMigratorTests
                 "created_at",
                 "text",
             ],
+            ["role_assignments"] =
+                ["actor_sid", "role", "assigned_at", "assigned_by_sid", "reason"],
             ["approvals"] =
             [
                 "id",
@@ -279,6 +282,7 @@ public sealed class DatabaseMigratorTests
                 (1, "001_initial", ReadEmbeddedMigrationDigest("001_initial")),
                 (2, "002_jobs", ReadEmbeddedMigrationDigest("002_jobs")),
                 (3, "003_audit_chain", ReadEmbeddedMigrationDigest("003_audit_chain")),
+                (4, "004_role_assignments", ReadEmbeddedMigrationDigest("004_role_assignments")),
             ];
             foreach ((long version, string name, ContentDigest digest) in expectedMigrations)
             {
@@ -296,6 +300,7 @@ public sealed class DatabaseMigratorTests
         Assert.AreNotEqual(ReadEmbeddedMigrationDigest("001_initial"), result.SchemaDigest);
         Assert.AreNotEqual(ReadEmbeddedMigrationDigest("002_jobs"), result.SchemaDigest);
         Assert.AreNotEqual(ReadEmbeddedMigrationDigest("003_audit_chain"), result.SchemaDigest);
+        Assert.AreNotEqual(ReadEmbeddedMigrationDigest("004_role_assignments"), result.SchemaDigest);
         AssertDatabaseChecksPass(connection);
     }
 
@@ -311,7 +316,7 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(1)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(3, result.SchemaVersion);
+        Assert.AreEqual(4, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
 
         string backupPath = result.BackupPath
@@ -352,9 +357,10 @@ public sealed class DatabaseMigratorTests
             new[] { "job_attempts", "job_heartbeats", "job_progress", "jobs" },
             GetUserTableNames(upgraded)
                 .Except(versionOneTables)
-                .Except(["audit_chain_entries"])
+                .Except(["audit_chain_entries", "role_assignments"])
                 .ToArray());
         Assert.IsTrue(GetUserTableNames(upgraded).Contains("audit_chain_entries"));
+        Assert.IsTrue(GetUserTableNames(upgraded).Contains("role_assignments"));
         CollectionAssert.AreEquivalent(
             new[]
             {
@@ -371,7 +377,7 @@ public sealed class DatabaseMigratorTests
             1L,
             ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM projects;"));
         Assert.AreEqual(
-            3L,
+            4L,
             ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
         Assert.AreEqual(
             "001_initial",
@@ -408,6 +414,16 @@ public sealed class DatabaseMigratorTests
             ExecuteScalarString(
                 upgraded,
                 "SELECT content_digest FROM schema_migrations WHERE version = 3;"));
+        Assert.AreEqual(
+            "004_role_assignments",
+            ExecuteScalarString(
+                upgraded,
+                "SELECT name FROM schema_migrations WHERE version = 4;"));
+        Assert.AreEqual(
+            ReadEmbeddedMigrationDigest("004_role_assignments").Hex,
+            ExecuteScalarString(
+                upgraded,
+                "SELECT content_digest FROM schema_migrations WHERE version = 4;"));
         AssertDatabaseChecksPass(upgraded);
     }
 
@@ -619,6 +635,174 @@ public sealed class DatabaseMigratorTests
                 "DELETE FROM audit_events WHERE id = $id;",
                 ("$id", AuditEventId)));
         AssertDatabaseChecksPass(connection);
+    }
+
+    [TestMethod]
+    public void Migration004_DefinesOnlyCurrentStrictRoleAssignments()
+    {
+        using TemporaryDatabase temporary = CreateMigratedDatabase();
+        using SqliteConnection connection = OpenConnection(temporary.DatabasePath);
+
+        CollectionAssert.AreEqual(
+            new[] { "actor_sid", "role", "assigned_at", "assigned_by_sid", "reason" },
+            GetTableColumns(connection, "role_assignments"));
+        CollectionAssert.AreEqual(
+            new[] { "actor_sid", "role" },
+            GetPrimaryKeyColumns(connection, "role_assignments"));
+        Assert.AreEqual(
+            1L,
+            ExecuteScalarInt64(
+                connection,
+                """
+                    SELECT strict
+                    FROM pragma_table_list
+                    WHERE schema = 'main'
+                      AND type = 'table'
+                      AND name = 'role_assignments';
+                    """));
+        CollectionAssert.AreEqual(
+            Array.Empty<string>(),
+            GetForeignKeyBindings(connection, "role_assignments"));
+        Assert.AreEqual(
+            0L,
+            ExecuteScalarInt64(
+                connection,
+                """
+                    SELECT COUNT(*)
+                    FROM sqlite_schema
+                    WHERE type = 'index'
+                      AND tbl_name = 'role_assignments'
+                      AND name NOT LIKE 'sqlite_%';
+                    """));
+        Assert.AreEqual(
+            0L,
+            ExecuteScalarInt64(
+                connection,
+                """
+                    SELECT COUNT(*)
+                    FROM sqlite_schema
+                    WHERE type = 'table'
+                      AND name IN ('permission_matrix', 'role_permissions', 'operation_permissions');
+                    """));
+
+        string[] exactRoles =
+        [
+            "Viewer",
+            "Editor",
+            "PerformerReviewer",
+            "ContentApprover",
+            "BrandApprover",
+            "RightsApprover",
+            "Administrator",
+        ];
+        for (int index = 0; index < exactRoles.Length; index++)
+        {
+            InsertRoleAssignment(
+                connection,
+                $"S-1-5-21-1111111111-2222222222-3333333333-{1001 + index}",
+                exactRoles[index]);
+        }
+
+        InsertRoleAssignment(connection, "S-1-5-21-1-2-3-2001", "Viewer");
+        InsertRoleAssignment(connection, "S-1-5-21-1-2-3-2001", "Editor");
+        AssertConstraintViolation(
+            () => InsertRoleAssignment(connection, "S-1-5-21-1-2-3-2001", "Viewer"));
+
+        foreach (string invalidRole in new[]
+        {
+            string.Empty,
+            "viewer",
+            "Administrator ",
+            "ReviewActorRole.Editor",
+            "SuperAdministrator",
+        })
+        {
+            AssertConstraintViolation(
+                () => InsertRoleAssignment(
+                    connection,
+                    "S-1-5-21-1-2-3-3001",
+                    invalidRole));
+        }
+
+        AssertConstraintViolation(
+            () => InsertRoleAssignment(connection, " actor", "Viewer"));
+        AssertConstraintViolation(
+            () => InsertRoleAssignment(
+                connection,
+                "S-1-5-21-1-2-3-3002",
+                "Viewer",
+                assignedAt: " timestamp"));
+        AssertConstraintViolation(
+            () => InsertRoleAssignment(
+                connection,
+                "S-1-5-21-1-2-3-3003",
+                "Viewer",
+                assignedBySid: "assigner "));
+        AssertConstraintViolation(
+            () => InsertRoleAssignment(
+                connection,
+                "S-1-5-21-1-2-3-3004",
+                "Viewer",
+                reason: " "));
+        AssertDatabaseChecksPass(connection);
+    }
+
+    [TestMethod]
+    public void Migrate_ExactVersionThreeAppliesOnly004WithBackupDigestAndIdempotence()
+    {
+        using TemporaryDatabase temporary = new();
+        CreateExactVersionThreeDatabase(temporary);
+
+        DatabaseMigrationResult result = DatabaseMigrator.Migrate(
+            temporary.DatabasePath,
+            temporary.BackupDirectory,
+            new FixedTimeProvider(FixedUtcNow.AddMinutes(3)));
+
+        Assert.IsTrue(result.Applied);
+        Assert.AreEqual(4, result.SchemaVersion);
+        Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
+        string backupPath = result.BackupPath
+            ?? throw new AssertFailedException("The 003 to 004 upgrade must create a backup.");
+        using (SqliteConnection backup = OpenConnection(backupPath, SqliteOpenMode.ReadOnly))
+        {
+            Assert.AreEqual(
+                3L,
+                ExecuteScalarInt64(backup, "SELECT COUNT(*) FROM schema_migrations;"));
+            Assert.AreEqual(
+                1L,
+                ExecuteScalarInt64(
+                    backup,
+                    "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'audit_chain_entries';"));
+            Assert.AreEqual(
+                0L,
+                ExecuteScalarInt64(
+                    backup,
+                    "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'role_assignments';"));
+            AssertDatabaseChecksPass(backup);
+        }
+
+        using (SqliteConnection upgraded = OpenConnection(temporary.DatabasePath))
+        {
+            Assert.AreEqual(
+                4L,
+                ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
+            Assert.AreEqual(
+                1L,
+                ExecuteScalarInt64(
+                    upgraded,
+                    "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = 'role_assignments';"));
+            AssertDatabaseChecksPass(upgraded);
+        }
+
+        string[] backups = GetBackupFiles(temporary);
+        DatabaseMigrationResult noOp = DatabaseMigrator.Migrate(
+            temporary.DatabasePath,
+            temporary.BackupDirectory,
+            new AlwaysThrowingTimeProvider());
+        Assert.IsFalse(noOp.Applied);
+        Assert.IsNull(noOp.BackupPath);
+        Assert.AreEqual(result.SchemaDigest, noOp.SchemaDigest);
+        CollectionAssert.AreEqual(backups, GetBackupFiles(temporary));
     }
 
     [TestMethod]
@@ -1073,7 +1257,7 @@ public sealed class DatabaseMigratorTests
 
         Assert.IsFalse(second.Applied);
         Assert.IsNull(second.BackupPath);
-        Assert.AreEqual(3, second.SchemaVersion);
+        Assert.AreEqual(4, second.SchemaVersion);
         Assert.AreEqual(first.SchemaDigest, second.SchemaDigest);
         CollectionAssert.AreEqual(originalBackups, GetBackupFiles(temporary));
 
@@ -1411,7 +1595,7 @@ public sealed class DatabaseMigratorTests
                                 content_digest,
                                 applied_at
                             )
-                            VALUES (4, '004_unknown', $digest, $applied_at);
+                            VALUES (5, '005_unknown', $digest, $applied_at);
                             """,
                         ("$digest", DigestA),
                         ("$applied_at", Timestamp));
@@ -1568,7 +1752,7 @@ public sealed class DatabaseMigratorTests
         Assert.IsTrue(retry.Applied);
         Assert.AreEqual(2, GetBackupFiles(temporary).Length);
         using SqliteConnection migrated = OpenConnection(temporary.DatabasePath);
-        Assert.AreEqual(14, GetUserTableNames(migrated).Length);
+        Assert.AreEqual(15, GetUserTableNames(migrated).Length);
         AssertDatabaseChecksPass(migrated);
     }
 
@@ -1589,9 +1773,9 @@ public sealed class DatabaseMigratorTests
             0L,
             ExecuteScalarInt64(connection, "SELECT COUNT(*) FROM projects;"));
         Assert.AreEqual(
-            3L,
+            4L,
             ExecuteScalarInt64(connection, "SELECT COUNT(*) FROM schema_migrations;"));
-        Assert.AreEqual(14, GetUserTableNames(connection).Length);
+        Assert.AreEqual(15, GetUserTableNames(connection).Length);
         AssertDatabaseChecksPass(connection);
     }
 
@@ -1690,6 +1874,27 @@ public sealed class DatabaseMigratorTests
                 VALUES (2, '002_jobs', $digest, $applied_at);
                 """,
             ("$digest", ReadEmbeddedMigrationDigest("002_jobs").Hex),
+            ("$applied_at", Timestamp));
+        AssertDatabaseChecksPass(connection);
+    }
+
+    private static void CreateExactVersionThreeDatabase(TemporaryDatabase temporary)
+    {
+        CreateExactVersionTwoDatabase(temporary);
+        using SqliteConnection connection = OpenConnection(temporary.DatabasePath);
+        ExecuteNonQuery(connection, ReadEmbeddedMigrationSql("003_audit_chain"));
+        ExecuteNonQuery(
+            connection,
+            """
+                INSERT INTO schema_migrations (
+                    version,
+                    name,
+                    content_digest,
+                    applied_at
+                )
+                VALUES (3, '003_audit_chain', $digest, $applied_at);
+                """,
+            ("$digest", ReadEmbeddedMigrationDigest("003_audit_chain").Hex),
             ("$applied_at", Timestamp));
         AssertDatabaseChecksPass(connection);
     }
@@ -1798,6 +2003,26 @@ public sealed class DatabaseMigratorTests
             SELECT name
             FROM pragma_table_info($table)
             ORDER BY cid;
+            """;
+        command.Parameters.AddWithValue("$table", table);
+        using SqliteDataReader reader = command.ExecuteReader();
+        var names = new List<string>();
+        while (reader.Read())
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names.ToArray();
+    }
+
+    private static string[] GetPrimaryKeyColumns(SqliteConnection connection, string table)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT name
+            FROM pragma_table_info($table)
+            WHERE pk > 0
+            ORDER BY pk;
             """;
         command.Parameters.AddWithValue("$table", table);
         using SqliteDataReader reader = command.ExecuteReader();
@@ -2237,6 +2462,39 @@ public sealed class DatabaseMigratorTests
             ("$event_hash", eventHash));
     }
 
+    private static void InsertRoleAssignment(
+        SqliteConnection connection,
+        string actorSid,
+        string role,
+        string assignedAt = Timestamp,
+        string assignedBySid = "S-1-5-21-1-2-3-5001",
+        string reason = "Role assigned")
+    {
+        ExecuteNonQuery(
+            connection,
+            """
+                INSERT INTO role_assignments (
+                    actor_sid,
+                    role,
+                    assigned_at,
+                    assigned_by_sid,
+                    reason
+                )
+                VALUES (
+                    $actor_sid,
+                    $role,
+                    $assigned_at,
+                    $assigned_by_sid,
+                    $reason
+                );
+                """,
+            ("$actor_sid", actorSid),
+            ("$role", role),
+            ("$assigned_at", assignedAt),
+            ("$assigned_by_sid", assignedBySid),
+            ("$reason", reason));
+    }
+
     private static void InsertArtifact(
         SqliteConnection connection,
         string id,
@@ -2517,6 +2775,7 @@ public sealed class DatabaseMigratorTests
             (1, "001_initial", ReadEmbeddedMigrationDigest("001_initial")),
             (2, "002_jobs", ReadEmbeddedMigrationDigest("002_jobs")),
             (3, "003_audit_chain", ReadEmbeddedMigrationDigest("003_audit_chain")),
+            (4, "004_role_assignments", ReadEmbeddedMigrationDigest("004_role_assignments")),
         ];
 
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
