@@ -1,0 +1,3 @@
+stream_index=2|key_frame=1|best_effort_timestamp=-50|duration=20
+stream_index=2|key_frame=0|best_effort_timestamp=-30|duration=33
+stream_index=2|key_frame=0|best_effort_timestamp=3|duration=17

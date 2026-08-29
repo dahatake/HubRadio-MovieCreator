@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical immutable PTS index for the lowest-index video stream. Runtime validation additionally requires reduced RationalTime values, integral stream-time-base multiples, contiguous zero-based entry sequences, strictly increasing presentation times, positive durations with representable ends, at least one key frame, and presentationRange equal to the first presentation time through the final presentation time plus final duration.",
+  "title": "PtsIndex",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "candidateId",
+    "projectId",
+    "jobId",
+    "sourceFileName",
+    "contentDigest",
+    "byteSize",
+    "streamIndex",
+    "timeBase",
+    "presentationRange",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "candidateId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "projectId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "jobId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "sourceFileName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "contentDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "byteSize": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854775807
+    },
+    "streamIndex": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "timeBase": {
+      "$ref": "#/$defs/positiveRationalTime"
+    },
+    "presentationRange": {
+      "$ref": "#/$defs/timeRange"
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "positiveRationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "timeRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "duration"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "duration": {
+          "$ref": "#/$defs/positiveRationalTime"
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "presentationTime",
+        "duration",
+        "keyFrame"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "presentationTime": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "duration": {
+          "$ref": "#/$defs/positiveRationalTime"
+        },
+        "keyFrame": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
