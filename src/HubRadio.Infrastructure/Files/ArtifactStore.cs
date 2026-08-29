@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Projects;
 using HubRadio.Infrastructure.Database;
+using HubRadio.Infrastructure.Integrity;
 using Microsoft.Data.Sqlite;
 
 namespace HubRadio.Infrastructure.Files;
@@ -32,6 +33,7 @@ public enum ArtifactStoreFailureReason
     SizeMismatch,
     DigestMismatch,
     DestinationExists,
+    RegisteredArtifactMissing,
     DatabaseRejected,
     RollbackFailed,
 }
@@ -68,6 +70,8 @@ public sealed class ArtifactStoreException : Exception
                 "The artifact digest does not match the expected value.",
             ArtifactStoreFailureReason.DestinationExists =>
                 "The artifact destination already exists.",
+            ArtifactStoreFailureReason.RegisteredArtifactMissing =>
+                "The registered artifact does not exist.",
             ArtifactStoreFailureReason.DatabaseRejected =>
                 "The artifact database operation was rejected.",
             ArtifactStoreFailureReason.RollbackFailed =>
@@ -348,6 +352,41 @@ public sealed class ArtifactStore
         }
     }
 
+    public async Task<BinaryVerificationResult> VerifyRegisteredAsync(
+        EntityId<ArtifactIdTag> artifactId,
+        BinaryVerifier binaryVerifier,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(artifactId);
+        ArgumentNullException.ThrowIfNull(binaryVerifier);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        StoredArtifact artifact = GetArtifact(artifactId)
+            ?? throw Failure(ArtifactStoreFailureReason.RegisteredArtifactMissing);
+        string artifactPath = ResolveRegisteredArtifactPath(artifact);
+        ValidateRegisteredArtifactPath(artifactPath);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        BinaryVerificationResult result = await binaryVerifier.VerifyAsync(
+            new BinaryVerificationRequest(
+                string.Concat("artifact.", artifact.Id.ToString()),
+                artifactPath,
+                artifact.ContentDigest,
+                artifact.ByteSize),
+            cancellationToken).ConfigureAwait(false);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateRegisteredArtifactPath(artifactPath);
+        StoredArtifact current = GetArtifact(artifactId)
+            ?? throw Failure(ArtifactStoreFailureReason.RegisteredArtifactMissing);
+        if (!HasSameMetadata(artifact, current))
+        {
+            throw Failure(ArtifactStoreFailureReason.DatabaseRejected);
+        }
+
+        return result;
+    }
+
     internal static StoredArtifact? ReadArtifact(
         SqliteConnection connection,
         SqliteTransaction? transaction,
@@ -481,6 +520,46 @@ public sealed class ArtifactStore
             destinationPath,
             destinationDirectory,
             storageReference);
+    }
+
+    private string ResolveRegisteredArtifactPath(StoredArtifact artifact)
+    {
+        string prefix = string.Concat(
+            "projects/",
+            artifact.ProjectId.ToString(),
+            "/",
+            GetKindFolder(artifact.Kind),
+            "/");
+        if (!artifact.StorageReference.StartsWith(prefix, StringComparison.Ordinal) ||
+            !ArtifactPromotionRequest.IsValidRelativePath(
+                artifact.StorageReference[prefix.Length..]) ||
+            !WorkspacePathSafety.TryResolvePortableRelativePath(
+                _workspacePath,
+                artifact.StorageReference,
+                out string artifactPath))
+        {
+            throw Failure(ArtifactStoreFailureReason.UnsafePath);
+        }
+
+        return artifactPath;
+    }
+
+    private void ValidateRegisteredArtifactPath(string artifactPath)
+    {
+        ValidateWorkspaceChain(_workspacePath);
+        try
+        {
+            WorkspacePathSafety.ValidateExistingPathChain(
+                _workspacePath,
+                artifactPath,
+                targetIsDirectory: false);
+        }
+        catch (WorkspacePathSafetyException exception)
+        {
+            throw Failure(MapPathFailure(
+                exception.Failure,
+                ArtifactStoreFailureReason.StagingMissing));
+        }
     }
 
     private static void ValidateWorkspaceChain(string workspacePath)
@@ -985,6 +1064,20 @@ public sealed class ArtifactStore
 
     private static bool HasSameWindowsDriveRoot(string first, string second)
         => WorkspacePathSafety.HasSameWindowsDriveRoot(first, second);
+
+    private static bool HasSameMetadata(
+        StoredArtifact expected,
+        StoredArtifact actual) =>
+        expected.Id == actual.Id &&
+        expected.ProjectId == actual.ProjectId &&
+        expected.Kind == actual.Kind &&
+        string.Equals(
+            expected.StorageReference,
+            actual.StorageReference,
+            StringComparison.Ordinal) &&
+        expected.ContentDigest == actual.ContentDigest &&
+        expected.ByteSize == actual.ByteSize &&
+        expected.CreatedAt == actual.CreatedAt;
 
     internal static string GetKindFolder(ArtifactKind kind) =>
         kind switch

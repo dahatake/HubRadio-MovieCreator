@@ -850,6 +850,7 @@ public sealed class ArtifactStoreTests
                 "SizeMismatch",
                 "DigestMismatch",
                 "DestinationExists",
+                "RegisteredArtifactMissing",
                 "DatabaseRejected",
                 "RollbackFailed",
             },
