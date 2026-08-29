@@ -216,6 +216,114 @@ public static class WorkspaceAcl
         }
     }
 
+    internal static void VerifyInheritedDirectory(
+        string directoryPath,
+        string protectedRootPath,
+        string currentActorSid)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException(
+                "Workspace access control requires Windows.");
+        }
+
+        string normalizedDirectoryPath = NormalizeWorkspacePath(directoryPath);
+        string normalizedRootPath = NormalizeWorkspacePath(protectedRootPath);
+        SecurityIdentifier actorSid = ParseActorSid(currentActorSid);
+
+        ValidateFixedDrive(normalizedRootPath);
+        ValidateExistingWorkspacePath(normalizedRootPath);
+        _ = VerifyExistingCore(normalizedRootPath, actorSid);
+        if (!WorkspacePathSafety.IsStrictDescendant(
+                normalizedRootPath,
+                normalizedDirectoryPath) ||
+            !WorkspacePathSafety.HasSameWindowsDriveRoot(
+                normalizedRootPath,
+                normalizedDirectoryPath))
+        {
+            throw Failure(WorkspaceAclFailureReason.UnsafePath);
+        }
+
+        ValidateExistingWorkspacePath(normalizedDirectoryPath);
+        try
+        {
+            var directory = new DirectoryInfo(normalizedDirectoryPath);
+            DirectorySecurity security = FileSystemAclExtensions.GetAccessControl(
+                directory,
+                AccessControlSections.Access | AccessControlSections.Owner);
+
+            if (security.AreAccessRulesProtected)
+            {
+                throw Failure(WorkspaceAclFailureReason.VerificationFailed);
+            }
+
+            IdentityReference? owner = security.GetOwner(typeof(SecurityIdentifier));
+            if (owner is not SecurityIdentifier ownerSid || !ownerSid.Equals(actorSid))
+            {
+                throw Failure(WorkspaceAclFailureReason.VerificationFailed);
+            }
+
+            FileSystemAccessRule[] explicitRules = GetAccessRules(
+                security,
+                includeExplicit: true,
+                includeInherited: false);
+            if (explicitRules.Length != 0)
+            {
+                throw Failure(WorkspaceAclFailureReason.VerificationFailed);
+            }
+
+            FileSystemAccessRule[] inheritedRules = GetAccessRules(
+                security,
+                includeExplicit: false,
+                includeInherited: true);
+            if (inheritedRules.Length != ExpectedExplicitRuleCount)
+            {
+                throw Failure(WorkspaceAclFailureReason.VerificationFailed);
+            }
+
+            var expectedSids = new HashSet<string>(StringComparer.Ordinal)
+            {
+                actorSid.Value,
+                CreateWellKnownSid(WellKnownSidType.LocalSystemSid).Value,
+                CreateWellKnownSid(WellKnownSidType.BuiltinAdministratorsSid).Value,
+            };
+            foreach (FileSystemAccessRule rule in inheritedRules)
+            {
+                if (!rule.IsInherited ||
+                    rule.IdentityReference is not SecurityIdentifier ruleSid ||
+                    !expectedSids.Remove(ruleSid.Value) ||
+                    rule.AccessControlType != AccessControlType.Allow ||
+                    rule.FileSystemRights != FileSystemRights.FullControl ||
+                    rule.InheritanceFlags != GetExpectedInheritance() ||
+                    rule.PropagationFlags != PropagationFlags.None)
+                {
+                    throw Failure(WorkspaceAclFailureReason.VerificationFailed);
+                }
+            }
+
+            if (expectedSids.Count != 0)
+            {
+                throw Failure(WorkspaceAclFailureReason.VerificationFailed);
+            }
+
+            ValidateExistingWorkspacePath(normalizedDirectoryPath);
+        }
+        catch (WorkspaceAclException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+            when (exception is UnauthorizedAccessException or SecurityException)
+        {
+            throw Failure(WorkspaceAclFailureReason.AccessDenied);
+        }
+        catch (Exception exception)
+            when (exception is IOException or InvalidOperationException or NotSupportedException)
+        {
+            throw Failure(WorkspaceAclFailureReason.VerificationFailed);
+        }
+    }
+
     [SupportedOSPlatform("windows")]
     private static WorkspaceAclResult VerifyExistingCore(
         string normalizedPath,

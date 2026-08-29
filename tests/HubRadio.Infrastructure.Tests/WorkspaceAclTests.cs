@@ -85,6 +85,102 @@ public sealed class WorkspaceAclTests
     }
 
     [TestMethod]
+    public void VerifyInheritedDirectory_AcceptsExactChildAndRejectsExplicitRule()
+    {
+        RequireWindowsFixedTempDrive();
+        using WorkspaceFixture fixture = CreateWorkspace();
+        string childDirectory = Path.Combine(fixture.WorkspacePath, "backup-child");
+        Directory.CreateDirectory(childDirectory);
+
+        WorkspaceAcl.VerifyInheritedDirectory(
+            childDirectory,
+            fixture.WorkspacePath,
+            fixture.CurrentSid);
+
+        DirectorySecurity security = ReadDirectorySecurity(childDirectory);
+        security.AddAccessRule(new FileSystemAccessRule(
+            CreateWellKnownSid(WellKnownSidType.BuiltinUsersSid),
+            FileSystemRights.ReadData,
+            InheritanceFlags.None,
+            PropagationFlags.None,
+            AccessControlType.Allow));
+        FileSystemAclExtensions.SetAccessControl(
+            new DirectoryInfo(childDirectory),
+            security);
+
+        WorkspaceAclException exception = Assert.ThrowsExactly<WorkspaceAclException>(() =>
+            WorkspaceAcl.VerifyInheritedDirectory(
+                childDirectory,
+                fixture.WorkspacePath,
+                fixture.CurrentSid));
+        AssertSafeFailure(
+            exception,
+            WorkspaceAclFailureReason.VerificationFailed,
+            reconciliationRequired: false,
+            childDirectory,
+            fixture.WorkspacePath,
+            fixture.CurrentSid);
+    }
+
+    [TestMethod]
+    public void VerifyInheritedDirectory_RequiresStrictDescendantOfProtectedRoot()
+    {
+        RequireWindowsFixedTempDrive();
+        using WorkspaceFixture fixture = CreateWorkspace();
+        string outsideDirectory = Path.Combine(fixture.RootPath, "outside");
+        Directory.CreateDirectory(outsideDirectory);
+
+        foreach (string candidate in new[]
+        {
+            fixture.WorkspacePath,
+            outsideDirectory,
+        })
+        {
+            WorkspaceAclException exception = Assert.ThrowsExactly<WorkspaceAclException>(() =>
+                WorkspaceAcl.VerifyInheritedDirectory(
+                    candidate,
+                    fixture.WorkspacePath,
+                    fixture.CurrentSid));
+            AssertSafeFailure(
+                exception,
+                WorkspaceAclFailureReason.UnsafePath,
+                reconciliationRequired: false,
+                candidate,
+                fixture.WorkspacePath,
+                fixture.CurrentSid);
+        }
+    }
+
+    [TestMethod]
+    public void VerifyInheritedDirectory_RejectsDescendantReparsePointWhenAvailable()
+    {
+        RequireWindowsFixedTempDrive();
+        using WorkspaceFixture fixture = CreateWorkspace();
+        string linkTarget = Path.Combine(fixture.RootPath, "backup-target");
+        Directory.CreateDirectory(linkTarget);
+        string childLink = Path.Combine(fixture.WorkspacePath, "backup-link");
+        if (!TryCreateDirectorySymbolicLink(childLink, linkTarget))
+        {
+            Assert.Inconclusive(
+                "Directory symbolic links are unavailable in this test environment.");
+            return;
+        }
+
+        WorkspaceAclException exception = Assert.ThrowsExactly<WorkspaceAclException>(() =>
+            WorkspaceAcl.VerifyInheritedDirectory(
+                childLink,
+                fixture.WorkspacePath,
+                fixture.CurrentSid));
+        AssertSafeFailure(
+            exception,
+            WorkspaceAclFailureReason.ReparsePoint,
+            reconciliationRequired: false,
+            childLink,
+            fixture.WorkspacePath,
+            fixture.CurrentSid);
+    }
+
+    [TestMethod]
     public void VerifyExisting_AllowsContentAndDoesNotRewriteAcl()
     {
         RequireWindowsFixedTempDrive();

@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Backup manifest v1 is strict canonical JSON. Runtime validation rejects duplicate properties, noncanonical bytes, unsafe or duplicate paths and IDs, a manifestDigest that is not SHA-256 over the canonical object with manifestDigest omitted, any file-tree mismatch, and any database/catalog mismatch.",
+  "title": "BackupManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "maxProperties": 9,
+  "required": [
+    "version",
+    "backupId",
+    "createdAt",
+    "database",
+    "artifacts",
+    "includedKinds",
+    "excludedKinds",
+    "manifestDigest",
+    "completionMarker"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "backupId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "createdAt": {
+      "$ref": "#/$defs/canonicalUtcTimestamp"
+    },
+    "database": {
+      "$ref": "#/$defs/databaseFile"
+    },
+    "artifacts": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/artifactFile"
+      }
+    },
+    "includedKinds": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "prefixItems": [
+        { "const": "Original" },
+        { "const": "Analysis" },
+        { "const": "Composition" },
+        { "const": "Render" },
+        { "const": "Delivery" },
+        { "const": "Evidence" }
+      ],
+      "items": false
+    },
+    "excludedKinds": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        { "const": "Proxy" },
+        { "const": "Preview" }
+      ],
+      "items": false
+    },
+    "manifestDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "completionMarker": {
+      "type": "string",
+      "const": "complete",
+      "maxLength": 8
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "canonicalUtcTimestamp": {
+      "type": "string",
+      "minLength": 28,
+      "maxLength": 28,
+      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{7}Z$"
+    },
+    "portableRelativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32767,
+      "pattern": "^(?!/)(?!.*(?:^|/)(?:\\.|\\.\\.)(?:/|$))(?!.*//)(?!.*[\\\\:<>\"|?*\\u0000-\\u001f])(?!.*[. ](?:/|$))[^/]+(?:/[^/]+)*$"
+    },
+    "databaseFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 3,
+      "required": [
+        "relativePath",
+        "byteSize",
+        "sha256"
+      ],
+      "properties": {
+        "relativePath": {
+          "type": "string",
+          "const": "payload/hubradio.db",
+          "maxLength": 19
+        },
+        "byteSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "sha256": {
+          "$ref": "#/$defs/contentDigest"
+        }
+      }
+    },
+    "artifactFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 8,
+      "required": [
+        "id",
+        "projectId",
+        "kind",
+        "sourceStorageReference",
+        "backupRelativePath",
+        "byteSize",
+        "sha256",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 11,
+          "enum": [
+            "Original",
+            "Analysis",
+            "Composition",
+            "Render",
+            "Delivery",
+            "Evidence"
+          ]
+        },
+        "sourceStorageReference": {
+          "$ref": "#/$defs/portableRelativePath"
+        },
+        "backupRelativePath": {
+          "allOf": [
+            { "$ref": "#/$defs/portableRelativePath" },
+            { "pattern": "^payload/" }
+          ]
+        },
+        "byteSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "sha256": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/canonicalUtcTimestamp"
+        }
+      }
+    }
+  }
+}
