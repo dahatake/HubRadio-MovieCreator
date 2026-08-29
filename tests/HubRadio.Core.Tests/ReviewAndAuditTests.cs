@@ -57,6 +57,7 @@ public sealed class ReviewAndAuditTests
                 AuditEventKind.CompositionExported,
                 AuditEventKind.PublicationRecorded,
                 AuditEventKind.SuggestionDecisionRecorded,
+                AuditEventKind.RightsDecisionRecorded,
             },
             Enum.GetValues<AuditEventKind>());
     }

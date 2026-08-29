@@ -1,5 +1,4 @@
-using System.Globalization;
-using System.Text;
+using HubRadio.Core.Layout;
 using HubRadio.Core.Projects;
 using HubRadio.Core.Reviews;
 using HubRadio.Core.Security;
@@ -234,8 +233,6 @@ public sealed class PublicationPolicyDecision
 
 public static class PublicationPolicy
 {
-    private static readonly Encoding StrictUtf8 = new UTF8Encoding(false, true);
-
     /// <summary>
     /// Evaluates a requested publication-scope label relative to its parent label.
     /// </summary>
@@ -459,67 +456,10 @@ public static class PublicationPolicy
             return;
         }
 
-        ArgumentNullException.ThrowIfNull(reason);
-        if (string.IsNullOrWhiteSpace(reason)
-            || !string.Equals(reason, reason.Trim(), StringComparison.Ordinal))
-        {
-            throw new ArgumentException(
-                "A human publication-scope change reason must not be blank or have leading or trailing whitespace.",
-                nameof(reason));
-        }
-
-        try
-        {
-            _ = StrictUtf8.GetByteCount(reason);
-        }
-        catch (EncoderFallbackException exception)
-        {
-            throw new ArgumentException(
-                "A human publication-scope change reason must contain valid Unicode that can be encoded as strict UTF-8.",
-                nameof(reason),
-                exception);
-        }
-
-        if (!ContainsSubstantiveUnicodeScalar(reason))
-        {
-            throw new ArgumentException(
-                "A human publication-scope change reason must contain at least one visible, substantive Unicode scalar.",
-                nameof(reason));
-        }
-    }
-
-    private static bool ContainsSubstantiveUnicodeScalar(string value)
-    {
-        foreach (Rune rune in value.EnumerateRunes())
-        {
-            UnicodeCategory category = Rune.GetUnicodeCategory(rune);
-            if (!Rune.IsWhiteSpace(rune)
-                && !IsNonSubstantiveSpecialScalar(rune)
-                && category is not (UnicodeCategory.Control
-                    or UnicodeCategory.Format
-                    or UnicodeCategory.NonSpacingMark
-                    or UnicodeCategory.SpacingCombiningMark
-                    or UnicodeCategory.EnclosingMark
-                    or UnicodeCategory.SpaceSeparator
-                    or UnicodeCategory.LineSeparator
-                    or UnicodeCategory.ParagraphSeparator))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool IsNonSubstantiveSpecialScalar(Rune rune)
-    {
-        return rune.Value switch
-        {
-            0x115F or 0x1160 or 0x2800 or 0x3164 or 0xFFA0 => true,
-            >= 0xFE00 and <= 0xFE0F => true,
-            >= 0xE0100 and <= 0xE01EF => true,
-            _ => false,
-        };
+        _ = ContractText.RequireNonBlankStrictUtf8Substantive(
+            reason,
+            nameof(reason),
+            "A human publication-scope change reason");
     }
 
     private static void ValidateDefined<TEnum>(

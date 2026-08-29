@@ -20,6 +20,7 @@ public enum AuditEventKind
     CompositionExported,
     PublicationRecorded,
     SuggestionDecisionRecorded,
+    RightsDecisionRecorded,
 }
 
 public sealed class AuditEvent
