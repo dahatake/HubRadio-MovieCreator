@@ -5,6 +5,7 @@ using HubRadio.Core.Projects;
 using HubRadio.Core.Provenance;
 using HubRadio.Core.Reviews;
 using HubRadio.Core.Time;
+using HubRadio.Infrastructure.Audit;
 using Microsoft.Data.Sqlite;
 
 namespace HubRadio.Infrastructure.Database;
@@ -215,10 +216,12 @@ public sealed class StoredAuditEvent
 public sealed class ReviewStore
 {
     private readonly string _databasePath;
+    private readonly AuditLog _auditLog;
 
     public ReviewStore(string databasePath)
     {
         _databasePath = SqliteStoreSupport.Initialize(databasePath);
+        _auditLog = new AuditLog(_databasePath);
     }
 
     public void AppendReviewRecord(ReviewRecord reviewRecord)
@@ -379,56 +382,7 @@ public sealed class ReviewStore
 
     public void AppendAuditEvent(AuditEvent auditEvent)
     {
-        ArgumentNullException.ThrowIfNull(auditEvent);
-        string occurredAt = SqliteStoreSupport.FormatTimestamp(
-            auditEvent.OccurredAt,
-            nameof(auditEvent));
-
-        using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
-        using SqliteCommand command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO audit_events (
-                id,
-                project_id,
-                kind,
-                actor_id,
-                actor_role,
-                occurred_at,
-                reason,
-                composition_version_id,
-                composition_version_digest
-            )
-            VALUES (
-                $id,
-                $project_id,
-                $kind,
-                $actor_id,
-                $actor_role,
-                $occurred_at,
-                $reason,
-                $composition_version_id,
-                $composition_version_digest
-            );
-            """;
-        SqliteStoreSupport.AddText(command, "$id", auditEvent.Id.ToString());
-        SqliteStoreSupport.AddText(command, "$project_id", auditEvent.ProjectId.ToString());
-        SqliteStoreSupport.AddText(command, "$kind", auditEvent.Kind.ToString());
-        SqliteStoreSupport.AddText(command, "$actor_id", auditEvent.ActorId);
-        SqliteStoreSupport.AddText(command, "$actor_role", auditEvent.ActorRole.ToString());
-        SqliteStoreSupport.AddText(command, "$occurred_at", occurredAt);
-        SqliteStoreSupport.AddText(command, "$reason", auditEvent.Reason);
-        SqliteStoreSupport.AddNullableText(
-            command,
-            "$composition_version_id",
-            auditEvent.CompositionVersionId?.ToString());
-        SqliteStoreSupport.AddNullableText(
-            command,
-            "$composition_version_digest",
-            auditEvent.CompositionVersionDigest?.Hex);
-        EnsureSingleMutation(command, "audit event");
-        transaction.Commit();
+        _auditLog.Append(auditEvent);
     }
 
     public StoredVersionEvidence? GetVersionEvidence(
@@ -472,42 +426,7 @@ public sealed class ReviewStore
     public IReadOnlyList<StoredAuditEvent> GetProjectAuditEvents(
         EntityId<ProjectIdTag> projectId)
     {
-        ArgumentNullException.ThrowIfNull(projectId);
-        using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
-        using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT
-                id,
-                project_id,
-                kind,
-                actor_id,
-                actor_role,
-                occurred_at,
-                reason,
-                composition_version_id,
-                composition_version_digest
-            FROM audit_events
-            WHERE project_id = $project_id;
-            """;
-        SqliteStoreSupport.AddText(command, "$project_id", projectId.ToString());
-        using SqliteDataReader reader = command.ExecuteReader();
-        var events = new List<StoredAuditEvent>();
-        while (reader.Read())
-        {
-            StoredAuditEvent auditEvent = ReadAuditEvent(reader);
-            if (auditEvent.ProjectId != projectId)
-            {
-                throw SqliteStoreSupport.InvalidStoredData("audit event");
-            }
-
-            events.Add(auditEvent);
-        }
-
-        return Array.AsReadOnly(
-            events
-                .OrderBy(static auditEvent => auditEvent.OccurredAt)
-                .ThenBy(static auditEvent => auditEvent.Id.ToString(), StringComparer.Ordinal)
-                .ToArray());
+        return _auditLog.GetProjectEvents(projectId);
     }
 
     private static void AddVersionEvidenceBinding(
@@ -785,37 +704,6 @@ public sealed class ReviewStore
             actorRole,
             SqliteStoreSupport.ReadTimestamp(reader, 6, entityKind),
             SqliteStoreSupport.ReadString(reader, 7, entityKind));
-    }
-
-    private static StoredAuditEvent ReadAuditEvent(SqliteDataReader reader)
-    {
-        const string entityKind = "audit event";
-        EntityId<CompositionVersionIdTag>? versionId =
-            SqliteStoreSupport.ReadNullableEntityId<CompositionVersionIdTag>(
-                reader,
-                7,
-                entityKind);
-        ContentDigest? versionDigest =
-            SqliteStoreSupport.ReadNullableContentDigest(reader, 8, entityKind);
-        if ((versionId is null) != (versionDigest is null))
-        {
-            throw SqliteStoreSupport.InvalidStoredData(entityKind);
-        }
-
-        return new StoredAuditEvent(
-            SqliteStoreSupport.ReadEntityId<AuditEventIdTag>(reader, 0, entityKind),
-            SqliteStoreSupport.ReadEntityId<ProjectIdTag>(reader, 1, entityKind),
-            ParseEnum<AuditEventKind>(
-                SqliteStoreSupport.ReadString(reader, 2, entityKind),
-                entityKind),
-            SqliteStoreSupport.ReadString(reader, 3, entityKind),
-            ParseEnum<ReviewActorRole>(
-                SqliteStoreSupport.ReadString(reader, 4, entityKind),
-                entityKind),
-            SqliteStoreSupport.ReadTimestamp(reader, 5, entityKind),
-            SqliteStoreSupport.ReadString(reader, 6, entityKind),
-            versionId,
-            versionDigest);
     }
 
     private static TEnum ParseEnum<TEnum>(string value, string entityKind)

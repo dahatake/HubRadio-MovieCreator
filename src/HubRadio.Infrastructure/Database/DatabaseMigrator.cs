@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using HubRadio.Core.Identity;
+using HubRadio.Infrastructure.Audit;
 using Microsoft.Data.Sqlite;
 
 namespace HubRadio.Infrastructure.Database;
@@ -33,7 +34,7 @@ public sealed class DatabaseMigrationResult
 
 public static class DatabaseMigrator
 {
-    private const int LatestSchemaVersion = 2;
+    private const int LatestSchemaVersion = 3;
     private const int DefaultTimeoutSeconds = 5;
     private const string SchemaDigestDomain =
         "HubRadio.MovieCreator.DatabaseMigrationSet/v1";
@@ -54,6 +55,10 @@ public static class DatabaseMigrator
             2,
             "002_jobs",
             "HubRadio.Infrastructure.Database.Migrations.002_jobs.sql"),
+        new(
+            3,
+            "003_audit_chain",
+            "HubRadio.Infrastructure.Database.Migrations.003_audit_chain.sql"),
     ];
 
     public static DatabaseMigrationResult Migrate(
@@ -387,6 +392,9 @@ public static class DatabaseMigrator
             migrationCommand.ExecuteNonQuery();
         }
 
+        ApplyDataMigration(connection, transaction, migration);
+        ValidateForeignKeys(connection, transaction);
+
         DateTimeOffset appliedAt = timeProvider.GetUtcNow().ToUniversalTime();
         using (SqliteCommand metadataCommand = connection.CreateCommand())
         {
@@ -421,6 +429,17 @@ public static class DatabaseMigrator
         transaction.Commit();
     }
 
+    private static void ApplyDataMigration(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        MigrationDefinition migration)
+    {
+        if (migration.Version == 3)
+        {
+            AuditChainCodec.Backfill(connection, transaction);
+        }
+    }
+
     private static string CreateValidatedBackup(
         SqliteConnection source,
         string backupDirectory,
@@ -434,7 +453,7 @@ public static class DatabaseMigrator
             .UtcDateTime
             .ToString(BackupTimestampFormat, CultureInfo.InvariantCulture);
         string backupFileName = string.Concat(
-            "hubradio-before-schema-002-",
+            "hubradio-before-schema-003-",
             timestamp,
             "-",
             Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
@@ -526,18 +545,23 @@ public static class DatabaseMigrator
 
     private static void ValidateDatabase(SqliteConnection connection)
     {
-        using (SqliteCommand foreignKeyCommand = connection.CreateCommand())
-        {
-            foreignKeyCommand.CommandText = "PRAGMA foreign_key_check;";
-            using SqliteDataReader reader = foreignKeyCommand.ExecuteReader();
-            if (reader.Read())
-            {
-                throw new InvalidOperationException(
-                    "SQLite foreign-key validation failed.");
-            }
-        }
-
+        ValidateForeignKeys(connection, transaction: null);
         ValidateIntegrity(connection);
+    }
+
+    private static void ValidateForeignKeys(
+        SqliteConnection connection,
+        SqliteTransaction? transaction)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "PRAGMA foreign_key_check;";
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (reader.Read())
+        {
+            throw new InvalidOperationException(
+                "SQLite foreign-key validation failed.");
+        }
     }
 
     private static void ValidateIntegrity(SqliteConnection connection)

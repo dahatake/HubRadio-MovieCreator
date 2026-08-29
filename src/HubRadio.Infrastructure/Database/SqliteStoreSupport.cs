@@ -353,6 +353,7 @@ internal static class SqliteStoreSupport
         using SqliteDataReader reader = command.ExecuteReader();
         if (!ReadExpectedMigration(reader, 1, "001_initial") ||
             !ReadExpectedMigration(reader, 2, "002_jobs") ||
+            !ReadExpectedMigration(reader, 3, "003_audit_chain") ||
             reader.Read())
         {
             throw new InvalidOperationException(

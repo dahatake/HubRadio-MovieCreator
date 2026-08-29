@@ -198,6 +198,9 @@ public sealed class ReviewStoreTests
         Assert.AreEqual(1L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM review_comments;"));
         Assert.AreEqual(1L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM approvals;"));
         Assert.AreEqual(1L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM audit_events;"));
+        Assert.AreEqual(
+            1L,
+            database.ExecuteScalarInt64("SELECT COUNT(*) FROM audit_chain_entries;"));
     }
 
     [TestMethod]
@@ -277,7 +280,7 @@ public sealed class ReviewStoreTests
     }
 
     [TestMethod]
-    public void ProjectAuditEventsPreserveOptionalVersionPairAndSortByTimestampThenId()
+    public void ProjectAuditEventsPreserveOptionalVersionPairAndUseGlobalAppendOrder()
     {
         using StoreTestDatabase database = new();
         (ReviewStore store, _, CompositionVersion version) = CreateStores(database);
@@ -305,12 +308,12 @@ public sealed class ReviewStoreTests
         IReadOnlyList<StoredAuditEvent> events =
             store.GetProjectAuditEvents(version.ProjectId);
         CollectionAssert.AreEqual(
-            new[] { earlierIdVersionEvent.Id, laterIdProjectEvent.Id },
+            new[] { laterIdProjectEvent.Id, earlierIdVersionEvent.Id },
             events.Select(static item => item.Id).ToArray());
-        Assert.AreEqual(version.Id, events[0].CompositionVersionId);
-        Assert.AreEqual(version.ContentDigest, events[0].CompositionVersionDigest);
-        Assert.IsNull(events[1].CompositionVersionId);
-        Assert.IsNull(events[1].CompositionVersionDigest);
+        Assert.IsNull(events[0].CompositionVersionId);
+        Assert.IsNull(events[0].CompositionVersionDigest);
+        Assert.AreEqual(version.Id, events[1].CompositionVersionId);
+        Assert.AreEqual(version.ContentDigest, events[1].CompositionVersionDigest);
         Assert.AreEqual(0, store.GetProjectAuditEvents(EntityId<ProjectIdTag>.New()).Count);
     }
 

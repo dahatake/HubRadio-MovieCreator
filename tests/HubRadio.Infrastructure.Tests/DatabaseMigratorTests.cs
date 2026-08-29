@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using HubRadio.Core.Identity;
+using HubRadio.Infrastructure.Audit;
 using HubRadio.Infrastructure.Database;
 using Microsoft.Data.Sqlite;
 
@@ -23,6 +24,8 @@ public sealed class DatabaseMigratorTests
     private const string ReviewCommentId = "88888888-8888-4888-8888-888888888888";
     private const string ApprovalId = "99999999-9999-4999-8999-999999999999";
     private const string AuditEventId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    private const string OtherAuditEventId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    private const string ThirdAuditEventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     private const string ArtifactId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
     private const string OtherArtifactId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     private const string SourceSpanId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
@@ -31,6 +34,8 @@ public sealed class DatabaseMigratorTests
     private const string DigestB =
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     private const string Timestamp = "2030-01-02T03:04:05.6789012Z";
+    private const string CanonicalEventTimestamp =
+        "2030-01-02T03:04:05.6789012+00:00";
 
     private static readonly DateTimeOffset FixedUtcNow =
         new(2030, 1, 2, 3, 4, 5, 678, TimeSpan.Zero);
@@ -47,7 +52,7 @@ public sealed class DatabaseMigratorTests
             timeProvider);
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(2, result.SchemaVersion);
+        Assert.AreEqual(3, result.SchemaVersion);
         Assert.AreEqual(64, result.SchemaDigest.Hex.Length);
         Assert.AreEqual(result.SchemaDigest.Hex, result.SchemaDigest.Hex.ToLowerInvariant());
         Assert.IsTrue(typeof(DatabaseMigrationResult).IsSealed);
@@ -63,7 +68,7 @@ public sealed class DatabaseMigratorTests
         Assert.IsTrue(
             Regex.IsMatch(
                 Path.GetFileName(backupPath),
-                "^hubradio-before-schema-002-20300102T0304056789012Z-[0-9a-f]{32}\\.db$",
+                "^hubradio-before-schema-003-20300102T0304056789012Z-[0-9a-f]{32}\\.db$",
                 RegexOptions.CultureInvariant));
         Assert.AreEqual(1, GetBackupFiles(temporary).Length);
 
@@ -78,6 +83,7 @@ public sealed class DatabaseMigratorTests
         [
             "approvals",
             "artifacts",
+            "audit_chain_entries",
             "audit_events",
             "composition_versions",
             "job_attempts",
@@ -174,6 +180,14 @@ public sealed class DatabaseMigratorTests
                 "approved_at",
                 "reason",
             ],
+            ["audit_chain_entries"] =
+            [
+                "sequence_number",
+                "audit_event_id",
+                "format_version",
+                "previous_hash",
+                "event_hash",
+            ],
             ["audit_events"] =
             [
                 "id",
@@ -256,13 +270,15 @@ public sealed class DatabaseMigratorTests
         {
             metadata.CommandText = """
                 SELECT version, name, content_digest, applied_at
-                FROM schema_migrations;
+                FROM schema_migrations
+                ORDER BY version;
                 """;
             using SqliteDataReader reader = metadata.ExecuteReader();
             (long Version, string Name, ContentDigest Digest)[] expectedMigrations =
             [
                 (1, "001_initial", ReadEmbeddedMigrationDigest("001_initial")),
                 (2, "002_jobs", ReadEmbeddedMigrationDigest("002_jobs")),
+                (3, "003_audit_chain", ReadEmbeddedMigrationDigest("003_audit_chain")),
             ];
             foreach ((long version, string name, ContentDigest digest) in expectedMigrations)
             {
@@ -279,11 +295,12 @@ public sealed class DatabaseMigratorTests
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
         Assert.AreNotEqual(ReadEmbeddedMigrationDigest("001_initial"), result.SchemaDigest);
         Assert.AreNotEqual(ReadEmbeddedMigrationDigest("002_jobs"), result.SchemaDigest);
+        Assert.AreNotEqual(ReadEmbeddedMigrationDigest("003_audit_chain"), result.SchemaDigest);
         AssertDatabaseChecksPass(connection);
     }
 
     [TestMethod]
-    public void Migrate_ExactVersionOneDatabaseCreatesOneBackupAndAppliesOnlyVersionTwo()
+    public void Migrate_ExactVersionOneDatabaseCreatesOneBackupAndAppliesRemainingVersions()
     {
         using TemporaryDatabase temporary = new();
         CreateExactVersionOneDatabase(temporary);
@@ -294,7 +311,7 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(1)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(2, result.SchemaVersion);
+        Assert.AreEqual(3, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
 
         string backupPath = result.BackupPath
@@ -333,7 +350,11 @@ public sealed class DatabaseMigratorTests
         using SqliteConnection upgraded = OpenConnection(temporary.DatabasePath);
         CollectionAssert.AreEquivalent(
             new[] { "job_attempts", "job_heartbeats", "job_progress", "jobs" },
-            GetUserTableNames(upgraded).Except(versionOneTables).ToArray());
+            GetUserTableNames(upgraded)
+                .Except(versionOneTables)
+                .Except(["audit_chain_entries"])
+                .ToArray());
+        Assert.IsTrue(GetUserTableNames(upgraded).Contains("audit_chain_entries"));
         CollectionAssert.AreEquivalent(
             new[]
             {
@@ -350,7 +371,7 @@ public sealed class DatabaseMigratorTests
             1L,
             ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM projects;"));
         Assert.AreEqual(
-            2L,
+            3L,
             ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
         Assert.AreEqual(
             "001_initial",
@@ -377,6 +398,16 @@ public sealed class DatabaseMigratorTests
             ExecuteScalarString(
                 upgraded,
                 "SELECT content_digest FROM schema_migrations WHERE version = 2;"));
+        Assert.AreEqual(
+            "003_audit_chain",
+            ExecuteScalarString(
+                upgraded,
+                "SELECT name FROM schema_migrations WHERE version = 3;"));
+        Assert.AreEqual(
+            ReadEmbeddedMigrationDigest("003_audit_chain").Hex,
+            ExecuteScalarString(
+                upgraded,
+                "SELECT content_digest FROM schema_migrations WHERE version = 3;"));
         AssertDatabaseChecksPass(upgraded);
     }
 
@@ -492,6 +523,293 @@ public sealed class DatabaseMigratorTests
             ExecuteScalarInt64(
                 connection,
                 "SELECT COUNT(*) FROM sqlite_schema WHERE type IN ('view', 'trigger');"));
+    }
+
+    [TestMethod]
+    public void Migration003_DefinesMinimalStrictAuditChainSidecar()
+    {
+        using TemporaryDatabase temporary = CreateMigratedDatabase();
+        using SqliteConnection connection = OpenConnection(temporary.DatabasePath);
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "sequence_number",
+                "audit_event_id",
+                "format_version",
+                "previous_hash",
+                "event_hash",
+            },
+            GetTableColumns(connection, "audit_chain_entries"));
+        Assert.AreEqual(
+            1L,
+            ExecuteScalarInt64(
+                connection,
+                """
+                    SELECT strict
+                    FROM pragma_table_list
+                    WHERE schema = 'main'
+                      AND type = 'table'
+                      AND name = 'audit_chain_entries';
+                    """));
+        CollectionAssert.AreEqual(
+            new[] { "audit_events:audit_event_id->id:RESTRICT:RESTRICT" },
+            GetForeignKeyBindings(connection, "audit_chain_entries"));
+        Assert.AreEqual(
+            0L,
+            ExecuteScalarInt64(
+                connection,
+                """
+                    SELECT COUNT(*)
+                    FROM sqlite_schema
+                    WHERE type = 'index'
+                      AND tbl_name = 'audit_chain_entries'
+                      AND name NOT LIKE 'sqlite_%';
+                    """));
+
+        InsertProject(connection, ProjectId);
+        InsertAuditEvent(
+            connection,
+            AuditEventId,
+            ProjectId,
+            compositionVersionId: null,
+            compositionVersionDigest: null);
+        AssertConstraintViolation(
+            () => InsertAuditChainEntry(
+                connection,
+                sequenceNumber: 0,
+                AuditEventId,
+                formatVersion: 1,
+                previousHash: new string('0', 64),
+                eventHash: DigestA));
+        AssertConstraintViolation(
+            () => InsertAuditChainEntry(
+                connection,
+                sequenceNumber: 1,
+                AuditEventId,
+                formatVersion: 2,
+                previousHash: new string('0', 64),
+                eventHash: DigestA));
+        AssertConstraintViolation(
+            () => InsertAuditChainEntry(
+                connection,
+                sequenceNumber: 1,
+                AuditEventId,
+                formatVersion: 1,
+                previousHash: new string('A', 64),
+                eventHash: DigestA));
+        InsertAuditChainEntry(
+            connection,
+            sequenceNumber: 1,
+            AuditEventId,
+            formatVersion: 1,
+            previousHash: new string('0', 64),
+            eventHash: DigestA);
+        AssertConstraintViolation(
+            () => InsertAuditChainEntry(
+                connection,
+                sequenceNumber: 2,
+                AuditEventId,
+                formatVersion: 1,
+                previousHash: DigestA,
+                eventHash: DigestB));
+        AssertConstraintViolation(
+            () => ExecuteNonQuery(
+                connection,
+                "DELETE FROM audit_events WHERE id = $id;",
+                ("$id", AuditEventId)));
+        AssertDatabaseChecksPass(connection);
+    }
+
+    [TestMethod]
+    public void Migration003_BackfillsLegacyVersionTwoDeterministicallyWithoutRowIdAuthority()
+    {
+        using TemporaryDatabase first = new();
+        using TemporaryDatabase second = new();
+        CreateExactVersionTwoDatabase(first);
+        CreateExactVersionTwoDatabase(second);
+        SeedLegacyAuditEvents(first, reverseInsertionOrder: false);
+        SeedLegacyAuditEvents(second, reverseInsertionOrder: true);
+
+        DatabaseMigrationResult firstResult = DatabaseMigrator.Migrate(
+            first.DatabasePath,
+            first.BackupDirectory,
+            new FixedTimeProvider(FixedUtcNow));
+        DatabaseMigrationResult secondResult = DatabaseMigrator.Migrate(
+            second.DatabasePath,
+            second.BackupDirectory,
+            new FixedTimeProvider(FixedUtcNow));
+
+        Assert.IsTrue(firstResult.Applied);
+        Assert.IsTrue(secondResult.Applied);
+        string[] firstChain = GetAuditChainRows(first.DatabasePath);
+        string[] secondChain = GetAuditChainRows(second.DatabasePath);
+        CollectionAssert.AreEqual(firstChain, secondChain);
+        CollectionAssert.AreEqual(
+            new[] { OtherAuditEventId, ThirdAuditEventId, AuditEventId },
+            firstChain.Select(static row => row.Split('|')[1]).ToArray());
+        new AuditLog(first.DatabasePath).Verify();
+        new AuditLog(second.DatabasePath).Verify();
+
+        string[] backups = GetBackupFiles(first);
+        DatabaseMigrationResult noOp = DatabaseMigrator.Migrate(
+            first.DatabasePath,
+            first.BackupDirectory,
+            new AlwaysThrowingTimeProvider());
+        Assert.IsFalse(noOp.Applied);
+        CollectionAssert.AreEqual(backups, GetBackupFiles(first));
+        CollectionAssert.AreEqual(firstChain, GetAuditChainRows(first.DatabasePath));
+    }
+
+    [TestMethod]
+    public void Migration003_MalformedLegacyAuditEventRollsBackTableBackfillAndMetadata()
+    {
+        using TemporaryDatabase temporary = new();
+        CreateExactVersionTwoDatabase(temporary);
+        using (SqliteConnection connection = OpenConnection(temporary.DatabasePath))
+        {
+            InsertAuditEvent(
+                connection,
+                AuditEventId,
+                ProjectId,
+                compositionVersionId: null,
+                compositionVersionDigest: null,
+                actorRole: "UnknownRole",
+                occurredAt: CanonicalEventTimestamp);
+        }
+
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => DatabaseMigrator.Migrate(
+                temporary.DatabasePath,
+                temporary.BackupDirectory,
+                new FixedTimeProvider(FixedUtcNow)));
+
+        Assert.AreEqual(1, GetBackupFiles(temporary).Length);
+        using SqliteConnection verification = OpenConnection(temporary.DatabasePath);
+        Assert.AreEqual(
+            0L,
+            ExecuteScalarInt64(
+                verification,
+                """
+                    SELECT COUNT(*)
+                    FROM sqlite_schema
+                    WHERE type = 'table' AND name = 'audit_chain_entries';
+                    """));
+        Assert.AreEqual(
+            2L,
+            ExecuteScalarInt64(verification, "SELECT COUNT(*) FROM schema_migrations;"));
+        Assert.AreEqual(
+            1L,
+            ExecuteScalarInt64(verification, "SELECT COUNT(*) FROM audit_events;"));
+        AssertDatabaseChecksPass(verification);
+    }
+
+    [TestMethod]
+    public void Migration003_LegacyForeignKeyViolationRollsBackTableBackfillAndMetadata()
+    {
+        using TemporaryDatabase temporary = new();
+        CreateExactVersionTwoDatabase(temporary);
+        using (SqliteConnection connection = OpenConnection(temporary.DatabasePath))
+        {
+            ExecuteNonQuery(connection, "PRAGMA foreign_keys = OFF;");
+            InsertAuditEvent(
+                connection,
+                AuditEventId,
+                OtherProjectId,
+                compositionVersionId: null,
+                compositionVersionDigest: null);
+        }
+
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => DatabaseMigrator.Migrate(
+                temporary.DatabasePath,
+                temporary.BackupDirectory,
+                new FixedTimeProvider(FixedUtcNow)));
+
+        Assert.AreEqual(1, GetBackupFiles(temporary).Length);
+        using SqliteConnection verification = OpenConnection(temporary.DatabasePath);
+        Assert.AreEqual(
+            0L,
+            ExecuteScalarInt64(
+                verification,
+                """
+                    SELECT COUNT(*)
+                    FROM sqlite_schema
+                    WHERE type = 'table' AND name = 'audit_chain_entries';
+                    """));
+        Assert.AreEqual(
+            2L,
+            ExecuteScalarInt64(verification, "SELECT COUNT(*) FROM schema_migrations;"));
+        Assert.AreEqual(
+            OtherProjectId,
+            ExecuteScalarString(
+                verification,
+                "SELECT project_id FROM audit_events WHERE id = $id;",
+                ("$id", AuditEventId)));
+        using SqliteCommand command = verification.CreateCommand();
+        command.CommandText = "PRAGMA foreign_key_check;";
+        using SqliteDataReader reader = command.ExecuteReader();
+        Assert.IsTrue(reader.Read());
+        AssertIntegrityCheckIsExactlyOk(verification);
+    }
+
+    [TestMethod]
+    public void Migration003_MalformedUtf8LegacyReasonRollsBackTableBackfillAndMetadata()
+    {
+        using TemporaryDatabase temporary = new();
+        CreateExactVersionTwoDatabase(temporary);
+        using (SqliteConnection connection = OpenConnection(temporary.DatabasePath))
+        {
+            InsertAuditEvent(
+                connection,
+                AuditEventId,
+                ProjectId,
+                compositionVersionId: null,
+                compositionVersionDigest: null);
+            ExecuteNonQuery(
+                connection,
+                """
+                    UPDATE audit_events
+                    SET reason = CAST(X'80' AS TEXT)
+                    WHERE id = $id;
+                    """,
+                ("$id", AuditEventId));
+            Assert.AreEqual(
+                "80",
+                ExecuteScalarString(
+                    connection,
+                    "SELECT hex(CAST(reason AS BLOB)) FROM audit_events WHERE id = $id;",
+                    ("$id", AuditEventId)));
+        }
+
+        InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(
+            () => DatabaseMigrator.Migrate(
+                temporary.DatabasePath,
+                temporary.BackupDirectory,
+                new FixedTimeProvider(FixedUtcNow)));
+        Assert.AreEqual("Stored audit chain data is invalid.", exception.Message);
+
+        Assert.AreEqual(1, GetBackupFiles(temporary).Length);
+        using SqliteConnection verification = OpenConnection(temporary.DatabasePath);
+        Assert.AreEqual(
+            0L,
+            ExecuteScalarInt64(
+                verification,
+                """
+                    SELECT COUNT(*)
+                    FROM sqlite_schema
+                    WHERE type = 'table' AND name = 'audit_chain_entries';
+                    """));
+        Assert.AreEqual(
+            2L,
+            ExecuteScalarInt64(verification, "SELECT COUNT(*) FROM schema_migrations;"));
+        Assert.AreEqual(
+            "80",
+            ExecuteScalarString(
+                verification,
+                "SELECT hex(CAST(reason AS BLOB)) FROM audit_events WHERE id = $id;",
+                ("$id", AuditEventId)));
+        AssertDatabaseChecksPass(verification);
     }
 
     [TestMethod]
@@ -755,7 +1073,7 @@ public sealed class DatabaseMigratorTests
 
         Assert.IsFalse(second.Applied);
         Assert.IsNull(second.BackupPath);
-        Assert.AreEqual(2, second.SchemaVersion);
+        Assert.AreEqual(3, second.SchemaVersion);
         Assert.AreEqual(first.SchemaDigest, second.SchemaDigest);
         CollectionAssert.AreEqual(originalBackups, GetBackupFiles(temporary));
 
@@ -1093,7 +1411,7 @@ public sealed class DatabaseMigratorTests
                                 content_digest,
                                 applied_at
                             )
-                            VALUES (3, '003_unknown', $digest, $applied_at);
+                            VALUES (4, '004_unknown', $digest, $applied_at);
                             """,
                         ("$digest", DigestA),
                         ("$applied_at", Timestamp));
@@ -1127,6 +1445,7 @@ public sealed class DatabaseMigratorTests
     [DataRow("index")]
     [DataRow("jobs-table")]
     [DataRow("jobs-index")]
+    [DataRow("audit-chain-table")]
     public void Migrate_CurrentMetadataWithAlteredSchemaCreatesBackupThenFailsClosed(
         string mutation)
     {
@@ -1141,6 +1460,7 @@ public sealed class DatabaseMigratorTests
                     "index" => "DROP INDEX idx_artifacts_content_digest;",
                     "jobs-table" => "DROP TABLE job_heartbeats;",
                     "jobs-index" => "DROP INDEX idx_jobs_state_created_at;",
+                    "audit-chain-table" => "DROP TABLE audit_chain_entries;",
                     _ => throw new AssertFailedException("Unknown schema mutation."),
                 });
             AssertDatabaseChecksPass(connection);
@@ -1248,7 +1568,7 @@ public sealed class DatabaseMigratorTests
         Assert.IsTrue(retry.Applied);
         Assert.AreEqual(2, GetBackupFiles(temporary).Length);
         using SqliteConnection migrated = OpenConnection(temporary.DatabasePath);
-        Assert.AreEqual(13, GetUserTableNames(migrated).Length);
+        Assert.AreEqual(14, GetUserTableNames(migrated).Length);
         AssertDatabaseChecksPass(migrated);
     }
 
@@ -1269,9 +1589,9 @@ public sealed class DatabaseMigratorTests
             0L,
             ExecuteScalarInt64(connection, "SELECT COUNT(*) FROM projects;"));
         Assert.AreEqual(
-            2L,
+            3L,
             ExecuteScalarInt64(connection, "SELECT COUNT(*) FROM schema_migrations;"));
-        Assert.AreEqual(13, GetUserTableNames(connection).Length);
+        Assert.AreEqual(14, GetUserTableNames(connection).Length);
         AssertDatabaseChecksPass(connection);
     }
 
@@ -1351,6 +1671,86 @@ public sealed class DatabaseMigratorTests
             ("$applied_at", Timestamp));
         InsertProject(connection, ProjectId);
         AssertDatabaseChecksPass(connection);
+    }
+
+    private static void CreateExactVersionTwoDatabase(TemporaryDatabase temporary)
+    {
+        CreateExactVersionOneDatabase(temporary);
+        using SqliteConnection connection = OpenConnection(temporary.DatabasePath);
+        ExecuteNonQuery(connection, ReadEmbeddedMigrationSql("002_jobs"));
+        ExecuteNonQuery(
+            connection,
+            """
+                INSERT INTO schema_migrations (
+                    version,
+                    name,
+                    content_digest,
+                    applied_at
+                )
+                VALUES (2, '002_jobs', $digest, $applied_at);
+                """,
+            ("$digest", ReadEmbeddedMigrationDigest("002_jobs").Hex),
+            ("$applied_at", Timestamp));
+        AssertDatabaseChecksPass(connection);
+    }
+
+    private static void SeedLegacyAuditEvents(
+        TemporaryDatabase temporary,
+        bool reverseInsertionOrder)
+    {
+        (string Id, string OccurredAt, string Reason)[] events =
+        [
+            (AuditEventId, "2030-01-02T03:04:06.0000000+00:00", "Later event"),
+            (ThirdAuditEventId, CanonicalEventTimestamp, "Same time, later ID"),
+            (OtherAuditEventId, CanonicalEventTimestamp, "Same time, earlier ID"),
+        ];
+        if (reverseInsertionOrder)
+        {
+            Array.Reverse(events);
+        }
+
+        using SqliteConnection connection = OpenConnection(temporary.DatabasePath);
+        foreach ((string id, string occurredAt, string reason) in events)
+        {
+            InsertAuditEvent(
+                connection,
+                id,
+                ProjectId,
+                compositionVersionId: null,
+                compositionVersionDigest: null,
+                occurredAt: occurredAt,
+                reason: reason);
+        }
+    }
+
+    private static string[] GetAuditChainRows(string databasePath)
+    {
+        using SqliteConnection connection = OpenConnection(databasePath);
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                sequence_number,
+                audit_event_id,
+                format_version,
+                previous_hash,
+                event_hash
+            FROM audit_chain_entries
+            ORDER BY sequence_number;
+            """;
+        using SqliteDataReader reader = command.ExecuteReader();
+        var rows = new List<string>();
+        while (reader.Read())
+        {
+            rows.Add(string.Join(
+                '|',
+                reader.GetInt64(0).ToString(CultureInfo.InvariantCulture),
+                reader.GetString(1),
+                reader.GetInt64(2).ToString(CultureInfo.InvariantCulture),
+                reader.GetString(3),
+                reader.GetString(4)));
+        }
+
+        return rows.ToArray();
     }
 
     private static SqliteConnection OpenConnection(
@@ -1762,7 +2162,10 @@ public sealed class DatabaseMigratorTests
         string id,
         string projectId,
         string? compositionVersionId,
-        string? compositionVersionDigest)
+        string? compositionVersionDigest,
+        string actorRole = "Administrator",
+        string occurredAt = Timestamp,
+        string reason = "Project registered")
     {
         ExecuteNonQuery(
             connection,
@@ -1794,11 +2197,44 @@ public sealed class DatabaseMigratorTests
             ("$project_id", projectId),
             ("$kind", "ProjectRegistered"),
             ("$actor_id", "S-1-5-21-1000"),
-            ("$actor_role", "Administrator"),
-            ("$occurred_at", Timestamp),
-            ("$reason", "Project registered"),
+            ("$actor_role", actorRole),
+            ("$occurred_at", occurredAt),
+            ("$reason", reason),
             ("$version_id", compositionVersionId),
             ("$digest", compositionVersionDigest));
+    }
+
+    private static void InsertAuditChainEntry(
+        SqliteConnection connection,
+        long sequenceNumber,
+        string auditEventId,
+        long formatVersion,
+        string previousHash,
+        string eventHash)
+    {
+        ExecuteNonQuery(
+            connection,
+            """
+                INSERT INTO audit_chain_entries (
+                    sequence_number,
+                    audit_event_id,
+                    format_version,
+                    previous_hash,
+                    event_hash
+                )
+                VALUES (
+                    $sequence_number,
+                    $audit_event_id,
+                    $format_version,
+                    $previous_hash,
+                    $event_hash
+                );
+                """,
+            ("$sequence_number", sequenceNumber),
+            ("$audit_event_id", auditEventId),
+            ("$format_version", formatVersion),
+            ("$previous_hash", previousHash),
+            ("$event_hash", eventHash));
     }
 
     private static void InsertArtifact(
@@ -2080,6 +2516,7 @@ public sealed class DatabaseMigratorTests
         [
             (1, "001_initial", ReadEmbeddedMigrationDigest("001_initial")),
             (2, "002_jobs", ReadEmbeddedMigrationDigest("002_jobs")),
+            (3, "003_audit_chain", ReadEmbeddedMigrationDigest("003_audit_chain")),
         ];
 
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);

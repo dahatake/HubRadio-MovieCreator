@@ -9,5 +9,7 @@
                       LogicalName="HubRadio.Infrastructure.Database.Migrations.001_initial.sql" />
     <EmbeddedResource Include="Database\Migrations\002_jobs.sql"
                       LogicalName="HubRadio.Infrastructure.Database.Migrations.002_jobs.sql" />
+    <EmbeddedResource Include="Database\Migrations\003_audit_chain.sql"
+                      LogicalName="HubRadio.Infrastructure.Database.Migrations.003_audit_chain.sql" />
   </ItemGroup>
 </Project>
