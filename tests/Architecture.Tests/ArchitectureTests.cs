@@ -249,6 +249,33 @@ public sealed class ArchitectureTests
     }
 
     [TestMethod]
+    public void WorkspaceAclDoesNotInvokeExternalProcesses()
+    {
+        string root = GetRepositoryRoot();
+        string sourcePath = Path.Combine(
+            root,
+            "src",
+            "HubRadio.Infrastructure",
+            "Security",
+            "WorkspaceAcl.cs");
+        string source = File.ReadAllText(sourcePath);
+        string[] forbiddenFragments =
+        [
+            "System.Diagnostics.Process",
+            "ProcessStartInfo",
+            "Process.Start",
+            "icacls",
+        ];
+
+        foreach (string fragment in forbiddenFragments)
+        {
+            Assert.IsFalse(
+                source.Contains(fragment, StringComparison.Ordinal),
+                $"WorkspaceAcl must use managed access-control APIs, not '{fragment}'.");
+        }
+    }
+
+    [TestMethod]
     public void ProductSourceDoesNotIntroduceRuntimeServers()
     {
         string root = GetRepositoryRoot();
