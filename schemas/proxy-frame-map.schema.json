@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical immutable map derived only from observed source and proxy presentation timestamps. Each proxy frame maps to the last source frame whose PTS is not later than the proxy PTS, clamped to the first source frame only when the proxy precedes it. Source-to-proxy lookup uses the last observed proxy PTS not later than the source time and reports source times before the proxy timeline as unrepresentable. Runtime validation requires exact input-index digest binding, contiguous proxy sequences, strictly increasing proxy PTS, monotonic source mappings, and an exact round-trip check of every representable source PTS. maximumError is evidence, not a production acceptance threshold; nominal frame rate fallback is forbidden.",
+  "title": "ProxyFrameMap",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sourceAssetId",
+    "projectId",
+    "sourceContentDigest",
+    "sourcePtsIndexDigest",
+    "proxyContentDigest",
+    "proxyPtsIndexDigest",
+    "sourceFrameCount",
+    "sourcePresentationStart",
+    "sourcePresentationEnd",
+    "roundTrip",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "sourceAssetId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "projectId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "sourceContentDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "sourcePtsIndexDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "proxyContentDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "proxyPtsIndexDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "sourceFrameCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "sourcePresentationStart": {
+      "$ref": "#/$defs/rationalTime"
+    },
+    "sourcePresentationEnd": {
+      "$ref": "#/$defs/rationalTime"
+    },
+    "roundTrip": {
+      "$ref": "#/$defs/roundTrip"
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "rationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "nonnegativeRationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "roundTrip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "testedSourceFrameCount",
+        "unrepresentableSourceFrameCount",
+        "maximumError"
+      ],
+      "properties": {
+        "testedSourceFrameCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "unrepresentableSourceFrameCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "maximumError": {
+          "$ref": "#/$defs/nonnegativeRationalTime"
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proxyFrameSequence",
+        "proxyPresentationTime",
+        "sourceFrameSequence",
+        "sourcePresentationTime"
+      ],
+      "properties": {
+        "proxyFrameSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "proxyPresentationTime": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "sourceFrameSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "sourcePresentationTime": {
+          "$ref": "#/$defs/rationalTime"
+        }
+      }
+    }
+  }
+}
