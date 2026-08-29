@@ -352,6 +352,26 @@ public sealed class ArtifactStore
         }
     }
 
+    internal string GetValidatedRegisteredArtifactPath(
+        EntityId<ArtifactIdTag> artifactId)
+    {
+        ArgumentNullException.ThrowIfNull(artifactId);
+
+        StoredArtifact artifact = GetArtifact(artifactId)
+            ?? throw Failure(ArtifactStoreFailureReason.RegisteredArtifactMissing);
+        string artifactPath = ResolveRegisteredArtifactPath(artifact);
+        ValidateRegisteredArtifactPath(artifactPath);
+
+        StoredArtifact current = GetArtifact(artifactId)
+            ?? throw Failure(ArtifactStoreFailureReason.RegisteredArtifactMissing);
+        if (!HasSameMetadata(artifact, current))
+        {
+            throw Failure(ArtifactStoreFailureReason.DatabaseRejected);
+        }
+
+        return artifactPath;
+    }
+
     public async Task<BinaryVerificationResult> VerifyRegisteredAsync(
         EntityId<ArtifactIdTag> artifactId,
         BinaryVerifier binaryVerifier,
