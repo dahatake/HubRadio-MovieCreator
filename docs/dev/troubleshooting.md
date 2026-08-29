@@ -1,6 +1,6 @@
-# Stage 0 トラブルシューティング
+# 開発・Stage 0 トラブルシューティング
 
-この文書は、現在のFoundation scaffold、benchmark、固定fixture動画生成ツールを対象にします。編集GUIは未実装のため、機能別のGUI障害対応手順はまだありません。
+この文書は、現在のFoundation、Stage 1基盤、benchmark、固定fixture動画生成ツールを対象にします。編集GUIは未実装のため、GUI操作手順ではなくtyped service境界を記載します。
 
 最初に [開発を始める](getting-started.md) の前提条件を確認してください。
 
@@ -97,6 +97,17 @@ pwsh.exe -NoLogo -NoProfile -File benchmarks\setup-python-env.ps1 -PythonExecuta
 - 問題レポートは既存の履歴を消さず追記します。
 
 問題レポートの候補原因を、確認済みの根本原因と読み替えないでください。
+
+## backup restore が `ReconciliationRequired=true` で失敗する
+
+`.hubradio.restore-*` や `.hubradio.previous-*` をExplorerから直接削除・改名しません。
+
+- `RestoreValidationFailed` で現行workspaceが残っている場合は、`ListIncompleteRestoresAsync`で隔離領域を列挙し、利用者が破棄を選んだ対象だけを`DiscardIncompleteRestoreAsync`へ渡します。
+- `RollbackFailed` の場合は、`ListIncompleteCutoversAsync`で同一operation IDに結ばれた候補を列挙します。利用者が旧workspaceへの復帰を選んだ対象だけを`RollbackIncompleteCutoverAsync`へ渡します。
+- `RestoredWorkspaceIsActive=true` は、active workspaceの検証に失敗し、旧workspaceが保持されている状態です。rollbackはactive側をrestore隔離名へ移してから旧workspaceを戻します。
+- 候補が列挙できない、またはrollbackが再度失敗する場合は、自動削除やDB修復をせず、workspaceとbackup rootを保持して調査します。
+
+成功したrestoreが保持する旧workspaceは、active workspaceが正常なら不完全cutoverとして列挙されません。暗号化、保持期間、削除UIは未完了の別gateです。
 
 ## 生成動画が `git status` に出ない
 

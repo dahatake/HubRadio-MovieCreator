@@ -49,7 +49,7 @@ U-001 の WebView2 の 2 コードは起動・復旧画面へ表示するだけ�
 - `Exception.Data`
 - transcript、字幕、prompt、media filename、media metadata、command output
 
-Windows上のlog pathはローカル固定diskの通常pathだけを受理する。UNC、device namespace、named pipe、alternate data stream、既存のreparse pointを含むpathはI/O前と書込み直前に拒否する。workspace root内への配置とACLは後続S-003の境界だが、J-009だけでも端末外shareや別streamをlocal logとして受理しない。
+Windows上のlog pathはローカル固定diskの通常pathだけを受理する。UNC、device namespace、named pipe、alternate data stream、既存のreparse pointを含むpathはI/O前と書込み直前に拒否する。workspace rootとACLの保護はS-003コードで実装済みだが別account受入待ちであり、J-009単体でも端末外shareや別streamをlocal logとして受理しない。
 
 各書込みでは、既存の完全かつ schema-valid な record を新しい順に byte 上限へ収め、一時 file を flush してから同一 directory 内で置換する。record の途中を byte truncate しない。同じ log path への process 内書込みは共有 gate、別 process との書込みはゼロ長 lock file で直列化され、待機と file I/O は caller cancellation を受け取る。既定上限は 1 MiB、設定可能範囲は 1 KiB から 16 MiB であり、log file は上限を超えて増加しない。
 

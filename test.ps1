@@ -14,7 +14,6 @@ if ($PSVersionTable.PSEdition -ne 'Core') {
 }
 
 $repoRoot = $PSScriptRoot
-$solutionPath = Join-Path $repoRoot 'HubRadio.slnx'
 $webRoot = Join-Path $repoRoot 'src\HubRadio.Web'
 $workerRoot = Join-Path $repoRoot 'src\HubRadio.Worker'
 $workerPython = Join-Path $workerRoot '.venv\Scripts\python.exe'
@@ -67,17 +66,38 @@ function Invoke-CheckedCommand {
 
 & (Join-Path $repoRoot 'build.ps1') -Configuration $Configuration
 
-$dotnet = Get-RequiredCommandPath -Name 'dotnet.exe'
 $npm = Get-RequiredCommandPath -Name 'npm.cmd'
 
-Invoke-CheckedCommand -FilePath $dotnet -ArgumentList @(
-    'test', $solutionPath,
-    '--configuration', $Configuration,
-    '--no-build',
-    '--no-restore',
-    '-p:Platform=x64',
-    '--verbosity', 'minimal'
-) -WorkingDirectory $repoRoot -Description '.NET tests'
+$dotnetTestExecutables = @(
+    'tests\Architecture.Tests\bin\{0}\net10.0\Architecture.Tests.exe' -f $Configuration
+    'tests\HubRadio.Core.Tests\bin\{0}\net10.0\HubRadio.Core.Tests.exe' -f $Configuration
+    'tests\HubRadio.Infrastructure.Tests\bin\{0}\net10.0\HubRadio.Infrastructure.Tests.exe' -f $Configuration
+    'tests\HubRadio.App.Tests\bin\{0}\net10.0-windows10.0.26100.0\win-x64\HubRadio.App.Tests.exe' -f $Configuration
+)
+
+foreach ($relativeExecutable in $dotnetTestExecutables) {
+    $testExecutable = Join-Path $repoRoot $relativeExecutable
+    if (-not (Test-Path -LiteralPath $testExecutable -PathType Leaf)) {
+        throw "Built .NET test executable is missing: $relativeExecutable"
+    }
+
+    $previousProcessorCount = $env:DOTNET_PROCESSOR_COUNT
+    try {
+        if ($relativeExecutable -like '*HubRadio.Infrastructure.Tests*') {
+            # SQLite/ACL/file-cutover integration tests contend nondeterministically
+            # under MTP worker concurrency; keep this assembly deterministic.
+            $env:DOTNET_PROCESSOR_COUNT = '1'
+        }
+
+        Invoke-CheckedCommand -FilePath $testExecutable -ArgumentList @(
+            '--progress', 'off'
+        ) `
+            -WorkingDirectory $repoRoot -Description ".NET tests: $relativeExecutable"
+    }
+    finally {
+        $env:DOTNET_PROCESSOR_COUNT = $previousProcessorCount
+    }
+}
 
 Invoke-CheckedCommand -FilePath $npm -ArgumentList @('test') `
     -WorkingDirectory $webRoot -Description 'Web tests'
@@ -85,4 +105,4 @@ Invoke-CheckedCommand -FilePath $npm -ArgumentList @('test') `
 Invoke-CheckedCommand -FilePath $workerPython -ArgumentList @('-m', 'pytest') `
     -WorkingDirectory $workerRoot -Description 'Python worker tests'
 
-Write-Information 'All test runners completed successfully.' -InformationAction Continue
+Write-Information 'All automated test runners completed successfully. Environment-gated inconclusive tests remain separate acceptance evidence.' -InformationAction Continue

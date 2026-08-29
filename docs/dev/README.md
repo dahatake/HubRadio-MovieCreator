@@ -3,7 +3,7 @@
 HubRadio MovieCreator の開発、保守、技術検証、設計判断に関する入口です。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation `F-001〜F-009`は完了済みで、全203 task中56件を完了しました。正規model／process基盤では`D-001〜D-010`、`D-012`、`J-003`、`J-004`、`J-009`、`J-010`、`M-001`、`R-004`、`R-005`、`S-001`を実装済みです。UI基盤では`U-001〜U-003`としてWinUI/WebView2 startup、secure bundled host、typed ping bridgeを実装しました。SQLite、編集操作、業務UI、製品worker protocol、配布は未実装で、次は[詳細実装計画](planning/implementation-plan.md)の依存解放済みtaskを変更境界ごとに実行します。
+> Stage 0 と Foundation `F-001〜F-009`は完了済みで、2026年8月30日時点で全203 task中93件を完了しました。`D-001〜D-016`、`J-001〜J-010`、`M-001〜M-010`、`R-001〜R-009/R-016`、`U-001〜U-004`、主要なS系統制を実装済みです。`S-003`は別account受入待ち、`M-011`はdurable restart checkpoint未達で監査中です。業務UI、解析後段、Render IR以降、配布は未完了です。最新状態は[詳細実装計画](planning/implementation-plan.md)を参照してください。
 
 ## 目的から探す
 

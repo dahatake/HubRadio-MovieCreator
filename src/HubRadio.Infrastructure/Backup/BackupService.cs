@@ -135,11 +135,38 @@ public sealed class IncompleteRestoreCandidate
     public string DirectoryName { get; }
 }
 
+public sealed class IncompleteCutoverCandidate
+{
+    internal IncompleteCutoverCandidate(
+        EntityId<BackupIdTag> backupId,
+        string previousWorkspaceDirectoryName,
+        string restoreDirectoryName,
+        bool restoredWorkspaceIsActive)
+    {
+        ArgumentNullException.ThrowIfNull(backupId);
+        ArgumentNullException.ThrowIfNull(previousWorkspaceDirectoryName);
+        ArgumentNullException.ThrowIfNull(restoreDirectoryName);
+        BackupId = backupId;
+        PreviousWorkspaceDirectoryName = previousWorkspaceDirectoryName;
+        RestoreDirectoryName = restoreDirectoryName;
+        RestoredWorkspaceIsActive = restoredWorkspaceIsActive;
+    }
+
+    public EntityId<BackupIdTag> BackupId { get; }
+
+    public string PreviousWorkspaceDirectoryName { get; }
+
+    public string RestoreDirectoryName { get; }
+
+    public bool RestoredWorkspaceIsActive { get; }
+}
+
 public sealed class BackupService
 {
     private const int DefaultTimeoutSeconds = 5;
     private const int FileBufferSize = 64 * 1024;
     private const string RestoreDirectoryPrefix = ".hubradio.restore-";
+    private const string PreviousDirectoryPrefix = ".hubradio.previous-";
 
     private static readonly SemaphoreSlim OperationGate = new(1, 1);
 
@@ -210,7 +237,6 @@ public sealed class BackupService
                 nameof(backupRootPath));
         }
 
-        VerifyProtectedRoots();
     }
 
     public async Task<BackupResult> CreateBackupAsync(
@@ -268,6 +294,39 @@ public sealed class BackupService
         try
         {
             DiscardIncompleteRestoreCore(candidate, cancellationToken);
+        }
+        finally
+        {
+            OperationGate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<IncompleteCutoverCandidate>>
+        ListIncompleteCutoversAsync(
+            CancellationToken cancellationToken = default)
+    {
+        await OperationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await ListIncompleteCutoversCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            OperationGate.Release();
+        }
+    }
+
+    public async Task RollbackIncompleteCutoverAsync(
+        IncompleteCutoverCandidate candidate,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        await OperationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await RollbackIncompleteCutoverCoreAsync(candidate, cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -607,10 +666,10 @@ public sealed class BackupService
                 _currentActorSid);
             cancellationToken.ThrowIfCancellationRequested();
 
-            return Cutover(
+            return await CutoverAsync(
                 backupId,
                 restorePath,
-                manifest.PayloadFileCount);
+                manifest.PayloadFileCount).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -696,7 +755,6 @@ public sealed class BackupService
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            VerifyProtectedRoots();
             string workspaceParent = GetWorkspaceParent();
             WorkspacePathSafety.ValidateExistingDirectoryAncestorChain(
                 workspaceParent);
@@ -765,6 +823,329 @@ public sealed class BackupService
                 BackupServiceFailureReason.RestoreValidationFailed,
                 reconciliationRequired: true);
         }
+    }
+
+    private async Task<IReadOnlyList<IncompleteCutoverCandidate>>
+        ListIncompleteCutoversCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string workspaceParent = GetWorkspaceParent();
+            WorkspacePathSafety.ValidateExistingDirectoryAncestorChain(
+                workspaceParent);
+            Dictionary<ReservedDirectoryKey, string> previousByOperation =
+                ReadReservedDirectories(
+                    workspaceParent,
+                    PreviousDirectoryPrefix,
+                    cancellationToken);
+            Dictionary<ReservedDirectoryKey, string> restoreByOperation =
+                ReadReservedDirectories(
+                    workspaceParent,
+                    RestoreDirectoryPrefix,
+                    cancellationToken);
+            bool workspaceExists =
+                WorkspacePathSafety.PathEntryExistsConservatively(_workspacePath);
+            bool workspaceIsIntact = workspaceExists &&
+                await IsWorkspaceIntactAsync(
+                    _workspacePath,
+                    _databasePath,
+                    requireNoStagingCandidates: false,
+                    cancellationToken).ConfigureAwait(false);
+            var candidates = new List<IncompleteCutoverCandidate>();
+            foreach ((ReservedDirectoryKey key, string previousName) in
+                previousByOperation.OrderBy(
+                    static pair => pair.Value,
+                    StringComparer.Ordinal))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                bool restoreExists = restoreByOperation.TryGetValue(
+                    key,
+                    out string? restoreName);
+                if (workspaceExists && restoreExists)
+                {
+                    throw Failure(
+                        BackupServiceFailureReason.RollbackFailed,
+                        reconciliationRequired: true);
+                }
+
+                bool restoredWorkspaceIsActive =
+                    workspaceExists && !workspaceIsIntact;
+                if (!workspaceExists || restoredWorkspaceIsActive)
+                {
+                    candidates.Add(new IncompleteCutoverCandidate(
+                        key.BackupId,
+                        previousName,
+                        restoreName ?? string.Concat(
+                            RestoreDirectoryPrefix,
+                            key.BackupId.ToString(),
+                            "-",
+                            key.OperationId),
+                        restoredWorkspaceIsActive));
+                }
+            }
+
+            return Array.AsReadOnly(candidates.ToArray());
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (BackupServiceException)
+        {
+            throw;
+        }
+        catch (WorkspaceAclException)
+        {
+            throw Failure(
+                BackupServiceFailureReason.AccessControlInvalid,
+                reconciliationRequired: true);
+        }
+        catch (Exception exception) when (IsOperationalFailure(exception))
+        {
+            throw Failure(
+                BackupServiceFailureReason.RollbackFailed,
+                reconciliationRequired: true);
+        }
+    }
+
+    private async Task RollbackIncompleteCutoverCoreAsync(
+        IncompleteCutoverCandidate candidate,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!TryParseReservedDirectoryName(
+                    candidate.PreviousWorkspaceDirectoryName,
+                    PreviousDirectoryPrefix,
+                    out ReservedDirectoryKey previousKey) ||
+                !TryParseReservedDirectoryName(
+                    candidate.RestoreDirectoryName,
+                    RestoreDirectoryPrefix,
+                    out ReservedDirectoryKey restoreKey) ||
+                previousKey != restoreKey ||
+                previousKey.BackupId != candidate.BackupId)
+            {
+                throw Failure(
+                    BackupServiceFailureReason.RollbackFailed,
+                    reconciliationRequired: true);
+            }
+
+            IReadOnlyList<IncompleteCutoverCandidate> current =
+                await ListIncompleteCutoversCoreAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            if (!current.Any(item =>
+                    item.BackupId == candidate.BackupId &&
+                    string.Equals(
+                        item.PreviousWorkspaceDirectoryName,
+                        candidate.PreviousWorkspaceDirectoryName,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        item.RestoreDirectoryName,
+                        candidate.RestoreDirectoryName,
+                        StringComparison.Ordinal) &&
+                    item.RestoredWorkspaceIsActive ==
+                        candidate.RestoredWorkspaceIsActive))
+            {
+                throw Failure(
+                    BackupServiceFailureReason.RollbackFailed,
+                    reconciliationRequired: true);
+            }
+
+            string workspaceParent = GetWorkspaceParent();
+            string previousPath = Path.Combine(
+                workspaceParent,
+                candidate.PreviousWorkspaceDirectoryName);
+            string restorePath = Path.Combine(
+                workspaceParent,
+                candidate.RestoreDirectoryName);
+            string databasePath = Path.Combine(previousPath, "hubradio.db");
+            _ = WorkspaceAcl.VerifyExisting(previousPath, _currentActorSid);
+            ValidateDatabaseAndAudit(databasePath);
+            WorkspaceRecoveryCheckResult recovery = await new WorkspaceRecovery(
+                    databasePath,
+                    previousPath,
+                    _timeProvider)
+                .CheckAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (!recovery.DatabaseUsable || !recovery.IsIntact)
+            {
+                throw Failure(
+                    BackupServiceFailureReason.RollbackFailed,
+                    reconciliationRequired: true);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (candidate.RestoredWorkspaceIsActive)
+            {
+                if (!WorkspacePathSafety.PathEntryExistsConservatively(
+                        _workspacePath) ||
+                    WorkspacePathSafety.PathEntryExistsConservatively(restorePath))
+                {
+                    throw Failure(
+                        BackupServiceFailureReason.RollbackFailed,
+                        reconciliationRequired: true);
+                }
+
+                WorkspacePathSafety.ValidateExistingPathChain(
+                    workspaceParent,
+                    _workspacePath,
+                    targetIsDirectory: true);
+                _directoryMove(_workspacePath, restorePath);
+                if (WorkspacePathSafety.PathEntryExistsConservatively(
+                        _workspacePath) ||
+                    !WorkspacePathSafety.PathEntryExistsConservatively(restorePath))
+                {
+                    throw Failure(
+                        BackupServiceFailureReason.RollbackFailed,
+                        reconciliationRequired: true);
+                }
+            }
+            else if (WorkspacePathSafety.PathEntryExistsConservatively(
+                _workspacePath))
+            {
+                throw Failure(
+                    BackupServiceFailureReason.RollbackFailed,
+                    reconciliationRequired: true);
+            }
+
+            _directoryMove(previousPath, _workspacePath);
+            try
+            {
+                if (!await IsWorkspaceIntactAsync(
+                        _workspacePath,
+                        _databasePath,
+                    requireNoStagingCandidates: false,
+                        CancellationToken.None).ConfigureAwait(false))
+                {
+                    throw new InvalidDataException(
+                        "The restored previous workspace is invalid.");
+                }
+            }
+            catch
+            {
+                if (!TryMoveDirectory(_workspacePath, previousPath))
+                {
+                    throw Failure(
+                        BackupServiceFailureReason.RollbackFailed,
+                        reconciliationRequired: true);
+                }
+
+                throw Failure(
+                    BackupServiceFailureReason.RollbackFailed,
+                    reconciliationRequired: true);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (BackupServiceException)
+        {
+            throw;
+        }
+        catch (WorkspaceAclException)
+        {
+            throw Failure(
+                BackupServiceFailureReason.AccessControlInvalid,
+                reconciliationRequired: true);
+        }
+        catch (Exception exception) when (IsOperationalFailure(exception))
+        {
+            throw Failure(
+                BackupServiceFailureReason.RollbackFailed,
+                reconciliationRequired: true);
+        }
+    }
+
+    private async Task<bool> IsWorkspaceIntactAsync(
+        string workspacePath,
+        string databasePath,
+        bool requireNoStagingCandidates,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            WorkspacePathSafety.ValidateExistingPathChain(
+                GetWorkspaceParent(),
+                workspacePath,
+                targetIsDirectory: true);
+            _ = WorkspaceAcl.VerifyExisting(workspacePath, _currentActorSid);
+            ValidateDatabaseAndAudit(databasePath);
+            WorkspaceRecoveryCheckResult recovery = await new WorkspaceRecovery(
+                    databasePath,
+                    workspacePath,
+                    _timeProvider)
+                .CheckAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return recovery.DatabaseUsable &&
+                recovery.IsIntact &&
+                recovery.Issues.Count == 0 &&
+                (!requireNoStagingCandidates ||
+                    recovery.StagingCandidates.Count == 0);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+            when (exception is WorkspaceAclException ||
+                IsOperationalFailure(exception))
+        {
+            return false;
+        }
+    }
+
+    private Dictionary<ReservedDirectoryKey, string> ReadReservedDirectories(
+        string workspaceParent,
+        string prefix,
+        CancellationToken cancellationToken)
+    {
+        string[] entries = Directory
+            .EnumerateFileSystemEntries(
+                workspaceParent,
+                string.Concat(prefix, "*"),
+                new EnumerationOptions
+                {
+                    RecurseSubdirectories = false,
+                    IgnoreInaccessible = false,
+                    ReturnSpecialDirectories = false,
+                    AttributesToSkip = 0,
+                    MatchCasing = MatchCasing.CaseInsensitive,
+                    MatchType = MatchType.Simple,
+                })
+            .OrderBy(static path => path, WorkspacePathSafety.PathComparer)
+            .ToArray();
+        var byOperation = new Dictionary<ReservedDirectoryKey, string>();
+        foreach (string entry in entries)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string directoryName = Path.GetFileName(entry);
+            if (!TryParseReservedDirectoryName(
+                    directoryName,
+                    prefix,
+                    out ReservedDirectoryKey key) ||
+                !byOperation.TryAdd(key, directoryName))
+            {
+                throw Failure(
+                    BackupServiceFailureReason.RollbackFailed,
+                    reconciliationRequired: true);
+            }
+
+            FileAttributes attributes =
+                WorkspacePathSafety.GetRequiredAttributes(entry);
+            WorkspacePathSafety.ValidateDirectoryAttributes(attributes);
+            WorkspacePathSafety.ValidateExistingPathChain(
+                workspaceParent,
+                entry,
+                targetIsDirectory: true);
+            _ = WorkspaceAcl.VerifyExisting(entry, _currentActorSid);
+        }
+
+        return byOperation;
     }
 
     private void DiscardIncompleteRestoreCore(
@@ -944,17 +1325,28 @@ public sealed class BackupService
         }
     }
 
-    private RestoreResult Cutover(
+    private async Task<RestoreResult> CutoverAsync(
         EntityId<BackupIdTag> backupId,
         string restorePath,
         int restoredFileCount)
     {
         string workspaceParent = GetWorkspaceParent();
+        if (!TryParseReservedDirectoryName(
+                Path.GetFileName(restorePath),
+                RestoreDirectoryPrefix,
+                out ReservedDirectoryKey restoreKey) ||
+            restoreKey.BackupId != backupId)
+        {
+            throw Failure(
+                BackupServiceFailureReason.CutoverFailed,
+                reconciliationRequired: true);
+        }
+
         string previousDirectoryName = string.Concat(
-            ".hubradio.previous-",
+            PreviousDirectoryPrefix,
             backupId.ToString(),
             "-",
-            Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
+            restoreKey.OperationId);
         string previousPath = Path.Combine(workspaceParent, previousDirectoryName);
         EnsurePathAbsent(previousPath);
 
@@ -968,7 +1360,16 @@ public sealed class BackupService
 
             _directoryMove(restorePath, _workspacePath);
             restoredMoved = true;
-            _ = WorkspaceAcl.VerifyExisting(_workspacePath, _currentActorSid);
+            if (!await IsWorkspaceIntactAsync(
+                    _workspacePath,
+                    _databasePath,
+                    requireNoStagingCandidates: true,
+                    CancellationToken.None).ConfigureAwait(false))
+            {
+                throw new InvalidDataException(
+                    "The active restored workspace is invalid.");
+            }
+
             return new RestoreResult(
                 backupId,
                 previousDirectoryName,
@@ -1673,21 +2074,39 @@ public sealed class BackupService
         string directoryName,
         [NotNullWhen(true)] out EntityId<BackupIdTag>? backupId)
     {
+        if (TryParseReservedDirectoryName(
+                directoryName,
+                RestoreDirectoryPrefix,
+                out ReservedDirectoryKey key))
+        {
+            backupId = key.BackupId;
+            return true;
+        }
+
         backupId = null;
+        return false;
+    }
+
+    private static bool TryParseReservedDirectoryName(
+        string directoryName,
+        string prefix,
+        out ReservedDirectoryKey key)
+    {
+        key = default;
         const int entityIdLength = 36;
         const int attemptIdLength = 32;
-        int expectedLength = RestoreDirectoryPrefix.Length +
+        int expectedLength = prefix.Length +
             entityIdLength + 1 + attemptIdLength;
         if (directoryName.Length != expectedLength ||
             !directoryName.StartsWith(
-                RestoreDirectoryPrefix,
+                prefix,
                 StringComparison.Ordinal))
         {
             return false;
         }
 
         string backupIdText = directoryName.Substring(
-            RestoreDirectoryPrefix.Length,
+            prefix.Length,
             entityIdLength);
         if (!EntityId<BackupIdTag>.TryParse(
                 backupIdText,
@@ -1696,7 +2115,7 @@ public sealed class BackupService
                 backupIdText,
                 parsedBackupId.ToString(),
                 StringComparison.Ordinal) ||
-            directoryName[RestoreDirectoryPrefix.Length + entityIdLength] != '-')
+            directoryName[prefix.Length + entityIdLength] != '-')
         {
             return false;
         }
@@ -1712,7 +2131,7 @@ public sealed class BackupService
             return false;
         }
 
-        backupId = parsedBackupId;
+        key = new ReservedDirectoryKey(parsedBackupId, attemptIdText);
         return true;
     }
 
@@ -1827,8 +2246,8 @@ public sealed class BackupService
 
     private static bool IsCutoverFailure(Exception exception) =>
         exception is IOException or UnauthorizedAccessException or SecurityException or
-            NotSupportedException or InvalidOperationException or WorkspaceAclException or
-            WorkspacePathSafetyException;
+            NotSupportedException or InvalidDataException or InvalidOperationException or
+            WorkspaceAclException or WorkspacePathSafetyException;
 
     private static BackupServiceException Failure(
         BackupServiceFailureReason reason,
@@ -1836,4 +2255,8 @@ public sealed class BackupService
         new(reason, reconciliationRequired);
 
     private sealed record FileSnapshot(long ByteSize, ContentDigest Sha256);
+
+    private readonly record struct ReservedDirectoryKey(
+        EntityId<BackupIdTag> BackupId,
+        string OperationId);
 }

@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Globalization;
+using System.IO.Compression;
 using System.Numerics;
 using System.Security;
 using System.Security.Cryptography;
@@ -20,6 +21,8 @@ namespace HubRadio.Infrastructure.Media;
 
 public sealed class PreviewAssetGenerationProfile
 {
+    // These values version a deterministic preview-cache representation. They are
+    // not perceptual-quality or candidate-ranking acceptance thresholds.
     internal const string CurrentVersion = "proxy-preview-assets-v1";
     internal const int WaveformSampleRate = 8000;
     internal const int ThumbnailWidth = 160;
@@ -174,7 +177,7 @@ public sealed class PreviewWaveformIndex
         }
 
         if ((channelCount == 0 && (sampleRate != 0 || channelLayout is not null)) ||
-            (channelCount > 0 && sampleRate <= 0) ||
+            (channelCount > 0 && (sampleRate <= 0 || channelLayout is null)) ||
             channelCount < 0 ||
             (channelLayout is not null &&
                 (channelLayout.Length == 0 ||
@@ -445,12 +448,40 @@ public sealed class GeneratedPreviewAssets
         ArgumentNullException.ThrowIfNull(waveformIndex);
         ArgumentNullException.ThrowIfNull(spriteIndex);
         ArgumentNullException.ThrowIfNull(profile);
+        byte[] waveformJson = StrictEncoding.GetBytes(waveformIndex.CanonicalJson);
+        byte[] spriteJson = StrictEncoding.GetBytes(spriteIndex.CanonicalJson);
         if (waveformIndexArtifact.Kind != ArtifactKind.Preview ||
             spriteImageArtifact.Kind != ArtifactKind.Preview ||
             spriteIndexArtifact.Kind != ArtifactKind.Preview ||
             waveformIndexArtifact.ProjectId != waveformIndex.ProjectId ||
             spriteImageArtifact.ProjectId != spriteIndex.ProjectId ||
             spriteIndexArtifact.ProjectId != spriteIndex.ProjectId ||
+            waveformIndex.SourceAssetId != spriteIndex.SourceAssetId ||
+            waveformIndex.ProjectId != spriteIndex.ProjectId ||
+            waveformIndex.ProxyArtifactId != spriteIndex.ProxyArtifactId ||
+            waveformIndex.ProxyContentDigest != spriteIndex.ProxyContentDigest ||
+            waveformIndex.ProxyPtsIndexDigest != spriteIndex.ProxyPtsIndexDigest ||
+            !string.Equals(
+                waveformIndex.ProfileVersion,
+                profile.Version,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                spriteIndex.ProfileVersion,
+                profile.Version,
+                StringComparison.Ordinal) ||
+            (waveformIndex.ChannelCount == 0
+                ? waveformIndex.SampleRate != 0
+                : waveformIndex.SampleRate != profile.WaveformSamplesPerSecond) ||
+            spriteIndex.CellWidth != profile.SpriteCellWidth ||
+            spriteIndex.CellHeight != profile.SpriteCellHeight ||
+            spriteIndex.Columns > profile.MaximumSpriteColumns ||
+            spriteIndex.Rows > profile.MaximumSpriteColumns ||
+            spriteIndex.Cells.Count > profile.MaximumSpriteCells ||
+            waveformIndexArtifact.ContentDigest !=
+                ContentDigest.Compute(waveformJson) ||
+            waveformIndexArtifact.ByteSize != waveformJson.LongLength ||
+            spriteIndexArtifact.ContentDigest != ContentDigest.Compute(spriteJson) ||
+            spriteIndexArtifact.ByteSize != spriteJson.LongLength ||
             spriteImageArtifact.Id != spriteIndex.SpriteImageArtifactId ||
             spriteImageArtifact.ContentDigest != spriteIndex.SpriteImageDigest)
         {
@@ -478,6 +509,10 @@ public sealed class GeneratedPreviewAssets
     public ThumbnailSpriteIndex SpriteIndex { get; }
 
     public PreviewAssetGenerationProfile Profile { get; }
+
+    private static readonly UTF8Encoding StrictEncoding = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
 }
 
 public enum PreviewAssetGenerationFailureReason
@@ -487,6 +522,7 @@ public enum PreviewAssetGenerationFailureReason
     ToolVerificationFailed,
     StagingConflict,
     StagingUnavailable,
+    ProcessTimedOut,
     WaveformGenerationFailed,
     WaveformOutputInvalid,
     SpriteGenerationFailed,
@@ -526,6 +562,8 @@ public sealed class PreviewAssetGenerationException : Exception
                 "The preview staging destination already exists.",
             PreviewAssetGenerationFailureReason.StagingUnavailable =>
                 "The preview staging destination is unavailable.",
+            PreviewAssetGenerationFailureReason.ProcessTimedOut =>
+                "The preview generation process exceeded its timeout.",
             PreviewAssetGenerationFailureReason.WaveformGenerationFailed =>
                 "The preview waveform could not be generated.",
             PreviewAssetGenerationFailureReason.WaveformOutputInvalid =>
@@ -882,14 +920,28 @@ public sealed class PreviewAssetGenerator
         string outputPath,
         int audioStreamIndex,
         int channelCount,
+        string channelLayout,
         long sampleCount,
         TimeSpan timeout)
     {
+        ArgumentNullException.ThrowIfNull(channelLayout);
         if (audioStreamIndex < 0 || channelCount <= 0 || sampleCount <= 0)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(audioStreamIndex),
                 "Waveform stream and sample values must be positive or zero-based.");
+        }
+
+        if (channelLayout.Length == 0 ||
+            !string.Equals(
+                channelLayout,
+                channelLayout.Trim(),
+                StringComparison.Ordinal) ||
+            channelLayout.Any(char.IsControl))
+        {
+            throw new ArgumentException(
+                "The waveform channel layout must be trimmed and nonblank.",
+                nameof(channelLayout));
         }
 
         string executable = SqliteStoreSupport.ValidateLocalAbsolutePath(
@@ -931,6 +983,8 @@ public sealed class PreviewAssetGenerator
                 filter,
                 "-ac",
                 channelCount.ToString(CultureInfo.InvariantCulture),
+                "-channel_layout",
+                channelLayout,
                 "-ar",
                 PreviewAssetGenerationProfile.WaveformSampleRate.ToString(
                     CultureInfo.InvariantCulture),
@@ -1102,6 +1156,9 @@ public sealed class PreviewAssetGenerator
         int channelCount = audioStream.Channels
             ?? throw Failure(
                 PreviewAssetGenerationFailureReason.InputBindingMismatch);
+        string channelLayout = audioStream.ChannelLayout
+            ?? throw Failure(
+                PreviewAssetGenerationFailureReason.InputBindingMismatch);
         long sampleCount = GetWaveformSampleCount(
             generatedProxy.ProxyPtsIndex);
         ProcessRunRequest request = CreateWaveformProcessRequest(
@@ -1110,6 +1167,7 @@ public sealed class PreviewAssetGenerator
             staging.WaveformPcmPath,
             audioStream.Index,
             channelCount,
+            channelLayout,
             sampleCount,
             timeout);
         ProcessRunResult result = await RunProcessAsync(
@@ -1669,6 +1727,11 @@ public sealed class PreviewAssetGenerator
         {
             throw;
         }
+        catch (TimeoutException)
+        {
+            throw Failure(
+                PreviewAssetGenerationFailureReason.ProcessTimedOut);
+        }
         catch (Exception)
         {
             throw Failure(reason);
@@ -1967,7 +2030,12 @@ public sealed class PreviewAssetGenerator
 
             bool seenHeader = false;
             bool seenImageData = false;
+            bool imageDataEnded = false;
             bool seenEnd = false;
+            int decodedChannelCount = 0;
+            long expectedDecodedByteCount = 0;
+            long maximumCompressedByteCount = 0;
+            using var compressedImageData = new MemoryStream();
             byte[] chunkHeader = new byte[8];
             byte[] crcBytes = new byte[4];
             byte[] buffer = ArrayPool<byte>.Shared.Rent(FileBufferSize);
@@ -1998,7 +2066,12 @@ public sealed class PreviewAssetGenerator
                         (seenHeader && isHeader) ||
                         (isHeader && chunkLength != 13) ||
                         (isEnd && chunkLength != 0) ||
-                        (isImageData && chunkLength == 0))
+                        (isImageData && (chunkLength == 0 || imageDataEnded)) ||
+                        (seenImageData && !isImageData && !isEnd &&
+                            chunkType[0] is >= (byte)'A' and <= (byte)'Z') ||
+                        (!isHeader && !isImageData && !isEnd &&
+                            chunkType[0] is >= (byte)'A' and <= (byte)'Z' &&
+                            !chunkType.SequenceEqual("PLTE"u8)))
                     {
                         throw Failure(
                             PreviewAssetGenerationFailureReason.SpriteOutputInvalid);
@@ -2024,6 +2097,17 @@ public sealed class PreviewAssetGenerator
                                 headerData.AsSpan(headerOffset));
                             headerOffset += requested;
                         }
+                        else if (isImageData)
+                        {
+                            if (compressedImageData.Length + requested >
+                                maximumCompressedByteCount)
+                            {
+                                throw Failure(
+                                    PreviewAssetGenerationFailureReason.SpriteOutputInvalid);
+                            }
+
+                            compressedImageData.Write(buffer, 0, requested);
+                        }
 
                         remaining -= requested;
                     }
@@ -2043,15 +2127,22 @@ public sealed class PreviewAssetGenerator
                                 headerData.AsSpan(0, 4)) != (uint)expectedWidth ||
                             BinaryPrimitives.ReadUInt32BigEndian(
                                 headerData.AsSpan(4, 4)) != (uint)expectedHeight ||
-                            !IsValidPngColorFormat(headerData[8], headerData[9]) ||
+                            headerData[8] != 8 ||
+                            headerData[9] is not (2 or 6) ||
                             headerData[10] != 0 ||
                             headerData[11] != 0 ||
-                            headerData[12] is not (0 or 1))
+                            headerData[12] != 0)
                         {
                             throw Failure(
                                 PreviewAssetGenerationFailureReason.SpriteOutputInvalid);
                         }
 
+                        decodedChannelCount = headerData[9] == 2 ? 3 : 4;
+                        expectedDecodedByteCount = checked(
+                            (long)expectedHeight *
+                            (1L + checked((long)expectedWidth * decodedChannelCount)));
+                        maximumCompressedByteCount = GetMaximumZlibByteCount(
+                            expectedDecodedByteCount);
                         seenHeader = true;
                     }
                     else if (isImageData)
@@ -2061,6 +2152,11 @@ public sealed class PreviewAssetGenerator
                     else if (isEnd)
                     {
                         seenEnd = true;
+                    }
+
+                    if (seenImageData && !isImageData)
+                    {
+                        imageDataEnded = true;
                     }
                 }
             }
@@ -2072,11 +2168,19 @@ public sealed class PreviewAssetGenerator
             if (!seenHeader ||
                 !seenImageData ||
                 !seenEnd ||
+                decodedChannelCount == 0 ||
                 stream.Position != stream.Length)
             {
                 throw Failure(
                     PreviewAssetGenerationFailureReason.SpriteOutputInvalid);
             }
+
+            ValidatePngImageData(
+                compressedImageData,
+                expectedWidth,
+                expectedHeight,
+                decodedChannelCount,
+                expectedDecodedByteCount);
 
             stream.Position = 0;
             byte[] digestBytes = await SHA256.HashDataAsync(
@@ -2097,6 +2201,7 @@ public sealed class PreviewAssetGenerator
         }
         catch (Exception exception)
             when (IsFileSystemFailure(exception) ||
+                exception is InvalidDataException ||
                 exception is CryptographicException)
         {
             throw Failure(
@@ -2114,16 +2219,62 @@ public sealed class PreviewAssetGenerator
         }
     }
 
-    private static bool IsValidPngColorFormat(byte bitDepth, byte colorType) =>
-        colorType switch
+    private static void ValidatePngImageData(
+        MemoryStream compressedImageData,
+        int width,
+        int height,
+        int channelCount,
+        long expectedByteCount)
+    {
+        compressedImageData.Position = 0;
+        using var zlib = new ZLibStream(
+            compressedImageData,
+            CompressionMode.Decompress,
+            leaveOpen: true);
+        int rowByteCount = checked(1 + checked(width * channelCount));
+        byte[] row = ArrayPool<byte>.Shared.Rent(rowByteCount);
+        try
         {
-            0 => bitDepth is 1 or 2 or 4 or 8 or 16,
-            2 => bitDepth is 8 or 16,
-            3 => bitDepth is 1 or 2 or 4 or 8,
-            4 => bitDepth is 8 or 16,
-            6 => bitDepth is 8 or 16,
-            _ => false,
-        };
+            long decodedByteCount = 0;
+            for (int rowIndex = 0; rowIndex < height; rowIndex++)
+            {
+                zlib.ReadExactly(row.AsSpan(0, rowByteCount));
+                if (row[0] > 4)
+                {
+                    throw Failure(
+                        PreviewAssetGenerationFailureReason.SpriteOutputInvalid);
+                }
+
+                decodedByteCount = checked(decodedByteCount + rowByteCount);
+            }
+
+            if (decodedByteCount != expectedByteCount || zlib.ReadByte() != -1)
+            {
+                throw Failure(
+                    PreviewAssetGenerationFailureReason.SpriteOutputInvalid);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(row, clearArray: true);
+        }
+    }
+
+    private static long GetMaximumZlibByteCount(long sourceByteCount)
+    {
+        if (sourceByteCount <= 0)
+        {
+            throw Failure(
+                PreviewAssetGenerationFailureReason.SpriteOutputInvalid);
+        }
+
+        return checked(
+            sourceByteCount +
+            (sourceByteCount >> 12) +
+            (sourceByteCount >> 14) +
+            (sourceByteCount >> 25) +
+            13);
+    }
 
     private static uint UpdateCrc32(uint crc, ReadOnlySpan<byte> bytes)
     {

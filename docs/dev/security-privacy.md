@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、企業向け動画、文字起こし、出演者情報、内部資料を扱うため、ローカル優先と人による承認を基本境界にします。
 
 > [!IMPORTANT]
-> 現在は Stage 0 の技術検証中です。以下には、検証ツールで実装済みの境界と、製品アプリケーションで実装する計画の両方があります。計画項目を完成済みの保護機能とはみなしません。
+> Stage 0は完了し、製品基盤を段階実装中です。以下には実装済み境界と未完了の製品flowが混在するため、各節の状態と詳細実装計画を併せて確認してください。
 
 ## 既定のデータ境界
 
@@ -17,7 +17,7 @@ HubRadio MovieCreator は、企業向け動画、文字起こし、出演者情�
 
 ## ローカル保存
 
-製品版は、利用者が選択したローカル固定ディスク上の管理ワークスペースへ保存する計画です。ネットワーク共有、同期 folder、リムーバブル媒体を初期既定にしません。
+製品基盤は、利用者が選択するローカル固定ディスク上の管理ワークスペースを前提に実装しています。初回選択UIは未完了で、ネットワーク共有、同期 folder、リムーバブル媒体を初期既定にしません。
 
 - 元動画、文字起こし改訂、編集版、承認、監査、納品物を正本として扱います。
 - 代理、波形、sprite、preview などの再生成可能物を正本と分けます。
@@ -25,11 +25,11 @@ HubRadio MovieCreator は、企業向け動画、文字起こし、出演者情�
 - 保持期間が未決のため、時間だけを理由とする自動削除を行いません。
 - backup は manifest、size、SHA-256、SQLite `integrity_check` を確認してから完成扱いにします。
 
-保存、削除、backup、ACL の決定は [ADR-0005](decisions/ADR-0005-storage-retention.md) を参照してください。これらの製品機能は未実装です。
+保存、削除、backup、ACL の決定は [ADR-0005](decisions/ADR-0005-storage-retention.md) を参照してください。ArtifactStore、WorkspaceRecovery、ACL、検証付きbackup/restoreは実装済みです。初回workspace選択UI、保持・削除UI、別account ACL受入、外部固定ディスクのBitLocker状態確認と保留UIは未完了です。
 
 ## Windows identity と権限
 
-製品版では Windows ユーザーの SID を監査主体の識別子として使う計画です。表示名だけを識別子にせず、独自 password や認証 server を追加しません。
+製品基盤では Windows ユーザーの SID を監査主体の識別子として実装済みです。表示名だけを識別子にせず、独自 password や認証 server を追加しません。
 
 - 初回起動時の SID には Administrator と Editor を割り当てます。
 - 承認役割は明示割当まで付与しません。

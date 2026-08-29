@@ -3,7 +3,7 @@
 この手順は、現在の Stage 0 技術検証を再現する開発者向けです。一般利用者向けの完成アプリケーションをインストールする手順ではありません。
 
 > [!IMPORTANT]
-> Foundation scaffoldは実装済みですが、編集機能は未実装です。現在利用できるのは、最小WinUI 3／React／Python workerのbuild・smoke testと、固定fixture向けStage 0検証ツールです。任意動画向けの一般的な編集CLIではありません。
+> FoundationとStage 1基盤の一部は実装済みですが、一般利用者向け業務UIとend-to-end render/export flowは未完了です。repository testではSQLite、job、媒体取込・proxy・preview素材、編集model、review/approval、backup/restoreを検証できますが、任意動画向けの一般的な編集CLIではありません。
 
 Foundation全体の依存復元、静的解析、build、testはrepository rootで次を実行します。
 

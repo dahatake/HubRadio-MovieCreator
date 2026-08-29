@@ -64,6 +64,47 @@ public sealed class PreviewAssetSchemaTests
             channel.GetProperty("maximumSample")
                 .GetProperty("maximum")
                 .GetInt32());
+        Assert.AreEqual(
+            "proxy-preview-assets-v1",
+            root.GetProperty("properties")
+                .GetProperty("profileVersion")
+                .GetProperty("const")
+                .GetString());
+        JsonElement audioCondition = root.GetProperty("allOf")[0];
+        Assert.AreEqual(
+            0,
+            audioCondition.GetProperty("if")
+                .GetProperty("properties")
+                .GetProperty("channelCount")
+                .GetProperty("const")
+                .GetInt32());
+        Assert.AreEqual(
+            8000,
+            audioCondition.GetProperty("else")
+                .GetProperty("properties")
+                .GetProperty("sampleRate")
+                .GetProperty("const")
+                .GetInt32());
+        Assert.AreEqual(
+            0,
+            audioCondition.GetProperty("then")
+                .GetProperty("properties")
+                .GetProperty("frames")
+                .GetProperty("items")
+                .GetProperty("properties")
+                .GetProperty("channels")
+                .GetProperty("maxItems")
+                .GetInt32());
+        Assert.AreEqual(
+            1,
+            audioCondition.GetProperty("else")
+                .GetProperty("properties")
+                .GetProperty("frames")
+                .GetProperty("items")
+                .GetProperty("properties")
+                .GetProperty("channels")
+                .GetProperty("minItems")
+                .GetInt32());
         string comment = root.GetProperty("$comment").GetString()!;
         StringAssert.Contains(comment, "exact observed proxy PTS");
         StringAssert.Contains(comment, "channel");
@@ -112,6 +153,29 @@ public sealed class PreviewAssetSchemaTests
                 "row",
             },
             GetStrings(definitions.GetProperty("cell").GetProperty("required")));
+
+        JsonElement properties = root.GetProperty("properties");
+        Assert.AreEqual(
+            "proxy-preview-assets-v1",
+            properties.GetProperty("profileVersion")
+                .GetProperty("const")
+                .GetString());
+        Assert.AreEqual(160, properties.GetProperty("cellWidth")
+            .GetProperty("const").GetInt32());
+        Assert.AreEqual(90, properties.GetProperty("cellHeight")
+            .GetProperty("const").GetInt32());
+        Assert.AreEqual(10, properties.GetProperty("columns")
+            .GetProperty("maximum").GetInt32());
+        Assert.AreEqual(10, properties.GetProperty("rows")
+            .GetProperty("maximum").GetInt32());
+        Assert.AreEqual(100, properties.GetProperty("cells")
+            .GetProperty("maxItems").GetInt32());
+        JsonElement cellProperties = definitions.GetProperty("cell")
+            .GetProperty("properties");
+        Assert.AreEqual(9, cellProperties.GetProperty("column")
+            .GetProperty("maximum").GetInt32());
+        Assert.AreEqual(9, cellProperties.GetProperty("row")
+            .GetProperty("maximum").GetInt32());
 
         string comment = root.GetProperty("$comment").GetString()!;
         StringAssert.Contains(comment, "verified proxy key frames");

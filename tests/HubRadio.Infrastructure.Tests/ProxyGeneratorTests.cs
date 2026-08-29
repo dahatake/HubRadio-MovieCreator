@@ -25,7 +25,7 @@ public sealed class ProxyGeneratorTests
         SourceCreatedAt.AddHours(1);
 
     [TestMethod]
-    public void CreateProcessRequest_UsesExactMeasuredNvencArgumentsWithoutOverwriteOrFallback()
+    public void CreateProcessRequest_UsesExactMeasuredNvencPrimaryArguments()
     {
         using TemporaryDirectory temporary = new();
         string ffmpegPath = Path.Combine(temporary.Path, "ffmpeg.exe");
@@ -185,7 +185,63 @@ public sealed class ProxyGeneratorTests
     }
 
     [TestMethod]
-    public async Task GenerateAsync_NvencFailureDoesNotFallbackAndCleansOnlyOwnedStaging()
+    public async Task GenerateAsync_NvencFailureFallsBackToMediaFoundationAndRecordsProfile()
+    {
+        using ProxyFixture fixture = new();
+        fixture.ProcessHandler = (request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            fixture.ProcessRequests.Add(request);
+            File.WriteAllBytes(request.ArgumentList[^1], fixture.ProxyContent);
+            bool nvenc = request.ArgumentList.Contains(
+                "h264_nvenc",
+                StringComparer.Ordinal);
+            return Task.FromResult(new ProcessRunResult(
+                nvenc ? 1 : 0,
+                string.Empty,
+                nvenc ? fixture.SourcePath : string.Empty,
+                false,
+                TimeSpan.FromMilliseconds(nvenc ? 3 : 7)));
+        };
+
+        GeneratedProxy result = await fixture.GenerateAsync();
+
+        Assert.HasCount(2, fixture.ProcessRequests);
+        Assert.IsTrue(fixture.ProcessRequests[0].ArgumentList.Contains(
+            "h264_nvenc",
+            StringComparer.Ordinal));
+        Assert.IsTrue(fixture.ProcessRequests[1].ArgumentList.Contains(
+            "h264_mf",
+            StringComparer.Ordinal));
+        Assert.IsFalse(fixture.ProcessRequests[1].ArgumentList.Contains(
+            "-preset",
+            StringComparer.Ordinal));
+        Assert.IsFalse(fixture.ProcessRequests[1].ArgumentList.Contains(
+            "-cq",
+            StringComparer.Ordinal));
+        int bitRateIndex = fixture.ProcessRequests[1].ArgumentList
+            .ToList()
+            .IndexOf("-b:v");
+        Assert.IsGreaterThanOrEqualTo(0, bitRateIndex);
+        Assert.AreEqual(
+            "4M",
+            fixture.ProcessRequests[1].ArgumentList[bitRateIndex + 1]);
+        Assert.AreEqual("h264_mf", result.Profile.VideoEncoder);
+        Assert.IsNull(result.Profile.EncoderPreset);
+        Assert.IsNull(result.Profile.ConstantQuality);
+        Assert.AreEqual("4M", result.Profile.VideoBitRate);
+        Assert.AreEqual(TimeSpan.FromMilliseconds(7), result.GenerationElapsed);
+        Assert.IsFalse(File.Exists(fixture.GetStagingOutputPath()));
+        Assert.IsFalse(Directory.Exists(fixture.GetStagingDirectory()));
+        Assert.IsTrue(File.Exists(fixture.GetFinalProxyPath()));
+        CollectionAssert.AreEqual(
+            fixture.SourceContent,
+            File.ReadAllBytes(fixture.SourcePath));
+        Assert.AreEqual(2L, fixture.CountArtifacts());
+    }
+
+    [TestMethod]
+    public async Task GenerateAsync_BothEncodersFailAndOwnedStagingIsCleaned()
     {
         using ProxyFixture fixture = new();
         fixture.ProcessHandler = (request, cancellationToken) =>
@@ -211,20 +267,87 @@ public sealed class ProxyGeneratorTests
             reconciliationRequired: false,
             fixture.SourcePath,
             fixture.GetStagingOutputPath());
-        Assert.HasCount(1, fixture.ProcessRequests);
+        Assert.HasCount(2, fixture.ProcessRequests);
         Assert.IsTrue(fixture.ProcessRequests[0].ArgumentList.Contains(
             "h264_nvenc",
             StringComparer.Ordinal));
-        Assert.IsFalse(fixture.ProcessRequests[0].ArgumentList.Contains(
+        Assert.IsTrue(fixture.ProcessRequests[1].ArgumentList.Contains(
             "h264_mf",
             StringComparer.Ordinal));
         Assert.IsFalse(File.Exists(fixture.GetStagingOutputPath()));
         Assert.IsFalse(Directory.Exists(fixture.GetStagingDirectory()));
         Assert.IsFalse(File.Exists(fixture.GetFinalProxyPath()));
-        CollectionAssert.AreEqual(
-            fixture.SourceContent,
-            File.ReadAllBytes(fixture.SourcePath));
         Assert.AreEqual(1L, fixture.CountArtifacts());
+    }
+
+    [TestMethod]
+    public async Task GenerateAsync_BothEncoderTimeoutsRemainTypedAndCleanStaging()
+    {
+        using ProxyFixture fixture = new();
+        fixture.ProcessHandler = (request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            fixture.ProcessRequests.Add(request);
+            throw new TimeoutException("private process timeout detail");
+        };
+
+        ProxyGenerationException exception =
+            await Assert.ThrowsExactlyAsync<ProxyGenerationException>(
+                () => fixture.GenerateAsync());
+
+        AssertSafeFailure(
+            exception,
+            ProxyGenerationFailureReason.ProcessTimedOut,
+            reconciliationRequired: false,
+            "private process timeout detail",
+            fixture.GetStagingOutputPath());
+        Assert.HasCount(2, fixture.ProcessRequests);
+        Assert.IsTrue(fixture.ProcessRequests[0].ArgumentList.Contains(
+            "h264_nvenc",
+            StringComparer.Ordinal));
+        Assert.IsTrue(fixture.ProcessRequests[1].ArgumentList.Contains(
+            "h264_mf",
+            StringComparer.Ordinal));
+        Assert.IsFalse(Directory.Exists(fixture.GetStagingDirectory()));
+        Assert.AreEqual(1L, fixture.CountArtifacts());
+    }
+
+    [TestMethod]
+    public async Task GenerateAsync_PrimaryFailureWithoutOutputStillFallsBack()
+    {
+        using ProxyFixture fixture = new();
+        fixture.ProcessHandler = (request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            fixture.ProcessRequests.Add(request);
+            bool primary = request.ArgumentList.Contains(
+                "h264_nvenc",
+                StringComparer.Ordinal);
+            if (!primary)
+            {
+                File.WriteAllBytes(request.ArgumentList[^1], fixture.ProxyContent);
+            }
+
+            return Task.FromResult(new ProcessRunResult(
+                primary ? 1 : 0,
+                string.Empty,
+                primary ? "private primary failure" : string.Empty,
+                false,
+                TimeSpan.Zero));
+        };
+
+        GeneratedProxy result = await fixture.GenerateAsync();
+
+        Assert.HasCount(2, fixture.ProcessRequests);
+        Assert.IsTrue(fixture.ProcessRequests[0].ArgumentList.Contains(
+            "h264_nvenc",
+            StringComparer.Ordinal));
+        Assert.IsTrue(fixture.ProcessRequests[1].ArgumentList.Contains(
+            "h264_mf",
+            StringComparer.Ordinal));
+        Assert.AreEqual("h264_mf", result.Profile.VideoEncoder);
+        Assert.IsFalse(Directory.Exists(fixture.GetStagingDirectory()));
+        Assert.AreEqual(2L, fixture.CountArtifacts());
     }
 
     [TestMethod]
@@ -936,7 +1059,7 @@ public sealed class ProxyGeneratorTests
             },
             binaryVerifier.VerifyAsync,
             ffprobeClient.ProbeAsync,
-            ptsIndexer.IndexAsync,
+            ProxyGenerator.GetIndexDelegate(ptsIndexer),
             (artifactId, cancellationToken) =>
                 fixture.Store.VerifyRegisteredAsync(
                     artifactId,
@@ -960,7 +1083,7 @@ public sealed class ProxyGeneratorTests
     }
 
     [TestMethod]
-    public async Task GenerateAsync_CanonicalNvencSyntheticIntegrationOrReportsEnvironmentBlocker()
+    public async Task GenerateAsync_CanonicalPreferredOrFallbackSyntheticIntegration()
     {
         if (!OperatingSystem.IsWindows() ||
             !TryFindCanonicalExecutable(
@@ -1023,10 +1146,96 @@ public sealed class ProxyGeneratorTests
             Assert.IsNull(fixture.Store.GetArtifact(fixture.ProxyArtifactId));
             Assert.AreEqual(1L, fixture.CountArtifacts());
             Assert.Inconclusive(
-                "The approved h264_nvenc encoder cannot run in this environment; no fallback was attempted.");
+                "Neither approved H.264 encoder can run in this environment.");
             return;
         }
 
+        AssertCanonicalGeneratedProxy(fixture, result);
+    }
+
+    [TestMethod]
+    public async Task GenerateAsync_CanonicalMediaFoundationFallbackIntegration()
+    {
+        if (!OperatingSystem.IsWindows() ||
+            !TryFindCanonicalExecutable(
+                "ffmpeg.exe",
+                DecodeValidator.CanonicalFfmpegByteSize,
+                DecodeValidator.CanonicalFfmpegSha256,
+                out string ffmpegPath) ||
+            !TryFindCanonicalExecutable(
+                "ffprobe.exe",
+                FfprobeClient.CanonicalFfprobeByteSize,
+                FfprobeClient.CanonicalFfprobeSha256,
+                out string ffprobePath))
+        {
+            Assert.Inconclusive("The approved FFmpeg package is unavailable.");
+            return;
+        }
+
+        using CanonicalPipelineFixture fixture =
+            await CanonicalPipelineFixture.CreateAsync(ffmpegPath, ffprobePath);
+        ProcessRunner processRunner = new();
+        BinaryVerifier binaryVerifier = new();
+        FfprobeClient ffprobeClient = new(
+            processRunner,
+            binaryVerifier,
+            ffprobePath);
+        PtsIndexer ptsIndexer = new(
+            processRunner,
+            binaryVerifier,
+            ffprobePath);
+        var requests = new List<ProcessRunRequest>();
+        var generator = new ProxyGenerator(
+            fixture.Store,
+            async (request, cancellationToken) =>
+            {
+                requests.Add(request);
+                if (request.ArgumentList.Contains(
+                        "h264_nvenc",
+                        StringComparer.Ordinal))
+                {
+                    return new ProcessRunResult(
+                        1,
+                        string.Empty,
+                        "NVENC unavailable control",
+                        Truncated: false,
+                        TimeSpan.Zero);
+                }
+
+                return await processRunner.RunAsync(request, cancellationToken);
+            },
+            binaryVerifier.VerifyAsync,
+            ffprobeClient.ProbeAsync,
+            ProxyGenerator.GetIndexDelegate(ptsIndexer),
+            (artifactId, cancellationToken) =>
+                fixture.Store.VerifyRegisteredAsync(
+                    artifactId,
+                    binaryVerifier,
+                    cancellationToken),
+            fixture.WorkspacePath,
+            ffmpegPath,
+            TimeProvider.System);
+
+        GeneratedProxy result = await generator.GenerateAsync(
+            fixture.ProxyArtifactId,
+            fixture.SourceAsset,
+            fixture.SourceOriginal,
+            fixture.SourcePtsIndex,
+            fixture.ProxyJobId,
+            TimeSpan.FromSeconds(30),
+            CancellationToken.None);
+
+        Assert.HasCount(2, requests);
+        Assert.IsTrue(requests[0].ArgumentList.Contains(
+            "h264_nvenc",
+            StringComparer.Ordinal));
+        Assert.IsTrue(requests[1].ArgumentList.Contains(
+            "h264_mf",
+            StringComparer.Ordinal));
+        Assert.AreEqual("h264_mf", result.Profile.VideoEncoder);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(
+            result.ProxyProbeResult.Streams.Single(
+                static stream => stream.Kind == MediaStreamKind.Video).Profile));
         AssertCanonicalGeneratedProxy(fixture, result);
     }
 
@@ -1271,10 +1480,22 @@ public sealed class ProxyGeneratorTests
         Assert.AreEqual(new RationalNumber(30000, 1001), profile.FrameRate);
         Assert.AreEqual("bilinear", profile.ScaleFlags);
         Assert.AreEqual("yuv420p", profile.PixelFormat);
-        Assert.AreEqual("h264_nvenc", profile.VideoEncoder);
-        Assert.AreEqual("p4", profile.EncoderPreset);
-        Assert.AreEqual(28, profile.ConstantQuality);
-        Assert.AreEqual("0", profile.VideoBitRate);
+        if (string.Equals(
+                profile.VideoEncoder,
+                "h264_nvenc",
+                StringComparison.Ordinal))
+        {
+            Assert.AreEqual("p4", profile.EncoderPreset);
+            Assert.AreEqual(28, profile.ConstantQuality);
+            Assert.AreEqual("0", profile.VideoBitRate);
+        }
+        else
+        {
+            Assert.AreEqual("h264_mf", profile.VideoEncoder);
+            Assert.IsNull(profile.EncoderPreset);
+            Assert.IsNull(profile.ConstantQuality);
+            Assert.AreEqual("4M", profile.VideoBitRate);
+        }
         Assert.AreEqual(30, profile.GopSize);
         Assert.AreEqual("aac", profile.AudioCodec);
         Assert.AreEqual("96k", profile.AudioBitRate);

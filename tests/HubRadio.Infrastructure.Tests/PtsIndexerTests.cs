@@ -81,6 +81,49 @@ public sealed class PtsIndexerTests
     }
 
     [TestMethod]
+    public void ParsePacketOutput_UsesObservedPacketTimingAndStrictKeyFrameFlags()
+    {
+        using PtsFixture fixture = new();
+        string output = string.Join(
+            '\n',
+            "stream_index=2|flags=K__|pts=-50|duration=20",
+            "stream_index=2|flags=___|pts=-30|duration=33",
+            "stream_index=2|flags=___|pts=3|duration=17");
+
+        PtsIndex result = PtsIndexer.ParsePacketOutput(
+            fixture.Staged,
+            fixture.ProbeResult,
+            output);
+
+        Assert.HasCount(3, result.Entries);
+        AssertEntry(
+            result.Entries[0],
+            sequence: 0,
+            presentationTime: new RationalTime(-1, 20),
+            duration: new RationalTime(1, 50),
+            keyFrame: true);
+        AssertEntry(
+            result.Entries[1],
+            sequence: 1,
+            presentationTime: new RationalTime(-3, 100),
+            duration: new RationalTime(33, 1000),
+            keyFrame: false);
+
+        foreach (string flags in new[] { "", "K", "K_", "X__", "_X_", "___X" })
+        {
+            PtsIndexFailureReason expected = flags.Length == 0
+                ? PtsIndexFailureReason.MissingKeyFrameFlag
+                : PtsIndexFailureReason.InvalidKeyFrameFlag;
+            Assert.AreEqual(
+                expected,
+                AssertPtsFailure(() => PtsIndexer.ParsePacketOutput(
+                    fixture.Staged,
+                    fixture.ProbeResult,
+                    $"stream_index=2|flags={flags}|pts=0|duration=20")));
+        }
+    }
+
+    [TestMethod]
     public void ParseOutput_SelectsLowestVideoStreamAndRejectsEveryOtherStream()
     {
         using PtsFixture fixture = new();
@@ -427,6 +470,32 @@ public sealed class PtsIndexerTests
             ProcessRunRequest.MaximumMaxCapturedBytes,
             request.MaxCapturedBytes);
         Assert.IsNull(request.StandardInput);
+
+        ProcessRunRequest packetRequest = PtsIndexer.CreatePacketProcessRequest(
+            ffprobePath,
+            fixture.Staged.StagingPath,
+            streamIndex: 2,
+            timeout);
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "-v",
+                "error",
+                "-select_streams",
+                "2",
+                "-show_packets",
+                "-show_entries",
+                "packet=stream_index,flags,pts,duration",
+                "-of",
+                "compact=p=0:nk=0:escape=none:s=|",
+                fixture.Staged.StagingPath,
+            },
+            packetRequest.ArgumentList.ToArray());
+        Assert.AreEqual(request.Executable, packetRequest.Executable);
+        Assert.AreEqual(request.WorkingDirectory, packetRequest.WorkingDirectory);
+        Assert.AreEqual(request.Timeout, packetRequest.Timeout);
+        Assert.AreEqual(request.MaxCapturedBytes, packetRequest.MaxCapturedBytes);
+        Assert.IsNull(packetRequest.StandardInput);
 
         MethodInfo createStartInfo = typeof(ProcessRunner).GetMethod(
             "CreateStartInfo",

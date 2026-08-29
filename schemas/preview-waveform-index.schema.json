@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Canonical preview waveform derived from the verified proxy audio. Each frame uses the exact observed proxy PTS and duration, and each channel stores signed 16-bit extrema from that frame interval. A proxy with no audio has sampleRate=0, channelCount=0, channelLayout=null, and an empty channels array for every proxy frame; silence is not invented. Runtime validation additionally requires exact proxy artifact and PTS-index digest binding, contiguous frame/channel indices, strict PTS monotonicity, and exact frame equality with the proxy PTS index.",
+  "$comment": "Canonical preview waveform derived from the verified proxy audio. Each frame uses the exact observed proxy PTS and duration, and each channel stores signed 16-bit extrema from that frame interval. The versioned 8000 Hz rate is a deterministic cache representation parameter, not an approved quality threshold. A proxy with no audio has sampleRate=0, channelCount=0, channelLayout=null, and an empty channels array for every proxy frame; silence is not invented. Runtime validation additionally requires exact proxy artifact and PTS-index digest binding, contiguous frame/channel indices, strict PTS monotonicity, and exact frame equality with the proxy PTS index.",
   "title": "PreviewWaveformIndex",
   "type": "object",
   "additionalProperties": false,
@@ -24,7 +24,7 @@
     "proxyArtifactId": { "$ref": "#/$defs/entityId" },
     "proxyContentDigest": { "$ref": "#/$defs/contentDigest" },
     "proxyPtsIndexDigest": { "$ref": "#/$defs/contentDigest" },
-    "profileVersion": { "$ref": "#/$defs/nonBlankText" },
+    "profileVersion": { "const": "proxy-preview-assets-v1" },
     "sampleRate": {
       "type": "integer",
       "minimum": 0,
@@ -47,6 +47,47 @@
       "items": { "$ref": "#/$defs/frame" }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "channelCount": { "const": 0 }
+        },
+        "required": ["channelCount"]
+      },
+      "then": {
+        "properties": {
+          "sampleRate": { "const": 0 },
+          "channelLayout": { "type": "null" },
+          "frames": {
+            "items": {
+              "properties": {
+                "channels": { "maxItems": 0 }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "sampleRate": { "const": 8000 },
+          "channelCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "channelLayout": { "$ref": "#/$defs/nonBlankText" },
+          "frames": {
+            "items": {
+              "properties": {
+                "channels": { "minItems": 1 }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "entityId": {
       "type": "string",

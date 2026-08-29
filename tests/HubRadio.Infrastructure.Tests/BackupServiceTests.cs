@@ -201,6 +201,17 @@ public sealed class BackupServiceTests
         }
 
         Assert.IsTrue(Directory.Exists(fixture.GetBackupDirectory(backup)));
+        string ordinaryStagingPath = Path.Combine(
+            fixture.WorkspacePath,
+            "projects",
+            projectId.ToString(),
+            "staging",
+            "later-work.partial");
+        Directory.CreateDirectory(Path.GetDirectoryName(ordinaryStagingPath)!);
+        File.WriteAllBytes(ordinaryStagingPath, [1, 2, 3]);
+        Assert.AreEqual(
+            0,
+            (await fixture.Service.ListIncompleteCutoversAsync()).Count);
     }
 
     [TestMethod]
@@ -757,6 +768,129 @@ public sealed class BackupServiceTests
             fixture.RootPath,
             ".hubradio.restore-*").Single();
         Assert.IsTrue(File.Exists(Path.Combine(stagingPath, "hubradio.db")));
+
+        var recoveryService = new BackupService(
+            fixture.DatabasePath,
+            fixture.WorkspacePath,
+            fixture.BackupRootPath,
+            fixture.CurrentSid);
+        IncompleteCutoverCandidate candidate =
+            (await recoveryService.ListIncompleteCutoversAsync()).Single();
+        Assert.AreEqual(backup.BackupId, candidate.BackupId);
+        Assert.AreEqual(Path.GetFileName(previousPath),
+            candidate.PreviousWorkspaceDirectoryName);
+        Assert.AreEqual(Path.GetFileName(stagingPath), candidate.RestoreDirectoryName);
+        Assert.IsFalse(candidate.RestoredWorkspaceIsActive);
+        Assert.IsFalse(Path.IsPathFullyQualified(
+            candidate.PreviousWorkspaceDirectoryName));
+        Assert.IsFalse(Path.IsPathFullyQualified(candidate.RestoreDirectoryName));
+
+        await recoveryService.RollbackIncompleteCutoverAsync(candidate);
+
+        AssertFileTreesEqual(currentBefore, SnapshotFileTree(fixture.WorkspacePath));
+        Assert.IsFalse(Directory.Exists(previousPath));
+        Assert.IsTrue(Directory.Exists(stagingPath));
+        Assert.AreEqual(0,
+            (await recoveryService.ListIncompleteCutoversAsync()).Count);
+        IncompleteRestoreCandidate restoreCandidate =
+            (await recoveryService.ListIncompleteRestoresAsync()).Single();
+        await recoveryService.DiscardIncompleteRestoreAsync(restoreCandidate);
+        Assert.IsFalse(Directory.Exists(stagingPath));
+    }
+
+    [TestMethod]
+    public async Task RestoreBackupAsync_PostCutoverIntegrityFailureRollsBackCurrent()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        _ = fixture.CreateProject();
+        BackupResult backup = await fixture.Service.CreateBackupAsync();
+        string markerPath = Path.Combine(fixture.WorkspacePath, "current-marker.bin");
+        File.WriteAllBytes(markerPath, [4, 3, 2, 1]);
+        IReadOnlyDictionary<string, ContentDigest> currentBefore =
+            SnapshotFileTree(fixture.WorkspacePath);
+        int moveCount = 0;
+        void MoveAndCorruptRestoredWorkspace(string source, string destination)
+        {
+            moveCount++;
+            Directory.Move(source, destination);
+            if (moveCount == 2)
+            {
+                File.WriteAllBytes(
+                    Path.Combine(destination, "hubradio.db"),
+                    [0xde, 0xad, 0xbe, 0xef]);
+            }
+        }
+
+        BackupService service = fixture.CreateService(
+            MoveAndCorruptRestoredWorkspace);
+        BackupServiceException exception =
+            await Assert.ThrowsExactlyAsync<BackupServiceException>(
+                () => service.RestoreBackupAsync(backup.BackupId));
+
+        Assert.AreEqual(4, moveCount);
+        AssertSafeException(
+            exception,
+            BackupServiceFailureReason.CutoverFailed,
+            reconciliationRequired: true,
+            fixture);
+        AssertFileTreesEqual(currentBefore, SnapshotFileTree(fixture.WorkspacePath));
+        Assert.IsTrue(File.Exists(markerPath));
+        AssertNoPreviousWorkspace(fixture);
+        Assert.AreEqual(
+            0,
+            (await fixture.Service.ListIncompleteCutoversAsync()).Count);
+        Assert.AreEqual(
+            1,
+            (await fixture.Service.ListIncompleteRestoresAsync()).Count);
+    }
+
+    [TestMethod]
+    public async Task IncompleteCutover_ActiveInvalidWorkspaceCanRollbackToPrevious()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        _ = fixture.CreateProject();
+        BackupResult backup = await fixture.Service.CreateBackupAsync();
+        string markerPath = Path.Combine(fixture.WorkspacePath, "current-marker.bin");
+        File.WriteAllBytes(markerPath, [4, 3, 2, 1]);
+        IReadOnlyDictionary<string, ContentDigest> previousTree =
+            SnapshotFileTree(fixture.WorkspacePath);
+
+        RestoreResult restored =
+            await fixture.Service.RestoreBackupAsync(backup.BackupId);
+        string previousPath = Path.Combine(
+            fixture.RootPath,
+            restored.PreviousWorkspaceDirectoryName);
+        File.WriteAllBytes(fixture.DatabasePath, [0xde, 0xad, 0xbe, 0xef]);
+
+        IncompleteCutoverCandidate candidate =
+            (await fixture.Service.ListIncompleteCutoversAsync()).Single();
+
+        Assert.AreEqual(backup.BackupId, candidate.BackupId);
+        Assert.AreEqual(
+            restored.PreviousWorkspaceDirectoryName,
+            candidate.PreviousWorkspaceDirectoryName);
+        Assert.IsTrue(candidate.RestoredWorkspaceIsActive);
+        string isolatedRestoredPath = Path.Combine(
+            fixture.RootPath,
+            candidate.RestoreDirectoryName);
+        Assert.IsFalse(Directory.Exists(isolatedRestoredPath));
+
+        await fixture.Service.RollbackIncompleteCutoverAsync(candidate);
+
+        AssertFileTreesEqual(previousTree, SnapshotFileTree(fixture.WorkspacePath));
+        Assert.IsTrue(File.Exists(markerPath));
+        Assert.IsFalse(Directory.Exists(previousPath));
+        Assert.IsTrue(Directory.Exists(isolatedRestoredPath));
+        Assert.AreEqual(
+            0,
+            (await fixture.Service.ListIncompleteCutoversAsync()).Count);
+        IncompleteRestoreCandidate isolated =
+            (await fixture.Service.ListIncompleteRestoresAsync()).Single();
+        Assert.AreEqual(candidate.RestoreDirectoryName, isolated.DirectoryName);
+        await fixture.Service.DiscardIncompleteRestoreAsync(isolated);
+        Assert.IsFalse(Directory.Exists(isolatedRestoredPath));
     }
 
     [TestMethod]
@@ -903,6 +1037,25 @@ public sealed class BackupServiceTests
     }
 
     [TestMethod]
+    public async Task IncompleteRestoreCanBeDiscardedWhenBackupRootIsUnavailable()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        EntityId<BackupIdTag> backupId = EntityId<BackupIdTag>.New();
+        string directoryName = CreateIncompleteRestoreDirectoryName(backupId);
+        string candidatePath = Path.Combine(fixture.RootPath, directoryName);
+        _ = WorkspaceAcl.CreateNew(candidatePath, fixture.CurrentSid);
+        File.WriteAllBytes(Path.Combine(candidatePath, "partial.bin"), [1, 2, 3]);
+        Directory.Delete(fixture.BackupRootPath, recursive: true);
+
+        IncompleteRestoreCandidate candidate =
+            (await fixture.Service.ListIncompleteRestoresAsync()).Single();
+        await fixture.Service.DiscardIncompleteRestoreAsync(candidate);
+
+        Assert.IsFalse(Directory.Exists(candidatePath));
+    }
+
+    [TestMethod]
     [DataRow("noncanonical-name")]
     [DataRow("file")]
     [DataRow("acl")]
@@ -1003,7 +1156,7 @@ public sealed class BackupServiceTests
     }
 
     [TestMethod]
-    public void ConstructorRequiresExactDisjointExistingProtectedRoots()
+    public async Task ConstructorRequiresExactDisjointPathsAndOperationsVerifyRoots()
     {
         RequireWindowsFixedTempDrive();
         using BackupServiceTestFixture fixture = new();
@@ -1027,12 +1180,14 @@ public sealed class BackupServiceTests
         Assert.AreEqual("backupRootPath", nested.ParamName);
 
         string missingRoot = Path.Combine(fixture.RootPath, "missing-backups");
-        BackupServiceException missing = Assert.ThrowsExactly<BackupServiceException>(() =>
-            new BackupService(
-                fixture.DatabasePath,
-                fixture.WorkspacePath,
-                missingRoot,
-                fixture.CurrentSid));
+        var missingRootService = new BackupService(
+            fixture.DatabasePath,
+            fixture.WorkspacePath,
+            missingRoot,
+            fixture.CurrentSid);
+        BackupServiceException missing =
+            await Assert.ThrowsExactlyAsync<BackupServiceException>(() =>
+                missingRootService.CreateBackupAsync());
         AssertSafeException(
             missing,
             BackupServiceFailureReason.AccessControlInvalid,
@@ -1072,6 +1227,8 @@ public sealed class BackupServiceTests
                 "RestoreBackupAsync",
                 "ListIncompleteRestoresAsync",
                 "DiscardIncompleteRestoreAsync",
+                "ListIncompleteCutoversAsync",
+                "RollbackIncompleteCutoverAsync",
             },
             methods.Select(static method => method.Name).ToArray());
         Assert.IsFalse(methods.Any(static method =>
@@ -1097,12 +1254,19 @@ public sealed class BackupServiceTests
             "BackupId",
             "DirectoryName");
         AssertImmutablePublicType(
+            typeof(IncompleteCutoverCandidate),
+            "BackupId",
+            "PreviousWorkspaceDirectoryName",
+            "RestoreDirectoryName",
+            "RestoredWorkspaceIsActive");
+        AssertImmutablePublicType(
             typeof(BackupServiceException),
             "Reason",
             "ReconciliationRequired");
         Assert.AreEqual(0, typeof(BackupResult).GetConstructors().Length);
         Assert.AreEqual(0, typeof(RestoreResult).GetConstructors().Length);
         Assert.AreEqual(0, typeof(IncompleteRestoreCandidate).GetConstructors().Length);
+        Assert.AreEqual(0, typeof(IncompleteCutoverCandidate).GetConstructors().Length);
         Assert.AreEqual(0, typeof(BackupServiceException).GetConstructors().Length);
 
         const string privatePath = @"C:\private\customer-workspace";

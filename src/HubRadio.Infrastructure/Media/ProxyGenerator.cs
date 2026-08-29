@@ -20,6 +20,7 @@ public enum ProxyGenerationFailureReason
     RegisteredOriginalInvalid,
     ToolVerificationFailed,
     SourceProbeFailed,
+    ProcessTimedOut,
     StagingConflict,
     StagingUnavailable,
     GenerationFailed,
@@ -57,6 +58,8 @@ public sealed class ProxyGenerationException : Exception
                 "The proxy generation tool could not be verified.",
             ProxyGenerationFailureReason.SourceProbeFailed =>
                 "The registered original could not be probed for proxy generation.",
+            ProxyGenerationFailureReason.ProcessTimedOut =>
+                "The proxy generation process exceeded its timeout.",
             ProxyGenerationFailureReason.StagingConflict =>
                 "The proxy staging destination already exists.",
             ProxyGenerationFailureReason.StagingUnavailable =>
@@ -81,6 +84,8 @@ public sealed class ProxyGenerationException : Exception
 
 public sealed class ProxyGenerationProfile
 {
+    // These are the two exact Stage 0 encoder requests. They select a reproducible
+    // representation path; their measured quality is not a production threshold.
     internal const string Stage0EvidenceLabel = "stage0-proxy-640x360-v1";
     internal const int Stage0Width = 640;
     internal const int Stage0Height = 360;
@@ -90,6 +95,8 @@ public sealed class ProxyGenerationProfile
     internal const string Stage0EncoderPreset = "p4";
     internal const int Stage0ConstantQuality = 28;
     internal const string Stage0VideoBitRate = "0";
+    internal const string MediaFoundationVideoEncoder = "h264_mf";
+    internal const string MediaFoundationVideoBitRate = "4M";
     internal const int Stage0GopSize = 30;
     internal const string Stage0AudioCodec = "aac";
     internal const string Stage0AudioBitRate = "96k";
@@ -97,6 +104,19 @@ public sealed class ProxyGenerationProfile
     private static readonly RationalNumber Stage0FrameRate = new(30000, 1001);
 
     internal ProxyGenerationProfile()
+        : this(
+            Stage0VideoEncoder,
+            Stage0EncoderPreset,
+            Stage0ConstantQuality,
+            Stage0VideoBitRate)
+    {
+    }
+
+    private ProxyGenerationProfile(
+        string videoEncoder,
+        string? encoderPreset,
+        int? constantQuality,
+        string videoBitRate)
     {
         EvidenceLabel = Stage0EvidenceLabel;
         Width = Stage0Width;
@@ -104,10 +124,10 @@ public sealed class ProxyGenerationProfile
         FrameRate = Stage0FrameRate;
         ScaleFlags = Stage0ScaleFlags;
         PixelFormat = Stage0PixelFormat;
-        VideoEncoder = Stage0VideoEncoder;
-        EncoderPreset = Stage0EncoderPreset;
-        ConstantQuality = Stage0ConstantQuality;
-        VideoBitRate = Stage0VideoBitRate;
+        VideoEncoder = videoEncoder;
+        EncoderPreset = encoderPreset;
+        ConstantQuality = constantQuality;
+        VideoBitRate = videoBitRate;
         GopSize = Stage0GopSize;
         AudioCodec = Stage0AudioCodec;
         AudioBitRate = Stage0AudioBitRate;
@@ -129,9 +149,9 @@ public sealed class ProxyGenerationProfile
 
     public string VideoEncoder { get; }
 
-    public string EncoderPreset { get; }
+    public string? EncoderPreset { get; }
 
-    public int ConstantQuality { get; }
+    public int? ConstantQuality { get; }
 
     public string VideoBitRate { get; }
 
@@ -144,6 +164,13 @@ public sealed class ProxyGenerationProfile
     public bool MetadataStripped { get; }
 
     public bool FastStart { get; }
+
+    internal static ProxyGenerationProfile CreateMediaFoundationFallback() =>
+        new(
+            MediaFoundationVideoEncoder,
+            encoderPreset: null,
+            constantQuality: null,
+            MediaFoundationVideoBitRate);
 }
 
 public sealed class GeneratedProxy
@@ -226,6 +253,8 @@ public sealed class ProxyGenerator
     private static readonly ContentDigest CanonicalFfmpegDigest =
         new(DecodeValidator.CanonicalFfmpegSha256);
     private static readonly ProxyGenerationProfile Stage0Profile = new();
+    private static readonly ProxyGenerationProfile MediaFoundationProfile =
+        ProxyGenerationProfile.CreateMediaFoundationFallback();
     private static readonly RationalNumber RequiredFrameRate = new(30000, 1001);
     private static readonly RationalTime RequiredFrameDuration = new(1001, 30000);
 
@@ -376,17 +405,16 @@ public sealed class ProxyGenerator
                 throw Failure(ProxyGenerationFailureReason.StagingUnavailable);
             }
 
-            ProcessRunRequest request = CreateProcessRequest(
-                _ffmpegPath,
-                sourcePath,
-                staging.OutputPath,
-                sourceVideo.Index,
-                sourceAudio?.Index,
-                timeout);
-            ProcessRunResult processResult = await RunGenerationAsync(
-                request,
-                cancellationToken).ConfigureAwait(false);
-            ValidateProcessResult(processResult);
+            (ProcessRunResult processResult, ProxyGenerationProfile selectedProfile) =
+                await RunGenerationWithFallbackAsync(
+                    sourcePath,
+                    staging,
+                    sourceVideo.Index,
+                    sourceAudio?.Index,
+                    timeout,
+                    sourceStream,
+                    sourceSnapshot,
+                    cancellationToken).ConfigureAwait(false);
             ValidateHeldSource(sourceStream, sourceSnapshot);
 
             StagedMediaImport proxyMedia;
@@ -479,7 +507,7 @@ public sealed class ProxyGenerator
                 proxyArtifact,
                 proxyProbe,
                 proxyPtsIndex,
-                Stage0Profile,
+                selectedProfile,
                 processResult.Duration);
         }
         catch (Exception exception)
@@ -554,8 +582,26 @@ public sealed class ProxyGenerator
         string outputPath,
         int videoStreamIndex,
         int? audioStreamIndex,
-        TimeSpan timeout)
+        TimeSpan timeout) =>
+        CreateProcessRequest(
+            ffmpegPath,
+            sourcePath,
+            outputPath,
+            videoStreamIndex,
+            audioStreamIndex,
+            timeout,
+            Stage0Profile);
+
+    private static ProcessRunRequest CreateProcessRequest(
+        string ffmpegPath,
+        string sourcePath,
+        string outputPath,
+        int videoStreamIndex,
+        int? audioStreamIndex,
+        TimeSpan timeout,
+        ProxyGenerationProfile profile)
     {
+        ArgumentNullException.ThrowIfNull(profile);
         if (videoStreamIndex < 0)
         {
             throw new ArgumentOutOfRangeException(
@@ -611,14 +657,21 @@ public sealed class ProxyGenerator
         arguments.Add(
             "scale=640:360:flags=bilinear,fps=30000/1001,format=yuv420p");
         arguments.Add("-c:v");
-        arguments.Add(ProxyGenerationProfile.Stage0VideoEncoder);
-        arguments.Add("-preset");
-        arguments.Add(ProxyGenerationProfile.Stage0EncoderPreset);
-        arguments.Add("-cq");
-        arguments.Add(ProxyGenerationProfile.Stage0ConstantQuality.ToString(
-            CultureInfo.InvariantCulture));
+        arguments.Add(profile.VideoEncoder);
+        if (profile.EncoderPreset is string encoderPreset)
+        {
+            arguments.Add("-preset");
+            arguments.Add(encoderPreset);
+        }
+
+        if (profile.ConstantQuality is int constantQuality)
+        {
+            arguments.Add("-cq");
+            arguments.Add(constantQuality.ToString(CultureInfo.InvariantCulture));
+        }
+
         arguments.Add("-b:v");
-        arguments.Add(ProxyGenerationProfile.Stage0VideoBitRate);
+        arguments.Add(profile.VideoBitRate);
         arguments.Add("-g");
         arguments.Add(ProxyGenerationProfile.Stage0GopSize.ToString(
             CultureInfo.InvariantCulture));
@@ -644,6 +697,105 @@ public sealed class ProxyGenerator
             timeout,
             ProcessRunRequest.DefaultMaxCapturedBytes,
             standardInput: null);
+    }
+
+    private async Task<(ProcessRunResult Result, ProxyGenerationProfile Profile)>
+        RunGenerationWithFallbackAsync(
+            string sourcePath,
+            StagingPaths staging,
+            int videoStreamIndex,
+            int? audioStreamIndex,
+            TimeSpan timeout,
+            FileStream sourceStream,
+            HeldFileSnapshot sourceSnapshot,
+            CancellationToken cancellationToken)
+    {
+        ProcessRunRequest primaryRequest = CreateProcessRequest(
+            _ffmpegPath,
+            sourcePath,
+            staging.OutputPath,
+            videoStreamIndex,
+            audioStreamIndex,
+            timeout,
+            Stage0Profile);
+        if (WorkspacePathSafety.PathEntryExistsConservatively(staging.OutputPath))
+        {
+            throw Failure(
+                ProxyGenerationFailureReason.StagingConflict,
+                reconciliationRequired: true);
+        }
+
+        try
+        {
+            ProcessRunResult primary = await RunGenerationAsync(
+                primaryRequest,
+                cancellationToken).ConfigureAwait(false);
+            ValidateProcessResult(primary);
+            return (primary, Stage0Profile);
+        }
+        catch (ProxyGenerationException exception)
+            when (exception.Reason is
+                    ProxyGenerationFailureReason.GenerationFailed or
+                    ProxyGenerationFailureReason.ProcessTimedOut &&
+                !exception.ReconciliationRequired)
+        {
+            if (WorkspacePathSafety.PathEntryExistsConservatively(
+                    staging.OutputPath))
+            {
+                DeleteFailedOutputForFallback(staging);
+            }
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateHeldSource(sourceStream, sourceSnapshot);
+        ProcessRunRequest fallbackRequest = CreateProcessRequest(
+            _ffmpegPath,
+            sourcePath,
+            staging.OutputPath,
+            videoStreamIndex,
+            audioStreamIndex,
+            timeout,
+            MediaFoundationProfile);
+        ProcessRunResult fallback = await RunGenerationAsync(
+            fallbackRequest,
+            cancellationToken).ConfigureAwait(false);
+        ValidateProcessResult(fallback);
+        return (fallback, MediaFoundationProfile);
+    }
+
+    private void DeleteFailedOutputForFallback(StagingPaths staging)
+    {
+        try
+        {
+            if (!WorkspacePathSafety.TryGetAttributes(
+                    staging.OutputPath,
+                    out FileAttributes attributes))
+            {
+                return;
+            }
+
+            WorkspacePathSafety.ValidateRegularFileAttributes(attributes);
+            WorkspacePathSafety.ValidateExistingPathChain(
+                staging.DirectoryPath,
+                staging.OutputPath,
+                targetIsDirectory: false);
+            File.Delete(staging.OutputPath);
+            if (WorkspacePathSafety.PathEntryExistsConservatively(
+                    staging.OutputPath))
+            {
+                throw new IOException(
+                    "The failed proxy output could not be removed.");
+            }
+        }
+        catch (Exception exception)
+            when (exception is IOException or UnauthorizedAccessException or
+                SecurityException or NotSupportedException or
+                WorkspacePathSafetyException)
+        {
+            throw Failure(
+                ProxyGenerationFailureReason.CleanupFailed,
+                reconciliationRequired: true);
+        }
     }
 
     internal static void ValidateProcessResult(ProcessRunResult processResult)
@@ -830,7 +982,7 @@ public sealed class ProxyGenerator
         return ffprobeClient.ProbeAsync;
     }
 
-    private static Func<
+    internal static Func<
         StagedMediaImport,
         MediaProbeResult,
         TimeSpan,
@@ -838,7 +990,28 @@ public sealed class ProxyGenerator
         Task<PtsIndex>> GetIndexDelegate(PtsIndexer ptsIndexer)
     {
         ArgumentNullException.ThrowIfNull(ptsIndexer);
-        return ptsIndexer.IndexAsync;
+        return async (stagedMedia, probeResult, timeout, cancellationToken) =>
+        {
+            try
+            {
+                return await ptsIndexer.IndexAsync(
+                    stagedMedia,
+                    probeResult,
+                    timeout,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (PtsIndexException exception)
+                when (exception.Reason is
+                    PtsIndexFailureReason.MissingDuration or
+                    PtsIndexFailureReason.UnexpectedField)
+            {
+                return await ptsIndexer.IndexPacketTimelineAsync(
+                    stagedMedia,
+                    probeResult,
+                    timeout,
+                    cancellationToken).ConfigureAwait(false);
+            }
+        };
     }
 
     private static Func<
@@ -1093,6 +1266,14 @@ public sealed class ProxyGenerator
         {
             throw;
         }
+        catch (Exception exception)
+            when (exception is TimeoutException or MediaProbeException
+            {
+                Reason: MediaProbeFailureReason.ProcessTimedOut,
+            })
+        {
+            throw Failure(ProxyGenerationFailureReason.ProcessTimedOut);
+        }
         catch (Exception)
         {
             throw Failure(ProxyGenerationFailureReason.SourceProbeFailed);
@@ -1145,6 +1326,10 @@ public sealed class ProxyGenerator
         {
             throw;
         }
+        catch (TimeoutException)
+        {
+            throw Failure(ProxyGenerationFailureReason.ProcessTimedOut);
+        }
         catch (Exception)
         {
             throw Failure(ProxyGenerationFailureReason.GenerationFailed);
@@ -1166,6 +1351,14 @@ public sealed class ProxyGenerator
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (Exception exception)
+            when (exception is TimeoutException or MediaProbeException
+            {
+                Reason: MediaProbeFailureReason.ProcessTimedOut,
+            })
+        {
+            throw Failure(ProxyGenerationFailureReason.ProcessTimedOut);
         }
         catch (Exception)
         {
@@ -1190,6 +1383,14 @@ public sealed class ProxyGenerator
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (Exception exception)
+            when (exception is TimeoutException or PtsIndexException
+            {
+                Reason: PtsIndexFailureReason.ProcessTimedOut,
+            })
+        {
+            throw Failure(ProxyGenerationFailureReason.ProcessTimedOut);
         }
         catch (Exception)
         {

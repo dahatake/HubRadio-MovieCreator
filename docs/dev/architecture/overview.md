@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、Windows 11 x64 の単一 PC で動作する、ローカル優先の動画編集支援アプリケーションとして設計しています。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation は完了済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。Stage 1では正規時刻・identity・provenance・analysis、CompositionVersion、TimelineMap、render/delivery manifest、canonical JSON/cache key、process制限、token化file picker、brand/layout、Windows actor SIDに加え、WinUI/WebView2 startup、secure bundled host、typed ping bridgeまで実装済みです。SQLite業務データ、編集操作、業務UI、製品worker protocol、配布は未実装です。
+> Stage 0 と Foundation は完了済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。Stage 1ではSQLite業務store、永続job/worker protocol、編集操作、review/approval、媒体取込・PTS・NVENC/Media Foundation proxy・preview素材、ACL、audit、backup/restoreまで実装済みです。`M-011`のdurable request/checkpoint・Asset/warning persistence、業務UI、解析後段、Render IR以降、配布は未完了です。
 
 ![HubRadio MovieCreatorのローカル優先アーキテクチャ。緑は実装済み、青は一部実装または計画中、紫の破線は条件付きAzure経路](system-overview.svg)
 
@@ -71,7 +71,7 @@ Stage 0のPowerShell／Python検証実装に加え、Foundationでは製品ホ�
 
 ### SQLite
 
-次の索引と業務状態を保存する計画です。
+次の索引と業務状態をSQLiteへ保存します。
 
 - 案件、権限、ジョブ
 - 復旧可能な作業コピー
@@ -83,7 +83,7 @@ Stage 0のPowerShell／Python検証実装に加え、Foundationでは製品ホ�
 
 ### 管理ワークスペース
 
-初回起動時に利用者が選んだローカル固定ディスクへ、元動画、代理、解析、編集版、プレビュー、レンダー、納品、証拠を保存する計画です。保存・保持・バックアップの決定は [ADR-0005](../decisions/ADR-0005-storage-retention.md) を参照してください。
+ローカル固定ディスク上の管理workspaceへ、元動画、代理、解析、編集版、プレビュー、レンダー、納品、証拠を保存する基盤を実装済みです。初回起動時の保存先選択UIは未完了です。保存・保持・バックアップの決定は [ADR-0005](../decisions/ADR-0005-storage-retention.md) を参照してください。
 
 ファイルは staging へ書き、hash 検証後に同一ボリューム内で昇格します。SQLite には昇格済み成果物だけを登録します。
 
@@ -103,7 +103,7 @@ Stage 0のPowerShell／Python検証実装に加え、Foundationでは製品ホ�
 | `RenderManifest` | 1回のレンダー入力、実行条件、結果を記録する |
 | `DeliveryManifest` | 動画、字幕、画像、文書を同じ承認版へ束ねる |
 
-表の全概念は型として実装済みです。`WorkingCopy`は現時点ではin-memory domain modelであり、SQLiteへの復旧可能な保存は未実装です。EditOperation、TimelineMap再構築、Render IR、render実行、review/export flowも後続taskで実装するため、型の存在を完成済み操作フローとは扱いません。
+表の全概念は型として実装済みです。`WorkingCopy`のSQLite永続化、EditOperation、TimelineMap再構築、review/approval基盤は実装済みです。Render IR、render実行、export flowは未完了であり、個別型の存在を完成済み操作フローとは扱いません。
 
 ## 処理フロー
 
@@ -136,8 +136,8 @@ Stage 0のPowerShell／Python検証実装に加え、Foundationでは製品ホ�
 | 境界 | 強制策と現在状態 |
 |---|---|
 | React → .NET | **実装済み:** origin、strict UTF-8 byte size、closed schema、methodの許可リスト検査。現在は`bridge.ping`だけ |
-| .NET → FFmpeg | **一部実装:** shell無効、引数配列、timeout、子孫終了、binary hash。型付きRender IRは未実装 |
-| .NET → Python | **未実装:** NDJSON schema、message上限、timeout、SQLite直接接続禁止 |
+| .NET → FFmpeg | **一部実装:** shell無効、引数配列、timeout、子孫終了、binary hash、proxyのNVENC→Media Foundation fallbackと実profile記録。型付きRender IRは未実装 |
+| .NET → Python | **実装済み:** closed NDJSON schema、message上限、timeout、SQLite直接接続禁止 |
 | ホスト → workspace | path 正規化、ID lookup、staging、hash、atomic move、Windows ACL |
 | ホスト → SQLite | parameterized query、transaction、foreign key、migration 前 backup |
 | ホスト → Azure | 既定無効。選択・マスク・確認済み文字起こし span だけ |

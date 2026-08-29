@@ -4,7 +4,7 @@
 **要求の正本（暫定既定）:** `docs/requirement-definition.md` 版 0.1 Draft  
 **設計根拠:** `docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **計画日:** 2026年8月26日  
-**計画状態:** Stage 0は2026年8月27日に人手承認済み。P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-010、D-012、J-003、J-004、J-009、J-010、M-001、R-004、R-005、U-001〜U-003、S-001は完了し、ST-008は利用条件不同意のためcondition-falseとして閉じた。Stage 1では`A-010`と`A-015`をcondition-false、`A-012`と`A-013`を正例annotation・再評価待ちとして開始せず、[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)の手動fallbackを実装する。全203 taskの内訳は、完了56 + 先行条件不成立`ST-008` 1 + 後続146である。後続146 task IDのうち14件は条件不成立・保留（4件）またはAzure gate closed（10件）で、baseline実行残は132件。Foundation scaffold、正規時刻・identity・provenance・project/rights・transcript revision・analysis provenance・layout/output specification・不変CompositionVersion・TimelineMap・render/delivery manifest・canonical JSON/cache key、shell-free ProcessRunner、Windows Job Object、bounded local diagnostics、tool/model binary integrity verification、token化file picker、版付きbrand template/layout resolver、Windows actor SID、WebView2 startup/secure bundled host/typed ping bridgeは実装済みである。SQLite、編集操作、業務UI、製品worker protocol、配布、IaC、Azure resourceは未実装であり、read-only install先での起動はpackage完成後の受入を待つ。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布は未承認。次の依存解放対象は`D-011`、`D-015`、`J-005`、`R-001`、`R-006`、`R-007`、`R-016`、`U-004`、`S-003`、`PK-001`、`PK-003`、`PK-004`、`PK-005`であり、変更境界が重ならないものを並列実行する。
+**計画状態:** Stage 0は2026年8月27日に人手承認済み。2026年8月30日時点で93/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-010、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006/S-008〜S-010/S-012/S-015を実装・検証した。`S-003`のコードは実装済みだが、別の非管理者Windows accountによる受入証拠を待つため完了数へ含めない。`M-011`は実装・敵対監査中で、process restart後のdurable checkpointを持たない現状を完了扱いにしない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留、`Z-001〜Z-010`はAzure gate closedのままである。したがって通常実行残は95 taskである。SQLite業務store、永続job、worker protocol、編集操作、review/approval、媒体取込・PTS・proxy・waveform/sprite、ACL、audit、backup/restoreまで実装済みで、業務UI、解析後段、Render IR以降、配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布は未承認。次は`M-011`の未達条件を閉じた後に`M-012`へ進み、独立して依存解放済みの`A-001`、`A-005`、`S-014`、`PK-001`、`PK-003`、`PK-004`、`PK-005`を再評価する。Azure作成とheld taskは別の成立証拠・明示承認まで開始しない。
 
 ---
 
@@ -229,7 +229,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.4 D — 正規モデル、SQLite、成果物ストア
 
-**実行状態: D-001〜D-010、D-012は完了。** `D-011`と`D-015`は依存解放済みである。`D-013`は`D-011`を待ち、WorkingCopyのSQLite永続化はD-013/D-014で実装する。
+**実行状態: D-001〜D-016は完了。** SQLite migration/store、WorkingCopy永続化、ArtifactStore、起動時整合性検査まで実装・検証済みである。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -252,7 +252,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.5 J — 永続ジョブと子プロセス
 
-**実行状態: J-003、J-004、J-009、J-010は完了。** `J-005`は依存解放済みであり、`J-001`は`D-013`を待つ。
+**実行状態: J-001〜J-010は完了。** 永続job、単一heavy runner、closed NDJSON worker、progress/cancel/retry、cache planning、restart recoveryまで実装・検証済みである。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -269,7 +269,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.6 M — 動画取込、代理、プレビュー素材
 
-**実行状態: M-001は完了。** native pickerのpathはWeb UIへ返さず、host内の一時的な型付きasset candidate IDへ変換する。`M-002`は`D-015`と`J-001`を待つ。
+**実行状態: M-001〜M-010は完了。** token化picker、stream copy/hash、probe/decode、original昇格、NVENC→Media Foundation固定fallbackを持つproxy、観測PTS、ProxyFrameMap、waveform/spriteまで実装・検証済みである。`M-011`は同一process内のtyped retryまで実装済みだが、request/stage checkpointとAsset/MediaInfo warningのdurable persistenceを持たないため完了扱いにしない。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -314,7 +314,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.8 R — 非破壊編集、字幕、レンダー
 
-**実行状態: R-004、R-005は完了。** 版付きbrand templateと正規化座標からのexact layout解決を実装した。`R-001`、`R-006`、`R-007`、`R-016`は依存解放済みである。
+**実行状態: R-001〜R-009、R-016は完了。** 型付き編集、TimelineMap再構築、version/checkpoint、profile、manual layout/keyframe、typed transitionまで実装・検証済みである。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -347,7 +347,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.9 U — Windows UI
 
-**実行状態: U-001〜U-003は完了。** Evergreen Runtime検出と失敗表示、`%LOCALAPPDATA%`配下のprofile、strict CSPと仮想hostによるbundled UI、外部navigation/popup/download遮断、origin/size/schema/methodを検証するtyped ping bridgeを実装した。raw host objectは公開していない。`U-004`は依存解放済みである。
+**実行状態: U-001〜U-004は完了。** secure bundled host、typed bridge、React単一state/reducerとhost同期を実装・検証済みである。業務画面U-005以降は未完了である。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -371,7 +371,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.10 S — ポリシー、レビュー、セキュリティ、復旧
 
-**実行状態: S-001は完了。** Windows SIDをfail-closedで取得する。`S-003`は実装着手可能だが、完了には別の非管理者Windows accountからのACL試験が必要である。
+**実行状態: S-001、S-002、S-004、S-006、S-008〜S-010、S-012、S-015は完了。** `S-003`はコードと同一account自動試験まで完了したが、別の非管理者Windows accountから読めないことの受入証拠を待つ。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -641,4 +641,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**次の未完了実行対象は、依存解放済みのD-011、D-015、J-005、R-001、R-006、R-007、R-016、U-004、S-003、PK-001、PK-003、PK-004、PK-005である。変更境界が重ならないものを並列実行する。S-003の完了には別の非管理者Windows accountによるACL試験が必要である。Azure作成はZ-001〜Z-004の条件成立とZ-005の別の明示指示後に限る。**
+**現在の直列対象は、durable restart条件を残す`M-011`である。完了後に`M-012`を実行する。独立レーンでは依存解放済みの`A-001`、`A-005`、`S-014`、`PK-001`、`PK-003`、`PK-004`、`PK-005`を再評価する。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Azure作成はZ-001〜Z-004の条件成立とZ-005の別の明示指示後に限る。**

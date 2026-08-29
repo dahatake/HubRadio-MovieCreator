@@ -280,6 +280,13 @@ public sealed class JobCoordinator
         return CreateSnapshot(RequireAggregate(jobId));
     }
 
+    internal StoredJob GetStoredJob(EntityId<JobIdTag> jobId)
+    {
+        ArgumentNullException.ThrowIfNull(jobId);
+        return _jobStore.GetJob(jobId)
+            ?? throw new InvalidOperationException("The job does not exist.");
+    }
+
     public JobCancellationResult RequestCancellation(EntityId<JobIdTag> jobId)
     {
         ArgumentNullException.ThrowIfNull(jobId);

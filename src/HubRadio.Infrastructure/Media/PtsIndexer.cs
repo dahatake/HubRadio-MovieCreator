@@ -394,6 +394,8 @@ public sealed class PtsIndexer
 {
     internal const string FrameShowEntries =
         "frame=stream_index,key_frame,best_effort_timestamp,duration";
+    internal const string PacketShowEntries =
+        "packet=stream_index,flags,pts,duration";
     internal const string CompactOutputFormat =
         "compact=p=0:nk=0:escape=none:s=|";
 
@@ -408,6 +410,8 @@ public sealed class PtsIndexer
     private const string KeyFrameField = "key_frame";
     private const string PresentationTimestampField = "best_effort_timestamp";
     private const string DurationField = "duration";
+    private const string PacketFlagsField = "flags";
+    private const string PacketPresentationTimestampField = "pts";
 
     private static readonly ContentDigest CanonicalFfprobeDigest =
         new(FfprobeClient.CanonicalFfprobeSha256);
@@ -417,6 +421,14 @@ public sealed class PtsIndexer
         StreamIndexField,
         KeyFrameField,
         PresentationTimestampField,
+        DurationField,
+    ];
+
+    private static readonly HashSet<string> KnownPacketFields =
+    [
+        StreamIndexField,
+        PacketFlagsField,
+        PacketPresentationTimestampField,
         DurationField,
     ];
 
@@ -443,7 +455,32 @@ public sealed class PtsIndexer
         StagedMediaImport stagedMedia,
         MediaProbeResult probeResult,
         TimeSpan timeout,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await IndexCoreAsync(
+            stagedMedia,
+            probeResult,
+            timeout,
+            usePacketTimeline: false,
+            cancellationToken).ConfigureAwait(false);
+
+    internal async Task<PtsIndex> IndexPacketTimelineAsync(
+        StagedMediaImport stagedMedia,
+        MediaProbeResult probeResult,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default) =>
+        await IndexCoreAsync(
+            stagedMedia,
+            probeResult,
+            timeout,
+            usePacketTimeline: true,
+            cancellationToken).ConfigureAwait(false);
+
+    private async Task<PtsIndex> IndexCoreAsync(
+        StagedMediaImport stagedMedia,
+        MediaProbeResult probeResult,
+        TimeSpan timeout,
+        bool usePacketTimeline,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(stagedMedia);
         ArgumentNullException.ThrowIfNull(probeResult);
@@ -452,11 +489,17 @@ public sealed class PtsIndexer
         ProbedMediaStream primaryVideoStream = ValidateInputBinding(
             stagedMedia,
             probeResult);
-        ProcessRunRequest request = CreateProcessRequest(
-            _ffprobePath,
-            stagedMedia.StagingPath,
-            primaryVideoStream.Index,
-            timeout);
+        ProcessRunRequest request = usePacketTimeline
+            ? CreatePacketProcessRequest(
+                _ffprobePath,
+                stagedMedia.StagingPath,
+                primaryVideoStream.Index,
+                timeout)
+            : CreateProcessRequest(
+                _ffprobePath,
+                stagedMedia.StagingPath,
+                primaryVideoStream.Index,
+                timeout);
 
         using FileStream stagedStream = OpenStagedMedia(stagedMedia.StagingPath);
         ValidateHeldStagedMedia(stagedStream, stagedMedia.ByteSize);
@@ -500,7 +543,11 @@ public sealed class PtsIndexer
         }
 
         ValidateHeldStagedMedia(stagedStream, stagedMedia.ByteSize);
-        return ParseProcessResult(stagedMedia, probeResult, processResult);
+        return ParseProcessResultCore(
+            stagedMedia,
+            probeResult,
+            processResult,
+            usePacketTimeline);
     }
 
     internal static ProbedMediaStream ValidateInputBinding(
@@ -576,10 +623,70 @@ public sealed class PtsIndexer
             standardInput: null);
     }
 
+    internal static ProcessRunRequest CreatePacketProcessRequest(
+        string ffprobePath,
+        string stagedPath,
+        int streamIndex,
+        TimeSpan timeout)
+    {
+        if (streamIndex < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(streamIndex),
+                "A selected ffprobe stream index must not be negative.");
+        }
+
+        string normalizedFfprobePath = SqliteStoreSupport.ValidateLocalAbsolutePath(
+            ffprobePath,
+            nameof(ffprobePath));
+        string normalizedStagedPath = SqliteStoreSupport.ValidateLocalAbsolutePath(
+            stagedPath,
+            nameof(stagedPath));
+        string? workingDirectory = Path.GetDirectoryName(normalizedStagedPath);
+        if (string.IsNullOrEmpty(workingDirectory))
+        {
+            throw new ArgumentException(
+                "The staged media path must have a parent directory.",
+                nameof(stagedPath));
+        }
+
+        return new ProcessRunRequest(
+            normalizedFfprobePath,
+            [
+                "-v",
+                "error",
+                "-select_streams",
+                streamIndex.ToString(CultureInfo.InvariantCulture),
+                "-show_packets",
+                "-show_entries",
+                PacketShowEntries,
+                "-of",
+                CompactOutputFormat,
+                normalizedStagedPath,
+            ],
+            workingDirectory,
+            timeout,
+            ProcessRunRequest.MaximumMaxCapturedBytes,
+            standardInput: null);
+    }
+
     internal static PtsIndex ParseProcessResult(
         StagedMediaImport stagedMedia,
         MediaProbeResult probeResult,
         ProcessRunResult processResult)
+    {
+        return ParseProcessResultCore(
+            stagedMedia,
+            probeResult,
+            processResult,
+            usePacketTimeline: false);
+    }
+
+    private static PtsIndex ParseProcessResultCore(
+        StagedMediaImport stagedMedia,
+        MediaProbeResult probeResult,
+        ProcessRunResult processResult,
+        bool usePacketTimeline)
     {
         ArgumentNullException.ThrowIfNull(stagedMedia);
         ArgumentNullException.ThrowIfNull(probeResult);
@@ -606,16 +713,44 @@ public sealed class PtsIndexer
             throw Failure(PtsIndexFailureReason.EmptyOutput);
         }
 
-        return ParseOutput(
-            stagedMedia,
-            probeResult,
-            processResult.StandardOutput);
+        return usePacketTimeline
+            ? ParsePacketOutput(
+                stagedMedia,
+                probeResult,
+                processResult.StandardOutput)
+            : ParseOutput(
+                stagedMedia,
+                probeResult,
+                processResult.StandardOutput);
     }
 
     internal static PtsIndex ParseOutput(
         StagedMediaImport stagedMedia,
         MediaProbeResult probeResult,
         string standardOutput)
+    {
+        return ParseOutputCore(
+            stagedMedia,
+            probeResult,
+            standardOutput,
+            usePacketTimeline: false);
+    }
+
+    internal static PtsIndex ParsePacketOutput(
+        StagedMediaImport stagedMedia,
+        MediaProbeResult probeResult,
+        string standardOutput) =>
+        ParseOutputCore(
+            stagedMedia,
+            probeResult,
+            standardOutput,
+            usePacketTimeline: true);
+
+    private static PtsIndex ParseOutputCore(
+        StagedMediaImport stagedMedia,
+        MediaProbeResult probeResult,
+        string standardOutput,
+        bool usePacketTimeline)
     {
         ArgumentNullException.ThrowIfNull(stagedMedia);
         ArgumentNullException.ThrowIfNull(probeResult);
@@ -638,9 +773,13 @@ public sealed class PtsIndexer
         bool hasKeyFrame = false;
         for (int sequence = 0; sequence < lines.Length; sequence++)
         {
-            ParsedFrame frame = ParseFrameLine(
-                lines[sequence],
-                primaryVideoStream.Index);
+            ParsedFrame frame = usePacketTimeline
+                ? ParsePacketLine(
+                    lines[sequence],
+                    primaryVideoStream.Index)
+                : ParseFrameLine(
+                    lines[sequence],
+                    primaryVideoStream.Index);
             RationalTime presentationTime = ConvertTicks(
                 frame.PresentationTimestamp,
                 timeBase);
@@ -759,22 +898,7 @@ public sealed class PtsIndexer
         string line,
         int expectedStreamIndex)
     {
-        Dictionary<string, string> fields = new(StringComparer.Ordinal);
-        foreach (string column in line.Split('|', StringSplitOptions.None))
-        {
-            int separatorIndex = column.IndexOf('=');
-            if (separatorIndex <= 0 || separatorIndex != column.LastIndexOf('='))
-            {
-                throw Failure(PtsIndexFailureReason.UnexpectedField);
-            }
-
-            string name = column[..separatorIndex];
-            string value = column[(separatorIndex + 1)..];
-            if (!KnownFrameFields.Contains(name) || !fields.TryAdd(name, value))
-            {
-                throw Failure(PtsIndexFailureReason.UnexpectedField);
-            }
-        }
+        Dictionary<string, string> fields = ParseFields(line, KnownFrameFields);
 
         string rawStreamIndex = ReadRequiredField(
             fields,
@@ -820,6 +944,83 @@ public sealed class PtsIndexer
             PtsIndexFailureReason.InvalidDuration);
 
         return new ParsedFrame(keyFrame, presentationTimestamp, duration);
+    }
+
+    private static ParsedFrame ParsePacketLine(
+        string line,
+        int expectedStreamIndex)
+    {
+        Dictionary<string, string> fields = ParseFields(line, KnownPacketFields);
+        string rawStreamIndex = ReadRequiredField(
+            fields,
+            StreamIndexField,
+            PtsIndexFailureReason.MissingStreamIndex,
+            treatNotAvailableAsMissing: false);
+        int streamIndex = ParseNonnegativeInt32(
+            rawStreamIndex,
+            PtsIndexFailureReason.InvalidStreamIndex);
+        if (streamIndex != expectedStreamIndex)
+        {
+            throw Failure(PtsIndexFailureReason.StreamIndexMismatch);
+        }
+
+        string flags = ReadRequiredField(
+            fields,
+            PacketFlagsField,
+            PtsIndexFailureReason.MissingKeyFrameFlag,
+            treatNotAvailableAsMissing: false);
+        if (flags.Length != 3 ||
+            flags[0] is not ('K' or '_') ||
+            flags[1] is not ('D' or '_') ||
+            flags[2] != '_')
+        {
+            throw Failure(PtsIndexFailureReason.InvalidKeyFrameFlag);
+        }
+
+        string rawPresentationTimestamp = ReadRequiredField(
+            fields,
+            PacketPresentationTimestampField,
+            PtsIndexFailureReason.MissingPresentationTimestamp,
+            treatNotAvailableAsMissing: true);
+        long presentationTimestamp = ParseSignedInt64(
+            rawPresentationTimestamp,
+            PtsIndexFailureReason.InvalidPresentationTimestamp);
+        string rawDuration = ReadRequiredField(
+            fields,
+            DurationField,
+            PtsIndexFailureReason.MissingDuration,
+            treatNotAvailableAsMissing: true);
+        long duration = ParsePositiveInt64(
+            rawDuration,
+            PtsIndexFailureReason.InvalidDuration);
+        return new ParsedFrame(
+            flags[0] == 'K',
+            presentationTimestamp,
+            duration);
+    }
+
+    private static Dictionary<string, string> ParseFields(
+        string line,
+        IReadOnlySet<string> knownFields)
+    {
+        Dictionary<string, string> fields = new(StringComparer.Ordinal);
+        foreach (string column in line.Split('|', StringSplitOptions.None))
+        {
+            int separatorIndex = column.IndexOf('=');
+            if (separatorIndex <= 0 || separatorIndex != column.LastIndexOf('='))
+            {
+                throw Failure(PtsIndexFailureReason.UnexpectedField);
+            }
+
+            string name = column[..separatorIndex];
+            string value = column[(separatorIndex + 1)..];
+            if (!knownFields.Contains(name) || !fields.TryAdd(name, value))
+            {
+                throw Failure(PtsIndexFailureReason.UnexpectedField);
+            }
+        }
+
+        return fields;
     }
 
     private static string ReadRequiredField(

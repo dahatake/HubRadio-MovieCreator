@@ -104,7 +104,7 @@
     <rect x="800" y="420" width="210" height="150" rx="14" fill="#eff6ff" stroke="#60a5fa"/>
     <text x="905" y="452" text-anchor="middle" class="box-title">Infrastructure</text>
     <text x="905" y="480" text-anchor="middle" class="box-text">process / integrity / picker ✓</text>
-    <text x="905" y="504" text-anchor="middle" class="box-text">SQLite / file / backup planned</text>
+    <text x="905" y="504" text-anchor="middle" class="box-text">SQLite / file / backup implemented</text>
     <text x="905" y="528" text-anchor="middle" class="box-text">atomic artifact store planned</text>
   </g>
 
@@ -213,6 +213,6 @@
   <path d="M 930 943 L 975 943" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)"/>
   <path d="M 1230 943 L 1275 943" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)"/>
 
-  <text x="800" y="1062" text-anchor="middle" class="small">Current: 56/203 tasks complete / Stage 0 approved / U-001..U-003 complete</text>
+  <text x="800" y="1062" text-anchor="middle" class="small">Current: 93/203 tasks complete / M-011 under review / external gates remain closed</text>
   <text x="800" y="1088" text-anchor="middle" class="small">SQLite + feature UI + package planned / ST-008 condition-false / Azure gate closed</text>
 </svg>

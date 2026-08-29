@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Canonical index for one PNG thumbnail sprite generated from verified proxy key frames. Runtime validation additionally requires exact proxy artifact and PTS-index digest binding, a verified PNG whose dimensions equal columns*cellWidth by rows*cellHeight, contiguous cell ordinals and coordinates, strictly increasing selected proxy-frame sequences and PTS values, and exact PTS/duration equality with each selected proxy PTS-index entry. Selection is deterministic and carries no face, blur, or content-quality claim.",
+  "$comment": "Canonical index for one PNG thumbnail sprite generated from verified proxy key frames. The versioned 160x90 cells, 10 columns, and 100-cell bound are deterministic cache representation parameters, not approved image-quality or candidate-ranking thresholds. Runtime validation additionally requires exact proxy artifact and PTS-index digest binding, a verified PNG whose dimensions equal columns*cellWidth by rows*cellHeight, contiguous cell ordinals and coordinates, strictly increasing selected proxy-frame sequences and PTS values, and exact PTS/duration equality with each selected proxy PTS-index entry. Selection carries no face, blur, or content-quality claim.",
   "title": "ThumbnailSpriteIndex",
   "type": "object",
   "additionalProperties": false,
@@ -27,32 +27,25 @@
     "proxyArtifactId": { "$ref": "#/$defs/entityId" },
     "proxyContentDigest": { "$ref": "#/$defs/contentDigest" },
     "proxyPtsIndexDigest": { "$ref": "#/$defs/contentDigest" },
-    "profileVersion": { "$ref": "#/$defs/nonBlankText" },
+    "profileVersion": { "const": "proxy-preview-assets-v1" },
     "spriteImageArtifactId": { "$ref": "#/$defs/entityId" },
     "spriteImageDigest": { "$ref": "#/$defs/contentDigest" },
-    "cellWidth": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
-    },
-    "cellHeight": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 2147483647
-    },
+    "cellWidth": { "const": 160 },
+    "cellHeight": { "const": 90 },
     "columns": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 2147483647
+      "maximum": 10
     },
     "rows": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 2147483647
+      "maximum": 10
     },
     "cells": {
       "type": "array",
       "minItems": 1,
+      "maxItems": 100,
       "items": { "$ref": "#/$defs/cell" }
     }
   },
@@ -131,12 +124,12 @@
         "column": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 2147483647
+          "maximum": 9
         },
         "row": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 2147483647
+          "maximum": 9
         }
       }
     }

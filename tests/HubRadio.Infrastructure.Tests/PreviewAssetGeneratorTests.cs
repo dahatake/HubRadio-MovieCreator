@@ -143,6 +143,7 @@ public sealed class PreviewAssetGeneratorTests
             waveformPath,
             audioStreamIndex: 1,
             channelCount: 2,
+            channelLayout: "stereo",
             sampleCount: fixture.ExpectedSampleCount,
             timeout);
         CollectionAssert.AreEqual(
@@ -160,6 +161,8 @@ public sealed class PreviewAssetGeneratorTests
                 $"aresample=8000:async=1:first_pts=0,apad=whole_len={fixture.ExpectedSampleCount},atrim=end_sample={fixture.ExpectedSampleCount}",
                 "-ac",
                 "2",
+                "-channel_layout",
+                "stereo",
                 "-ar",
                 "8000",
                 "-c:a",
@@ -277,10 +280,72 @@ public sealed class PreviewAssetGeneratorTests
     }
 
     [TestMethod]
+    public async Task GenerateAsync_ProcessTimeoutRemainsTypedAndCleansOwnedStaging()
+    {
+        using PreviewFixture fixture = new();
+        fixture.ProcessHandler = (request, cancellationToken) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            fixture.ProcessRequests.Add(request);
+            throw new TimeoutException("private preview timeout detail");
+        };
+
+        PreviewAssetGenerationException exception =
+            await Assert.ThrowsExactlyAsync<PreviewAssetGenerationException>(() =>
+                fixture.GenerateAsync());
+
+        AssertSafeFailure(
+            exception,
+            PreviewAssetGenerationFailureReason.ProcessTimedOut,
+            reconciliationRequired: false);
+        Assert.IsFalse(exception.ToString().Contains(
+            "private preview timeout detail",
+            StringComparison.Ordinal));
+        Assert.AreEqual(1L, fixture.CountArtifacts());
+        Assert.IsFalse(Directory.Exists(fixture.GetStagingDirectory()));
+    }
+
+    [TestMethod]
     public async Task GenerateAsync_CorruptPngCrcIsRejectedBeforeAnyPromotion()
     {
         using PreviewFixture fixture = new();
         fixture.CorruptSpriteCrc = true;
+
+        PreviewAssetGenerationException exception =
+            await Assert.ThrowsExactlyAsync<PreviewAssetGenerationException>(() =>
+                fixture.GenerateAsync());
+
+        AssertSafeFailure(
+            exception,
+            PreviewAssetGenerationFailureReason.SpriteOutputInvalid,
+            reconciliationRequired: false);
+        Assert.AreEqual(1L, fixture.CountArtifacts());
+        Assert.IsFalse(Directory.Exists(fixture.GetStagingDirectory()));
+    }
+
+    [TestMethod]
+    public async Task GenerateAsync_CrcValidButInvalidCompressedPngIsRejected()
+    {
+        using PreviewFixture fixture = new();
+        fixture.CorruptSpriteImageData = true;
+
+        PreviewAssetGenerationException exception =
+            await Assert.ThrowsExactlyAsync<PreviewAssetGenerationException>(() =>
+                fixture.GenerateAsync());
+
+        AssertSafeFailure(
+            exception,
+            PreviewAssetGenerationFailureReason.SpriteOutputInvalid,
+            reconciliationRequired: false);
+        Assert.AreEqual(1L, fixture.CountArtifacts());
+        Assert.IsFalse(Directory.Exists(fixture.GetStagingDirectory()));
+    }
+
+    [TestMethod]
+    public async Task GenerateAsync_CrcValidOversizedPngImageDataIsRejected()
+    {
+        using PreviewFixture fixture = new();
+        fixture.OversizedSpriteImageData = true;
 
         PreviewAssetGenerationException exception =
             await Assert.ThrowsExactlyAsync<PreviewAssetGenerationException>(() =>
@@ -913,6 +978,10 @@ public sealed class PreviewAssetGeneratorTests
 
         internal bool CorruptSpriteCrc { get; set; }
 
+        internal bool CorruptSpriteImageData { get; set; }
+
+        internal bool OversizedSpriteImageData { get; set; }
+
         internal bool TruncateWaveform { get; set; }
 
         internal bool WrongSpriteDimensions { get; set; }
@@ -1056,6 +1125,14 @@ public sealed class PreviewAssetGeneratorTests
                     bytes[29] ^= 0x01;
                     File.WriteAllBytes(outputPath, bytes);
                 }
+                else if (CorruptSpriteImageData)
+                {
+                    CorruptIdatWithValidCrc(outputPath);
+                }
+                else if (OversizedSpriteImageData)
+                {
+                    ExpandIdatWithValidCrc(outputPath);
+                }
             }
 
             return Task.FromResult(new ProcessRunResult(
@@ -1148,6 +1225,70 @@ public sealed class PreviewAssetGeneratorTests
             Span<byte> crcBytes = stackalloc byte[4];
             BinaryPrimitives.WriteUInt32BigEndian(crcBytes, crc);
             destination.Write(crcBytes);
+        }
+
+        private static void CorruptIdatWithValidCrc(string path)
+        {
+            byte[] bytes = File.ReadAllBytes(path);
+            int offset = 8;
+            while (offset < bytes.Length)
+            {
+                int length = checked((int)BinaryPrimitives.ReadUInt32BigEndian(
+                    bytes.AsSpan(offset, 4)));
+                ReadOnlySpan<byte> type = bytes.AsSpan(offset + 4, 4);
+                if (type.SequenceEqual("IDAT"u8))
+                {
+                    if (length == 0)
+                    {
+                        throw new InvalidOperationException(
+                            "The PNG test IDAT chunk is empty.");
+                    }
+
+                    int dataOffset = offset + 8;
+                    bytes[dataOffset] ^= 0xff;
+                    uint crc = 0xffffffffu;
+                    crc = UpdateCrc32(crc, type);
+                    crc = UpdateCrc32(
+                        crc,
+                        bytes.AsSpan(dataOffset, length)) ^ 0xffffffffu;
+                    BinaryPrimitives.WriteUInt32BigEndian(
+                        bytes.AsSpan(dataOffset + length, 4),
+                        crc);
+                    File.WriteAllBytes(path, bytes);
+                    return;
+                }
+
+                offset = checked(offset + 12 + length);
+            }
+
+            throw new InvalidOperationException("The PNG test IDAT chunk is missing.");
+        }
+
+        private static void ExpandIdatWithValidCrc(string path)
+        {
+            byte[] bytes = File.ReadAllBytes(path);
+            int offset = 8;
+            while (offset < bytes.Length)
+            {
+                int length = checked((int)BinaryPrimitives.ReadUInt32BigEndian(
+                    bytes.AsSpan(offset, 4)));
+                ReadOnlySpan<byte> type = bytes.AsSpan(offset + 4, 4);
+                if (type.SequenceEqual("IDAT"u8))
+                {
+                    byte[] expanded = new byte[checked(length + 200_000)];
+                    bytes.AsSpan(offset + 8, length).CopyTo(expanded);
+                    using var png = new MemoryStream();
+                    png.Write(bytes.AsSpan(0, offset));
+                    WritePngChunk(png, "IDAT"u8, expanded);
+                    png.Write(bytes.AsSpan(offset + 12 + length));
+                    File.WriteAllBytes(path, png.ToArray());
+                    return;
+                }
+
+                offset = checked(offset + 12 + length);
+            }
+
+            throw new InvalidOperationException("The PNG test IDAT chunk is missing.");
         }
 
         private static uint UpdateCrc32(uint crc, ReadOnlySpan<byte> bytes)

@@ -501,6 +501,7 @@ public enum MediaProbeFailureReason
 {
     ToolVerificationFailed,
     StagedFileInvalid,
+    ProcessTimedOut,
     ProcessFailed,
     OutputTruncated,
     InvalidJson,
@@ -525,6 +526,8 @@ public sealed class MediaProbeException : Exception
                 "The media probe tool could not be verified.",
             MediaProbeFailureReason.StagedFileInvalid =>
                 "The staged media file is invalid.",
+            MediaProbeFailureReason.ProcessTimedOut =>
+                "The media probe process exceeded its timeout.",
             MediaProbeFailureReason.ProcessFailed =>
                 "The media probe process failed.",
             MediaProbeFailureReason.OutputTruncated =>
@@ -656,6 +659,10 @@ public sealed class FfprobeClient
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (TimeoutException)
+        {
+            throw Failure(MediaProbeFailureReason.ProcessTimedOut);
         }
         catch (Exception)
         {

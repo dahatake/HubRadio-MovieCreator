@@ -56,7 +56,7 @@ public sealed class ProxyFrameMapTests
 
         Assert.AreEqual(6, map.SourceFrameCount);
         Assert.AreEqual(Time(-1, 10), map.SourcePresentationStart);
-        Assert.AreEqual(Time(3, 10), map.SourcePresentationEnd);
+        Assert.AreEqual(Time(17, 50), map.SourcePresentationEnd);
         Assert.AreEqual(6, map.Entries.Count);
         AssertEntry(map.Entries[0], 0, Time(0), 2, Time(0));
         AssertEntry(map.Entries[1], 1, Time(1, 30), 2, Time(0));
@@ -92,6 +92,13 @@ public sealed class ProxyFrameMapTests
             Time(1, 10),
             out ProxyFrameMapEntry? exact));
         Assert.AreEqual(3, exact.ProxyFrameSequence);
+        Assert.IsTrue(map.TryMapSourceTimeToProxyFrame(
+            Time(13, 100),
+            out ProxyFrameMapEntry? finalFrameInterior));
+        Assert.AreEqual(3, finalFrameInterior.ProxyFrameSequence);
+        Assert.IsFalse(map.TryMapSourceTimeToProxyFrame(
+            Time(7, 50),
+            out _));
         Assert.IsFalse(map.TryMapSourceTimeToProxyFrame(
             Time(100),
             out ProxyFrameMapEntry? afterEnd));
@@ -182,6 +189,18 @@ public sealed class ProxyFrameMapTests
         AssertParamName<ArgumentException>(
             "proxyPresentationTimes",
             () => CreateMap([Time(3), Time(4)], [Time(0), Time(1)]));
+        AssertParamName<ArgumentOutOfRangeException>(
+            "sourcePresentationEnd",
+            () => ProxyFrameMap.Create(
+                SourceAssetId,
+                ProjectId,
+                SourceDigest,
+                SourceIndexDigest,
+                ProxyDigest,
+                ProxyIndexDigest,
+                [Time(0), Time(1)],
+                Time(1),
+                [Time(0), Time(1)]));
     }
 
     [TestMethod]
@@ -348,6 +367,9 @@ public sealed class ProxyFrameMapTests
             ProxyDigest,
             ProxyIndexDigest,
             sourceTimes,
+            sourceTimes.Count == 0
+                ? Time(1, 25)
+                : sourceTimes[^1] + Time(1, 25),
             proxyTimes);
 
     private static RationalTime Time(long value, long rate = 1) =>

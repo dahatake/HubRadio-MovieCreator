@@ -194,6 +194,7 @@ public sealed class ProxyFrameMap
         ContentDigest proxyContentDigest,
         ContentDigest proxyPtsIndexDigest,
         IReadOnlyList<RationalTime> sourcePresentationTimes,
+        RationalTime sourcePresentationEnd,
         IReadOnlyList<RationalTime> proxyPresentationTimes)
     {
         ArgumentNullException.ThrowIfNull(sourceAssetId);
@@ -211,7 +212,15 @@ public sealed class ProxyFrameMap
         RationalTime[] proxyTimes = CopyStrictlyIncreasing(
             proxyPresentationTimes,
             nameof(proxyPresentationTimes));
-        if (proxyTimes[^1] < sourceTimes[0] || sourceTimes[^1] < proxyTimes[0])
+        if (sourcePresentationEnd <= sourceTimes[^1])
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(sourcePresentationEnd),
+                "The source presentation end must follow the final source PTS.");
+        }
+
+        if (proxyTimes[^1] < sourceTimes[0] ||
+            sourcePresentationEnd <= proxyTimes[0])
         {
             throw new ArgumentException(
                 "Source and proxy presentation timestamps must overlap.",
@@ -231,7 +240,7 @@ public sealed class ProxyFrameMap
             proxyPtsIndexDigest,
             sourceTimes.Length,
             sourceTimes[0],
-            sourceTimes[^1],
+            sourcePresentationEnd,
             entries,
             roundTrip);
     }
@@ -253,7 +262,7 @@ public sealed class ProxyFrameMap
         [NotNullWhen(true)] out ProxyFrameMapEntry? proxyFrame)
     {
         if (sourceTime < SourcePresentationStart ||
-            sourceTime > SourcePresentationEnd)
+            sourceTime >= SourcePresentationEnd)
         {
             proxyFrame = null;
             return false;

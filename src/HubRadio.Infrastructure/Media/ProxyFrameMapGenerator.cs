@@ -64,6 +64,7 @@ public sealed class ProxyFrameMapGenerator
                 sourcePtsIndex.Entries
                     .Select(static entry => entry.PresentationTime)
                     .ToArray(),
+                sourcePtsIndex.PresentationEnd,
                 generatedProxy.ProxyPtsIndex.Entries
                     .Select(static entry => entry.PresentationTime)
                     .ToArray());
