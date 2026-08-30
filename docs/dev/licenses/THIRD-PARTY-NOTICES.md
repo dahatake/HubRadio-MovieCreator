@@ -1,6 +1,6 @@
 # Third-party notice inventory (non-final)
 
-- Status: F-008 BOM scaffold with PK-001, PK-003, and PK-004 evidence updates
+- Status: F-008 BOM scaffold with PK-001, PK-003, PK-004, and PK-005 evidence updates
 - Evidence date: 2026-08-28
 - Release approval: **not granted**
 - Legal approval: **not granted**
@@ -28,8 +28,9 @@ Any `pending-PK-*`, held, condition-false, benchmark-only, unreviewed host compo
 | Component | Current evidence | License indicator | Inventory action |
 |---|---|---|---|
 | Microsoft Windows App SDK 2.4.0 | App project declaration, NuGet assets resolution, and locally rehashed matching nupkg | Package-specific Microsoft Windows App SDK License Terms; non-SPDX | Preserve applicable component terms and notices; verify actual packaged files at PK-006/Q-010. |
-| React 19.2.8 | `package.json` plus exact `package-lock.json` entry | MIT declared by lock | Obtain artifact SHA-256 and complete the production transitive notice set at PK-005/Q-010. |
-| React DOM 19.2.8 | `package.json` plus exact `package-lock.json` entry | MIT declared by lock | Obtain artifact SHA-256 and complete the production transitive notice set at PK-005/Q-010. |
+| React 19.2.8 | Exact lock plus PK-005 tarball size/SHA-256 and hashed Vite output | MIT declared by lock and package tarball | Preserve the evidence in `packaging/web/dependency-manifest.json`; complete final notices, advisories, SBOM, and release approval at Q-010. |
+| React DOM 19.2.8 | Exact lock plus PK-005 tarball size/SHA-256 and hashed Vite output | MIT declared by lock and package tarball | Preserve the evidence in `packaging/web/dependency-manifest.json`; complete final notices, advisories, SBOM, and release approval at Q-010. |
+| Scheduler 0.27.0 | Exact transitive lock plus PK-005 tarball size/SHA-256 and hashed Vite output | MIT declared by lock and package tarball | Keep it in the closed production runtime set; complete final notices, advisories, SBOM, and release approval at Q-010. |
 | CPython worker runtime | CPython 3.12 minor line is fixed; no exact runtime distribution is selected | Pending PK-002 | Fix the Windows x64 runtime artifact, hashes, bundled components, and notices before self-contained packaging. |
 | faster-whisper 1.2.1 | Exact declaration plus PK-001 runtime lock and wheel SHA-256 | MIT evidence for the exact tag | CPU/int8 only; retain SYSTRAN and embedded Silero notices; PK-004 pins the exact offline model while Q-010 retains final notice closure. |
 | CTranslate2 4.8.1 | Exact declaration plus PK-001 runtime lock and Windows x64 wheel SHA-256 | MIT evidence for the exact tag | No CUDA runtime is included or approved; complete binary notice review at Q-010. |
@@ -107,11 +108,11 @@ BGM, jingles, SFX, logos, images, and documents remain unavailable for product u
 ## Known incompleteness and release blockers
 
 1. `dependencies.csv` inventories current direct declarations plus specifically evidenced Stage 0 tools. It is not the complete npm, NuGet, Python, native, .NET runtime, or OS-component transitive closure.
-2. npm lock entries currently carry SHA-1 SRI values. These are retained only as lock evidence; artifact SHA-256 values remain `pending-PK-005`.
+2. PK-005 independently rehashes the React, React DOM, and Scheduler production tarballs and records their aggregate set digest. Remaining build/test npm package artifacts still have only lock-level SHA-1 evidence and remain Q-010 engineering-SBOM work.
 3. PK-001 provides an adopted 29-wheel hash lock for Windows x64 / CPython 3.12 and proves it in a fresh same-host virtual environment. PK-004 pins the one eligible CPU model bundle and cache behavior. PK-002 must still select the exact Python runtime artifact; native component notices, vulnerabilities, final package bytes, and optional GPU decisions remain open.
 4. PK-003 fixes FFmpeg’s expected archive metadata, locally rehashed selected files, configure line, upstream/build-repository commits, source acquisition method, and non-final notice inventory. Archive-byte rehash, exact rebuild proof, corresponding-source bundle assembly, static dependency licenses, codec/patent review, vulnerabilities, final notices, and SBOM remain open for PK-006/Q-010.
 5. PK-004 records model acquisition/consent states, model-card evidence, exact revisions, file and manifest hashes, cache behavior, and offline startup. Held and condition-false models have no bundle path. PK-006/Q-010 must still prove the release package contains only the eligible bytes and complete all notice, vulnerability, SBOM, legal, and release gates.
-6. The Web production bundle and its transitive licenses require PK-005. WinUI, .NET runtime, Python worker, FFmpeg, Web assets, model files, and notices require PK-006 package verification.
+6. PK-005 produces a closed, source-map-free Web asset manifest and verifies the App output bytes. WinUI, .NET runtime, Python worker, FFmpeg, Web assets, model files, and notices still require PK-006 installed-package verification.
 7. PK-007 signing/install/upgrade/uninstall evidence does not exist yet.
 8. Q-010 must generate and compare the release-candidate SBOM and Model BOM, review licenses and vulnerabilities, verify notice contents against actual package files, and fail closed on every unresolved item.
 

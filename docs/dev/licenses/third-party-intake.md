@@ -148,7 +148,7 @@ BuildToolsはexact NuGet lock（content hash `ju02pHSp1LDEIvFgLIDbCbXGPpTTrXJrH9
 | Host runtime | Evergreen WebView2 `151.0.4129.107` / `msedgewebview2.exe` | 対象Windowsへinstalled | 4,477,256 | `fe7922326f2a1d3188454ba5502861253223d5da10d9da0b858f9b10f3e01468` | ST-013はhost runtimeを使用しbundleしていない。Evergreen更新後の同一出力は保証せず、versionをrunごとに記録 |
 | Windows font | Segoe UI Bold / `segoeuib.ttf` | 対象Windowsへinstalled | 947,092 | `aeb9e4a6ec5cc59f4d72df8189032d7dbb28f45161cf1552174818b5465dac4e` | browser/FFmpeg比較にhost fontを使用し、benchmarkへ同梱していない。製品動画への焼込・配布条件はブランドfont採用時に再審査 |
 
-ST-013のNuGet restoreはSDK `10.0.400`を`global.json`で固定し、`packages.lock.json --locked-mode`で実行した。WebView2 Runtimeとfontはhost dependencyであり、NuGet package hashだけではそれらを固定しない。製品のWebView2 bootstrap/install、offline環境、runtime更新時の回帰、fontライセンス、SBOMはU-001/PK-005〜PK-007/Q-010で完了する。
+ST-013のNuGet restoreはSDK `10.0.400`を`global.json`で固定し、`packages.lock.json --locked-mode`で実行した。PK-005はReact production runtime 3 tarballとclosed Vite outputをhash固定したが、WebView2 Runtimeとfontはhost dependencyであり、NuGet package hashだけではそれらを固定しない。製品のWebView2 bootstrap/install、offline環境、runtime更新時の回帰、fontライセンス、installed package、SBOMはU-001/PK-006/PK-007/Q-010で完了する。
 
 ## 追加確認済み一次資料
 

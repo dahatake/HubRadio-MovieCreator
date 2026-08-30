@@ -3,7 +3,7 @@
 **作成日:** 2026年8月27日
 **最終更新:** 2026年8月30日
 **対象リポジトリ:** HubRadio-MovieCreator
-**正本:** `docs/dev/planning/implementation-plan.md`（全203タスク、SHA-256 `cc1f1273c925978cff1253f6bdf606f54483fcf14468d677fcca472534527a88`）
+**正本:** `docs/dev/planning/implementation-plan.md`（全203タスク、SHA-256 `d8599850120b889578a0a02b667a90d3d2207bd006a11873f62b0d1984e77ecf`）
 **本書の位置付け:** 正本の実行順序を、これまでの実測結果に基づいて具体化した作業計画。要求・ADRを変更するものではない。
 
 ---
@@ -29,9 +29,9 @@
 | U | U-001〜U-004 | WinUI/WebView2 startup、secure host/bridge、React state同期までreview・commit済み |
 | S | S-001、S-002、S-004、S-006〜S-010、S-012、S-014、S-015 | actor/role/text sensitivity/review/approval/audit/backupと横断敵対試験をreview済み。S-003はcode済み・別account受入待ち |
 | Z | Z-001〜Z-007 | local model不達/cloud necessity未証明、28 Region/model/quota、data processing、最小Japan East resource、desktop Entra authentication、local payload確認境界をreview済み |
-| PK | PK-001、PK-003、PK-004 | Python wheel lock、FFmpeg manifest、offline model catalog/cache境界をreview・commit済み |
+| PK | PK-001、PK-003〜PK-005 | Python wheel lock、FFmpeg manifest、offline model catalog/cache、closed React production bundleをreview・commit済み |
 
-**完了: 112 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ちで完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了91件のうち5件が現在condition-falseまたは保留である。M-011/M-012、S-014、PK-001/PK-003/PK-004は完了し、次は`PK-005`を各gate確認後に実行する。`Z-008`は2つ目の実在文章候補実装が現れるまで開始しない。
+**完了: 113 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ちで完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了90件のうち5件が現在condition-falseまたは保留である。PK-001/PK-003〜PK-005は完了し、次は`PK-002`を各gate確認後に実行する。`Z-008`は2つ目の実在文章候補実装が現れるまで開始しない。
 
 ### 1.2 直近の統合作業
 
@@ -63,6 +63,7 @@
 - S-007: email、内部network location、credential形式、適用済み辞書snapshotをローカルで検出し、本文を保持せずrevision/utterance/source-span IDと原文UTF-16範囲だけを返す`TextSensitivityScanner`を実装。text element単位NFKC、無効Unicodeのfail-closed、同種包含除去、異種overlap保持を含む対象test 17件を完了し、Release一括runnerでArchitecture 25/25、Core 548/548、Infrastructure 579成功・18環境gate・0失敗、App 289成功・1環境gate・0失敗、Web 22/22、Python 66/66を確認した。これはS-011のexport gateやZ-007の送信確認を代替しない
 - Z-007: 主選択と直接隣接する明示contextだけをrequest-scoped evidence IDへ変換するlocal-only `CloudPayloadBuilder`を実装。exact revision/dictionary snapshotへS-007を再適用し、URL、path、file name、Windows SID、GUID形式内部IDもNFKC逆写像後にmaskする。local provenance付きdiff、Azure送信先/model/region/deployment/data-zone/retention表示、canonical payloadと表示条件を結合したdigest、one-shot/16並行確認を対象test 21件で検証した。Release一括runnerはArchitecture 25/25、Core 548/548、Infrastructure 579成功・18環境gate・0失敗、App 310成功・1環境gate・0失敗、Web 22/22、Python 66/66。sender、credential、永続化、ModelRun、Z-008 interfaceは追加せず、実コンテンツ送信は行っていない
 - PK-004: 12候補をclosed catalogへ固定し、CPU/int8 ASR model 1件だけにoffline install経路を与えた。個別size/hashと集約manifestをcopy前後に検証し、workspace stagingから非上書きmoveでcacheへ昇格する。未取得・破損・不同意・非採用を区別し、network取得、silent update、held/condition-false bundleを拒否する。focused 12成功・symlink環境gate 1件、実cache 4 file / 486,212,372 bytes照合、全Release runnerを完了した。最終MSIX、完全notice/CVE/SBOM、法務・release承認は未完了
+- PK-005: React/React DOM/Schedulerの3 tarballとViteのindex/CSS/JSをSHA-256 manifestへ固定し、lock drift、source map、remote/inline entry、CSS/SVG remote、unsupported fileをfail closedで拒否する。App buildはverified manifestを必須化し、出力4 fileを完全照合した。同一host 2 build、Web 23件、Node負例6件、App 4件、bundle欠落negative、3つのworkspace task、全Release runnerを完了した。cross-machine、installed MSIX、完全SBOM/legal/releaseは未完了
 
 旧ADR重複は削除済みで、`docs/dev/decisions/`だけがADR正本である。DOC-001〜DOC-004は敵対的レビュー、修正、再検証、commitまで完了した。
 
@@ -180,7 +181,7 @@ ST-015承認後に着手する。
 |---|---|---|
 | S-001〜S-016 | 16 | S-001/S-002/S-004/S-006〜S-010/S-012/S-015完了。S-003は別account受入待ち |
 | Q-000〜Q-013 | 14 | Must受入、長尺・縦型・クイズ、セキュリティ、追跡性、性能、復旧、敵対試験、アクセシビリティ、SBOM、初期パイロット |
-| PK-001〜PK-007 | 7 | PK-001/PK-003/PK-004完了。次はPK-005のReact組込、その後Python runtime、MSIX、署名・upgrade検証を依存順に実施 |
+| PK-001〜PK-007 | 7 | PK-001/PK-003〜PK-005完了。次はPK-002のPython runtime、その後MSIX、署名・upgrade検証を依存順に実施 |
 
 ### Phase F: Stage 2 Should機能（E、19タスク）
 
@@ -277,7 +278,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. `PK-005`でReact production assetsの閉じた組込を完了する。Z-007のlocal payload確認境界は完了したが、Z-008は2つ目の実在文章候補実装が現れるまで開始しない。
+1. `PK-002`でPython runtime/workerをself-contained配布物へ組み立てる。Z-007のlocal payload確認境界は完了したが、Z-008は2つ目の実在文章候補実装が現れるまで開始しない。
 2. 各taskを個別にbuild/testし、敵対的レビューの実在する指摘だけを反映して独立commitする。
 3. 完了ごとに依存DAGを再評価する。`S-003`とheld/condition-false taskは外部証拠または別承認なしに完了扱いにせず、Azure後続はpayload/validation/fallbackの個別gateを省略しない。
 

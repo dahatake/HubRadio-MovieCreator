@@ -39,7 +39,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="..\HubRadio.Web\dist\**\*">
+    <Content Include="..\HubRadio.Web\dist\**\*"
+         Exclude="..\HubRadio.Web\dist\**\*.partial">
       <Link>WebAssets\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
@@ -50,5 +51,8 @@
     <Error
       Condition="!Exists('..\HubRadio.Web\dist\index.html')"
       Text="Bundled web assets are missing. Run npm ci and npm run build in src/HubRadio.Web before building HubRadio.App." />
+    <Error
+      Condition="!Exists('..\HubRadio.Web\dist\asset-manifest.json')"
+      Text="The verified Web asset manifest is missing. Run npm ci and npm run build in src/HubRadio.Web before building HubRadio.App." />
   </Target>
 </Project>

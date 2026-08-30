@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "1.0.0",
+  "evidenceDate": "2026-08-30",
+  "target": "HubRadio.Web production runtime",
+  "packageManager": "npm@11.17.0",
+  "releaseApproved": false,
+  "artifactSetSha256": "2f7dd38035e86b41f059d67ced299d2dd5266f2c3bc5d074e17bc2e402d4f565",
+  "packages": [
+    {
+      "name": "react",
+      "version": "19.2.8",
+      "source": "https://ms-feed-17.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/react/-/react-19.2.8.tgz",
+      "fileName": "react-19.2.8.tgz",
+      "byteSize": 24799,
+      "sha256": "94c6b9e0785854d2e5d9628cec05c33ed017b6a9002af5e8778d4134e9ada611",
+      "registrySha1": "a80663dbb58d69c6fe3fd291d3cb324e8a7dff2d",
+      "declaredLicense": "MIT"
+    },
+    {
+      "name": "react-dom",
+      "version": "19.2.8",
+      "source": "https://ms-feed-2.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/react-dom/-/react-dom-19.2.8.tgz",
+      "fileName": "react-dom-19.2.8.tgz",
+      "byteSize": 1276383,
+      "sha256": "1ffc99af594271b41835004a9b6789a832eacc5d153169f3bfbd1f76f9547dbb",
+      "registrySha1": "3b46b9eeda877cdff2cf13d2770fff4ae36c2ec2",
+      "declaredLicense": "MIT"
+    },
+    {
+      "name": "scheduler",
+      "version": "0.27.0",
+      "source": "https://ms-feed-25.pkgs.visualstudio.com/1es-public/_packaging/npm-public/npm/registry/scheduler/-/scheduler-0.27.0.tgz",
+      "fileName": "scheduler-0.27.0.tgz",
+      "byteSize": 10015,
+      "sha256": "ab26ce35ce4032f04b78cfc5bbb4cfe13358e9fe7a5433a8aa6315c3debc5095",
+      "registrySha1": "0c4ef82d67d1e5c1e359e8fc76d3a87f045fe5bd",
+      "declaredLicense": "MIT"
+    }
+  ],
+  "conditions": [
+    "Only the Vite production output described by dist/asset-manifest.json is copied into HubRadio.App.",
+    "Source maps, public-directory passthrough, remote entry assets, and runtime CDN dependencies are disabled.",
+    "PK-006 must compare the installed package bytes with the generated asset manifest.",
+    "Q-010 must complete transitive notice, vulnerability, SBOM, legal, and release review."
+  ]
+}
