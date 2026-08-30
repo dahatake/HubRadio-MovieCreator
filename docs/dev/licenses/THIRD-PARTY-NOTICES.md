@@ -1,6 +1,6 @@
 # Third-party notice inventory (non-final)
 
-- Status: F-008 BOM scaffold
+- Status: F-008 BOM scaffold with PK-001 and PK-003 evidence updates
 - Evidence date: 2026-08-28
 - Release approval: **not granted**
 - Legal approval: **not granted**
@@ -42,12 +42,18 @@ The current worker declares `faster-whisper==1.2.1` and `ctranslate2==4.8.1`. PK
 
 | Component | Decision boundary | License indicator | Required closure |
 |---|---|---|---|
-| BtbN FFmpeg LGPL build, `ffmpeg.exe`, and `ffprobe.exe` | Fixed LGPL build is a development baseline; GPL-enabled builds remain prohibited | LGPL-2.1-or-later base; bundled dependency licenses are not yet complete | PK-003 must fix source availability, exact build configuration, binary hashes, notices, dependency licenses, and codec-patent review. |
+| BtbN FFmpeg LGPL build, `ffmpeg.exe`, and `ffprobe.exe` | PK-003 fixes the exact Windows x64 static LGPL development baseline; GPL/nonfree substitution remains prohibited | `--enable-version3` is present; GPL/nonfree enable flags are absent; bundled `LICENSE.txt` is LGPLv3 text; static dependency review is incomplete | Preserve [`packaging/ffmpeg/manifest.json`](../../../packaging/ffmpeg/manifest.json), its non-final notice inventory, exact source/build references, and selected-file hashes. PK-006 must rehash package inputs; Q-010 must close dependency licenses/sources, codec/patent review, vulnerabilities, SBOM, and final notices. |
 | faster-whisper 1.2.1 and CTranslate2 4.8.1 | Conditional local ASR runtime; CPU is the mandatory path | MIT evidence is recorded for exact tags | PK-001 hash lock is complete; PK-004 must package the exact model without silent updates; Q-010 must close transitive notices and vulnerabilities. |
 | Systran faster-whisper-small exact revision | Conditional ASR model baseline only | Exact-revision model card declares MIT | No model or cache redistribution until PK-004 license, model-card, offline-cache, and integrity gates pass. |
 | Foundry Local CUDA execution-provider cache | Local benchmark use only; redistribution approval is false | NVIDIA SDK EULA and component-specific terms remain incomplete | Never copy the observed cache into a release. Approve a separate redistributable runtime or disable CUDA and release CPU-only. |
 
 ADR-0007’s Stage 1 baseline is not a release decision. ASR accuracy thresholds, CUDA redistribution, FFmpeg redistribution, and complete notice assembly remain open release blockers.
+
+### PK-003 FFmpeg package evidence
+
+PK-003 reconciles the Stage 0 capability record, exact WinGet metadata, GitHub release asset metadata, the installed expanded files, upstream source identity, and runtime verifier constants into [`packaging/ffmpeg/manifest.json`](../../../packaging/ffmpeg/manifest.json). The selected `ffmpeg.exe`, `ffprobe.exe`, and `LICENSE.txt` were locally rehashed; their sizes and hashes match the manifest. The complete observed `-buildconf` line is preserved without inventing `--disable-gpl` or `--disable-nonfree` flags. Its actual `--enable-version3` flag, absence of `--enable-gpl`/`--enable-nonfree`, and the LGPLv3 license text copied by the vendor recipe are recorded separately from the WinGet catalog's `LGPL-2.1` label.
+
+The expected vendor archive size and SHA-256 agree between the exact WinGet installer metadata and the GitHub release asset digest, but PK-003 did not retain and independently rehash the archive bytes. The upstream FFmpeg commit and BtbN build-repository commit are fixed, while a bit-for-bit rebuild and complete static dependency source/license closure are not claimed. [`packaging/ffmpeg/NOTICE.md`](../../../packaging/ffmpeg/NOTICE.md) is explicitly non-final. Legal approval, release approval, corresponding-source bundle assembly, complete dependency notices, codec/patent review, vulnerability review, and SBOM remain open for PK-006/Q-010.
 
 ## Held, condition-false, and benchmark-only models
 
@@ -103,7 +109,7 @@ BGM, jingles, SFX, logos, images, and documents remain unavailable for product u
 1. `dependencies.csv` inventories current direct declarations plus specifically evidenced Stage 0 tools. It is not the complete npm, NuGet, Python, native, .NET runtime, or OS-component transitive closure.
 2. npm lock entries currently carry SHA-1 SRI values. These are retained only as lock evidence; artifact SHA-256 values remain `pending-PK-005`.
 3. PK-001 provides an adopted 29-wheel hash lock for Windows x64 / CPython 3.12 and proves it in a fresh same-host virtual environment. PK-002 must still select the exact Python runtime artifact; PK-004 owns the model bundle; native component notices, vulnerabilities, and optional GPU decisions remain open.
-4. FFmpeg’s archive provenance, executables, configure line, source availability, bundled libraries, and codec obligations must be reconciled into one PK-003 package manifest.
+4. PK-003 fixes FFmpeg’s expected archive metadata, locally rehashed selected files, configure line, upstream/build-repository commits, source acquisition method, and non-final notice inventory. Archive-byte rehash, exact rebuild proof, corresponding-source bundle assembly, static dependency licenses, codec/patent review, vulnerabilities, final notices, and SBOM remain open for PK-006/Q-010.
 5. Model acquisition, terms acceptance, model cards, exact revisions, file or manifest hashes, cache behavior, and offline startup must pass PK-004. Held and condition-false models must stay out of the release package.
 6. The Web production bundle and its transitive licenses require PK-005. WinUI, .NET runtime, Python worker, FFmpeg, Web assets, model files, and notices require PK-006 package verification.
 7. PK-007 signing/install/upgrade/uninstall evidence does not exist yet.

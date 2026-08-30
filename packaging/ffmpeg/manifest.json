@@ -1,0 +1,159 @@
+{
+  "schemaVersion": "1.0.0",
+  "taskId": "PK-003",
+  "status": "fixed-development-baseline",
+  "package": {
+    "id": "BtbN.FFmpeg.LGPL.8.1",
+    "version": "8.1.2-20260731",
+    "buildIdentifier": "n8.1.2-34-g9b6c8969e0-20260731",
+    "target": "win64",
+    "architecture": "x86_64",
+    "variant": "lgpl",
+    "linkage": "static-executables",
+    "releaseTag": "autobuild-2026-07-31-14-10",
+    "releaseUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-07-31-14-10",
+    "archive": {
+      "fileName": "ffmpeg-n8.1.2-34-g9b6c8969e0-win64-lgpl-8.1.zip",
+      "downloadUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-31-14-10/ffmpeg-n8.1.2-34-g9b6c8969e0-win64-lgpl-8.1.zip",
+      "githubReleaseAssetId": 496767231,
+      "expectedByteSize": 145349121,
+      "expectedSha256": "089e4169e93b2b3f3acbfced3c0704d24276a225641bdda04d796d28b07a2a38",
+      "hashProvenance": [
+        "WinGet exact-version installer metadata",
+        "GitHub release asset digest"
+      ],
+      "bytesRetainedAndRehashedByPk003": false
+    }
+  },
+  "sourceAndBuild": {
+    "buildRepository": {
+      "url": "https://github.com/BtbN/FFmpeg-Builds",
+      "releaseTag": "autobuild-2026-07-31-14-10",
+      "commit": "a99e8230eae00d1cee38f23076a7a1f55cd984e2",
+      "commitUrl": "https://github.com/BtbN/FFmpeg-Builds/commit/a99e8230eae00d1cee38f23076a7a1f55cd984e2"
+    },
+    "ffmpegSource": {
+      "repository": "https://github.com/FFmpeg/FFmpeg.git",
+      "branchSelectedByVendorAddin": "release/8.1",
+      "commit": "9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b",
+      "commitUrl": "https://github.com/FFmpeg/FFmpeg/commit/9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b",
+      "acquisitionUrl": "https://github.com/FFmpeg/FFmpeg/archive/9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b.tar.gz",
+      "sourceArchiveRetainedAndRehashedByPk003": false
+    },
+    "vendorBuildInvocation": {
+      "target": "win64",
+      "variant": "lgpl",
+      "addins": [
+        "8.1"
+      ],
+      "commands": [
+        "./makeimage.sh win64 lgpl 8.1",
+        "./build.sh win64 lgpl 8.1"
+      ]
+    },
+    "instructions": "packaging/ffmpeg/README.md",
+    "exactCommitRebuildVerifiedByPk003": false
+  },
+  "versionEvidence": {
+    "firstLine": "ffmpeg version n8.1.2-34-g9b6c8969e0-20260731 Copyright (c) 2000-2026 the FFmpeg developers",
+    "configuration": "configuration: --prefix=/ffbuild/prefix --pkg-config-flags=--static --pkg-config=pkg-config --cross-prefix=x86_64-w64-mingw32- --arch=x86_64 --target-os=mingw32 --enable-version3 --disable-debug --disable-w32threads --enable-pthreads --enable-iconv --enable-zlib --enable-libxml2 --enable-libvmaf --enable-fontconfig --enable-libharfbuzz --enable-libfreetype --enable-libfribidi --enable-vulkan --enable-libshaderc --enable-libvorbis --disable-libxcb --disable-xlib --disable-libpulse --enable-gmp --enable-lzma --enable-liblcevc-dec --enable-opencl --enable-amf --enable-libaom --enable-libaribb24 --disable-avisynth --enable-chromaprint --enable-libdav1d --disable-libdavs2 --disable-libdvdread --disable-libdvdnav --disable-libfdk-aac --enable-ffnvcodec --enable-cuda-llvm --disable-frei0r --enable-libgme --enable-libkvazaar --enable-libaribcaption --enable-libass --enable-libbluray --enable-libjxl --enable-libmp3lame --enable-libopus --enable-libplacebo --enable-librist --enable-libssh --enable-libtheora --enable-libvpx --enable-libwebp --enable-libzmq --enable-lv2 --enable-libvpl --enable-openal --enable-liboapv --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopenmpt --enable-librav1e --disable-librubberband --enable-schannel --enable-sdl2 --enable-libsnappy --enable-libsoxr --enable-libsrt --enable-libsvtav1 --enable-libtwolame --enable-libuavs3d --disable-libdrm --enable-vaapi --disable-libvidstab --enable-libvvenc --disable-whisper --disable-libx264 --disable-libx265 --disable-libxavs2 --disable-libxvid --enable-libzimg --enable-libzvbi --extra-cflags=-DLIBTWOLAME_STATIC --extra-cxxflags= --extra-libs=-lgomp --extra-ldflags=-pthread --extra-ldexeflags= --cc=x86_64-w64-mingw32-gcc --cxx=x86_64-w64-mingw32-g++ --ar=x86_64-w64-mingw32-gcc-ar --ranlib=x86_64-w64-mingw32-gcc-ranlib --nm=x86_64-w64-mingw32-gcc-nm --extra-version=20260731"
+  },
+  "selectedFiles": [
+    {
+      "role": "ffmpeg",
+      "pathSuffixInArchive": "bin/ffmpeg.exe",
+      "byteSize": 113536512,
+      "sha256": "6099366f31293cdc6c283ea44ffb32f07e3139cd0caf6d0db652a7d064d089cb",
+      "hashProvenance": "PK-003 local rehash of the exact WinGet-installed expanded file"
+    },
+    {
+      "role": "ffprobe",
+      "pathSuffixInArchive": "bin/ffprobe.exe",
+      "byteSize": 113330688,
+      "sha256": "4c2f730969c9551aec21c5ca07eb73f63bb0920204c9cd6c9a6e7be6be0458d2",
+      "hashProvenance": "PK-003 local rehash of the exact WinGet-installed expanded file"
+    },
+    {
+      "role": "license",
+      "pathSuffixInArchive": "LICENSE.txt",
+      "byteSize": 7651,
+      "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768",
+      "hashProvenance": "PK-003 local rehash of the exact WinGet-installed expanded file"
+    }
+  ],
+  "excludedFromProductPackage": [
+    "bin/ffplay.exe"
+  ],
+  "licenseAssessment": {
+    "ffmpegOfficialBaseLicenseIndicator": "LGPL-2.1-or-later",
+    "wingetCatalogLicenseIndicator": "LGPL-2.1",
+    "bundledLicenseFileTitle": "GNU Lesser General Public License, Version 3",
+    "enableVersion3": true,
+    "enablesGpl": false,
+    "enablesNonFree": false,
+    "staticExecutableDistribution": true,
+    "bundledDependencyLicenseReviewRequired": true,
+    "legalApprovalGranted": false
+  },
+  "observedCapabilities": {
+    "filters": {
+      "trim": true,
+      "atrim": true,
+      "concat": true,
+      "crop": true,
+      "scale": true,
+      "overlay": true,
+      "subtitles": true,
+      "xfade": true,
+      "acrossfade": true,
+      "loudnorm": true,
+      "silencedetect": true,
+      "drawtext": true
+    },
+    "encoders": {
+      "aac": true,
+      "h264_mf": true,
+      "h264_nvenc": true,
+      "hevc_mf": true,
+      "hevc_nvenc": true,
+      "libx264": false,
+      "libx265": false
+    },
+    "hardwareAccelerationMethodsListedByFfmpeg": [
+      "cuda",
+      "vaapi",
+      "dxva2",
+      "qsv",
+      "d3d11va",
+      "opencl",
+      "vulkan",
+      "d3d12va",
+      "amf"
+    ],
+    "hardwareAccelerationMethodsWereListed": true,
+    "runtimeEncodeSuccessMeasured": false
+  },
+  "noticeInventory": "packaging/ffmpeg/NOTICE.md",
+  "evidence": [
+    "benchmarks/results/ffmpeg-capabilities.json",
+    "benchmarks/stages/inspect-ffmpeg.ps1",
+    "src/HubRadio.Infrastructure/Media/FfprobeClient.cs",
+    "src/HubRadio.Infrastructure/Media/DecodeValidator.cs",
+    "docs/dev/licenses/dependencies.csv",
+    "docs/dev/licenses/THIRD-PARTY-NOTICES.md"
+  ],
+  "releaseGates": {
+    "archiveBytesRehashedByPk003": false,
+    "exactCommitRebuildVerifiedByPk003": false,
+    "correspondingSourceBundlePreparedForDistribution": false,
+    "bundledDependencyLicenseReviewComplete": false,
+    "codecPatentReviewComplete": false,
+    "releaseCandidateSbomComplete": false,
+    "legalApprovalGranted": false,
+    "releaseApprovalGranted": false
+  },
+  "remainingTaskOwners": {
+    "PK-006": "Assemble only the selected executable files and applicable license/notice material, then verify the packaged bytes.",
+    "Q-010": "Close the release-candidate native dependency inventory, source bundle, notices, licenses, codec/patent review, vulnerabilities, and SBOM before release."
+  }
+}
