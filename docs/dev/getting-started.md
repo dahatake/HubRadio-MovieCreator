@@ -20,7 +20,8 @@ pwsh.exe -NoLogo -NoProfile -File .\test.ps1 -Configuration Release
 | source 管理 | Git |
 | fixture | 利用許可を確認した固定動画 |
 | media 検証 | WinGet の `BtbN.FFmpeg.LGPL.8.1` version `8.1.2-20260731` |
-| ML 検証 | Python 3.12 と `benchmarks/setup-python-env.ps1` が作る隔離環境 |
+| 製品worker | Windows x64版CPython 3.12。`build.ps1`がPK-001 hash lockから隔離環境を作る |
+| Stage 0 ML検証 | Python 3.12 と `benchmarks/setup-python-env.ps1` が作る別の隔離環境 |
 | fixture 動画生成 | `h264_nvenc` を利用できる NVIDIA GPU と十分なローカル空き容量 |
 
 ハードウェア最小要件は未確定です。記録済みの検証機は単一の実測環境であり、動作保証の最小構成ではありません。
@@ -78,7 +79,11 @@ winget install --id BtbN.FFmpeg.LGPL.8.1 --exact --version 8.1.2-20260731 --acce
 
 別 version や GPL build を使う場合は hash を直接書き換えず、ライセンス、build configuration、機能、実行結果を再評価します。
 
-## 5. Python 検証環境を作る
+## 5. Python環境を作る
+
+製品workerはrepository rootの`build.ps1`または`test.ps1`から構築する。`src/HubRadio.Worker/requirements.lock`と`requirements-test.lock`がWindows x64 / CPython 3.12用wheelをSHA-256で固定し、buildはbinary-only・hash必須で復元する。手動の`pip freeze`や`pip install -e .[test]`でlockを上書きしない。詳細は[Python依存lock](packaging/python-dependency-lock.md)を参照する。
+
+Stage 0 benchmarkを再実行する場合だけ、製品workerとは別の固定環境を作る。
 
 Python を使う Stage 0 タスクを実行する場合だけ、固定環境を作ります。
 
@@ -86,7 +91,7 @@ Python を使う Stage 0 タスクを実行する場合だけ、固定環境を�
 pwsh.exe -NoLogo -NoProfile -File benchmarks\setup-python-env.ps1
 ```
 
-既定では `%LOCALAPPDATA%\Programs\Python\Python312\python.exe` を検査し、`benchmarks/.venv` を作成します。スクリプトは Python 3.12 と、直接利用する package の固定 version を検査します。完全な transitive hash lock は Stage 0 の採用技術決定後に行う計画であり、現在の環境を release lock とみなしません。
+既定では `%LOCALAPPDATA%\Programs\Python\Python312\python.exe` を検査し、`benchmarks/.venv` を作成します。これは過去のStage 0候補を再測定する環境であり、PK-001の製品worker lockやrelease packageではありません。heldまたはcondition-falseのbenchmark packageが存在しても、製品lockへ追加しません。
 
 ## 6. 小さい確認から実行する
 

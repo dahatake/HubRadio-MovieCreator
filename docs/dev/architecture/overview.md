@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、Windows 11 x64 の単一 PC で動作する、ローカル優先の動画編集支援アプリケーションとして設計しています。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation は完了済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。Stage 1ではSQLite業務store、永続job/worker protocol、編集操作、review/approval、durable request/checkpointとAsset/warning/PTS/artifact stateを復元する媒体取込、NVENC/Media Foundation proxy・preview素材、媒体およびbridge/process/path境界の専用敵対試験、ACL、audit、backup/restoreまで実装済みです。業務UI、解析後段、Render IR以降、配布は未完了です。
+> Stage 0 と Foundation は完了済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。Stage 1ではSQLite業務store、永続job/worker protocol、編集操作、review/approval、durable request/checkpointとAsset/warning/PTS/artifact stateを復元する媒体取込、NVENC/Media Foundation proxy・preview素材、媒体およびbridge/process/path境界の専用敵対試験、ACL、audit、backup/restore、Windows x64 / CPython 3.12向けPython wheel hash lockまで実装済みです。業務UI、解析後段、Render IR以降、Python runtime/modelを含む配布は未完了です。
 
 ![HubRadio MovieCreatorのローカル優先アーキテクチャ。緑は実装済み、青は一部実装または計画中、紫の破線は条件付きAzure経路](system-overview.svg)
 
@@ -64,6 +64,8 @@ unpackaged実プロセスsmokeでは、Web UI Ready、Runtime欠落時のnative 
 製品版では両者を .NET ホストの子プロセスとして実行します。shell は使わず、timeout、取消、子孫終了、実行ファイル hash を検査します。Python は SQLite に直接接続せず、版付き NDJSON 契約とジョブ専用 staging を使います。
 
 Stage 0のshot、face、local text model用probeは不採用・保留判断の証拠として残しますが、現在の製品workerや配布依存には含めません。
+
+PK-001ではruntime 25件とtest固有4件をexact version・SHA-256・binary-onlyで固定し、同一Windows x64 hostのfresh CPython 3.12.10 AMD64 venvへdownload済みwheelhouseだけから再現しました。これはPython runtime、ASR model、CUDA、MSIX、完全license/CVE/SBOM、release readinessの証拠ではありません。
 
 Stage 0のPowerShell／Python検証実装に加え、Foundationでは製品ホスト、Web UI、workerの最小buildable scaffoldを作成しました。ここでのscaffold成功は業務機能の完成を意味しません。
 

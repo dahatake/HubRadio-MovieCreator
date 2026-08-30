@@ -18,6 +18,8 @@ $solutionPath = Join-Path $repoRoot 'HubRadio.slnx'
 $webRoot = Join-Path $repoRoot 'src\HubRadio.Web'
 $workerRoot = Join-Path $repoRoot 'src\HubRadio.Worker'
 $workerPython = Join-Path $workerRoot '.venv\Scripts\python.exe'
+$workerRuntimeLock = Join-Path $workerRoot 'requirements.lock'
+$workerTestLock = Join-Path $workerRoot 'requirements-test.lock'
 
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_NOLOGO = '1'
@@ -150,22 +152,45 @@ if (-not (Test-Path -LiteralPath $workerPython -PathType Leaf)) {
     ) -WorkingDirectory $workerRoot -Description 'Python 3.12 virtual environment creation'
 }
 
+foreach ($lockPath in @($workerRuntimeLock, $workerTestLock)) {
+    if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) {
+        throw "Python dependency lock is missing: $lockPath"
+    }
+}
+
 Invoke-CheckedCommand -FilePath $workerPython -ArgumentList @(
-    '-m', 'pip', 'install', '--disable-pip-version-check', '-e', '.[test]'
-) -WorkingDirectory $workerRoot -Description 'Python dependency restore'
+    '-m', 'pip', 'install', '--disable-pip-version-check',
+    '--require-hashes', '--only-binary=:all:',
+    '-r', $workerTestLock
+) -WorkingDirectory $workerRoot -Description 'Hash-locked Python dependency restore'
+
+Invoke-CheckedCommand -FilePath $workerPython -ArgumentList @(
+    '-m', 'pip', 'install', '--disable-pip-version-check',
+    '--no-index', '--no-deps', '--no-build-isolation', '-e', '.'
+) -WorkingDirectory $workerRoot -Description 'Local Python worker installation'
+
+Invoke-CheckedCommand -FilePath $workerPython -ArgumentList @(
+    '-m', 'pip', 'check'
+) -WorkingDirectory $workerRoot -Description 'Python dependency consistency verification'
 
 Invoke-CheckedCommand -FilePath $npm -ArgumentList @('run', 'typecheck') `
     -WorkingDirectory $webRoot -Description 'Web TypeScript verification'
 Invoke-CheckedCommand -FilePath $npm -ArgumentList @('run', 'build') `
     -WorkingDirectory $webRoot -Description 'Web production build'
 
-$pythonVersionJson = & $workerPython -c 'import json, sys; print(json.dumps({"major": sys.version_info.major, "minor": sys.version_info.minor}))'
+$pythonVersionJson = & $workerPython -c 'import json, struct, sys; print(json.dumps({"implementation": sys.implementation.name, "major": sys.version_info.major, "minor": sys.version_info.minor, "platform": sys.platform, "pointerBits": struct.calcsize("P") * 8}))'
 if ($LASTEXITCODE -ne 0) {
     throw 'Unable to inspect the worker Python version.'
 }
 $pythonVersion = $pythonVersionJson | ConvertFrom-Json
-if ($pythonVersion.major -ne 3 -or $pythonVersion.minor -ne 12) {
-    throw "Worker Python 3.12 is required; found $($pythonVersion.major).$($pythonVersion.minor)."
+if (
+    $pythonVersion.implementation -ne 'cpython' -or
+    $pythonVersion.major -ne 3 -or
+    $pythonVersion.minor -ne 12 -or
+    $pythonVersion.platform -ne 'win32' -or
+    $pythonVersion.pointerBits -ne 64
+) {
+    throw "Worker CPython 3.12 for Windows x64 is required; found $($pythonVersion.implementation) $($pythonVersion.major).$($pythonVersion.minor), $($pythonVersion.platform), $($pythonVersion.pointerBits)-bit."
 }
 
 $previousConfiguration = $env:Configuration

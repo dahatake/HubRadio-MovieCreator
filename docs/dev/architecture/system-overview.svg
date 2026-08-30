@@ -213,6 +213,6 @@
   <path d="M 930 943 L 975 943" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)"/>
   <path d="M 1230 943 L 1275 943" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)"/>
 
-  <text x="800" y="1062" text-anchor="middle" class="small">Current: 109/203 tasks complete / S-014 boundary adversarial suite complete / external gates remain closed</text>
-  <text x="800" y="1088" text-anchor="middle" class="small">PK-001 next / feature UI + Render IR + package planned / ST-008 condition-false</text>
+  <text x="800" y="1062" text-anchor="middle" class="small">Current: 110/203 tasks complete / PK-001 Python wheel hash lock complete / external gates remain closed</text>
+  <text x="800" y="1088" text-anchor="middle" class="small">PK-003 next / feature UI + Render IR + runtime, model, package planned / ST-008 condition-false</text>
 </svg>

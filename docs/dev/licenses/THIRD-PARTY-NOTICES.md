@@ -15,6 +15,7 @@ Any `pending-PK-*`, held, condition-false, benchmark-only, unreviewed host compo
 |---|---|
 | `declared-product` | Directly declared by current product source, but not approved for release by F-008. |
 | `declared-dev`, `declared-test`, `resolved-test` | Build or test dependency; not automatically part of the shipped package. |
+| `locked-*` / `adopted-*-locked` | Exact wheel and SHA-256 are fixed by PK-001; this is reproducibility evidence, not release or legal approval. |
 | `adopted-conditional` | Accepted only as the bounded Stage 1 baseline described by ADR-0007; release conditions remain open. |
 | `held` | Do not add to the product dependency graph until stated re-evaluation evidence and a later decision exist. |
 | `condition-false` | The implementation condition is false; do not implement or package the candidate. |
@@ -29,18 +30,20 @@ Any `pending-PK-*`, held, condition-false, benchmark-only, unreviewed host compo
 | Microsoft Windows App SDK 2.4.0 | App project declaration, NuGet assets resolution, and locally rehashed matching nupkg | Package-specific Microsoft Windows App SDK License Terms; non-SPDX | Preserve applicable component terms and notices; verify actual packaged files at PK-006/Q-010. |
 | React 19.2.8 | `package.json` plus exact `package-lock.json` entry | MIT declared by lock | Obtain artifact SHA-256 and complete the production transitive notice set at PK-005/Q-010. |
 | React DOM 19.2.8 | `package.json` plus exact `package-lock.json` entry | MIT declared by lock | Obtain artifact SHA-256 and complete the production transitive notice set at PK-005/Q-010. |
-| CPython worker runtime | `requires-python >=3.12`; no exact runtime distribution is selected | Pending PK-002 | Fix the Windows x64 runtime, hashes, bundled components, and notices before self-contained packaging. |
+| CPython worker runtime | CPython 3.12 minor line is fixed; no exact runtime distribution is selected | Pending PK-002 | Fix the Windows x64 runtime artifact, hashes, bundled components, and notices before self-contained packaging. |
+| faster-whisper 1.2.1 | Exact declaration plus PK-001 runtime lock and wheel SHA-256 | MIT evidence for the exact tag | CPU/int8 only; retain SYSTRAN and embedded Silero notices; package the exact model at PK-004. |
+| CTranslate2 4.8.1 | Exact declaration plus PK-001 runtime lock and Windows x64 wheel SHA-256 | MIT evidence for the exact tag | No CUDA runtime is included or approved; complete binary notice review at Q-010. |
 
 An isolated `ProgressRing` compatibility probe observed `Compatible=false` with Windows App SDK 2.4.0 and `Compatible=true` with `2.4.1-experimental`. The product dependency remains 2.4.0; the experimental package was probe-only and is not a declared product or release dependency.
 
-The current worker declares no product runtime Python packages. Stage 0 Python packages listed below are not silently promoted into the worker dependency graph.
+The current worker declares `faster-whisper==1.2.1` and `ctranslate2==4.8.1`. PK-001 fixes their complete Windows x64 / CPython 3.12 dependency closure to 25 runtime wheels and separates four test-only wheels. The exact component filenames, byte sizes, hashes, and adoption exclusions are maintained in `src/HubRadio.Worker/wheel-matrix.json`; this does not approve the Python runtime, model, CUDA, notices, vulnerabilities, or release package.
 
 ## Conditional Stage 1 runtime candidates
 
 | Component | Decision boundary | License indicator | Required closure |
 |---|---|---|---|
 | BtbN FFmpeg LGPL build, `ffmpeg.exe`, and `ffprobe.exe` | Fixed LGPL build is a development baseline; GPL-enabled builds remain prohibited | LGPL-2.1-or-later base; bundled dependency licenses are not yet complete | PK-003 must fix source availability, exact build configuration, binary hashes, notices, dependency licenses, and codec-patent review. |
-| faster-whisper 1.2.1 and CTranslate2 4.8.1 | Conditional local ASR runtime; CPU is the mandatory fallback | MIT evidence is recorded for exact tags | PK-001 must create the adopted hash lock; PK-004 must package the exact model without silent updates; Q-010 must close transitive notices and vulnerabilities. |
+| faster-whisper 1.2.1 and CTranslate2 4.8.1 | Conditional local ASR runtime; CPU is the mandatory path | MIT evidence is recorded for exact tags | PK-001 hash lock is complete; PK-004 must package the exact model without silent updates; Q-010 must close transitive notices and vulnerabilities. |
 | Systran faster-whisper-small exact revision | Conditional ASR model baseline only | Exact-revision model card declares MIT | No model or cache redistribution until PK-004 license, model-card, offline-cache, and integrity gates pass. |
 | Foundry Local CUDA execution-provider cache | Local benchmark use only; redistribution approval is false | NVIDIA SDK EULA and component-specific terms remain incomplete | Never copy the observed cache into a release. Approve a separate redistributable runtime or disable CUDA and release CPU-only. |
 
@@ -68,7 +71,7 @@ The following are tracked because they affect reproducibility and later SBOM gen
 - .NET SDK 10.0.400 selected by `global.json`.
 - Node.js 24.19.0 and PowerShell 7.6.5 were observed on the Stage 0 host but are not pinned by repository artifacts; their controlled-toolchain artifacts and license evidence remain pending.
 - npm 11.17.0, TypeScript 7.0.2, Vite 8.2.2, Vitest 4.1.11, and the three direct `@types` packages.
-- `setuptools>=77` and pytest 9.0.0 from the worker declaration; neither has a committed Python lock or artifact SHA-256.
+- setuptools 84.0.0 and pytest 9.0.0 are exact, hash-locked PK-001 artifacts. pytest and its test-only transitive wheels are excluded from the product runtime lock.
 - MSTest.Sdk 4.3.3 and its assets-resolved direct test packages: MSTest.TestAdapter 4.3.3, MSTest.TestFramework 4.3.3, Microsoft.Testing.Extensions.CodeCoverage 18.9.0, and Microsoft.Testing.Extensions.TrxReport 2.3.3.
 - Microsoft.Windows.SDK.BuildTools 10.0.26100.1 and `makeappx.exe`, used only for the unsigned Stage 0 packaging feasibility run.
 - WinApp CLI 0.6.1.0, observed but not used because its implicit BuildTools bootstrap was not reproducible.
@@ -77,9 +80,9 @@ Test and build tool licenses still belong in the final engineering SBOM where re
 
 ## Other benchmark-only software and host components
 
-- `huggingface_hub` 1.28.0 and `tokenizers` 0.23.1 were observed in the ASR benchmark environment only.
-- MediaPipe 1.0.1, PySceneDetect 0.7.1, ONNX Runtime 1.29.0, PyAV 18.1.0, NumPy 2.5.2, OpenCV packages 5.0.0.93, and their measured model assets remain benchmark or held inputs unless a later task explicitly adopts and locks them.
-- Both `opencv-python` and `opencv-contrib-python` were installed into the same Stage 0 environment. PK-001 must select one compatible provider and record a real wheel hash rather than treating installed-manifest hashes as wheel hashes.
+- `huggingface_hub` 1.28.0, `tokenizers` 0.23.1, ONNX Runtime 1.29.0, PyAV 18.1.0, and NumPy 2.5.2 are now hash-locked product transitives because the adopted faster-whisper/CTranslate2 package metadata requires them. Product code still uses local-files-only model loading, CPU/int8, and `vad_filter=False`; dependency presence does not enable network fallback, VAD policy, CUDA, or additional models.
+- MediaPipe 1.0.1, PySceneDetect 0.7.1, OpenCV packages 5.0.0.93, and their measured model assets remain benchmark or held inputs and are explicitly absent from the PK-001 lock.
+- Both `opencv-python` and `opencv-contrib-python` were installed into the same Stage 0 environment. Their installed-manifest hashes are not wheel hashes; because A-012 remains held, PK-001 selects neither provider and a future adoption requires annotation evidence, a separate decision, and a real wheel hash.
 - Microsoft Foundry Local CLI/daemon 0.10.3 were Developer-signed preview binaries observed on one host. They are not declared product dependencies.
 - Microsoft.Web.WebView2 1.0.4129.50 was a probe SDK. Evergreen WebView2 Runtime 151.0.4129.107 was a host dependency, not bundled. Runtime bootstrap, update, network policy, terms, and release-candidate regression remain open.
 - Segoe UI Bold and Microsoft Haruka Desktop were host components used only by benchmark controls. They were not bundled, and F-008 does not approve font embedding, rendered-output rights, voice redistribution, or generated-control-audio redistribution.
@@ -99,7 +102,7 @@ BGM, jingles, SFX, logos, images, and documents remain unavailable for product u
 
 1. `dependencies.csv` inventories current direct declarations plus specifically evidenced Stage 0 tools. It is not the complete npm, NuGet, Python, native, .NET runtime, or OS-component transitive closure.
 2. npm lock entries currently carry SHA-1 SRI values. These are retained only as lock evidence; artifact SHA-256 values remain `pending-PK-005`.
-3. The worker has no adopted Python lock. `setuptools`, pytest, ML wheels, native DLLs, and optional GPU components require PK-001/PK-002 closure.
+3. PK-001 provides an adopted 29-wheel hash lock for Windows x64 / CPython 3.12 and proves it in a fresh same-host virtual environment. PK-002 must still select the exact Python runtime artifact; PK-004 owns the model bundle; native component notices, vulnerabilities, and optional GPU decisions remain open.
 4. FFmpeg’s archive provenance, executables, configure line, source availability, bundled libraries, and codec obligations must be reconciled into one PK-003 package manifest.
 5. Model acquisition, terms acceptance, model cards, exact revisions, file or manifest hashes, cache behavior, and offline startup must pass PK-004. Held and condition-false models must stay out of the release package.
 6. The Web production bundle and its transitive licenses require PK-005. WinUI, .NET runtime, Python worker, FFmpeg, Web assets, model files, and notices require PK-006 package verification.

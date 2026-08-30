@@ -1,0 +1,336 @@
+{
+  "schemaVersion": 1,
+  "evidenceDate": "2026-08-30",
+  "target": {
+    "operatingSystem": "Windows",
+    "architecture": "x64",
+    "pythonImplementation": "CPython",
+    "pythonVersion": "3.12",
+    "verifiedInterpreterVersion": "3.12.10",
+    "wheelPlatform": "win_amd64"
+  },
+  "resolverEvidence": {
+    "pipVersion": "25.0.1",
+    "packageIndex": "https://packagefeedproxy.microsoft.io/pypi/simple/",
+    "noCache": true,
+    "onlyBinary": true,
+    "wheelCount": 29,
+    "artifactSetSha256": "5f52dce86a3c0b4fcf198e452123e345afd4429f7c5a354e4b1d1b6ed6cdbe6e",
+    "artifactSetAlgorithm": "Sort by fileName ordinal; concatenate fileName NUL byteSize NUL sha256 LF; SHA-256 UTF-8 bytes."
+  },
+  "lockFiles": {
+    "runtime": "requirements.lock",
+    "buildAndTest": "requirements-test.lock"
+  },
+  "adoptedRuntime": {
+    "directRequirements": [
+      "ctranslate2==4.8.1",
+      "faster-whisper==1.2.1"
+    ],
+    "asrDevice": "cpu",
+    "asrComputeType": "int8",
+    "modelArtifactOwner": "PK-004"
+  },
+  "packages": [
+    {
+      "name": "anyio",
+      "version": "4.14.2",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "anyio-4.14.2-py3-none-any.whl",
+      "byteSize": 125813,
+      "sha256": "9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494"
+    },
+    {
+      "name": "av",
+      "version": "18.1.0",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "av-18.1.0-cp311-abi3-win_amd64.whl",
+      "byteSize": 27595679,
+      "sha256": "ea1480b7a8d5405cb5f382b344731bf125fd2c1c6fae3964f6c48595628387ff"
+    },
+    {
+      "name": "certifi",
+      "version": "2026.7.22",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "certifi-2026.7.22-py3-none-any.whl",
+      "byteSize": 136983,
+      "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775"
+    },
+    {
+      "name": "click",
+      "version": "8.4.2",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "click-8.4.2-py3-none-any.whl",
+      "byteSize": 119243,
+      "sha256": "e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76"
+    },
+    {
+      "name": "colorama",
+      "version": "0.4.6",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "colorama-0.4.6-py2.py3-none-any.whl",
+      "byteSize": 25335,
+      "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"
+    },
+    {
+      "name": "ctranslate2",
+      "version": "4.8.1",
+      "lock": "runtime",
+      "scope": "direct",
+      "fileName": "ctranslate2-4.8.1-cp312-cp312-win_amd64.whl",
+      "byteSize": 19220789,
+      "sha256": "49f96e861b57301f0b76a082109bde2cac8204a6b4fedc870883008271e82251"
+    },
+    {
+      "name": "faster-whisper",
+      "version": "1.2.1",
+      "lock": "runtime",
+      "scope": "direct",
+      "fileName": "faster_whisper-1.2.1-py3-none-any.whl",
+      "byteSize": 1118909,
+      "sha256": "79a66ad50688c0b794dd501dc340a736992a6342f7f95e5811be60b5224a26a7"
+    },
+    {
+      "name": "filelock",
+      "version": "3.32.3",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "filelock-3.32.3-py3-none-any.whl",
+      "byteSize": 98901,
+      "sha256": "7f0ca4bcc0e181c60dbbd8aa9ab5b120ebb99e4e064e83636340056f833a1f09"
+    },
+    {
+      "name": "flatbuffers",
+      "version": "25.12.19",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "flatbuffers-25.12.19-py2.py3-none-any.whl",
+      "byteSize": 26661,
+      "sha256": "7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4"
+    },
+    {
+      "name": "fsspec",
+      "version": "2026.7.0",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "fsspec-2026.7.0-py3-none-any.whl",
+      "byteSize": 206583,
+      "sha256": "b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279"
+    },
+    {
+      "name": "h11",
+      "version": "0.16.0",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "h11-0.16.0-py3-none-any.whl",
+      "byteSize": 37515,
+      "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"
+    },
+    {
+      "name": "hf-xet",
+      "version": "1.6.0",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "hf_xet-1.6.0-cp38-abi3-win_amd64.whl",
+      "byteSize": 4033128,
+      "sha256": "fb4fadde1b2b70bf4c0c14a6dccbe7194b1c28947fefd5bbe3fed9d940676c3b"
+    },
+    {
+      "name": "httpcore",
+      "version": "1.0.9",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "httpcore-1.0.9-py3-none-any.whl",
+      "byteSize": 78784,
+      "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"
+    },
+    {
+      "name": "httpx",
+      "version": "0.28.1",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "httpx-0.28.1-py3-none-any.whl",
+      "byteSize": 73517,
+      "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"
+    },
+    {
+      "name": "huggingface-hub",
+      "version": "1.28.0",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "huggingface_hub-1.28.0-py3-none-any.whl",
+      "byteSize": 793202,
+      "sha256": "58a8bacb03072edfc38067065e9dc24bbb34805410fcd36a1632de0b329660bb"
+    },
+    {
+      "name": "idna",
+      "version": "3.19",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "idna-3.19-py3-none-any.whl",
+      "byteSize": 68550,
+      "sha256": "815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4"
+    },
+    {
+      "name": "iniconfig",
+      "version": "2.3.0",
+      "lock": "test",
+      "scope": "transitive",
+      "fileName": "iniconfig-2.3.0-py3-none-any.whl",
+      "byteSize": 7484,
+      "sha256": "f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12"
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.2",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "numpy-2.5.2-cp312-cp312-win_amd64.whl",
+      "byteSize": 12464674,
+      "sha256": "28ac63476ec7651484215ee7fa15a1f78b57c14621f01e392afe17b9a1390ce4"
+    },
+    {
+      "name": "onnxruntime",
+      "version": "1.29.0",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "onnxruntime-1.29.0-cp312-cp312-win_amd64.whl",
+      "byteSize": 14001407,
+      "sha256": "4acf2b4948b7ede87221ca6332344b8facdc8059d6ac751a7d367d04532b02dd"
+    },
+    {
+      "name": "packaging",
+      "version": "26.3",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "packaging-26.3-py3-none-any.whl",
+      "byteSize": 129956,
+      "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
+    },
+    {
+      "name": "pluggy",
+      "version": "1.6.0",
+      "lock": "test",
+      "scope": "transitive",
+      "fileName": "pluggy-1.6.0-py3-none-any.whl",
+      "byteSize": 20538,
+      "sha256": "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746"
+    },
+    {
+      "name": "protobuf",
+      "version": "7.36.0",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "protobuf-7.36.0-cp310-abi3-win_amd64.whl",
+      "byteSize": 453731,
+      "sha256": "1781cc1de61249b750848029bca452c0a8b7e990080316b9bbc2518b2117b488"
+    },
+    {
+      "name": "pygments",
+      "version": "2.21.0",
+      "lock": "test",
+      "scope": "transitive",
+      "fileName": "pygments-2.21.0-py3-none-any.whl",
+      "byteSize": 1250147,
+      "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9"
+    },
+    {
+      "name": "pytest",
+      "version": "9.0.0",
+      "lock": "test",
+      "scope": "direct",
+      "fileName": "pytest-9.0.0-py3-none-any.whl",
+      "byteSize": 373364,
+      "sha256": "e5ccdf10b0bac554970ee88fc1a4ad0ee5d221f8ef22321f9b7e4584e19d7f96"
+    },
+    {
+      "name": "pyyaml",
+      "version": "6.0.3",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "pyyaml-6.0.3-cp312-cp312-win_amd64.whl",
+      "byteSize": 154003,
+      "sha256": "5fcd34e47f6e0b794d17de1b4ff496c00986e1c83f7ab2fb8fcfe9616ff7477b"
+    },
+    {
+      "name": "setuptools",
+      "version": "84.0.0",
+      "lock": "runtime",
+      "scope": "transitive-and-build-direct",
+      "fileName": "setuptools-84.0.0-py3-none-any.whl",
+      "byteSize": 818216,
+      "sha256": "51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670"
+    },
+    {
+      "name": "tokenizers",
+      "version": "0.23.1",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "tokenizers-0.23.1-cp310-abi3-win_amd64.whl",
+      "byteSize": 2798223,
+      "sha256": "e7bfaf995c1bdbbd21d13539decb6650967013759318627d85daeb7881af16b7"
+    },
+    {
+      "name": "tqdm",
+      "version": "4.70.0",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "tqdm-4.70.0-py3-none-any.whl",
+      "byteSize": 80184,
+      "sha256": "7f585706bfddbdebf89daac705b2dfcc16890130727d3197ca62c732b4310953"
+    },
+    {
+      "name": "typing-extensions",
+      "version": "4.16.0",
+      "lock": "runtime",
+      "scope": "transitive",
+      "fileName": "typing_extensions-4.16.0-py3-none-any.whl",
+      "byteSize": 45571,
+      "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+    }
+  ],
+  "excludedCandidates": [
+    {
+      "decision": "A-010 condition-false",
+      "identities": ["pyannote-audio", "pyannote speaker model"],
+      "reason": "Model terms were not accepted; the manual speaker path remains mandatory."
+    },
+    {
+      "decision": "A-012 held",
+      "identities": ["scenedetect", "opencv-python", "opencv-contrib-python"],
+      "reason": "Shot detection lacks representative positive annotations and an adoption decision."
+    },
+    {
+      "decision": "A-013 held",
+      "identities": ["mediapipe", "blaze-face model"],
+      "reason": "Face detection lacks representative annotations and an adoption decision."
+    },
+    {
+      "decision": "A-015 condition-false",
+      "identities": ["Foundry Local Qwen model", "local text model client"],
+      "reason": "The accepted evidence produced no grounded suggestion output."
+    },
+    {
+      "decision": "ADR-0007 redistribution held",
+      "identities": ["Foundry CUDA execution-provider cache", "CUDA runtime bundle"],
+      "reason": "The observed host cache is not approved for copying or redistribution."
+    },
+    {
+      "decision": "Optional extras not selected",
+      "identities": ["torch", "transformers", "faster-whisper conversion extra"],
+      "reason": "The adopted CPU inference path does not use conversion or GPU extras."
+    }
+  ],
+  "remainingGates": [
+    "PK-002 must select and hash the distributable CPython runtime; this matrix pins only the 3.12 minor line and wheel set.",
+    "PK-004 must package and verify the exact ASR model artifact without network fallback or silent update.",
+    "PK-006 must verify the complete package on a clean target machine.",
+    "Q-010 must close transitive licenses, notices, vulnerabilities, and the release-candidate SBOM.",
+    "CUDA redistribution remains disabled until a separately authorized runtime and decision exist."
+  ]
+}

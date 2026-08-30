@@ -54,9 +54,9 @@ fixture を入手できない場合、実素材を必要とする stage を成�
 
 ## Python 3.12 が見つからない
 
-**原因:** `benchmarks/setup-python-env.ps1` の既定 path に Python 3.12 がありません。
+**原因:** 製品workerの`build.ps1`が`py.exe -3.12`でWindows x64版CPython 3.12を選択できないか、`benchmarks/setup-python-env.ps1`の既定pathにStage 0用Python 3.12がありません。
 
-**対処:** Python 3.12 を用意するか、実在する Python 3.12 の絶対 path を `-PythonExecutable` に指定します。別 major／minor version を無理に使用しません。
+**対処:** Windows x64版CPython 3.12を用意します。Stage 0 benchmarkだけを再実行する場合は、実在するPython 3.12の絶対pathを`-PythonExecutable`に指定できます。別implementation、32-bit、別major/minor versionを無理に使用しません。
 
 ```powershell
 pwsh.exe -NoLogo -NoProfile -File benchmarks\setup-python-env.ps1 -PythonExecutable C:\path\to\python.exe
@@ -64,9 +64,9 @@ pwsh.exe -NoLogo -NoProfile -File benchmarks\setup-python-env.ps1 -PythonExecuta
 
 ## pinned package の設定に失敗する
 
-**原因:** network、package source、wheel 対応、既存環境の不整合などが考えられます。表示された事実を確認する前に原因を断定しません。
+**原因:** 製品workerではlockと取得artifactのSHA-256不一致、sdistしかないplatform、Python/architecture不一致、network/package source、既存環境の不整合が考えられます。Stage 0 benchmark環境では別の候補package設定が原因になり得ます。表示された事実を確認する前に原因を断定しません。
 
-**対処:** Python version、失敗した package 名、exit code を確認します。必要な場合は `-Recreate` で `benchmarks/.venv` を作り直します。`-Recreate` は指定した環境 directory を削除して再作成するため、別用途の環境を指定しないでください。
+**対処:** 製品workerでは`requirements.lock`、`requirements-test.lock`、`wheel-matrix.json`を個別に書き換えず、Python implementation/version/architecture、失敗したwheel名、期待hash、exit codeを確認します。新versionへ更新する場合は29-wheel closureをfresh venvで再解決・再検証します。Stage 0 benchmarkだけは、必要な場合に`-Recreate`で`benchmarks/.venv`を作り直します。`-Recreate`は指定した環境directoryを削除するため、製品workerや別用途の環境を指定しないでください。
 
 ## benchmark が timeout する
 

@@ -61,7 +61,7 @@ license evidence:
 - faster-whisper-small exact revision README/model card: https://huggingface.co/Systran/faster-whisper-small/resolve/536b0662742c02347bc0e980a01041f333bce120/README.md — 1,998 bytes、SHA-256 `329373481008c7c38654aff8ecdcf0163c211557cc7ba8e2ef6f2f84b4f75ec8`、front matter `license: mit`
 - Foundry Local CLI / execution provider reference: https://learn.microsoft.com/azure/foundry-local/reference/reference-cli — CLIはpreview、CUDA EPはNVIDIA SDK EULA対象と記載
 
-Windows Japanese TTS controlはインストール済み`Microsoft Haruka Desktop`でローカル生成した機構確認用であり、音声またはvoice componentを製品へ再配布する判断ではない。Foundry CUDA cacheのcopy、Appx/modelの同梱、完全なtransitive hash lock、notice生成は未承認であり、PK-001/PK-004/Q-010まで出荷対象にしない。
+Windows Japanese TTS controlはインストール済み`Microsoft Haruka Desktop`でローカル生成した機構確認用であり、音声またはvoice componentを製品へ再配布する判断ではない。PK-001は採用CPU workerのtransitive wheelをhash固定したが、Foundry CUDA cacheのcopy、Appx/modelの同梱、Python runtime、notice生成は未承認であり、PK-002/PK-004/Q-010まで出荷対象にしない。
 
 ## ST-011 Foundry Local文章model受入記録
 
@@ -84,7 +84,7 @@ Windows Japanese TTS controlはインストール済み`Microsoft Haruka Desktop
 | Python distribution | `opencv-python` `5.0.0.93` | package metadata: https://github.com/opencv/opencv-python | 47 / 144,683,896 | `88e81024645b0f27577ca20c93c340dbcd8f5c174bdf9bfd00fbfe816fbd57b0` | metadataはApache 2.0。同一`cv2` namespaceを共有するため、最終lockでは重複distributionを解消する |
 | Python distribution | `numpy` `2.5.2` | PyPI / https://numpy.org/ | ST-016記録を再利用 | ST-016 wheel SHA-256 `28ac63476ec7651484215ee7fa15a1f78b57c14621f01e392afe17b9a1390ce4` | SPDX expressionは`BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0` |
 
-OpenCV 2 distributionの同居はStage 0環境の観測事実であり、両方を製品へ含める判断ではない。PK-001で単一providerへ整理し、exact wheel hash・transitive license・noticeを固定する。ST-012のsource-derived renderは権利未確認のためlocal technical evaluationに限定し、FFmpeg/OpenCV/NumPyの利用がfixtureの外部公開許可を与えるものではない。
+OpenCV 2 distributionの同居はStage 0環境の観測事実であり、両方を製品へ含める判断ではない。A-012がheldであるため、PK-001は両providerを製品lockから明示除外した。将来のannotationと別の採用決定が成立するまでwheelを選ばない。ST-012のsource-derived renderは権利未確認のためlocal technical evaluationに限定し、FFmpeg/OpenCV/NumPyの利用がfixtureの外部公開許可を与えるものではない。
 
 ## ST-010 MediaPipe受入記録
 
@@ -123,7 +123,7 @@ license evidence:
 - PyAV v18.1.0 `LICENSE.txt`（BSD-3-Clause）: https://raw.githubusercontent.com/PyAV-Org/PyAV/v18.1.0/LICENSE.txt — 1,505 bytes、SHA-256 `76af0461ffb92e19f1c14449e95557d83a2dfaa1baf202d49e5f1d8746c0da19`
 - NumPy v2.5.2 `LICENSE.txt`（BSD-3-Clause。wheel内の追加第三者licenseは最終notice生成時に別途収集）: https://raw.githubusercontent.com/numpy/numpy/v2.5.2/LICENSE.txt — 1,543 bytes、SHA-256 `1be1df33863f97a7bc1c4d67980bd6c69c9a6fef0a5ee76e6ad6cb91e56e8491`
 
-YAMNetとSileroのscore/thresholdはStage 0比較設定であり、productionの合否値ではない。YAMNetのcough候補は正例対照と人手annotationがないため、手動試聴なしに削除候補を確定しない。complete transitive hash lock、offline model bundle、全license noticeの生成はF-008/PK-001/PK-004/Q-010で完了させる。
+YAMNetとSileroのscore/thresholdはStage 0比較設定であり、productionの合否値ではない。YAMNetのcough候補は正例対照と人手annotationがないため、手動試聴なしに削除候補を確定しない。採用CPU workerのtransitive wheel hash lockはPK-001で完了した。offline model bundleと全license noticeの生成はPK-004/Q-010で完了させる。
 
 ## ST-014 Windows package toolchain受入記録
 
