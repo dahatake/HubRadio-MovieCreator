@@ -24,7 +24,7 @@
 | `docs/requirement-definition.md` | 0.1 Draft | `f28c24f9c5f72859ebb71503a6242703ec5225b329e3aa3a7face56fd73e60a9` |
 | `docs/dev/research/implementation-research.md` | 調査日 2026-08-26、Windows後続決定注記を反映 | `8ef0efdf1b4fccd9f144ec52dcc0b1bef2f8fd3335ea6c4bad1343ae2fb89c64` |
 | `docs/dev/reviews/adversarial-review.md` | 修正後 PASS | `09a85e34ea015fef2719075223aa89d45d3723d61ce38399dc182eea94166c71` |
-| `docs/dev/planning/implementation-plan.md` | 計画日 2026-08-26、2026-08-31時点119/203完了・A-001〜A-009/A-011/S-007/S-014/Z-001〜Z-007/PK-001〜PK-005完了・PK-006同一host実装済み/clean Windows受入待ち・M-011 durable restart/M-012媒体敵対試験完了 | `a77df60c625f6940d6454a4d07081ad6f13a1ab62102293feef0b811172f438d` |
+| `docs/dev/planning/implementation-plan.md` | 計画日 2026-08-26、2026-08-31時点120/203完了・A-001〜A-009/A-011/A-014/S-007/S-014/Z-001〜Z-007/PK-001〜PK-005完了・PK-006同一host実装済み/clean Windows受入待ち・M-011 durable restart/M-012媒体敵対試験完了 | `7d240c86a8d0851de20aa8f7f97a5b79f6d436a5e6507c4f143edf694972714f` |
 
 指定されていた `/hve-dev/requirement-definition.md` はリポジトリに存在しない。したがって、存在しないパスを推測して作成したり、別内容の要求定義として扱ったりしない。
 

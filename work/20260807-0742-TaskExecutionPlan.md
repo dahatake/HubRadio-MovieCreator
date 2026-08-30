@@ -3,7 +3,7 @@
 **作成日:** 2026年8月27日
 **最終更新:** 2026年8月31日
 **対象リポジトリ:** HubRadio-MovieCreator
-**正本:** `docs/dev/planning/implementation-plan.md`（全203タスク、SHA-256 `a77df60c625f6940d6454a4d07081ad6f13a1ab62102293feef0b811172f438d`）
+**正本:** `docs/dev/planning/implementation-plan.md`（全203タスク、SHA-256 `7d240c86a8d0851de20aa8f7f97a5b79f6d436a5e6507c4f143edf694972714f`）
 **本書の位置付け:** 正本の実行順序を、これまでの実測結果に基づいて具体化した作業計画。要求・ADRを変更するものではない。
 
 ---
@@ -24,14 +24,14 @@
 | D | D-001〜D-016 | 正規model、SQLite migration/store、ArtifactStore、WorkspaceRecoveryまでreview・commit済み |
 | J | J-001〜J-010 | 永続job、runner、closed worker protocol、progress/cancel/retry、restart recoveryまでreview・commit済み |
 | M | M-001〜M-012 | picker、取込、probe/decode、原本、PTS、NVENC/MF proxy、frame map、preview素材、durable restart、媒体敵対試験までreview・commit済み |
-| A | A-001〜A-009/A-011 | pinned CPU int8 ASR runner、固定PCM抽出、first decoded frame基準の元時刻写像、raw timing evidence付きTranscriptRevision正規化、人による不変Human child revisionと別canonical edit record保存、案件/シリーズ用語辞書CRUD、用語修正候補と明示採否、versioned FFmpeg無音候補、明示編集語句候補、決定論的な隣接反復候補、manual speaker assignment revisionをreview済み |
+| A | A-001〜A-009/A-011/A-014 | pinned CPU int8 ASR runner、固定PCM抽出、first decoded frame基準の元時刻写像、raw timing evidence付きTranscriptRevision正規化、人による不変Human child revisionと別canonical edit record保存、案件/シリーズ用語辞書CRUD、用語修正候補と明示採否、versioned FFmpeg無音候補、明示編集語句候補、決定論的な隣接反復候補、manual speaker assignment revision、manual-first topic boundaryをreview済み |
 | R | R-001〜R-009、R-016 | typed edit、version、profile、manual layout/keyframe、transitionまでreview・commit済み |
 | U | U-001〜U-004 | WinUI/WebView2 startup、secure host/bridge、React state同期までreview・commit済み |
 | S | S-001、S-002、S-004、S-006〜S-010、S-012、S-014、S-015 | actor/role/text sensitivity/review/approval/audit/backupと横断敵対試験をreview済み。S-003はcode済み・別account受入待ち |
 | Z | Z-001〜Z-007 | local model不達/cloud necessity未証明、28 Region/model/quota、data processing、最小Japan East resource、desktop Entra authentication、local payload確認境界をreview済み |
 | PK | PK-001〜PK-005 | Python wheel lock/self-contained runtime、FFmpeg manifest、offline model catalog/cache、closed React production bundleをreview・commit済み。PK-006はcode/同一host unpack検証済み・clean Windows受入待ち |
 
-**完了: 119 / 203タスク（2026-08-31時点）**。`S-003`はコード実装済みだが別account受入待ちで完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了84件のうち5件が現在condition-falseまたは保留である。PK-001〜PK-005は完了した。PK-006はWAP/manual fallback/strict unpack verifierまで実装したが、別のclean Windowsへのinstall証拠がないため未完了として保持する。A-011まで完了し、次は`A-014`から実行可能なtaskを継続する。`Z-008`は2つ目の実在する生成系文章候補実装が現れるまで開始せず、A-009の削除候補をその条件へ読み替えない。
+**完了: 120 / 203タスク（2026-08-31時点）**。`S-003`はコード実装済みだが別account受入待ちで完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了83件のうち5件が現在condition-falseまたは保留である。PK-001〜PK-005は完了した。PK-006はWAP/manual fallback/strict unpack verifierまで実装したが、別のclean Windowsへのinstall証拠がないため未完了として保持する。A-014まで完了し、次は`A-018`から実行可能なtaskを継続する。`Z-008`は2つ目の実在する生成系文章候補実装が現れるまで開始せず、A-009の削除候補をその条件へ読み替えない。
 
 ### 1.2 直近の統合作業
 
@@ -71,6 +71,7 @@
 - A-008: FR-005に明記された`ここはカット`だけをclosed dictionary v1へ固定し、sentence内のNFKC token sequenceへexact matchする。dictionary version、normalized位置、根拠token、revision digestを保持し、partial token/untimed fallbackを明示する。fuzzy/cross-sentence/自動削除を拒否し、focused 9/9を完了した
 - A-009: 構造的に隣接する同一話者の発話全体とsentence内の直結token blockをNFKC exact一致だけで検出し、後側をrevision/source/token証拠と決定的keyへ結合したimmutable Proposed候補として返す。rolling hash後のexact確認、比較work budget、nested型/output整合性、private failureをfocused 23/23で検証し、worker 104/104、2-build runtime、空PATH実行、2-build unsigned MSIX payload、strict unpack検証を完了した。canonical Release runnerはArchitecture 46/46、Core 548/548、Infrastructure 613/631成功・18環境gate、App 373/375成功・2環境gate、Web 23/23、Node asset負例6/6、Python 104/104で失敗0。時間・類似度閾値、clean-machine install、release承認は未完了
 - A-011: Transcriptを変更せず、anonymous speaker IDをProject Performerへ結ぶ独立immutable revision historyを実装した。Performer氏名/役割とactor-confirmed surnameをsnapshot化し、full/surname/role/hidden、匿名fallback、肩書・所属未確認flagをtypedに解決する。Project/Transcript digest、parent、actor SID、理由、単調timestamp、previous/current diffへ結合し、focused 11/11を確認した。canonical Release runnerはArchitecture 46/46、Core 548/548、Infrastructure 613/631成功・18環境gate、App 384/386成功・2環境gate、Web 23/23、Node asset負例6/6、Python 104/104で失敗0。Project/schema永続化、S-005 policy、UI、自動話者分離はtask外で追加していない
+- A-014: 全連続utterance transitionをmanual-review TopicBoundary候補にし、speaker change、前後SourceSpan、exact rational gapを客観featuresとして保持する。semantic/pause/similarity/phrase/shot判定を捏造せず、confidenceなし・Proposed・revision digest/token evidenceへ結合した。人のtopic rangeはtranscript extentを検証するが候補時刻へclampせず、親/previous range/actor SID/reasonを持つchild revisionへ修正する。focused 13/13、App 397/399成功・2環境gate・失敗0を確認した
 
 旧ADR重複は削除済みで、`docs/dev/decisions/`だけがADR正本である。DOC-001〜DOC-004は敵対的レビュー、修正、再検証、commitまで完了した。
 
@@ -103,7 +104,7 @@
 |---|---:|---|
 | `docs/dev/**/*.md` | 26文書 | developer向け入口、architecture、benchmark、ADR、license、plan、research、review、error catalogを分離済み |
 | Git対象Markdown相対リンク | 全32文書の94件中broken 0件 | 再編後、Foundation、J-009追加文書の相対リンクは有効 |
-| Implementation plan SHA-256 | `a77df60c625f6940d6454a4d07081ad6f13a1ab62102293feef0b811172f438d` | 2026-08-31更新時点で`docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
+| Implementation plan SHA-256 | `7d240c86a8d0851de20aa8f7f97a5b79f6d436a5e6507c4f143edf694972714f` | 2026-08-31更新時点で`docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
 | `git diff --check` | staged / unstagedともexit 0 | whitespace errorなし |
 | 旧ADR重複 | 0件 | 削除済み。`docs/dev/decisions/`だけをADR正本として使用 |
 | Git staging | D-005、J-009、J-010と補正の個別commit後はclean | 本進捗同期だけを次のcommit対象にする |
@@ -168,7 +169,7 @@ ST-015承認後に着手する。
 | 群 | 件数 | 内容 |
 |---|---|---|
 | M-001〜M-012 | 12 | 完了。proxyのNVENC→Media Foundation固定fallback、durable request/checkpoint、Asset/warning復元、媒体敵対試験を含む |
-| A-001〜A-021 | 21 | A-001〜A-009/A-011完了。咳検出、topic、強調候補、横断採否管理、再処理DAGは未完了 |
+| A-001〜A-021 | 21 | A-001〜A-009/A-011/A-014完了。咳検出、topic metadata、強調候補、横断採否管理、再処理DAGは未完了 |
 
 **Phase Aの結果に依存する分岐**
 - ST-006/007に従い、A-001はraw word時刻を候補として保持し、欠落・zero-duration・親segment外はreview-requiredとした。A-003はraw値を保持したままA-002のRationalTimeと手動調整fallbackへ変換した
@@ -285,7 +286,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. `PK-006`の別clean Windows install gateは外部証拠待ちとして保持し、`A-014`から依存解放済みの実行可能taskを継続する。Z-008は2つ目の実在する生成系文章候補実装が現れるまで開始せず、A-009をその条件へ読み替えない。
+1. `PK-006`の別clean Windows install gateは外部証拠待ちとして保持し、`A-018`から依存解放済みの実行可能taskを継続する。Z-008は2つ目の実在する生成系文章候補実装が現れるまで開始せず、A-009をその条件へ読み替えない。
 2. 各taskを個別にbuild/testし、敵対的レビューの実在する指摘だけを反映して独立commitする。
 3. 完了ごとに依存DAGを再評価する。`S-003`とheld/condition-false taskは外部証拠または別承認なしに完了扱いにせず、Azure後続はpayload/validation/fallbackの個別gateを省略しない。
 
@@ -325,7 +326,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 5. **完了。** `A-002`は固定PCM抽出とfirst decoded frame基準の元時刻写像を成立させた。packet/container startを補正値として適用しない。
 6. **完了。** `A-003`はraw ASR秒とreview要否を別証拠として保持し、nearest-to-evenでA-002のRationalTimeへ変換した。範囲外をclampせずmanual timing fallbackを維持する。
 7. **完了。** `A-004`は原revisionを不変のままHuman child revisionと別canonical edit recordをArtifactStoreへ保存し、人修正とdownstream staleの証拠を固定した。
-8. **A-011完了。** `A-014`、`A-016`〜`A-021`はmanual fallbackを主経路として実装する。
+8. **A-014完了。** `A-016`、`A-018`〜`A-021`はmanual fallbackを主経路として実装する。
 9. `A-010`と`A-015`は条件不成立として実装しない。`A-012`と`A-013`は選定済みproduction detectorとしてcritical pathへ置かず、正例annotationと別承認が成立するまでholdする。
 10. `A-014`、`A-016`、`R-008`、`R-011`、`E-005`、`E-009`、`E-010`、`PK-001`、`PK-004`はheld/condition-false taskへ必須依存しないmanual-first baselineとする。`Q-000`/`Q-001`/`Q-004`/`Q-005`がheld taskなしで通ることを依存表で確認する。
 11. `A-018`はtechnical warningと人手review候補だけを出し、自動削除APIを持たない。
