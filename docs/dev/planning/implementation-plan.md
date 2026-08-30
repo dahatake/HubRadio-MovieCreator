@@ -6,7 +6,7 @@
 **計画日:** 2026年8月26日  
 **計画状態:** Stage 0は2026年8月27日に人手承認済み。
 
-2026年8月31日時点で123/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-012、A-001〜A-009/A-011/A-014/A-018〜A-020、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006〜S-010/S-012/S-014/S-015、Z-001〜Z-007、PK-001〜PK-005を実装・検証した。`PK-006`はPackaging Project、unsigned manual fallback、unpack verifierまで実装済みだが、別のclean Windowsへのinstall証拠を待つため完了数へ含めない。
+2026年8月31日時点で124/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-012、A-001〜A-009/A-011/A-014/A-018〜A-021、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006〜S-010/S-012/S-014/S-015、Z-001〜Z-007、PK-001〜PK-005を実装・検証した。`PK-006`はPackaging Project、unsigned manual fallback、unpack verifierまで実装済みだが、別のclean Windowsへのinstall証拠を待つため完了数へ含めない。
 
 `S-003`のコードは実装済みだが、別の非管理者Windows accountによる受入証拠を待つため完了数へ含めない。
 
@@ -18,13 +18,13 @@
 
 `PK-001`はWindows x64 / CPython 3.12向けruntime 25件とtest-only 4件のwheelをexact-version・SHA-256・binary-onlyで固定し、同一hostのfresh CPython 3.12.10 AMD64 venvでdownload済みwheelhouseだけから全29件をoffline再現した。`pip check`、version checks、worker 80/80、wheel filename/size/hash/artifact-set hash、canonical Release buildは成功した。これは別のclean Windows machine、Python runtime、ASR model、CUDA、MSIX、完全なlicense/CVE/SBOM、release readinessを証明しない。
 
-`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中80件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。
+`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中79件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。
 
 SQLite業務store、永続job、worker protocol、編集操作、review/approval、durable媒体取込・PTS・proxy・waveform/sprite、固定CPU ASR runner、元音声抽出とdecoded-frame基準の元時刻写像、worker結果のTranscriptRevision正規化、人による不変Transcript改訂、案件/シリーズ用語辞書CRUD、ローカル文字起こしsensitivity candidate scan、ACL、audit、backup/restore、Japan Eastの限定Azure評価resource、desktop Entra authentication、選択spanだけをmaskして送信前diffと送信先条件を表示しdigestへ結合するlocal-only payload確認境界まで実装済みである。
 
 実コンテンツのnetwork送信、response validation、fallback、ModelRun監査、end-user cloud feature、業務UI、用語不一致候補以降の解析、Render IR以降、配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布、release readinessは未承認。
 
-`PK-006`のclean Windows install gateは保留し、依存解放済みの`A-021`から実行可能なtaskを継続する。`Z-008`は2つ目の実在する生成系文章候補実装が現れるまで開始せず、A-009の削除候補をその条件へ読み替えない。held taskは成立証拠と別承認なしに解除しない。
+`PK-006`のclean Windows install gateは保留し、依存解放済みの`A-016`から実行可能なtaskを継続する。`Z-008`は2つ目の実在する生成系文章候補実装が現れるまで開始せず、A-009の削除候補をその条件へ読み替えない。held taskは成立証拠と別承認なしに解除しない。
 
 ---
 
@@ -322,6 +322,8 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 **A-020も完了。** topic titleはculture-independentな`Topic N` placeholder、audienceはProject snapshot、主話者はtopic rangeと発話rangeのexact rational overlapをspeakerごとに集計して一意最大だけを採用し、同率は未解決にする。A-011の割当表示をsnapshot化するが、要約、keyword、重要発言、公開注意は生成せずunsetから開始する。titleを含む全fieldはmanual入力で1 fieldずつimmutable child revisionへ変更・clearでき、origin、parent、actor SID、理由、単調timestamp、exact Project/Transcript/topic-range bindingを保持する。重要発言SourceSpanはtopic range完全内だけを許可する。focused 11件とApp回帰419/421成功・2環境gate・失敗0を確認した。
 
+**A-021も完了。** 結論はA-020重要発言、製品名はcallerが明示したA-005 TermEntry ID、注意・keyword・話題転換要約はmanual topic metadata、数字はNFKC後のASCII digitを含むtoken、質問への回答は明示`?`へNFKC正規化される直前発話の次utteranceというclosed規則だけで候補化する。全文辞書を製品扱いせず、case/fuzzy/subtoken/semantic answer判定を行わない。原文candidateは実token表記とtoken-specific SourceSpanを保持し、exact原文がないmanual metadataはtopic support付き`ManualSummary`へtyped分離する。理由が同じ原文へ重なる場合はsource identity/range/token IDs/textで統合し、TermEntry version evidenceを保持する。全SuggestionはHighlight/Proposed/null confidence/自動採用不可である。focused 12件とApp回帰431/433成功・2環境gate・失敗0を確認した。
+
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
 | A-001 | **完了。** 採用したASR runnerを1つだけ実装する | `WORKER/tasks/transcribe.py`、worker tests | ST-006,ST-007,J-005,M-006 / `L-M` | 固定model hash・設定でsegment/token/confidenceを出す | FR-002 | ローカル処理 |
@@ -342,7 +344,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | A-018 | **完了。** 咳・雑音・操作待ち・録画品質問題を削除候補化する | `INFRA/Analysis/AudioReviewCandidateDetector.cs`、tests | ST-016,A-002,D-006 / `L-M` | digest-bound mono waveformのlow-energy/clipping、FFmpegとのwait consensus、manual-listened cough/noiseだけをSourceSpan・理由・null confidence付きProposed候補へ変換。録音品質はtechnical warning、held YAMNet/Sileroと自動削除を拒否 | FR-005 | ローカル処理 |
 | A-019 | **完了。** 準備会話とtopic逸脱区間を候補化する | `APP/Analysis/ContextDeviationDetector.cs`、tests | A-004,A-014,D-006 / `L-C` | explicit topic range完全外だけをleading/between/trailingへ分類し、nearest boundary exact distanceを理由feature化。partial overlapとno-contextを安全に退避し、semantic閾値・confidence・自動削除なし | FR-005 | ローカル処理 |
 | A-020 | **完了。** topic名、要約、主話者、keyword、重要発言、対象者、公開注意を編集可能にする | `APP/Analysis/TopicMetadataService.cs`、tests | A-004,A-011,A-014。A-015は任意 / `L-C` | placeholder/project snapshot/exact-overlap主話者をorigin付き初期値にし、同率を未解決化。全fieldをmanual child revisionで編集・clearし、model生成を混在させない | FR-006 | なし |
-| A-021 | 結論、数値、製品名、注意、keyword、Q&Aから強調テロップ候補を抽出する | `APP/Analysis/EmphasisCandidateService.cs`、tests | A-004,A-005,A-020,D-006 / `L-C` | SourceSpan、候補理由、原文/要約区分を持ち、自動採用しない | FR-013 | なし |
+| A-021 | **完了。** 結論、数値、製品名、注意、keyword、Q&Aから強調テロップ候補を抽出する | `APP/Analysis/EmphasisCandidateService.cs`、tests | A-004,A-005,A-020,D-006 / `L-C` | explicit important span/product term/manual metadata/digit/question punctuationだけをclosed rulesで抽出。原token表記SourceSpanとManualSummaryをtyped分離し、理由・term versionを保持、自動採用なし | FR-013 | なし |
 | A-016 | 提案の採用/却下/修正とstale表示を統合する | `APP/Analysis/SuggestionService.cs`、tests | A-006〜A-009,A-011,A-014,A-018〜A-021,J-007 / `L-C` | 実装対象producerだけを統合し、AI候補保存とComposition採用を分離。A-010/A-012/A-013/A-015を必須依存にしない | FR-005〜007/013、BR-005 | なし |
 | A-017 | transcript修正時の最小再処理DAGを実装する | `APP/Analysis/AnalysisDependencyGraph.cs`、tests | A-004,A-016,J-007 / `L-C` | ASRを再実行せず辞書/topic等だけstale化 | NFR-002、AR-3 | なし |
 
@@ -685,4 +687,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**`PK-006`は同一host実装・unpack検証済みだが、別のclean Windowsへのinstall証拠を待つため未完了のまま保持する。次は依存解放済みの`A-021`から実行可能なtaskを継続する。未完了は残り80 taskである。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在する生成系文章候補実装が揃うまで抽象もsenderも作らず、A-009の削除候補をその条件へ読み替えない。**
+**`PK-006`は同一host実装・unpack検証済みだが、別のclean Windowsへのinstall証拠を待つため未完了のまま保持する。次は依存解放済みの`A-016`から実行可能なtaskを継続する。未完了は残り79 taskである。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在する生成系文章候補実装が揃うまで抽象もsenderも作らず、A-009の削除候補をその条件へ読み替えない。**
