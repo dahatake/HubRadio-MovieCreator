@@ -24,13 +24,13 @@
 | D | D-001〜D-016 | 正規model、SQLite migration/store、ArtifactStore、WorkspaceRecoveryまでreview・commit済み |
 | J | J-001〜J-010 | 永続job、runner、closed worker protocol、progress/cancel/retry、restart recoveryまでreview・commit済み |
 | M | M-001〜M-010 | picker、取込、probe/decode、原本、PTS、NVENC/MF proxy、frame map、preview素材までreview・commit済み |
-| A | A-001〜A-002 | pinned CPU int8 ASR runner、固定PCM抽出、first decoded frame基準の元時刻写像をreview済み |
+| A | A-001〜A-003 | pinned CPU int8 ASR runner、固定PCM抽出、first decoded frame基準の元時刻写像、raw timing evidence付きTranscriptRevision正規化をreview済み |
 | R | R-001〜R-009、R-016 | typed edit、version、profile、manual layout/keyframe、transitionまでreview・commit済み |
 | U | U-001〜U-004 | WinUI/WebView2 startup、secure host/bridge、React state同期までreview・commit済み |
 | S | S-001、S-002、S-004、S-006、S-008〜S-010、S-012、S-015 | actor/role/review/approval/audit/backup制御をreview・commit済み。S-003はcode済み・別account受入待ち |
 | Z | Z-001〜Z-006 | local model不達/cloud necessity未証明、28 Region/model/quota、data processing、最小Japan East resource、desktop Entra authenticationをreview済み |
 
-**完了: 101 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ち、`M-011`はdurable restart checkpointとAsset/warning persistence未達のため、いずれも完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了102件のうち5件が現在condition-falseまたは保留である。次は`A-003`〜`A-005`→`S-007`→`Z-007`を依存順に進め、並行して`M-011`→`M-012`、`S-014`、`PK-001`、`PK-003`〜`PK-005`を各gate確認後に進める。
+**完了: 102 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ち、`M-011`はdurable restart checkpointとAsset/warning persistence未達のため、いずれも完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了101件のうち5件が現在condition-falseまたは保留である。次は`A-004`〜`A-005`→`S-007`→`Z-007`を依存順に進め、並行して`M-011`→`M-012`、`S-014`、`PK-001`、`PK-003`〜`PK-005`を各gate確認後に進める。
 
 ### 1.2 直近の統合作業
 
@@ -56,6 +56,7 @@
 - Z-001〜Z-006: commit `10c3b2a`、`f4efbb3`、`2c51182`、`84012a4`、`449cc0b`、`c418224`
 - A-001: pinned model/configのunit test 24件、worker全66件、canonical controlのoffline CPU実モデルrun（2 segment、43 token、本文非出力）を完了。accuracy、production latency、CUDA再配布は未承認
 - A-002: 固定16 kHz mono PCM WAVとclosed timeline成果物、first decoded audio frame基準の双方向写像を実装。負の開始、1秒遅延開始、AAC priming、実FFmpeg/FFprobeを含む対象test 13件を完了。cross-build byte同一性とproduction性能は未測定
+- A-003: A-001のraw秒・review要否を保持し、nearest-to-evenでA-002のsource timelineへ写像してTranscriptRevisionとSourceSpanを構築。範囲外、欠落、zero-duration、丸め後zero、overlapをclampせずmanual timing fallbackへ落とし、対象test 11件と全runnerを完了
 
 旧ADR重複は削除済みで、`docs/dev/decisions/`だけがADR正本である。DOC-001〜DOC-004は敵対的レビュー、修正、再検証、commitまで完了した。
 
@@ -88,7 +89,7 @@
 |---|---:|---|
 | `docs/dev/**/*.md` | 26文書 | developer向け入口、architecture、benchmark、ADR、license、plan、research、review、error catalogを分離済み |
 | Git対象Markdown相対リンク | 全32文書の94件中broken 0件 | 再編後、Foundation、J-009追加文書の相対リンクは有効 |
-| Implementation plan SHA-256 | `a38913e02e506c1008d45abf486b1b0330d6f0d0c699e7ceefa02d6b28b614e5` | 2026-08-30更新時点で`docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
+| Implementation plan SHA-256 | `5ccfca85805a2d9daf671afbc45e5999c618d20da9fda44dd3c5fbc5448d4e10` | 2026-08-30更新時点で`docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
 | `git diff --check` | staged / unstagedともexit 0 | whitespace errorなし |
 | 旧ADR重複 | 0件 | 削除済み。`docs/dev/decisions/`だけをADR正本として使用 |
 | Git staging | D-005、J-009、J-010と補正の個別commit後はclean | 本進捗同期だけを次のcommit対象にする |
@@ -153,10 +154,10 @@ ST-015承認後に着手する。
 | 群 | 件数 | 内容 |
 |---|---|---|
 | M-001〜M-012 | 12 | M-001〜M-010完了（proxyはNVENC→Media Foundation固定fallbackを含む）。`M-011`はdurable request/checkpoint・Asset/warning persistence未達で監査中、M-012は待機 |
-| A-001〜A-021 | 21 | A-001〜A-002完了。TranscriptRevision化、用語辞書、無音・言い直し・咳検出、話者割当、topic、強調候補、採否管理、再処理DAGは未完了 |
+| A-001〜A-021 | 21 | A-001〜A-003完了。人によるTranscript改訂、用語辞書、無音・言い直し・咳検出、話者割当、topic、強調候補、採否管理、再処理DAGは未完了 |
 
 **Phase Aの結果に依存する分岐**
-- ST-006/007に従い、A-001はraw word時刻を候補として保持し、欠落・zero-duration・親segment外はreview-requiredとした。A-003でRationalTimeと手動調整fallbackへ変換する
+- ST-006/007に従い、A-001はraw word時刻を候補として保持し、欠落・zero-duration・親segment外はreview-requiredとした。A-003はraw値を保持したままA-002のRationalTimeと手動調整fallbackへ変換した
 - ST-009の結果により、A-012（shot境界）は本fixtureでは境界を返さない前提でテストを設計する
 - ST-008未実行のため、A-010は配布せずA-011（手動割当）を主経路とする
 
@@ -270,7 +271,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. `A-003`〜`A-005`を依存順に実装し、`S-007`のtext sensitivity gateを成立させてから`Z-007`へ進む。並行して`M-011`のdurable request/checkpoint・Asset/warning persistenceを閉じ、次に`M-012`へ進む。`S-014`、`PK-001`、`PK-003`〜`PK-005`は各gate確認後に実装する。
+1. `A-004`〜`A-005`を依存順に実装し、`S-007`のtext sensitivity gateを成立させてから`Z-007`へ進む。並行して`M-011`のdurable request/checkpoint・Asset/warning persistenceを閉じ、次に`M-012`へ進む。`S-014`、`PK-001`、`PK-003`〜`PK-005`は各gate確認後に実装する。
 2. 各taskを個別にbuild/testし、敵対的レビューの実在する指摘だけを反映して独立commitする。
 3. 完了ごとに依存DAGを再評価する。`S-003`とheld/condition-false taskは外部証拠または別承認なしに完了扱いにせず、Azure後続はpayload/validation/fallbackの個別gateを省略しない。
 
@@ -307,11 +308,12 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 2. **完了。** `M-007`〜`M-010`でobserved PTS index、NVENC/MF proxy、ProxyFrameMap、waveform/spriteを実装した。
 3. `M-011`は同一process内typed retryまで実装済み。durable request/checkpoint・Asset/warning persistenceを閉じてから完了とし、その後`M-012`で破損媒体、UNC、option風filename、resource bombを敵対試験する。
 4. **完了。** `A-001`はCPU int8の単一経路を成立させた。CUDAは正規runtimeと再配布承認がないため製品runnerへ追加していない。
-5. **完了。** `A-002`は固定PCM抽出とfirst decoded frame基準の元時刻写像を成立させた。packet/container startを補正値として適用せず、A-003はraw ASR秒を明示丸めで写像して範囲外証拠を保持する。
-6. `A-003`〜`A-009`、`A-011`、`A-014`、`A-016`〜`A-021`はmanual fallbackを主経路として実装する。
-7. `A-010`と`A-015`は条件不成立として実装しない。`A-012`と`A-013`は選定済みproduction detectorとしてcritical pathへ置かず、正例annotationと別承認が成立するまでholdする。
-8. `A-014`、`A-016`、`R-008`、`R-011`、`E-005`、`E-009`、`E-010`、`PK-001`、`PK-004`はheld/condition-false taskへ必須依存しないmanual-first baselineとする。`Q-000`/`Q-001`/`Q-004`/`Q-005`がheld taskなしで通ることを依存表で確認する。
-9. `A-018`はtechnical warningと人手review候補だけを出し、自動削除APIを持たない。
+5. **完了。** `A-002`は固定PCM抽出とfirst decoded frame基準の元時刻写像を成立させた。packet/container startを補正値として適用しない。
+6. **完了。** `A-003`はraw ASR秒とreview要否を別証拠として保持し、nearest-to-evenでA-002のRationalTimeへ変換した。範囲外をclampせずmanual timing fallbackを維持する。
+7. `A-004`〜`A-009`、`A-011`、`A-014`、`A-016`〜`A-021`はmanual fallbackを主経路として実装する。
+8. `A-010`と`A-015`は条件不成立として実装しない。`A-012`と`A-013`は選定済みproduction detectorとしてcritical pathへ置かず、正例annotationと別承認が成立するまでholdする。
+9. `A-014`、`A-016`、`R-008`、`R-011`、`E-005`、`E-009`、`E-010`、`PK-001`、`PK-004`はheld/condition-false taskへ必須依存しないmanual-first baselineとする。`Q-000`/`Q-001`/`Q-004`/`Q-005`がheld taskなしで通ることを依存表で確認する。
+10. `A-018`はtechnical warningと人手review候補だけを出し、自動削除APIを持たない。
 
 ### Wave 4: R + U + S — 編集、render、UI、統制
 
