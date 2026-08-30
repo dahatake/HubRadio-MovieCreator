@@ -4,7 +4,7 @@
 **要求の正本（暫定既定）:** `docs/requirement-definition.md` 版 0.1 Draft  
 **設計根拠:** `docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **計画日:** 2026年8月26日  
-**計画状態:** Stage 0は2026年8月27日に人手承認済み。2026年8月30日時点で106/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-010、A-001〜A-005、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006〜S-010/S-012/S-015、Z-001〜Z-007を実装・検証した。`S-003`のコードは実装済みだが、別の非管理者Windows accountによる受入証拠を待つため完了数へ含めない。`M-011`は同一process内retryまで実装済みだが、process restart後のdurable request/checkpointとAsset/warning persistenceを持たない現状を完了扱いにしない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中97件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。SQLite業務store、永続job、worker protocol、編集操作、review/approval、媒体取込・PTS・proxy・waveform/sprite、固定CPU ASR runner、元音声抽出とdecoded-frame基準の元時刻写像、worker結果のTranscriptRevision正規化、人による不変Transcript改訂、案件/シリーズ用語辞書CRUD、ローカル文字起こしsensitivity candidate scan、ACL、audit、backup/restore、Japan Eastの限定Azure評価resource、desktop Entra authentication、選択spanだけをmaskして送信前diffと送信先条件を表示しdigestへ結合するlocal-only payload確認境界まで実装済みである。実コンテンツのnetwork送信、response validation、fallback、ModelRun監査、end-user cloud feature、業務UI、用語不一致候補以降の解析、Render IR以降、配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布、release readinessは未承認。次は`M-011`のdurable request/checkpointとAsset/warning persistenceを閉じた後に`M-012`へ進む。`Z-008`は2つ目の実在文章候補実装が現れるまで開始せず、held taskは成立証拠と別承認なしに解除しない。
+**計画状態:** Stage 0は2026年8月27日に人手承認済み。2026年8月30日時点で107/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-011、A-001〜A-005、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006〜S-010/S-012/S-015、Z-001〜Z-007を実装・検証した。`S-003`のコードは実装済みだが、別の非管理者Windows accountによる受入証拠を待つため完了数へ含めない。`M-011`はversioned canonical request/checkpointをSQLite schema v6へ永続化し、Asset/Rights、MediaInfo warning evidence、source/proxy PTS、decode、artifact metadata、frame map、waveform/sprite indexをfresh process instance相当で検証付き復元する。完了済みprefixを再実行せずsuffixをattempt 2で再開し、stagingまたはartifactの副作用がcheckpointと不一致なら推測修復せずreconciliation-requiredへ送る統合試験まで完了した。これは実process-killを含む`Q-007`受入の代替ではない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中96件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。SQLite業務store、永続job、worker protocol、編集操作、review/approval、durable媒体取込・PTS・proxy・waveform/sprite、固定CPU ASR runner、元音声抽出とdecoded-frame基準の元時刻写像、worker結果のTranscriptRevision正規化、人による不変Transcript改訂、案件/シリーズ用語辞書CRUD、ローカル文字起こしsensitivity candidate scan、ACL、audit、backup/restore、Japan Eastの限定Azure評価resource、desktop Entra authentication、選択spanだけをmaskして送信前diffと送信先条件を表示しdigestへ結合するlocal-only payload確認境界まで実装済みである。実コンテンツのnetwork送信、response validation、fallback、ModelRun監査、end-user cloud feature、業務UI、用語不一致候補以降の解析、Render IR以降、配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布、release readinessは未承認。次は`M-012`へ進む。`Z-008`は2つ目の実在文章候補実装が現れるまで開始せず、held taskは成立証拠と別承認なしに解除しない。
 
 ---
 
@@ -269,7 +269,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.6 M — 動画取込、代理、プレビュー素材
 
-**実行状態: M-001〜M-010は完了。** token化picker、stream copy/hash、probe/decode、original昇格、NVENC→Media Foundation固定fallbackを持つproxy、観測PTS、ProxyFrameMap、waveform/spriteまで実装・検証済みである。`M-011`は同一process内のtyped retryまで実装済みだが、request/stage checkpointとAsset/MediaInfo warningのdurable persistenceを持たないため完了扱いにしない。
+**実行状態: M-001〜M-011は完了。** token化picker、stream copy/hash、probe/decode、original昇格、NVENC→Media Foundation固定fallbackを持つproxy、観測PTS、ProxyFrameMap、waveform/spriteまで実装・検証済みである。M-011はjob/project/request digest、stage、attempt、revision、timestampへ結合したversioned canonical request/checkpointをSQLiteへ永続化する。Asset/Rights、typed MediaInfo warning evidence、source/proxy PTS、decode、artifact metadata、frame map、waveform/sprite indexをfresh instanceで検証付き復元し、完了済みprefixを再実行せずsuffixを再開する。stage 0の未checkpoint staging副作用、artifact row/fileとcheckpointの先行・遅延、未登録昇格先、破損payloadは黙って推測修復せずreconciliation-requiredへ送る。deterministic crash-state injectionとrestart integrationは合格したが、実process-kill、disk full、workspace全体restoreの`Q-007`受入は未完了である。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -643,4 +643,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**次はdurable restart条件を残す`M-011`のrequest/checkpointとAsset/warning persistenceを閉じた後に`M-012`を実行し、依存解放済みの`S-014`、`PK-001`、`PK-003`、`PK-004`、`PK-005`を各gate確認後に実行する。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在文章候補実装が揃うまで抽象もsenderも作らない。**
+**次は`M-012`を実行し、依存解放済みの`S-014`、`PK-001`、`PK-003`、`PK-004`、`PK-005`を各gate確認後に実行する。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在文章候補実装が揃うまで抽象もsenderも作らない。**

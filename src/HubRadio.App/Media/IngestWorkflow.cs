@@ -40,6 +40,8 @@ public enum IngestWorkflowFailureReason
     ProxyGenerationFailed,
     FrameMapGenerationFailed,
     PreviewGenerationFailed,
+    CheckpointValidationFailed,
+    CheckpointPersistenceFailed,
     ProgressPersistenceFailed,
 }
 
@@ -149,7 +151,15 @@ public sealed class IngestWorkflowRequest
 
     public ContentDigest RequestDigest { get; }
 
-    private ContentDigest ComputeDigest()
+    internal string CanonicalJson =>
+        new UTF8Encoding(
+            encoderShouldEmitUTF8Identifier: false,
+            throwOnInvalidBytes: true).GetString(BuildCanonicalPayload());
+
+    private ContentDigest ComputeDigest() =>
+        ContentDigest.Compute(BuildCanonicalPayload());
+
+    private byte[] BuildCanonicalPayload()
     {
         var buffer = new ArrayBufferWriter<byte>();
         using (var writer = new Utf8JsonWriter(
@@ -215,8 +225,8 @@ public sealed class IngestWorkflowRequest
             writer.Flush();
         }
 
-        return ContentDigest.Compute(
-            CanonicalJson.CanonicalizeToUtf8(buffer.WrittenSpan));
+        return HubRadio.Core.Serialization.CanonicalJson.CanonicalizeToUtf8(
+            buffer.WrittenSpan);
     }
 }
 
@@ -307,6 +317,9 @@ public sealed class IngestWorkflow
     private const long TotalStages = IngestWorkflowRequest.StageCount;
 
     private readonly JobCoordinator _jobCoordinator;
+    private readonly IngestWorkflowStore _workflowStore;
+    private readonly IngestWorkflowCheckpointCodec _checkpointCodec;
+    private readonly ArtifactStore _artifactStore;
     private readonly CopyDelegate _copyAsync;
     private readonly ProbeDelegate _probeAsync;
     private readonly IndexDelegate _indexAsync;
@@ -319,6 +332,9 @@ public sealed class IngestWorkflow
 
     public IngestWorkflow(
         JobCoordinator jobCoordinator,
+        IngestWorkflowStore workflowStore,
+        ArtifactStore artifactStore,
+        string workspacePath,
         MediaImporter mediaImporter,
         FfprobeClient ffprobeClient,
         PtsIndexer ptsIndexer,
@@ -329,6 +345,9 @@ public sealed class IngestWorkflow
         PreviewAssetGenerator previewAssetGenerator)
         : this(
             jobCoordinator,
+            workflowStore,
+            new IngestWorkflowCheckpointCodec(workspacePath, artifactStore),
+            artifactStore,
             GetCopyDelegate(mediaImporter),
             GetProbeDelegate(ffprobeClient),
             GetIndexDelegate(ptsIndexer),
@@ -343,6 +362,9 @@ public sealed class IngestWorkflow
 
     internal IngestWorkflow(
         JobCoordinator jobCoordinator,
+        IngestWorkflowStore workflowStore,
+        IngestWorkflowCheckpointCodec checkpointCodec,
+        ArtifactStore artifactStore,
         CopyDelegate copyAsync,
         ProbeDelegate probeAsync,
         IndexDelegate indexAsync,
@@ -354,6 +376,9 @@ public sealed class IngestWorkflow
         GeneratePreviewDelegate generatePreviewAsync)
     {
         ArgumentNullException.ThrowIfNull(jobCoordinator);
+        ArgumentNullException.ThrowIfNull(workflowStore);
+        ArgumentNullException.ThrowIfNull(checkpointCodec);
+        ArgumentNullException.ThrowIfNull(artifactStore);
         ArgumentNullException.ThrowIfNull(copyAsync);
         ArgumentNullException.ThrowIfNull(probeAsync);
         ArgumentNullException.ThrowIfNull(indexAsync);
@@ -365,6 +390,9 @@ public sealed class IngestWorkflow
         ArgumentNullException.ThrowIfNull(generatePreviewAsync);
 
         _jobCoordinator = jobCoordinator;
+        _workflowStore = workflowStore;
+        _checkpointCodec = checkpointCodec;
+        _artifactStore = artifactStore;
         _copyAsync = copyAsync;
         _probeAsync = probeAsync;
         _indexAsync = indexAsync;
@@ -376,6 +404,29 @@ public sealed class IngestWorkflow
         _generatePreviewAsync = generatePreviewAsync;
     }
 
+    public Task<IngestWorkflowRunResult> ResumeAsync(
+        EntityId<JobIdTag> jobId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobId);
+        cancellationToken.ThrowIfCancellationRequested();
+        StoredIngestWorkflow stored = _workflowStore.Get(jobId)
+            ?? throw new InvalidOperationException(
+                "The durable ingest workflow is not registered.");
+        IngestWorkflowRequest request =
+            IngestWorkflowCheckpointCodec.DeserializeRequest(
+                stored.RequestPayloadJson);
+        if (request.JobId != jobId ||
+            request.ProjectId != stored.ProjectId ||
+            request.RequestDigest != stored.RequestDigest)
+        {
+            throw new InvalidOperationException(
+                "The durable ingest request is invalid.");
+        }
+
+        return RunAsync(request, previousRun: null, cancellationToken);
+    }
+
     public async Task<IngestWorkflowRunResult> RunAsync(
         IngestWorkflowRequest request,
         IngestWorkflowRunResult? previousRun = null,
@@ -384,10 +435,25 @@ public sealed class IngestWorkflow
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
         ValidateQueuedJob(request);
+        if (previousRun is not null)
+        {
+            ValidatePreviousRun(request, previousRun);
+        }
 
-        WorkflowResumeState state = previousRun is null
-            ? WorkflowResumeState.Create(request)
-            : ValidateAndCopyPreviousRun(request, previousRun);
+        WorkflowResumeState state = WorkflowResumeState.Create(request);
+        StoredIngestWorkflow persisted = _workflowStore.RegisterOrGet(
+            request.JobId,
+            request.ProjectId,
+            request.Version,
+            request.RequestDigest,
+            request.CanonicalJson,
+            IngestWorkflowCheckpointCodec.SchemaVersion,
+            _checkpointCodec.Serialize(state));
+        if (previousRun is not null)
+        {
+            ValidatePreviousCheckpoint(previousRun, persisted);
+        }
+
         IngestWorkflowFailureReason? failureReason = null;
         bool reconciliationRequired = false;
 
@@ -461,7 +527,62 @@ public sealed class IngestWorkflow
                         throw;
                     }
 
+                    try
+                    {
+                        string checkpoint = _checkpointCodec.Serialize(state);
+                        persisted = _workflowStore.AdvanceCheckpoint(
+                            request.JobId,
+                            request.RequestDigest,
+                            persisted.Revision,
+                            (int)state.Stage,
+                            context.SequenceNumber,
+                            IngestWorkflowCheckpointCodec.SchemaVersion,
+                            checkpoint,
+                            context.GetPersistenceTimestamp(
+                                persisted.UpdatedAt));
+                    }
+                    catch
+                    {
+                        state = before;
+                        failureReason =
+                            IngestWorkflowFailureReason.CheckpointPersistenceFailed;
+                        reconciliationRequired = true;
+                        throw;
+                    }
+
                     ReportStage(state.Stage);
+                }
+
+                try
+                {
+                    _checkpointCodec.ValidateStagingCheckpointBoundary(
+                        request,
+                        persisted.CheckpointStage);
+                    EnsureArtifactCheckpointBoundary(request, persisted);
+                    state = await _checkpointCodec.DeserializeAsync(
+                        request,
+                        persisted,
+                        token).ConfigureAwait(false);
+                    if (previousRun is not null &&
+                        state.Stage != previousRun.LastCompletedStage)
+                    {
+                        throw new InvalidOperationException(
+                            "The durable ingest checkpoint does not match the previous result.");
+                    }
+                }
+                catch (OperationCanceledException exception)
+                    when (token.IsCancellationRequested &&
+                        exception.CancellationToken == token)
+                {
+                    throw;
+                }
+                catch
+                {
+                    state = WorkflowResumeState.Create(request);
+                    failureReason =
+                        IngestWorkflowFailureReason.CheckpointValidationFailed;
+                    reconciliationRequired = true;
+                    throw;
                 }
 
                 if (state.Stage != IngestWorkflowStage.NotStarted)
@@ -685,7 +806,7 @@ public sealed class IngestWorkflow
         }
     }
 
-    private WorkflowResumeState ValidateAndCopyPreviousRun(
+    private void ValidatePreviousRun(
         IngestWorkflowRequest request,
         IngestWorkflowRunResult previousRun)
     {
@@ -710,7 +831,56 @@ public sealed class IngestWorkflow
 
         WorkflowResumeState state = previousRun.CopyResumeState();
         state.ValidateFor(request);
-        return state;
+    }
+
+    private static void ValidatePreviousCheckpoint(
+        IngestWorkflowRunResult previousRun,
+        StoredIngestWorkflow persisted)
+    {
+        if ((int)previousRun.LastCompletedStage != persisted.CheckpointStage ||
+            persisted.CheckpointAttemptNumber > previousRun.Job.SequenceNumber)
+        {
+            throw new ArgumentException(
+                "The previous ingest result is not the durable retry checkpoint.",
+                nameof(previousRun));
+        }
+    }
+
+    private void EnsureArtifactCheckpointBoundary(
+        IngestWorkflowRequest request,
+        StoredIngestWorkflow persisted)
+    {
+        EnsureArtifactBoundary(
+            request.OriginalArtifactId,
+            persisted.CheckpointStage >=
+                (int)IngestWorkflowStage.OriginalCommitted);
+        EnsureArtifactBoundary(
+            request.ProxyArtifactId,
+            persisted.CheckpointStage >=
+                (int)IngestWorkflowStage.ProxyCommitted);
+        bool previewsCommitted = persisted.CheckpointStage >=
+            (int)IngestWorkflowStage.PreviewAssetsCommitted;
+        EnsureArtifactBoundary(
+            request.WaveformIndexArtifactId,
+            previewsCommitted);
+        EnsureArtifactBoundary(
+            request.SpriteImageArtifactId,
+            previewsCommitted);
+        EnsureArtifactBoundary(
+            request.SpriteIndexArtifactId,
+            previewsCommitted);
+    }
+
+    private void EnsureArtifactBoundary(
+        EntityId<ArtifactIdTag> artifactId,
+        bool expectedToExist)
+    {
+        bool exists = _artifactStore.GetArtifact(artifactId) is not null;
+        if (exists != expectedToExist)
+        {
+            throw new InvalidOperationException(
+                "The durable ingest checkpoint requires reconciliation.");
+        }
     }
 
     private static string GetPhase(IngestWorkflowStage stage) =>

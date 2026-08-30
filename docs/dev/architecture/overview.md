@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、Windows 11 x64 の単一 PC で動作する、ローカル優先の動画編集支援アプリケーションとして設計しています。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation は完了済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。Stage 1ではSQLite業務store、永続job/worker protocol、編集操作、review/approval、媒体取込・PTS・NVENC/Media Foundation proxy・preview素材、ACL、audit、backup/restoreまで実装済みです。`M-011`のdurable request/checkpoint・Asset/warning persistence、業務UI、解析後段、Render IR以降、配布は未完了です。
+> Stage 0 と Foundation は完了済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。Stage 1ではSQLite業務store、永続job/worker protocol、編集操作、review/approval、durable request/checkpointとAsset/warning/PTS/artifact stateを復元する媒体取込、NVENC/Media Foundation proxy・preview素材、ACL、audit、backup/restoreまで実装済みです。媒体の敵対試験、業務UI、解析後段、Render IR以降、配布は未完了です。
 
 ![HubRadio MovieCreatorのローカル優先アーキテクチャ。緑は実装済み、青は一部実装または計画中、紫の破線は条件付きAzure経路](system-overview.svg)
 
@@ -78,6 +78,7 @@ Stage 0のPowerShell／Python検証実装に加え、Foundationでは製品ホ�
 - 不変の編集版索引
 - レビュー、承認、権利、監査
 - 納品物の索引
+- 取込jobのversioned canonical request/checkpoint
 
 単一 PC・単一書込ホストが対象であるため、共有 PostgreSQL やクラウド DB は導入しません。
 
@@ -85,7 +86,7 @@ Stage 0のPowerShell／Python検証実装に加え、Foundationでは製品ホ�
 
 ローカル固定ディスク上の管理workspaceへ、元動画、代理、解析、編集版、プレビュー、レンダー、納品、証拠を保存する基盤を実装済みです。初回起動時の保存先選択UIは未完了です。保存・保持・バックアップの決定は [ADR-0005](../decisions/ADR-0005-storage-retention.md) を参照してください。
 
-ファイルは staging へ書き、hash 検証後に同一ボリューム内で昇格します。SQLite には昇格済み成果物だけを登録します。
+ファイルは staging へ書き、hash 検証後に同一ボリューム内で昇格します。SQLite には昇格済み成果物だけを登録します。取込workflowは完了stageごとにcheckpointを先にcommitし、再起動後は登録済みartifactのpath、size、digest、metadataとstaging境界を再検証してから未完了suffixだけを再開します。artifact昇格とcheckpointの間に不一致が残った場合は自動推測修復せず、手動reconciliationを要求します。
 
 ## 非破壊編集と追跡性
 

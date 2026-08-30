@@ -16,5 +16,7 @@
                       LogicalName="HubRadio.Infrastructure.Database.Migrations.004_role_assignments.sql" />
     <EmbeddedResource Include="Database\Migrations\005_term_entries.sql"
                       LogicalName="HubRadio.Infrastructure.Database.Migrations.005_term_entries.sql" />
+    <EmbeddedResource Include="Database\Migrations\006_ingest_workflows.sql"
+              LogicalName="HubRadio.Infrastructure.Database.Migrations.006_ingest_workflows.sql" />
   </ItemGroup>
 </Project>

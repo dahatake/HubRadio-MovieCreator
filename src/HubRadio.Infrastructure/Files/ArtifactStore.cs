@@ -352,6 +352,39 @@ public sealed class ArtifactStore
         }
     }
 
+    public async Task<StoredArtifact> ValidateRegisteredAsync(
+        EntityId<ArtifactIdTag> artifactId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(artifactId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        StoredArtifact artifact = GetArtifact(artifactId)
+            ?? throw Failure(ArtifactStoreFailureReason.RegisteredArtifactMissing);
+        string artifactPath = ResolveRegisteredArtifactPath(artifact);
+        ValidateRegisteredArtifactPath(artifactPath);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        using FileStream stream = OpenStagingFile(artifactPath);
+        ValidateRegisteredArtifactPath(artifactPath);
+        ValidateOpenedFile(stream);
+        await VerifyStoredContentAsync(
+            stream,
+            artifact.ContentDigest,
+            artifact.ByteSize,
+            cancellationToken).ConfigureAwait(false);
+        ValidateRegisteredArtifactPath(artifactPath);
+
+        StoredArtifact current = GetArtifact(artifactId)
+            ?? throw Failure(ArtifactStoreFailureReason.RegisteredArtifactMissing);
+        if (!HasSameMetadata(artifact, current))
+        {
+            throw Failure(ArtifactStoreFailureReason.DatabaseRejected);
+        }
+
+        return current;
+    }
+
     internal string GetValidatedRegisteredArtifactPath(
         EntityId<ArtifactIdTag> artifactId)
     {
@@ -759,6 +792,58 @@ public sealed class ArtifactStore
         }
 
         return ContentDigest.FromBytes(actualDigestBytes);
+    }
+
+    private static async Task VerifyStoredContentAsync(
+        FileStream stream,
+        ContentDigest expectedDigest,
+        long expectedByteSize,
+        CancellationToken cancellationToken)
+    {
+        if (GetOpenedFileLength(stream) != expectedByteSize)
+        {
+            throw Failure(ArtifactStoreFailureReason.SizeMismatch);
+        }
+
+        byte[] actualDigestBytes = new byte[Sha256ByteLength];
+        try
+        {
+            int written = await SHA256.HashDataAsync(
+                stream,
+                actualDigestBytes,
+                cancellationToken).ConfigureAwait(false);
+            if (written != Sha256ByteLength)
+            {
+                throw Failure(ArtifactStoreFailureReason.DigestMismatch);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ArtifactStoreException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+            when (IsFileFailure(exception) || exception is CryptographicException)
+        {
+            throw Failure(ArtifactStoreFailureReason.NotRegularFile);
+        }
+
+        ValidateOpenedFile(stream);
+        if (GetOpenedFileLength(stream) != expectedByteSize)
+        {
+            throw Failure(ArtifactStoreFailureReason.SizeMismatch);
+        }
+
+        byte[] expectedDigestBytes = Convert.FromHexString(expectedDigest.Hex);
+        if (!CryptographicOperations.FixedTimeEquals(
+                expectedDigestBytes,
+                actualDigestBytes))
+        {
+            throw Failure(ArtifactStoreFailureReason.DigestMismatch);
+        }
     }
 
     private static void ValidateOpenedFile(FileStream stream)

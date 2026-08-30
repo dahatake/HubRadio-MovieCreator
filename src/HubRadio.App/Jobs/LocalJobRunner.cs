@@ -231,6 +231,22 @@ public sealed class LocalJobExecutionContext
         }
     }
 
+    internal DateTimeOffset GetPersistenceTimestamp(DateTimeOffset minimum)
+    {
+        lock (_sync)
+        {
+            EnsureOpen();
+            DateTimeOffset timestamp = _timeProvider.GetUtcNow().ToUniversalTime();
+            DateTimeOffset floor = minimum.ToUniversalTime();
+            if (_latestRecordedAt is DateTimeOffset latest && latest > floor)
+            {
+                floor = latest;
+            }
+
+            return timestamp >= floor ? timestamp : floor;
+        }
+    }
+
     internal DateTimeOffset? Seal()
     {
         lock (_sync)
