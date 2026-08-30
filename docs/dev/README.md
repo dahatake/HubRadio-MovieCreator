@@ -3,7 +3,7 @@
 HubRadio MovieCreator の開発、保守、技術検証、設計判断に関する入口です。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation `F-001〜F-009`は完了済みで、2026年8月30日時点で全203 task中104件を完了しました。`D-001〜D-016`、`J-001〜J-010`、`M-001〜M-010`、`A-001〜A-005`、`R-001〜R-009/R-016`、`U-001〜U-004`、主要なS系統制、`Z-001〜Z-006`を実装済みです。Japan Eastの限定Azure評価resourceとdesktop Entra authenticationは存在しますが、実コンテンツ送信機能は未提供です。`S-003`は別account受入待ち、`M-011`はdurable restart checkpoint未達です。用語不一致候補以降の解析、業務UI、Render IR以降、配布は未完了です。最新状態は[詳細実装計画](planning/implementation-plan.md)を参照してください。
+> Stage 0 と Foundation `F-001〜F-009`は完了済みで、2026年8月30日時点で全203 task中105件を完了しました。`D-001〜D-016`、`J-001〜J-010`、`M-001〜M-010`、`A-001〜A-005`、`R-001〜R-009/R-016`、`U-001〜U-004`、文字起こしsensitivity scannerを含む主要なS系統制、`Z-001〜Z-006`を実装済みです。Japan Eastの限定Azure評価resourceとdesktop Entra authenticationは存在しますが、実コンテンツ送信機能は未提供です。`S-003`は別account受入待ち、`M-011`はdurable restart checkpoint未達です。用語不一致候補以降の解析、業務UI、Render IR以降、配布は未完了です。最新状態は[詳細実装計画](planning/implementation-plan.md)を参照してください。
 
 ## 目的から探す
 

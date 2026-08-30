@@ -61,7 +61,7 @@ Z-007〜Z-010が完了するまでend-user cloud featureは未提供である。
 - service-generated ARM fieldのwhat-if差分をIaCへ逆輸入せず、再適用前後の保持を実測した。
 - public client IDとtenant IDは非秘密識別子であり、配布assemblyから読めることを明記した。
 - Z-006ではsync/async、cancel、scope、revocation failure、atomic sign-out、16件のin-flight requestを試験し、実在指摘を反映した。
-- `S-007`と`Z-006`は`Z-007`の独立した兄弟前提であり、`S-007`自体へ`Z-006`依存を追加しない。
+- `S-007`と`Z-006`は`Z-007`の独立した兄弟前提である。S-007はZ-006依存を追加せずローカル処理として完了し、本文や一致値をfindingへ保持しないこと、走査不能時に外部出力警告を維持することを検証した。
 - API keyの存在確認としてkey-list APIを呼ぶ提案は、secret値を取得するため不採用とした。management planeの`disableLocalAuth=true`、credential不在、source/config scanを境界とし、Q-010で再監査する。
 - .NET testはrepositoryの`test.ps1`と同じbuild済みMTP executableで実行した。`dotnet test`で0件だった誤ったfilter試行を合格証拠に使っていない。
 - `Azure.Identity`はconfigured NuGet source上の最新stable `1.21.0`と当日のdirect/transitive advisory不在を確認した。将来不在を保証せずQ-010で再照会する。
@@ -69,6 +69,6 @@ Z-007〜Z-010が完了するまでend-user cloud featureは未提供である。
 ## 結果
 
 - Z-001〜Z-006は完了した。
-- `A-004`/`A-005`は完了した。Z-007は残る前提`S-007`の完了後に開始できる。
+- `A-004`/`A-005`/`S-007`は完了し、Z-007の実装前提は揃った。S-007完了を実コンテンツ送信許可へ読み替えず、Z-007〜Z-010のgateを維持する。
 - Azure accountとEntra objectsは後続評価のため維持し、暗黙に削除・拡張しない。
 - `G-RELEASE`、production費用、品質、rights、retention、署名、clean Windows受入は未承認のまま維持する。

@@ -27,10 +27,10 @@
 | A | A-001〜A-005 | pinned CPU int8 ASR runner、固定PCM抽出、first decoded frame基準の元時刻写像、raw timing evidence付きTranscriptRevision正規化、人による不変Human child revisionと別canonical edit record保存、案件/シリーズ用語辞書CRUDをreview済み |
 | R | R-001〜R-009、R-016 | typed edit、version、profile、manual layout/keyframe、transitionまでreview・commit済み |
 | U | U-001〜U-004 | WinUI/WebView2 startup、secure host/bridge、React state同期までreview・commit済み |
-| S | S-001、S-002、S-004、S-006、S-008〜S-010、S-012、S-015 | actor/role/review/approval/audit/backup制御をreview・commit済み。S-003はcode済み・別account受入待ち |
+| S | S-001、S-002、S-004、S-006〜S-010、S-012、S-015 | actor/role/text sensitivity/review/approval/audit/backup制御をreview済み。S-003はcode済み・別account受入待ち |
 | Z | Z-001〜Z-006 | local model不達/cloud necessity未証明、28 Region/model/quota、data processing、最小Japan East resource、desktop Entra authenticationをreview済み |
 
-**完了: 104 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ち、`M-011`はdurable restart checkpointとAsset/warning persistence未達のため、いずれも完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了99件のうち5件が現在condition-falseまたは保留である。次は`S-007`→`Z-007`を依存順に進め、並行して`M-011`→`M-012`、`S-014`、`PK-001`、`PK-003`〜`PK-005`を各gate確認後に進める。
+**完了: 105 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ち、`M-011`はdurable restart checkpointとAsset/warning persistence未達のため、いずれも完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了98件のうち5件が現在condition-falseまたは保留である。次は`Z-007`へ進め、並行して`M-011`→`M-012`、`S-014`、`PK-001`、`PK-003`〜`PK-005`を各gate確認後に進める。
 
 ### 1.2 直近の統合作業
 
@@ -59,6 +59,7 @@
 - A-003: A-001のraw秒・review要否を保持し、nearest-to-evenでA-002のsource timelineへ写像してTranscriptRevisionとSourceSpanを構築。範囲外、欠落、zero-duration、丸め後zero、overlapをclampせずmanual timing fallbackへ落とし、対象test 11件と全runnerを完了
 - A-004: 原revisionを変更せずHuman childを生成し、stable IDs/timing/confidence/speakerを保持。actor SID、理由、typed diff、revision-bound SourceSpan、旧新digest、downstream staleを別canonical edit recordとしてArtifactStoreへ保存する。親artifactの保存前後検証、論理revision重複、曖昧文字階層、stale expected text、部分昇格のfail-closed/reconciliationを含む対象test 15件と全runnerを完了
 - A-005: 不変`TermEntry`とProject/Series typed XOR scope、STRICT schema v5、scope別partial unique index、Project RESTRICT FK、version 0 createとOCC付きupdate/deleteを実装。架空のSeries table/FKは作らず、Core 548件、Infrastructure 597件中579成功・18環境skip、App 273件中272成功・1環境skip、Architecture 25件、Web 22件、Python 66件のRelease一括runnerを完了
+- S-007: email、内部network location、credential形式、適用済み辞書snapshotをローカルで検出し、本文を保持せずrevision/utterance/source-span IDと原文UTF-16範囲だけを返す`TextSensitivityScanner`を実装。text element単位NFKC、無効Unicodeのfail-closed、同種包含除去、異種overlap保持を含む対象test 17件を完了し、Release一括runnerでArchitecture 25/25、Core 548/548、Infrastructure 579成功・18環境gate・0失敗、App 289成功・1環境gate・0失敗、Web 22/22、Python 66/66を確認した。これはS-011のexport gateやZ-007の送信確認を代替しない
 
 旧ADR重複は削除済みで、`docs/dev/decisions/`だけがADR正本である。DOC-001〜DOC-004は敵対的レビュー、修正、再検証、commitまで完了した。
 
@@ -91,7 +92,7 @@
 |---|---:|---|
 | `docs/dev/**/*.md` | 26文書 | developer向け入口、architecture、benchmark、ADR、license、plan、research、review、error catalogを分離済み |
 | Git対象Markdown相対リンク | 全32文書の94件中broken 0件 | 再編後、Foundation、J-009追加文書の相対リンクは有効 |
-| Implementation plan SHA-256 | `1a5be1e16e9a51ae09e01761aa39120c053c5aa25f792123b9923309b4b0c8ad` | 2026-08-30更新時点で`docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
+| Implementation plan SHA-256 | `1ad8503d5516d030f3ecc8b311a8462fffc2b1d1d9391814b7d0bf52263f5fac` | 2026-08-30更新時点で`docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
 | `git diff --check` | staged / unstagedともexit 0 | whitespace errorなし |
 | 旧ADR重複 | 0件 | 削除済み。`docs/dev/decisions/`だけをADR正本として使用 |
 | Git staging | D-005、J-009、J-010と補正の個別commit後はclean | 本進捗同期だけを次のcommit対象にする |
@@ -174,7 +175,7 @@ ST-015承認後に着手する。
 
 | 群 | 件数 | 内容 |
 |---|---|---|
-| S-001〜S-016 | 16 | S-001/S-002/S-004/S-006/S-008〜S-010/S-012/S-015完了。S-003は別account受入待ち |
+| S-001〜S-016 | 16 | S-001/S-002/S-004/S-006〜S-010/S-012/S-015完了。S-003は別account受入待ち |
 | Q-000〜Q-013 | 14 | Must受入、長尺・縦型・クイズ、セキュリティ、追跡性、性能、復旧、敵対試験、アクセシビリティ、SBOM、初期パイロット |
 | PK-001〜PK-007 | 7 | 未完了。PK-001/PK-003/PK-004/PK-005は依存解放済み。Python固定、FFmpeg固定、モデル管理、React組込、MSIX、署名・upgrade検証を順次実施 |
 
@@ -184,7 +185,7 @@ ST-015承認後に着手する。
 
 ### Phase G: 条件付きAzure（Z、10タスク）
 
-**Z-001〜Z-006完了。** Japan Eastの最小resourceとdesktop Entra authenticationまで成立した。A-005は完了し、Z-007はS-007待ちである。実コンテンツ送信、response採用、fallback、ModelRun監査は未実装である。
+**Z-001〜Z-006とS-007は完了。** Japan Eastの最小resource、desktop Entra authentication、ローカルsensitivity candidate scanまで成立し、Z-007の実装前提は揃った。実コンテンツ送信、response採用、fallback、ModelRun監査は未実装である。
 
 ---
 
@@ -197,7 +198,7 @@ ST-015承認後に着手する。
 | D-004 / D-008 | D-002またはD-003完了後に別集約として進められる |
 | J-003 / J-009 | F-002後のprocess/diagnostic基盤としてDB critical pathと並行可能 |
 | F-007 / F-008 / F-009 | 各依存が揃えばfixture索引、BOM、architecture testを並行可能 |
-| S-007 / S-014 / PK-001 / PK-003〜PK-005 | M-011の直列修正と変更境界が独立し、各task固有gateを満たすものだけ並行可能 |
+| Z-007 / S-014 / PK-001 / PK-003〜PK-005 | M-011の直列修正と変更境界が独立し、各task固有gateを満たすものだけ並行可能 |
 | U-005以降 / R-010以降 | 対応serviceとmanual-first依存が解放された単位だけ並行可能 |
 
 | 並列化しない対象 | 理由 |
@@ -273,7 +274,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. `S-007`のtext sensitivity gateを成立させてから`Z-007`へ進む。並行して`M-011`のdurable request/checkpoint・Asset/warning persistenceを閉じ、次に`M-012`へ進む。`S-014`、`PK-001`、`PK-003`〜`PK-005`は各gate確認後に実装する。
+1. `Z-007`で選択span、周辺最小文脈、mask、送信前diff、人の明示確認を持つ最小payload境界を実装する。並行して`M-011`のdurable request/checkpoint・Asset/warning persistenceを閉じ、次に`M-012`へ進む。`S-014`、`PK-001`、`PK-003`〜`PK-005`は各gate確認後に実装する。
 2. 各taskを個別にbuild/testし、敵対的レビューの実在する指摘だけを反映して独立commitする。
 3. 完了ごとに依存DAGを再評価する。`S-003`とheld/condition-false taskは外部証拠または別承認なしに完了扱いにせず、Azure後続はpayload/validation/fallbackの個別gateを省略しない。
 
@@ -324,7 +325,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 |---|---|---|
 | R | R-001〜R-009/R-016完了。次は依存解放後のR-010以降 | D-009とapproved manual fallback |
 | U | U-001〜U-004完了。次は対応service完成後のU-005以降 | 業務method追加ごとのorigin/size/schema/method review |
-| S | 主要基盤task完了。S-003 codeは別account受入待ち、S-014等は依存解放を再確認 | 別非管理者account ACL試験と公開範囲拡大時の再承認 |
+| S | 主要基盤taskとS-007完了。S-003 codeは別account受入待ち、S-014等は依存解放を再確認 | 別非管理者account ACL試験と公開範囲拡大時の再承認 |
 
 統合順は、`R-008〜R-016`（manual layout、subtitle、graphic、transition）→`R-017`（typed Render IR gate）→`R-018`（FFmpeg compiler）→`R-019/R-020`（preview/final jobs）→`R-021/R-022`（QC/delivery）とする。UIは対応service完成ごとにU-005〜U-017へ接続し、S-008〜S-016のreview/export/audit/backup gateを通す。
 
@@ -346,7 +347,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ### Conditional Azure
 
-`Z-001〜Z-006`は評価したlocal modelの不達、cloud necessity未証明、data processor/residency、Subscription/Region/model、利用者の限定評価指示を分離して完了した。`Z-007〜Z-010`は依存が揃った順に実行し、選択・mask・diff確認済みspan以外を送信しない。Azure resourceが存在してもaudio/video/image/path/SID/project IDは送信対象にしない。
+`Z-001〜Z-006`は評価したlocal modelの不達、cloud necessity未証明、data processor/residency、Subscription/Region/model、利用者の限定評価指示を分離して完了した。S-007のローカル候補検出も完了したが、それ自体を送信許可にはしない。`Z-007〜Z-010`は依存が揃った順に実行し、選択・mask・diff確認済みspan以外を送信しない。Azure resourceが存在してもaudio/video/image/path/SID/project IDは送信対象にしない。
 
 ---
 

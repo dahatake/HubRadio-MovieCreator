@@ -73,7 +73,9 @@ Azure は通常の処理経路ではありません。次の条件がすべて�
 
 送信候補にできるのは、選択・マスク・確認済みの根拠付き文字起こし span だけです。動画、音声、画像、file path、Windows SID、内部案件 ID、全文文字起こしを送りません。
 
-Z-001〜Z-006で全28利用可能Regionを評価し、単一Region `japaneast`（表示名Japan East）に最小評価resourceとmodel deploymentを作成し、single-tenant desktop Entra authenticationを実装しました。API key、client secret、certificate、connection stringは作成・取得・保存していません。実コンテンツのpayload builder、送信前diff確認、response validation、fallbackは未実装のため、end-user cloud featureは未提供です。詳細は [ADR-0008](decisions/ADR-0008-bounded-azure-evaluation.md) を参照してください。
+S-007では、email、内部URL/host/IP、credential形式、適用済みProject/Series辞書snapshotをローカルで候補化するscannerを実装しました。findingはrevision/utterance/source-span ID、安定した理由code、原文UTF-16 offset/lengthだけを保持し、文字起こし本文や一致した秘密を複製しません。無効Unicodeまたは走査不能時も外部出力警告を維持します。このscannerの完了は候補の解消、外部出力許可、cloud送信確認の代替ではありません。
+
+Z-001〜Z-006で全28利用可能Regionを評価し、単一Region `japaneast`（表示名Japan East）に最小評価resourceとmodel deploymentを作成し、single-tenant desktop Entra authenticationを実装しました。API key、client secret、certificate、connection stringは作成・取得・保存していません。実コンテンツのpayload builder、mask、送信前diff確認、response validation、fallbackは未実装のため、end-user cloud featureは未提供です。詳細は [ADR-0008](decisions/ADR-0008-bounded-azure-evaluation.md) を参照してください。
 
 ## 秘密情報
 
