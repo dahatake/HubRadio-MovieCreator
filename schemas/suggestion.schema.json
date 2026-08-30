@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Canonical persisted Suggestion form. Current suggestion kinds refer to a time-bounded SourceSpan. Proposed, reviewed, rejected, and adopted suggestions remain immutable audit records. A composition stores the suggestionReference shape with the same Suggestion ID and OriginRef; it does not copy or convert the suggestion into an EditorialRecord.",
+  "$comment": "Canonical persisted Suggestion form. Current suggestion kinds refer to a time-bounded SourceSpan. Proposed, reviewed, rejected, and adopted suggestions remain immutable audit records. Adopting a term correction creates a human transcript revision instead of a composition reference. For composition-producing kinds, a composition stores the suggestionReference shape with the same Suggestion ID and OriginRef; it does not copy or convert the suggestion into an EditorialRecord.",
   "title": "Suggestion",
   "type": "object",
   "additionalProperties": false,
@@ -24,7 +24,8 @@
       "enum": [
         "deleteRange",
         "topicBoundary",
-        "highlight"
+        "highlight",
+        "termCorrection"
       ]
     },
     "status": {
@@ -106,7 +107,7 @@
     },
     "suggestionReference": {
       "type": "object",
-      "$comment": "Created only from an adopted Suggestion by the runtime model.",
+      "$comment": "Created only from an adopted composition-producing Suggestion by the runtime model; term corrections are excluded.",
       "additionalProperties": false,
       "required": [
         "suggestionId",

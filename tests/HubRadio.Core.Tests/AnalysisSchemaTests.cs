@@ -272,7 +272,13 @@ public sealed class AnalysisSchemaTests
             new[] { "proposed", "reviewed", "rejected", "adopted" },
             GetStringArray(properties.GetProperty("status").GetProperty("enum")));
         CollectionAssert.AreEqual(
-            new[] { "deleteRange", "topicBoundary", "highlight" },
+            new[]
+            {
+                "deleteRange",
+                "topicBoundary",
+                "highlight",
+                "termCorrection",
+            },
             GetStringArray(properties.GetProperty("kind").GetProperty("enum")));
         foreach (string field in new[] { "reason", "missingContext", "warning" })
         {
@@ -290,12 +296,16 @@ public sealed class AnalysisSchemaTests
         Assert.AreEqual(
             "#/$defs/sourceSpanOrigin",
             reference.GetProperty("properties").GetProperty("origin").GetProperty("$ref").GetString());
-        StringAssert.Contains(GetRequiredString(reference, "$comment"), "adopted Suggestion");
+        StringAssert.Contains(
+            GetRequiredString(reference, "$comment"),
+            "adopted composition-producing Suggestion");
+        StringAssert.Contains(GetRequiredString(reference, "$comment"), "term corrections");
         AssertSourceSpanIsTheOnlyOrigin(definitions);
         AssertNullableConfidence(definitions);
 
         string comment = GetRequiredString(root, "$comment");
         StringAssert.Contains(comment, "immutable audit records");
+        StringAssert.Contains(comment, "human transcript revision");
         StringAssert.Contains(comment, "Suggestion ID and OriginRef");
         StringAssert.Contains(comment, "does not copy or convert");
     }

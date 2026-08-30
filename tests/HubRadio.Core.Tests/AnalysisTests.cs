@@ -41,6 +41,15 @@ public sealed class AnalysisTests
         CollectionAssert.AreEqual(
             new[]
             {
+                SuggestionKind.DeleteRange,
+                SuggestionKind.TopicBoundary,
+                SuggestionKind.Highlight,
+                SuggestionKind.TermCorrection,
+            },
+            Enum.GetValues<SuggestionKind>());
+        CollectionAssert.AreEqual(
+            new[]
+            {
                 SuggestionStatus.Proposed,
                 SuggestionStatus.Reviewed,
                 SuggestionStatus.Rejected,
@@ -485,6 +494,14 @@ public sealed class AnalysisTests
                     () => SuggestionReference.FromAdoptedSuggestion(
                         CreateSuggestion(status: status))).ParamName);
         }
+
+        Assert.AreEqual(
+            "suggestion",
+            Assert.ThrowsExactly<ArgumentException>(() =>
+                SuggestionReference.FromAdoptedSuggestion(
+                    CreateSuggestion(
+                        kind: SuggestionKind.TermCorrection,
+                        status: SuggestionStatus.Adopted))).ParamName);
 
         Assert.ThrowsExactly<ArgumentNullException>(
             () => SuggestionReference.FromAdoptedSuggestion(null!));

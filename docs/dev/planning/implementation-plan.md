@@ -6,7 +6,7 @@
 **計画日:** 2026年8月26日  
 **計画状態:** Stage 0は2026年8月27日に人手承認済み。
 
-2026年8月30日時点で114/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-012、A-001〜A-005、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006〜S-010/S-012/S-014/S-015、Z-001〜Z-007、PK-001〜PK-005を実装・検証した。`PK-006`はPackaging Project、unsigned manual fallback、unpack verifierまで実装済みだが、別のclean Windowsへのinstall証拠を待つため完了数へ含めない。
+2026年8月31日時点で115/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-012、A-001〜A-006、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006〜S-010/S-012/S-014/S-015、Z-001〜Z-007、PK-001〜PK-005を実装・検証した。`PK-006`はPackaging Project、unsigned manual fallback、unpack verifierまで実装済みだが、別のclean Windowsへのinstall証拠を待つため完了数へ含めない。
 
 `S-003`のコードは実装済みだが、別の非管理者Windows accountによる受入証拠を待つため完了数へ含めない。
 
@@ -18,13 +18,13 @@
 
 `PK-001`はWindows x64 / CPython 3.12向けruntime 25件とtest-only 4件のwheelをexact-version・SHA-256・binary-onlyで固定し、同一hostのfresh CPython 3.12.10 AMD64 venvでdownload済みwheelhouseだけから全29件をoffline再現した。`pip check`、version checks、worker 80/80、wheel filename/size/hash/artifact-set hash、canonical Release buildは成功した。これは別のclean Windows machine、Python runtime、ASR model、CUDA、MSIX、完全なlicense/CVE/SBOM、release readinessを証明しない。
 
-`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中89件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。
+`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中88件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。
 
 SQLite業務store、永続job、worker protocol、編集操作、review/approval、durable媒体取込・PTS・proxy・waveform/sprite、固定CPU ASR runner、元音声抽出とdecoded-frame基準の元時刻写像、worker結果のTranscriptRevision正規化、人による不変Transcript改訂、案件/シリーズ用語辞書CRUD、ローカル文字起こしsensitivity candidate scan、ACL、audit、backup/restore、Japan Eastの限定Azure評価resource、desktop Entra authentication、選択spanだけをmaskして送信前diffと送信先条件を表示しdigestへ結合するlocal-only payload確認境界まで実装済みである。
 
 実コンテンツのnetwork送信、response validation、fallback、ModelRun監査、end-user cloud feature、業務UI、用語不一致候補以降の解析、Render IR以降、配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布、release readinessは未承認。
 
-`PK-006`のclean Windows install gateは保留し、依存解放済みの`A-006`から実行可能なtaskを継続する。`Z-008`は2つ目の実在文章候補実装が現れるまで開始せず、held taskは成立証拠と別承認なしに解除しない。
+`PK-006`のclean Windows install gateは保留し、依存解放済みの`A-007`から実行可能なtaskを継続する。`Z-008`は2つ目の実在文章候補実装が現れるまで開始せず、held taskは成立証拠と別承認なしに解除しない。
 
 ---
 
@@ -308,7 +308,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.7 A — ローカル解析と人の修正
 
-**実行状態: A-001〜A-005は完了。** `faster-whisper` 1.2.1 / CTranslate2 4.8.1、model revision `536b0662742c02347bc0e980a01041f333bce120`、4-file manifest SHA-256を固定し、CPU int8の単一runnerを実装した。canonical synthetic controlの実モデルoffline runは2 segment・43 tokenを返し、本文を出力していない。これはpipeline構造の証拠であり、fixture accuracyやproduction latencyの合格証拠ではない。A-002は固定16 kHz mono PCM WAVをAnalysis成果物へ昇格し、選択audio streamのfirst decoded frame PTSをsample 0として、負または遅延した開始時刻を`RationalTime`で保持する。packet/container startは参考値として記録するが写像へ適用しない。FFprobeは時刻閾値ではなく先頭2 packetsを読むため、実AACのdecoder primingと1秒遅延開始の合成媒体を通した。A-003はA-001のraw秒とreview要否を別証拠として保持し、nearest-to-evenで16 kHz sampleへ丸めてA-002の写像から`RationalTime`を作る。範囲外や欠落、zero-duration、丸め後zero、overlapはclampせず、review対象tokenの正本rangeをnullにした。各utteranceのSourceSpanはsource asset/digest、audio stream、revision/token IDへ結合した。A-004は原revisionを不変のままHuman child revisionを生成し、stableなutterance/sentence/token ID・時刻・確度・話者を保持する。actor SID、理由、typed diff、旧新revision digest、downstream stale、revision-bound SourceSpanは別のcanonical edit recordへ保存する。親artifact実体を保存前後に検証し、論理revision IDの重複、曖昧な文字階層、stale expected text、部分昇格をfail-closedまたはreconciliation-requiredとして扱う。具体的な再処理DAGはA-017へ残す。A-005は不変の`TermEntry`とProject/Seriesのtyped XOR scopeを定義し、表記、読み、非負versionを検証する。SQLite schema v5のSTRICT `term_entries`、scope別partial unique index、Project RESTRICT FKと、version 0 createおよびOCC付きupdate/deleteを持つ専用`TermStore`を実装した。Series集約が未実装のため架空のSeries table/FKは作らず、scope-local重複、並行更新、rollback、stored corruption、SQL injection文字列を検証した。
+**実行状態: A-001〜A-006は完了。** `faster-whisper` 1.2.1 / CTranslate2 4.8.1、model revision `536b0662742c02347bc0e980a01041f333bce120`、4-file manifest SHA-256を固定し、CPU int8の単一runnerを実装した。canonical synthetic controlの実モデルoffline runは2 segment・43 tokenを返し、本文を出力していない。これはpipeline構造の証拠であり、fixture accuracyやproduction latencyの合格証拠ではない。A-002は固定16 kHz mono PCM WAVをAnalysis成果物へ昇格し、選択audio streamのfirst decoded frame PTSをsample 0として、負または遅延した開始時刻を`RationalTime`で保持する。packet/container startは参考値として記録するが写像へ適用しない。FFprobeは時刻閾値ではなく先頭2 packetsを読むため、実AACのdecoder primingと1秒遅延開始の合成媒体を通した。A-003はA-001のraw秒とreview要否を別証拠として保持し、nearest-to-evenで16 kHz sampleへ丸めてA-002の写像から`RationalTime`を作る。範囲外や欠落、zero-duration、丸め後zero、overlapはclampせず、review対象tokenの正本rangeをnullにした。各utteranceのSourceSpanはsource asset/digest、audio stream、revision/token IDへ結合した。A-004は原revisionを不変のままHuman child revisionを生成し、stableなutterance/sentence/token ID・時刻・確度・話者を保持する。actor SID、理由、typed diff、旧新revision digest、downstream stale、revision-bound SourceSpanは別のcanonical edit recordへ保存する。親artifact実体を保存前後に検証し、論理revision IDの重複、曖昧な文字階層、stale expected text、部分昇格をfail-closedまたはreconciliation-requiredとして扱う。具体的な再処理DAGはA-017へ残す。A-005は不変の`TermEntry`とProject/Seriesのtyped XOR scopeを定義し、表記、読み、非負versionを検証する。SQLite schema v5のSTRICT `term_entries`、scope別partial unique index、Project RESTRICT FKと、version 0 createおよびOCC付きupdate/deleteを持つ専用`TermStore`を実装した。Series集約が未実装のため架空のSeries table/FKは作らず、scope-local重複、並行更新、rollback、stored corruption、SQL injection文字列を検証した。A-006は1つのProjectまたはSeries辞書snapshotを対象に、NFKC表記一致、大文字小文字差、辞書の読み完全一致だけを理由付き`TermCorrection`候補として出す。編集距離や確度を捏造せず、candidateをsource revision digest、SourceSpan、token、TermEntry ID/OCC versionへ結合する。却下はimmutable decision recordだけを作り、明示採用時だけA-004を通じてHuman child revisionを生成する。同じrevision IDの不正再利用、辞書version drift、二重判断、malformed Unicodeをfail closedで拒否する。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -317,7 +317,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | A-003 | **完了。** worker結果をTranscriptRevisionへ正規化する | `APP/Analysis/TranscriptImporter.cs`、tests | D-005,A-001,A-002 / `L-C` | 浮動秒を正本にせず、raw値とreview要否を保持して明示丸めでA-002の`RationalTime`へ変換し、範囲外をclampしない | FR-002 | なし |
 | A-004 | **完了。** 人による文字修正を新しいTranscriptRevisionとして保存する | `APP/Transcripts/TranscriptEditor.cs`、tests | A-003,D-012 / `L-C` | 原文を残したHuman childへ修正し、actor SID、理由、typed diff、revision-bound SourceSpan、旧新digestとdownstream staleを別canonical recordへ保存。親artifact実体、重複revision、曖昧文字階層、部分昇格をfail-closedで検証 | FR-002/004、NFR-006 | なし |
 | A-005 | **完了。** 案件/シリーズ用語辞書CRUDを実装する | `CORE/Terms/TermEntry.cs`、`INFRA/Database/TermStore.cs`、migration `005_term_entries.sql`、tests | D-004,D-013 / `L-C` | typed XOR scope、読み、表記、scope-local重複、version 0 create、OCC付きupdate/delete、破損stored dataのfail-closedを検証 | FR-004 | なし |
-| A-006 | 用語不一致を候補として提示・採否記録する | `APP/Analysis/TermCandidateService.cs`、tests | A-004,A-005,D-006 / `L-C` | 自動確定せず、採用時だけ新revisionへ反映 | FR-004、NFR-001 | なし |
+| A-006 | **完了。** 用語不一致を候補として提示・採否記録する | `APP/Analysis/TermCandidateService.cs`、tests | A-004,A-005,D-006 / `L-C` | exact deterministic rulesだけで理由付きProposed候補を生成し、source/term snapshotへ結合。却下では原revision不変、明示採用時だけHuman childへ反映 | FR-004、NFR-001 | なし |
 | A-007 | ffmpeg silence/VAD結果を削除候補化する | `INFRA/Analysis/SilenceDetector.cs`、tests | A-002,D-006,J-003 / `L-M` | 理由、閾値版、SourceSpanを持ち自動削除しない | FR-005 | ローカル処理 |
 | A-008 | 「ここはカット」等の明示語句候補を実装する | `APP/Analysis/EditorialPhraseDetector.cs`、tests | A-004,D-006 / `L-C` | 辞書版と根拠tokenを持つ | FR-005 | なし |
 | A-009 | 近接反復/言い直し候補の決定論的baselineを実装する | `WORKER/tasks/repetition.py`、tests | A-004,J-005 / `L-M` | 誤削除せずSuggestionのみ。理由特徴を返す | FR-005 | ローカル処理 |
@@ -673,4 +673,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**`PK-006`は同一host実装・unpack検証済みだが、別のclean Windowsへのinstall証拠を待つため未完了のまま保持する。次は依存解放済みの`A-006`から実行可能なtaskを継続する。未完了は残り89 taskである。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在文章候補実装が揃うまで抽象もsenderも作らない。**
+**`PK-006`は同一host実装・unpack検証済みだが、別のclean Windowsへのinstall証拠を待つため未完了のまま保持する。次は依存解放済みの`A-007`から実行可能なtaskを継続する。未完了は残り88 taskである。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在文章候補実装が揃うまで抽象もsenderも作らない。**

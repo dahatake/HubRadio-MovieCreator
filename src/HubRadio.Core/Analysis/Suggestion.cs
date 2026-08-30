@@ -8,6 +8,10 @@ public enum SuggestionKind
     DeleteRange,
     TopicBoundary,
     Highlight,
+    /// <summary>
+    /// A proposed dictionary correction; the status, not the kind, records adoption.
+    /// </summary>
+    TermCorrection,
 }
 
 public enum SuggestionStatus
@@ -112,10 +116,11 @@ public sealed class SuggestionReference
     {
         ArgumentNullException.ThrowIfNull(suggestion);
 
-        if (suggestion.Status != SuggestionStatus.Adopted)
+        if (suggestion.Status != SuggestionStatus.Adopted
+            || suggestion.Kind == SuggestionKind.TermCorrection)
         {
             throw new ArgumentException(
-                "Only an adopted suggestion can be referenced by a composition element.",
+                "Only an adopted composition suggestion can be referenced by a composition element.",
                 nameof(suggestion));
         }
 
