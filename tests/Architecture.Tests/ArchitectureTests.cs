@@ -95,6 +95,34 @@ public sealed class ArchitectureTests
             "A Node process API starts a known command shell."),
     };
 
+    private static readonly RulePattern[] JavaScriptUnsafeContentRules =
+    {
+        new(
+            "web.raw-html-prop",
+            CreateRegex("""\bdangerouslySetInnerHTML\b"""),
+            "React dangerouslySetInnerHTML bypasses text escaping."),
+        new(
+            "web.raw-html-assignment",
+            CreateRegex("""\b(?:innerHTML|outerHTML)\s*="""),
+            "A DOM raw-HTML property is assigned."),
+        new(
+            "web.raw-html-api",
+            CreateRegex("""\b(?:insertAdjacentHTML|setHTMLUnsafe|createContextualFragment)\s*\("""),
+            "A raw-HTML DOM API is used."),
+        new(
+            "web.document-write",
+            CreateRegex("""\bdocument\s*\.\s*write(?:ln)?\s*\("""),
+            "document.write inserts untrusted markup."),
+        new(
+            "web.srcdoc",
+            CreateRegex("""\bsrcDoc\s*="""),
+            "An iframe srcDoc raw-HTML surface is used."),
+        new(
+            "web.dynamic-code",
+            CreateRegex("""(?:\beval\s*\(|\bnew\s+Function\s*\()"""),
+            "Dynamic JavaScript code evaluation is used."),
+    };
+
     private static readonly RulePattern[] ProjectShellRules =
     {
         new(
@@ -249,6 +277,19 @@ public sealed class ArchitectureTests
     }
 
     [TestMethod]
+    public void ProductWebSourceUsesTextRenderingWithoutUnsafeHtmlOrDynamicCodeSinks()
+    {
+        string root = GetRepositoryRoot();
+        List<RuleViolation> violations = ScanProductSource(root, FindUnsafeWebContentViolations);
+
+        Assert.AreEqual(
+            0,
+            violations.Count,
+            "Product Web source contains an unsafe HTML or dynamic-code sink:" +
+            Environment.NewLine + FormatViolations(violations));
+    }
+
+    [TestMethod]
     public void WorkspaceAclDoesNotInvokeExternalProcesses()
     {
         string root = GetRepositoryRoot();
@@ -300,6 +341,38 @@ public sealed class ArchitectureTests
         IReadOnlyList<RuleViolation> violations = FindShellExecutionViolations(path, source);
 
         Assert.IsTrue(violations.Count > 0, $"Expected the shell rule to reject {path}: {source}");
+    }
+
+    [TestMethod]
+    [DataRow("return <div dangerouslySetInnerHTML={{ __html: value }} />;")]
+    [DataRow("element.innerHTML = value;")]
+    [DataRow("element.insertAdjacentHTML('beforeend', value);")]
+    [DataRow("document.write(value);")]
+    [DataRow("return <iframe srcDoc={value} />;")]
+    [DataRow("eval(value);")]
+    [DataRow("const callable = new Function(value);")]
+    public void UnsafeWebContentRuleNegativeControlsDetectProhibitedSource(string source)
+    {
+        IReadOnlyList<RuleViolation> violations = FindUnsafeWebContentViolations(
+            "src/HubRadio.Web/src/sample.tsx",
+            source);
+
+        Assert.IsTrue(
+            violations.Count > 0,
+            $"Expected the unsafe Web content rule to reject: {source}");
+    }
+
+    [TestMethod]
+    public void UnsafeWebContentRulesAllowReactTextInterpolation()
+    {
+        const string source =
+            "export const SafeText = ({ value }: { value: string }) => <p>{value}</p>;";
+
+        IReadOnlyList<RuleViolation> violations = FindUnsafeWebContentViolations(
+            "src/HubRadio.Web/src/sample.tsx",
+            source);
+
+        Assert.AreEqual(0, violations.Count);
     }
 
     [TestMethod]
@@ -527,6 +600,23 @@ public sealed class ArchitectureTests
         }
 
         return Array.Empty<RuleViolation>();
+    }
+
+    private static IReadOnlyList<RuleViolation> FindUnsafeWebContentViolations(
+        string path,
+        string content)
+    {
+        string normalizedPath = path.Replace('\\', '/');
+        string extension = Path.GetExtension(normalizedPath);
+        if (!normalizedPath.StartsWith(
+                "src/HubRadio.Web/",
+                StringComparison.OrdinalIgnoreCase) ||
+            !IsJavaScriptOrTypeScript(extension))
+        {
+            return Array.Empty<RuleViolation>();
+        }
+
+        return FindMatches(path, content, JavaScriptUnsafeContentRules);
     }
 
     private static IReadOnlyList<RuleViolation> FindPackageScriptShellViolations(string path, string content)

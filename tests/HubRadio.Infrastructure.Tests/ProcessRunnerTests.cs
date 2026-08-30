@@ -155,6 +155,32 @@ public sealed class ProcessRunnerTests
     }
 
     [TestMethod]
+    public void Request_NullCharacterOrInvalidUtf16Argument_IsRejectedWithoutContent()
+    {
+        const string sensitiveMarker = "ARGUMENT-SECRET-7E77";
+        string[] invalidArguments =
+        [
+            "prefix\0" + sensitiveMarker,
+            "\uD800" + sensitiveMarker,
+        ];
+
+        foreach (string invalidArgument in invalidArguments)
+        {
+            ArgumentException exception = Assert.ThrowsExactly<ArgumentException>(
+                () => new ProcessRunRequest(
+                    DotNetExecutable,
+                    [invalidArgument],
+                    TestWorkingDirectory,
+                    TimeSpan.FromSeconds(1)));
+
+            Assert.AreEqual("argumentList", exception.ParamName);
+            Assert.IsFalse(exception.ToString().Contains(
+                sensitiveMarker,
+                StringComparison.Ordinal));
+        }
+    }
+
+    [TestMethod]
     public void Request_WorkingDirectoryMustBeExistingAbsoluteDirectory()
     {
         string missingDirectory = Path.Combine(
@@ -262,7 +288,7 @@ public sealed class ProcessRunnerTests
     }
 
     [TestMethod]
-    public async Task RunAsync_ArgumentsWithSpacesAndMetacharacters_RemainSeparate()
+    public async Task RunAsync_AdversarialArgumentsRemainSeparateOpaqueTokens()
     {
         string[] expectedArguments =
         [
@@ -273,6 +299,11 @@ public sealed class ProcessRunnerTests
             "$(literal)",
             "<redirect-looking>",
             "\"quoted\"",
+            "<script>x</script>",
+            "--unknown-cli",
+            "-vf=movie=attack",
+            "bridge.p\u0456ng",
+            "line one\nline two",
         ];
         ProcessRunner runner = new();
         ProcessRunRequest request = CreateHelperRequest(

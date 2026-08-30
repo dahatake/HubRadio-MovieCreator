@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、Windows 11 x64 の単一 PC で動作する、ローカル優先の動画編集支援アプリケーションとして設計しています。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation は完了済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。Stage 1ではSQLite業務store、永続job/worker protocol、編集操作、review/approval、durable request/checkpointとAsset/warning/PTS/artifact stateを復元する媒体取込、NVENC/Media Foundation proxy・preview素材、媒体の専用敵対試験、ACL、audit、backup/restoreまで実装済みです。業務UI、解析後段、Render IR以降、配布は未完了です。
+> Stage 0 と Foundation は完了済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。Stage 1ではSQLite業務store、永続job/worker protocol、編集操作、review/approval、durable request/checkpointとAsset/warning/PTS/artifact stateを復元する媒体取込、NVENC/Media Foundation proxy・preview素材、媒体およびbridge/process/path境界の専用敵対試験、ACL、audit、backup/restoreまで実装済みです。業務UI、解析後段、Render IR以降、配布は未完了です。
 
 ![HubRadio MovieCreatorのローカル優先アーキテクチャ。緑は実装済み、青は一部実装または計画中、紫の破線は条件付きAzure経路](system-overview.svg)
 
@@ -66,6 +66,8 @@ unpackaged実プロセスsmokeでは、Web UI Ready、Runtime欠落時のnative 
 Stage 0のshot、face、local text model用probeは不採用・保留判断の証拠として残しますが、現在の製品workerや配布依存には含めません。
 
 Stage 0のPowerShell／Python検証実装に加え、Foundationでは製品ホスト、Web UI、workerの最小buildable scaffoldを作成しました。ここでのscaffold成功は業務機能の完成を意味しません。
+
+S-014では現在のclosed surfaceだけを対象に、React text interpolationのescapeとraw-HTML/dynamic-code sink不在、bridge/workerのunknown RPC、workerのexact CLI、process argvのstrict UTF-16/NUL境界を合成入力で検証しました。path、秘密非log、typed transition、固定proxy/preview filterは既存試験を再実行しています。これは未実装の業務UI、任意Render IR/filter compiler、環境依存reparse point、別account ACL、統合security受入`Q-008`の代替ではありません。
 
 ## 永続化
 

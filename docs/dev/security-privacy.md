@@ -52,6 +52,19 @@ HubRadio MovieCreator は、企業向け動画、文字起こし、出演者情�
 
 Stage 0 の仕組みは、完成した製品 workspace の権限モデルや脅威対策の代替ではありません。
 
+## 製品境界の合成敵対試験
+
+現在実装済みのclosed surfaceに対して、次の自動試験を実装しています。
+
+- React text interpolationは合成XSS文字列をescapeし、製品Web sourceにはraw-HTMLまたはdynamic-code sinkを置かないarchitecture guardを適用する。
+- WebView bridgeとPython workerはXSS、shell、filter、Unicode confusable風のunknown methodをexact allowlistで拒否し、入力文字列をresponseまたはstderrへ反映しない。
+- worker CLIはoption省略を許さず、公開済みの`--health`と`--protocol`だけをexactに受理する。
+- process引数はshellを使わず個別tokenで渡し、OS/runtimeが黙って変換するNULと不正UTF-16を起動前に拒否する。metacharacterと改行は単一tokenとして往復する。
+- ArtifactStoreのtraversal、UNC、device namespace、ADS、reserved device、reparse pointと、LocalDiagnosticLogの本文・path・秘密非記録は既存の専用試験を正本証拠とする。
+- 現在のtransition境界は任意filter文字列を公開せず、proxy/preview用FFmpeg filterは固定値または検証済み数値から決定論的に生成する。
+
+これらは合成入力と現在の実装surfaceに対する証拠です。業務UI、Render IR/filter compiler、別account ACL、環境で作成不能だったreparse point、production resource閾値、統合security受入`Q-008`は別の実装・受入を必要とします。
+
 ## Media metadata
 
 media metadata には、位置情報、端末名、撮影時刻、comment などが含まれる可能性があります。

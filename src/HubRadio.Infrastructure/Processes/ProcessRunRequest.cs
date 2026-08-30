@@ -91,6 +91,24 @@ public sealed class ProcessRunRequest
                     nameof(argumentList));
             }
 
+            try
+            {
+                _ = StrictUtf8.GetByteCount(argument);
+            }
+            catch (EncoderFallbackException)
+            {
+                throw new ArgumentException(
+                    "Process arguments must contain valid UTF-16 that can be encoded as strict UTF-8.",
+                    nameof(argumentList));
+            }
+
+            if (argument.Contains('\0', StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    "Process arguments must not contain null characters.",
+                    nameof(argumentList));
+            }
+
             arguments[index] = argument;
         }
 

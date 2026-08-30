@@ -8,7 +8,10 @@ from hubradio_worker.protocol import run_protocol
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="python -m hubradio_worker")
+    parser = argparse.ArgumentParser(
+        prog="python -m hubradio_worker",
+        allow_abbrev=False,
+    )
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--health", action="store_true")
     mode.add_argument("--protocol", action="store_true")
