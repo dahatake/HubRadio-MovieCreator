@@ -28,9 +28,9 @@
 | R | R-001〜R-009、R-016 | typed edit、version、profile、manual layout/keyframe、transitionまでreview・commit済み |
 | U | U-001〜U-004 | WinUI/WebView2 startup、secure host/bridge、React state同期までreview・commit済み |
 | S | S-001、S-002、S-004、S-006〜S-010、S-012、S-015 | actor/role/text sensitivity/review/approval/audit/backup制御をreview済み。S-003はcode済み・別account受入待ち |
-| Z | Z-001〜Z-006 | local model不達/cloud necessity未証明、28 Region/model/quota、data processing、最小Japan East resource、desktop Entra authenticationをreview済み |
+| Z | Z-001〜Z-007 | local model不達/cloud necessity未証明、28 Region/model/quota、data processing、最小Japan East resource、desktop Entra authentication、local payload確認境界をreview済み |
 
-**完了: 105 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ち、`M-011`はdurable restart checkpointとAsset/warning persistence未達のため、いずれも完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了98件のうち5件が現在condition-falseまたは保留である。次は`Z-007`へ進め、並行して`M-011`→`M-012`、`S-014`、`PK-001`、`PK-003`〜`PK-005`を各gate確認後に進める。
+**完了: 106 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ち、`M-011`はdurable restart checkpointとAsset/warning persistence未達のため、いずれも完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了97件のうち5件が現在condition-falseまたは保留である。次は`M-011`のdurable条件を閉じて`M-012`へ進み、`S-014`、`PK-001`、`PK-003`〜`PK-005`を各gate確認後に進める。`Z-008`は2つ目の実在文章候補実装が現れるまで開始しない。
 
 ### 1.2 直近の統合作業
 
@@ -60,6 +60,7 @@
 - A-004: 原revisionを変更せずHuman childを生成し、stable IDs/timing/confidence/speakerを保持。actor SID、理由、typed diff、revision-bound SourceSpan、旧新digest、downstream staleを別canonical edit recordとしてArtifactStoreへ保存する。親artifactの保存前後検証、論理revision重複、曖昧文字階層、stale expected text、部分昇格のfail-closed/reconciliationを含む対象test 15件と全runnerを完了
 - A-005: 不変`TermEntry`とProject/Series typed XOR scope、STRICT schema v5、scope別partial unique index、Project RESTRICT FK、version 0 createとOCC付きupdate/deleteを実装。架空のSeries table/FKは作らず、Core 548件、Infrastructure 597件中579成功・18環境skip、App 273件中272成功・1環境skip、Architecture 25件、Web 22件、Python 66件のRelease一括runnerを完了
 - S-007: email、内部network location、credential形式、適用済み辞書snapshotをローカルで検出し、本文を保持せずrevision/utterance/source-span IDと原文UTF-16範囲だけを返す`TextSensitivityScanner`を実装。text element単位NFKC、無効Unicodeのfail-closed、同種包含除去、異種overlap保持を含む対象test 17件を完了し、Release一括runnerでArchitecture 25/25、Core 548/548、Infrastructure 579成功・18環境gate・0失敗、App 289成功・1環境gate・0失敗、Web 22/22、Python 66/66を確認した。これはS-011のexport gateやZ-007の送信確認を代替しない
+- Z-007: 主選択と直接隣接する明示contextだけをrequest-scoped evidence IDへ変換するlocal-only `CloudPayloadBuilder`を実装。exact revision/dictionary snapshotへS-007を再適用し、URL、path、file name、Windows SID、GUID形式内部IDもNFKC逆写像後にmaskする。local provenance付きdiff、Azure送信先/model/region/deployment/data-zone/retention表示、canonical payloadと表示条件を結合したdigest、one-shot/16並行確認を対象test 21件で検証した。Release一括runnerはArchitecture 25/25、Core 548/548、Infrastructure 579成功・18環境gate・0失敗、App 310成功・1環境gate・0失敗、Web 22/22、Python 66/66。sender、credential、永続化、ModelRun、Z-008 interfaceは追加せず、実コンテンツ送信は行っていない
 
 旧ADR重複は削除済みで、`docs/dev/decisions/`だけがADR正本である。DOC-001〜DOC-004は敵対的レビュー、修正、再検証、commitまで完了した。
 
@@ -92,7 +93,7 @@
 |---|---:|---|
 | `docs/dev/**/*.md` | 26文書 | developer向け入口、architecture、benchmark、ADR、license、plan、research、review、error catalogを分離済み |
 | Git対象Markdown相対リンク | 全32文書の94件中broken 0件 | 再編後、Foundation、J-009追加文書の相対リンクは有効 |
-| Implementation plan SHA-256 | `1ad8503d5516d030f3ecc8b311a8462fffc2b1d1d9391814b7d0bf52263f5fac` | 2026-08-30更新時点で`docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
+| Implementation plan SHA-256 | `273ed98dcd9d3f64d27690c2f4dc2b1b24935de6bc3a42ffa1238da2033b149f` | 2026-08-30更新時点で`docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
 | `git diff --check` | staged / unstagedともexit 0 | whitespace errorなし |
 | 旧ADR重複 | 0件 | 削除済み。`docs/dev/decisions/`だけをADR正本として使用 |
 | Git staging | D-005、J-009、J-010と補正の個別commit後はclean | 本進捗同期だけを次のcommit対象にする |
@@ -106,7 +107,7 @@
 3. **0件・失敗・想定外の結果は対照実験で解釈可能にしてから記録する。** ST-009で確立した方式を全ML系タスクへ適用する。
 4. **成果物はcanonical（レビュー済み要約）とraw run（ローカル証跡）を分離する。** rawはGit対象外。
 5. **文書更新時は`docs/dev/planning/implementation-plan.md`・`README.md`・`docs/dev/decisions/ADR-0001-source-of-truth.md`のhashを同時に同期する。**
-6. **Azureは確認したlocal model不達とユーザーの明示指示が揃った限定評価範囲だけ実行する。** Z-001はcloud necessityを未証明のまま保持しており、Z-001〜Z-006完了をproduction必要性へ読み替えない。実コンテンツ送信はZ-007〜Z-010の個別gate完了まで行わない。
+6. **Azureは確認したlocal model不達とユーザーの明示指示が揃った限定評価範囲だけ実行する。** Z-001はcloud necessityを未証明のまま保持しており、Z-001〜Z-007完了をproduction必要性へ読み替えない。Z-007はlocal確認境界だけであり、実コンテンツ送信はZ-008〜Z-010の個別gate完了まで行わない。
 
 ---
 
@@ -185,7 +186,7 @@ ST-015承認後に着手する。
 
 ### Phase G: 条件付きAzure（Z、10タスク）
 
-**Z-001〜Z-006とS-007は完了。** Japan Eastの最小resource、desktop Entra authentication、ローカルsensitivity candidate scanまで成立し、Z-007の実装前提は揃った。実コンテンツ送信、response採用、fallback、ModelRun監査は未実装である。
+**Z-001〜Z-007とS-007は完了。** Japan Eastの最小resource、desktop Entra authentication、ローカルsensitivity candidate scan、local-only payload preview/mask/confirmation境界まで成立した。実コンテンツのnetwork送信、response採用、fallback、ModelRun監査は未実装である。
 
 ---
 
@@ -198,7 +199,7 @@ ST-015承認後に着手する。
 | D-004 / D-008 | D-002またはD-003完了後に別集約として進められる |
 | J-003 / J-009 | F-002後のprocess/diagnostic基盤としてDB critical pathと並行可能 |
 | F-007 / F-008 / F-009 | 各依存が揃えばfixture索引、BOM、architecture testを並行可能 |
-| Z-007 / S-014 / PK-001 / PK-003〜PK-005 | M-011の直列修正と変更境界が独立し、各task固有gateを満たすものだけ並行可能 |
+| S-014 / PK-001 / PK-003〜PK-005 | M-011の直列修正と変更境界が独立し、各task固有gateを満たすものだけ並行可能 |
 | U-005以降 / R-010以降 | 対応serviceとmanual-first依存が解放された単位だけ並行可能 |
 
 | 並列化しない対象 | 理由 |
@@ -274,7 +275,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. `Z-007`で選択span、周辺最小文脈、mask、送信前diff、人の明示確認を持つ最小payload境界を実装する。並行して`M-011`のdurable request/checkpoint・Asset/warning persistenceを閉じ、次に`M-012`へ進む。`S-014`、`PK-001`、`PK-003`〜`PK-005`は各gate確認後に実装する。
+1. `M-011`のdurable request/checkpoint・Asset/warning persistenceを閉じ、次に`M-012`へ進む。`S-014`、`PK-001`、`PK-003`〜`PK-005`は各gate確認後に実装する。Z-007のlocal payload確認境界は完了したが、Z-008は2つ目の実在文章候補実装が現れるまで開始しない。
 2. 各taskを個別にbuild/testし、敵対的レビューの実在する指摘だけを反映して独立commitする。
 3. 完了ごとに依存DAGを再評価する。`S-003`とheld/condition-false taskは外部証拠または別承認なしに完了扱いにせず、Azure後続はpayload/validation/fallbackの個別gateを省略しない。
 
@@ -347,7 +348,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ### Conditional Azure
 
-`Z-001〜Z-006`は評価したlocal modelの不達、cloud necessity未証明、data processor/residency、Subscription/Region/model、利用者の限定評価指示を分離して完了した。S-007のローカル候補検出も完了したが、それ自体を送信許可にはしない。`Z-007〜Z-010`は依存が揃った順に実行し、選択・mask・diff確認済みspan以外を送信しない。Azure resourceが存在してもaudio/video/image/path/SID/project IDは送信対象にしない。
+`Z-001〜Z-007`は評価したlocal modelの不達、cloud necessity未証明、data processor/residency、Subscription/Region/model、利用者の限定評価指示、local payload確認境界を分離して完了した。S-007のローカル候補をexact snapshotへ再適用し、選択・mask・diff・送信条件をdigestへ結合するが、senderは持たない。`Z-008〜Z-010`は実在する2つ目の実装と依存が揃った後だけ実行し、Azure resourceが存在してもaudio/video/image/path/SID/project IDは送信対象にしない。
 
 ---
 

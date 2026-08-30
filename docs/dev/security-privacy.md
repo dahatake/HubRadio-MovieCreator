@@ -75,7 +75,11 @@ Azure は通常の処理経路ではありません。次の条件がすべて�
 
 S-007では、email、内部URL/host/IP、credential形式、適用済みProject/Series辞書snapshotをローカルで候補化するscannerを実装しました。findingはrevision/utterance/source-span ID、安定した理由code、原文UTF-16 offset/lengthだけを保持し、文字起こし本文や一致した秘密を複製しません。無効Unicodeまたは走査不能時も外部出力警告を維持します。このscannerの完了は候補の解消、外部出力許可、cloud送信確認の代替ではありません。
 
-Z-001〜Z-006で全28利用可能Regionを評価し、単一Region `japaneast`（表示名Japan East）に最小評価resourceとmodel deploymentを作成し、single-tenant desktop Entra authenticationを実装しました。API key、client secret、certificate、connection stringは作成・取得・保存していません。実コンテンツのpayload builder、mask、送信前diff確認、response validation、fallbackは未実装のため、end-user cloud featureは未提供です。詳細は [ADR-0008](decisions/ADR-0008-bounded-azure-evaluation.md) を参照してください。
+Z-001〜Z-007で全28利用可能Regionを評価し、単一Region `japaneast`（表示名Japan East）に最小評価resourceとmodel deploymentを作成し、single-tenant desktop Entra authenticationとlocal-only payload確認境界を実装しました。API key、client secret、certificate、connection stringは作成・取得・保存していません。
+
+Z-007の`CloudPayloadBuilder`は、利用者が指定した主範囲と直接隣接する明示contextだけをexact TranscriptRevision・辞書snapshotに対して再走査します。S-007の候補に加え、URL、path、file name、Windows SID、GUID形式内部IDをNFKCから原文範囲へ逆写像して`[MASKED]`へ置き換えます。previewは元本文やmatched値を複製せず、local provenance range、mask理由、実際に送信候補となる文字列、送信先、region、deployment、model、処理範囲、保持条件を表示します。送信候補のclosed canonical JSONはrequest内だけのevidence ID、role、masked textだけを含み、local IDや送信先metadataを含みません。payloadと表示条件を結合したdigestに一致する明示確認後、一度だけdefensive bytesを発行します。
+
+Z-007にはnetwork sender、credential取得、payload永続化、通常log、ModelRun、response採用を実装していません。Z-008〜Z-010の実在文章候補実装、grounded validation、manual/local fallback、監査が未完了のため、実コンテンツはAzureへ送信されず、end-user cloud featureも未提供です。詳細は [ADR-0008](decisions/ADR-0008-bounded-azure-evaluation.md) を参照してください。
 
 ## 秘密情報
 

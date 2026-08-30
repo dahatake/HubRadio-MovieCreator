@@ -4,7 +4,7 @@
 **要求の正本（暫定既定）:** `docs/requirement-definition.md` 版 0.1 Draft  
 **設計根拠:** `docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **計画日:** 2026年8月26日  
-**計画状態:** Stage 0は2026年8月27日に人手承認済み。2026年8月30日時点で105/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-010、A-001〜A-005、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006〜S-010/S-012/S-015、Z-001〜Z-006を実装・検証した。`S-003`のコードは実装済みだが、別の非管理者Windows accountによる受入証拠を待つため完了数へ含めない。`M-011`は同一process内retryまで実装済みだが、process restart後のdurable request/checkpointとAsset/warning persistenceを持たない現状を完了扱いにしない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中98件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。SQLite業務store、永続job、worker protocol、編集操作、review/approval、媒体取込・PTS・proxy・waveform/sprite、固定CPU ASR runner、元音声抽出とdecoded-frame基準の元時刻写像、worker結果のTranscriptRevision正規化、人による不変Transcript改訂、案件/シリーズ用語辞書CRUD、ローカル文字起こしsensitivity candidate scan、ACL、audit、backup/restore、Japan Eastの限定Azure評価resource、desktop Entra authenticationまで実装済みで、実コンテンツのcloud送信、業務UI、用語不一致候補以降の解析、Render IR以降、配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布、release readinessは未承認。次は`Z-007`の最小payload境界へ進める一方、`M-011`のdurable条件を閉じた後に`M-012`へ進む。held taskは成立証拠と別承認なしに解除しない。
+**計画状態:** Stage 0は2026年8月27日に人手承認済み。2026年8月30日時点で106/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-010、A-001〜A-005、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006〜S-010/S-012/S-015、Z-001〜Z-007を実装・検証した。`S-003`のコードは実装済みだが、別の非管理者Windows accountによる受入証拠を待つため完了数へ含めない。`M-011`は同一process内retryまで実装済みだが、process restart後のdurable request/checkpointとAsset/warning persistenceを持たない現状を完了扱いにしない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中97件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。SQLite業務store、永続job、worker protocol、編集操作、review/approval、媒体取込・PTS・proxy・waveform/sprite、固定CPU ASR runner、元音声抽出とdecoded-frame基準の元時刻写像、worker結果のTranscriptRevision正規化、人による不変Transcript改訂、案件/シリーズ用語辞書CRUD、ローカル文字起こしsensitivity candidate scan、ACL、audit、backup/restore、Japan Eastの限定Azure評価resource、desktop Entra authentication、選択spanだけをmaskして送信前diffと送信先条件を表示しdigestへ結合するlocal-only payload確認境界まで実装済みである。実コンテンツのnetwork送信、response validation、fallback、ModelRun監査、end-user cloud feature、業務UI、用語不一致候補以降の解析、Render IR以降、配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布、release readinessは未承認。次は`M-011`のdurable request/checkpointとAsset/warning persistenceを閉じた後に`M-012`へ進む。`Z-008`は2つ目の実在文章候補実装が現れるまで開始せず、held taskは成立証拠と別承認なしに解除しない。
 
 ---
 
@@ -168,7 +168,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | `G0-SEC` | 子プロセス制限、パッケージ、ライセンス | 出荷前必須対策と受容する残余リスクが承認済み |
 | `G1-MUST` | 要求定義のMust縦切り | Q-000、Q-001、Q-004、Q-005と関連NFR試験が合格 |
 | `G2-SHOULD` | Should機能と完全版AC-002/003 | Q-002、Q-003が合格し、実素材評価で現行手動経路を悪化させず、人が常に修正可能 |
-| `G-AZURE` | Azure追加 | cloud necessityは未証明だが、限定評価resource作成は2026-08-30の利用者指示で明示承認。実コンテンツ利用はZ-007〜Z-010の送信データ、validation、fallback、監査が揃うまで閉じる |
+| `G-AZURE` | Azure追加 | cloud necessityは未証明だが、限定評価resource作成は2026-08-30の利用者指示で明示承認。Z-007のlocal payload確認境界は成立したが、実コンテンツ利用はZ-008〜Z-010の実装、validation、fallback、監査が揃うまで閉じる |
 | `G-RELEASE` | 配布 | 署名、インストール、復旧、SBOM、全受入記録が揃う |
 
 ---
@@ -373,7 +373,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.10 S — ポリシー、レビュー、セキュリティ、復旧
 
-**実行状態: S-001、S-002、S-004、S-006〜S-010、S-012、S-015は完了。** `S-003`はコードと同一account自動試験まで完了したが、別の非管理者Windows accountから読めないことの受入証拠を待つ。S-007はemail、内部network location、credential形式、適用済みProject/Series辞書snapshotをローカルで候補化する。findingはrevision/utterance/source-span ID、理由code、原文UTF-16範囲だけを保持し、本文や一致値を複製しない。text element単位のNFKCから原文範囲へ逆写像し、無効Unicodeまたは走査不能時は不完全として外部出力警告を維持する。候補の人による最終解消、export gate、cloud送信確認はS-011/Z-007で別途実装する。
+**実行状態: S-001、S-002、S-004、S-006〜S-010、S-012、S-015は完了。** `S-003`はコードと同一account自動試験まで完了したが、別の非管理者Windows accountから読めないことの受入証拠を待つ。S-007はemail、内部network location、credential形式、適用済みProject/Series辞書snapshotをローカルで候補化する。findingはrevision/utterance/source-span ID、理由code、原文UTF-16範囲だけを保持し、本文や一致値を複製しない。text element単位のNFKCから原文範囲へ逆写像し、無効Unicodeまたは走査不能時は不完全として外部出力警告を維持する。Z-007は選択範囲と明示した隣接文脈だけへfindingを適用してmaskするが、候補の編集・辞書からの除外等による元revision上の最終解消とexport gateは別の利用者操作/S-011で扱う。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -422,7 +422,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.12 Z — 条件付きAzure分岐
 
-**実行状態: Z-001〜Z-006は完了。** 全28利用可能Regionを比較し、利用者推奨と最小構成に従ってResource Group **`HubRadio-MovieCreator`**の単一Region `japaneast`（表示名Japan East）だけに評価resourceを作成した。desktop public-client登録とEntra/RBACを検証済みで、S-007も完了したためZ-007の実装前提は揃った。ただし、実コンテンツのcloud送信はZ-007〜Z-010完了まで無効のままである。詳細は[ADR-0008](../decisions/ADR-0008-bounded-azure-evaluation.md)を参照する。
+**実行状態: Z-001〜Z-007は完了。** 全28利用可能Regionを比較し、利用者推奨と最小構成に従ってResource Group **`HubRadio-MovieCreator`**の単一Region `japaneast`（表示名Japan East）だけに評価resourceを作成した。desktop public-client登録とEntra/RBACを検証し、Z-007ではS-007をexact revision/dictionary snapshotへ再適用するlocal-only `CloudPayloadBuilder`を実装した。主選択と直接隣接する明示contextだけをrequest-scoped evidence IDへ変換し、PII/credential/辞書語に加えてURL、path、file name、Windows SID、GUID形式内部IDをNFKC逆写像後にmaskする。previewはlocal provenanceとmask差分、送信先、region、deployment、model、処理範囲、保持条件を表示し、canonical payloadと表示条件を結合したdigestに対するone-shot確認後だけpayload bytesを発行する。credential、network sender、永続化、ModelRun、Z-008 interfaceは追加していないため、実コンテンツのcloud送信とend-user featureはZ-008〜Z-010完了まで無効のままである。詳細は[ADR-0008](../decisions/ADR-0008-bounded-azure-evaluation.md)を参照する。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -432,7 +432,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | Z-004 | **完了。** 最小Azure構成と権限を設計する | `docs/dev/azure/resource-plan.md` | Z-002,Z-003 / `L-AZ` | RG名、region、model deployment、Entra/RBACだけ。DB/Storage/AKS等を含めない | YAGNI、Azure best practices | 作成なし |
 | Z-005 | **完了。** ユーザーの明示的な「作成」指示後だけresourceを作る | `infra/`、`docs/dev/azure/deployment-record.md` | Z-004 + 明示承認 / 直列 | 作成前what-if、作成後endpoint/model/quota確認 | ユーザー制約 | **条件付き Azure** |
 | Z-006 | **完了。** API keyを保存せずdesktop Entra認証/RBACを実装する | `INFRA/Azure/AzureCredentialProvider.cs`、`docs/dev/azure/identity-record.md`、auth tests | Z-005,S-001,S-002 / `L-AZ` | tokenをlog/DB/backupへ保存せず、sign-out/revokeを試験 | NFR-004 | 条件付き Azure |
-| Z-007 | 選択span、周辺最小文脈、mask、送信確認を実装する | `APP/Azure/CloudPayloadBuilder.cs`、tests | P-006,S-007,Z-006 / `L-AZ` | audio/video/path/内部IDを含めず、送信前diffを人が確認 | NFR-004、AR-19 | 条件付き Azure |
+| Z-007 | **完了。** 選択span、周辺最小文脈、mask、送信確認を実装する | `APP/Azure/CloudPayloadBuilder.cs`、tests | P-006,S-007,Z-006 / `L-AZ` | explicit rangeと直接隣接contextだけをclosed canonical JSONへ変換。matched値を保持せず、URL/path/file name/SID/内部IDを含めてmaskし、local provenance付きdiffと送信条件をpayload digestへ結合。digest一致後のone-shot確認だけがdefensive payload bytesを発行し、senderは持たない | NFR-004、AR-19 | 条件付き Azure |
 | Z-008 | 2つ目の実装が現れた時点で文章候補interfaceを抽出する | `CORE/Generation/ITextSuggestionEngine.cs`、local/Azure implementations | Z-006,Z-007,既存local実装 / `L-AZ` | 先にinterfaceを作らず、同じschema/OriginRefを両実装が返す | NFR-007、YAGNI | 条件付き Azure |
 | Z-009 | Structured Output後の根拠・数値・固有名詞検査を実装する | `APP/Azure/AzureSuggestionValidator.cs`、adversarial tests | Z-008,D-003,D-006 / `L-AZ` | schema適合を真実性とみなさず、根拠なしを採用不可 | FR-006/011/022/025 | 条件付き Azure |
 | Z-010 | local/cloud比較、fallback、ModelRun監査、利用停止を実装する | `BENCH/results/azure-evaluation.md`、`APP/Azure/CloudFeatureGate.cs` | Z-008,Z-009,S-013 / `L-AZ` | offline/auth/quota失敗時に手動またはlocalへ戻り、編集を失わない | NFR-003/004/006 | 条件付き Azure |
@@ -512,7 +512,7 @@ flowchart TD
 4. `M`と`R`のpure core部分は`D`後に並列。ただし統合は`A`の実成果物を待つ。
 5. `S-001〜S-007`はCore完成後に並列。`S-008〜S-011`は版・レビュー実装と直列。
 6. `E-004`、`E-011`、`E-013`は共通の文章候補基盤が決まった後に並列。対応UIの`E-015〜E-019`も各service完了後に並列。
-7. `Z-001〜Z-006`とS-007のsensitivity scannerは成立済み。`Z-007`以降は通常critical pathへ強制せず、payload確認、grounded validation、fallbackの依存を順守する。
+7. `Z-001〜Z-007`とS-007のsensitivity scanner、local payload確認境界は成立済み。`Z-008`以降は2つ目の実在実装、grounded validation、fallbackの依存を順守し、通常critical pathへ強制しない。
 
 ---
 
@@ -643,4 +643,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**次は`Z-007`を実装して選択span、最小文脈、mask、送信前diff、人の明示確認を持つ最小payload境界を成立させる。並行して、durable restart条件を残す`M-011`を閉じた後に`M-012`を実行し、依存解放済みの`S-014`、`PK-001`、`PK-003`、`PK-004`、`PK-005`を各gate確認後に実行する。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在実装が揃うまで抽象を作らない。**
+**次はdurable restart条件を残す`M-011`のrequest/checkpointとAsset/warning persistenceを閉じた後に`M-012`を実行し、依存解放済みの`S-014`、`PK-001`、`PK-003`、`PK-004`、`PK-005`を各gate確認後に実行する。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在文章候補実装が揃うまで抽象もsenderも作らない。**

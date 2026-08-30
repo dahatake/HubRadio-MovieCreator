@@ -4,7 +4,7 @@
 - 対象model: `gpt-5.6-sol` version `2026-07-09`
 - 対象deployment type: `DataZoneStandard`
 - 対象resource region: `japaneast`
-- 状態: **実装前の処理境界を確認済み。resource固有のContentLogging状態は作成後に検証する。**
+- 状態: **処理境界とresource作成後の設定を確認済み。Z-007のlocal payload確認境界まで実装し、network送信は未提供。**
 
 ## 適用範囲
 
@@ -44,10 +44,12 @@ Global/DataZone deploymentで保存されるdata at rest（abuse monitoring stor
 
 1. 利用者が目的とsource spanを明示選択している。
 2. payload previewを利用者が確認している。
-3. PII、秘密、内部URL、credential、不要な固有名詞の候補が解消済みである。
+3. PII、秘密、内部URL、credential、不要な固有名詞の候補がpayload上でmask済みで、走査が完全である。
 4. UIがregion、model ID/version、deployment typeを表示する。
 5. payloadがclosed schemaに一致する。
 6. responseもclosed schemaに一致し、known evidence token IDだけを参照する。
+
+Z-007は1〜5のうちlocalで検証できる境界を実装した。exact TranscriptRevisionと辞書snapshotを再走査し、主選択と直接隣接する明示contextだけをrequest内evidence ID、role、masked textへ変換する。previewはlocal provenance、mask差分、region、model、deployment type、processing scope、retention disclosureを表示し、payloadと表示条件を結合したdigestへのone-shot確認後だけdefensive payload bytesを発行する。network senderとresponse処理は持たないため、6および実送信はZ-008〜Z-010まで未完了である。
 
 送信payloadに含めてよい値:
 
@@ -91,9 +93,9 @@ Anthropic infrastructure hosted版は、選択Azure region外・Azure外で処�
 1. accountの`location`が`japaneast`である。
 2. deployment SKUが`DataZoneStandard`である。
 3. model/versionが`gpt-5.6-sol` / `2026-07-09`である。
-4. account capabilityの`ContentLogging`を確認する。`false`が存在する場合だけmodified abuse monitoring適用済みと判断する。field不在を`false`とみなさない。
-5. local authenticationを無効化できる場合は無効化し、data planeをEntra IDに限定する。
-6. public network設定を記録し、秘密を含まないsmoke requestだけで動作確認する。
+4. **確認済み。** account capabilityの`ContentLogging` fieldは2026-08-30のmanagement-plane再取得で不在だった。`false`とはみなさず、既定abuse monitoringが適用されるものとして扱う。
+5. **確認済み。** `disableLocalAuth=true`としてdata planeをEntra IDに限定した。
+6. **確認済み。** `publicNetworkAccess=Enabled`を記録し、秘密を含まないsynthetic smoke requestだけで動作確認した。実コンテンツは送信していない。
 
 ## 未決事項
 

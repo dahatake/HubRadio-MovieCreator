@@ -2,7 +2,7 @@
 
 - 状態: Accepted
 - 決定日: 2026-08-30
-- タスク: Z-001〜Z-006
+- タスク: Z-001〜Z-007
 - cloud necessity証拠: [`benchmarks/results/cloud-necessity.md`](../../../benchmarks/results/cloud-necessity.md)
 - model/region証拠: [`docs/dev/azure/model-selection.md`](../azure/model-selection.md)
 - data processing証拠: [`docs/dev/azure/data-processing-review.md`](../azure/data-processing-review.md)
@@ -38,13 +38,13 @@
 
 Azure resourceとdesktop identityが存在しても、通常の編集内容を自動送信しない。
 
-1. Z-007で選択span、最小文脈、sensitivity mask、送信前diff、人の明示確認を実装する。
+1. **完了。** Z-007で選択span、直接隣接する明示的な最小文脈、sensitivity mask、local provenance付き送信前diff、人の操作を受けるdigest-bound one-shot確認境界を実装した。
 2. 動画、音声、画像、path、Windows SID、内部project ID、全文文字起こしは送信対象にしない。
 3. Z-008は実在する2つ目の文章候補実装が揃うまでinterfaceを先行作成しない。
 4. Z-009でclosed schemaに加えて根拠ID、数値、固有名詞を検査する。schema適合を真実性とみなさない。
 5. Z-010でoffline/auth/quota失敗時のmanual/local fallback、ModelRun監査、利用停止を実装する。
 
-Z-007〜Z-010が完了するまでend-user cloud featureは未提供である。Z-005のsynthetic requestはdata-plane接続証拠であり、実コンテンツ送信、model品質、groundedness、production readinessの証拠ではない。
+Z-007はcanonical payload bytesをnetworkへ送らないlocal builderである。credential、sender、永続化、ModelRun、response処理、Z-008 interfaceを持たず、確認済みpayloadを生成できることを実コンテンツ送信の実施証拠へ読み替えない。Z-008〜Z-010が完了するまでend-user cloud featureは未提供である。Z-005のsynthetic requestはdata-plane接続証拠であり、実コンテンツ送信、model品質、groundedness、production readinessの証拠ではない。
 
 ## 置換範囲
 
@@ -62,13 +62,14 @@ Z-007〜Z-010が完了するまでend-user cloud featureは未提供である。
 - public client IDとtenant IDは非秘密識別子であり、配布assemblyから読めることを明記した。
 - Z-006ではsync/async、cancel、scope、revocation failure、atomic sign-out、16件のin-flight requestを試験し、実在指摘を反映した。
 - `S-007`と`Z-006`は`Z-007`の独立した兄弟前提である。S-007はZ-006依存を追加せずローカル処理として完了し、本文や一致値をfindingへ保持しないこと、走査不能時に外部出力警告を維持することを検証した。
+- `Z-007`は主選択と直接隣接contextを明示rangeとして受け、同じrevision/dictionary snapshotを内部で再走査する。異なるpreviewのdigest、二重確認、16並行確認、split surrogate、重複range、NFKC、public URL、quoted/relative path、file name、SID、GUID形式内部IDを敵対試験し、21件を通した。previewから未確認wire bytesを取得する経路はprivate one-shot stateへ閉じた。
 - API keyの存在確認としてkey-list APIを呼ぶ提案は、secret値を取得するため不採用とした。management planeの`disableLocalAuth=true`、credential不在、source/config scanを境界とし、Q-010で再監査する。
 - .NET testはrepositoryの`test.ps1`と同じbuild済みMTP executableで実行した。`dotnet test`で0件だった誤ったfilter試行を合格証拠に使っていない。
 - `Azure.Identity`はconfigured NuGet source上の最新stable `1.21.0`と当日のdirect/transitive advisory不在を確認した。将来不在を保証せずQ-010で再照会する。
 
 ## 結果
 
-- Z-001〜Z-006は完了した。
-- `A-004`/`A-005`/`S-007`は完了し、Z-007の実装前提は揃った。S-007完了を実コンテンツ送信許可へ読み替えず、Z-007〜Z-010のgateを維持する。
+- Z-001〜Z-007は完了した。
+- `A-004`/`A-005`/`S-007`を入力としてZ-007のlocal payload確認境界を完了した。これを実コンテンツ送信許可へ読み替えず、Z-008〜Z-010のgateを維持する。
 - Azure accountとEntra objectsは後続評価のため維持し、暗黙に削除・拡張しない。
 - `G-RELEASE`、production費用、品質、rights、retention、署名、clean Windows受入は未承認のまま維持する。
