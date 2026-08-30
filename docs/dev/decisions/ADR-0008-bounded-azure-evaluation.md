@@ -69,6 +69,6 @@ Z-007〜Z-010が完了するまでend-user cloud featureは未提供である。
 ## 結果
 
 - Z-001〜Z-006は完了した。
-- Z-007は`S-007`とその前提である`A-004`/`A-005`の完了後に開始できる。
+- `A-004`/`A-005`は完了した。Z-007は残る前提`S-007`の完了後に開始できる。
 - Azure accountとEntra objectsは後続評価のため維持し、暗黙に削除・拡張しない。
 - `G-RELEASE`、production費用、品質、rights、retention、署名、clean Windows受入は未承認のまま維持する。
