@@ -213,6 +213,6 @@
   <path d="M 930 943 L 975 943" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)"/>
   <path d="M 1230 943 L 1275 943" fill="none" stroke="#047857" stroke-width="3" marker-end="url(#arrowGreen)"/>
 
-  <text x="800" y="1062" text-anchor="middle" class="small">Current: 107/203 tasks complete / M-011 durable restart complete / external gates remain closed</text>
-  <text x="800" y="1088" text-anchor="middle" class="small">M-012 next / feature UI + Render IR + package planned / ST-008 condition-false</text>
+  <text x="800" y="1062" text-anchor="middle" class="small">Current: 108/203 tasks complete / M-012 media adversarial suite complete / external gates remain closed</text>
+  <text x="800" y="1088" text-anchor="middle" class="small">S-014 next / feature UI + Render IR + package planned / ST-008 condition-false</text>
 </svg>

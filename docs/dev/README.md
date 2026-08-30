@@ -3,7 +3,7 @@
 HubRadio MovieCreator の開発、保守、技術検証、設計判断に関する入口です。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation `F-001〜F-009`は完了済みで、2026年8月30日時点で全203 task中107件を完了しました。`D-001〜D-016`、`J-001〜J-010`、durable restart checkpointを含む`M-001〜M-011`、`A-001〜A-005`、`R-001〜R-009/R-016`、`U-001〜U-004`、文字起こしsensitivity scannerを含む主要なS系統制、`Z-001〜Z-007`を実装済みです。Japan Eastの限定Azure評価resource、desktop Entra authentication、local-onlyのmasked payload previewとdigest-bound one-shot確認境界は存在しますが、network sender、response validation、fallback、ModelRun監査、end-user cloud featureは未提供です。`S-003`は別account受入待ちです。媒体の敵対試験、用語不一致候補以降の解析、業務UI、Render IR以降、配布は未完了です。最新状態は[詳細実装計画](planning/implementation-plan.md)を参照してください。
+> Stage 0 と Foundation `F-001〜F-009`は完了済みで、2026年8月30日時点で全203 task中108件を完了しました。`D-001〜D-016`、`J-001〜J-010`、durable restart checkpointと専用媒体敵対試験を含む`M-001〜M-012`、`A-001〜A-005`、`R-001〜R-009/R-016`、`U-001〜U-004`、文字起こしsensitivity scannerを含む主要なS系統制、`Z-001〜Z-007`を実装済みです。M-012は合成した危険path、option風source名、破損container、巨大・深層metadata、巨大dual-stream出力、停止しないtoolを対象にfail-closed、bounded capture、期限終了、診断非開示を検証しましたが、production閾値や`Q-008`の完了証拠ではありません。Japan Eastの限定Azure評価resource、desktop Entra authentication、local-onlyのmasked payload previewとdigest-bound one-shot確認境界は存在しますが、network sender、response validation、fallback、ModelRun監査、end-user cloud featureは未提供です。`S-003`は別account受入待ちです。用語不一致候補以降の解析、業務UI、Render IR以降、配布は未完了です。最新状態は[詳細実装計画](planning/implementation-plan.md)を参照してください。
 
 ## 目的から探す
 
