@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <Import Project="$(MSBuildExtensionsPath)\Microsoft\DesktopBridge\Microsoft.DesktopBridge.props" />
+
+  <UsingTask
+    TaskName="DecodeVerifiedPackageAsset"
+    TaskFactory="RoslynCodeTaskFactory"
+    AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <SourcePath ParameterType="System.String" Required="true" />
+      <DestinationPath ParameterType="System.String" Required="true" />
+      <ExpectedSha256 ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Security.Cryptography" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        byte[] bytes = Convert.FromBase64String(File.ReadAllText(SourcePath).Trim());
+        string digest;
+        using (SHA256 sha256 = SHA256.Create())
+        {
+            digest = BitConverter.ToString(sha256.ComputeHash(bytes))
+                .Replace("-", string.Empty)
+                .ToLowerInvariant();
+        }
+        if (!string.Equals(digest, ExpectedSha256, StringComparison.Ordinal))
+        {
+            Log.LogError("A generated package asset failed SHA-256 verification.");
+            return false;
+        }
+        Directory.CreateDirectory(Path.GetDirectoryName(DestinationPath));
+        File.WriteAllBytes(DestinationPath, bytes);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <PropertyGroup>
+    <ProjectGuid>{8D0A1096-1DF9-493A-BC80-86B7F8C61753}</ProjectGuid>
+    <TargetPlatformVersion>10.0.26100.0</TargetPlatformVersion>
+    <TargetPlatformMinVersion>10.0.26100.0</TargetPlatformMinVersion>
+    <DefaultLanguage>ja-JP</DefaultLanguage>
+    <AppxBundle>Never</AppxBundle>
+    <AppxBundlePlatforms>x64</AppxBundlePlatforms>
+    <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
+    <GenerateAppInstallerFile>false</GenerateAppInstallerFile>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <EntryPointProjectUniqueName>..\..\src\HubRadio.App\HubRadio.App.csproj</EntryPointProjectUniqueName>
+    <HubRadioGeneratedAssetsPath>$(IntermediateOutputPath)HubRadioAssets\</HubRadioGeneratedAssetsPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AppxManifest Include="Package.appxmanifest">
+      <SubType>Designer</SubType>
+    </AppxManifest>
+    <Content Include="PACKAGE-NOT-FOR-RELEASE.txt" />
+    <Content Include="$(HubRadioGeneratedAssetsPath)Square44x44Logo.png">
+      <Link>Assets\Square44x44Logo.png</Link>
+    </Content>
+    <Content Include="$(HubRadioGeneratedAssetsPath)Square150x150Logo.png">
+      <Link>Assets\Square150x150Logo.png</Link>
+    </Content>
+    <Content Include="$(HubRadioGeneratedAssetsPath)StoreLogo.png">
+      <Link>Assets\StoreLogo.png</Link>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HubRadioPythonRuntimePath)' != ''">
+    <Content Include="$(HubRadioPythonRuntimePath)\**\*">
+      <Link>Worker\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HubRadioModelBundlePath)' != ''">
+    <Content Include="$(HubRadioModelBundlePath)\config.json">
+      <Link>Models\faster-whisper-small\config.json</Link>
+    </Content>
+    <Content Include="$(HubRadioModelBundlePath)\model.bin">
+      <Link>Models\faster-whisper-small\model.bin</Link>
+    </Content>
+    <Content Include="$(HubRadioModelBundlePath)\tokenizer.json">
+      <Link>Models\faster-whisper-small\tokenizer.json</Link>
+    </Content>
+    <Content Include="$(HubRadioModelBundlePath)\vocabulary.txt">
+      <Link>Models\faster-whisper-small\vocabulary.txt</Link>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HubRadioFfmpegPath)' != '' and '$(HubRadioFfprobePath)' != '' and '$(HubRadioFfmpegLicensePath)' != ''">
+    <Content Include="$(HubRadioFfmpegPath)">
+      <Link>Tools\ffmpeg.exe</Link>
+    </Content>
+    <Content Include="$(HubRadioFfprobePath)">
+      <Link>Tools\ffprobe.exe</Link>
+    </Content>
+    <Content Include="$(HubRadioFfmpegLicensePath)">
+      <Link>Licenses\FFmpeg-LICENSE.txt</Link>
+    </Content>
+    <Content Include="$(HubRadioPythonRuntimePath)\LICENSE.txt">
+      <Link>Licenses\CPython-LICENSE.txt</Link>
+    </Content>
+    <Content Include="..\..\docs\dev\licenses\THIRD-PARTY-NOTICES.md">
+      <Link>Licenses\THIRD-PARTY-NOTICES-NONFINAL.md</Link>
+    </Content>
+    <Content Include="..\ffmpeg\manifest.json">
+      <Link>Evidence\ffmpeg-manifest.json</Link>
+    </Content>
+    <Content Include="..\models\catalog.json">
+      <Link>Evidence\model-catalog.json</Link>
+    </Content>
+    <Content Include="..\python\runtime-manifest.json">
+      <Link>Evidence\python-runtime-manifest.json</Link>
+    </Content>
+    <Content Include="..\web\dependency-manifest.json">
+      <Link>Evidence\web-dependency-manifest.json</Link>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\HubRadio.App\HubRadio.App.csproj">
+      <Name>HubRadio.App</Name>
+      <Project>{DBCB93FA-6948-4732-B3F8-D9C61FDF6E48}</Project>
+      <Private>True</Private>
+      <SkipGetTargetFrameworkProperties>True</SkipGetTargetFrameworkProperties>
+      <PublishProfile>Properties\PublishProfiles\win-$(Platform).pubxml</PublishProfile>
+      <AdditionalProperties>RuntimeIdentifier=win-x64;SelfContained=true;WindowsAppSDKSelfContained=true;PublishSingleFile=false;WindowsPackageType=None</AdditionalProperties>
+    </ProjectReference>
+  </ItemGroup>
+
+  <Target Name="ValidateHubRadioPackageInputs" BeforeTargets="PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="'$(Platform)' != 'x64'" Text="HubRadio.Package supports only the x64 platform." />
+    <Error Condition="'$(HubRadioPythonRuntimePath)' == '' or !Exists('$(HubRadioPythonRuntimePath)\python.exe')" Text="HubRadioPythonRuntimePath must identify the verified self-contained worker runtime." />
+    <Error Condition="'$(HubRadioModelBundlePath)' == '' or !Exists('$(HubRadioModelBundlePath)\model.bin')" Text="HubRadioModelBundlePath must identify the verified CPU/int8 model bundle." />
+    <Error Condition="'$(HubRadioFfmpegPath)' == '' or !Exists('$(HubRadioFfmpegPath)')" Text="HubRadioFfmpegPath must identify the verified FFmpeg executable." />
+    <Error Condition="'$(HubRadioFfprobePath)' == '' or !Exists('$(HubRadioFfprobePath)')" Text="HubRadioFfprobePath must identify the verified ffprobe executable." />
+    <Error Condition="'$(HubRadioFfmpegLicensePath)' == '' or !Exists('$(HubRadioFfmpegLicensePath)')" Text="HubRadioFfmpegLicensePath must identify the verified FFmpeg license." />
+  </Target>
+
+  <Target Name="GenerateVerifiedPackageAssets" BeforeTargets="PrepareForBuild">
+    <DecodeVerifiedPackageAsset
+      SourcePath="Assets\Square44x44Logo.png.b64"
+      DestinationPath="$(HubRadioGeneratedAssetsPath)Square44x44Logo.png"
+      ExpectedSha256="bf764a0cdfcc4ccf7080781ce5580adb538c87e320e2dc1fa6634ef1c076026c" />
+    <DecodeVerifiedPackageAsset
+      SourcePath="Assets\Square150x150Logo.png.b64"
+      DestinationPath="$(HubRadioGeneratedAssetsPath)Square150x150Logo.png"
+      ExpectedSha256="f44fceb26344cdaeeb5ff5437574938364830e349118f2bf43cba807a232096e" />
+    <DecodeVerifiedPackageAsset
+      SourcePath="Assets\StoreLogo.png.b64"
+      DestinationPath="$(HubRadioGeneratedAssetsPath)StoreLogo.png"
+      ExpectedSha256="7ac7bd4603467a0ccd9dc451a151852e7e8677b4b3d7d6d8d4c5bad5fcf7e382" />
+  </Target>
+
+  <Import Project="$(MSBuildExtensionsPath)\Microsoft\DesktopBridge\Microsoft.DesktopBridge.targets" />
+</Project>

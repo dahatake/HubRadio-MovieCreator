@@ -3,7 +3,7 @@
 **作成日:** 2026年8月27日
 **最終更新:** 2026年8月30日
 **対象リポジトリ:** HubRadio-MovieCreator
-**正本:** `docs/dev/planning/implementation-plan.md`（全203タスク、SHA-256 `dfed1da77fe47cd02f75f8da2b43300306e0d86081582de42dc62bce121e870a`）
+**正本:** `docs/dev/planning/implementation-plan.md`（全203タスク、SHA-256 `36529d100aea18ebdd69e60819922b0a5e02297ac95a33425e78e9814b6b01da`）
 **本書の位置付け:** 正本の実行順序を、これまでの実測結果に基づいて具体化した作業計画。要求・ADRを変更するものではない。
 
 ---
@@ -29,9 +29,9 @@
 | U | U-001〜U-004 | WinUI/WebView2 startup、secure host/bridge、React state同期までreview・commit済み |
 | S | S-001、S-002、S-004、S-006〜S-010、S-012、S-014、S-015 | actor/role/text sensitivity/review/approval/audit/backupと横断敵対試験をreview済み。S-003はcode済み・別account受入待ち |
 | Z | Z-001〜Z-007 | local model不達/cloud necessity未証明、28 Region/model/quota、data processing、最小Japan East resource、desktop Entra authentication、local payload確認境界をreview済み |
-| PK | PK-001〜PK-005 | Python wheel lock/self-contained runtime、FFmpeg manifest、offline model catalog/cache、closed React production bundleをreview・commit済み |
+| PK | PK-001〜PK-005 | Python wheel lock/self-contained runtime、FFmpeg manifest、offline model catalog/cache、closed React production bundleをreview・commit済み。PK-006はcode/同一host unpack検証済み・clean Windows受入待ち |
 
-**完了: 114 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ちで完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了89件のうち5件が現在condition-falseまたは保留である。PK-001〜PK-005は完了し、次は`PK-006`を各gate確認後に実行する。`Z-008`は2つ目の実在文章候補実装が現れるまで開始しない。
+**完了: 114 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ちで完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了89件のうち5件が現在condition-falseまたは保留である。PK-001〜PK-005は完了した。PK-006はWAP/manual fallback/strict unpack verifierまで実装したが、別のclean Windowsへのinstall証拠がないため未完了として保持する。次は`A-006`から実行可能なtaskを継続する。`Z-008`は2つ目の実在文章候補実装が現れるまで開始しない。
 
 ### 1.2 直近の統合作業
 
@@ -65,6 +65,7 @@
 - PK-004: 12候補をclosed catalogへ固定し、CPU/int8 ASR model 1件だけにoffline install経路を与えた。個別size/hashと集約manifestをcopy前後に検証し、workspace stagingから非上書きmoveでcacheへ昇格する。未取得・破損・不同意・非採用を区別し、network取得、silent update、held/condition-false bundleを拒否する。focused 12成功・symlink環境gate 1件、実cache 4 file / 486,212,372 bytes照合、全Release runnerを完了した。最終MSIX、完全notice/CVE/SBOM、法務・release承認は未完了
 - PK-005: React/React DOM/Schedulerの3 tarballとViteのindex/CSS/JSをSHA-256 manifestへ固定し、lock drift、source map、remote/inline entry、CSS/SVG remote、unsupported fileをfail closedで拒否する。App buildはverified manifestを必須化し、出力4 fileを完全照合した。同一host 2 build、Web 23件、Node負例6件、App 4件、bundle欠落negative、3つのworkspace task、全Release runnerを完了した。cross-machine、installed MSIX、完全SBOM/legal/releaseは未完了
 - PK-002: 公式CPython 3.12.10 Windows x64 embeddable ZIP、runtime 25 wheel、worker source 5 filesを固定し、2,694 files / 268,422,987 bytes / 集合SHA-256 `4ed693b5…baa905`のread-only payloadを生成した。2 build同一hash、空PATH native imports、health、protocol、前後不変、改ざん/余分wheel/上書き拒否を完了した。clean machine、installed MSIX、完全SBOM/legal/releaseは未完了
+- PK-006: x64 WAP projectとunsigned manual fallbackを実装し、3,265 payload files / 1,224,299,374 bytes / 集合SHA-256 `7a547bab…142504`を独立2 buildで一致させた。MakeAppx unpack後に全path/size/hashとblock map、WinUI/WebView2、worker health/protocol、FFmpeg/ffprobe、offline CPU/int8 model、Web bundleを実行検証した。WAP workload、署名、install、identity launch、別のclean Windows、upgrade/rollback/uninstall、SBOM/legal/releaseは未完了
 
 旧ADR重複は削除済みで、`docs/dev/decisions/`だけがADR正本である。DOC-001〜DOC-004は敵対的レビュー、修正、再検証、commitまで完了した。
 
@@ -97,7 +98,7 @@
 |---|---:|---|
 | `docs/dev/**/*.md` | 26文書 | developer向け入口、architecture、benchmark、ADR、license、plan、research、review、error catalogを分離済み |
 | Git対象Markdown相対リンク | 全32文書の94件中broken 0件 | 再編後、Foundation、J-009追加文書の相対リンクは有効 |
-| Implementation plan SHA-256 | `273ed98dcd9d3f64d27690c2f4dc2b1b24935de6bc3a42ffa1238da2033b149f` | 2026-08-30更新時点で`docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
+| Implementation plan SHA-256 | `36529d100aea18ebdd69e60819922b0a5e02297ac95a33425e78e9814b6b01da` | 2026-08-30更新時点で`docs/dev/decisions/ADR-0001-source-of-truth.md`と一致 |
 | `git diff --check` | staged / unstagedともexit 0 | whitespace errorなし |
 | 旧ADR重複 | 0件 | 削除済み。`docs/dev/decisions/`だけをADR正本として使用 |
 | Git staging | D-005、J-009、J-010と補正の個別commit後はclean | 本進捗同期だけを次のcommit対象にする |
@@ -182,7 +183,7 @@ ST-015承認後に着手する。
 |---|---|---|
 | S-001〜S-016 | 16 | S-001/S-002/S-004/S-006〜S-010/S-012/S-015完了。S-003は別account受入待ち |
 | Q-000〜Q-013 | 14 | Must受入、長尺・縦型・クイズ、セキュリティ、追跡性、性能、復旧、敵対試験、アクセシビリティ、SBOM、初期パイロット |
-| PK-001〜PK-007 | 7 | PK-001〜PK-005完了。次はPK-006のMSIX、その後署名・upgrade検証を依存順に実施 |
+| PK-001〜PK-007 | 7 | PK-001〜PK-005完了。PK-006は同一host実装済み・clean Windows受入待ち。PK-007の署名・upgrade検証はPK-006受入後 |
 
 ### Phase F: Stage 2 Should機能（E、19タスク）
 
@@ -279,7 +280,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. `PK-006`でWinUI、self-contained worker、FFmpeg、model、Web assets、license inventoryを1つのunsigned MSIXへ収め、clean target以外で可能なpackage構造検査を完了する。Z-008は2つ目の実在文章候補実装が現れるまで開始しない。
+1. `PK-006`の別clean Windows install gateは外部証拠待ちとして保持し、`A-006`から依存解放済みの実行可能taskを継続する。Z-008は2つ目の実在文章候補実装が現れるまで開始しない。
 2. 各taskを個別にbuild/testし、敵対的レビューの実在する指摘だけを反映して独立commitする。
 3. 完了ごとに依存DAGを再評価する。`S-003`とheld/condition-false taskは外部証拠または別承認なしに完了扱いにせず、Azure後続はpayload/validation/fallbackの個別gateを省略しない。
 

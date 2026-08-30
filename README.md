@@ -93,7 +93,7 @@ HubRadio MovieCreator は、企業向けのトーク、対談、インタビュ�
 |---|---|
 | 一般利用者向けアプリ | 未提供 |
 | インストーラー | 未提供 |
-| 技術検証 | Stage 0・Foundation完了。Stage 1はSQLite/job、媒体取込・proxy・preview素材、編集model、review/approval、ACL/audit/backup、限定Azure評価の認証基盤まで一部実装済み。業務UI、cloud payload、render/export flowは未完了 |
+| 技術検証 | Stage 0・Foundation完了。Stage 1はSQLite/job、媒体取込・proxy・preview素材、編集model、review/approval、ACL/audit/backup、限定Azure評価の認証基盤、unsigned MSIXの同一host pack/unpack検証まで一部実装済み。clean Windows install、業務UI、cloud送信、render/export flowは未完了 |
 | 対象予定 | Windows 11 x64 の単一 PC |
 | 外部への自動公開 | 対象外 |
 | クラウド利用 | 評価resourceは作成済み。実コンテンツを送る利用者機能は未提供 |

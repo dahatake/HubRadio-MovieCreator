@@ -1,0 +1,4 @@
+This unsigned package is local PK-006 development evidence only.
+
+It is not approved for installation, distribution, publication, or production use.
+Package signing, trusted installation, upgrade, rollback, uninstall, clean production-channel Windows validation, complete notices, vulnerability review, SBOM, legal review, and release approval remain open.
