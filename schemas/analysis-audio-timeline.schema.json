@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "A-002 canonical mapping from fixed 16 kHz mono PCM samples to the first decoded source-audio frame. probeReportedAudioStart records packet/container evidence but probeReportedPacketStartApplied is always false. Runtime validation binds the source identity, M-007 video PTS index digest, decoded audio stream, WAV artifact, and exact sample range.",
+  "title": "AnalysisAudioTimeline",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectId",
+    "analysisJobId",
+    "sourceAssetId",
+    "sourceContentDigest",
+    "sourceByteSize",
+    "sourceOriginalArtifactId",
+    "sourceVideoPtsIndexDigest",
+    "sourceVideoStreamIndex",
+    "sourceAudioStreamIndex",
+    "sourceAudioTimeBase",
+    "probeReportedAudioStart",
+    "firstDecodedAudioFrameTimestamp",
+    "firstDecodedAudioFramePresentationTime",
+    "firstDecodedAudioFrameSampleCount",
+    "analysisAudioArtifactId",
+    "analysisAudioDigest",
+    "analysisAudioByteSize",
+    "analysisSampleRate",
+    "analysisSampleCount",
+    "analysisDuration",
+    "timelineArtifactId",
+    "mappingRule",
+    "probeReportedPacketStartApplied"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0",
+      "maxLength": 5
+    },
+    "projectId": { "$ref": "#/$defs/entityId" },
+    "analysisJobId": { "$ref": "#/$defs/entityId" },
+    "sourceAssetId": { "$ref": "#/$defs/entityId" },
+    "sourceContentDigest": { "$ref": "#/$defs/sha256" },
+    "sourceByteSize": { "$ref": "#/$defs/positiveInt64" },
+    "sourceOriginalArtifactId": { "$ref": "#/$defs/entityId" },
+    "sourceVideoPtsIndexDigest": { "$ref": "#/$defs/sha256" },
+    "sourceVideoStreamIndex": { "$ref": "#/$defs/nonnegativeInt32" },
+    "sourceAudioStreamIndex": { "$ref": "#/$defs/nonnegativeInt32" },
+    "sourceAudioTimeBase": { "$ref": "#/$defs/positiveRationalTime" },
+    "probeReportedAudioStart": {
+      "oneOf": [
+        { "$ref": "#/$defs/rationalTime" },
+        { "type": "null" }
+      ]
+    },
+    "firstDecodedAudioFrameTimestamp": { "$ref": "#/$defs/int64" },
+    "firstDecodedAudioFramePresentationTime": { "$ref": "#/$defs/rationalTime" },
+    "firstDecodedAudioFrameSampleCount": { "$ref": "#/$defs/positiveInt32" },
+    "analysisAudioArtifactId": { "$ref": "#/$defs/entityId" },
+    "analysisAudioDigest": { "$ref": "#/$defs/sha256" },
+    "analysisAudioByteSize": { "$ref": "#/$defs/positiveInt64" },
+    "analysisSampleRate": {
+      "type": "integer",
+      "const": 16000
+    },
+    "analysisSampleCount": { "$ref": "#/$defs/positiveInt64" },
+    "analysisDuration": { "$ref": "#/$defs/positiveRationalTime" },
+    "timelineArtifactId": { "$ref": "#/$defs/entityId" },
+    "mappingRule": {
+      "type": "string",
+      "const": "first-decoded-audio-frame-plus-analysis-sample-offset",
+      "maxLength": 60
+    },
+    "probeReportedPacketStartApplied": {
+      "type": "boolean",
+      "const": false
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "int64": {
+      "type": "integer",
+      "minimum": -9223372036854775808,
+      "maximum": 9223372036854775807
+    },
+    "positiveInt64": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854775807
+    },
+    "nonnegativeInt32": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "positiveInt32": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "rationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "rate"],
+      "properties": {
+        "value": { "$ref": "#/$defs/int64" },
+        "rate": { "$ref": "#/$defs/positiveInt64" }
+      }
+    },
+    "positiveRationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "rate"],
+      "properties": {
+        "value": { "$ref": "#/$defs/positiveInt64" },
+        "rate": { "$ref": "#/$defs/positiveInt64" }
+      }
+    }
+  }
+}
