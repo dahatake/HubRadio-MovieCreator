@@ -6,7 +6,7 @@
 **計画日:** 2026年8月26日  
 **計画状態:** Stage 0は2026年8月27日に人手承認済み。
 
-2026年8月30日時点で113/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-012、A-001〜A-005、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006〜S-010/S-012/S-014/S-015、Z-001〜Z-007、PK-001/PK-003〜PK-005を実装・検証した。
+2026年8月30日時点で114/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-012、A-001〜A-005、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006〜S-010/S-012/S-014/S-015、Z-001〜Z-007、PK-001〜PK-005を実装・検証した。
 
 `S-003`のコードは実装済みだが、別の非管理者Windows accountによる受入証拠を待つため完了数へ含めない。
 
@@ -18,13 +18,13 @@
 
 `PK-001`はWindows x64 / CPython 3.12向けruntime 25件とtest-only 4件のwheelをexact-version・SHA-256・binary-onlyで固定し、同一hostのfresh CPython 3.12.10 AMD64 venvでdownload済みwheelhouseだけから全29件をoffline再現した。`pip check`、version checks、worker 80/80、wheel filename/size/hash/artifact-set hash、canonical Release buildは成功した。これは別のclean Windows machine、Python runtime、ASR model、CUDA、MSIX、完全なlicense/CVE/SBOM、release readinessを証明しない。
 
-`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中90件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。
+`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中89件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。
 
 SQLite業務store、永続job、worker protocol、編集操作、review/approval、durable媒体取込・PTS・proxy・waveform/sprite、固定CPU ASR runner、元音声抽出とdecoded-frame基準の元時刻写像、worker結果のTranscriptRevision正規化、人による不変Transcript改訂、案件/シリーズ用語辞書CRUD、ローカル文字起こしsensitivity candidate scan、ACL、audit、backup/restore、Japan Eastの限定Azure評価resource、desktop Entra authentication、選択spanだけをmaskして送信前diffと送信先条件を表示しdigestへ結合するlocal-only payload確認境界まで実装済みである。
 
 実コンテンツのnetwork送信、response validation、fallback、ModelRun監査、end-user cloud feature、業務UI、用語不一致候補以降の解析、Render IR以降、配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布、release readinessは未承認。
 
-次は`PK-002`へ進む。`Z-008`は2つ目の実在文章候補実装が現れるまで開始せず、held taskは成立証拠と別承認なしに解除しない。
+次は`PK-006`へ進む。`Z-008`は2つ目の実在文章候補実装が現れるまで開始せず、held taskは成立証拠と別承認なしに解除しない。
 
 ---
 
@@ -459,7 +459,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.13 PK — 配布と供給網
 
-**実行状態: PK-001、PK-003〜PK-005は完了。** `PK-002`は依存解放済みである。PK-001はWindows x64 / CPython 3.12向けにruntime 25件とtest固有4件のwheelをexact version・SHA-256・binary-onlyで固定し、既存venvを使わない同一hostのfresh CPython 3.12.10 AMD64 venvへdownload済みwheelhouseだけから29件を再現した。`pip check`、version照合、worker test 80/80、wheel file名・size・個別hash・artifact-set hash照合、canonical Release buildは成功した。これは採用wheel集合の証拠であり、別のclean Windows machine、Python runtime、ASR model、CUDA、MSIX、完全notice/CVE/SBOM、release readinessの証拠ではない。現在のunpackaged開発出力を、MSIXまたはread-only install先の受入証拠として扱わない。
+**実行状態: PK-001〜PK-005は完了。** `PK-006`は依存解放済みである。PK-001はWindows x64 / CPython 3.12向けにruntime 25件とtest固有4件のwheelをexact version・SHA-256・binary-onlyで固定し、既存venvを使わない同一hostのfresh CPython 3.12.10 AMD64 venvへdownload済みwheelhouseだけから29件を再現した。`pip check`、version照合、worker test 80/80、wheel file名・size・個別hash・artifact-set hash照合、canonical Release buildは成功した。現在のunpackaged開発出力を、MSIXまたはread-only install先の受入証拠として扱わない。
 
 PK-003は、BtbN Windows x64 static LGPL `8.1.2-20260731`のexact manifestを固定し、展開済みの`ffmpeg.exe`、`ffprobe.exe`、`LICENSE.txt`をローカルで再hashした。完全なbuild configuration、BtbN/FFmpeg-Builds commit `a99e8230eae00d1cee38f23076a7a1f55cd984e2`、upstream FFmpeg commit `9b6c8969e05b4f0b29f0f85cd501be6b3e582e6b`、source/build instructions、non-final noticeを記録し、focused manifest consistency tests 3/3とcanonical Release regressionは成功した。archive bytesの独立再hash、exact rebuild、source bundle、static依存の完全なlicense、codec/patent、CVE/SBOM、法務・release承認、runtime hardware encode成功は未証明であり、`PK-006`/`Q-010`のopen gateとして残る。
 
@@ -467,10 +467,12 @@ PK-004は12候補を採用・保留・benchmark-only・condition-falseへ閉じ�
 
 PK-005はVite出力を毎回空にし、public directory、inline asset、source mapを無効化した。production dependency closureをReact、React DOM、Schedulerの3 tarballへ固定し、個別size/SHA-256とaggregate digestを記録する。buildはlock driftを自動更新せずfail closedで検出し、生成したindex/CSS/JS全fileのsize/SHA-256をatomic manifestへ保存する。closed CSP、relative hashed entry、remote HTML/CSS/SVG、inline script、source-map reference、unsupported fileを検証し、App出力の`WebAssets`をmanifestと完全一致させた。同一host 2 buildのmanifest SHA-256一致、Web 23件、Node負例6件、App packaging 4件、bundle欠落時App build拒否、3つのworkspace verification task、canonical Release regressionを完了した。Node/build-tool完全SBOM、cross-machine再現、installed MSIX byte照合、最終notice/CVE/legal/release承認は`PK-006`/`Q-010`のopen gateである。
 
+PK-002は公式CPython 3.12.10 Windows x64 embeddable ZIP 11,133,606 bytes、SHA-256 `4acbed6d…25a3c3`、35 entries、同梱license、選択3 binaryのPython Software Foundation署名を固定した。PK-001のruntime 25 wheelとworker source 5 filesだけをoffline stagingへ展開し、console launcher/pip/pycacheを除外して2,694 files / 268,422,987 bytes、payload集合SHA-256 `4ed693b5…baa905`のread-only treeを非上書きmoveで生成する。2独立buildは同じ集合hashを返した。child environmentをclearし、空PATH、汚染PYTHONPATH/PYTHONHOME、workspace向けhome/temp/cache、`-I -B`でnative package 6件、health、strict NDJSON pingを実行し、前後tree不変を確認した。archive改ざん、余分wheel、既存outputはbuild前に拒否した。clean machine、installed MSIX、完全notice/CVE/SBOM、法務・release承認は`PK-006`/`Q-010`のopen gateである。
+
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
 | PK-001 | **完了。** 採用ML wheelが共存するPython版を固定する | `WORKER/requirements.lock`、`WORKER/requirements-test.lock`、`WORKER/wheel-matrix.json`、`docs/dev/packaging/python-dependency-lock.md` | ST-006,ST-007,ST-009,ST-010,ST-016,F-004 / `L-S` | Windows x64のfresh CPython 3.12.10 AMD64 venvで29 wheelのhash固定offline install、version/hash照合、`pip check`、worker testを再現し、condition-false/held modelをlockへ含めない | NFR-003/006 | なし |
-| PK-002 | Python runtime/workerをself-contained配布物へ組み立てる | `packaging/python/`、build script、license | PK-001,J-005 / `L-S` | system Python/PATHへ依存せず、書込はworkspaceだけ | NFR-003/004 | なし |
+| PK-002 | **完了。** Python runtime/workerをself-contained配布物へ組み立てる | `packaging/python/runtime-manifest.json`、`build-runtime.ps1`、`verify-runtime.ps1`、license、tests | PK-001,J-005 / `L-S` | fixed CPython archive、25 wheel、worker sourceから決定的read-only treeを作り、空PATH/isolated環境でnative imports、health、protocol、前後不変を検証。書込先環境をmanaged workspaceへ限定 | NFR-003/004 | なし |
 | PK-003 | **完了。** FFmpeg LGPL build、source/build config、noticeを固定する | `packaging/ffmpeg/manifest.json`、`packaging/ffmpeg/README.md`、`packaging/ffmpeg/NOTICE.md`、`tests/Architecture.Tests/FfmpegPackageManifestTests.cs`（manifest consistency tests） | ST-002,ST-005,P-008 / `L-S` | binary hash、`-buildconf`、license、source入手方法を一致 | FR-031、RS[S48] | なし |
 | PK-004 | **完了。** model取得、同意、hash、cache、offline起動を実装する | `packaging/models/catalog.json`、`APP/Models/ModelManager.cs`、tests | F-008,ST-006,ST-007,ST-009,ST-010,ST-011,ST-016 / `L-S` | pinned catalogから採用CPU modelだけをoffline bundleで検証・原子的cache昇格し、未取得/破損/不同意/非採用を区別。network取得・silent overwrite・不採用modelのbundleを拒否 | NFR-003/006 | ローカル処理 |
 | PK-005 | **完了。** React production assetsをApp packageへ組み込む | `WEB/scripts/verify-production-assets.mjs`、`packaging/web/dependency-manifest.json`、`APP/WebAssets/`生成規則、build integration、tests | F-003,U-002 / `L-W` | runtime 3 tarballと全生成assetをhash固定し、closed CSP、local relative entry、source map/remote/inline/余分file拒否、bundle欠落時fail、App出力完全一致を検証 | NFR-004 | なし |
@@ -669,4 +671,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**次は依存解放済みの`PK-002`を各gate確認後に実行する。未完了は残り90 taskである。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在文章候補実装が揃うまで抽象もsenderも作らない。**
+**次は依存解放済みの`PK-006`を各gate確認後に実行する。未完了は残り89 taskである。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在文章候補実装が揃うまで抽象もsenderも作らない。**

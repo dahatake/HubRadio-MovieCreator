@@ -69,7 +69,7 @@ public sealed class WorkerClient
         string standardInput = string.Concat(StrictUtf8.GetString(canonical), "\n");
         ProcessRunRequest request = new(
             pythonExecutable,
-            ["-m", "hubradio_worker", "--protocol"],
+            ["-I", "-B", "-m", "hubradio_worker", "--protocol"],
             workerWorkingDirectory,
             timeout,
             maxCapturedBytes: WorkerProtocolParser.MaxProtocolOutputUtf8Bytes,

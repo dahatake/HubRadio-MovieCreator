@@ -250,6 +250,25 @@ public sealed class WorkerClientTests
             result.Progress.ToArray());
     }
 
+    [TestMethod]
+    public void WorkerClient_UsesIsolatedNoBytecodePythonArguments()
+    {
+        string repositoryRoot = GetRepositoryRoot();
+        string source = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "src",
+            "HubRadio.Infrastructure",
+            "Worker",
+            "WorkerClient.cs"));
+
+        Assert.IsTrue(source.Contains(
+            "[\"-I\", \"-B\", \"-m\", \"hubradio_worker\", \"--protocol\"]",
+            StringComparison.Ordinal));
+        Assert.IsFalse(source.Contains(
+            "[\"-m\", \"hubradio_worker\", \"--protocol\"]",
+            StringComparison.Ordinal));
+    }
+
     private static WorkerProtocolException AssertInvalid(ProcessRunResult result)
     {
         WorkerProtocolException exception = Assert.ThrowsExactly<WorkerProtocolException>(

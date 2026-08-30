@@ -327,8 +327,8 @@
     }
   ],
   "remainingGates": [
-    "PK-002 must select and hash the distributable CPython runtime; this matrix pins only the 3.12 minor line and wheel set.",
-    "PK-004 must package and verify the exact ASR model artifact without network fallback or silent update.",
+    "PK-002 fixes the CPython 3.12.10 Windows x64 embeddable runtime and deterministic self-contained worker payload in packaging/python/runtime-manifest.json.",
+    "PK-004 fixes the exact ASR model artifact and offline cache boundary without network fallback or silent update.",
     "PK-006 must verify the complete package on a clean target machine.",
     "Q-010 must close transitive licenses, notices, vulnerabilities, and the release-candidate SBOM.",
     "CUDA redistribution remains disabled until a separately authorized runtime and decision exist."

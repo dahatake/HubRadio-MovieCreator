@@ -1,0 +1,170 @@
+{
+  "schemaVersion": "1.0.0",
+  "evidenceDate": "2026-08-30",
+  "runtime": {
+    "identity": "CPython",
+    "version": "3.12.10",
+    "architecture": "x64",
+    "operatingSystem": "Windows",
+    "source": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip",
+    "fileName": "python-3.12.10-embed-amd64.zip",
+    "byteSize": 11133606,
+    "sha256": "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3",
+    "archiveEntryCount": 35,
+    "archiveEntries": [
+      "LICENSE.txt",
+      "_asyncio.pyd",
+      "_bz2.pyd",
+      "_ctypes.pyd",
+      "_decimal.pyd",
+      "_elementtree.pyd",
+      "_hashlib.pyd",
+      "_lzma.pyd",
+      "_msi.pyd",
+      "_multiprocessing.pyd",
+      "_overlapped.pyd",
+      "_queue.pyd",
+      "_socket.pyd",
+      "_sqlite3.pyd",
+      "_ssl.pyd",
+      "_uuid.pyd",
+      "_wmi.pyd",
+      "_zoneinfo.pyd",
+      "libcrypto-3.dll",
+      "libffi-8.dll",
+      "libssl-3.dll",
+      "pyexpat.pyd",
+      "python.cat",
+      "python.exe",
+      "python3.dll",
+      "python312._pth",
+      "python312.dll",
+      "python312.zip",
+      "pythonw.exe",
+      "select.pyd",
+      "sqlite3.dll",
+      "unicodedata.pyd",
+      "vcruntime140.dll",
+      "vcruntime140_1.dll",
+      "winsound.pyd"
+    ],
+    "selectedSignedFiles": [
+      {
+        "name": "python.exe",
+        "byteSize": 104952,
+        "sha256": "4d6f5f81a4bca11191c4c7c6b43632694d0a4ce74e068619d8fdc161d469859a",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Python Software Foundation, O=Python Software Foundation, L=Beaverton, S=Oregon, C=US",
+        "signerThumbprint": "DE01DAAE82D04F466A576E178F6B07A839238953"
+      },
+      {
+        "name": "python3.dll",
+        "byteSize": 70376,
+        "sha256": "fb975a606e7fbf74f64260e3f60c3490b4f74a183c0926fd6ed1ac4c52ac7b1c",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Python Software Foundation, O=Python Software Foundation, L=Beaverton, S=Oregon, C=US",
+        "signerThumbprint": "DE01DAAE82D04F466A576E178F6B07A839238953"
+      },
+      {
+        "name": "python312.dll",
+        "byteSize": 6945272,
+        "sha256": "9a0e3435aaa680d868150f87ab3e388ad2eebc22f87e036155c7b4eda8cd2120",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Python Software Foundation, O=Python Software Foundation, L=Beaverton, S=Oregon, C=US",
+        "signerThumbprint": "DE01DAAE82D04F466A576E178F6B07A839238953"
+      }
+    ],
+    "license": {
+      "fileName": "LICENSE.txt",
+      "byteSize": 36874,
+      "sha256": "e502c6b880ff58d614901495a9009c136539cd0b1e2a2abb8fc00b934c203419",
+      "status": "included-from-official-runtime"
+    }
+  },
+  "isolation": {
+    "pythonArguments": [
+      "-I",
+      "-B"
+    ],
+    "pthFile": "python312._pth",
+    "pthLines": [
+      "python312.zip",
+      ".",
+      "Lib",
+      "Lib\\site-packages"
+    ],
+    "importSiteEnabled": false,
+    "pipIncludedAtRuntime": false,
+    "systemPathRequired": false,
+    "writableRoot": "host-supplied managed workspace"
+  },
+  "wheelInput": {
+    "matrixPath": "src/HubRadio.Worker/wheel-matrix.json",
+    "matrixSha256": "d7a6bd79bb50f94fba69efcb0e43f2a26a73e52509e2b9d49422e0974b902ea1",
+    "runtimeWheelCount": 25,
+    "runtimeWheelBytes": 84705557,
+    "runtimeWheelSetSha256": "a08c4fafe13d834fdbdbdf031774b0b57f7dd03227700a8b525d0193f707f141"
+  },
+  "workerSource": {
+    "root": "src/HubRadio.Worker/src",
+    "fileCount": 5,
+    "totalBytes": 25762,
+    "artifactSetSha256": "6af6e608d0778200d9b55393384af477b6ae3b3e28a251cba04f146314ba430c",
+    "files": [
+      {
+        "path": "hubradio_worker/__init__.py",
+        "byteSize": 38,
+        "sha256": "fbfcfdaf52e6cc9e409036f82405ba36eb56c921821a513d75bc970d17799424"
+      },
+      {
+        "path": "hubradio_worker/__main__.py",
+        "byteSize": 745,
+        "sha256": "96b93fdcb6b43d669698d491f6533c4db0fe9d5dae3ed50344102460120418d7"
+      },
+      {
+        "path": "hubradio_worker/protocol.py",
+        "byteSize": 7901,
+        "sha256": "b62969c5557636abbee7f9c74dea59f37be6c83c305d2e88e15bbd3443add4c2"
+      },
+      {
+        "path": "hubradio_worker/tasks/__init__.py",
+        "byteSize": 47,
+        "sha256": "a61915562de52e5d549727365641a4a114ddbfcb6855e46f266eb62159907cd6"
+      },
+      {
+        "path": "hubradio_worker/tasks/transcribe.py",
+        "byteSize": 17031,
+        "sha256": "1b624974063aa84490f9f82c543848990e6c9b30b83284c3a7db28ee4576f5f5"
+      }
+    ]
+  },
+  "output": {
+    "rootName": "HubRadio.WorkerRuntime",
+    "fileManifestName": "runtime-files.json",
+    "entryPoint": "python.exe",
+    "expectedFileCount": 2694,
+    "expectedTotalBytes": 268422987,
+    "expectedArtifactSetSha256": "4ed693b55b4b2198f549b5bdce1b68cb8a77e1167cdb6c3721a5d0fa44baa905",
+    "healthArguments": [
+      "-I",
+      "-B",
+      "-m",
+      "hubradio_worker",
+      "--health"
+    ],
+    "protocolArguments": [
+      "-I",
+      "-B",
+      "-m",
+      "hubradio_worker",
+      "--protocol"
+    ]
+  },
+  "releaseApproved": false,
+  "remainingGates": [
+    "PK-006 must assemble and test this runtime inside the final MSIX on a clean Windows target.",
+    "Q-010 must complete runtime and wheel notice, vulnerability, SBOM, legal, and release review.",
+    "The official archive hash was measured from python.org and selected binaries had valid Python Software Foundation signatures; this is not organization release approval.",
+    "CUDA and every held or condition-false model runtime remain excluded."
+  ]
+}

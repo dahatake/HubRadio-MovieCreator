@@ -131,7 +131,7 @@ YAMNetとSileroのscore/thresholdはStage 0比較設定であり、productionの
 
 | 種別 | 固定対象 | 配布元 | byte size | SHA-256 | license・条件 |
 |---|---|---|---:|---|---|
-| .NET SDK selector | `benchmarks/probes/global.json` / SDK `10.0.400` | installed .NET SDK | — | global.json `deb68fdcdf73ca5a9b4862010d170ebc117339887aa0aa72d22a04ade7437942` | probe buildだけをexact SDKへ固定。self-contained出力に含まれるruntime/native componentsのnoticeはPK-002/Q-010で収集する |
+| .NET SDK selector | `benchmarks/probes/global.json` / SDK `10.0.400` | installed .NET SDK | — | global.json `deb68fdcdf73ca5a9b4862010d170ebc117339887aa0aa72d22a04ade7437942` | probe buildだけをexact SDKへ固定。self-contained .NET出力に含まれるruntime/native componentsのnoticeはPK-006/Q-010で収集する |
 | NuGet package | `Microsoft.Windows.SDK.BuildTools` `10.0.26100.1` | Microsoft package feed proxy | 22,476,117 | `7e37f35384a7b146730fa67dde243d46b97ce5ca73aaeb1c3141cd812b286395` | `.nuspec`は`requireLicenseAcceptance=true`、license URL `https://aka.ms/WinSDKLicenseURL`を宣言。local package buildにのみ使用し、redistribution承認は未実施 |
 | Package tool | x64 `makeappx.exe` | 上記BuildTools package | 567,328 | `9981418e9a18a9aa19bb69f835137a3bf8fe2e6fe7e18d5ca9b76191cc331f3f` | MSIX pack/unpackに使用。tool自体はStage 0 MSIXへ同梱していない |
 | License evidence | Windows SDK license RTF | `https://download.microsoft.com/download/0/F/F/0FF2B061-47DD-4F55-89B6-FD1D8C44F14D/sdk_license.rtf` | 246,945 | `dd07eb178e00c6bba4148457fc00ff77cd4887eb521d504186fe59c9ec8bbe62` | binary RTFのため本文条件を本記録で要約・断定しない。署名済み配布前に組織のlicense reviewを必須とする |

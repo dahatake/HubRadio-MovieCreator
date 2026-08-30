@@ -35,13 +35,13 @@ hash lockの受入では、既存worker venvを再利用せず、同一Windows x
 
 2026年8月30日に、既存worker venvを使わない一時CPython 3.12.10 AMD64環境で上記を実行した。29 wheelをnetworkなしでinstallし、locked distribution 29件、`pip check`、worker test 80/80、wheelhouse 29/29の個別size/hash照合がすべて成功した。canonical Release buildでもhash lock復元、no-index local install、dependency consistency、Web/.NET/Python static gateが成功した。
 
-この確認はfresh virtual environmentの再現性であり、別のclean Windows machine、MSIX、offline runtime bundle、install/upgrade/uninstall、release readinessの証拠ではない。
+この確認はfresh virtual environmentの再現性である。後続PK-002は同じ25 runtime wheelを公式CPython 3.12.10 Windows x64 embeddable runtimeへ展開し、空PATH、native imports、health、protocol、read-only不変性を実証した。別のclean Windows machine、installed MSIX、install/upgrade/uninstall、release readinessは依然として未証明である。
 
 ## 除外と残gate
 
 - 採用実行経路は`faster-whisper` small / CPU / int8だけである。
 - A-010のpyannoteとA-015のlocal text modelはcondition-false、A-012のshot detectorとA-013のface detectorはheldであり、lockへ含めない。
 - `faster-whisper` conversion extra、Torch、Transformers、Foundry Local CUDA cache、CUDA runtime bundleは含めない。観測済みCUDA cacheの再配布承認はfalseのままである。
-- Python runtime本体のexact artifact/hash/noticeはPK-002、ASR modelのoffline packageはPK-004、clean target machineと完全packageはPK-006、transitive license/CVE/SBOM closureはQ-010で扱う。
+- Python runtime本体のexact artifact/hashとself-contained treeはPK-002、ASR modelのoffline packageはPK-004で完了した。clean target machineと完全packageはPK-006、transitive license/CVE/SBOM closureはQ-010で扱う。
 
-したがってPK-001は採用wheel集合の再現を固定するが、model、Python runtime、CUDA、完全notice、releaseを承認しない。
+したがってPK-001は採用wheel集合、PK-002はCPU self-contained runtimeを固定するが、CUDA、完全notice、installed package、releaseを承認しない。
