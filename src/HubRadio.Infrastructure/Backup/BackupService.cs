@@ -164,6 +164,9 @@ public sealed class IncompleteCutoverCandidate
 public sealed class BackupService
 {
     private const int DefaultTimeoutSeconds = 5;
+    private const int DirectoryMoveMaximumAttempts = 6;
+    private const int DirectoryMoveInitialDelayMilliseconds = 25;
+    private const int DirectoryMoveMaximumDelayMilliseconds = 200;
     private const int FileBufferSize = 64 * 1024;
     private const string RestoreDirectoryPrefix = ".hubradio.restore-";
     private const string PreviousDirectoryPrefix = ".hubradio.previous-";
@@ -293,7 +296,8 @@ public sealed class BackupService
         await OperationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            DiscardIncompleteRestoreCore(candidate, cancellationToken);
+            await DiscardIncompleteRestoreCoreAsync(candidate, cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -487,7 +491,10 @@ public sealed class BackupService
                 _currentActorSid);
             cancellationToken.ThrowIfCancellationRequested();
             EnsurePathAbsent(finalPath);
-            _directoryMove(stagingPath, finalPath);
+            await MoveDirectoryWithTransientRetryAsync(
+                stagingPath,
+                finalPath,
+                cancellationToken).ConfigureAwait(false);
 
             try
             {
@@ -501,7 +508,8 @@ public sealed class BackupService
             }
             catch
             {
-                if (!TryMoveDirectory(finalPath, stagingPath))
+                if (!await TryMoveDirectoryAsync(finalPath, stagingPath)
+                        .ConfigureAwait(false))
                 {
                     throw Failure(
                         BackupServiceFailureReason.BackupCreationFailed,
@@ -993,7 +1001,10 @@ public sealed class BackupService
                     workspaceParent,
                     _workspacePath,
                     targetIsDirectory: true);
-                _directoryMove(_workspacePath, restorePath);
+                await MoveDirectoryWithTransientRetryAsync(
+                    _workspacePath,
+                    restorePath,
+                    CancellationToken.None).ConfigureAwait(false);
                 if (WorkspacePathSafety.PathEntryExistsConservatively(
                         _workspacePath) ||
                     !WorkspacePathSafety.PathEntryExistsConservatively(restorePath))
@@ -1011,7 +1022,10 @@ public sealed class BackupService
                     reconciliationRequired: true);
             }
 
-            _directoryMove(previousPath, _workspacePath);
+            await MoveDirectoryWithTransientRetryAsync(
+                previousPath,
+                _workspacePath,
+                CancellationToken.None).ConfigureAwait(false);
             try
             {
                 if (!await IsWorkspaceIntactAsync(
@@ -1026,7 +1040,8 @@ public sealed class BackupService
             }
             catch
             {
-                if (!TryMoveDirectory(_workspacePath, previousPath))
+                if (!await TryMoveDirectoryAsync(_workspacePath, previousPath)
+                        .ConfigureAwait(false))
                 {
                     throw Failure(
                         BackupServiceFailureReason.RollbackFailed,
@@ -1148,7 +1163,7 @@ public sealed class BackupService
         return byOperation;
     }
 
-    private void DiscardIncompleteRestoreCore(
+    private async Task DiscardIncompleteRestoreCoreAsync(
         IncompleteRestoreCandidate candidate,
         CancellationToken cancellationToken)
     {
@@ -1189,7 +1204,11 @@ public sealed class BackupService
             isolatedPath = Path.Combine(workspaceParent, isolatedDirectoryName);
             EnsurePathAbsent(isolatedPath);
             cancellationToken.ThrowIfCancellationRequested();
-            Directory.Move(candidatePath, isolatedPath);
+            await MoveDirectoryWithTransientRetryAsync(
+                Directory.Move,
+                candidatePath,
+                isolatedPath,
+                cancellationToken).ConfigureAwait(false);
             if (WorkspacePathSafety.PathEntryExistsConservatively(candidatePath) ||
                 !WorkspacePathSafety.PathEntryExistsConservatively(isolatedPath))
             {
@@ -1354,11 +1373,17 @@ public sealed class BackupService
         bool restoredMoved = false;
         try
         {
-            _directoryMove(_workspacePath, previousPath);
+            await MoveDirectoryWithTransientRetryAsync(
+                _workspacePath,
+                previousPath,
+                CancellationToken.None).ConfigureAwait(false);
             previousMoved = true;
             _ = WorkspaceAcl.VerifyExisting(previousPath, _currentActorSid);
 
-            _directoryMove(restorePath, _workspacePath);
+            await MoveDirectoryWithTransientRetryAsync(
+                restorePath,
+                _workspacePath,
+                CancellationToken.None).ConfigureAwait(false);
             restoredMoved = true;
             if (!await IsWorkspaceIntactAsync(
                     _workspacePath,
@@ -1408,10 +1433,11 @@ public sealed class BackupService
                     reconciliationRequired: true);
             }
 
-            if (!TryRollbackCutover(
+            if (!await TryRollbackCutoverAsync(
                     previousPath,
                     restorePath,
-                    restoredMoved))
+                    restoredMoved)
+                .ConfigureAwait(false))
             {
                 throw Failure(
                     BackupServiceFailureReason.RollbackFailed,
@@ -1424,7 +1450,7 @@ public sealed class BackupService
         }
     }
 
-    private bool TryRollbackCutover(
+    private async Task<bool> TryRollbackCutoverAsync(
         string previousPath,
         string restorePath,
         bool restoredMoved)
@@ -1439,7 +1465,10 @@ public sealed class BackupService
                     return false;
                 }
 
-                _directoryMove(_workspacePath, restorePath);
+                await MoveDirectoryWithTransientRetryAsync(
+                    _workspacePath,
+                    restorePath,
+                    CancellationToken.None).ConfigureAwait(false);
                 _ = WorkspaceAcl.VerifyExisting(restorePath, _currentActorSid);
             }
 
@@ -1449,7 +1478,10 @@ public sealed class BackupService
                 return false;
             }
 
-            _directoryMove(previousPath, _workspacePath);
+            await MoveDirectoryWithTransientRetryAsync(
+                previousPath,
+                _workspacePath,
+                CancellationToken.None).ConfigureAwait(false);
             _ = WorkspaceAcl.VerifyExisting(_workspacePath, _currentActorSid);
             return true;
         }
@@ -2190,7 +2222,9 @@ public sealed class BackupService
         }
     }
 
-    private static bool TryMoveDirectory(string sourcePath, string destinationPath)
+    private static async Task<bool> TryMoveDirectoryAsync(
+        string sourcePath,
+        string destinationPath)
     {
         try
         {
@@ -2200,7 +2234,11 @@ public sealed class BackupService
                 return false;
             }
 
-            Directory.Move(sourcePath, destinationPath);
+            await MoveDirectoryWithTransientRetryAsync(
+                Directory.Move,
+                sourcePath,
+                destinationPath,
+                CancellationToken.None).ConfigureAwait(false);
             return !WorkspacePathSafety.PathEntryExistsConservatively(sourcePath) &&
                 WorkspacePathSafety.PathEntryExistsConservatively(destinationPath);
         }
@@ -2208,6 +2246,79 @@ public sealed class BackupService
         {
             return false;
         }
+    }
+
+    private async Task MoveDirectoryWithTransientRetryAsync(
+        string sourcePath,
+        string destinationPath,
+        CancellationToken cancellationToken) =>
+        await MoveDirectoryWithTransientRetryAsync(
+                _directoryMove,
+                sourcePath,
+                destinationPath,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    private static async Task MoveDirectoryWithTransientRetryAsync(
+        Action<string, string> directoryMove,
+        string sourcePath,
+        string destinationPath,
+        CancellationToken cancellationToken)
+    {
+        for (int attempt = 1; attempt <= DirectoryMoveMaximumAttempts; attempt++)
+        {
+            try
+            {
+                directoryMove(sourcePath, destinationPath);
+                return;
+            }
+            catch (IOException exception)
+                when (IsTransientDirectoryMoveFailure(exception))
+            {
+                bool sourceExists =
+                    WorkspacePathSafety.PathEntryExistsConservatively(sourcePath);
+                bool destinationExists =
+                    WorkspacePathSafety.PathEntryExistsConservatively(destinationPath);
+                if (!sourceExists && destinationExists)
+                {
+                    return;
+                }
+
+                if (!sourceExists || destinationExists)
+                {
+                    throw;
+                }
+
+                if (attempt == DirectoryMoveMaximumAttempts)
+                {
+                    throw;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                int delayMilliseconds = Math.Min(
+                    DirectoryMoveInitialDelayMilliseconds << (attempt - 1),
+                    DirectoryMoveMaximumDelayMilliseconds);
+                await Task.Delay(delayMilliseconds, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static bool IsTransientDirectoryMoveFailure(IOException exception)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        if ((exception.HResult & unchecked((int)0xffff0000)) !=
+            unchecked((int)0x80070000))
+        {
+            return false;
+        }
+
+        int nativeError = exception.HResult & 0xffff;
+        return nativeError is 5 or 32 or 33;
     }
 
     private static bool HasSameMetadata(

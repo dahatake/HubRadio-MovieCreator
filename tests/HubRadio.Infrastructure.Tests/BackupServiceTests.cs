@@ -677,6 +677,188 @@ public sealed class BackupServiceTests
     }
 
     [TestMethod]
+    public async Task CreateBackupAsync_TransientFinalRenameAccessDeniedIsRetried()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        _ = fixture.CreateProject();
+        int moveCount = 0;
+        bool failureInjected = false;
+        void MoveWithTransientAccessDenied(string source, string destination)
+        {
+            if (!failureInjected)
+            {
+                failureInjected = true;
+                moveCount++;
+                throw new IOException(
+                    "Injected transient directory move failure.",
+                    unchecked((int)0x80070005));
+            }
+
+            Directory.Move(source, destination);
+            moveCount++;
+        }
+
+        BackupService service = fixture.CreateService(MoveWithTransientAccessDenied);
+        BackupResult result = await service.CreateBackupAsync();
+
+        Assert.AreEqual(2, moveCount);
+        Assert.IsTrue(Directory.Exists(fixture.GetBackupDirectory(result)));
+        Assert.IsFalse(Directory.EnumerateDirectories(
+            fixture.BackupRootPath,
+            ".backup-*.staging").Any());
+    }
+
+    [TestMethod]
+    public async Task CreateBackupAsync_FinalTransientRenameOutcomeIsReconciled()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        _ = fixture.CreateProject();
+        int moveCount = 0;
+        void MoveWithFinalAmbiguousSuccess(string source, string destination)
+        {
+            moveCount++;
+            if (moveCount < 6)
+            {
+                throw new IOException(
+                    "Injected transient directory move failure.",
+                    unchecked((int)0x80070005));
+            }
+
+            Directory.Move(source, destination);
+            throw new IOException(
+                "Injected successful move with ambiguous outcome.",
+                unchecked((int)0x80070005));
+        }
+
+        BackupService service = fixture.CreateService(MoveWithFinalAmbiguousSuccess);
+        BackupResult result = await service.CreateBackupAsync();
+
+        Assert.AreEqual(6, moveCount);
+        Assert.IsTrue(Directory.Exists(fixture.GetBackupDirectory(result)));
+        BackupManifest manifest = BackupManifest.Parse(
+            File.ReadAllBytes(fixture.GetManifestPath(result)));
+        Assert.AreEqual(result.ManifestDigest, manifest.ManifestDigest);
+    }
+
+    [TestMethod]
+    public async Task CreateBackupAsync_CancellationDuringRenameRetryLeavesStaging()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        _ = fixture.CreateProject();
+        using CancellationTokenSource cancellation = new();
+        int moveCount = 0;
+        void CancelThenFailMove(string source, string destination)
+        {
+            _ = source;
+            _ = destination;
+            moveCount++;
+            cancellation.Cancel();
+            throw new IOException(
+                "Injected transient directory move failure.",
+                unchecked((int)0x80070005));
+        }
+
+        BackupService service = fixture.CreateService(CancelThenFailMove);
+        _ = await Assert.ThrowsAsync<OperationCanceledException>(
+            () => service.CreateBackupAsync(cancellation.Token));
+
+        Assert.AreEqual(1, moveCount);
+        Assert.IsFalse(Directory.EnumerateDirectories(
+            fixture.BackupRootPath,
+            "backup-*").Any());
+        Assert.AreEqual(1, Directory.EnumerateDirectories(
+            fixture.BackupRootPath,
+            ".backup-*.staging").Count());
+    }
+
+    [TestMethod]
+    public async Task RestoreBackupAsync_TransientCutoverRenameIsRetried()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        _ = fixture.CreateProject();
+        BackupResult backup = await fixture.Service.CreateBackupAsync();
+        int moveCount = 0;
+        bool failureInjected = false;
+        void MoveWithTransientAccessDenied(string source, string destination)
+        {
+            if (!failureInjected)
+            {
+                failureInjected = true;
+                moveCount++;
+                throw new IOException(
+                    "Injected transient directory move failure.",
+                    unchecked((int)0x80070005));
+            }
+
+            Directory.Move(source, destination);
+            moveCount++;
+        }
+
+        BackupService service = fixture.CreateService(MoveWithTransientAccessDenied);
+        RestoreResult restored = await service.RestoreBackupAsync(backup.BackupId);
+
+        Assert.AreEqual(3, moveCount);
+        Assert.IsTrue(Directory.Exists(fixture.WorkspacePath));
+        Assert.IsTrue(Directory.Exists(Path.Combine(
+            fixture.RootPath,
+            restored.PreviousWorkspaceDirectoryName)));
+        DatabaseMigrator.ValidateCurrentDatabase(fixture.DatabasePath);
+    }
+
+    [TestMethod]
+    public async Task RestoreBackupAsync_TransientRollbackRenameIsRetried()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        _ = fixture.CreateProject();
+        BackupResult backup = await fixture.Service.CreateBackupAsync();
+        IReadOnlyDictionary<string, ContentDigest> currentBefore =
+            SnapshotFileTree(fixture.WorkspacePath);
+        int moveCount = 0;
+        void MoveWithCutoverAndTransientRollbackFailure(
+            string source,
+            string destination)
+        {
+            int logicalMove = moveCount + 1;
+            if (logicalMove == 2)
+            {
+                moveCount = logicalMove;
+                throw new IOException("Injected cutover move failure.");
+            }
+
+            if (logicalMove == 3)
+            {
+                moveCount = logicalMove;
+                throw new IOException(
+                    "Injected transient rollback move failure.",
+                    unchecked((int)0x80070005));
+            }
+
+            Directory.Move(source, destination);
+            moveCount = logicalMove;
+        }
+
+        BackupService service = fixture.CreateService(
+            MoveWithCutoverAndTransientRollbackFailure);
+        BackupServiceException exception =
+            await Assert.ThrowsExactlyAsync<BackupServiceException>(
+                () => service.RestoreBackupAsync(backup.BackupId));
+
+        Assert.AreEqual(4, moveCount);
+        AssertSafeException(
+            exception,
+            BackupServiceFailureReason.CutoverFailed,
+            reconciliationRequired: true,
+            fixture);
+        AssertFileTreesEqual(currentBefore, SnapshotFileTree(fixture.WorkspacePath));
+        AssertNoPreviousWorkspace(fixture);
+    }
+
+    [TestMethod]
     [DataRow(1, 1)]
     [DataRow(2, 3)]
     public async Task RestoreBackupAsync_CutoverFailureKeepsOrRollsBackCurrentWorkspace(
@@ -694,13 +876,15 @@ public sealed class BackupServiceTests
         int moveCount = 0;
         void MoveWithFailure(string source, string destination)
         {
-            moveCount++;
-            if (moveCount == failingMove)
+            int logicalMove = moveCount + 1;
+            if (logicalMove == failingMove)
             {
+                moveCount = logicalMove;
                 throw new IOException("Injected cutover move failure.");
             }
 
             Directory.Move(source, destination);
+            moveCount = logicalMove;
         }
 
         BackupService service = fixture.CreateService(MoveWithFailure);
@@ -737,13 +921,15 @@ public sealed class BackupServiceTests
         int moveCount = 0;
         void MoveWithRestoreAndRollbackFailure(string source, string destination)
         {
-            moveCount++;
-            if (moveCount is 2 or 3)
+            int logicalMove = moveCount + 1;
+            if (logicalMove is 2 or 3)
             {
+                moveCount = logicalMove;
                 throw new IOException("Injected restore or rollback move failure.");
             }
 
             Directory.Move(source, destination);
+            moveCount = logicalMove;
         }
 
         BackupService service = fixture.CreateService(
@@ -812,9 +998,10 @@ public sealed class BackupServiceTests
         int moveCount = 0;
         void MoveAndCorruptRestoredWorkspace(string source, string destination)
         {
-            moveCount++;
+            int logicalMove = moveCount + 1;
             Directory.Move(source, destination);
-            if (moveCount == 2)
+            moveCount = logicalMove;
+            if (logicalMove == 2)
             {
                 File.WriteAllBytes(
                     Path.Combine(destination, "hubradio.db"),
