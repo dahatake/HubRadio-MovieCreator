@@ -1,6 +1,6 @@
 # Third-party notice inventory (non-final)
 
-- Status: F-008 BOM scaffold with PK-001 and PK-003 evidence updates
+- Status: F-008 BOM scaffold with PK-001, PK-003, and PK-004 evidence updates
 - Evidence date: 2026-08-28
 - Release approval: **not granted**
 - Legal approval: **not granted**
@@ -31,7 +31,7 @@ Any `pending-PK-*`, held, condition-false, benchmark-only, unreviewed host compo
 | React 19.2.8 | `package.json` plus exact `package-lock.json` entry | MIT declared by lock | Obtain artifact SHA-256 and complete the production transitive notice set at PK-005/Q-010. |
 | React DOM 19.2.8 | `package.json` plus exact `package-lock.json` entry | MIT declared by lock | Obtain artifact SHA-256 and complete the production transitive notice set at PK-005/Q-010. |
 | CPython worker runtime | CPython 3.12 minor line is fixed; no exact runtime distribution is selected | Pending PK-002 | Fix the Windows x64 runtime artifact, hashes, bundled components, and notices before self-contained packaging. |
-| faster-whisper 1.2.1 | Exact declaration plus PK-001 runtime lock and wheel SHA-256 | MIT evidence for the exact tag | CPU/int8 only; retain SYSTRAN and embedded Silero notices; package the exact model at PK-004. |
+| faster-whisper 1.2.1 | Exact declaration plus PK-001 runtime lock and wheel SHA-256 | MIT evidence for the exact tag | CPU/int8 only; retain SYSTRAN and embedded Silero notices; PK-004 pins the exact offline model while Q-010 retains final notice closure. |
 | CTranslate2 4.8.1 | Exact declaration plus PK-001 runtime lock and Windows x64 wheel SHA-256 | MIT evidence for the exact tag | No CUDA runtime is included or approved; complete binary notice review at Q-010. |
 
 An isolated `ProgressRing` compatibility probe observed `Compatible=false` with Windows App SDK 2.4.0 and `Compatible=true` with `2.4.1-experimental`. The product dependency remains 2.4.0; the experimental package was probe-only and is not a declared product or release dependency.
@@ -43,8 +43,8 @@ The current worker declares `faster-whisper==1.2.1` and `ctranslate2==4.8.1`. PK
 | Component | Decision boundary | License indicator | Required closure |
 |---|---|---|---|
 | BtbN FFmpeg LGPL build, `ffmpeg.exe`, and `ffprobe.exe` | PK-003 fixes the exact Windows x64 static LGPL development baseline; GPL/nonfree substitution remains prohibited | `--enable-version3` is present; GPL/nonfree enable flags are absent; bundled `LICENSE.txt` is LGPLv3 text; static dependency review is incomplete | Preserve [`packaging/ffmpeg/manifest.json`](../../../packaging/ffmpeg/manifest.json), its non-final notice inventory, exact source/build references, and selected-file hashes. PK-006 must rehash package inputs; Q-010 must close dependency licenses/sources, codec/patent review, vulnerabilities, SBOM, and final notices. |
-| faster-whisper 1.2.1 and CTranslate2 4.8.1 | Conditional local ASR runtime; CPU is the mandatory path | MIT evidence is recorded for exact tags | PK-001 hash lock is complete; PK-004 must package the exact model without silent updates; Q-010 must close transitive notices and vulnerabilities. |
-| Systran faster-whisper-small exact revision | Conditional ASR model baseline only | Exact-revision model card declares MIT | No model or cache redistribution until PK-004 license, model-card, offline-cache, and integrity gates pass. |
+| faster-whisper 1.2.1 and CTranslate2 4.8.1 | Conditional local ASR runtime; CPU is the mandatory path | MIT evidence is recorded for exact tags | PK-001 hash lock and PK-004 offline model/cache integrity are complete; Q-010 must close transitive notices and vulnerabilities. |
+| Systran faster-whisper-small exact revision | Conditional ASR model baseline only | Exact-revision model card declares MIT | PK-004 pins one offline bundle and rejects network fallback or silent replacement. Final package inclusion and release approval remain PK-006/Q-010 work. |
 | Foundry Local CUDA execution-provider cache | Local benchmark use only; redistribution approval is false | NVIDIA SDK EULA and component-specific terms remain incomplete | Never copy the observed cache into a release. Approve a separate redistributable runtime or disable CUDA and release CPU-only. |
 
 ADR-0007’s Stage 1 baseline is not a release decision. ASR accuracy thresholds, CUDA redistribution, FFmpeg redistribution, and complete notice assembly remain open release blockers.
@@ -61,7 +61,7 @@ The expected vendor archive size and SHA-256 agree between the exact WinGet inst
 |---|---|---|
 | Foundry Local Whisper small | Held; timing capability was insufficient | Do not use as the FR-002 timing provider and do not bundle its cache. |
 | MediaPipe BlazeFace short-range | Held; positive control passed but fixture detections were 0/300 | Keep manual layout/keyframes; do not add the package/model to the product lock. |
-| MediaPipe BlazeFace full-range local cache file | Benchmark-only and unbenchmarked; canonical provenance is missing | Presence in ignored cache is not adoption; source, version, license, model card, and annotation remain PK-004 work. |
+| MediaPipe BlazeFace full-range local cache file | Benchmark-only and unbenchmarked; canonical provenance is missing | PK-004 records it as non-runtime with no bundle. Any later adoption requires source, version, license, model card, annotation, and a separate decision. |
 | YAMNet | Held behind manual listening and annotation | Do not enable automatic deletion or a production score threshold. |
 | Silero VAD | Benchmark-only mechanism evidence | A-018 must select the actual implementation; if distributed, retain both parent-package and Silero notices. |
 | Qwen3 0.6B and 4B Foundry Local variants | A-015 condition-false; benchmark cache only | Do not implement the local text client and do not copy or bundle model/EP caches. |
@@ -108,9 +108,9 @@ BGM, jingles, SFX, logos, images, and documents remain unavailable for product u
 
 1. `dependencies.csv` inventories current direct declarations plus specifically evidenced Stage 0 tools. It is not the complete npm, NuGet, Python, native, .NET runtime, or OS-component transitive closure.
 2. npm lock entries currently carry SHA-1 SRI values. These are retained only as lock evidence; artifact SHA-256 values remain `pending-PK-005`.
-3. PK-001 provides an adopted 29-wheel hash lock for Windows x64 / CPython 3.12 and proves it in a fresh same-host virtual environment. PK-002 must still select the exact Python runtime artifact; PK-004 owns the model bundle; native component notices, vulnerabilities, and optional GPU decisions remain open.
+3. PK-001 provides an adopted 29-wheel hash lock for Windows x64 / CPython 3.12 and proves it in a fresh same-host virtual environment. PK-004 pins the one eligible CPU model bundle and cache behavior. PK-002 must still select the exact Python runtime artifact; native component notices, vulnerabilities, final package bytes, and optional GPU decisions remain open.
 4. PK-003 fixes FFmpeg’s expected archive metadata, locally rehashed selected files, configure line, upstream/build-repository commits, source acquisition method, and non-final notice inventory. Archive-byte rehash, exact rebuild proof, corresponding-source bundle assembly, static dependency licenses, codec/patent review, vulnerabilities, final notices, and SBOM remain open for PK-006/Q-010.
-5. Model acquisition, terms acceptance, model cards, exact revisions, file or manifest hashes, cache behavior, and offline startup must pass PK-004. Held and condition-false models must stay out of the release package.
+5. PK-004 records model acquisition/consent states, model-card evidence, exact revisions, file and manifest hashes, cache behavior, and offline startup. Held and condition-false models have no bundle path. PK-006/Q-010 must still prove the release package contains only the eligible bytes and complete all notice, vulnerability, SBOM, legal, and release gates.
 6. The Web production bundle and its transitive licenses require PK-005. WinUI, .NET runtime, Python worker, FFmpeg, Web assets, model files, and notices require PK-006 package verification.
 7. PK-007 signing/install/upgrade/uninstall evidence does not exist yet.
 8. Q-010 must generate and compare the release-candidate SBOM and Model BOM, review licenses and vulnerabilities, verify notice contents against actual package files, and fail closed on every unresolved item.

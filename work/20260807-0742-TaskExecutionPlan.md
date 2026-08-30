@@ -3,7 +3,7 @@
 **作成日:** 2026年8月27日
 **最終更新:** 2026年8月30日
 **対象リポジトリ:** HubRadio-MovieCreator
-**正本:** `docs/dev/planning/implementation-plan.md`（全203タスク）
+**正本:** `docs/dev/planning/implementation-plan.md`（全203タスク、SHA-256 `cc1f1273c925978cff1253f6bdf606f54483fcf14468d677fcca472534527a88`）
 **本書の位置付け:** 正本の実行順序を、これまでの実測結果に基づいて具体化した作業計画。要求・ADRを変更するものではない。
 
 ---
@@ -23,14 +23,15 @@
 | F | F-001〜F-009 | scaffold、3言語test、一括検証、fixture registry、BOM、architecture制約を個別review・commit済み |
 | D | D-001〜D-016 | 正規model、SQLite migration/store、ArtifactStore、WorkspaceRecoveryまでreview・commit済み |
 | J | J-001〜J-010 | 永続job、runner、closed worker protocol、progress/cancel/retry、restart recoveryまでreview・commit済み |
-| M | M-001〜M-010 | picker、取込、probe/decode、原本、PTS、NVENC/MF proxy、frame map、preview素材までreview・commit済み |
+| M | M-001〜M-012 | picker、取込、probe/decode、原本、PTS、NVENC/MF proxy、frame map、preview素材、durable restart、媒体敵対試験までreview・commit済み |
 | A | A-001〜A-005 | pinned CPU int8 ASR runner、固定PCM抽出、first decoded frame基準の元時刻写像、raw timing evidence付きTranscriptRevision正規化、人による不変Human child revisionと別canonical edit record保存、案件/シリーズ用語辞書CRUDをreview済み |
 | R | R-001〜R-009、R-016 | typed edit、version、profile、manual layout/keyframe、transitionまでreview・commit済み |
 | U | U-001〜U-004 | WinUI/WebView2 startup、secure host/bridge、React state同期までreview・commit済み |
-| S | S-001、S-002、S-004、S-006〜S-010、S-012、S-015 | actor/role/text sensitivity/review/approval/audit/backup制御をreview済み。S-003はcode済み・別account受入待ち |
+| S | S-001、S-002、S-004、S-006〜S-010、S-012、S-014、S-015 | actor/role/text sensitivity/review/approval/audit/backupと横断敵対試験をreview済み。S-003はcode済み・別account受入待ち |
 | Z | Z-001〜Z-007 | local model不達/cloud necessity未証明、28 Region/model/quota、data processing、最小Japan East resource、desktop Entra authentication、local payload確認境界をreview済み |
+| PK | PK-001、PK-003、PK-004 | Python wheel lock、FFmpeg manifest、offline model catalog/cache境界をreview・commit済み |
 
-**完了: 106 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ち、`M-011`はdurable restart checkpointとAsset/warning persistence未達のため、いずれも完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了97件のうち5件が現在condition-falseまたは保留である。次は`M-011`のdurable条件を閉じて`M-012`へ進み、`S-014`、`PK-001`、`PK-003`〜`PK-005`を各gate確認後に進める。`Z-008`は2つ目の実在文章候補実装が現れるまで開始しない。
+**完了: 112 / 203タスク（2026-08-30時点）**。`S-003`はコード実装済みだが別account受入待ちで完了数へ含めない。`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。未完了91件のうち5件が現在condition-falseまたは保留である。M-011/M-012、S-014、PK-001/PK-003/PK-004は完了し、次は`PK-005`を各gate確認後に実行する。`Z-008`は2つ目の実在文章候補実装が現れるまで開始しない。
 
 ### 1.2 直近の統合作業
 
@@ -52,7 +53,7 @@
 - U-001: commit `0e5bb09`。WebView2 profile配置補正はcommit `cad5dca`、実プロセス保証追加はcommit `8d6936c`
 - U-002、U-003: commit `d40ed75`、`f39427a`
 - D-007、D-009、D-010、D-012: commit `c889ba6`、`31fda38`、`2452ccf`、`b6cc7b8`
-- 以後のD/J/M/R/U/S完了taskは各独立commitとして`git log`に記録済み。M-011は未commit・監査中のためこの一覧へ完了記録を追加しない
+- 以後のD/J/M/R/U/S完了taskは各独立commitとして`git log`に記録済み。M-011/M-012/S-014はdurable restart、媒体・横断敵対試験として完了済み
 - Z-001〜Z-006: commit `10c3b2a`、`f4efbb3`、`2c51182`、`84012a4`、`449cc0b`、`c418224`
 - A-001: pinned model/configのunit test 24件、worker全66件、canonical controlのoffline CPU実モデルrun（2 segment、43 token、本文非出力）を完了。accuracy、production latency、CUDA再配布は未承認
 - A-002: 固定16 kHz mono PCM WAVとclosed timeline成果物、first decoded audio frame基準の双方向写像を実装。負の開始、1秒遅延開始、AAC priming、実FFmpeg/FFprobeを含む対象test 13件を完了。cross-build byte同一性とproduction性能は未測定
@@ -61,6 +62,7 @@
 - A-005: 不変`TermEntry`とProject/Series typed XOR scope、STRICT schema v5、scope別partial unique index、Project RESTRICT FK、version 0 createとOCC付きupdate/deleteを実装。架空のSeries table/FKは作らず、Core 548件、Infrastructure 597件中579成功・18環境skip、App 273件中272成功・1環境skip、Architecture 25件、Web 22件、Python 66件のRelease一括runnerを完了
 - S-007: email、内部network location、credential形式、適用済み辞書snapshotをローカルで検出し、本文を保持せずrevision/utterance/source-span IDと原文UTF-16範囲だけを返す`TextSensitivityScanner`を実装。text element単位NFKC、無効Unicodeのfail-closed、同種包含除去、異種overlap保持を含む対象test 17件を完了し、Release一括runnerでArchitecture 25/25、Core 548/548、Infrastructure 579成功・18環境gate・0失敗、App 289成功・1環境gate・0失敗、Web 22/22、Python 66/66を確認した。これはS-011のexport gateやZ-007の送信確認を代替しない
 - Z-007: 主選択と直接隣接する明示contextだけをrequest-scoped evidence IDへ変換するlocal-only `CloudPayloadBuilder`を実装。exact revision/dictionary snapshotへS-007を再適用し、URL、path、file name、Windows SID、GUID形式内部IDもNFKC逆写像後にmaskする。local provenance付きdiff、Azure送信先/model/region/deployment/data-zone/retention表示、canonical payloadと表示条件を結合したdigest、one-shot/16並行確認を対象test 21件で検証した。Release一括runnerはArchitecture 25/25、Core 548/548、Infrastructure 579成功・18環境gate・0失敗、App 310成功・1環境gate・0失敗、Web 22/22、Python 66/66。sender、credential、永続化、ModelRun、Z-008 interfaceは追加せず、実コンテンツ送信は行っていない
+- PK-004: 12候補をclosed catalogへ固定し、CPU/int8 ASR model 1件だけにoffline install経路を与えた。個別size/hashと集約manifestをcopy前後に検証し、workspace stagingから非上書きmoveでcacheへ昇格する。未取得・破損・不同意・非採用を区別し、network取得、silent update、held/condition-false bundleを拒否する。focused 12成功・symlink環境gate 1件、実cache 4 file / 486,212,372 bytes照合、全Release runnerを完了した。最終MSIX、完全notice/CVE/SBOM、法務・release承認は未完了
 
 旧ADR重複は削除済みで、`docs/dev/decisions/`だけがADR正本である。DOC-001〜DOC-004は敵対的レビュー、修正、再検証、commitまで完了した。
 
@@ -157,7 +159,7 @@ ST-015承認後に着手する。
 
 | 群 | 件数 | 内容 |
 |---|---|---|
-| M-001〜M-012 | 12 | M-001〜M-010完了（proxyはNVENC→Media Foundation固定fallbackを含む）。`M-011`はdurable request/checkpoint・Asset/warning persistence未達で監査中、M-012は待機 |
+| M-001〜M-012 | 12 | 完了。proxyのNVENC→Media Foundation固定fallback、durable request/checkpoint、Asset/warning復元、媒体敵対試験を含む |
 | A-001〜A-021 | 21 | A-001〜A-005完了。用語不一致候補、無音・言い直し・咳検出、話者割当、topic、強調候補、採否管理、再処理DAGは未完了 |
 
 **Phase Aの結果に依存する分岐**
@@ -178,7 +180,7 @@ ST-015承認後に着手する。
 |---|---|---|
 | S-001〜S-016 | 16 | S-001/S-002/S-004/S-006〜S-010/S-012/S-015完了。S-003は別account受入待ち |
 | Q-000〜Q-013 | 14 | Must受入、長尺・縦型・クイズ、セキュリティ、追跡性、性能、復旧、敵対試験、アクセシビリティ、SBOM、初期パイロット |
-| PK-001〜PK-007 | 7 | 未完了。PK-001/PK-003/PK-004/PK-005は依存解放済み。Python固定、FFmpeg固定、モデル管理、React組込、MSIX、署名・upgrade検証を順次実施 |
+| PK-001〜PK-007 | 7 | PK-001/PK-003/PK-004完了。次はPK-005のReact組込、その後Python runtime、MSIX、署名・upgrade検証を依存順に実施 |
 
 ### Phase F: Stage 2 Should機能（E、19タスク）
 
@@ -275,7 +277,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 ## 8. 直近の実行順序
 
-1. `M-011`のdurable request/checkpoint・Asset/warning persistenceを閉じ、次に`M-012`へ進む。`S-014`、`PK-001`、`PK-003`〜`PK-005`は各gate確認後に実装する。Z-007のlocal payload確認境界は完了したが、Z-008は2つ目の実在文章候補実装が現れるまで開始しない。
+1. `PK-005`でReact production assetsの閉じた組込を完了する。Z-007のlocal payload確認境界は完了したが、Z-008は2つ目の実在文章候補実装が現れるまで開始しない。
 2. 各taskを個別にbuild/testし、敵対的レビューの実在する指摘だけを反映して独立commitする。
 3. 完了ごとに依存DAGを再評価する。`S-003`とheld/condition-false taskは外部証拠または別承認なしに完了扱いにせず、Azure後続はpayload/validation/fallbackの個別gateを省略しない。
 
@@ -310,7 +312,7 @@ ST-007（時刻精度）、ST-010（顔検出）、ST-016（音声イベント�
 
 1. **完了。** `M-001`〜`M-006`でtoken化picker、stream copy/hash、ffprobe、warning、full decode、original昇格を直列化した。
 2. **完了。** `M-007`〜`M-010`でobserved PTS index、NVENC/MF proxy、ProxyFrameMap、waveform/spriteを実装した。
-3. `M-011`は同一process内typed retryまで実装済み。durable request/checkpoint・Asset/warning persistenceを閉じてから完了とし、その後`M-012`で破損媒体、UNC、option風filename、resource bombを敵対試験する。
+3. **完了。** `M-011`はdurable request/checkpoint・Asset/warning persistenceとfresh-instance suffix resumeを実装し、`M-012`は破損媒体、UNC、option風filename、resource bomb境界を敵対試験した。
 4. **完了。** `A-001`はCPU int8の単一経路を成立させた。CUDAは正規runtimeと再配布承認がないため製品runnerへ追加していない。
 5. **完了。** `A-002`は固定PCM抽出とfirst decoded frame基準の元時刻写像を成立させた。packet/container startを補正値として適用しない。
 6. **完了。** `A-003`はraw ASR秒とreview要否を別証拠として保持し、nearest-to-evenでA-002のRationalTimeへ変換した。範囲外をclampせずmanual timing fallbackを維持する。

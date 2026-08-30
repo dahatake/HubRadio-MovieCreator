@@ -61,7 +61,7 @@ license evidence:
 - faster-whisper-small exact revision README/model card: https://huggingface.co/Systran/faster-whisper-small/resolve/536b0662742c02347bc0e980a01041f333bce120/README.md — 1,998 bytes、SHA-256 `329373481008c7c38654aff8ecdcf0163c211557cc7ba8e2ef6f2f84b4f75ec8`、front matter `license: mit`
 - Foundry Local CLI / execution provider reference: https://learn.microsoft.com/azure/foundry-local/reference/reference-cli — CLIはpreview、CUDA EPはNVIDIA SDK EULA対象と記載
 
-Windows Japanese TTS controlはインストール済み`Microsoft Haruka Desktop`でローカル生成した機構確認用であり、音声またはvoice componentを製品へ再配布する判断ではない。PK-001は採用CPU workerのtransitive wheelをhash固定したが、Foundry CUDA cacheのcopy、Appx/modelの同梱、Python runtime、notice生成は未承認であり、PK-002/PK-004/Q-010まで出荷対象にしない。
+Windows Japanese TTS controlはインストール済み`Microsoft Haruka Desktop`でローカル生成した機構確認用であり、音声またはvoice componentを製品へ再配布する判断ではない。PK-001は採用CPU workerのtransitive wheelをhash固定し、PK-004はCPU model 1件のoffline bundle/cache境界を固定した。Foundry CUDA cacheのcopy、Appx同梱、Python runtime、完全notice、最終package、release承認は未完了であり、PK-002/PK-006/Q-010まで出荷対象にしない。
 
 ## ST-011 Foundry Local文章model受入記録
 
@@ -72,7 +72,7 @@ Windows Japanese TTS controlはインストール済み`Microsoft Haruka Desktop
 | Foundry Local chat model | `qwen3-0.6b-cuda-gpu:2` / cache `v2` | Foundry Local catalog/cache、publisher表示 `Microsoft` | 516,135,598 | 8-file manifest `38dc1ac88c6af4a684f96e8a9b4c30a6bca2671115a84e15189d93d57a10ebbe` | catalogは`apache-2.0`、`reasoning,tool-calling`を宣言。独立配布license reviewは未完了。ST-011ではcontrol/fixture全4入力でaccepted JSON 0件 |
 | Foundry Local chat model | `qwen3-4b-cuda-gpu:2` / cache `v2` | Foundry Local catalog/cache、publisher表示 `Microsoft` | 2,823,706,996 | 9-file manifest `89d232e91d2c130e5ffd38f03776ad47c3b9779c8689e565fd4b2ea483f6e657` | catalogは`apache-2.0`、`reasoning,tool-calling`を宣言。独立配布license reviewは未完了。synthetic schema/IDは通過したがcontrol不合格、fixture accepted JSON 0件 |
 
-両modelは`CUDAExecutionProvider`で実行し、ST-006で固定したCUDA EP 14-file manifest `8248ba49910e8fba56ddc8b4810a55cc9b3a069ca0dc2f7a23cd5f1f9a807021`を使用した。Foundry Local CLI/REST API 0.10.3はpreview、AppxはDeveloper署名であり、model/EPのcache copy、offline bundle、製品同梱、再配布は未承認である。ST-011の不合格をlicense不備と混同せず、機能面ではmanual-only、供給網面ではPK-004/Q-010までblockを維持する。
+両modelは`CUDAExecutionProvider`で実行し、ST-006で固定したCUDA EP 14-file manifest `8248ba49910e8fba56ddc8b4810a55cc9b3a069ca0dc2f7a23cd5f1f9a807021`を使用した。Foundry Local CLI/REST API 0.10.3はpreview、AppxはDeveloper署名である。PK-004は両modelとEP cacheをcondition-falseの非runtime entryとして固定し、bundle/取得経路を与えない。ST-011の不合格をlicense不備と混同せず、機能面ではmanual-only、供給網面では将来の別採用判断とQ-010までblockを維持する。
 
 ## ST-012 render解析runtime受入記録
 
@@ -96,7 +96,7 @@ OpenCV 2 distributionの同居はStage 0環境の観測事実であり、両方�
 | Face Detector model | `blaze_face_short_range.tflite` (`float16/1`) | https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite | 229,746 | `b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f` | MediaPipe Tasks Face DetectorのStage 0入力。モデルカード相当の機能・制約資料は公式Face Detector documentationを参照 |
 | Positive-control image | `portrait.jpg` | https://storage.googleapis.com/mediapipe-assets/portrait.jpg | 176,561 | `a6f11efaa834706db23f275b6115058fa87fc7f14362681e6abe14e82749de3e` | benchmark正例だけに使用。MediaPipe vision testdataの`BUILD` packageは`licenses = ["notice"]`（Apache-2.0）を宣言。製品素材へ同梱しない |
 
-モデルと正例assetは取得後にbyte sizeとSHA-256を検査し、一致した場合だけ原子的にcacheへ昇格する。cacheがないclean環境では固定HTTPS配布元への到達が必要であり、offline bundle、silent update禁止、最終Model BOMはF-008/PK-004で実装する。ST-010の0件結果は自動顔リフレームの採用根拠にせず、ST-015の人判断まで手動layout/keyframeを推奨する。
+モデルと正例assetは取得後にbyte sizeとSHA-256を検査した。PK-004は顔modelを非runtime entryとして固定し、取得・bundle経路を与えないため、製品起動時のHTTPS fallbackは存在しない。ST-010の0件結果は自動顔リフレームの採用根拠にせず、正例annotationと別承認が成立するまで手動layout/keyframeを維持する。
 
 ## ST-016 音響model・runtime受入記録
 
@@ -123,7 +123,7 @@ license evidence:
 - PyAV v18.1.0 `LICENSE.txt`（BSD-3-Clause）: https://raw.githubusercontent.com/PyAV-Org/PyAV/v18.1.0/LICENSE.txt — 1,505 bytes、SHA-256 `76af0461ffb92e19f1c14449e95557d83a2dfaa1baf202d49e5f1d8746c0da19`
 - NumPy v2.5.2 `LICENSE.txt`（BSD-3-Clause。wheel内の追加第三者licenseは最終notice生成時に別途収集）: https://raw.githubusercontent.com/numpy/numpy/v2.5.2/LICENSE.txt — 1,543 bytes、SHA-256 `1be1df33863f97a7bc1c4d67980bd6c69c9a6fef0a5ee76e6ad6cb91e56e8491`
 
-YAMNetとSileroのscore/thresholdはStage 0比較設定であり、productionの合否値ではない。YAMNetのcough候補は正例対照と人手annotationがないため、手動試聴なしに削除候補を確定しない。採用CPU workerのtransitive wheel hash lockはPK-001で完了した。offline model bundleと全license noticeの生成はPK-004/Q-010で完了させる。
+YAMNetとSileroのscore/thresholdはStage 0比較設定であり、productionの合否値ではない。YAMNetのcough候補は正例対照と人手annotationがないため、手動試聴なしに削除候補を確定しない。採用CPU workerのtransitive wheel hash lockはPK-001、採用ASR modelのoffline bundle/cache境界はPK-004で完了した。完全なlicense notice、最終package照合、SBOM、release承認はQ-010まで未完了である。
 
 ## ST-014 Windows package toolchain受入記録
 
@@ -136,7 +136,7 @@ YAMNetとSileroのscore/thresholdはStage 0比較設定であり、productionの
 | Package tool | x64 `makeappx.exe` | 上記BuildTools package | 567,328 | `9981418e9a18a9aa19bb69f835137a3bf8fe2e6fe7e18d5ca9b76191cc331f3f` | MSIX pack/unpackに使用。tool自体はStage 0 MSIXへ同梱していない |
 | License evidence | Windows SDK license RTF | `https://download.microsoft.com/download/0/F/F/0FF2B061-47DD-4F55-89B6-FD1D8C44F14D/sdk_license.rtf` | 246,945 | `dd07eb178e00c6bba4148457fc00ff77cd4887eb521d504186fe59c9ec8bbe62` | binary RTFのため本文条件を本記録で要約・断定しない。署名済み配布前に組織のlicense reviewを必須とする |
 
-BuildToolsはexact NuGet lock（content hash `ju02pHSp1LDEIvFgLIDbCbXGPpTTrXJrH90HxC6neclpbRpdS8RxeRbYOzPQFByUPCgT/Egbz4s/cpNMamW1Sg==`）からrestoreした。WinApp CLI 0.6.1は実機に存在したが、暗黙のBuildTools取得が再現不能だったためfinal runのpackage構築には使用していない。完全な.NET runtime notice、Windows SDK license承認、FFmpeg/model notice、SBOMはPK-002/PK-003/PK-004/Q-010で完了させる。
+BuildToolsはexact NuGet lock（content hash `ju02pHSp1LDEIvFgLIDbCbXGPpTTrXJrH90HxC6neclpbRpdS8RxeRbYOzPQFByUPCgT/Egbz4s/cpNMamW1Sg==`）からrestoreした。WinApp CLI 0.6.1は実機に存在したが、暗黙のBuildTools取得が再現不能だったためfinal runのpackage構築には使用していない。完全な.NET runtime notice、Windows SDK license承認、FFmpeg/model notice、最終package SBOMはPK-002/PK-006/Q-010で完了させる。
 
 ## ST-013 WebView2 preview runtime受入記録
 

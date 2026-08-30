@@ -47,6 +47,7 @@
 
 # Generated package and release artifacts
 /artifacts/
+/packaging/models/Bundles/
 **/AppPackages/
 *.appx
 *.appxbundle

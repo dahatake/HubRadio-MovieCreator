@@ -1,0 +1,422 @@
+{
+  "schemaVersion": "1.0.0",
+  "catalogId": "hubradio-model-catalog",
+  "generatedFrom": "docs/dev/licenses/models.csv",
+  "policy": {
+    "localProcessingOnly": true,
+    "networkAcquisitionEnabled": false,
+    "silentUpgradeEnabled": false,
+    "runtimeDispositionAllowlist": [
+      "adopted-conditional"
+    ],
+    "cacheSubdirectory": "cache/models",
+    "releaseApproved": false
+  },
+  "models": [
+    {
+      "modelId": "asr.faster-whisper-small.cpu-int8",
+      "identity": "Systran/faster-whisper-small",
+      "version": "revision 536b0662742c02347bc0e980a01041f333bce120",
+      "purpose": "Local Japanese ASR baseline",
+      "disposition": "adopted-conditional",
+      "consentStatus": "not-required",
+      "runtimeEligible": true,
+      "releaseApproved": false,
+      "sourceEvidence": "https://huggingface.co/Systran/faster-whisper-small/tree/536b0662742c02347bc0e980a01041f333bce120",
+      "artifactEvidence": {
+        "kind": "artifact-manifest",
+        "sha256": "4e924b13871cadaa18f24bf888a6388e45d15da56e06b0b90141dc27d96e951f",
+        "byteSize": 486212372,
+        "fileCount": 4
+      },
+      "license": {
+        "status": "verified-model-card",
+        "declaredSpdx": "MIT",
+        "evidence": "https://huggingface.co/Systran/faster-whisper-small/resolve/536b0662742c02347bc0e980a01041f333bce120/README.md",
+        "evidenceSha256": "329373481008c7c38654aff8ecdcf0163c211557cc7ba8e2ef6f2f84b4f75ec8",
+        "releaseNoticeComplete": false
+      },
+      "bundle": {
+        "relativePath": "Bundles/faster-whisper-small-536b0662742c02347bc0e980a01041f333bce120",
+        "manifestSha256": "4e924b13871cadaa18f24bf888a6388e45d15da56e06b0b90141dc27d96e951f",
+        "totalBytes": 486212372,
+        "files": [
+          {
+            "name": "config.json",
+            "byteSize": 2370,
+            "sha256": "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828"
+          },
+          {
+            "name": "model.bin",
+            "byteSize": 483546902,
+            "sha256": "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671"
+          },
+          {
+            "name": "tokenizer.json",
+            "byteSize": 2203239,
+            "sha256": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab"
+          },
+          {
+            "name": "vocabulary.txt",
+            "byteSize": 459861,
+            "sha256": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+          }
+        ]
+      },
+      "conditions": [
+        "CPU int8 is the mandatory runtime path.",
+        "CUDA runtime redistribution is not approved.",
+        "Accuracy and production thresholds are not approved.",
+        "Q-010 must close release notices and vulnerability review."
+      ],
+      "evidence": [
+        "benchmarks/results/asr-benchmark.json",
+        "docs/dev/decisions/ADR-0007-stage-0-technology-selection.md",
+        "docs/dev/licenses/third-party-intake.md"
+      ]
+    },
+    {
+      "modelId": "asr.foundry-whisper-small.cuda",
+      "identity": "openai-whisper-small-cuda-gpu",
+      "version": "Foundry Local model id openai-whisper-small-cuda-gpu:3",
+      "purpose": "Alternative local ASR benchmark",
+      "disposition": "held",
+      "consentStatus": "unverified",
+      "runtimeEligible": false,
+      "releaseApproved": false,
+      "sourceEvidence": null,
+      "artifactEvidence": {
+        "kind": "artifact-manifest",
+        "sha256": "003489877f5a82eccbaeb435e520fb1656780331f26ae7cb4f03bbb15f8f64f8",
+        "byteSize": 316267930,
+        "fileCount": 17
+      },
+      "license": {
+        "status": "catalog-declared-only",
+        "declaredSpdx": "Apache-2.0",
+        "evidence": "benchmarks/results/asr-benchmark.json#/models/foundryLocalWhisperSmall",
+        "evidenceSha256": null,
+        "releaseNoticeComplete": false
+      },
+      "bundle": null,
+      "conditions": [
+        "The engine supplied no segment or word timestamps and no engine duration.",
+        "Do not copy or bundle the Foundry cache.",
+        "Independent distribution review remains open."
+      ],
+      "evidence": [
+        "benchmarks/results/asr-benchmark.json",
+        "benchmarks/results/stage-0-report.md",
+        "docs/dev/decisions/ADR-0007-stage-0-technology-selection.md"
+      ]
+    },
+    {
+      "modelId": "diarization.pyannote-community-1",
+      "identity": "pyannote/speaker-diarization-community-1",
+      "version": "Community-1; exact revision not acquired",
+      "purpose": "Speaker diarization candidate",
+      "disposition": "condition-false",
+      "consentStatus": "required-not-accepted",
+      "runtimeEligible": false,
+      "releaseApproved": false,
+      "sourceEvidence": null,
+      "artifactEvidence": null,
+      "license": {
+        "status": "terms-not-accepted",
+        "declaredSpdx": "CC-BY-4.0",
+        "evidence": "docs/dev/licenses/third-party-intake.md",
+        "evidenceSha256": null,
+        "releaseNoticeComplete": false
+      },
+      "bundle": null,
+      "conditions": [
+        "Do not download, cache, implement, or distribute.",
+        "Reconsider only after authorized terms acceptance and contact-sharing review.",
+        "Exact revision, model-card evidence, and weight hash are absent."
+      ],
+      "evidence": [
+        "docs/dev/licenses/third-party-intake.md",
+        "docs/dev/decisions/ADR-0007-stage-0-technology-selection.md"
+      ]
+    },
+    {
+      "modelId": "vision.blazeface-short-range",
+      "identity": "MediaPipe BlazeFace short-range",
+      "version": "float16/1",
+      "purpose": "Face bounding-box benchmark for reframing",
+      "disposition": "held",
+      "consentStatus": "not-required",
+      "runtimeEligible": false,
+      "releaseApproved": false,
+      "sourceEvidence": "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
+      "artifactEvidence": {
+        "kind": "artifact-file",
+        "sha256": "b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f",
+        "byteSize": 229746,
+        "fileCount": 1
+      },
+      "license": {
+        "status": "verified-upstream-reference",
+        "declaredSpdx": "Apache-2.0",
+        "evidence": "docs/dev/licenses/third-party-intake.md",
+        "evidenceSha256": null,
+        "releaseNoticeComplete": false
+      },
+      "bundle": null,
+      "conditions": [
+        "A-013 remains held after zero detections in 300 fixture samples.",
+        "Require representative annotation and re-evaluation before adoption."
+      ],
+      "evidence": [
+        "benchmarks/results/face-detection.json",
+        "docs/dev/decisions/ADR-0007-stage-0-technology-selection.md"
+      ]
+    },
+    {
+      "modelId": "vision.blazeface-full-range",
+      "identity": "MediaPipe BlazeFace full-range",
+      "version": "exact upstream revision not recorded",
+      "purpose": "Unbenchmarked long-range face-detector cache candidate",
+      "disposition": "benchmark-only",
+      "consentStatus": "unverified",
+      "runtimeEligible": false,
+      "releaseApproved": false,
+      "sourceEvidence": null,
+      "artifactEvidence": {
+        "kind": "artifact-file-local-cache",
+        "sha256": "3698b18f063835bc609069ef052228fbe86d9c9a6dc8dcb7c7c2d69aed2b181b",
+        "byteSize": 1083786,
+        "fileCount": 1
+      },
+      "license": {
+        "status": "pending",
+        "declaredSpdx": null,
+        "evidence": null,
+        "evidenceSha256": null,
+        "releaseNoticeComplete": false
+      },
+      "bundle": null,
+      "conditions": [
+        "Local cache presence is not provenance or adoption.",
+        "Source URL, exact revision, model-card evidence, and annotated benchmark are absent."
+      ],
+      "evidence": [
+        "benchmarks/results/face-detection.json",
+        "docs/dev/licenses/models.csv"
+      ]
+    },
+    {
+      "modelId": "audio.yamnet",
+      "identity": "YAMNet audio classifier",
+      "version": "float32/1",
+      "purpose": "Audio-event review candidate benchmark",
+      "disposition": "held",
+      "consentStatus": "not-required",
+      "runtimeEligible": false,
+      "releaseApproved": false,
+      "sourceEvidence": "https://storage.googleapis.com/mediapipe-models/audio_classifier/yamnet/float32/1/yamnet.tflite",
+      "artifactEvidence": {
+        "kind": "artifact-file",
+        "sha256": "4d8b4a53282dc83ef04e3e7dbc4fbc98082e34e44ed798e16c3a0cdd4c584faf",
+        "byteSize": 4126810,
+        "fileCount": 1
+      },
+      "license": {
+        "status": "verified-upstream-reference",
+        "declaredSpdx": "Apache-2.0",
+        "evidence": "https://raw.githubusercontent.com/tensorflow/models/master/LICENSE",
+        "evidenceSha256": "5b17814bf0de8cf65069bc6d7cc38cff19fcaa864d243423ad3ef3db01b52385",
+        "releaseNoticeComplete": false
+      },
+      "bundle": null,
+      "conditions": [
+        "Cough and noise candidates require manual listening.",
+        "No production threshold or automatic deletion is approved."
+      ],
+      "evidence": [
+        "benchmarks/results/audio-event-and-recording-quality.json",
+        "benchmarks/results/stage-0-report.md"
+      ]
+    },
+    {
+      "modelId": "audio.silero-vad-v6",
+      "identity": "Silero VAD",
+      "version": "v6.0 asset silero_vad_v6.onnx",
+      "purpose": "Speech and wait-candidate mechanism benchmark",
+      "disposition": "benchmark-only",
+      "consentStatus": "not-required",
+      "runtimeEligible": false,
+      "releaseApproved": false,
+      "sourceEvidence": "https://github.com/snakers4/silero-vad/tree/v6.0",
+      "artifactEvidence": {
+        "kind": "artifact-file",
+        "sha256": "4cbf549b8326f60f80f2536d9eefeb450a9abe83365a098031c89719f1be17d2",
+        "byteSize": 1245151,
+        "fileCount": 1
+      },
+      "license": {
+        "status": "verified-upstream-reference",
+        "declaredSpdx": "MIT",
+        "evidence": "https://raw.githubusercontent.com/snakers4/silero-vad/v6.0/LICENSE",
+        "evidenceSha256": "2e63e9a38b6e8fc0c7bc37ce174caca1862870856c6daf5697cfb785e925520b",
+        "releaseNoticeComplete": false
+      },
+      "bundle": null,
+      "conditions": [
+        "A-018 must select and lock any adopted VAD method.",
+        "Preserve SYSTRAN and Silero notices if the wheel-embedded asset is distributed."
+      ],
+      "evidence": [
+        "benchmarks/results/audio-event-and-recording-quality.json",
+        "docs/dev/licenses/third-party-intake.md"
+      ]
+    },
+    {
+      "modelId": "text.qwen3-0.6b-cuda",
+      "identity": "qwen3-0.6b-cuda-gpu",
+      "version": "Foundry Local model id qwen3-0.6b-cuda-gpu:2; cache v2",
+      "purpose": "Grounded local text suggestion benchmark",
+      "disposition": "condition-false",
+      "consentStatus": "unverified",
+      "runtimeEligible": false,
+      "releaseApproved": false,
+      "sourceEvidence": null,
+      "artifactEvidence": {
+        "kind": "artifact-manifest",
+        "sha256": "38dc1ac88c6af4a684f96e8a9b4c30a6bca2671115a84e15189d93d57a10ebbe",
+        "byteSize": 516135598,
+        "fileCount": 8
+      },
+      "license": {
+        "status": "catalog-declared-only",
+        "declaredSpdx": "Apache-2.0",
+        "evidence": "benchmarks/results/local-text-model.json",
+        "evidenceSha256": null,
+        "releaseNoticeComplete": false
+      },
+      "bundle": null,
+      "conditions": [
+        "A-015 is condition-false because accepted fixture JSON count was zero.",
+        "Do not implement a client, copy, bundle, or infer release approval."
+      ],
+      "evidence": [
+        "benchmarks/results/local-text-model.json",
+        "docs/dev/decisions/ADR-0007-stage-0-technology-selection.md"
+      ]
+    },
+    {
+      "modelId": "text.qwen3-4b-cuda",
+      "identity": "qwen3-4b-cuda-gpu",
+      "version": "Foundry Local model id qwen3-4b-cuda-gpu:2; cache v2",
+      "purpose": "Grounded local text suggestion benchmark",
+      "disposition": "condition-false",
+      "consentStatus": "unverified",
+      "runtimeEligible": false,
+      "releaseApproved": false,
+      "sourceEvidence": null,
+      "artifactEvidence": {
+        "kind": "artifact-manifest",
+        "sha256": "89d232e91d2c130e5ffd38f03776ad47c3b9779c8689e565fd4b2ea483f6e657",
+        "byteSize": 2823706996,
+        "fileCount": 9
+      },
+      "license": {
+        "status": "catalog-declared-only",
+        "declaredSpdx": "Apache-2.0",
+        "evidence": "benchmarks/results/local-text-model.json",
+        "evidenceSha256": null,
+        "releaseNoticeComplete": false
+      },
+      "bundle": null,
+      "conditions": [
+        "A-015 is condition-false because the control failed and fixture accepted JSON count was zero.",
+        "Do not implement a client, copy, bundle, or infer semantic acceptance."
+      ],
+      "evidence": [
+        "benchmarks/results/local-text-model.json",
+        "docs/dev/decisions/ADR-0007-stage-0-technology-selection.md"
+      ]
+    },
+    {
+      "modelId": "vision.talknet",
+      "identity": "TalkNet",
+      "version": "not acquired",
+      "purpose": "Active-speaker detection candidate for a later stage",
+      "disposition": "held",
+      "consentStatus": "unverified",
+      "runtimeEligible": false,
+      "releaseApproved": false,
+      "sourceEvidence": null,
+      "artifactEvidence": null,
+      "license": {
+        "status": "pending",
+        "declaredSpdx": null,
+        "evidence": null,
+        "evidenceSha256": null,
+        "releaseNoticeComplete": false
+      },
+      "bundle": null,
+      "conditions": [
+        "Do not acquire or implement before Stage 2 evidence.",
+        "Require a real-material PoC, exact dependency lock, model license, and weight hash."
+      ],
+      "evidence": [
+        "docs/dev/licenses/third-party-intake.md"
+      ]
+    },
+    {
+      "modelId": "vision.sam2",
+      "identity": "SAM 2",
+      "version": "not acquired",
+      "purpose": "Selected-subject tracking candidate for a later stage",
+      "disposition": "held",
+      "consentStatus": "unverified",
+      "runtimeEligible": false,
+      "releaseApproved": false,
+      "sourceEvidence": null,
+      "artifactEvidence": null,
+      "license": {
+        "status": "pending",
+        "declaredSpdx": null,
+        "evidence": null,
+        "evidenceSha256": null,
+        "releaseNoticeComplete": false
+      },
+      "bundle": null,
+      "conditions": [
+        "Do not acquire or implement before Stage 2 evidence.",
+        "Require a real-material PoC, exact dependency lock, model license, and weight hash."
+      ],
+      "evidence": [
+        "docs/dev/licenses/third-party-intake.md"
+      ]
+    },
+    {
+      "modelId": "audio.deepfilternet",
+      "identity": "DeepFilterNet",
+      "version": "not acquired",
+      "purpose": "Audio enhancement candidate for a later stage",
+      "disposition": "held",
+      "consentStatus": "unverified",
+      "runtimeEligible": false,
+      "releaseApproved": false,
+      "sourceEvidence": null,
+      "artifactEvidence": null,
+      "license": {
+        "status": "pending",
+        "declaredSpdx": null,
+        "evidence": null,
+        "evidenceSha256": null,
+        "releaseNoticeComplete": false
+      },
+      "bundle": null,
+      "conditions": [
+        "Do not acquire or implement before Stage 2 evidence.",
+        "Require A/B quality evaluation, exact dependency lock, model license, and weight hash."
+      ],
+      "evidence": [
+        "docs/dev/licenses/third-party-intake.md"
+      ]
+    }
+  ]
+}
