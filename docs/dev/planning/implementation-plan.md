@@ -6,7 +6,7 @@
 **計画日:** 2026年8月26日  
 **計画状態:** Stage 0は2026年8月27日に人手承認済み。
 
-2026年8月31日時点で118/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-012、A-001〜A-009、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006〜S-010/S-012/S-014/S-015、Z-001〜Z-007、PK-001〜PK-005を実装・検証した。`PK-006`はPackaging Project、unsigned manual fallback、unpack verifierまで実装済みだが、別のclean Windowsへのinstall証拠を待つため完了数へ含めない。
+2026年8月31日時点で119/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-012、A-001〜A-009/A-011、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006〜S-010/S-012/S-014/S-015、Z-001〜Z-007、PK-001〜PK-005を実装・検証した。`PK-006`はPackaging Project、unsigned manual fallback、unpack verifierまで実装済みだが、別のclean Windowsへのinstall証拠を待つため完了数へ含めない。
 
 `S-003`のコードは実装済みだが、別の非管理者Windows accountによる受入証拠を待つため完了数へ含めない。
 
@@ -18,13 +18,13 @@
 
 `PK-001`はWindows x64 / CPython 3.12向けruntime 25件とtest-only 4件のwheelをexact-version・SHA-256・binary-onlyで固定し、同一hostのfresh CPython 3.12.10 AMD64 venvでdownload済みwheelhouseだけから全29件をoffline再現した。`pip check`、version checks、worker 80/80、wheel filename/size/hash/artifact-set hash、canonical Release buildは成功した。これは別のclean Windows machine、Python runtime、ASR model、CUDA、MSIX、完全なlicense/CVE/SBOM、release readinessを証明しない。
 
-`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中85件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。
+`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中84件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。
 
 SQLite業務store、永続job、worker protocol、編集操作、review/approval、durable媒体取込・PTS・proxy・waveform/sprite、固定CPU ASR runner、元音声抽出とdecoded-frame基準の元時刻写像、worker結果のTranscriptRevision正規化、人による不変Transcript改訂、案件/シリーズ用語辞書CRUD、ローカル文字起こしsensitivity candidate scan、ACL、audit、backup/restore、Japan Eastの限定Azure評価resource、desktop Entra authentication、選択spanだけをmaskして送信前diffと送信先条件を表示しdigestへ結合するlocal-only payload確認境界まで実装済みである。
 
 実コンテンツのnetwork送信、response validation、fallback、ModelRun監査、end-user cloud feature、業務UI、用語不一致候補以降の解析、Render IR以降、配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布、release readinessは未承認。
 
-`PK-006`のclean Windows install gateは保留し、依存解放済みの`A-011`から実行可能なtaskを継続する。`Z-008`は2つ目の実在する生成系文章候補実装が現れるまで開始せず、A-009の削除候補をその条件へ読み替えない。held taskは成立証拠と別承認なしに解除しない。
+`PK-006`のclean Windows install gateは保留し、依存解放済みの`A-014`から実行可能なtaskを継続する。`Z-008`は2つ目の実在する生成系文章候補実装が現れるまで開始せず、A-009の削除候補をその条件へ読み替えない。held taskは成立証拠と別承認なしに解除しない。
 
 ---
 
@@ -312,6 +312,8 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 **A-009も完了。** 未測定の時間・類似度閾値を導入せず、構造的に隣接する同一話者の発話全体または同一sentence内で直結するtoken blockだけをNFKC exact一致で検出する。後側だけをrevision digest、SourceSpan、根拠token、比較token、versioned rule、決定的candidate keyへ結合したimmutable Proposed候補として返し、自動削除APIとconfidenceを持たない。rolling hashはpre-filterに限定して必ずexact比較し、比較work budget、入力size、canonical ID、nested型、候補整合性をfail closedで検証した。worker 104件、runtime 2独立build、空PATH実行、unsigned MSIX 2独立payloadとstrict unpack検証を通したが、clean-machine installとrelease gateは未成立である。
 
+**A-011も完了。** Transcript schemaへperformer assignmentを混入させず、anonymous speaker IDをProjectのPerformerへ手動で結ぶ独立immutable revision chainを実装した。氏名と役割はPerformerからsnapshot化し、姓は文化依存の推測をせずactor-confirmed値を明示入力する。full name、surname、role、hiddenをtypedに解決し、未割当は元の匿名labelへ戻す。exact Project/Transcript revision digest、parent revision、actor SID、理由、単調timestamp、previous/current diffを保持し、未確認の肩書・所属はtyped warning flagにする。解除後再割当、no-op、stale context、欠落ID、malformed Unicode、read-only historyをfocused 11件で検証した。
+
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
 | A-001 | **完了。** 採用したASR runnerを1つだけ実装する | `WORKER/tasks/transcribe.py`、worker tests | ST-006,ST-007,J-005,M-006 / `L-M` | 固定model hash・設定でsegment/token/confidenceを出す | FR-002 | ローカル処理 |
@@ -324,7 +326,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | A-008 | **完了。** 「ここはカット」等の明示語句候補を実装する | `APP/Analysis/EditorialPhraseDetector.cs`、tests | A-004,D-006 / `L-C` | requirement-explicit phraseだけのclosed versioned dictionary、exact NFKC token evidence、partial/untimed range disclosure、理由付きProposed候補を実装。fuzzy/自動削除なし | FR-005 | なし |
 | A-009 | **完了。** 近接反復/言い直し候補の決定論的baselineを実装する | `WORKER/tasks/repetition.py`、tests | A-004,J-005 / `L-M` | 構造的隣接とNFKC exact一致だけを使い、後側をrevision/source/token証拠と決定的keyへ結合したimmutable Proposed候補として返す。rolling hash後のexact確認、work budget、private fail-closedを検証し、自動削除しない | FR-005 | ローカル処理 |
 | A-010 | **condition-false。** pyannote話者分離は実装しない | （成果物なし） | P-008 / 条件付き `L-M` | 利用条件不同意を記録済み。worker/modelを配布せず、A-011の手動speaker割当を使う。将来は明示同意、license/hash固定、別承認後に再計画 | FR-003 | ローカル処理 |
-| A-011 | 匿名speaker clusterを出演者へ手動割当する | `APP/Speakers/SpeakerAssignmentService.cs`、tests | D-005,A-003 / `L-C` | full/姓/役割/非表示と改訂履歴を保持 | FR-003、BR-002 | なし |
+| A-011 | **完了。** 匿名speaker clusterを出演者へ手動割当する | `APP/Speakers/SpeakerAssignmentService.cs`、tests | D-005,A-003 / `L-C` | Transcriptを不変に保ち、Project/Transcript digestへ結合したmanual assignment revision chainでfull/明示surname/role/hidden、匿名fallback、肩書未確認warning、再割当/解除履歴を保持 | FR-003、BR-002 | なし |
 | A-012 | **再評価保留。** shot境界taskは正例annotation取得後に再評価する | （保留、成果物なし） | ST-009 + 正例annotation + 別承認 / 条件付き `L-M` | fixture 3構成の境界0件とcontrol成功を保持し、thresholdを選ばない。topic/transitionはtranscript規則、編集境界、手動操作を使う | FR-006/016 | ローカル処理 |
 | A-013 | **再評価保留。** face bbox taskは代表fixtureのannotation取得後に再評価する | （保留、成果物なし） | ST-010 + face annotation + 別承認 / 条件付き `L-M` | positive control 1件、fixture 300/300 frame検出0件を保持し、confidenceを選ばない。layout/字幕/thumbnailは手動領域と版付きsafe zoneを使う | FR-010/014/021 | ローカル処理 |
 | A-014 | 発話とtranscript規則を使うtopic境界baselineを実装する | `APP/Analysis/TopicBoundaryService.cs`、tests | A-004,D-006 / `L-C` | 境界理由を表示し、人が開始/終了を修正可能。shot境界はA-012が将来採用された場合だけ任意入力にする | FR-006 | なし |
@@ -675,4 +677,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**`PK-006`は同一host実装・unpack検証済みだが、別のclean Windowsへのinstall証拠を待つため未完了のまま保持する。次は依存解放済みの`A-011`から実行可能なtaskを継続する。未完了は残り85 taskである。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在する生成系文章候補実装が揃うまで抽象もsenderも作らず、A-009の削除候補をその条件へ読み替えない。**
+**`PK-006`は同一host実装・unpack検証済みだが、別のclean Windowsへのinstall証拠を待つため未完了のまま保持する。次は依存解放済みの`A-014`から実行可能なtaskを継続する。未完了は残り84 taskである。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在する生成系文章候補実装が揃うまで抽象もsenderも作らず、A-009の削除候補をその条件へ読み替えない。**
