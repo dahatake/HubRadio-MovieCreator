@@ -13,7 +13,7 @@ public sealed class PythonRuntimePackageManifestTests
     private const string RuntimeWheelSetSha256 =
         "a08c4fafe13d834fdbdbdf031774b0b57f7dd03227700a8b525d0193f707f141";
     private const string WorkerSourceSetSha256 =
-        "6af6e608d0778200d9b55393384af477b6ae3b3e28a251cba04f146314ba430c";
+        "a190c26138bf07a3070ca086e2370c911e4dd0541e192591657d66da99564c9d";
 
     [TestMethod]
     public void RuntimeManifest_PinsOfficialWindowsX64EmbeddableArtifactAndIsolation()
@@ -95,10 +95,10 @@ public sealed class PythonRuntimePackageManifestTests
             File.ReadAllLines(Path.Combine(root, "packaging", "python", "python312._pth")));
 
         JsonElement output = manifest.GetProperty("output");
-        Assert.AreEqual(2694, output.GetProperty("expectedFileCount").GetInt32());
-        Assert.AreEqual(268_422_987, output.GetProperty("expectedTotalBytes").GetInt64());
+        Assert.AreEqual(2695, output.GetProperty("expectedFileCount").GetInt32());
+        Assert.AreEqual(268_442_311, output.GetProperty("expectedTotalBytes").GetInt64());
         Assert.AreEqual(
-            "4ed693b55b4b2198f549b5bdce1b68cb8a77e1167cdb6c3721a5d0fa44baa905",
+            "1ef1e9fca2b89c006f6030de0b315a9255c9b969fdf3ac7cc36a30aeb412ab7f",
             output.GetProperty("expectedArtifactSetSha256").GetString());
     }
 
@@ -145,7 +145,7 @@ public sealed class PythonRuntimePackageManifestTests
             .EnumerateArray()
             .OrderBy(static file => file.GetProperty("path").GetString(), StringComparer.Ordinal)
             .ToArray();
-        Assert.AreEqual(5, expectedFiles.Length);
+        Assert.AreEqual(6, expectedFiles.Length);
 
         string[] actualPaths = Directory
             .EnumerateFiles(Path.Combine(workerRoot, "hubradio_worker"), "*.py", SearchOption.AllDirectories)

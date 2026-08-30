@@ -18,7 +18,7 @@ This is PK-006 development evidence only. It does not claim package signing, tru
 
 ## Measured same-host evidence
 
-- Two independent builds produced the same 3,265-file, 1,224,299,374-byte payload set with SHA-256 `7a547babac5510c531ec75faad940d7b69ebb393eb2ea557ac48e4143c142504`.
+- Two independent builds produced the same 3,266-file, 1,224,383,084-byte payload set with SHA-256 `b15f5b967f900fa1ce65539cc56733016ad3eb9e42d3e54fe50f3c5335928e73`.
 - The outer MSIX hashes differed because MakeAppx recorded container metadata; no outer-byte reproducibility claim is made.
 - Strict unpack verification passed for the complete payload, SHA-256 block map, manifest, fixed component evidence, isolated worker health/protocol, FFmpeg/ffprobe, offline CPU/int8 model load, closed Web bundle, and WinUI/WebView2 startup/recovery.
 - `dotnet publish` omitted `App.xbf`, `MainWindow.xbf`, and `HubRadio.App.pri`; the fallback therefore uses the complete self-contained `dotnet build` output consumed by the packaging boundary.

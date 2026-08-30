@@ -107,9 +107,9 @@
   },
   "workerSource": {
     "root": "src/HubRadio.Worker/src",
-    "fileCount": 5,
-    "totalBytes": 25762,
-    "artifactSetSha256": "6af6e608d0778200d9b55393384af477b6ae3b3e28a251cba04f146314ba430c",
+    "fileCount": 6,
+    "totalBytes": 45086,
+    "artifactSetSha256": "a190c26138bf07a3070ca086e2370c911e4dd0541e192591657d66da99564c9d",
     "files": [
       {
         "path": "hubradio_worker/__init__.py",
@@ -132,6 +132,11 @@
         "sha256": "a61915562de52e5d549727365641a4a114ddbfcb6855e46f266eb62159907cd6"
       },
       {
+        "path": "hubradio_worker/tasks/repetition.py",
+        "byteSize": 19324,
+        "sha256": "a74551eb7a7a34cf60f1bdff78a0e1baa9b69f5af04fee1ddaca2fc4341f1c59"
+      },
+      {
         "path": "hubradio_worker/tasks/transcribe.py",
         "byteSize": 17031,
         "sha256": "1b624974063aa84490f9f82c543848990e6c9b30b83284c3a7db28ee4576f5f5"
@@ -142,9 +147,9 @@
     "rootName": "HubRadio.WorkerRuntime",
     "fileManifestName": "runtime-files.json",
     "entryPoint": "python.exe",
-    "expectedFileCount": 2694,
-    "expectedTotalBytes": 268422987,
-    "expectedArtifactSetSha256": "4ed693b55b4b2198f549b5bdce1b68cb8a77e1167cdb6c3721a5d0fa44baa905",
+    "expectedFileCount": 2695,
+    "expectedTotalBytes": 268442311,
+    "expectedArtifactSetSha256": "1ef1e9fca2b89c006f6030de0b315a9255c9b969fdf3ac7cc36a30aeb412ab7f",
     "healthArguments": [
       "-I",
       "-B",
