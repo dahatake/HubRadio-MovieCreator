@@ -10,6 +10,8 @@ internal static class Program
     private const uint JobObjectLimitProcessMemory = 0x00000100;
     private const uint JobObjectLimitActiveProcess = 0x00000008;
     private const uint JobObjectLimitKillOnJobClose = 0x00002000;
+    private const uint SemFailCriticalErrors = 0x0001;
+    private const uint SemNoGpFaultErrorBox = 0x0002;
     private const int JobObjectBasicAccountingInformationClass = 1;
     private const int JobObjectBasicProcessIdList = 3;
     private const int JobObjectExtendedLimitInformationClass = 9;
@@ -40,6 +42,7 @@ internal static class Program
             return args[0] switch
             {
                 "self-test" => await RunSelfTestAsync(),
+                "kill-on-close" => await RunKillOnCloseAsync(),
                 "crash-host" => await RunCrashHostAsync(RequireArgument(args, 1, "state path")),
                 "wait-child" => await RunWaitChildAsync(args),
                 "wait-grandchild" => await RunWaitGrandchildAsync(RequireArgument(args, 1, "PID path")),
@@ -73,6 +76,16 @@ internal static class Program
         };
         Console.WriteLine(JsonSerializer.Serialize(report, JsonOptions));
         return 0;
+    }
+
+    private static async Task<int> RunKillOnCloseAsync()
+    {
+        Dictionary<string, object?> result = await TestKillOnCloseAsync();
+        Console.WriteLine(JsonSerializer.Serialize(result, JsonOptions));
+        return result.TryGetValue("passed", out object? passed) &&
+            passed is true
+                ? 0
+                : 1;
     }
 
     private static async Task<Dictionary<string, object?>> TestKillOnCloseAsync()
@@ -257,17 +270,23 @@ internal static class Program
         File.WriteAllText(go, string.Empty);
         await WaitForFileAsync(grandchildPid, TimeSpan.FromSeconds(10));
         int grandchildProcessId = int.Parse(await File.ReadAllTextAsync(grandchildPid));
+        using Process grandchildProcess = Process.GetProcessById(grandchildProcessId);
         Dictionary<string, object?> state = new()
         {
             ["hostProcessId"] = Environment.ProcessId,
             ["childProcessId"] = child.Id,
+            ["childStartTimeUtc"] = child.StartTime.ToUniversalTime(),
             ["grandchildProcessId"] = grandchildProcessId,
+            ["grandchildStartTimeUtc"] = grandchildProcess.StartTime.ToUniversalTime(),
             ["childInJob"] = IsProcessInSpecificJob(child.Id, job),
             ["grandchildInJob"] = IsProcessInSpecificJob(grandchildProcessId, job),
             ["temporaryDirectory"] = work,
             ["ready"] = true,
         };
         await WriteJsonAtomicallyAsync(statePath, state);
+        _ = SetErrorMode(SemFailCriticalErrors | SemNoGpFaultErrorBox);
+        Console.Error.WriteLine("Intentional ST-014 crash-host termination.");
+        Console.Error.Flush();
         Environment.FailFast("Intentional ST-014 crash-host termination.");
         return 99;
     }
@@ -785,6 +804,9 @@ internal static class Program
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeJobHandle CreateJobObject(IntPtr jobAttributes, string? name);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint SetErrorMode(uint mode);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

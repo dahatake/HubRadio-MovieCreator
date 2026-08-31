@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>HubRadio.Q007.JobRecoveryProbe</AssemblyName>
+    <RootNamespace>HubRadio.Q007.JobRecoveryProbe</RootNamespace>
+    <WindowsPackageType>None</WindowsPackageType>
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
+    <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\HubRadio.App\HubRadio.App.csproj" />
+    <ProjectReference Include="..\..\..\src\HubRadio.Core\HubRadio.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\HubRadio.Infrastructure\HubRadio.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

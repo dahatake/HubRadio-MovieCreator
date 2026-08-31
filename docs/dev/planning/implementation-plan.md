@@ -6,7 +6,7 @@
 **計画日:** 2026年8月26日  
 **計画状態:** Stage 0は2026年8月27日に人手承認済み。
 
-2026年8月31日時点で124/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-012、A-001〜A-009/A-011/A-014/A-018〜A-021、R-001〜R-009/R-016、U-001〜U-004、S-001/S-002/S-004/S-006〜S-010/S-012/S-014/S-015、Z-001〜Z-007、PK-001〜PK-005を実装・検証した。`PK-006`はPackaging Project、unsigned manual fallback、unpack verifierまで実装済みだが、別のclean Windowsへのinstall証拠を待つため完了数へ含めない。
+2026年8月31日時点で138/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-012、A-001〜A-009/A-011/A-014/A-016〜A-021、R-001〜R-018/R-025、U-001〜U-004、S-001/S-002/S-004〜S-010/S-012〜S-015、Z-001〜Z-007、PK-001〜PK-005、Q-007を実装・検証した。`PK-006`はPackaging Project、unsigned manual fallback、unpack verifierまで実装済みだが、別のclean Windowsへのinstall証拠を待つため完了数へ含めない。
 
 `S-003`のコードは実装済みだが、別の非管理者Windows accountによる受入証拠を待つため完了数へ含めない。
 
@@ -14,17 +14,17 @@
 
 `M-012`は専用の8件の合成敵対試験で、traversal、UNC、device namespace、ADSを拒否し、option風source名をGUID staging名へ隔離して全media toolへ単一の`ArgumentList` tokenとして渡すことを確認した。wrong magicとtruncated `ftyp`、承認済み実FFprobeによる合成破損container、巨大・深層metadata、stdout/stderr各1 MiB超の出力、停止しないhelperをfail-closedまたは期限内終了とし、例外へ入力内容・pathを複製しないことも検証した。これは合成入力と当該承認済みFFprobeに対する証拠であり、任意のmedia resource bomb、production resource閾値、`Q-008`受入の代替ではない。
 
-`S-014`は現在のclosed surfaceを対象に、React text interpolationのescapeと危険なraw-HTML/dynamic-code sink不在、bridge/workerのXSS・shell・filter・Unicode confusable風unknown method拒否、worker CLIのexact option、process引数のstrict UTF-16/NUL拒否とmetacharacter・改行の単一token往復を検証した。調査中に.NET argvのNUL後半切断・不正UTF-16置換と、Python `argparse`のoption省略受理を実測し、内容非開示の早期拒否と`allow_abbrev=False`へ修正した。path、秘密非log、typed transition、固定media filterは既存のArtifactStore、LocalDiagnosticLog、TransitionEmitter、proxy/preview引数試験を再利用した。これは現在のbridge/worker/process/path/filter境界に対する合成自動証拠であり、未実装の業務UI・Render IR、環境依存reparse point、別account ACL、`Q-008`受入の代替ではない。
+`S-014`は現在のclosed surfaceを対象に、React text interpolationのescapeと危険なraw-HTML/dynamic-code sink不在、bridge/workerのXSS・shell・filter・Unicode confusable風unknown method拒否、worker CLIのexact option、process引数のstrict UTF-16/NUL拒否とmetacharacter・改行の単一token往復を検証した。調査中に.NET argvのNUL後半切断・不正UTF-16置換と、Python `argparse`のoption省略受理を実測し、内容非開示の早期拒否と`allow_abbrev=False`へ修正した。path、秘密非log、typed transition、固定media filterは既存のArtifactStore、LocalDiagnosticLog、TransitionEmitter、proxy/preview引数試験を再利用した。これは現在のbridge/worker/process/path/filter境界に対する合成自動証拠である。未実装の業務UI、S-014後に実装したRender IR/FFmpeg compile、環境依存reparse point、別account ACLはS-014の証拠範囲外であり、`Q-008`受入の代替ではない。
 
 `PK-001`はWindows x64 / CPython 3.12向けruntime 25件とtest-only 4件のwheelをexact-version・SHA-256・binary-onlyで固定し、同一hostのfresh CPython 3.12.10 AMD64 venvでdownload済みwheelhouseだけから全29件をoffline再現した。`pip check`、version checks、worker 80/80、wheel filename/size/hash/artifact-set hash、canonical Release buildは成功した。これは別のclean Windows machine、Python runtime、ASR model、CUDA、MSIX、完全なlicense/CVE/SBOM、release readinessを証明しない。
 
-`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中79件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。
+`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中65件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。
 
 SQLite業務store、永続job、worker protocol、編集操作、review/approval、durable媒体取込・PTS・proxy・waveform/sprite、固定CPU ASR runner、元音声抽出とdecoded-frame基準の元時刻写像、worker結果のTranscriptRevision正規化、人による不変Transcript改訂、案件/シリーズ用語辞書CRUD、ローカル文字起こしsensitivity candidate scan、ACL、audit、backup/restore、Japan Eastの限定Azure評価resource、desktop Entra authentication、選択spanだけをmaskして送信前diffと送信先条件を表示しdigestへ結合するlocal-only payload確認境界まで実装済みである。
 
-実コンテンツのnetwork送信、response validation、fallback、ModelRun監査、end-user cloud feature、業務UI、用語不一致候補以降の解析、Render IR以降、配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布、release readinessは未承認。
+実コンテンツのnetwork送信、response validation、fallback、end-user cloud feature、業務UI、R-019〜R-024/R-026のpreview・render・delivery、署名済み配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布、release readinessは未承認。
 
-`PK-006`のclean Windows install gateは保留し、依存解放済みの`A-016`から実行可能なtaskを継続する。`Z-008`は2つ目の実在する生成系文章候補実装が現れるまで開始せず、A-009の削除候補をその条件へ読み替えない。held taskは成立証拠と別承認なしに解除しない。
+`PK-006`のclean Windows install gateは保留し、依存解放済みの`R-019`と`R-020`から実行可能なtaskを継続する。`Z-008`は2つ目の実在する生成系文章候補実装が現れるまで開始せず、A-009の削除候補をその条件へ読み替えない。held taskは成立証拠と別承認なしに解除しない。
 
 ---
 
@@ -289,7 +289,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.6 M — 動画取込、代理、プレビュー素材
 
-**実行状態: M-001〜M-012は完了。** token化picker、stream copy/hash、probe/decode、original昇格、NVENC→Media Foundation固定fallbackを持つproxy、観測PTS、ProxyFrameMap、waveform/spriteまで実装・検証済みである。M-011はjob/project/request digest、stage、attempt、revision、timestampへ結合したversioned canonical request/checkpointをSQLiteへ永続化する。Asset/Rights、typed MediaInfo warning evidence、source/proxy PTS、decode、artifact metadata、frame map、waveform/sprite indexをfresh instanceで検証付き復元し、完了済みprefixを再実行せずsuffixを再開する。stage 0の未checkpoint staging副作用、artifact row/fileとcheckpointの先行・遅延、未登録昇格先、破損payloadは黙って推測修復せずreconciliation-requiredへ送る。M-012はlocal path境界、option風source名のGUID staging隔離、合成破損container、巨大・深層metadata、bounded dual-stream output、nonterminating toolの期限終了を専用testで検証した。deterministic crash-state injectionとrestart integrationは合格したが、実process-kill、disk full、workspace全体restoreの`Q-007`受入と、media/bridge/workerを統合する`Q-008`受入は未完了である。
+**実行状態: M-001〜M-012は完了。** token化picker、stream copy/hash、probe/decode、original昇格、NVENC→Media Foundation固定fallbackを持つproxy、観測PTS、ProxyFrameMap、waveform/spriteまで実装・検証済みである。M-011はjob/project/request digest、stage、attempt、revision、timestampへ結合したversioned canonical request/checkpointをSQLiteへ永続化する。Asset/Rights、typed MediaInfo warning evidence、source/proxy PTS、decode、artifact metadata、frame map、waveform/sprite indexをfresh instanceで検証付き復元し、完了済みprefixを再実行せずsuffixを再開する。stage 0の未checkpoint staging副作用、artifact row/fileとcheckpointの先行・遅延、未登録昇格先、破損payloadは黙って推測修復せずreconciliation-requiredへ送る。M-012はlocal path境界、option風source名のGUID staging隔離、合成破損container、巨大・深層metadata、bounded dual-stream output、nonterminating toolの期限終了を専用testで検証した。deterministic crash-state injectionとrestart integrationに加え、`Q-007`で実process-kill、disk full、workspace全体restoreの受入まで完了した。media/bridge/workerを統合する`Q-008`受入は未完了である。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -345,12 +345,12 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | A-019 | **完了。** 準備会話とtopic逸脱区間を候補化する | `APP/Analysis/ContextDeviationDetector.cs`、tests | A-004,A-014,D-006 / `L-C` | explicit topic range完全外だけをleading/between/trailingへ分類し、nearest boundary exact distanceを理由feature化。partial overlapとno-contextを安全に退避し、semantic閾値・confidence・自動削除なし | FR-005 | ローカル処理 |
 | A-020 | **完了。** topic名、要約、主話者、keyword、重要発言、対象者、公開注意を編集可能にする | `APP/Analysis/TopicMetadataService.cs`、tests | A-004,A-011,A-014。A-015は任意 / `L-C` | placeholder/project snapshot/exact-overlap主話者をorigin付き初期値にし、同率を未解決化。全fieldをmanual child revisionで編集・clearし、model生成を混在させない | FR-006 | なし |
 | A-021 | **完了。** 結論、数値、製品名、注意、keyword、Q&Aから強調テロップ候補を抽出する | `APP/Analysis/EmphasisCandidateService.cs`、tests | A-004,A-005,A-020,D-006 / `L-C` | explicit important span/product term/manual metadata/digit/question punctuationだけをclosed rulesで抽出。原token表記SourceSpanとManualSummaryをtyped分離し、理由・term versionを保持、自動採用なし | FR-013 | なし |
-| A-016 | 提案の採用/却下/修正とstale表示を統合する | `APP/Analysis/SuggestionService.cs`、tests | A-006〜A-009,A-011,A-014,A-018〜A-021,J-007 / `L-C` | 実装対象producerだけを統合し、AI候補保存とComposition採用を分離。A-010/A-012/A-013/A-015を必須依存にしない | FR-005〜007/013、BR-005 | なし |
-| A-017 | transcript修正時の最小再処理DAGを実装する | `APP/Analysis/AnalysisDependencyGraph.cs`、tests | A-004,A-016,J-007 / `L-C` | ASRを再実行せず辞書/topic等だけstale化 | NFR-002、AR-3 | なし |
+| A-016 | **完了。** 提案の採用/却下/修正とstale表示を統合する | `APP/Analysis/SuggestionService.cs`、tests | A-006〜A-009,A-011,A-014,A-018〜A-021,J-007 / `L-C` | 実装対象producerだけを統合し、AI候補保存とComposition採用を分離。A-010/A-012/A-013/A-015を必須依存にしない | FR-005〜007/013、BR-005 | なし |
+| A-017 | **完了。** transcript修正時の最小再処理DAGを実装する | `APP/Analysis/AnalysisDependencyGraph.cs`、tests | A-004,A-016,J-007 / `L-C` | ASRを再実行せず辞書/topic等だけstale化 | NFR-002、AR-3 | なし |
 
 ### 5.8 R — 非破壊編集、字幕、レンダー
 
-**実行状態: R-001〜R-009、R-016は完了。** 型付き編集、TimelineMap再構築、version/checkpoint、profile、manual layout/keyframe、typed transitionまで実装・検証済みである。
+**実行状態: R-001〜R-018、R-025は完了。** 型付き編集、TimelineMap再構築、version/checkpoint、profile、manual layout/keyframe、字幕生成・編集・出力、長尺構成、typed transition、Render IR/FFmpeg compile、非破壊字幕表示まで実装・検証済みである。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -363,22 +363,22 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | R-007 | 9:16短尺profileを定義する | `APP/Profiles/9x16/*.json`、tests | R-004,R-005,ST-005 / `L-M` | 解像度、safe zone、字幕領域を版付き定義 | FR-010/031 | なし |
 | R-008 | 手動レイアウト7種とフォールバックを実装する | `CORE/Layout/ManualLayoutResolver.cs`、tests | R-005,R-007 / `L-C` | 単一crop、二人上下、話者+資料、資料+小窓、拡大、blur背景、固定templateを選べる。face候補はA-013が将来採用された場合だけ任意入力にする | FR-010、AR-15 | なし |
 | R-009 | crop/scale/positionの手動keyframe補間を実装する | `CORE/Layout/KeyframeTrack.cs`、tests | R-005,R-008 / `L-C` | shot境界、補間、範囲、preview/render一致を検査 | FR-010/014 | なし |
-| R-010 | 発話から字幕Cue候補を生成する | `CORE/Subtitles/SubtitleSegmenter.cs`、tests | D-005,D-008,A-004 / `L-C` | 日本語分割、話者変更、間、修正revisionを反映 | FR-012 | なし |
-| R-011 | 字幕hard/soft制約と解なし判定を実装する | `CORE/Subtitles/SubtitleLayoutEngine.cs`、tests | R-005,R-010 / `L-C` | 版付きLayoutSpecのsafe zoneから判定し、画面外/禁止領域はhard fail、解なしは手動へ送る。face領域はA-013が将来採用された場合だけ任意入力にする | FR-012/014、AR-17 | なし |
-| R-012 | 字幕/強調/注意/引用の編集と版を実装する | `APP/Subtitles/SubtitleService.cs`、tests | R-010,R-011,R-003 / `L-C` | 時刻、文字、style変更を差分・OriginRef付き保存 | FR-012〜014 | なし |
-| R-013 | VTT/SRT/ASSを同じCueから出力する | `INFRA/Subtitles/*.cs`、round-trip tests | R-012 / `L-M` | encoding、escape、時刻順、範囲を検証 | FR-012/031 | ローカル処理 |
-| R-014 | 強調テロップ候補の採用、手動作成、配置を実装する | `APP/Graphics/EmphasisCueService.cs`、tests | D-003,A-021,R-011,R-012 / `L-C` | 根拠なし引用、過剰同時表示、発話先行を拒否/警告し、全候補を人が変更可能 | FR-013/014 | なし |
-| R-015 | opening/title/speaker/topic/CTA/endingをtemplateから構成する | `APP/Compositions/LongFormComposer.cs`、tests | R-004,R-006,A-011,A-014 / `L-C` | 開始/終了余白、番組/episode/出演者、key visual、logo、jingle、公開区分、まとめをON/OFFし、OriginRefと権利を保持 | FR-008/015/024 | なし |
+| R-010 | **完了。** 発話から字幕Cue候補を生成する | `CORE/Subtitles/SubtitleSegmenter.cs`、tests | D-005,D-008,A-004 / `L-C` | 日本語分割、話者変更、間、修正revisionを反映 | FR-012 | なし |
+| R-011 | **完了。** 字幕hard/soft制約と解なし判定を実装する | `CORE/Subtitles/SubtitleLayoutEngine.cs`、tests | R-005,R-010 / `L-C` | 版付きLayoutSpecのsafe zoneから判定し、画面外/禁止領域はhard fail、解なしは手動へ送る。face領域はA-013が将来採用された場合だけ任意入力にする | FR-012/014、AR-17 | なし |
+| R-012 | **完了。** 字幕/強調/注意/引用の編集と版を実装する | `APP/Subtitles/SubtitleService.cs`、tests | R-010,R-011,R-003 / `L-C` | 時刻、文字、style変更を差分・OriginRef付き保存 | FR-012〜014 | なし |
+| R-013 | **完了。** VTT/SRT/ASSを同じCueから出力する | `INFRA/Subtitles/*.cs`、round-trip tests | R-012 / `L-M` | encoding、escape、時刻順、範囲を検証 | FR-012/031 | ローカル処理 |
+| R-014 | **完了。** 強調テロップ候補の採用、手動作成、配置を実装する | `APP/Graphics/EmphasisCueService.cs`、tests | D-003,A-021,R-011,R-012 / `L-C` | 根拠なし引用、過剰同時表示、発話先行を拒否/警告し、全候補を人が変更可能 | FR-013/014 | なし |
+| R-015 | **完了。** opening/title/speaker/topic/CTA/endingをtemplateから構成する | `APP/Compositions/LongFormComposer.cs`、tests | R-004,R-006,A-011,A-014 / `L-C` | 開始/終了余白、番組/episode/出演者、key visual、logo、jingle、公開区分、まとめをON/OFFし、OriginRefと権利を保持 | FR-008/015/024 | なし |
 | R-016 | cut、crossfade、fade、wipe、slide、title card、zoomの型付きtransitionを実装する | `CORE/Rendering/Transition.cs`、`INFRA/Rendering/TransitionEmitter.cs`、tests | D-008,R-005 / `L-M` | 任意filter文字列を許さず、軽微cutへ過剰効果を自動適用しない | FR-016 | ローカル処理 |
-| R-017 | typed Render IRと検証器を実装する | `CORE/Rendering/RenderGraph.cs`、`RenderGraphValidator.cs` | R-002,R-005〜R-016,D-010 / `L-C` | 全nodeの入力hash、OriginRef、時刻、権利参照を検証 | FR-008〜020/031/032 | なし |
-| R-018 | Render IRをFFmpeg引数/filterscriptへcompileする | `INFRA/Rendering/FfmpegCompiler.cs`、golden tests | R-017,ST-002,J-003 / `L-M` | shellなし、allowlist、escape、command length、同一IR同一引数を検証 | FR-031、NFR-003/004 | ローカル処理 |
+| R-017 | **完了。** typed Render IRと検証器を実装する | `CORE/Rendering/RenderGraph.cs`、`RenderGraphValidator.cs` | R-002,R-005〜R-016,D-010 / `L-C` | 全nodeの入力hash、OriginRef、時刻、権利参照を検証 | FR-008〜020/031/032 | なし |
+| R-018 | **完了。** Render IRをFFmpeg引数/filterscriptへcompileする | `INFRA/Rendering/FfmpegCompiler.cs`、golden tests | R-017,ST-002,J-003 / `L-M` | shellなし、allowlist、escape、command length、同一IR同一引数を検証 | FR-031、NFR-003/004 | ローカル処理 |
 | R-019 | 区間忠実preview jobを実装する | `APP/Rendering/PreviewRenderService.cs`、integration tests | R-018,J-006,M-008 / `L-M` | 選択区間だけ再renderし、cache keyとLayoutSpecを共有 | FR-026、NFR-002 | ローカル処理 |
 | R-020 | 最終render job、進捗、cancel、idempotencyを実装する | `APP/Rendering/FinalRenderService.cs`、tests | R-018,J-006〜J-008 / `L-M` | approved digestを入力にし、同一jobの二重昇格を防ぐ | FR-031、NFR-003 | ローカル処理 |
 | R-021 | container/stream/duration/A-V/字幕/画面/音量QCを実装する | `INFRA/Rendering/OutputQc.cs`、fixtures/tests | R-020,M-003,R-011 / `L-M` | 閾値はST-015決定値。内容変更と技術再renderを区別 | FR-020/031、AR-14/18 | ローカル処理 |
 | R-022 | DeliveryManifestと使用区間一覧を生成する | `APP/Delivery/DeliveryService.cs`、tests | D-010,R-002,R-013,R-020,R-021 / `L-C` | 動画、字幕、thumbnail、transcript、review、spanを同じ版へ束ねる | FR-031/032、AR-7 | なし |
 | R-023 | 人が選んだ元フレームを版付きtemplateへ合成してthumbnail出力する | `APP/Thumbnails/ManualThumbnailService.cs`、tests | M-010,R-004,R-018 / `L-M` | 元PTS、template版、OriginRef、hashを保持し、候補自動評価なしでもPNGを出力 | FR-021/031 | ローカル処理 |
 | R-024 | transcript、chapter、投稿文、編集指示、review、使用区間を付帯成果物へserializeする | `APP/Delivery/AncillaryArtifactExporter.cs`、tests | A-004,A-020,R-002,R-003,R-022,S-009。E-013は任意 / `L-C` | 各ファイルがcomposition/review版、language、hash、OriginRefを持ちDeliveryManifestへ登録 | FR-025/031/032 | なし |
-| R-025 | 字幕の句読点表示と全文/選択Cue表示を非破壊に切り替える | `CORE/Subtitles/SubtitleDisplayPolicy.cs`、tests | R-010,R-012 / `L-C` | transcript原文を変えず、profileごとの差分をpreview/exportで一致させる | FR-009/012 | なし |
+| R-025 | **完了。** 字幕の句読点表示と全文/選択Cue表示を非破壊に切り替える | `CORE/Subtitles/SubtitleDisplayPolicy.cs`、tests | R-010,R-012 / `L-C` | transcript原文を変えず、profileごとの差分をpreview/exportで一致させる | FR-009/012 | なし |
 | R-026 | 字幕焼き込み版と字幕なし版を同じCompositionから生成する | `APP/Rendering/SubtitleVariantService.cs`、tests | R-013,R-017〜R-022,R-025 / `L-M` | 版・映像・音声を共有した2出力をDeliveryManifestで区別 | FR-012/031 | ローカル処理 |
 
 ### 5.9 U — Windows UI
@@ -407,7 +407,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.10 S — ポリシー、レビュー、セキュリティ、復旧
 
-**実行状態: S-001、S-002、S-004、S-006〜S-010、S-012、S-014、S-015は完了。** `S-003`はコードと同一account自動試験まで完了したが、別の非管理者Windows accountから読めないことの受入証拠を待つ。S-007はemail、内部network location、credential形式、適用済みProject/Series辞書snapshotをローカルで候補化する。findingはrevision/utterance/source-span ID、理由code、原文UTF-16範囲だけを保持し、本文や一致値を複製しない。text element単位のNFKCから原文範囲へ逆写像し、無効Unicodeまたは走査不能時は不完全として外部出力警告を維持する。Z-007は選択範囲と明示した隣接文脈だけへfindingを適用してmaskするが、候補の編集・辞書からの除外等による元revision上の最終解消とexport gateは別の利用者操作/S-011で扱う。S-014は現在公開済みのclosed surfaceだけを対象に、text escape、unsafe sink不在、exact RPC/CLI、strict process argv、既存のpath・diagnostic・typed/fixed filter境界を横断検証した。将来の業務UIとRender IRは各実装taskで同じgateへ追加し、S-014だけを`Q-008`の完了証拠にはしない。
+**実行状態: S-001、S-002、S-004〜S-010、S-012〜S-015は完了。** `S-003`はコードと同一account自動試験まで完了したが、別の非管理者Windows accountから読めないことの受入証拠を待つ。S-007はemail、内部network location、credential形式、適用済みProject/Series辞書snapshotをローカルで候補化する。findingはrevision/utterance/source-span ID、理由code、原文UTF-16範囲だけを保持し、本文や一致値を複製しない。text element単位のNFKCから原文範囲へ逆写像し、無効Unicodeまたは走査不能時は不完全として外部出力警告を維持する。Z-007は選択範囲と明示した隣接文脈だけへfindingを適用してmaskするが、候補の編集・辞書からの除外等による元revision上の最終解消とexport gateは別の利用者操作/S-011で扱う。S-014は現在公開済みのclosed surfaceだけを対象に、text escape、unsafe sink不在、exact RPC/CLI、strict process argv、既存のpath・diagnostic・typed/fixed filter境界を横断検証した。未実装の業務UIと、S-014後に実装したRender IR/FFmpeg compileはS-014の証拠範囲外であり、各実装taskの試験を併用する。S-014だけを`Q-008`の完了証拠にはしない。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -415,7 +415,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | S-002 | local role assignmentと操作permissionを実装する | `CORE/Security/Permission.cs`、`APP/Security/AuthorizationService.cs` | S-001,D-004,D-013 / `L-S` | Viewer/Editor/Reviewer/Approver/Adminの許可表を全操作で試験 | NFR-004、AC-004 | なし |
 | S-003 | workspace ACL作成・検査を実装する | `INFRA/Security/WorkspaceAcl.cs`、tests | P-007,S-001,ST-014 / `L-S` | 別の非管理者Windows accountから読めないことを試験 | NFR-004、AC-004 | なし |
 | S-004 | 公開区分の継承・downgrade・変更権限を実装する | `CORE/Policy/PublicationPolicy.cs`、tests | D-004,S-002 / `L-S` | 子成果物が親より公開範囲を自動拡大しない。人が公開範囲を拡大する場合は子CompositionVersionを作り、既存承認を失効して必要レビューを再実行 | §6.3、NFR-004/006 | なし |
-| S-005 | performer氏名/肩書確認と警告を実装する | `APP/Policy/PerformerPolicy.cs`、tests | D-004,A-011 / `L-S` | 未確認時警告、確認者/日付/収録時点を保持 | BR-002 | なし |
+| S-005 | **完了。** performer氏名/肩書確認と警告を実装する | `APP/Policy/PerformerPolicy.cs`、tests | D-004,A-011 / `L-S` | 未確認時警告、確認者/日付/収録時点を保持 | BR-002 | なし |
 | S-006 | RightsRecord警告・保留・根拠付き例外を実装する | `CORE/Policy/RightsPolicy.cs`、tests | D-004,S-002,S-004 / `L-S` | 要求どおり警告し、確認または権限ある例外まで外部出力保留 | BR-004、AR-12 | なし |
 | S-007 | **完了。** 文字起こしのPII/秘密形式/社内辞書候補を実装する | `APP/Policy/TextSensitivityScanner.cs`、tests | A-004,A-005,D-006 / `L-S` | 本文を保持せず原文UTF-16範囲とSourceSpanを返し、NFKC、無効Unicode、email、内部URL/host/IP、credential、literal辞書、重複・重なり、複数utteranceを検証。候補または不完全走査時は外部出力警告 | BR-003 | ローカル処理 |
 | S-008 | review state machineを実装する | `CORE/Reviews/ReviewStateMachine.cs`、tests | D-011,P-005,S-002 / `L-S` | Editing→各review→Approved→FinalRendering→QualityControl→Exported→PublishedとChangesRequested/PublicationBlockedを全遷移試験 | FR-029、AR-13/14 | なし |
@@ -423,7 +423,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | S-010 | approvalをCompositionVersion digestへ固定する | `APP/Reviews/ApprovalService.cs`、tests | R-003,S-008 / `L-S` | 内容変更でapproval失効、技術再renderでは維持 | FR-029/030、AR-14 | なし |
 | S-011 | final render/export直前policy gateを実装する | `APP/Policy/ExportPolicy.cs`、tests | S-004〜S-010,R-020 / 直列 | approval、公開区分、rights、未解消注意、OriginRefを同期再検査 | AC-004、RS§11.4 | なし |
 | S-012 | 追記専用AuditEventとhash chainを実装する | `INFRA/Audit/AuditLog.cs`、migration/tests | D-011,D-012,S-001 / `L-S` | app APIにupdate/deleteを持たず、chain破損を検出。改ざん防止を過大主張しない | NFR-006 | なし |
-| S-013 | AI提案・人修正・ModelRunの来歴を監査へ統合する | `APP/Audit/ProvenanceAuditService.cs`、tests | D-006,A-016,S-012 / `L-S` | provider、model/version/hash、local/cloud、採否を識別 | BR-005、AC-005 | なし |
+| S-013 | **完了。** AI提案・人修正・ModelRunの来歴を監査へ統合する | `APP/Audit/ProvenanceAuditService.cs`、tests | D-006,A-016,S-012 / `L-S` | provider、model/version/hash、local/cloud、採否を識別 | BR-005、AC-005 | なし |
 | S-014 | **完了。** WebView bridge、process、pathの敵対試験を実装する | `APP/Web/Bridge.cs`、`INFRA/Processes/ProcessRunRequest.cs`、`WEB/src/security.test.tsx`、`WORKER/src/hubradio_worker/__main__.py`、`WORKER/tests/test_protocol_security.py`、`TESTS/Architecture.Tests/ArchitectureTests.cs`、`TESTS/HubRadio.App.Tests/BridgeProtocolSecurityTests.cs`、`TESTS/HubRadio.Infrastructure.Tests/ProcessRunnerTests.cs` | U-003,J-003〜J-005,D-015 / `L-S` | 合成XSSをReact textとしてescapeしraw-HTML/dynamic-code sinkを禁止。XSS/shell/filter/confusable風unknown RPCとCLI省略形を拒否し入力を固定errorへ反映しない。argvのNUL・不正UTF-16を早期拒否し、metacharacter・改行をshellなしの単一tokenで渡す。既存ArtifactStore path、LocalDiagnosticLog、typed transition、固定proxy/preview filter試験も再実行 | NFR-004、RS§11.5 | なし |
 | S-015 | SQLite online backupと検証付きrestoreを実装する | `INFRA/Backup/BackupService.cs`、tests | P-007,D-016,S-012 / `L-S` | DB snapshotとP-007で選んだ成果物を保存し、hash、`integrity_check`、restore rollbackを試験 | NFR-003 | なし |
 | S-016 | original変更、tool/model変更、policy変更の検出を実装する | `APP/Integrity/IntegrityMonitor.cs`、tests | J-010,M-006,S-011 / `L-S` | 承認後の差異をPublicationBlockedまたは再reviewへ送る | NFR-003/004/006 | なし |
@@ -506,7 +506,7 @@ PK-006は、公式templateに沿うx64 Windows Application Packaging Projectと`
 | Q-004 | Windows actor/role/公開区分/承認gateを試験する | `TESTS/Acceptance/AC004_Security.*` | S-001〜S-016 / 直列 | 権限外閲覧、外部誤出力、未承認final、audit閲覧を検査 | AC-004 | なし |
 | Q-005 | 任意出力時刻、AI/人、素材権利の追跡を試験する | `TESTS/Acceptance/AC005_Traceability.*` | D-003,D-009,R-022,S-013 / 直列 | 逆引き不能/OriginRefなしを0件にして証跡を保存 | AC-005 | なし |
 | Q-006 | 部分再処理、UI応答、render、disk/DBを実測する | `BENCH/results/stage-1-performance.md` | J-007,A-017,R-019,R-020,U-015 / `L-G` | P-009/ST-015で承認した指標へ照合。未達は手動fallbackまたはblock | NFR-001/002 | ローカル処理 |
-| Q-007 | crash、disk full、process kill、DB/成果物restoreを試験する | `TESTS/Reliability/`、`BENCH/results/recovery.md` | J-008,D-016,S-015 / `L-S` | 元動画/承認版を失わず、再開または明確な手動復旧が可能 | NFR-003 | ローカル処理 |
+| Q-007 | **完了。** crash、disk full、process kill、DB/成果物restoreを試験する | `TESTS/Reliability/`、`BENCH/results/recovery.md` | J-008,D-016,S-015 / `L-S` | 元動画/承認版を失わず、再開または明確な手動復旧が可能 | NFR-003 | ローカル処理 |
 | Q-008 | media/bridge/worker/FFmpeg/promptの敵対試験をまとめる | `TESTS/Security/`、`docs/dev/security/test-report.md` | M-012,S-014,Z-009該当時 / `L-S` | Critical未解決0。残余リスクは責任者承認 | NFR-004、BR-003 | ローカル/条件付き Azure |
 | Q-009 | accessibilityと字幕/音声なし理解を人が確認する | `docs/dev/accessibility/test-report.md` | U-015,R-011,R-013 / `L-W` | keyboard、focus、contrast、色、字幕、mute flowを記録 | NFR-005 | なし |
 | Q-010 | SBOM/Model BOM/license/脆弱性をrelease候補で検査する | `artifacts/sbom.*`、`docs/dev/licenses/release-review.md` | F-008,PK-001〜PK-006 / `L-S` | 未確認license/model/CVEを出荷しない | NFR-006、RS§13 | なし |
@@ -687,4 +687,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**`PK-006`は同一host実装・unpack検証済みだが、別のclean Windowsへのinstall証拠を待つため未完了のまま保持する。次は依存解放済みの`A-016`から実行可能なtaskを継続する。未完了は残り79 taskである。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在する生成系文章候補実装が揃うまで抽象もsenderも作らず、A-009の削除候補をその条件へ読み替えない。**
+**`PK-006`は同一host実装・unpack検証済みだが、別のclean Windowsへのinstall証拠を待つため未完了のまま保持する。次は依存解放済みの`R-019`と`R-020`から実行可能なtaskを継続する。未完了は残り65 taskである。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在する生成系文章候補実装が揃うまで抽象もsenderも作らず、A-009の削除候補をその条件へ読み替えない。**
