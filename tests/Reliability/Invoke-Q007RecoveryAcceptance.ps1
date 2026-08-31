@@ -25,6 +25,7 @@ $webRoot = Join-Path $repoRoot 'src\HubRadio.Web'
 $reliabilityProject = Join-Path $PSScriptRoot 'HubRadio.Q007.ReliabilityProbe\HubRadio.Q007.ReliabilityProbe.csproj'
 $jobRecoveryProject = Join-Path $PSScriptRoot 'HubRadio.Q007.JobRecoveryProbe\HubRadio.Q007.JobRecoveryProbe.csproj'
 $processProbeProject = Join-Path $repoRoot 'benchmarks\probes\ProcessProbe\ProcessProbe.csproj'
+$linuxNoSpaceLeftOnDeviceErrorCode = 28
 
 function Assert-Condition {
     [CmdletBinding()]
@@ -1006,8 +1007,11 @@ function Invoke-DiskFullScenario {
             $processResult.exitCode -eq 0 -and
             $capacityBytes -eq 4194304 -and
             $availableAtFailureBytes -eq 0 -and
-            [int]$observed.nativeErrorCode -in @(28, 39, 112) -and
-            $nativeCodes -contains [int]$observed.nativeErrorCode -and
+            [int]$observed.nativeErrorCode -eq $linuxNoSpaceLeftOnDeviceErrorCode -and
+            ([int]$observed.nativeHResult -band 0xffff) -eq
+                $linuxNoSpaceLeftOnDeviceErrorCode -and
+            $nativeCodes.Count -eq 1 -and
+            [int]$nativeCodes[0] -eq $linuxNoSpaceLeftOnDeviceErrorCode -and
             [string]$probe.implementationAssembly -ceq 'HubRadio.Infrastructure' -and
             [string]$probe.operatingSystem -ceq 'linux' -and
             [string]$probe.exceptionType -ceq 'HubRadio.Infrastructure.Media.MediaImportException' -and
@@ -1028,7 +1032,9 @@ function Invoke-DiskFullScenario {
             constrainedFilesystem = 'root-mounted WSL tmpfs'
             capacityBytes = $capacityBytes
             availableAtFailureBytes = $availableAtFailureBytes
+            nativeHResult = [int]$observed.nativeHResult
             nativeErrorCode = [int]$observed.nativeErrorCode
+            nativeErrorCodeContract = 'IOException.HResult low 16 bits; Linux ENOSPC'
             failureReason = [string]$probe.failureReason
             sourceDigestUnchanged = [bool]$probe.sourceDigestUnchanged
             sourceMetadataUnchanged = [bool]$probe.sourceMetadataUnchanged

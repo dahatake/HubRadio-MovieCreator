@@ -26,6 +26,7 @@ internal static class Program
 {
     private const int DiskFullSourceByteSize = 8 * 1024 * 1024;
     private const int FileBufferSize = 64 * 1024;
+    private const int LinuxNoSpaceLeftOnDeviceErrorCode = 28;
     private const long PartialSourceByteSize = 512L * 1024 * 1024;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -75,6 +76,12 @@ internal static class Program
         string observedPath,
         string continuePath)
     {
+        if (!OperatingSystem.IsLinux())
+        {
+            throw new PlatformNotSupportedException(
+                "The disk-full import probe requires Linux.");
+        }
+
         string normalizedCaseRoot = RequireExistingDirectory(caseRoot);
         string normalizedWorkspace = RequireExistingDirectory(workspacePath);
         string normalizedObservedPath = RequireAbsolutePath(observedPath);
@@ -114,8 +121,9 @@ internal static class Program
                 return;
             }
 
+            int nativeHResult = exception.HResult;
             int nativeCode = exception.HResult & 0xffff;
-            if (nativeCode is not (28 or 39 or 112))
+            if (nativeCode != LinuxNoSpaceLeftOnDeviceErrorCode)
             {
                 return;
             }
@@ -132,6 +140,7 @@ internal static class Program
                 {
                     schemaVersion = "1.0.0",
                     processId = Environment.ProcessId,
+                    nativeHResult,
                     nativeErrorCode = nativeCode,
                 });
 
@@ -196,7 +205,8 @@ internal static class Program
             !importFailure.RecoveryRequired &&
             Volatile.Read(ref firstDiskFullObserved) == 1 &&
             Volatile.Read(ref continuationObserved) == 1 &&
-            nativeErrorCodes.Length > 0 &&
+            nativeErrorCodes.Length == 1 &&
+            nativeErrorCodes[0] == LinuxNoSpaceLeftOnDeviceErrorCode &&
             sourceDigestUnchanged &&
             sourceMetadataUnchanged &&
             existingDestinationUnchanged &&
