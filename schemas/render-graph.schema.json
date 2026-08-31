@@ -1,0 +1,461 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Closed typed RenderGraph IR. Paths, commands, FFmpeg arguments, and raw filter expressions are intentionally absent; R-018 resolves validated input IDs outside this contract.",
+  "title": "RenderGraph",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "compositionVersionId",
+    "compositionVersionDigest",
+    "timelineMapId",
+    "timelineMapDigest",
+    "profileId",
+    "profileDigest",
+    "layoutSpecId",
+    "layoutSpecDigest",
+    "template",
+    "inputs",
+    "fonts",
+    "nodes",
+    "outputNodeId"
+  ],
+  "properties": {
+    "id": { "$ref": "#/$defs/entityId" },
+    "compositionVersionId": { "$ref": "#/$defs/entityId" },
+    "compositionVersionDigest": { "$ref": "#/$defs/contentDigest" },
+    "timelineMapId": { "$ref": "#/$defs/entityId" },
+    "timelineMapDigest": { "$ref": "#/$defs/contentDigest" },
+    "profileId": { "$ref": "#/$defs/entityId" },
+    "profileDigest": { "$ref": "#/$defs/contentDigest" },
+    "layoutSpecId": { "$ref": "#/$defs/entityId" },
+    "layoutSpecDigest": { "$ref": "#/$defs/contentDigest" },
+    "template": { "$ref": "#/$defs/templateReference" },
+    "inputs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/renderGraphInput" }
+    },
+    "fonts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/renderFontEvidence" }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/renderNode" }
+    },
+    "outputNodeId": { "$ref": "#/$defs/entityId" }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonBlankText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "rationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "rate"],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "nonNegativeTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "rate"],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "positiveTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "rate"],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "outputRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "duration"],
+      "properties": {
+        "start": { "$ref": "#/$defs/nonNegativeTime" },
+        "duration": { "$ref": "#/$defs/positiveTime" }
+      }
+    },
+    "transitionRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "duration"],
+      "properties": {
+        "start": { "$ref": "#/$defs/nonNegativeTime" },
+        "duration": { "$ref": "#/$defs/nonNegativeTime" }
+      }
+    },
+    "sourceRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "duration"],
+      "properties": {
+        "start": { "$ref": "#/$defs/rationalTime" },
+        "duration": { "$ref": "#/$defs/positiveTime" }
+      }
+    },
+    "nullableSourceRange": {
+      "oneOf": [
+        { "$ref": "#/$defs/sourceRange" },
+        { "type": "null" }
+      ]
+    },
+    "sourceSpanOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "sourceSpanId"],
+      "properties": {
+        "kind": { "const": "sourceSpan" },
+        "sourceSpanId": { "$ref": "#/$defs/entityId" }
+      }
+    },
+    "assetOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "assetId"],
+      "properties": {
+        "kind": { "const": "asset" },
+        "assetId": { "$ref": "#/$defs/entityId" }
+      }
+    },
+    "editorialOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "editorialRecordId"],
+      "properties": {
+        "kind": { "const": "editorialRecord" },
+        "editorialRecordId": { "$ref": "#/$defs/entityId" }
+      }
+    },
+    "origin": {
+      "oneOf": [
+        { "$ref": "#/$defs/sourceSpanOrigin" },
+        { "$ref": "#/$defs/assetOrigin" },
+        { "$ref": "#/$defs/editorialOrigin" }
+      ]
+    },
+    "templateReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "versionDigest"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "name": { "$ref": "#/$defs/nonBlankText" },
+        "versionDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "renderGraphInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "contentDigest", "byteSize", "origin"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "kind": { "enum": ["video", "audio", "subtitle", "graphic"] },
+        "contentDigest": { "$ref": "#/$defs/contentDigest" },
+        "byteSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "origin": { "$ref": "#/$defs/origin" }
+      }
+    },
+    "renderFontEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "fileDigest"],
+      "properties": {
+        "name": { "$ref": "#/$defs/nonBlankText" },
+        "fileDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "cue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "range", "regionName"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "kind": { "enum": ["subtitle", "graphic"] },
+        "range": { "$ref": "#/$defs/outputRange" },
+        "regionName": { "$ref": "#/$defs/nonBlankText" }
+      }
+    },
+    "subtitleCue": {
+      "allOf": [
+        { "$ref": "#/$defs/cue" },
+        {
+          "properties": {
+            "kind": { "const": "subtitle" }
+          }
+        }
+      ]
+    },
+    "graphicCue": {
+      "allOf": [
+        { "$ref": "#/$defs/cue" },
+        {
+          "properties": {
+            "kind": { "const": "graphic" }
+          }
+        }
+      ]
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "duration", "direction"],
+      "properties": {
+        "kind": {
+          "enum": ["cut", "crossfade", "fade", "wipe", "slide", "titleCard", "zoom"]
+        },
+        "duration": { "$ref": "#/$defs/rationalTime" },
+        "direction": {
+          "oneOf": [
+            { "enum": ["left", "right", "up", "down"] },
+            { "type": "null" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": { "enum": ["wipe", "slide"] }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "direction": { "enum": ["left", "right", "up", "down"] }
+            }
+          },
+          "else": {
+            "properties": {
+              "direction": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": { "const": "cut" }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "duration": {
+                "properties": {
+                  "value": { "const": 0 }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "duration": { "$ref": "#/$defs/positiveTime" }
+            }
+          }
+        }
+      ]
+    },
+    "videoNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "inputNodeIds", "artifactInputId", "outputRange", "sourceRange", "origin", "regionName"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "kind": { "const": "video" },
+        "inputNodeIds": { "type": "array", "maxItems": 0 },
+        "artifactInputId": { "$ref": "#/$defs/entityId" },
+        "outputRange": { "$ref": "#/$defs/outputRange" },
+        "sourceRange": { "$ref": "#/$defs/nullableSourceRange" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "regionName": { "$ref": "#/$defs/nonBlankText" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "origin": { "$ref": "#/$defs/sourceSpanOrigin" }
+            },
+            "required": ["origin"]
+          },
+          "then": {
+            "properties": {
+              "sourceRange": { "$ref": "#/$defs/sourceRange" }
+            }
+          },
+          "else": {
+            "properties": {
+              "sourceRange": { "type": "null" }
+            }
+          }
+        }
+      ]
+    },
+    "audioNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "inputNodeIds", "artifactInputId", "outputRange", "sourceRange", "origin"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "kind": { "const": "audio" },
+        "inputNodeIds": { "type": "array", "maxItems": 0 },
+        "artifactInputId": { "$ref": "#/$defs/entityId" },
+        "outputRange": { "$ref": "#/$defs/outputRange" },
+        "sourceRange": { "$ref": "#/$defs/nullableSourceRange" },
+        "origin": { "$ref": "#/$defs/origin" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "origin": { "$ref": "#/$defs/sourceSpanOrigin" }
+            },
+            "required": ["origin"]
+          },
+          "then": {
+            "properties": {
+              "sourceRange": { "$ref": "#/$defs/sourceRange" }
+            }
+          },
+          "else": {
+            "properties": {
+              "sourceRange": { "type": "null" }
+            }
+          }
+        }
+      ]
+    },
+    "subtitleNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "inputNodeIds", "artifactInputId", "outputRange", "origin", "regionName", "cue"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "kind": { "const": "subtitle" },
+        "inputNodeIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": { "$ref": "#/$defs/entityId" }
+        },
+        "artifactInputId": { "$ref": "#/$defs/entityId" },
+        "outputRange": { "$ref": "#/$defs/outputRange" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "regionName": { "$ref": "#/$defs/nonBlankText" },
+        "cue": { "$ref": "#/$defs/subtitleCue" }
+      }
+    },
+    "graphicNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "inputNodeIds", "artifactInputId", "outputRange", "origin", "regionName", "cue"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "kind": { "const": "graphic" },
+        "inputNodeIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": { "$ref": "#/$defs/entityId" }
+        },
+        "artifactInputId": { "$ref": "#/$defs/entityId" },
+        "outputRange": { "$ref": "#/$defs/outputRange" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "regionName": { "$ref": "#/$defs/nonBlankText" },
+        "cue": { "$ref": "#/$defs/graphicCue" }
+      }
+    },
+    "transitionNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "inputNodeIds", "outputRange", "origin", "transition"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "kind": { "const": "transition" },
+        "inputNodeIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/entityId" }
+        },
+        "outputRange": { "$ref": "#/$defs/transitionRange" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "transition": { "$ref": "#/$defs/transition" }
+      }
+    },
+    "outputNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "inputNodeIds", "outputRange"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "kind": { "const": "output" },
+        "inputNodeIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/entityId" }
+        },
+        "outputRange": { "$ref": "#/$defs/outputRange" }
+      }
+    },
+    "renderNode": {
+      "oneOf": [
+        { "$ref": "#/$defs/videoNode" },
+        { "$ref": "#/$defs/audioNode" },
+        { "$ref": "#/$defs/subtitleNode" },
+        { "$ref": "#/$defs/graphicNode" },
+        { "$ref": "#/$defs/transitionNode" },
+        { "$ref": "#/$defs/outputNode" }
+      ]
+    }
+  }
+}
