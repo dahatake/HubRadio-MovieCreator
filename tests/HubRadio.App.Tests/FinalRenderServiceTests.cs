@@ -444,6 +444,40 @@ public sealed class FinalRenderServiceTests
     }
 
     [TestMethod]
+    public async Task DestinationConflictWithDifferentCreatedAtIsNotAnIdempotentDuplicate()
+    {
+        using FinalRenderFixture fixture = new();
+        FinalRenderRequest firstRequest = fixture.CreateRequest();
+        FinalRenderRequest conflictingRequest = fixture.CreateRequest(
+            outputCreatedAt: firstRequest.OutputCreatedAt.AddMinutes(1));
+        fixture.PromotionBehavior = (_, _) =>
+        {
+            fixture.ExistingArtifact = fixture.CreateStoredArtifact(firstRequest);
+            throw new ArtifactStoreException(
+                ArtifactStoreFailureReason.DestinationExists,
+                reconciliationRequired: false);
+        };
+
+        FinalRenderRunResult result = await fixture.Service.RunAsync(
+            conflictingRequest);
+
+        Assert.AreEqual(
+            FinalRenderDisposition.ReconciliationRequired,
+            result.Disposition);
+        Assert.AreEqual(
+            FinalRenderFailureReason.ReconciliationRequired,
+            result.FailureReason);
+        Assert.AreEqual(FinalRenderStage.OutputVerified, result.LastCompletedStage);
+        Assert.AreEqual(0, fixture.RegisteredValidationCount);
+        Assert.AreEqual(1, fixture.ProcessCount);
+        Assert.AreEqual(1, fixture.OutputVerificationCount);
+        Assert.AreEqual(1, fixture.PromotionCount);
+        Assert.AreNotEqual(
+            conflictingRequest.OutputCreatedAt.ToUniversalTime(),
+            fixture.ExistingArtifact?.CreatedAt);
+    }
+
+    [TestMethod]
     public async Task AmbiguousPromotionOutcomesRequireReconciliation()
     {
         using (FinalRenderFixture fixture = new())
@@ -959,7 +993,8 @@ public sealed class FinalRenderServiceTests
             ContentDigest? approvedDigest = null,
             IReadOnlyList<StoredApproval>? approvalEvidence = null,
             FinalRenderPolicySnapshot? policySnapshot = null,
-            IReadOnlyList<FfmpegInputBinding>? inputs = null) =>
+            IReadOnlyList<FfmpegInputBinding>? inputs = null,
+            DateTimeOffset? outputCreatedAt = null) =>
             new(
                 Job.Id,
                 Project.Id,
@@ -980,7 +1015,7 @@ public sealed class FinalRenderServiceTests
                 TimeSpan.FromMinutes(5),
                 ExpectedOutputDigest,
                 ExpectedOutputByteSize,
-                OutputCreatedAt);
+                outputCreatedAt ?? OutputCreatedAt);
 
         internal StoredApproval AppendApproval()
         {
