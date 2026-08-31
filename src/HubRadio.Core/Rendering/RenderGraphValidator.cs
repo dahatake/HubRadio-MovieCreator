@@ -174,6 +174,7 @@ public enum RenderGraphValidationIssueKind
     Cycle,
     UnreachableNode,
     OutputNodeInvalid,
+    OutputStreamMismatch,
     OutputRangeMismatch,
     NodeRangeOutOfBounds,
     LayoutRegionMissing,
@@ -466,6 +467,38 @@ public static class RenderGraphValidator
             issues.Add(
                 RenderGraphValidationIssueKind.OutputNodeInvalid,
                 extra.Id);
+        }
+
+        if (output is not null)
+        {
+            RenderNode[] terminalInputs = output.InputNodeIds
+                .Where(nodes.ContainsKey)
+                .Select(id => nodes[id])
+                .ToArray();
+            int audioCount = terminalInputs.Count(static node =>
+                node.Kind == RenderNodeKind.Audio);
+            int subtitleCount = terminalInputs.Count(static node =>
+                node.Kind == RenderNodeKind.Subtitle);
+            int primaryVisualCount = terminalInputs.Count(static node =>
+                node.Kind is RenderNodeKind.Video
+                    or RenderNodeKind.Graphic
+                    or RenderNodeKind.Transition);
+            bool streamsMatch = context.Profile.SubtitleBurnIn
+                ? subtitleCount == 1
+                    && primaryVisualCount == 0
+                    && audioCount <= 1
+                    && terminalInputs.Length == subtitleCount + audioCount
+                : primaryVisualCount == 1
+                    && subtitleCount <= 1
+                    && audioCount <= 1
+                    && terminalInputs.Length ==
+                        primaryVisualCount + subtitleCount + audioCount;
+            if (!streamsMatch)
+            {
+                issues.Add(
+                    RenderGraphValidationIssueKind.OutputStreamMismatch,
+                    output.Id);
+            }
         }
 
         TimeRange expectedOutput = new(default, timelineEnd);

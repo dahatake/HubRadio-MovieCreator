@@ -187,6 +187,35 @@ public sealed class RenderGraphValidatorTests
     }
 
     [TestMethod]
+    public void OutputNodeRejectsAmbiguousTerminalMediaStreams()
+    {
+        Fixture fixture = Fixture.Create();
+        RenderNode ambiguousOutput = RenderNode.Output(
+            fixture.OutputNode.Id,
+            [
+                fixture.TransitionNode.Id,
+                fixture.GraphicNode.Id,
+                fixture.AudioNode.Id,
+            ],
+            fixture.OutputNode.OutputRange);
+        RenderGraph ambiguous = fixture.GraphWith(
+            nodes:
+            [
+                fixture.VideoNode,
+                fixture.AudioNode,
+                fixture.SubtitleNode,
+                fixture.GraphicNode,
+                fixture.TransitionNode,
+                ambiguousOutput,
+            ]);
+
+        AssertIssue(
+            RenderGraphValidator.Validate(ambiguous, fixture.Context),
+            RenderGraphValidationIssueKind.OutputStreamMismatch,
+            nodeId: ambiguousOutput.Id);
+    }
+
+    [TestMethod]
     public void CompositionAndTimelineBindingsRejectForgedDigestAndMapping()
     {
         Fixture fixture = Fixture.Create();
@@ -949,7 +978,7 @@ public sealed class RenderGraphValidatorTests
             var subtitleNode = RenderNode.Subtitle(
                 NodeId(3),
                 subtitleInput.Id,
-                videoNode.Id,
+                targetVisualNodeId: NodeId(5),
                 new Cue(Id<CueIdTag>(0x7700001a, 1), CueKind.Subtitle, Range(1, 1), "subtitle"),
                 editorialOrigin);
             var graphicNode = RenderNode.Graphic(
@@ -966,7 +995,7 @@ public sealed class RenderGraphValidatorTests
                 Transition.Crossfade(new RationalTime(1, 1)));
             var outputNode = RenderNode.Output(
                 NodeId(6),
-                [transitionNode.Id, audioNode.Id, subtitleNode.Id],
+                [subtitleNode.Id, audioNode.Id],
                 Range(0, 4));
             RenderGraph graph = new(
                 GraphId(1),
