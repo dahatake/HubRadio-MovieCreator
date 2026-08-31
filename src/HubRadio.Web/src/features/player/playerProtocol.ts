@@ -1,4 +1,7 @@
-import { BRIDGE_PROTOCOL_VERSION } from '../../bridge/protocol'
+import {
+  BRIDGE_MAX_PLAYER_RESPONSE_UTF8_BYTES,
+  BRIDGE_PROTOCOL_VERSION,
+} from '../../bridge/protocol'
 
 export const PLAYER_READ_METHOD = 'player.read' as const
 export const PLAYER_SEEK_METHOD = 'player.seek' as const
@@ -189,7 +192,10 @@ export function createPlayerSeekRequest(
 }
 
 export function parsePlayerReadResponse(value: unknown): PlayerReadResponse | null {
-  if (!hasExactKeys(value, ['version', 'requestId', 'method', 'result'])) {
+  if (
+    !isWithinUtf8Limit(value, BRIDGE_MAX_PLAYER_RESPONSE_UTF8_BYTES) ||
+    !hasExactKeys(value, ['version', 'requestId', 'method', 'result'])
+  ) {
     return null
   }
   if (
@@ -234,7 +240,10 @@ export function parsePlayerReadResponse(value: unknown): PlayerReadResponse | nu
 }
 
 export function parsePlayerSeekResponse(value: unknown): PlayerSeekResponse | null {
-  if (!hasExactKeys(value, ['version', 'requestId', 'method', 'result'])) {
+  if (
+    !isWithinUtf8Limit(value, BRIDGE_MAX_PLAYER_RESPONSE_UTF8_BYTES) ||
+    !hasExactKeys(value, ['version', 'requestId', 'method', 'result'])
+  ) {
     return null
   }
   if (
@@ -832,6 +841,18 @@ function isInt16(value: unknown): value is number {
     value >= -32_768 &&
     value <= 32_767
   )
+}
+
+function isWithinUtf8Limit(value: unknown, maximumBytes: number): boolean {
+  try {
+    const serialized = JSON.stringify(value)
+    return (
+      serialized !== undefined &&
+      new TextEncoder().encode(serialized).byteLength <= maximumBytes
+    )
+  } catch {
+    return false
+  }
 }
 
 function hasExactKeys(

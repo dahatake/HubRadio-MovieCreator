@@ -1,6 +1,7 @@
 export const BRIDGE_PROTOCOL_VERSION = 1 as const
 export const BRIDGE_MAX_REQUEST_UTF8_BYTES = 256 as const
 export const BRIDGE_MAX_RESPONSE_UTF8_BYTES = 4096 as const
+export const BRIDGE_MAX_PLAYER_RESPONSE_UTF8_BYTES = 64 * 1024 * 1024
 export const BRIDGE_PING_METHOD = 'bridge.ping' as const
 export const JOBS_GET_STATUS_METHOD = 'jobs.getStatus' as const
 export const JOBS_CANCEL_METHOD = 'jobs.cancel' as const

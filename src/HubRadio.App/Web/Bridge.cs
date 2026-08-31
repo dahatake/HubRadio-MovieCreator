@@ -6,6 +6,7 @@ using System.Text.Json;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Jobs;
 using HubRadio.Core.Serialization;
+using HubRadio.Infrastructure.Database;
 using HubRadio.Infrastructure.Diagnostics;
 using Microsoft.Web.WebView2.Core;
 
@@ -113,6 +114,8 @@ internal static class BridgeProtocol
     internal const int MaxResponseUtf8Bytes = 4096;
     internal const int MaxProjectRequestUtf8Bytes = 96 * 1024;
     internal const int MaxProjectResponseUtf8Bytes = 1024 * 1024;
+    internal const int MaxPlayerResponseUtf8Bytes =
+        IngestWorkflowStore.MaximumPayloadUtf8Bytes;
     internal const string PingMethod = "bridge.ping";
     internal const string ListProjectsMethod = "project.list";
     internal const string CreateDraftMethod = "project.createDraft";
@@ -365,9 +368,13 @@ internal static class BridgeProtocol
         };
 
     internal static int GetMaximumResponseUtf8Bytes(BridgeMethod method) =>
-        IsProjectMethod(method)
-            ? MaxProjectResponseUtf8Bytes
-            : MaxResponseUtf8Bytes;
+        method switch
+        {
+            BridgeMethod.PlayerRead or BridgeMethod.PlayerSeek =>
+                MaxPlayerResponseUtf8Bytes,
+            _ when IsProjectMethod(method) => MaxProjectResponseUtf8Bytes,
+            _ => MaxResponseUtf8Bytes,
+        };
 
     internal static bool IsProjectMethod(BridgeMethod method) =>
         method is
@@ -649,8 +656,24 @@ internal static class BridgeProtocol
 
     internal static string GetBoundedResponse(ArrayBufferWriter<byte> buffer)
     {
+        return GetBoundedResponse(buffer, MaxResponseUtf8Bytes);
+    }
+
+    internal static string GetBoundedResponse(
+        ArrayBufferWriter<byte> buffer,
+        BridgeMethod method)
+    {
+        return GetBoundedResponse(
+            buffer,
+            GetMaximumResponseUtf8Bytes(method));
+    }
+
+    private static string GetBoundedResponse(
+        ArrayBufferWriter<byte> buffer,
+        int maximumUtf8Bytes)
+    {
         ArgumentNullException.ThrowIfNull(buffer);
-        if (buffer.WrittenCount > MaxResponseUtf8Bytes)
+        if (buffer.WrittenCount > maximumUtf8Bytes)
         {
             throw new InvalidOperationException(
                 "The bridge response exceeds the supported size.");

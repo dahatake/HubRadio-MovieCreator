@@ -760,7 +760,25 @@ internal static class PlayerBridgeJson
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(result);
-        var buffer = new ArrayBufferWriter<byte>();
+        try
+        {
+            return WriteReadResponseCore(request, result);
+        }
+        catch (InvalidOperationException)
+            when (result.Status == PlayerBridgeStatus.Available)
+        {
+            return WriteReadResponseCore(
+                request,
+                PlayerBridgeReadResult.Unavailable());
+        }
+    }
+
+    private static string WriteReadResponseCore(
+        BridgeRequest request,
+        PlayerBridgeReadResult result)
+    {
+        var buffer = new BoundedBufferWriter(
+            BridgeProtocol.GetMaximumResponseUtf8Bytes(request.Method));
         using Utf8JsonWriter writer = new(buffer);
         WriteEnvelopeStart(writer, request);
         writer.WriteStartObject("result");
@@ -794,7 +812,8 @@ internal static class PlayerBridgeJson
                 nameof(status));
         }
 
-        var buffer = new ArrayBufferWriter<byte>();
+        var buffer = new BoundedBufferWriter(
+            BridgeProtocol.GetMaximumResponseUtf8Bytes(request.Method));
         using Utf8JsonWriter writer = new(buffer);
         WriteEnvelopeStart(writer, request);
         writer.WriteStartObject("result");
@@ -975,4 +994,66 @@ internal static class PlayerBridgeJson
                 status,
                 "Unknown player bridge status."),
         };
+
+    internal sealed class BoundedBufferWriter : IBufferWriter<byte>
+    {
+        private readonly ArrayBufferWriter<byte> buffer = new();
+        private readonly int maximumBytes;
+
+        internal BoundedBufferWriter(int maximumBytes)
+        {
+            if (maximumBytes <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(maximumBytes));
+            }
+
+            this.maximumBytes = maximumBytes;
+        }
+
+        internal ReadOnlySpan<byte> WrittenSpan => buffer.WrittenSpan;
+
+        public void Advance(int count)
+        {
+            if (count < 0 || count > maximumBytes - buffer.WrittenCount)
+            {
+                throw new InvalidOperationException(
+                    "The bridge response exceeds the supported size.");
+            }
+
+            buffer.Advance(count);
+        }
+
+        public Memory<byte> GetMemory(int sizeHint = 0)
+        {
+            int requested = GetRequestedSize(sizeHint);
+            Memory<byte> memory = buffer.GetMemory(requested);
+            return memory[..Math.Min(memory.Length, RemainingBytes)];
+        }
+
+        public Span<byte> GetSpan(int sizeHint = 0)
+        {
+            int requested = GetRequestedSize(sizeHint);
+            Span<byte> span = buffer.GetSpan(requested);
+            return span[..Math.Min(span.Length, RemainingBytes)];
+        }
+
+        private int RemainingBytes => maximumBytes - buffer.WrittenCount;
+
+        private int GetRequestedSize(int sizeHint)
+        {
+            if (sizeHint < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(sizeHint));
+            }
+
+            int requested = Math.Max(sizeHint, 1);
+            if (requested > RemainingBytes)
+            {
+                throw new InvalidOperationException(
+                    "The bridge response exceeds the supported size.");
+            }
+
+            return requested;
+        }
+    }
 }

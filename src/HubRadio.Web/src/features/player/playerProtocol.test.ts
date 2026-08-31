@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  BRIDGE_MAX_PLAYER_RESPONSE_UTF8_BYTES,
+  BRIDGE_MAX_RESPONSE_UTF8_BYTES,
+} from '../../bridge/protocol'
+
+import {
   createPlayerReadRequest,
   createPlayerSeekRequest,
   findProxyFrameAtDerivedMediaSeconds,
@@ -100,6 +105,20 @@ describe('player bridge protocol', () => {
     expect(Object.isFrozen(parsed.result.snapshot)).toBe(true)
     expect(Object.isFrozen(parsed.result.snapshot.frames)).toBe(true)
     expect(Object.isFrozen(parsed.result.snapshot.frames[0]?.waveformChannels)).toBe(true)
+  })
+
+  it('uses the bounded player envelope rather than the compact job limit', () => {
+    const large = clonePlayerValue()
+    large.result.snapshot.waveform.channelLayout = 'x'.repeat(
+      BRIDGE_MAX_RESPONSE_UTF8_BYTES,
+    )
+    const byteLength = new TextEncoder().encode(JSON.stringify(large)).byteLength
+    expect(byteLength).toBeGreaterThan(BRIDGE_MAX_RESPONSE_UTF8_BYTES)
+    expect(
+      byteLength,
+    ).toBeLessThanOrEqual(BRIDGE_MAX_PLAYER_RESPONSE_UTF8_BYTES)
+
+    expect(parsePlayerReadResponse(large)?.result.status).toBe('available')
   })
 
   it('preserves a negative observed proxy start without normalizing it', () => {

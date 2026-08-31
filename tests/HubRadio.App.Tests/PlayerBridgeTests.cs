@@ -81,6 +81,9 @@ public sealed class PlayerBridgeTests
 
         string responseJson = await handler.HandleAsync(request);
 
+        Assert.IsLessThanOrEqualTo(
+            BridgeProtocol.MaxPlayerResponseUtf8Bytes,
+            Encoding.UTF8.GetByteCount(responseJson));
         using JsonDocument document = JsonDocument.Parse(responseJson);
         JsonElement root = document.RootElement;
         AssertExactKeys(root, "version", "requestId", "method", "result");
@@ -127,6 +130,53 @@ public sealed class PlayerBridgeTests
         Assert.IsTrue(WebViewHost.IsAllowedMediaAssetUri(spriteReference));
         Assert.IsFalse(responseJson.Contains(@"C:\", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(responseJson.Contains("file://", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task LargeReadResponseUsesPlayerEnvelopeInsteadOfCompactJobLimit()
+    {
+        PlayerBridgeReadResult available = CreateReadResult(
+            CreateEvidenceFixture(waveformChannelCount: 128));
+        Assert.AreEqual(PlayerBridgeStatus.Available, available.Status);
+        var handler = new PlayerBridgeRequestHandler(
+            new StubReader(available),
+            AllowPlayerAccessAuthorization.Instance);
+        var request = new BridgeRequest(
+            Guid.Parse(RequestId),
+            BridgeProtocol.PlayerReadMethod,
+            JobId);
+
+        string responseJson = await handler.HandleAsync(request);
+
+        Assert.IsGreaterThan(
+            BridgeProtocol.MaxResponseUtf8Bytes,
+            Encoding.UTF8.GetByteCount(responseJson));
+        Assert.IsLessThanOrEqualTo(
+            BridgeProtocol.MaxPlayerResponseUtf8Bytes,
+            Encoding.UTF8.GetByteCount(responseJson));
+        using JsonDocument document = JsonDocument.Parse(responseJson);
+        JsonElement result = document.RootElement.GetProperty("result");
+        Assert.AreEqual("available", result.GetProperty("status").GetString());
+        Assert.AreEqual(
+            JsonValueKind.Object,
+            result.GetProperty("snapshot").ValueKind);
+    }
+
+    [TestMethod]
+    public void BoundedResponseWriterRejectsGrowthBeforeAdvancingPastItsLimit()
+    {
+        var writer = new PlayerBridgeJson.BoundedBufferWriter(4);
+        Span<byte> destination = writer.GetSpan(4);
+        destination[..4].Fill(0x2a);
+        writer.Advance(4);
+
+        Assert.AreEqual(4, writer.WrittenSpan.Length);
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            writer.GetMemory(1));
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            writer.Advance(1));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() =>
+            writer.GetSpan(-1));
     }
 
     [TestMethod]
@@ -532,7 +582,8 @@ public sealed class PlayerBridgeTests
                 SpriteImageDigest));
 
     private static PlayerEvidenceFixture CreateEvidenceFixture(
-        IReadOnlyList<PtsIndexEntry>? entries = null)
+        IReadOnlyList<PtsIndexEntry>? entries = null,
+        int waveformChannelCount = 1)
     {
         PtsIndexEntry[] proxyEntries = entries?.ToArray() ??
         [
@@ -568,10 +619,13 @@ public sealed class PlayerBridgeTests
                 entry.Sequence,
                 entry.PresentationTime,
                 entry.Duration,
-                [MediaCheckpointFactory.RestoreWaveformChannel(
-                    0,
-                    checked((short)(-100 - entry.Sequence)),
-                    checked((short)(100 + entry.Sequence)))]))
+                Enumerable.Range(0, waveformChannelCount)
+                    .Select(channelIndex =>
+                        MediaCheckpointFactory.RestoreWaveformChannel(
+                            channelIndex,
+                            checked((short)(-100 - entry.Sequence)),
+                            checked((short)(100 + entry.Sequence))))
+                    .ToArray()))
             .ToArray();
         PreviewWaveformIndex waveform =
             MediaCheckpointFactory.RestoreWaveformIndex(
@@ -582,8 +636,10 @@ public sealed class PlayerBridgeTests
                 proxyPtsIndexDigest,
                 "proxy-preview-assets-v1",
                 sampleRate: 8000,
-                channelCount: 1,
-                channelLayout: "mono",
+                channelCount: waveformChannelCount,
+                channelLayout: waveformChannelCount == 1
+                    ? "mono"
+                    : "test-multichannel",
                 waveformFrames);
         ThumbnailSpriteIndex sprite = MediaCheckpointFactory.RestoreSpriteIndex(
             SourceAssetId,
