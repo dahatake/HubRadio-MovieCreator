@@ -357,6 +357,7 @@ internal static class SqliteStoreSupport
             !ReadExpectedMigration(reader, 4, "004_role_assignments") ||
             !ReadExpectedMigration(reader, 5, "005_term_entries") ||
             !ReadExpectedMigration(reader, 6, "006_ingest_workflows") ||
+            !ReadExpectedMigration(reader, 7, "007_project_creation_drafts") ||
             reader.Read())
         {
             throw new InvalidOperationException(

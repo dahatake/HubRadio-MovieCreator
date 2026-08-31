@@ -8,6 +8,15 @@ public static class StableErrorCodes
 
     public const string DiagnosticLogWriteFailed = "diagnostic.log_write_failed";
     public const string ProcessStartFailed = ProcessStartException.StableErrorCode;
+    public const string ProjectAlreadyFinalized = "project.already_finalized";
+    public const string ProjectIncomplete = "project.incomplete";
+    public const string ProjectInvalidRequest = "project.invalid_request";
+    public const string ProjectNotAuthorized = "project.not_authorized";
+    public const string ProjectNotFound = "project.not_found";
+    public const string ProjectOperationFailed = "project.operation_failed";
+    public const string ProjectRevisionConflict = "project.revision_conflict";
+    public const string ProjectSourceReselectionRequired =
+        "project.source_reselection_required";
     public const string WebViewInitializationFailed = "webview.initialization_failed";
     public const string WebViewRuntimeUnavailable = "webview.runtime_unavailable";
     public const string WorkerInvalidMessage = "worker.invalid_message";
@@ -19,6 +28,14 @@ public static class StableErrorCodes
     [
         DiagnosticLogWriteFailed,
         ProcessStartFailed,
+        ProjectAlreadyFinalized,
+        ProjectIncomplete,
+        ProjectInvalidRequest,
+        ProjectNotAuthorized,
+        ProjectNotFound,
+        ProjectOperationFailed,
+        ProjectRevisionConflict,
+        ProjectSourceReselectionRequired,
         WebViewInitializationFailed,
         WebViewRuntimeUnavailable,
         WorkerInvalidMessage,
@@ -32,6 +49,17 @@ public static class StableErrorCodes
     public static bool IsDefined(string? code) =>
         string.Equals(code, DiagnosticLogWriteFailed, StringComparison.Ordinal) ||
         string.Equals(code, ProcessStartFailed, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectAlreadyFinalized, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectIncomplete, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectInvalidRequest, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectNotAuthorized, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectNotFound, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectOperationFailed, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectRevisionConflict, StringComparison.Ordinal) ||
+        string.Equals(
+            code,
+            ProjectSourceReselectionRequired,
+            StringComparison.Ordinal) ||
         string.Equals(code, WebViewInitializationFailed, StringComparison.Ordinal) ||
         string.Equals(code, WebViewRuntimeUnavailable, StringComparison.Ordinal) ||
         string.Equals(code, WorkerInvalidMessage, StringComparison.Ordinal) ||

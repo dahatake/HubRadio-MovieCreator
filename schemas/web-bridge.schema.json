@@ -1,28 +1,98 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts request messages only from the bundled HTTPS origin and rejects messages over 128 UTF-8 bytes before parsing. Version 1 intentionally exposes only the technical bridge.ping method and no business RPC methods or raw host objects.",
+  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the bundled HTTPS origin, rejects requests over 96 KiB before parsing, and bounds responses to 1 MiB. Source media crosses this boundary only as an opaque candidate ID; paths and Windows identities are prohibited.",
   "title": "WebBridgeMessage",
   "oneOf": [
-    {
-      "$ref": "#/$defs/pingRequest"
-    },
-    {
-      "$ref": "#/$defs/pingResponse"
-    }
+    { "$ref": "#/$defs/pingRequest" },
+    { "$ref": "#/$defs/listRequest" },
+    { "$ref": "#/$defs/createDraftRequest" },
+    { "$ref": "#/$defs/loadDraftRequest" },
+    { "$ref": "#/$defs/saveDraftRequest" },
+    { "$ref": "#/$defs/pickSourceRequest" },
+    { "$ref": "#/$defs/finalizeDraftRequest" },
+    { "$ref": "#/$defs/pingResponse" },
+    { "$ref": "#/$defs/listResponse" },
+    { "$ref": "#/$defs/draftResponse" },
+    { "$ref": "#/$defs/pickSourceResponse" },
+    { "$ref": "#/$defs/errorResponse" }
   ],
   "$defs": {
-    "protocolVersion": {
-      "const": 1
-    },
+    "protocolVersion": { "const": 1 },
     "requestId": {
       "type": "string",
       "minLength": 36,
       "maxLength": 36,
       "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     },
+    "entityId": { "$ref": "#/$defs/requestId" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{7}\\+00:00$"
+    },
+    "inputTimestamp": {
+      "oneOf": [
+        { "$ref": "#/$defs/timestamp" },
+        {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+        }
+      ]
+    },
     "method": {
       "enum": [
-        "bridge.ping"
+        "bridge.ping",
+        "project.list",
+        "project.createDraft",
+        "project.loadDraft",
+        "project.saveDraft",
+        "project.pickSource",
+        "project.finalizeDraft"
+      ]
+    },
+    "publicationScope": {
+      "enum": [
+        "internalOnly",
+        "specificGroupOnly",
+        "externalCandidate",
+        "externalPublicationApproved",
+        "publicationForbidden",
+        "pendingDecision"
+      ]
+    },
+    "sourceStatus": {
+      "enum": [
+        "notSelected",
+        "available",
+        "reselectionRequired"
+      ]
+    },
+    "missingField": {
+      "enum": [
+        "sourceMedia",
+        "contentName",
+        "purpose",
+        "audience",
+        "publicationScope",
+        "outputFormats",
+        "language",
+        "performerNames",
+        "deadline",
+        "brandTemplate"
+      ]
+    },
+    "optionalString": {
+      "type": ["string", "null"]
+    },
+    "optionalEntityId": {
+      "oneOf": [
+        { "$ref": "#/$defs/entityId" },
+        { "type": "null" }
+      ]
+    },
+    "optionalPublicationScope": {
+      "oneOf": [
+        { "$ref": "#/$defs/publicationScope" },
+        { "type": "null" }
       ]
     },
     "emptyObject": {
@@ -30,63 +100,390 @@
       "additionalProperties": false,
       "maxProperties": 0
     },
+    "deadlineInput": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hasDeadline", "value"],
+          "properties": {
+            "hasDeadline": { "const": false },
+            "value": { "type": "null" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hasDeadline", "value"],
+          "properties": {
+            "hasDeadline": { "const": true },
+            "value": { "$ref": "#/$defs/inputTimestamp" }
+          }
+        }
+      ]
+    },
+    "draftInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceCandidateId",
+        "contentName",
+        "purpose",
+        "audience",
+        "publicationScope",
+        "outputProfileIds",
+        "language",
+        "performerNames",
+        "deadlineSelection",
+        "brandTemplateId"
+      ],
+      "properties": {
+        "sourceCandidateId": { "$ref": "#/$defs/optionalEntityId" },
+        "contentName": { "$ref": "#/$defs/optionalString" },
+        "purpose": { "$ref": "#/$defs/optionalString" },
+        "audience": { "$ref": "#/$defs/optionalString" },
+        "publicationScope": { "$ref": "#/$defs/optionalPublicationScope" },
+        "outputProfileIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/entityId" }
+        },
+        "language": { "$ref": "#/$defs/optionalString" },
+        "performerNames": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string" }
+        },
+        "deadlineSelection": { "$ref": "#/$defs/deadlineInput" },
+        "brandTemplateId": { "$ref": "#/$defs/optionalEntityId" }
+      }
+    },
     "pingRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "version",
-        "requestId",
-        "method",
-        "params"
-      ],
+      "required": ["version", "requestId", "method", "params"],
       "properties": {
-        "version": {
-          "$ref": "#/$defs/protocolVersion"
-        },
-        "requestId": {
-          "$ref": "#/$defs/requestId"
-        },
-        "method": {
-          "$ref": "#/$defs/method"
-        },
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "bridge.ping" },
+        "params": { "$ref": "#/$defs/emptyObject" }
+      }
+    },
+    "listRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "project.list" },
+        "params": { "$ref": "#/$defs/emptyObject" }
+      }
+    },
+    "createDraftRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "project.createDraft" },
+        "params": { "$ref": "#/$defs/emptyObject" }
+      }
+    },
+    "loadDraftRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "project.loadDraft" },
         "params": {
-          "$ref": "#/$defs/emptyObject"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["draftId"],
+          "properties": {
+            "draftId": { "$ref": "#/$defs/entityId" }
+          }
         }
       }
     },
-    "pingResult": {
+    "saveDraftRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "project.saveDraft" },
+        "params": { "$ref": "#/$defs/mutateDraftParams" }
+      }
+    },
+    "pickSourceRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "project.pickSource" },
+        "params": { "$ref": "#/$defs/emptyObject" }
+      }
+    },
+    "finalizeDraftRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "project.finalizeDraft" },
+        "params": { "$ref": "#/$defs/mutateDraftParams" }
+      }
+    },
+    "mutateDraftParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["draftId", "expectedRevision", "input"],
+      "properties": {
+        "draftId": { "$ref": "#/$defs/entityId" },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "input": { "$ref": "#/$defs/draftInput" }
+      }
+    },
+    "catalogOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projectListItem": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "protocolVersion"
+        "draftId",
+        "projectId",
+        "state",
+        "contentName",
+        "episodeNumber",
+        "sourceStatus",
+        "owner",
+        "publicationScope",
+        "editState",
+        "reviewState",
+        "outputFormats",
+        "updatedAt"
       ],
       "properties": {
-        "protocolVersion": {
-          "$ref": "#/$defs/protocolVersion"
-        }
+        "draftId": { "$ref": "#/$defs/entityId" },
+        "projectId": { "$ref": "#/$defs/optionalEntityId" },
+        "state": { "enum": ["draft", "finalized"] },
+        "contentName": { "$ref": "#/$defs/optionalString" },
+        "episodeNumber": { "type": "null" },
+        "sourceStatus": { "$ref": "#/$defs/sourceStatus" },
+        "owner": { "type": "null" },
+        "publicationScope": { "$ref": "#/$defs/optionalPublicationScope" },
+        "editState": { "type": "null" },
+        "reviewState": { "type": "null" },
+        "outputFormats": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "draftId",
+        "revision",
+        "isFinalized",
+        "projectId",
+        "sourceCandidateId",
+        "sourceStatus",
+        "contentName",
+        "purpose",
+        "audience",
+        "publicationScope",
+        "outputProfileIds",
+        "language",
+        "performerNames",
+        "deadlineSelection",
+        "brandTemplateId",
+        "missingFields",
+        "updatedAt"
+      ],
+      "properties": {
+        "draftId": { "$ref": "#/$defs/entityId" },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "isFinalized": { "type": "boolean" },
+        "projectId": { "$ref": "#/$defs/optionalEntityId" },
+        "sourceCandidateId": { "$ref": "#/$defs/optionalEntityId" },
+        "sourceStatus": { "$ref": "#/$defs/sourceStatus" },
+        "contentName": { "$ref": "#/$defs/optionalString" },
+        "purpose": { "$ref": "#/$defs/optionalString" },
+        "audience": { "$ref": "#/$defs/optionalString" },
+        "publicationScope": { "$ref": "#/$defs/optionalPublicationScope" },
+        "outputProfileIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/entityId" }
+        },
+        "language": { "$ref": "#/$defs/optionalString" },
+        "performerNames": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string" }
+        },
+        "deadlineSelection": { "$ref": "#/$defs/deadlineInput" },
+        "brandTemplateId": { "$ref": "#/$defs/optionalEntityId" },
+        "missingFields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/missingField" }
+        },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
       }
     },
     "pingResponse": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "version",
-        "requestId",
-        "method",
-        "result"
-      ],
+      "required": ["version", "requestId", "method", "result"],
       "properties": {
-        "version": {
-          "$ref": "#/$defs/protocolVersion"
-        },
-        "requestId": {
-          "$ref": "#/$defs/requestId"
-        },
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "bridge.ping" },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["protocolVersion"],
+          "properties": {
+            "protocolVersion": { "$ref": "#/$defs/protocolVersion" }
+          }
+        }
+      }
+    },
+    "listResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "project.list" },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["projects", "catalog", "canCreate"],
+          "properties": {
+            "projects": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/projectListItem" }
+            },
+            "catalog": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["outputProfiles", "brandTemplates"],
+              "properties": {
+                "outputProfiles": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/catalogOption" }
+                },
+                "brandTemplates": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/catalogOption" }
+                }
+              }
+            },
+            "canCreate": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "draftResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
         "method": {
-          "$ref": "#/$defs/method"
+          "enum": [
+            "project.createDraft",
+            "project.loadDraft",
+            "project.saveDraft",
+            "project.finalizeDraft"
+          ]
         },
         "result": {
-          "$ref": "#/$defs/pingResult"
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["draft"],
+          "properties": {
+            "draft": { "$ref": "#/$defs/draft" }
+          }
+        }
+      }
+    },
+    "pickSourceResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "project.pickSource" },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["candidateId"],
+          "properties": {
+            "candidateId": { "$ref": "#/$defs/optionalEntityId" }
+          }
+        }
+      }
+    },
+    "errorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "error"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "$ref": "#/$defs/method" },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": {
+              "enum": [
+                "project.already_finalized",
+                "project.incomplete",
+                "project.invalid_request",
+                "project.not_authorized",
+                "project.not_found",
+                "project.operation_failed",
+                "project.revision_conflict",
+                "project.source_reselection_required"
+              ]
+            },
+            "message": { "type": "string", "minLength": 1 }
+          }
         }
       }
     }

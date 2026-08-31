@@ -6,7 +6,7 @@ namespace HubRadio.App.Tests;
 public sealed class WebBridgeSchemaTests
 {
     [TestMethod]
-    public void SchemaIsClosedVersionedAndAllowsOnlyPing()
+    public void SchemaIsClosedVersionedAndAllowsOnlyExplicitProjectMethods()
     {
         using JsonDocument document = JsonDocument.Parse(
             File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
@@ -15,16 +15,44 @@ public sealed class WebBridgeSchemaTests
 
         Assert.AreEqual("https://json-schema.org/draft/2020-12/schema", root.GetProperty("$schema").GetString());
         Assert.AreEqual("WebBridgeMessage", root.GetProperty("title").GetString());
-        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "128 UTF-8 bytes");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "96 KiB");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "1 MiB");
         Assert.AreEqual(1, definitions.GetProperty("protocolVersion").GetProperty("const").GetInt32());
         CollectionAssert.AreEqual(
-            new[] { "bridge.ping" },
+            new[]
+            {
+                "bridge.ping",
+                "project.list",
+                "project.createDraft",
+                "project.loadDraft",
+                "project.saveDraft",
+                "project.pickSource",
+                "project.finalizeDraft",
+            },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
                 .Select(static item => item.GetString())
                 .ToArray());
 
-        foreach (string definitionName in new[] { "pingRequest", "pingResult", "pingResponse" })
+        foreach (string definitionName in new[]
+        {
+            "pingRequest",
+            "listRequest",
+            "createDraftRequest",
+            "loadDraftRequest",
+            "saveDraftRequest",
+            "pickSourceRequest",
+            "finalizeDraftRequest",
+            "mutateDraftParams",
+            "draftInput",
+            "projectListItem",
+            "draft",
+            "pingResponse",
+            "listResponse",
+            "draftResponse",
+            "pickSourceResponse",
+            "errorResponse",
+        })
         {
             Assert.AreEqual(
                 JsonValueKind.False,
@@ -33,7 +61,7 @@ public sealed class WebBridgeSchemaTests
     }
 
     [TestMethod]
-    public void RequestAndResponseHaveDistinctExactEnvelopes()
+    public void RequestAndResponseHaveDistinctExactEnvelopesAndTenFieldInput()
     {
         using JsonDocument document = JsonDocument.Parse(
             File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
@@ -45,12 +73,82 @@ public sealed class WebBridgeSchemaTests
         CollectionAssert.AreEquivalent(
             new[] { "version", "requestId", "method", "result" },
             GetStrings(definitions.GetProperty("pingResponse").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "error" },
+            GetStrings(definitions.GetProperty("errorResponse").GetProperty("required")));
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "sourceCandidateId",
+                "contentName",
+                "purpose",
+                "audience",
+                "publicationScope",
+                "outputProfileIds",
+                "language",
+                "performerNames",
+                "deadlineSelection",
+                "brandTemplateId",
+            },
+            GetStrings(definitions.GetProperty("draftInput").GetProperty("required")));
         Assert.AreEqual(
             0,
             definitions.GetProperty("emptyObject").GetProperty("maxProperties").GetInt32());
         Assert.AreEqual(
             36,
             definitions.GetProperty("requestId").GetProperty("maxLength").GetInt32());
+    }
+
+    [TestMethod]
+    public void ListSchemaRepresentsUnknownColumnsAsNullAndNeverDefinesPrivateValues()
+    {
+        using JsonDocument document = JsonDocument.Parse(
+            File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
+        JsonElement definitions = document.RootElement.GetProperty("$defs");
+        JsonElement properties = definitions
+            .GetProperty("projectListItem")
+            .GetProperty("properties");
+
+        foreach (string unavailable in new[]
+        {
+            "episodeNumber",
+            "owner",
+            "editState",
+            "reviewState",
+        })
+        {
+            Assert.AreEqual(
+                "null",
+                properties.GetProperty(unavailable).GetProperty("type").GetString());
+        }
+
+        string schema = document.RootElement.GetRawText();
+        Assert.IsFalse(schema.Contains("actorSid", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("windowsSid", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("sourcePath", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("filePath", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public void PersistencePayloadSchemaIsClosedVersionedAndOpaque()
+    {
+        using JsonDocument document = JsonDocument.Parse(
+            File.ReadAllText(ResolveRepositoryPath(
+                "schemas/project-creation-draft.schema.json")));
+        JsonElement root = document.RootElement;
+
+        Assert.AreEqual(JsonValueKind.False, root.GetProperty("additionalProperties").ValueKind);
+        Assert.AreEqual(12, root.GetProperty("required").GetArrayLength());
+        Assert.AreEqual(
+            "1.0.0",
+            root.GetProperty("properties")
+                .GetProperty("schemaVersion")
+                .GetProperty("const")
+                .GetString());
+        string schema = root.GetRawText();
+        StringAssert.Contains(schema, "sourceCandidateId");
+        Assert.IsFalse(schema.Contains("sourcePath", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("actorSid", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string[] GetStrings(JsonElement array)

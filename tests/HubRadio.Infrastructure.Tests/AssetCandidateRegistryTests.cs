@@ -34,6 +34,32 @@ public sealed class AssetCandidateRegistryTests
     }
 
     [TestMethod]
+    public void IsAvailable_ObservesTokenWithoutRevealingOrConsumingPath()
+    {
+        const string selectedPath = @"C:\private\availability.mov";
+        AssetCandidateRegistry registry = new();
+        EntityId<AssetIdTag> candidateId = registry.RegisterSelection(selectedPath)
+            ?? throw new AssertFailedException("A selected path must create a candidate.");
+
+        Assert.IsTrue(registry.IsAvailable(candidateId));
+        Assert.IsTrue(registry.IsAvailable(candidateId));
+        Assert.AreEqual(1, registry.PendingCount);
+        Assert.IsTrue(registry.TryClaim(candidateId, out string? claimedPath));
+        Assert.AreEqual(selectedPath, claimedPath);
+        Assert.IsFalse(registry.IsAvailable(candidateId));
+    }
+
+    [TestMethod]
+    public void IsAvailable_UnknownAndNullTokensFailClosed()
+    {
+        AssetCandidateRegistry registry = new();
+
+        Assert.IsFalse(registry.IsAvailable(EntityId<AssetIdTag>.New()));
+        Assert.ThrowsExactly<ArgumentNullException>(() => registry.IsAvailable(null!));
+        Assert.AreEqual(0, registry.PendingCount);
+    }
+
+    [TestMethod]
     public void TryClaim_RegisteredCandidate_ReturnsPathExactlyOnce()
     {
         const string selectedPath = @"C:\media\source.mov";

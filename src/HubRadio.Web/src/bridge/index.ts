@@ -4,13 +4,20 @@ import {
   type BridgePingRequest,
   type BridgePingResponse,
 } from './protocol'
+import {
+  parseProjectBridgeResponse,
+  type ProjectBridgeRequest,
+  type ProjectBridgeResponse,
+} from './projectProtocol'
+
+export * from './projectProtocol'
 
 export interface BridgeMessageEvent {
   readonly data: unknown
 }
 
 export interface BridgeTransport {
-  postMessage(message: BridgePingRequest): void
+  postMessage(message: BridgePingRequest | ProjectBridgeRequest): void
   addEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
   removeEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
 }
@@ -18,21 +25,29 @@ export interface BridgeTransport {
 export interface BridgeClient {
   sendPing(requestId: string): void
   onPingResponse(listener: (response: BridgePingResponse) => void): () => void
+  sendProject(request: ProjectBridgeRequest): void
+  onProjectResponse(listener: (response: ProjectBridgeResponse) => void): () => void
   dispose(): void
 }
 
 export function createBridgeClient(transport: BridgeTransport): BridgeClient {
   const listeners = new Set<(response: BridgePingResponse) => void>()
+  const projectListeners = new Set<(response: ProjectBridgeResponse) => void>()
   let disposed = false
 
   const receive = (event: BridgeMessageEvent): void => {
     const response = parsePingResponse(event.data)
-    if (response === null) {
-      return
+    if (response !== null) {
+      for (const listener of listeners) {
+        listener(response)
+      }
     }
 
-    for (const listener of listeners) {
-      listener(response)
+    const projectResponse = parseProjectBridgeResponse(event.data)
+    if (projectResponse !== null) {
+      for (const listener of projectListeners) {
+        listener(projectResponse)
+      }
     }
   }
 
@@ -50,6 +65,17 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
         listeners.delete(listener)
       }
     },
+    sendProject(request: ProjectBridgeRequest): void {
+      throwIfDisposed(disposed)
+      transport.postMessage(request)
+    },
+    onProjectResponse(listener: (response: ProjectBridgeResponse) => void): () => void {
+      throwIfDisposed(disposed)
+      projectListeners.add(listener)
+      return (): void => {
+        projectListeners.delete(listener)
+      }
+    },
     dispose(): void {
       if (disposed) {
         return
@@ -57,6 +83,7 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
 
       disposed = true
       listeners.clear()
+      projectListeners.clear()
       transport.removeEventListener('message', receive)
     },
   })

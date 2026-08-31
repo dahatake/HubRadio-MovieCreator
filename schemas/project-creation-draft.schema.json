@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hubradio.local/schemas/project-creation-draft.schema.json",
+  "$comment": "Canonical U-005 persistence payload. It contains only an opaque in-process source candidate ID and never a raw path or Windows identity. The host additionally enforces strict Unicode, substantive text, catalog membership, canonical JSON, and a 64 KiB UTF-8 limit.",
+  "title": "ProjectCreationDraft",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "draftId",
+    "sourceCandidateId",
+    "contentName",
+    "purpose",
+    "audience",
+    "publicationScope",
+    "outputProfiles",
+    "language",
+    "performerNames",
+    "deadlineSelection",
+    "brandTemplate"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "draftId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "sourceCandidateId": {
+      "oneOf": [
+        { "$ref": "#/$defs/entityId" },
+        { "type": "null" }
+      ]
+    },
+    "contentName": {
+      "$ref": "#/$defs/optionalText"
+    },
+    "purpose": {
+      "$ref": "#/$defs/optionalText"
+    },
+    "audience": {
+      "$ref": "#/$defs/optionalText"
+    },
+    "publicationScope": {
+      "oneOf": [
+        { "$ref": "#/$defs/publicationScope" },
+        { "type": "null" }
+      ]
+    },
+    "outputProfiles": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/outputProfile"
+      }
+    },
+    "language": {
+      "$ref": "#/$defs/optionalText"
+    },
+    "performerNames": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/text"
+      }
+    },
+    "deadlineSelection": {
+      "oneOf": [
+        { "$ref": "#/$defs/deadlineSelection" },
+        { "type": "null" }
+      ]
+    },
+    "brandTemplate": {
+      "oneOf": [
+        { "$ref": "#/$defs/brandTemplate" },
+        { "type": "null" }
+      ]
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "minLength": 36,
+      "maxLength": 36,
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "digest": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "optionalText": {
+      "oneOf": [
+        { "$ref": "#/$defs/text" },
+        { "type": "null" }
+      ]
+    },
+    "publicationScope": {
+      "enum": [
+        "internalOnly",
+        "specificGroupOnly",
+        "externalCandidate",
+        "externalPublicationApproved",
+        "publicationForbidden",
+        "pendingDecision"
+      ]
+    },
+    "outputProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "profileDigest"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "name": {
+          "$ref": "#/$defs/text"
+        },
+        "profileDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "deadlineSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deadline"
+      ],
+      "properties": {
+        "deadline": {
+          "oneOf": [
+            { "$ref": "#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "brandTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "versionDigest"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "name": {
+          "$ref": "#/$defs/text"
+        },
+        "versionDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{7}\\+00:00$"
+    }
+  }
+}

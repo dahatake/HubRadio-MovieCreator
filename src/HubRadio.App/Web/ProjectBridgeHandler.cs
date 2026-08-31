@@ -1,0 +1,281 @@
+using System.Text.Json;
+using HubRadio.App.Projects;
+using HubRadio.App.Security;
+using HubRadio.Core.Identity;
+using HubRadio.Core.Projects;
+using HubRadio.Infrastructure.Database;
+using HubRadio.Infrastructure.Diagnostics;
+
+namespace HubRadio.App.Web;
+
+internal sealed class ProjectBridgeHandler
+{
+    private readonly ProjectCreationService service;
+
+    internal ProjectBridgeHandler(ProjectCreationService service)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        this.service = service;
+    }
+
+    internal async Task<string> HandleAsync(
+        BridgeRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        try
+        {
+            return request.Method switch
+            {
+                BridgeProtocol.ListProjectsMethod =>
+                    WriteOverview(request, service.ListProjects()),
+                BridgeProtocol.CreateDraftMethod =>
+                    WriteDraft(request, service.CreateDraft()),
+                BridgeProtocol.LoadDraftMethod =>
+                    WriteDraft(request, service.LoadDraft(ReadDraftId(request))),
+                BridgeProtocol.SaveDraftMethod =>
+                    WriteDraft(
+                        request,
+                        service.SaveDraft(
+                            ReadDraftId(request),
+                            ReadExpectedRevision(request),
+                            request.Parameters.GetProperty("input"))),
+                BridgeProtocol.PickSourceMethod =>
+                    WritePickedSource(
+                        request,
+                        await service.PickSourceAsync(cancellationToken)),
+                BridgeProtocol.FinalizeDraftMethod =>
+                    WriteDraft(
+                        request,
+                        service.FinalizeDraft(
+                            ReadDraftId(request),
+                            ReadExpectedRevision(request),
+                            request.Parameters.GetProperty("input"))),
+                _ => BridgeProtocol.CreateErrorResponse(
+                    request,
+                    StableErrorCodes.ProjectInvalidRequest),
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (AuthorizationException)
+        {
+            return BridgeProtocol.CreateErrorResponse(
+                request,
+                StableErrorCodes.ProjectNotAuthorized);
+        }
+        catch (StoreConcurrencyException)
+        {
+            return BridgeProtocol.CreateErrorResponse(
+                request,
+                StableErrorCodes.ProjectRevisionConflict);
+        }
+        catch (ProjectCreationException exception)
+        {
+            return BridgeProtocol.CreateErrorResponse(
+                request,
+                exception.Reason switch
+                {
+                    ProjectCreationFailureReason.DraftNotFound =>
+                        StableErrorCodes.ProjectNotFound,
+                    ProjectCreationFailureReason.DraftAlreadyFinalized =>
+                        StableErrorCodes.ProjectAlreadyFinalized,
+                    ProjectCreationFailureReason.DraftIncomplete =>
+                        StableErrorCodes.ProjectIncomplete,
+                    ProjectCreationFailureReason.SourceReselectionRequired =>
+                        StableErrorCodes.ProjectSourceReselectionRequired,
+                    _ => StableErrorCodes.ProjectOperationFailed,
+                });
+        }
+        catch (Exception exception)
+            when (exception is ArgumentException or FormatException or JsonException)
+        {
+            return BridgeProtocol.CreateErrorResponse(
+                request,
+                StableErrorCodes.ProjectInvalidRequest);
+        }
+        catch (Exception)
+        {
+            return BridgeProtocol.CreateErrorResponse(
+                request,
+                StableErrorCodes.ProjectOperationFailed);
+        }
+    }
+
+    private static EntityId<ProjectCreationDraftIdTag> ReadDraftId(
+        BridgeRequest request) =>
+        EntityId<ProjectCreationDraftIdTag>.Parse(
+            request.Parameters.GetProperty("draftId").GetString()!);
+
+    private static int ReadExpectedRevision(BridgeRequest request) =>
+        request.Parameters.GetProperty("expectedRevision").GetInt32();
+
+    private static string WriteOverview(
+        BridgeRequest request,
+        ProjectCreationOverview overview) =>
+        BridgeProtocol.CreateResultResponse(
+            request,
+            writer =>
+            {
+                writer.WriteStartObject();
+                writer.WriteStartArray("projects");
+                foreach (ProjectListItem item in overview.Projects)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("draftId", item.DraftId);
+                    WriteNullableString(writer, "projectId", item.ProjectId);
+                    writer.WriteString("state", item.State);
+                    WriteNullableString(writer, "contentName", item.ContentName);
+                    writer.WriteNull("episodeNumber");
+                    writer.WriteString("sourceStatus", item.SourceStatus);
+                    writer.WriteNull("owner");
+                    WriteNullableString(
+                        writer,
+                        "publicationScope",
+                        item.PublicationScope);
+                    writer.WriteNull("editState");
+                    writer.WriteNull("reviewState");
+                    writer.WriteStartArray("outputFormats");
+                    foreach (string outputFormat in item.OutputFormats)
+                    {
+                        writer.WriteStringValue(outputFormat);
+                    }
+
+                    writer.WriteEndArray();
+                    writer.WriteString("updatedAt", item.UpdatedAt);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
+                writer.WriteStartObject("catalog");
+                WriteCatalogOptions(
+                    writer,
+                    "outputProfiles",
+                    overview.OutputProfiles);
+                WriteCatalogOptions(
+                    writer,
+                    "brandTemplates",
+                    overview.BrandTemplates);
+                writer.WriteEndObject();
+                writer.WriteBoolean("canCreate", overview.CanCreate);
+                writer.WriteEndObject();
+            });
+
+    private static string WriteDraft(
+        BridgeRequest request,
+        ProjectCreationDraftView draft) =>
+        BridgeProtocol.CreateResultResponse(
+            request,
+            writer =>
+            {
+                writer.WriteStartObject();
+                writer.WriteStartObject("draft");
+                writer.WriteString("draftId", draft.DraftId);
+                writer.WriteNumber("revision", draft.Revision);
+                writer.WriteBoolean("isFinalized", draft.IsFinalized);
+                WriteNullableString(writer, "projectId", draft.ProjectId);
+                WriteNullableString(
+                    writer,
+                    "sourceCandidateId",
+                    draft.SourceCandidateId);
+                writer.WriteString("sourceStatus", draft.SourceStatus);
+                WriteNullableString(writer, "contentName", draft.ContentName);
+                WriteNullableString(writer, "purpose", draft.Purpose);
+                WriteNullableString(writer, "audience", draft.Audience);
+                WriteNullableString(
+                    writer,
+                    "publicationScope",
+                    draft.PublicationScope);
+                writer.WriteStartArray("outputProfileIds");
+                foreach (string outputProfileId in draft.OutputProfileIds)
+                {
+                    writer.WriteStringValue(outputProfileId);
+                }
+
+                writer.WriteEndArray();
+                WriteNullableString(writer, "language", draft.Language);
+                writer.WriteStartArray("performerNames");
+                foreach (string performerName in draft.PerformerNames)
+                {
+                    writer.WriteStringValue(performerName);
+                }
+
+                writer.WriteEndArray();
+                if (draft.HasDeadline is null)
+                {
+                    writer.WriteNull("deadlineSelection");
+                }
+                else
+                {
+                    writer.WriteStartObject("deadlineSelection");
+                    writer.WriteBoolean("hasDeadline", draft.HasDeadline.Value);
+                    WriteNullableString(writer, "value", draft.Deadline);
+                    writer.WriteEndObject();
+                }
+
+                WriteNullableString(
+                    writer,
+                    "brandTemplateId",
+                    draft.BrandTemplateId);
+                writer.WriteStartArray("missingFields");
+                foreach (string missingField in draft.MissingFields)
+                {
+                    writer.WriteStringValue(missingField);
+                }
+
+                writer.WriteEndArray();
+                writer.WriteString("updatedAt", draft.UpdatedAt);
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            });
+
+    private static string WritePickedSource(
+        BridgeRequest request,
+        EntityId<HubRadio.Core.Provenance.AssetIdTag>? candidateId) =>
+        BridgeProtocol.CreateResultResponse(
+            request,
+            writer =>
+            {
+                writer.WriteStartObject();
+                WriteNullableString(
+                    writer,
+                    "candidateId",
+                    candidateId?.ToString());
+                writer.WriteEndObject();
+            });
+
+    private static void WriteCatalogOptions(
+        Utf8JsonWriter writer,
+        string propertyName,
+        IReadOnlyList<ProjectCatalogOption> options)
+    {
+        writer.WriteStartArray(propertyName);
+        foreach (ProjectCatalogOption option in options)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("id", option.Id);
+            writer.WriteString("name", option.Name);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+    }
+
+    private static void WriteNullableString(
+        Utf8JsonWriter writer,
+        string propertyName,
+        string? value)
+    {
+        if (value is null)
+        {
+            writer.WriteNull(propertyName);
+        }
+        else
+        {
+            writer.WriteString(propertyName, value);
+        }
+    }
+}

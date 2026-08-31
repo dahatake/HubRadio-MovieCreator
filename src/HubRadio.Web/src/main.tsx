@@ -1,7 +1,9 @@
+import './theme'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import App from './App'
+import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
 import { AppStateProvider } from './state'
 import './styles.css'
 
@@ -14,7 +16,9 @@ if (rootElement === null) {
 createRoot(rootElement).render(
   <StrictMode>
     <AppStateProvider>
-      <App />
+      <ProjectStateProvider>
+        <App />
+      </ProjectStateProvider>
     </AppStateProvider>
   </StrictMode>,
 )

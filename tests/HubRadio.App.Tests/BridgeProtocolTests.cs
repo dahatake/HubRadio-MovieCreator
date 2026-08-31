@@ -56,6 +56,8 @@ public sealed class BridgeProtocolTests
         Assert.IsTrue(accepted);
         Assert.IsNotNull(request);
         Assert.AreEqual(Guid.Parse(RequestId), request.RequestId);
+        Assert.AreEqual(BridgeProtocol.PingMethod, request.Method);
+        Assert.AreEqual(0, request.Parameters.EnumerateObject().Count());
         Assert.AreEqual(BridgeRequestRejection.None, rejection);
 
         using JsonDocument response = JsonDocument.Parse(
@@ -164,6 +166,146 @@ public sealed class BridgeProtocolTests
     }
 
     [TestMethod]
+    public void EveryProjectMethodAcceptsOnlyItsExactClosedParameters()
+    {
+        string draftId = "11112222-3333-4444-8555-66667777aabb";
+        string candidateId = "99990000-aaaa-4bbb-8ccc-ddddeeeeffff";
+        string profileId = "14b4f6b6-1ebc-55c3-9682-2c7e9ad226fa";
+        string templateId = "bf08c776-0f97-5373-a091-c70b60acd569";
+        string input = $$"""
+            {
+              "sourceCandidateId":"{{candidateId}}",
+              "contentName":"name",
+              "purpose":"purpose",
+              "audience":"audience",
+              "publicationScope":"internalOnly",
+              "outputProfileIds":["{{profileId}}"],
+              "language":"ja-JP",
+              "performerNames":["person"],
+              "deadlineSelection":{"hasDeadline":false,"value":null},
+              "brandTemplateId":"{{templateId}}"
+            }
+            """;
+        string[] valid =
+        [
+            CreateRequest(BridgeProtocol.ListProjectsMethod, "{}"),
+            CreateRequest(BridgeProtocol.CreateDraftMethod, "{}"),
+            CreateRequest(BridgeProtocol.PickSourceMethod, "{}"),
+            CreateRequest(
+                BridgeProtocol.LoadDraftMethod,
+                $"{{\"draftId\":\"{draftId}\"}}"),
+            CreateRequest(
+                BridgeProtocol.SaveDraftMethod,
+                $"{{\"draftId\":\"{draftId}\",\"expectedRevision\":0,\"input\":{input}}}"),
+            CreateRequest(
+                BridgeProtocol.FinalizeDraftMethod,
+                $"{{\"draftId\":\"{draftId}\",\"expectedRevision\":2147483647,\"input\":{input}}}"),
+        ];
+        string wrongScopeInput = input.Replace(
+            "\"internalOnly\"",
+            "\"InternalOnly\"",
+            StringComparison.Ordinal);
+        string duplicateProfileInput = input.Replace(
+            $"[\"{profileId}\"]",
+            $"[\"{profileId}\",\"{profileId}\"]",
+            StringComparison.Ordinal);
+        string duplicatePerformerInput = input.Replace(
+            "[\"person\"]",
+            "[\"person\",\"person\"]",
+            StringComparison.Ordinal);
+        string invalidDeadlineInput = input.Replace(
+            "{\"hasDeadline\":false,\"value\":null}",
+            "{\"hasDeadline\":true,\"value\":\"tomorrow\"}",
+            StringComparison.Ordinal);
+        string extraPropertyInput = input.Replace(
+            $"\"brandTemplateId\":\"{templateId}\"",
+            $"\"brandTemplateId\":\"{templateId}\",\"extra\":true",
+            StringComparison.Ordinal);
+
+        foreach (string message in valid)
+        {
+            Assert.IsTrue(
+                BridgeProtocol.TryParseRequest(
+                    WebViewHost.EntryPoint,
+                    message,
+                    out BridgeRequest? request,
+                    out BridgeRequestRejection rejection),
+                rejection.ToString());
+            Assert.IsNotNull(request);
+        }
+
+        string[] invalid =
+        [
+            CreateRequest(BridgeProtocol.ListProjectsMethod, "{\"extra\":true}"),
+            CreateRequest(BridgeProtocol.LoadDraftMethod, "{}"),
+            CreateRequest(
+                BridgeProtocol.LoadDraftMethod,
+                $"{{\"draftId\":\"{draftId.ToUpperInvariant()}\"}}"),
+            CreateRequest(
+                BridgeProtocol.SaveDraftMethod,
+                $"{{\"draftId\":\"{draftId}\",\"expectedRevision\":-1,\"input\":{input}}}"),
+            CreateRequest(
+                BridgeProtocol.SaveDraftMethod,
+                $"{{\"draftId\":\"{draftId}\",\"expectedRevision\":0,\"input\":{input},\"extra\":true}}"),
+            CreateRequest(
+                BridgeProtocol.SaveDraftMethod,
+                $"{{\"draftId\":\"{draftId}\",\"expectedRevision\":0,\"input\":{extraPropertyInput}}}"),
+            CreateRequest(
+                BridgeProtocol.FinalizeDraftMethod,
+                $"{{\"draftId\":\"{draftId}\",\"expectedRevision\":0,\"input\":{wrongScopeInput}}}"),
+            CreateRequest(
+                BridgeProtocol.SaveDraftMethod,
+                $"{{\"draftId\":\"{draftId}\",\"expectedRevision\":0,\"input\":{duplicateProfileInput}}}"),
+            CreateRequest(
+                BridgeProtocol.SaveDraftMethod,
+                $"{{\"draftId\":\"{draftId}\",\"expectedRevision\":0,\"input\":{duplicatePerformerInput}}}"),
+            CreateRequest(
+                BridgeProtocol.SaveDraftMethod,
+                $"{{\"draftId\":\"{draftId}\",\"expectedRevision\":0,\"input\":{invalidDeadlineInput}}}"),
+        ];
+
+        foreach (string message in invalid)
+        {
+            Assert.IsFalse(BridgeProtocol.TryParseRequest(
+                WebViewHost.EntryPoint,
+                message,
+                out _,
+                out BridgeRequestRejection rejection));
+            Assert.AreEqual(BridgeRequestRejection.SchemaViolation, rejection);
+        }
+    }
+
+    [TestMethod]
+    public void ErrorResponseIsCorrelatedClosedAndContainsNoExceptionOrPrivateDetail()
+    {
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            CreateRequest(BridgeProtocol.ListProjectsMethod, "{}"),
+            out BridgeRequest? request,
+            out _));
+        Assert.IsNotNull(request);
+
+        string responseJson = BridgeProtocol.CreateErrorResponse(
+            request,
+            HubRadio.Infrastructure.Diagnostics.StableErrorCodes.ProjectNotAuthorized);
+        using JsonDocument response = JsonDocument.Parse(responseJson);
+        JsonElement root = response.RootElement;
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "error" },
+            root.EnumerateObject().Select(static property => property.Name).ToArray());
+        JsonElement error = root.GetProperty("error");
+        CollectionAssert.AreEquivalent(
+            new[] { "code", "message" },
+            error.EnumerateObject().Select(static property => property.Name).ToArray());
+        Assert.AreEqual(
+            "project.not_authorized",
+            error.GetProperty("code").GetString());
+        Assert.IsFalse(responseJson.Contains("SID", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(responseJson.Contains("C:\\", StringComparison.Ordinal));
+        Assert.IsFalse(responseJson.Contains("Exception", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void NullMessageIsRejectedWithoutARequest()
     {
         Assert.IsFalse(BridgeProtocol.TryParseRequest(
@@ -190,6 +332,11 @@ public sealed class BridgeProtocolTests
     private static string CreateRequest()
     {
         return $"{{\"version\":1,\"requestId\":\"{RequestId}\",\"method\":\"bridge.ping\",\"params\":{{}}}}";
+    }
+
+    private static string CreateRequest(string method, string parameters)
+    {
+        return $"{{\"version\":1,\"requestId\":\"{RequestId}\",\"method\":\"{method}\",\"params\":{parameters}}}";
     }
 
     private static string ResolveRepositoryPath(string relativePath)

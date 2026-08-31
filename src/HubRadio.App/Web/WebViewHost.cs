@@ -9,6 +9,7 @@ internal sealed class WebViewHost : IDisposable
 
     private readonly CoreWebView2 coreWebView;
     private readonly string webAssetsDirectory;
+    private readonly Func<BridgeRequest, CancellationToken, Task<string>>? handleRequestAsync;
     private Bridge? bridge;
     private TaskCompletionSource? initialNavigation;
     private bool isStarted;
@@ -16,7 +17,8 @@ internal sealed class WebViewHost : IDisposable
 
     internal WebViewHost(
         CoreWebView2 coreWebView,
-        string webAssetsDirectory)
+        string webAssetsDirectory,
+        Func<BridgeRequest, CancellationToken, Task<string>>? handleRequestAsync = null)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentException.ThrowIfNullOrWhiteSpace(webAssetsDirectory);
@@ -32,6 +34,7 @@ internal sealed class WebViewHost : IDisposable
 
         this.coreWebView = coreWebView;
         this.webAssetsDirectory = fullPath;
+        this.handleRequestAsync = handleRequestAsync;
     }
 
     internal async Task StartAsync(CancellationToken cancellationToken = default)
@@ -74,7 +77,7 @@ internal sealed class WebViewHost : IDisposable
             await navigation.Task;
             cancellationToken.ThrowIfCancellationRequested();
 
-            Bridge startedBridge = new(coreWebView);
+            Bridge startedBridge = new(coreWebView, handleRequestAsync);
             startedBridge.Start();
             bridge = startedBridge;
         }

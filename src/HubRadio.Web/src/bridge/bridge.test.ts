@@ -12,6 +12,10 @@ import {
   createPingRequest,
   parsePingResponse,
 } from './protocol'
+import {
+  PROJECT_LIST_METHOD,
+  createProjectListRequest,
+} from './projectProtocol'
 
 const requestId = '00112233-4455-6677-8899-aabbccddeeff'
 
@@ -99,6 +103,46 @@ describe('web bridge client', () => {
     expect(transport.listenerCount).toBe(0)
     expect(() => client.sendPing(requestId)).toThrow('disposed')
     expect(() => client.onPingResponse(listener)).toThrow('disposed')
+  })
+
+  it('sends and emits only strict project protocol messages', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    client.onProjectResponse(listener)
+    const request = createProjectListRequest(requestId)
+
+    client.sendProject(request)
+    expect(transport.posted).toEqual([request])
+
+    transport.emit({
+      version: 1,
+      requestId,
+      method: PROJECT_LIST_METHOD,
+      result: {
+        projects: [],
+        catalog: { outputProfiles: [], brandTemplates: [] },
+        canCreate: true,
+        extra: true,
+      },
+    })
+    expect(listener).not.toHaveBeenCalled()
+
+    transport.emit({
+      version: 1,
+      requestId,
+      method: PROJECT_LIST_METHOD,
+      result: {
+        projects: [],
+        catalog: { outputProfiles: [], brandTemplates: [] },
+        canCreate: true,
+      },
+    })
+    expect(listener).toHaveBeenCalledOnce()
+
+    client.dispose()
+    expect(() => client.sendProject(request)).toThrow('disposed')
+    expect(() => client.onProjectResponse(listener)).toThrow('disposed')
   })
 
   it('does not fabricate a host transport outside WebView2', () => {

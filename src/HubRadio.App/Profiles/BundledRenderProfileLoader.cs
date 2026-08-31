@@ -14,6 +14,7 @@ public sealed class BundledRenderProfileDefinition
         RenderProfile profile,
         LayoutSpec layout,
         ContentDigest layoutDigest,
+        TemplateReference templateReference,
         string pixelFormatEvidence,
         IReadOnlyList<string> capabilities,
         bool platformSafeZonesMeasured,
@@ -25,6 +26,7 @@ public sealed class BundledRenderProfileDefinition
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(layoutDigest);
+        ArgumentNullException.ThrowIfNull(templateReference);
         ArgumentNullException.ThrowIfNull(pixelFormatEvidence);
         ArgumentNullException.ThrowIfNull(capabilities);
         ArgumentNullException.ThrowIfNull(evidenceSource);
@@ -34,6 +36,7 @@ public sealed class BundledRenderProfileDefinition
         Profile = profile;
         Layout = layout;
         LayoutDigest = layoutDigest;
+        TemplateReference = templateReference;
         PixelFormatEvidence = pixelFormatEvidence;
         Capabilities = CopyAsReadOnly(capabilities, nameof(capabilities));
         PlatformSafeZonesMeasured = platformSafeZonesMeasured;
@@ -48,6 +51,8 @@ public sealed class BundledRenderProfileDefinition
     public LayoutSpec Layout { get; }
 
     public ContentDigest LayoutDigest { get; }
+
+    internal TemplateReference TemplateReference { get; }
 
     public string PixelFormatEvidence { get; }
 
@@ -427,6 +432,10 @@ public static class BundledRenderProfileLoader
             profile,
             layout,
             layoutDigest,
+            new TemplateReference(
+                embeddedTemplateId,
+                templateName,
+                templateVersionDigest),
             PixelFormatEvidence,
             capabilities,
             platformSafeZonesMeasured,

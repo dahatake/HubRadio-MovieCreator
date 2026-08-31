@@ -1,4 +1,5 @@
 using HubRadio.App.Web;
+using HubRadio.App.Projects;
 using HubRadio.Infrastructure.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.Web.WebView2.Core;
@@ -63,9 +64,18 @@ public sealed partial class MainWindow : Window
                         new CoreWebView2EnvironmentOptions());
                 await WebApplicationView.EnsureCoreWebView2Async(environment);
 
+                ProjectBridgeHandler projectHandler = ProjectApplicationRuntime.Create(
+                    this,
+                    Path.Combine(
+                        Environment.GetFolderPath(
+                            Environment.SpecialFolder.LocalApplicationData),
+                        "HubRadio.MovieCreator"),
+                    Path.Combine(AppContext.BaseDirectory, "Profiles"));
+
                 WebViewHost host = new(
                     WebApplicationView.CoreWebView2,
-                    Path.Combine(AppContext.BaseDirectory, "WebAssets"));
+                    Path.Combine(AppContext.BaseDirectory, "WebAssets"),
+                    projectHandler.HandleAsync);
                 try
                 {
                     WebApplicationView.Visibility = Visibility.Visible;

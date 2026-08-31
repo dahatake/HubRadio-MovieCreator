@@ -33,6 +33,12 @@ public sealed class AssetCandidateRegistry
         }
     }
 
+    public bool IsAvailable(EntityId<AssetIdTag> candidateId)
+    {
+        ArgumentNullException.ThrowIfNull(candidateId);
+        return pendingCandidates.ContainsKey(candidateId);
+    }
+
     internal bool TryClaim(
         EntityId<AssetIdTag> candidateId,
         [NotNullWhen(true)] out string? selectedPath)
