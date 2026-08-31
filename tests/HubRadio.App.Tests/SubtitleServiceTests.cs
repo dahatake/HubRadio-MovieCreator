@@ -12,6 +12,7 @@ using HubRadio.Core.Reviews;
 using HubRadio.Core.Subtitles;
 using HubRadio.Core.Time;
 using HubRadio.Core.Transcripts;
+using HubRadio.Infrastructure.Subtitles;
 
 namespace HubRadio.App.Tests;
 
@@ -619,6 +620,40 @@ public sealed class SubtitleServiceTests
                 ActorSid,
                 CreatedAt.AddMinutes(2),
                 "Reject a missing current source candidate."));
+    }
+
+    [TestMethod]
+    [DataRow(SubtitleCueStyle.Normal)]
+    [DataRow(SubtitleCueStyle.Emphasis)]
+    [DataRow(SubtitleCueStyle.Caution)]
+    [DataRow(SubtitleCueStyle.Quote)]
+    public void ExportMapperCopiesTheExactR012SnapshotWithoutLayoutDependency(
+        SubtitleCueStyle style)
+    {
+        Fixture fixture = Fixture.Create();
+        SubtitleCueHistory history = fixture.CreateInitial(fixture.ManualLayout);
+        if (style != SubtitleCueStyle.Normal)
+        {
+            history = SubtitleService.SetStyle(
+                history,
+                fixture.ChildComposition(fixture.Composition, 2),
+                fixture.SourceCandidate,
+                RevisionId(2),
+                style,
+                EditorialOrigin(71),
+                ActorSid,
+                CreatedAt.AddMinutes(2),
+                "Select a subtitle export style.");
+        }
+
+        SubtitleCueSnapshot snapshot = history.CurrentRevision.Snapshot;
+        SubtitleFileCue mapped = SubtitleExportMapper.Map(snapshot);
+
+        Assert.AreSame(snapshot.Cue, mapped.Cue);
+        Assert.AreEqual(snapshot.Text, mapped.Text);
+        Assert.AreEqual(style.ToString(), mapped.Style.ToString());
+        Assert.IsTrue(snapshot.RequiresManualLayout);
+        Assert.IsNull(snapshot.Cue.RegionName);
     }
 
     [TestMethod]
