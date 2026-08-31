@@ -16,6 +16,16 @@ import {
   type ProjectBridgeRequest,
   type ProjectBridgeResponse,
 } from './projectProtocol'
+import {
+  createPlayerReadRequest,
+  createPlayerSeekRequest,
+  parsePlayerReadResponse,
+  parsePlayerSeekResponse,
+  type PlayerReadRequest,
+  type PlayerReadResponse,
+  type PlayerSeekRequest,
+  type PlayerSeekResponse,
+} from '../features/player/playerProtocol'
 
 export * from './projectProtocol'
 
@@ -24,7 +34,13 @@ export interface BridgeMessageEvent {
 }
 
 export interface BridgeTransport {
-  postMessage(message: BridgeRequest | ProjectBridgeRequest): void
+  postMessage(
+    message:
+      | BridgeRequest
+      | ProjectBridgeRequest
+      | PlayerReadRequest
+      | PlayerSeekRequest,
+  ): void
   addEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
   removeEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
 }
@@ -39,6 +55,19 @@ export interface BridgeClient {
   sendProject(request: ProjectBridgeRequest): void
   onProjectResponse(listener: (response: ProjectBridgeResponse) => void): () => void
   onJobResponse(listener: (response: BridgeJobResponse) => void): () => void
+  sendPlayerRead(requestId: string, jobId: string): void
+  onPlayerReadResponse(
+    listener: (response: PlayerReadResponse) => void,
+  ): () => void
+  sendPlayerSeek(
+    requestId: string,
+    jobId: string,
+    evidenceDigest: string,
+    proxyFrameSequence: number,
+  ): void
+  onPlayerSeekResponse(
+    listener: (response: PlayerSeekResponse) => void,
+  ): () => void
   dispose(): void
 }
 
@@ -52,6 +81,12 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
   const projectListeners = new Set<(response: ProjectBridgeResponse) => void>()
   const jobListeners = new Set<(response: BridgeJobResponse) => void>()
   const pendingJobRequests = new Map<string, PendingJobRequest>()
+  const playerReadListeners = new Set<
+    (response: PlayerReadResponse) => void
+  >()
+  const playerSeekListeners = new Set<
+    (response: PlayerSeekResponse) => void
+  >()
   let disposed = false
 
   const receive = (event: BridgeMessageEvent): void => {
@@ -87,6 +122,23 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
     if (projectResponse !== null) {
       for (const listener of projectListeners) {
         listener(projectResponse)
+      }
+
+      return
+    }
+
+    const playerReadResponse = parsePlayerReadResponse(event.data)
+    if (playerReadResponse !== null) {
+      for (const listener of playerReadListeners) {
+        listener(playerReadResponse)
+      }
+      return
+    }
+
+    const playerSeekResponse = parsePlayerSeekResponse(event.data)
+    if (playerSeekResponse !== null) {
+      for (const listener of playerSeekListeners) {
+        listener(playerSeekResponse)
       }
     }
   }
@@ -159,6 +211,44 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
         projectListeners.delete(listener)
       }
     },
+    sendPlayerRead(requestId: string, jobId: string): void {
+      throwIfDisposed(disposed)
+      transport.postMessage(createPlayerReadRequest(requestId, jobId))
+    },
+    onPlayerReadResponse(
+      listener: (response: PlayerReadResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      playerReadListeners.add(listener)
+      return (): void => {
+        playerReadListeners.delete(listener)
+      }
+    },
+    sendPlayerSeek(
+      requestId: string,
+      jobId: string,
+      evidenceDigest: string,
+      proxyFrameSequence: number,
+    ): void {
+      throwIfDisposed(disposed)
+      transport.postMessage(
+        createPlayerSeekRequest(
+          requestId,
+          jobId,
+          evidenceDigest,
+          proxyFrameSequence,
+        ),
+      )
+    },
+    onPlayerSeekResponse(
+      listener: (response: PlayerSeekResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      playerSeekListeners.add(listener)
+      return (): void => {
+        playerSeekListeners.delete(listener)
+      }
+    },
     dispose(): void {
       if (disposed) {
         return
@@ -169,6 +259,8 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       projectListeners.clear()
       jobListeners.clear()
       pendingJobRequests.clear()
+      playerReadListeners.clear()
+      playerSeekListeners.clear()
       transport.removeEventListener('message', receive)
     },
   })

@@ -112,10 +112,10 @@ const readClosedCsp = (indexHtml) => {
     ['default-src', "'none'"],
     ['script-src', "'self'"],
     ['style-src', "'self'"],
-    ['img-src', "'self' data:"],
+    ['img-src', "'self' data: https://player-media.appassets.example"],
     ['connect-src', "'none'"],
     ['font-src', "'self'"],
-    ['media-src', "'none'"],
+    ['media-src', 'https://player-media.appassets.example'],
     ['object-src', "'none'"],
     ['base-uri', "'none'"],
     ['form-action', "'none'"],
@@ -220,7 +220,7 @@ export const verifyProductionAssets = async (distRoot) => {
     }
 
     const bytes = await readFile(fullPath)
-  validateTextAsset(portablePath, bytes)
+    validateTextAsset(portablePath, bytes)
     assets.push({
       path: portablePath,
       byteSize: bytes.byteLength,

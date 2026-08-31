@@ -16,7 +16,12 @@ public sealed class WebViewHostTests
         StringAssert.Contains(html, "style-src 'self'");
         StringAssert.Contains(html, "connect-src 'none'");
         StringAssert.Contains(html, "font-src 'self'");
-        StringAssert.Contains(html, "media-src 'none'");
+        StringAssert.Contains(
+            html,
+            "img-src 'self' data: https://player-media.appassets.example");
+        StringAssert.Contains(
+            html,
+            "media-src https://player-media.appassets.example");
         StringAssert.Contains(html, "object-src 'none'");
         StringAssert.Contains(html, "base-uri 'none'");
         StringAssert.Contains(html, "form-action 'none'");
@@ -24,6 +29,7 @@ public sealed class WebViewHostTests
         StringAssert.Contains(html, "worker-src 'none'");
         Assert.IsFalse(html.Contains("'unsafe-inline'", StringComparison.Ordinal));
         Assert.IsFalse(html.Contains("'unsafe-eval'", StringComparison.Ordinal));
+        Assert.IsFalse(html.Contains("media-src 'self'", StringComparison.Ordinal));
         Assert.IsFalse(html.Contains("http://", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -84,6 +90,46 @@ public sealed class WebViewHostTests
         foreach (string uri in rejected)
         {
             Assert.IsFalse(WebViewHost.IsAllowedResourceUri(uri), uri);
+        }
+    }
+
+    [TestMethod]
+    public void MediaOriginPolicy_IsDistinctReservedAndHttpsOnly()
+    {
+        string mediaUri =
+            "https://player-media.appassets.example/media/v1/" +
+            "11111111-1111-4111-8111-111111111111/proxy/" +
+            "22222222-2222-4222-8222-222222222222/" +
+            new string('a', 64);
+        Assert.IsTrue(WebViewHost.IsAllowedMediaOrigin(mediaUri));
+        Assert.IsTrue(WebViewHost.IsAllowedMediaAssetUri(mediaUri));
+        Assert.IsFalse(WebViewHost.IsAllowedOrigin(mediaUri));
+        Assert.IsFalse(WebViewHost.IsAllowedResourceUri(mediaUri));
+
+        string[] rejectedOrigins =
+        [
+            mediaUri.Replace("https://", "http://", StringComparison.Ordinal),
+            mediaUri.Replace(
+                WebViewHost.MediaHostName,
+                WebViewHost.VirtualHostName,
+                StringComparison.Ordinal),
+            mediaUri.Replace(
+                WebViewHost.MediaHostName,
+                string.Concat(WebViewHost.MediaHostName, ".evil.test"),
+                StringComparison.Ordinal),
+            mediaUri.Replace(
+                WebViewHost.MediaHostName,
+                string.Concat("user@", WebViewHost.MediaHostName),
+                StringComparison.Ordinal),
+            mediaUri.Replace(
+                WebViewHost.MediaHostName,
+                string.Concat(WebViewHost.MediaHostName, ":444"),
+                StringComparison.Ordinal),
+        ];
+        foreach (string uri in rejectedOrigins)
+        {
+            Assert.IsFalse(WebViewHost.IsAllowedMediaOrigin(uri), uri);
+            Assert.IsFalse(WebViewHost.IsAllowedMediaAssetUri(uri), uri);
         }
     }
 

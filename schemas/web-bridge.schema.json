@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping and jobs requests are limited to 256 UTF-8 bytes with 4096-byte responses; project requests are limited to 96 KiB with 1 MiB responses. Source media crosses this boundary only as an opaque candidate ID, and sensitive host data is prohibited.",
+  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; ping and jobs use 4096-byte responses, while project requests are limited to 96 KiB with 1 MiB responses. The native host authorizes its current Windows actor for every player read, seek, and media GET; actor and role claims are never accepted from Web messages. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, arbitrary URLs, and sensitive host data are prohibited.",
   "title": "WebBridgeMessage",
   "oneOf": [
     { "$ref": "#/$defs/pingRequest" },
@@ -21,7 +21,11 @@
     { "$ref": "#/$defs/jobCancelResponse" },
     { "$ref": "#/$defs/jobRetryResponse" },
     { "$ref": "#/$defs/projectErrorResponse" },
-    { "$ref": "#/$defs/errorResponse" }
+    { "$ref": "#/$defs/errorResponse" },
+    { "$ref": "#/$defs/playerReadRequest" },
+    { "$ref": "#/$defs/playerReadResponse" },
+    { "$ref": "#/$defs/playerSeekRequest" },
+    { "$ref": "#/$defs/playerSeekResponse" }
   ],
   "$defs": {
     "protocolVersion": { "const": 1 },
@@ -29,7 +33,7 @@
       "type": "string",
       "minLength": 36,
       "maxLength": 36,
-      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000(?![\\s\\S]))[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![\\s\\S])"
     },
     "requestId": { "$ref": "#/$defs/canonicalId" },
     "entityId": { "$ref": "#/$defs/canonicalId" },
@@ -68,7 +72,9 @@
         "project.finalizeDraft",
         "jobs.getStatus",
         "jobs.cancel",
-        "jobs.retry"
+        "jobs.retry",
+        "player.read",
+        "player.seek"
       ]
     },
     "projectMethod": {
@@ -568,6 +574,363 @@
         }
       }
     },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "nonnegativeInt32": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483647
+    },
+    "signedInt64String": {
+      "type": "string",
+      "pattern": "^(?:0|-?[1-9][0-9]{0,18})(?![\\s\\S])"
+    },
+    "positiveInt64String": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]{0,18}(?![\\s\\S])"
+    },
+    "rationalTime": {
+      "type": "object",
+      "$comment": "The native writer emits reduced signed-Int64 rationals. Consumers additionally enforce Int64 bounds, positive rate, and greatest-common-divisor 1 because JSON Schema cannot express that arithmetic invariant.",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/signedInt64String"
+        },
+        "rate": {
+          "$ref": "#/$defs/positiveInt64String"
+        }
+      }
+    },
+    "proxyMediaReference": {
+      "type": "string",
+      "pattern": "^https://player-media\\.appassets\\.example/media/v1/(?!00000000-0000-0000-0000-000000000000/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/proxy/(?!00000000-0000-0000-0000-000000000000/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "spriteMediaReference": {
+      "type": "string",
+      "pattern": "^https://player-media\\.appassets\\.example/media/v1/(?!00000000-0000-0000-0000-000000000000/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/sprite/(?!00000000-0000-0000-0000-000000000000/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "waveformChannel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "channelIndex",
+        "minimumSample",
+        "maximumSample"
+      ],
+      "properties": {
+        "channelIndex": {
+          "$ref": "#/$defs/nonnegativeInt32"
+        },
+        "minimumSample": {
+          "type": "integer",
+          "minimum": -32768,
+          "maximum": 32767
+        },
+        "maximumSample": {
+          "type": "integer",
+          "minimum": -32768,
+          "maximum": 32767
+        }
+      }
+    },
+    "spriteCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "column",
+        "row"
+      ],
+      "properties": {
+        "ordinal": {
+          "$ref": "#/$defs/nonnegativeInt32"
+        },
+        "column": {
+          "$ref": "#/$defs/nonnegativeInt32"
+        },
+        "row": {
+          "$ref": "#/$defs/nonnegativeInt32"
+        }
+      }
+    },
+    "playerPosition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proxyFrameSequence",
+        "proxyPresentationTime",
+        "sourceFrameSequence",
+        "sourcePresentationTime",
+        "outputPresentationTime"
+      ],
+      "properties": {
+        "proxyFrameSequence": {
+          "$ref": "#/$defs/nonnegativeInt32"
+        },
+        "proxyPresentationTime": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "sourceFrameSequence": {
+          "$ref": "#/$defs/nonnegativeInt32"
+        },
+        "sourcePresentationTime": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "outputPresentationTime": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/rationalTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "playerFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proxyFrameSequence",
+        "proxyPresentationTime",
+        "sourceFrameSequence",
+        "sourcePresentationTime",
+        "outputPresentationTime",
+        "proxyDuration",
+        "waveformChannels",
+        "spriteCell"
+      ],
+      "properties": {
+        "proxyFrameSequence": {
+          "$ref": "#/$defs/nonnegativeInt32"
+        },
+        "proxyPresentationTime": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "sourceFrameSequence": {
+          "$ref": "#/$defs/nonnegativeInt32"
+        },
+        "sourcePresentationTime": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "outputPresentationTime": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/rationalTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proxyDuration": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "waveformChannels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/waveformChannel"
+          }
+        },
+        "spriteCell": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/spriteCell"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "playerProxy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mediaReference",
+        "contentDigest",
+        "ptsIndexDigest",
+        "presentationStart",
+        "presentationEnd"
+      ],
+      "properties": {
+        "mediaReference": {
+          "$ref": "#/$defs/proxyMediaReference"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "ptsIndexDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "presentationStart": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "presentationEnd": {
+          "$ref": "#/$defs/rationalTime"
+        }
+      }
+    },
+    "playerWaveform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sampleRate",
+        "channelCount",
+        "channelLayout"
+      ],
+      "properties": {
+        "sampleRate": {
+          "$ref": "#/$defs/nonnegativeInt32"
+        },
+        "channelCount": {
+          "$ref": "#/$defs/nonnegativeInt32"
+        },
+        "channelLayout": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "sampleRate": {
+              "const": 0
+            },
+            "channelCount": {
+              "const": 0
+            },
+            "channelLayout": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "sampleRate": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "channelCount": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "channelLayout": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^\\S(?:[\\s\\S]*\\S)?(?![\\s\\S])"
+            }
+          }
+        }
+      ]
+    },
+    "playerSprite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "imageReference",
+        "imageDigest",
+        "cellWidth",
+        "cellHeight",
+        "columns",
+        "rows"
+      ],
+      "properties": {
+        "imageReference": {
+          "$ref": "#/$defs/spriteMediaReference"
+        },
+        "imageDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "cellWidth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "cellHeight": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "columns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "playerSnapshot": {
+      "type": "object",
+      "$comment": "Consumers semantically verify digest/reference bindings, contiguous proxy intervals, monotonic source mappings, waveform channel cardinality, canonical sprite grids, and the final half-open proxy end.",
+      "additionalProperties": false,
+      "required": [
+        "evidenceDigest",
+        "sourceAssetId",
+        "projectId",
+        "sourcePresentationStart",
+        "sourcePresentationEnd",
+        "proxy",
+        "waveform",
+        "sprite",
+        "frames"
+      ],
+      "properties": {
+        "evidenceDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "sourceAssetId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "sourcePresentationStart": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "sourcePresentationEnd": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "proxy": {
+          "$ref": "#/$defs/playerProxy"
+        },
+        "waveform": {
+          "$ref": "#/$defs/playerWaveform"
+        },
+        "sprite": {
+          "$ref": "#/$defs/playerSprite"
+        },
+        "frames": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/playerFrame"
+          }
+        }
+      }
+    },
     "warningCode": {
       "enum": [
         "audioTrackAbsent",
@@ -765,6 +1128,218 @@
         "requestId": { "$ref": "#/$defs/requestId" },
         "method": { "$ref": "#/$defs/jobMethod" },
         "error": { "$ref": "#/$defs/bridgeError" }
+      }
+    },
+    "playerReadParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId"
+      ],
+      "properties": {
+        "jobId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "playerSeekParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId",
+        "digest",
+        "proxyFrameSequence"
+      ],
+      "properties": {
+        "jobId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "digest": {
+          "$comment": "The exact playerSnapshot.evidenceDigest. The compact wire key keeps every nonnegative Int32 proxyFrameSequence within the 256-byte request limit.",
+          "$ref": "#/$defs/contentDigest"
+        },
+        "proxyFrameSequence": {
+          "$ref": "#/$defs/nonnegativeInt32"
+        }
+      }
+    },
+    "playerReadResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "snapshot"
+          ],
+          "properties": {
+            "status": {
+              "const": "available"
+            },
+            "snapshot": {
+              "$ref": "#/$defs/playerSnapshot"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "snapshot"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "forbidden",
+                "unavailable",
+                "stale",
+                "mismatched"
+              ]
+            },
+            "snapshot": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "playerSeekResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "position"
+          ],
+          "properties": {
+            "status": {
+              "const": "available"
+            },
+            "position": {
+              "$ref": "#/$defs/playerPosition"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "position"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "forbidden",
+                "unavailable",
+                "stale",
+                "mismatched",
+                "invalidTime"
+              ]
+            },
+            "position": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "playerReadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "requestId",
+        "method",
+        "params"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "requestId": {
+          "$ref": "#/$defs/requestId"
+        },
+        "method": {
+          "const": "player.read"
+        },
+        "params": {
+          "$ref": "#/$defs/playerReadParams"
+        }
+      }
+    },
+    "playerReadResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "requestId",
+        "method",
+        "result"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "requestId": {
+          "$ref": "#/$defs/requestId"
+        },
+        "method": {
+          "const": "player.read"
+        },
+        "result": {
+          "$ref": "#/$defs/playerReadResult"
+        }
+      }
+    },
+    "playerSeekRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "requestId",
+        "method",
+        "params"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "requestId": {
+          "$ref": "#/$defs/requestId"
+        },
+        "method": {
+          "const": "player.seek"
+        },
+        "params": {
+          "$ref": "#/$defs/playerSeekParams"
+        }
+      }
+    },
+    "playerSeekResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "requestId",
+        "method",
+        "result"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/protocolVersion"
+        },
+        "requestId": {
+          "$ref": "#/$defs/requestId"
+        },
+        "method": {
+          "const": "player.seek"
+        },
+        "result": {
+          "$ref": "#/$defs/playerSeekResult"
+        }
       }
     }
   }

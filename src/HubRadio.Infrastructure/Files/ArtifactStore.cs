@@ -189,6 +189,107 @@ public sealed class StoredArtifact
     public DateTimeOffset CreatedAt { get; }
 }
 
+public sealed class ValidatedArtifactReadStream : Stream
+{
+    private FileStream? _stream;
+
+    internal ValidatedArtifactReadStream(
+        StoredArtifact artifact,
+        FileStream stream)
+    {
+        ArgumentNullException.ThrowIfNull(artifact);
+        ArgumentNullException.ThrowIfNull(stream);
+        RegisteredArtifact = artifact;
+        _stream = stream;
+    }
+
+    public EntityId<ArtifactIdTag> Id => RegisteredArtifact.Id;
+
+    public EntityId<ProjectIdTag> ProjectId => RegisteredArtifact.ProjectId;
+
+    public ArtifactKind Kind => RegisteredArtifact.Kind;
+
+    public ContentDigest ContentDigest => RegisteredArtifact.ContentDigest;
+
+    public long ByteSize => RegisteredArtifact.ByteSize;
+
+    internal StoredArtifact RegisteredArtifact { get; }
+
+    public override bool CanRead => _stream?.CanRead == true;
+
+    public override bool CanSeek => _stream?.CanSeek == true;
+
+    public override bool CanWrite => false;
+
+    public override long Length => GetStream().Length;
+
+    public override long Position
+    {
+        get => GetStream().Position;
+        set => GetStream().Position = value;
+    }
+
+    public override void Flush()
+    {
+        ObjectDisposedException.ThrowIf(_stream is null, this);
+    }
+
+    public override int Read(byte[] buffer, int offset, int count) =>
+        GetStream().Read(buffer, offset, count);
+
+    public override int Read(Span<byte> buffer) => GetStream().Read(buffer);
+
+    public override ValueTask<int> ReadAsync(
+        Memory<byte> buffer,
+        CancellationToken cancellationToken = default) =>
+        GetStream().ReadAsync(buffer, cancellationToken);
+
+    public override Task<int> ReadAsync(
+        byte[] buffer,
+        int offset,
+        int count,
+        CancellationToken cancellationToken) =>
+        GetStream().ReadAsync(buffer, offset, count, cancellationToken);
+
+    public override long Seek(long offset, SeekOrigin origin) =>
+        GetStream().Seek(offset, origin);
+
+    public override void SetLength(long value) =>
+        throw new NotSupportedException("The validated artifact stream is read-only.");
+
+    public override void Write(byte[] buffer, int offset, int count) =>
+        throw new NotSupportedException("The validated artifact stream is read-only.");
+
+    public override void Write(ReadOnlySpan<byte> buffer) =>
+        throw new NotSupportedException("The validated artifact stream is read-only.");
+
+    protected override void Dispose(bool disposing)
+    {
+        FileStream? stream = Interlocked.Exchange(ref _stream, null);
+        if (disposing)
+        {
+            stream?.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        FileStream? stream = Interlocked.Exchange(ref _stream, null);
+        if (stream is not null)
+        {
+            await stream.DisposeAsync().ConfigureAwait(false);
+        }
+
+        GC.SuppressFinalize(this);
+    }
+
+    private FileStream GetStream() =>
+        _stream ?? throw new ObjectDisposedException(
+            nameof(ValidatedArtifactReadStream));
+}
+
 public sealed class ArtifactStore
 {
     private const int FileBufferSize = 64 * 1024;
@@ -359,30 +460,56 @@ public sealed class ArtifactStore
         ArgumentNullException.ThrowIfNull(artifactId);
         cancellationToken.ThrowIfCancellationRequested();
 
+        await using ValidatedArtifactReadStream stream =
+            await OpenValidatedReadAsync(artifactId, cancellationToken)
+                .ConfigureAwait(false);
+        return stream.RegisteredArtifact;
+    }
+
+    public async Task<ValidatedArtifactReadStream> OpenValidatedReadAsync(
+        EntityId<ArtifactIdTag> artifactId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(artifactId);
+        cancellationToken.ThrowIfCancellationRequested();
+
         StoredArtifact artifact = GetArtifact(artifactId)
             ?? throw Failure(ArtifactStoreFailureReason.RegisteredArtifactMissing);
         string artifactPath = ResolveRegisteredArtifactPath(artifact);
         ValidateRegisteredArtifactPath(artifactPath);
         cancellationToken.ThrowIfCancellationRequested();
 
-        using FileStream stream = OpenStagingFile(artifactPath);
-        ValidateRegisteredArtifactPath(artifactPath);
-        ValidateOpenedFile(stream);
-        await VerifyStoredContentAsync(
-            stream,
-            artifact.ContentDigest,
-            artifact.ByteSize,
-            cancellationToken).ConfigureAwait(false);
-        ValidateRegisteredArtifactPath(artifactPath);
-
-        StoredArtifact current = GetArtifact(artifactId)
-            ?? throw Failure(ArtifactStoreFailureReason.RegisteredArtifactMissing);
-        if (!HasSameMetadata(artifact, current))
+        FileStream? stream = null;
+        try
         {
-            throw Failure(ArtifactStoreFailureReason.DatabaseRejected);
-        }
+            stream = OpenStagingFile(artifactPath);
+            ValidateRegisteredArtifactPath(artifactPath);
+            ValidateOpenedFile(stream);
+            await VerifyStoredContentAsync(
+                stream,
+                artifact.ContentDigest,
+                artifact.ByteSize,
+                cancellationToken).ConfigureAwait(false);
+            ResetOpenedFile(stream);
+            ValidateRegisteredArtifactPath(artifactPath);
 
-        return current;
+            StoredArtifact current = GetArtifact(artifactId)
+                ?? throw Failure(
+                    ArtifactStoreFailureReason.RegisteredArtifactMissing);
+            if (!HasSameMetadata(artifact, current))
+            {
+                throw Failure(ArtifactStoreFailureReason.DatabaseRejected);
+            }
+
+            ValidateOpenedFile(stream);
+            ValidatedArtifactReadStream result = new(current, stream);
+            stream = null;
+            return result;
+        }
+        finally
+        {
+            stream?.Dispose();
+        }
     }
 
     internal string GetValidatedRegisteredArtifactPath(
@@ -874,6 +1001,20 @@ public sealed class ArtifactStore
         }
         catch (Exception exception)
             when (exception is IOException or UnauthorizedAccessException or SecurityException or NotSupportedException)
+        {
+            throw Failure(ArtifactStoreFailureReason.NotRegularFile);
+        }
+    }
+
+    private static void ResetOpenedFile(FileStream stream)
+    {
+        try
+        {
+            stream.Position = 0;
+        }
+        catch (Exception exception)
+            when (exception is IOException or NotSupportedException or
+                ObjectDisposedException)
         {
             throw Failure(ArtifactStoreFailureReason.NotRegularFile);
         }

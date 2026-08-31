@@ -385,10 +385,13 @@ internal sealed class IngestWorkflowCheckpointCodec
         {
             throw;
         }
+        catch (ArtifactStoreException exception)
+        {
+            throw InvalidCheckpoint(exception);
+        }
         catch (Exception exception)
             when (IsDomainValidationFailure(exception) ||
-                exception is ArtifactStoreException or
-                    MediaCheckpointValidationException or
+                exception is MediaCheckpointValidationException or
                     ProxyFrameMapException)
         {
             throw InvalidCheckpoint();
@@ -1208,6 +1211,10 @@ internal sealed class IngestWorkflowCheckpointCodec
 
     private static InvalidOperationException InvalidCheckpoint() =>
         new("The durable ingest checkpoint is invalid.");
+
+    private static InvalidOperationException InvalidCheckpoint(
+        Exception innerException) =>
+        new("The durable ingest checkpoint is invalid.", innerException);
 
     private sealed class RequestDto
     {

@@ -16,6 +16,16 @@ import {
   PROJECT_LIST_METHOD,
   createProjectListRequest,
 } from './projectProtocol'
+import {
+  createPlayerReadRequest,
+  createPlayerSeekRequest,
+} from '../features/player/playerProtocol'
+import {
+  createPlayerReadResponseValue,
+  createPlayerSeekResponseValue,
+  playerEvidenceDigest,
+  playerJobId,
+} from '../features/player/playerTestFixture'
 
 const requestId = '00112233-4455-6677-8899-aabbccddeeff'
 
@@ -37,6 +47,7 @@ describe('web bridge protocol', () => {
     '',
     '00000000-0000-0000-0000-000000000000',
     '00112233-4455-6677-8899-AABBCCDDEEFF',
+    `${requestId}\n`,
     'not-a-uuid',
   ])('rejects invalid request ID %s', (invalidRequestId) => {
     expect(() => createPingRequest(invalidRequestId)).toThrow()
@@ -83,6 +94,65 @@ describe('web bridge client', () => {
     expect(listener).toHaveBeenCalledOnce()
   })
 
+  it('sends only closed player read and evidence-bound seek requests', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+
+    client.sendPlayerRead(requestId, playerJobId)
+    client.sendPlayerSeek(requestId, playerJobId, playerEvidenceDigest, 2)
+
+    expect(transport.posted).toEqual([
+      createPlayerReadRequest(requestId, playerJobId),
+      createPlayerSeekRequest(requestId, playerJobId, playerEvidenceDigest, 2),
+    ])
+  })
+
+  it('routes exact player response methods and ignores unknown or extended input', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const readListener = vi.fn()
+    const seekListener = vi.fn()
+    client.onPlayerReadResponse(readListener)
+    client.onPlayerSeekResponse(seekListener)
+
+    transport.emit(createPlayerReadResponseValue())
+    expect(readListener).toHaveBeenCalledOnce()
+    expect(seekListener).not.toHaveBeenCalled()
+
+    transport.emit(createPlayerSeekResponseValue())
+    expect(readListener).toHaveBeenCalledOnce()
+    expect(seekListener).toHaveBeenCalledOnce()
+
+    transport.emit({
+      ...createPlayerReadResponseValue(),
+      privateException: 'C:\\private\\source.mov',
+    })
+    transport.emit({
+      version: 1,
+      requestId,
+      method: 'player.delete',
+      result: {},
+    })
+    expect(readListener).toHaveBeenCalledOnce()
+    expect(seekListener).toHaveBeenCalledOnce()
+  })
+
+  it('unsubscribes player listeners independently', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const retained = vi.fn()
+    const removed = vi.fn()
+    client.onPlayerReadResponse(retained)
+    const unsubscribe = client.onPlayerReadResponse(removed)
+
+    unsubscribe()
+    unsubscribe()
+    transport.emit(createPlayerReadResponseValue())
+
+    expect(retained).toHaveBeenCalledOnce()
+    expect(removed).not.toHaveBeenCalled()
+  })
+
   it('unsubscribes listeners and removes the transport handler on disposal', () => {
     const transport = new FakeTransport()
     const client = createBridgeClient(transport)
@@ -103,6 +173,12 @@ describe('web bridge client', () => {
     expect(transport.listenerCount).toBe(0)
     expect(() => client.sendPing(requestId)).toThrow('disposed')
     expect(() => client.onPingResponse(listener)).toThrow('disposed')
+    expect(() => client.sendPlayerRead(requestId, playerJobId)).toThrow('disposed')
+    expect(() =>
+      client.sendPlayerSeek(requestId, playerJobId, playerEvidenceDigest, 0),
+    ).toThrow('disposed')
+    expect(() => client.onPlayerReadResponse(listener)).toThrow('disposed')
+    expect(() => client.onPlayerSeekResponse(listener)).toThrow('disposed')
   })
 
   it('sends and emits only strict project protocol messages', () => {

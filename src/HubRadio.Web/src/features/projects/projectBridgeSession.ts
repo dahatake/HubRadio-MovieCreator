@@ -15,14 +15,19 @@ export interface ProjectBridgeSession {
   readonly dispose: () => void
 }
 
+export type ProjectBridgeClient = Pick<
+  BridgeClient,
+  'sendProject' | 'onProjectResponse' | 'dispose'
+>
+
 export type ProjectDispatch = (action: ProjectAction) => void
 
 export function startProjectBridgeSession(
-  createClient: () => BridgeClient,
+  createClient: () => ProjectBridgeClient,
   createRequestId: () => string,
   dispatch: ProjectDispatch,
 ): ProjectBridgeSession {
-  let client: BridgeClient
+  let client: ProjectBridgeClient
   try {
     client = createClient()
   } catch {

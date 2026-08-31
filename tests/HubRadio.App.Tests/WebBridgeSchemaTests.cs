@@ -19,6 +19,9 @@ public sealed class WebBridgeSchemaTests
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "1 MiB");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "256 UTF-8 bytes");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "4096-byte responses");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "reserved intercepted HTTPS media origin");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "current Windows actor");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "never accepted from Web messages");
         Assert.AreEqual(1, definitions.GetProperty("protocolVersion").GetProperty("const").GetInt32());
         CollectionAssert.AreEqual(
             new[]
@@ -33,10 +36,44 @@ public sealed class WebBridgeSchemaTests
                 "jobs.getStatus",
                 "jobs.cancel",
                 "jobs.retry",
+                "player.read",
+                "player.seek",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
                 .Select(static item => item.GetString())
+                .ToArray());
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "#/$defs/pingRequest",
+                "#/$defs/listRequest",
+                "#/$defs/createDraftRequest",
+                "#/$defs/loadDraftRequest",
+                "#/$defs/saveDraftRequest",
+                "#/$defs/pickSourceRequest",
+                "#/$defs/finalizeDraftRequest",
+                "#/$defs/jobStatusRequest",
+                "#/$defs/jobCancelRequest",
+                "#/$defs/jobRetryRequest",
+                "#/$defs/pingResponse",
+                "#/$defs/listResponse",
+                "#/$defs/draftResponse",
+                "#/$defs/pickSourceResponse",
+                "#/$defs/jobStatusResponse",
+                "#/$defs/jobCancelResponse",
+                "#/$defs/jobRetryResponse",
+                "#/$defs/projectErrorResponse",
+                "#/$defs/errorResponse",
+                "#/$defs/playerReadRequest",
+                "#/$defs/playerReadResponse",
+                "#/$defs/playerSeekRequest",
+                "#/$defs/playerSeekResponse",
+            },
+            root.GetProperty("oneOf")
+                .EnumerateArray()
+                .Select(static item => item.GetProperty("$ref").GetString())
                 .ToArray());
 
         foreach (string definitionName in new[]
@@ -72,12 +109,73 @@ public sealed class WebBridgeSchemaTests
             "jobSnapshot",
             "bridgeError",
             "errorResponse",
+            "playerReadParams",
+            "playerSeekParams",
+            "playerReadRequest",
+            "playerReadResponse",
+            "playerSeekRequest",
+            "playerSeekResponse",
+            "playerSnapshot",
+            "playerProxy",
+            "playerWaveform",
+            "playerSprite",
+            "playerFrame",
+            "playerPosition",
+            "rationalTime",
         })
         {
             Assert.AreEqual(
                 JsonValueKind.False,
                 definitions.GetProperty(definitionName).GetProperty("additionalProperties").ValueKind);
         }
+
+        string proxyMediaPattern = definitions
+            .GetProperty("proxyMediaReference")
+            .GetProperty("pattern")
+            .GetString()!;
+        string spriteMediaPattern = definitions
+            .GetProperty("spriteMediaReference")
+            .GetProperty("pattern")
+            .GetString()!;
+        StringAssert.Contains(proxyMediaPattern, "player-media\\.appassets\\.example/media/v1/");
+        StringAssert.Contains(proxyMediaPattern, "/proxy/");
+        StringAssert.Contains(proxyMediaPattern, "[0-9a-f]{64}");
+        StringAssert.Contains(spriteMediaPattern, "/sprite/");
+        Assert.AreEqual(
+            "#/$defs/proxyMediaReference",
+            definitions.GetProperty("playerProxy")
+                .GetProperty("properties")
+                .GetProperty("mediaReference")
+                .GetProperty("$ref")
+                .GetString());
+        Assert.AreEqual(
+            "#/$defs/spriteMediaReference",
+            definitions.GetProperty("playerSprite")
+                .GetProperty("properties")
+                .GetProperty("imageReference")
+                .GetProperty("$ref")
+                .GetString());
+        Assert.AreEqual(
+            2,
+            definitions.GetProperty("playerWaveform")
+                .GetProperty("oneOf")
+                .GetArrayLength());
+        CollectionAssert.Contains(
+            GetStrings(definitions
+                .GetProperty("playerReadResult")
+                .GetProperty("oneOf")[1]
+                .GetProperty("properties")
+                .GetProperty("status")
+                .GetProperty("enum")),
+            "forbidden");
+        CollectionAssert.Contains(
+            GetStrings(definitions
+                .GetProperty("playerSeekResult")
+                .GetProperty("oneOf")[1]
+                .GetProperty("properties")
+                .GetProperty("status")
+                .GetProperty("enum")),
+            "forbidden");
     }
 
     [TestMethod]
@@ -128,6 +226,31 @@ public sealed class WebBridgeSchemaTests
                 "brandTemplateId",
             },
             GetStrings(definitions.GetProperty("draftInput").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "params" },
+            GetStrings(definitions.GetProperty("playerReadRequest").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "result" },
+            GetStrings(definitions.GetProperty("playerReadResponse").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "params" },
+            GetStrings(definitions.GetProperty("playerSeekRequest").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "result" },
+            GetStrings(definitions.GetProperty("playerSeekResponse").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "jobId" },
+            GetStrings(definitions.GetProperty("playerReadParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "jobId", "digest", "proxyFrameSequence" },
+            GetStrings(definitions.GetProperty("playerSeekParams").GetProperty("required")));
+        StringAssert.Contains(
+            definitions.GetProperty("playerSeekParams")
+                .GetProperty("properties")
+                .GetProperty("digest")
+                .GetProperty("$comment")
+                .GetString()!,
+            "256-byte request limit");
         Assert.AreEqual(
             0,
             definitions.GetProperty("emptyObject").GetProperty("maxProperties").GetInt32());

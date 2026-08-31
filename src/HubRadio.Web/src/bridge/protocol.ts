@@ -7,7 +7,7 @@ export const JOBS_CANCEL_METHOD = 'jobs.cancel' as const
 export const JOBS_RETRY_METHOD = 'jobs.retry' as const
 
 const requestIdPattern =
-  /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+  /^(?!00000000-0000-0000-0000-000000000000(?![\s\S]))[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![\s\S])/
 const timestampPattern =
   /^(?!0000)\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[0-1])T([0-1]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{7}Z$/
 

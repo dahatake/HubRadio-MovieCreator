@@ -33,6 +33,8 @@ internal enum BridgeMethod
     JobsGetStatus,
     JobsCancel,
     JobsRetry,
+    PlayerRead,
+    PlayerSeek,
 }
 
 internal sealed class BridgeRequest
@@ -42,13 +44,34 @@ internal sealed class BridgeRequest
         BridgeMethod method,
         JsonElement parameters,
         EntityId<JobIdTag>? jobId,
-        int? expectedRevision)
+        int? expectedRevision,
+        ContentDigest? evidenceDigest,
+        int? proxyFrameSequence)
     {
         RequestId = requestId;
         Method = method;
         Parameters = parameters;
         JobId = jobId;
         ExpectedRevision = expectedRevision;
+        EvidenceDigest = evidenceDigest;
+        ProxyFrameSequence = proxyFrameSequence;
+    }
+
+    internal BridgeRequest(
+        Guid requestId,
+        string method,
+        EntityId<JobIdTag>? jobId = null,
+        ContentDigest? evidenceDigest = null,
+        int? proxyFrameSequence = null)
+        : this(
+            requestId,
+            BridgeProtocol.ParseMethodName(method),
+            JsonSerializer.SerializeToElement(new { }),
+            jobId,
+            expectedRevision: null,
+            evidenceDigest,
+            proxyFrameSequence)
+    {
     }
 
     internal Guid RequestId { get; }
@@ -61,13 +84,26 @@ internal sealed class BridgeRequest
 
     internal int? ExpectedRevision { get; }
 
+    internal ContentDigest? EvidenceDigest { get; }
+
+    internal int? ProxyFrameSequence { get; }
+
     internal static BridgeRequest Create(
         Guid requestId,
         BridgeMethod method,
         JsonElement parameters,
         EntityId<JobIdTag>? jobId = null,
-        int? expectedRevision = null) =>
-        new(requestId, method, parameters, jobId, expectedRevision);
+        int? expectedRevision = null,
+        ContentDigest? evidenceDigest = null,
+        int? proxyFrameSequence = null) =>
+        new(
+            requestId,
+            method,
+            parameters,
+            jobId,
+            expectedRevision,
+            evidenceDigest,
+            proxyFrameSequence);
 }
 
 internal static class BridgeProtocol
@@ -101,6 +137,8 @@ internal static class BridgeProtocol
     internal const string JobsGetStatusMethod = "jobs.getStatus";
     internal const string JobsCancelMethod = "jobs.cancel";
     internal const string JobsRetryMethod = "jobs.retry";
+    internal const string PlayerReadMethod = "player.read";
+    internal const string PlayerSeekMethod = "player.seek";
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -318,6 +356,8 @@ internal static class BridgeProtocol
             BridgeMethod.JobsGetStatus => JobsGetStatusMethod,
             BridgeMethod.JobsCancel => JobsCancelMethod,
             BridgeMethod.JobsRetry => JobsRetryMethod,
+            BridgeMethod.PlayerRead => PlayerReadMethod,
+            BridgeMethod.PlayerSeek => PlayerSeekMethod,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(method),
                 method,
@@ -359,9 +399,25 @@ internal static class BridgeProtocol
             JobsGetStatusMethod => BridgeMethod.JobsGetStatus,
             JobsCancelMethod => BridgeMethod.JobsCancel,
             JobsRetryMethod => BridgeMethod.JobsRetry,
+            PlayerReadMethod => BridgeMethod.PlayerRead,
+            PlayerSeekMethod => BridgeMethod.PlayerSeek,
             _ => (BridgeMethod)(-1),
         };
         return Enum.IsDefined(parsedMethod);
+    }
+
+    internal static BridgeMethod ParseMethodName(string method)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(method);
+        if (TryParseMethod(method, out BridgeMethod parsedMethod))
+        {
+            return parsedMethod;
+        }
+
+        throw new ArgumentOutOfRangeException(
+            nameof(method),
+            method,
+            "Unknown bridge method.");
     }
 
     private static bool HasValidParameters(
@@ -643,6 +699,15 @@ internal static class BridgeProtocol
             return true;
         }
 
+        if (method is BridgeMethod.PlayerRead or BridgeMethod.PlayerSeek)
+        {
+            return TryCreatePlayerRequest(
+                requestId,
+                method,
+                parameters,
+                out request);
+        }
+
         int expectedPropertyCount = method == BridgeMethod.JobsGetStatus ? 1 : 2;
         if (parameters.EnumerateObject().Count() != expectedPropertyCount ||
             !parameters.TryGetProperty("jobId", out JsonElement jobId) ||
@@ -676,6 +741,62 @@ internal static class BridgeProtocol
             parameters.Clone(),
             parsedJobId,
             parsedRevision);
+        return true;
+    }
+
+    private static bool TryCreatePlayerRequest(
+        Guid requestId,
+        BridgeMethod method,
+        JsonElement parameters,
+        out BridgeRequest? request)
+    {
+        request = null;
+        if (!parameters.TryGetProperty("jobId", out JsonElement jobId) ||
+            jobId.ValueKind != JsonValueKind.String ||
+            !TryParseJobId(jobId.GetString(), out EntityId<JobIdTag>? parsedJobId))
+        {
+            return false;
+        }
+
+        if (method == BridgeMethod.PlayerRead)
+        {
+            if (!HasExactProperties(parameters, ["jobId"]))
+            {
+                return false;
+            }
+
+            request = BridgeRequest.Create(
+                requestId,
+                method,
+                parameters.Clone(),
+                parsedJobId);
+            return true;
+        }
+
+        if (!HasExactProperties(
+                parameters,
+                ["jobId", "digest", "proxyFrameSequence"]) ||
+            !parameters.TryGetProperty(
+                "digest",
+                out JsonElement evidenceDigest) ||
+            evidenceDigest.ValueKind != JsonValueKind.String ||
+            !TryParseDigest(
+                evidenceDigest.GetString(),
+                out ContentDigest? parsedEvidenceDigest) ||
+            !TryParseExpectedRevision(
+                parameters.GetProperty("proxyFrameSequence"),
+                out int parsedProxyFrameSequence))
+        {
+            return false;
+        }
+
+        request = BridgeRequest.Create(
+            requestId,
+            method,
+            parameters.Clone(),
+            parsedJobId,
+            evidenceDigest: parsedEvidenceDigest,
+            proxyFrameSequence: parsedProxyFrameSequence);
         return true;
     }
 
@@ -723,6 +844,20 @@ internal static class BridgeProtocol
         expectedRevision = default;
         return false;
     }
+
+    private static bool TryParseDigest(
+        string? value,
+        out ContentDigest? digest)
+    {
+        if (ContentDigest.TryParse(value, out digest) &&
+            string.Equals(value, digest.Hex, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        digest = null;
+        return false;
+    }
 }
 
 internal sealed class Bridge : IDisposable
@@ -731,6 +866,7 @@ internal sealed class Bridge : IDisposable
     private readonly Func<BridgeRequest, CancellationToken, Task<string>>?
         handleProjectRequestAsync;
     private readonly JobBridgeRequestHandler? jobHandler;
+    private readonly PlayerBridgeRequestHandler playerHandler;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private bool isStarted;
     private bool isDisposed;
@@ -739,21 +875,46 @@ internal sealed class Bridge : IDisposable
         : this(
             coreWebView,
             handleProjectRequestAsync: null,
-            jobHandler: null)
+            jobHandler: null,
+            UnavailablePlayerBridgeReader.Instance,
+            DeniedPlayerAccessAuthorization.Instance)
     {
     }
 
     internal Bridge(
         CoreWebView2 coreWebView,
         Func<BridgeRequest, CancellationToken, Task<string>> handleProjectRequestAsync)
-        : this(coreWebView, handleProjectRequestAsync, jobHandler: null)
+        : this(
+            coreWebView,
+            handleProjectRequestAsync,
+            jobHandler: null,
+            UnavailablePlayerBridgeReader.Instance,
+            DeniedPlayerAccessAuthorization.Instance)
     {
     }
 
     internal Bridge(
         CoreWebView2 coreWebView,
         JobBridgeRequestHandler? jobHandler)
-        : this(coreWebView, handleProjectRequestAsync: null, jobHandler)
+        : this(
+            coreWebView,
+            handleProjectRequestAsync: null,
+            jobHandler,
+            UnavailablePlayerBridgeReader.Instance,
+            DeniedPlayerAccessAuthorization.Instance)
+    {
+    }
+
+    internal Bridge(
+        CoreWebView2 coreWebView,
+        IPlayerBridgeReader playerReader,
+        IPlayerAccessAuthorization playerAuthorization)
+        : this(
+            coreWebView,
+            handleProjectRequestAsync: null,
+            jobHandler: null,
+            playerReader,
+            playerAuthorization)
     {
     }
 
@@ -761,12 +922,19 @@ internal sealed class Bridge : IDisposable
         CoreWebView2 coreWebView,
         Func<BridgeRequest, CancellationToken, Task<string>>?
             handleProjectRequestAsync,
-        JobBridgeRequestHandler? jobHandler)
+        JobBridgeRequestHandler? jobHandler,
+        IPlayerBridgeReader playerReader,
+        IPlayerAccessAuthorization playerAuthorization)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
+        ArgumentNullException.ThrowIfNull(playerReader);
+        ArgumentNullException.ThrowIfNull(playerAuthorization);
         this.coreWebView = coreWebView;
         this.handleProjectRequestAsync = handleProjectRequestAsync;
         this.jobHandler = jobHandler;
+        playerHandler = new PlayerBridgeRequestHandler(
+            playerReader,
+            playerAuthorization);
     }
 
     internal void Start()
@@ -865,6 +1033,11 @@ internal sealed class Bridge : IDisposable
                 : await handleProjectRequestAsync(request, cancellationToken);
         }
 
+        if (request.Method is BridgeMethod.PlayerRead or BridgeMethod.PlayerSeek)
+        {
+            return await playerHandler.HandleAsync(request, cancellationToken);
+        }
+
         return jobHandler?.Handle(request) ??
             JobBridgeResponseSerializer.SerializeError(
                 request,
@@ -873,6 +1046,21 @@ internal sealed class Bridge : IDisposable
 
     private static string CreateUnavailableResponse(BridgeRequest request)
     {
+        if (request.Method == BridgeMethod.PlayerRead)
+        {
+            return PlayerBridgeJson.WriteReadResponse(
+                request,
+                PlayerBridgeReadResult.Unavailable());
+        }
+
+        if (request.Method == BridgeMethod.PlayerSeek)
+        {
+            return PlayerBridgeJson.WriteSeekResponse(
+                request,
+                PlayerBridgeStatus.Unavailable,
+                position: null);
+        }
+
         return BridgeProtocol.IsProjectMethod(request.Method)
             ? BridgeProtocol.CreateErrorResponse(
                 request,

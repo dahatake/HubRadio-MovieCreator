@@ -1,10 +1,12 @@
 using Microsoft.Web.WebView2.Core;
+using Windows.Storage.Streams;
 
 namespace HubRadio.App.Web;
 
 internal sealed class WebViewHost : IDisposable
 {
     internal const string VirtualHostName = "appassets.example";
+    internal const string MediaHostName = "player-media.appassets.example";
     internal const string EntryPoint = "https://appassets.example/index.html";
 
     private readonly CoreWebView2 coreWebView;
@@ -12,6 +14,10 @@ internal sealed class WebViewHost : IDisposable
     private readonly Func<BridgeRequest, CancellationToken, Task<string>>?
         handleProjectRequestAsync;
     private readonly JobBridgeRequestHandler? jobHandler;
+    private readonly IPlayerBridgeReader playerReader;
+    private readonly IPlayerAccessAuthorization playerAuthorization;
+    private readonly PlayerMediaResponseFactory mediaResponseFactory;
+    private readonly CancellationTokenSource mediaCancellation = new();
     private Bridge? bridge;
     private TaskCompletionSource? initialNavigation;
     private bool isStarted;
@@ -24,7 +30,10 @@ internal sealed class WebViewHost : IDisposable
             coreWebView,
             webAssetsDirectory,
             handleProjectRequestAsync: null,
-            jobHandler: null)
+            jobHandler: null,
+            UnavailablePlayerBridgeReader.Instance,
+            UnavailablePlayerMediaAssetReader.Instance,
+            DeniedPlayerAccessAuthorization.Instance)
     {
     }
 
@@ -37,7 +46,10 @@ internal sealed class WebViewHost : IDisposable
             coreWebView,
             webAssetsDirectory,
             handleProjectRequestAsync,
-            jobHandler: null)
+            jobHandler: null,
+            UnavailablePlayerBridgeReader.Instance,
+            UnavailablePlayerMediaAssetReader.Instance,
+            DeniedPlayerAccessAuthorization.Instance)
     {
     }
 
@@ -49,7 +61,10 @@ internal sealed class WebViewHost : IDisposable
             coreWebView,
             webAssetsDirectory,
             handleProjectRequestAsync: null,
-            jobHandler)
+            jobHandler,
+            UnavailablePlayerBridgeReader.Instance,
+            UnavailablePlayerMediaAssetReader.Instance,
+            DeniedPlayerAccessAuthorization.Instance)
     {
     }
 
@@ -59,9 +74,49 @@ internal sealed class WebViewHost : IDisposable
         Func<BridgeRequest, CancellationToken, Task<string>>?
             handleProjectRequestAsync,
         JobBridgeRequestHandler? jobHandler)
+        : this(
+            coreWebView,
+            webAssetsDirectory,
+            handleProjectRequestAsync,
+            jobHandler,
+            UnavailablePlayerBridgeReader.Instance,
+            UnavailablePlayerMediaAssetReader.Instance,
+            DeniedPlayerAccessAuthorization.Instance)
+    {
+    }
+
+    internal WebViewHost(
+        CoreWebView2 coreWebView,
+        string webAssetsDirectory,
+        IPlayerBridgeReader playerReader,
+        IPlayerMediaAssetReader mediaAssetReader,
+        IPlayerAccessAuthorization playerAuthorization)
+        : this(
+            coreWebView,
+            webAssetsDirectory,
+            handleProjectRequestAsync: null,
+            jobHandler: null,
+            playerReader,
+            mediaAssetReader,
+            playerAuthorization)
+    {
+    }
+
+    internal WebViewHost(
+        CoreWebView2 coreWebView,
+        string webAssetsDirectory,
+        Func<BridgeRequest, CancellationToken, Task<string>>?
+            handleProjectRequestAsync,
+        JobBridgeRequestHandler? jobHandler,
+        IPlayerBridgeReader playerReader,
+        IPlayerMediaAssetReader mediaAssetReader,
+        IPlayerAccessAuthorization playerAuthorization)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentException.ThrowIfNullOrWhiteSpace(webAssetsDirectory);
+        ArgumentNullException.ThrowIfNull(playerReader);
+        ArgumentNullException.ThrowIfNull(mediaAssetReader);
+        ArgumentNullException.ThrowIfNull(playerAuthorization);
 
         string fullPath = Path.GetFullPath(webAssetsDirectory);
         if (!Path.IsPathFullyQualified(fullPath) ||
@@ -76,6 +131,11 @@ internal sealed class WebViewHost : IDisposable
         this.webAssetsDirectory = fullPath;
         this.handleProjectRequestAsync = handleProjectRequestAsync;
         this.jobHandler = jobHandler;
+        this.playerReader = playerReader;
+        this.playerAuthorization = playerAuthorization;
+        mediaResponseFactory = new PlayerMediaResponseFactory(
+            mediaAssetReader,
+            playerAuthorization);
     }
 
     internal async Task StartAsync(CancellationToken cancellationToken = default)
@@ -106,7 +166,8 @@ internal sealed class WebViewHost : IDisposable
         coreWebView.DownloadStarting += OnDownloadStarting;
         coreWebView.AddWebResourceRequestedFilter(
             "*",
-            CoreWebView2WebResourceContext.All);
+            CoreWebView2WebResourceContext.All,
+            CoreWebView2WebResourceRequestSourceKinds.All);
         coreWebView.WebResourceRequested += OnWebResourceRequested;
 
         try
@@ -121,7 +182,9 @@ internal sealed class WebViewHost : IDisposable
             Bridge startedBridge = new(
                 coreWebView,
                 handleProjectRequestAsync,
-                jobHandler);
+                jobHandler,
+                playerReader,
+                playerAuthorization);
             startedBridge.Start();
             bridge = startedBridge;
         }
@@ -133,7 +196,7 @@ internal sealed class WebViewHost : IDisposable
     }
 
     internal static bool IsAllowedTopLevelUri(string? value) =>
-        TryParseAllowedOrigin(value, out Uri? uri) &&
+        TryParseAllowedOrigin(value, VirtualHostName, out Uri? uri) &&
         uri is not null &&
         string.Equals(uri.AbsolutePath, "/index.html", StringComparison.Ordinal) &&
         string.IsNullOrEmpty(uri.Query) &&
@@ -141,8 +204,14 @@ internal sealed class WebViewHost : IDisposable
 
     internal static bool IsAllowedResourceUri(string? value) => IsAllowedOrigin(value);
 
+    internal static bool IsAllowedMediaAssetUri(string? value) =>
+        PlayerMediaAssetReference.IsAllowedValue(value);
+
     internal static bool IsAllowedOrigin(string? value) =>
-        TryParseAllowedOrigin(value, out _);
+        TryParseAllowedOrigin(value, VirtualHostName, out _);
+
+    internal static bool IsAllowedMediaOrigin(string? value) =>
+        TryParseAllowedOrigin(value, MediaHostName, out _);
 
     public void Dispose()
     {
@@ -152,6 +221,7 @@ internal sealed class WebViewHost : IDisposable
         }
 
         isDisposed = true;
+        mediaCancellation.Cancel();
         bridge?.Dispose();
         bridge = null;
         if (!isStarted)
@@ -166,12 +236,14 @@ internal sealed class WebViewHost : IDisposable
         coreWebView.WebResourceRequested -= OnWebResourceRequested;
         coreWebView.RemoveWebResourceRequestedFilter(
             "*",
-            CoreWebView2WebResourceContext.All);
+            CoreWebView2WebResourceContext.All,
+            CoreWebView2WebResourceRequestSourceKinds.All);
         coreWebView.ClearVirtualHostNameToFolderMapping(VirtualHostName);
     }
 
     private static bool TryParseAllowedOrigin(
         string? value,
+        string expectedHost,
         out Uri? uri)
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out uri))
@@ -180,7 +252,7 @@ internal sealed class WebViewHost : IDisposable
         }
 
         return string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal) &&
-            string.Equals(uri.Host, VirtualHostName, StringComparison.Ordinal) &&
+            string.Equals(uri.Host, expectedHost, StringComparison.Ordinal) &&
             uri.IsDefaultPort &&
             string.IsNullOrEmpty(uri.UserInfo);
     }
@@ -238,10 +310,97 @@ internal sealed class WebViewHost : IDisposable
             return;
         }
 
-        args.Response = coreWebView.Environment.CreateWebResourceResponse(
-            null,
-            403,
-            "Forbidden",
-            "Content-Type: text/plain\r\nCache-Control: no-store");
+        if (IsAllowedMediaOrigin(args.Request.Uri))
+        {
+            var deferral = args.GetDeferral();
+            _ = CompleteMediaRequestAsync(
+                args,
+                () =>
+                {
+                    try
+                    {
+                        deferral.Complete();
+                    }
+                    finally
+                    {
+                        deferral.Dispose();
+                    }
+                });
+            return;
+        }
+
+        args.Response = CreateEmptyResponse(403, "Forbidden");
     }
+
+    private async Task CompleteMediaRequestAsync(
+        CoreWebView2WebResourceRequestedEventArgs args,
+        Action completeDeferral)
+    {
+        Stream? content = null;
+        IRandomAccessStream? randomAccessContent = null;
+        try
+        {
+            CoreWebView2HttpRequestHeaders requestHeaders =
+                args.Request.Headers;
+            string? rangeHeader = requestHeaders.Contains("Range")
+                ? requestHeaders.GetHeader("Range")
+                : null;
+            using PlayerMediaResponse response =
+                await mediaResponseFactory.CreateAsync(
+                    args.Request.Method,
+                    args.Request.Uri,
+                    rangeHeader,
+                    mediaCancellation.Token);
+            content = response.DetachContent();
+            if (content is not null)
+            {
+                randomAccessContent = content.AsRandomAccessStream();
+                content = null;
+            }
+
+            args.Response = coreWebView.Environment.CreateWebResourceResponse(
+                randomAccessContent,
+                response.StatusCode,
+                response.ReasonPhrase,
+                response.Headers);
+            randomAccessContent = null;
+        }
+        catch (Exception)
+        {
+            randomAccessContent?.Dispose();
+            content?.Dispose();
+            try
+            {
+                args.Response = CreateEmptyResponse(
+                    503,
+                    "Service Unavailable");
+            }
+            catch (Exception)
+            {
+                // The WebView may have closed while the deferred read was pending.
+            }
+        }
+        finally
+        {
+            try
+            {
+                completeDeferral();
+            }
+            catch (Exception)
+            {
+                // The WebView may have closed while the deferred read was pending.
+            }
+        }
+    }
+
+    private CoreWebView2WebResourceResponse CreateEmptyResponse(
+        int statusCode,
+        string reasonPhrase) =>
+        coreWebView.Environment.CreateWebResourceResponse(
+            null,
+            statusCode,
+            reasonPhrase,
+            "Content-Length: 0\r\n" +
+            "Cache-Control: no-store\r\n" +
+            "X-Content-Type-Options: nosniff");
 }

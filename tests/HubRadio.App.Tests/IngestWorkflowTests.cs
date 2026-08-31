@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using HubRadio.App.Jobs;
 using HubRadio.App.Media;
+using HubRadio.App.Web;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Jobs;
 using HubRadio.Core.Layout;
@@ -523,6 +524,253 @@ public sealed class IngestWorkflowTests
         Assert.AreEqual(
             completed.PreviewAssets.SpriteIndex.CanonicalJson,
             restored.PreviewAssets.SpriteIndex.CanonicalJson);
+    }
+
+    [TestMethod]
+    public async Task CompletedCheckpointPlayerReaderReturnsCanonicalPathOpaqueEvidence()
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        IngestWorkflowRunResult completed = await fixture.Workflow.RunAsync(
+            fixture.Request,
+            previousRun: null,
+            CancellationToken.None);
+        var reader = new IngestPlayerBridgeReader(
+            fixture.Store,
+            fixture.WorkflowStore,
+            fixture.Codec);
+
+        PlayerBridgeReadResult result = await reader.ReadAsync(
+            fixture.Request.JobId,
+            CancellationToken.None);
+
+        Assert.AreEqual(PlayerBridgeStatus.Available, result.Status);
+        PlayerBridgeSnapshot snapshot = result.Snapshot
+            ?? throw new AssertFailedException(
+                "The completed checkpoint did not produce player evidence.");
+        Assert.AreEqual(fixture.ProjectId, snapshot.ProjectId);
+        Assert.AreEqual(
+            completed.FrameMap!.SourcePresentationStart,
+            snapshot.SourcePresentationStart);
+        Assert.AreEqual(
+            completed.FrameMap.SourcePresentationEnd,
+            snapshot.SourcePresentationEnd);
+        Assert.AreEqual(
+            completed.Proxy!.ProxyPtsIndex.Entries.Count,
+            snapshot.Frames.Count);
+        Assert.AreEqual(
+            completed.Proxy.ProxyArtifact.Id,
+            snapshot.ProxyMediaReference.ArtifactId);
+        Assert.AreEqual(
+            completed.Proxy.ProxyArtifact.ContentDigest,
+            snapshot.ProxyMediaReference.ContentDigest);
+        Assert.AreEqual(
+            completed.PreviewAssets!.SpriteImageArtifact.Id,
+            snapshot.SpriteImageReference.ArtifactId);
+        Assert.IsFalse(snapshot.ProxyMediaReference.Value.Contains(
+            fixture.RootPath,
+            StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(snapshot.ProxyMediaReference.Value.Contains(
+            "file:",
+            StringComparison.OrdinalIgnoreCase));
+
+        var mediaReader = new ArtifactStorePlayerMediaAssetReader(
+            fixture.ArtifactStore);
+        await using ValidatedArtifactReadStream proxyStream =
+            await mediaReader.OpenAsync(
+                snapshot.ProxyMediaReference,
+                CancellationToken.None)
+            ?? throw new AssertFailedException(
+                "The capability-bound proxy stream was unavailable.");
+        Assert.AreEqual(
+            completed.Proxy.ProxyArtifact.ByteSize,
+            proxyStream.Length);
+        Assert.IsTrue(proxyStream.CanRead);
+        Assert.IsTrue(proxyStream.CanSeek);
+        Assert.IsFalse(proxyStream.CanWrite);
+
+        await using ValidatedArtifactReadStream spriteStream =
+            await mediaReader.OpenAsync(
+                snapshot.SpriteImageReference,
+                CancellationToken.None)
+            ?? throw new AssertFailedException(
+                "The capability-bound sprite stream was unavailable.");
+        Assert.AreEqual(
+            completed.PreviewAssets.SpriteImageArtifact.ByteSize,
+            spriteStream.Length);
+
+        PlayerMediaAssetReference reclassifiedWaveform =
+            PlayerMediaAssetReference.ThumbnailSprite(
+                fixture.ProjectId,
+                completed.PreviewAssets.WaveformIndexArtifact.Id,
+                completed.PreviewAssets.WaveformIndexArtifact.ContentDigest);
+        await using ValidatedArtifactReadStream? rejected =
+            await mediaReader.OpenAsync(
+                reclassifiedWaveform,
+                CancellationToken.None);
+        Assert.IsNull(rejected);
+    }
+
+    [TestMethod]
+    public async Task PlayerReaderFailsClosedForMissingIncompleteAndWrongKindJobs()
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        var reader = new IngestPlayerBridgeReader(
+            fixture.Store,
+            fixture.WorkflowStore,
+            fixture.Codec);
+
+        PlayerBridgeReadResult missing = await reader.ReadAsync(
+            EntityId<JobIdTag>.New(),
+            CancellationToken.None);
+        Assert.AreEqual(PlayerBridgeStatus.Unavailable, missing.Status);
+
+        WorkflowResumeState initial = WorkflowResumeState.Create(
+            fixture.Request);
+        _ = fixture.WorkflowStore.RegisterOrGet(
+            fixture.Request.JobId,
+            fixture.Request.ProjectId,
+            fixture.Request.Version,
+            fixture.Request.RequestDigest,
+            fixture.Request.CanonicalJson,
+            IngestWorkflowCheckpointCodec.SchemaVersion,
+            fixture.Codec.Serialize(initial));
+        PlayerBridgeReadResult incomplete = await reader.ReadAsync(
+            fixture.Request.JobId,
+            CancellationToken.None);
+        Assert.AreEqual(PlayerBridgeStatus.Unavailable, incomplete.Status);
+
+        Job wrongKind = fixture.CreateQueuedJob("media.other.v1");
+        IngestWorkflowRequest wrongKindRequest =
+            fixture.CreateEquivalentRequest(jobId: wrongKind.Id);
+        WorkflowResumeState wrongKindInitial = WorkflowResumeState.Create(
+            wrongKindRequest);
+        _ = fixture.WorkflowStore.RegisterOrGet(
+            wrongKindRequest.JobId,
+            wrongKindRequest.ProjectId,
+            wrongKindRequest.Version,
+            wrongKindRequest.RequestDigest,
+            wrongKindRequest.CanonicalJson,
+            IngestWorkflowCheckpointCodec.SchemaVersion,
+            fixture.Codec.Serialize(wrongKindInitial));
+        PlayerBridgeReadResult mismatched = await reader.ReadAsync(
+            wrongKind.Id,
+            CancellationToken.None);
+        Assert.AreEqual(PlayerBridgeStatus.Mismatched, mismatched.Status);
+    }
+
+    [TestMethod]
+    public async Task PlayerReaderRejectsAProjectMismatchedWorkflow()
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        _ = await fixture.Workflow.RunAsync(
+            fixture.Request,
+            previousRun: null,
+            CancellationToken.None);
+        EntityId<ProjectIdTag> otherProjectId = EntityId<ProjectIdTag>.New();
+        new ProjectStore(fixture.DatabasePath).CreateProject(
+            new Project(
+                otherProjectId,
+                "Other project",
+                "Exercise the cross-project player boundary.",
+                "Test suite",
+                PublicationScope.InternalOnly,
+                deadline: null,
+                assets: [],
+                performers: []),
+            "{\"playerBoundary\":true}",
+            fixture.TimeProvider.GetUtcNow());
+        fixture.ExecuteCorruptionForTest($"""
+            UPDATE jobs
+            SET project_id = '{otherProjectId}'
+            WHERE id = '{fixture.Request.JobId}';
+            UPDATE ingest_workflows
+            SET project_id = '{otherProjectId}'
+            WHERE job_id = '{fixture.Request.JobId}';
+            """);
+        var reader = new IngestPlayerBridgeReader(
+            fixture.Store,
+            fixture.WorkflowStore,
+            fixture.Codec);
+
+        PlayerBridgeReadResult result = await reader.ReadAsync(
+            fixture.Request.JobId,
+            CancellationToken.None);
+
+        Assert.AreEqual(PlayerBridgeStatus.Mismatched, result.Status);
+        Assert.IsNull(result.Snapshot);
+    }
+
+    [TestMethod]
+    public async Task PlayerReaderClassifiesArtifactDriftAsStale()
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        IngestWorkflowRunResult completed = await fixture.Workflow.RunAsync(
+            fixture.Request,
+            previousRun: null,
+            CancellationToken.None);
+        string proxyPath = fixture.GetRegisteredArtifactPath(
+            completed.Proxy!.ProxyArtifact.Id);
+        byte[] changed = File.ReadAllBytes(proxyPath);
+        changed[^1] ^= 0xff;
+        File.WriteAllBytes(proxyPath, changed);
+        var reader = new IngestPlayerBridgeReader(
+            fixture.Store,
+            fixture.WorkflowStore,
+            fixture.Codec);
+
+        PlayerBridgeReadResult result = await reader.ReadAsync(
+            fixture.Request.JobId,
+            CancellationToken.None);
+
+        Assert.AreEqual(PlayerBridgeStatus.Stale, result.Status);
+        Assert.IsNull(result.Snapshot);
+    }
+
+    [TestMethod]
+    public async Task PlayerReaderRejectsCanonicalButUnknownCheckpointFields()
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        _ = await fixture.Workflow.RunAsync(
+            fixture.Request,
+            previousRun: null,
+            CancellationToken.None);
+        StoredIngestWorkflow stored = fixture.WorkflowStore.Get(
+            fixture.Request.JobId)!;
+        string changed = MutateCanonicalJson(
+            stored.CheckpointPayloadJson,
+            static root => root["unexpectedPlayerField"] = true);
+        fixture.ReplaceCheckpointPayload(changed);
+        var reader = new IngestPlayerBridgeReader(
+            fixture.Store,
+            fixture.WorkflowStore,
+            fixture.Codec);
+
+        PlayerBridgeReadResult result = await reader.ReadAsync(
+            fixture.Request.JobId,
+            CancellationToken.None);
+
+        Assert.AreEqual(PlayerBridgeStatus.Mismatched, result.Status);
+        Assert.IsNull(result.Snapshot);
+    }
+
+    [TestMethod]
+    public async Task PlayerReaderHonorsPreCancellation()
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        var reader = new IngestPlayerBridgeReader(
+            fixture.Store,
+            fixture.WorkflowStore,
+            fixture.Codec);
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+
+        OperationCanceledException exception =
+            await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+                reader.ReadAsync(
+                    fixture.Request.JobId,
+                    cancellation.Token));
+
+        Assert.AreEqual(cancellation.Token, exception.CancellationToken);
     }
 
     [TestMethod]
@@ -1538,6 +1786,57 @@ public sealed class IngestWorkflowTests
             _ = command.ExecuteNonQuery();
         }
 
+        internal void ExecuteCorruptionForTest(string sql)
+        {
+            var builder = new SqliteConnectionStringBuilder
+            {
+                DataSource = DatabasePath,
+                Mode = SqliteOpenMode.ReadWrite,
+                Cache = SqliteCacheMode.Private,
+                Pooling = false,
+                ForeignKeys = false,
+            };
+            using var connection = new SqliteConnection(builder.ToString());
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = sql;
+            Assert.AreEqual(2, command.ExecuteNonQuery());
+        }
+
+        internal void ReplaceCheckpointPayload(string canonicalJson)
+        {
+            ArgumentNullException.ThrowIfNull(canonicalJson);
+            byte[] payload = Encoding.UTF8.GetBytes(canonicalJson);
+            ContentDigest digest = ContentDigest.Compute(payload);
+            var builder = new SqliteConnectionStringBuilder
+            {
+                DataSource = DatabasePath,
+                Mode = SqliteOpenMode.ReadWrite,
+                Cache = SqliteCacheMode.Private,
+                Pooling = false,
+                ForeignKeys = true,
+            };
+            using var connection = new SqliteConnection(builder.ToString());
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE ingest_workflows
+                SET checkpoint_digest = $checkpoint_digest,
+                    checkpoint_payload = $checkpoint_payload
+                WHERE job_id = $job_id;
+                """;
+            command.Parameters.Add(
+                "$checkpoint_digest",
+                SqliteType.Text).Value = digest.Hex;
+            command.Parameters.Add(
+                "$checkpoint_payload",
+                SqliteType.Blob).Value = payload;
+            command.Parameters.Add(
+                "$job_id",
+                SqliteType.Text).Value = Request.JobId.ToString();
+            Assert.AreEqual(1, command.ExecuteNonQuery());
+        }
+
         internal IngestWorkflowRequest CreateEquivalentRequest(
             EntityId<JobIdTag>? jobId = null,
             string? mediaType = null,
@@ -1897,21 +2196,24 @@ public sealed class IngestWorkflowTests
             StoredArtifact waveformArtifact = await PromoteFixtureBytesAsync(
                 waveformIndexArtifactId,
                 ArtifactKind.Preview,
-                $"{generatedProxy.SourceAssetId}/waveform.json",
+                $"{generatedProxy.SourceAssetId}/{generatedProxy.ProxyArtifact.Id}/" +
+                    $"{waveformIndexArtifactId}.waveform-index.json",
                 Encoding.UTF8.GetBytes(model.WaveformIndex.CanonicalJson),
                 CreatedAt.AddMinutes(2),
                 cancellationToken);
             StoredArtifact spriteImageArtifact = await PromoteFixtureBytesAsync(
                 spriteImageArtifactId,
                 ArtifactKind.Preview,
-                $"{generatedProxy.SourceAssetId}/sprite.png",
+                $"{generatedProxy.SourceAssetId}/{generatedProxy.ProxyArtifact.Id}/" +
+                    $"{spriteImageArtifactId}.sprite.png",
                 SpriteContent,
                 CreatedAt.AddMinutes(2),
                 cancellationToken);
             StoredArtifact spriteIndexArtifact = await PromoteFixtureBytesAsync(
                 spriteIndexArtifactId,
                 ArtifactKind.Preview,
-                $"{generatedProxy.SourceAssetId}/sprite.json",
+                $"{generatedProxy.SourceAssetId}/{generatedProxy.ProxyArtifact.Id}/" +
+                    $"{spriteIndexArtifactId}.sprite-index.json",
                 Encoding.UTF8.GetBytes(model.SpriteIndex.CanonicalJson),
                 CreatedAt.AddMinutes(2),
                 cancellationToken);

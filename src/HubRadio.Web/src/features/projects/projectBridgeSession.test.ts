@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import {
   PROJECT_LIST_METHOD,
   createProjectPickSourceRequest,
-  type BridgeClient,
   type ProjectBridgeRequest,
   type ProjectBridgeResponse,
 } from '../../bridge'
@@ -13,7 +12,10 @@ import {
   projectResponseReceived,
   type ProjectAction,
 } from './projectState'
-import { startProjectBridgeSession } from './projectBridgeSession'
+import {
+  startProjectBridgeSession,
+  type ProjectBridgeClient,
+} from './projectBridgeSession'
 
 const requestId = '00112233-4455-6677-8899-aabbccddeeff'
 const nextRequestId = '10112233-4455-6677-8899-aabbccddeeff'
@@ -103,7 +105,7 @@ describe('project bridge session', () => {
   })
 })
 
-class FakeClient implements BridgeClient {
+class FakeClient implements ProjectBridgeClient {
   readonly sent: ProjectBridgeRequest[] = []
   throwOnSend = false
   throwOnSubscribe = false

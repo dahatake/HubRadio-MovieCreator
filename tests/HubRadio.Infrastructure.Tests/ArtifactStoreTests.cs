@@ -822,6 +822,246 @@ public sealed class ArtifactStoreTests
     }
 
     [TestMethod]
+    public async Task OpenValidatedReadAsync_ReturnsBoundPathOpaqueReadOnlyStream()
+    {
+        using ArtifactFixture fixture = new();
+        EntityId<ProjectIdTag> projectId = fixture.CreateProject();
+        byte[] content = Encoding.UTF8.GetBytes("validated artifact bytes");
+        string stagingPath = fixture.CreateStagingFile(
+            projectId,
+            "validated.bin",
+            content);
+        ArtifactPromotionRequest request = fixture.CreateRequest(
+            projectId,
+            ArtifactKind.Proxy,
+            stagingPath,
+            "nested/validated.bin",
+            content,
+            createdAt: CreatedAt);
+        StoredArtifact stored = await fixture.Store.PromoteAsync(request);
+
+        await using ValidatedArtifactReadStream stream =
+            await fixture.Store.OpenValidatedReadAsync(request.Id);
+
+        Assert.AreEqual(stored.Id, stream.Id);
+        Assert.AreEqual(stored.ProjectId, stream.ProjectId);
+        Assert.AreEqual(stored.Kind, stream.Kind);
+        Assert.AreEqual(stored.ContentDigest, stream.ContentDigest);
+        Assert.AreEqual(stored.ByteSize, stream.ByteSize);
+        Assert.IsTrue(stream.CanRead);
+        Assert.IsTrue(stream.CanSeek);
+        Assert.IsFalse(stream.CanWrite);
+        Assert.AreEqual(content.LongLength, stream.Length);
+        Assert.AreEqual(0L, stream.Position);
+
+        stream.Seek(3, SeekOrigin.Begin);
+        byte[] suffix = new byte[content.Length - 3];
+        await stream.ReadExactlyAsync(suffix);
+        CollectionAssert.AreEqual(content[3..], suffix);
+
+        Assert.ThrowsExactly<NotSupportedException>(
+            () => stream.Write(new byte[] { 1 }, 0, 1));
+        Assert.ThrowsExactly<NotSupportedException>(() => stream.SetLength(1));
+        CollectionAssert.AreEqual(
+            content,
+            File.ReadAllBytes(fixture.GetStoragePath(stored.StorageReference)));
+
+        StoredArtifact validated = await fixture.Store.ValidateRegisteredAsync(
+            request.Id);
+        AssertArtifactEqual(stored, validated);
+    }
+
+    [TestMethod]
+    public async Task OpenValidatedReadAsync_DisposalClosesTheLease()
+    {
+        using ArtifactFixture fixture = new();
+        EntityId<ProjectIdTag> projectId = fixture.CreateProject();
+        byte[] content = Encoding.UTF8.GetBytes("dispose validated stream");
+        string stagingPath = fixture.CreateStagingFile(
+            projectId,
+            "dispose.bin",
+            content);
+        ArtifactPromotionRequest request = fixture.CreateRequest(
+            projectId,
+            ArtifactKind.Preview,
+            stagingPath,
+            "dispose.bin",
+            content);
+        _ = await fixture.Store.PromoteAsync(request);
+        ValidatedArtifactReadStream stream =
+            await fixture.Store.OpenValidatedReadAsync(request.Id);
+
+        await stream.DisposeAsync();
+
+        Assert.IsFalse(stream.CanRead);
+        Assert.IsFalse(stream.CanSeek);
+        Assert.IsFalse(stream.CanWrite);
+        Assert.ThrowsExactly<ObjectDisposedException>(() => _ = stream.Length);
+        Assert.ThrowsExactly<ObjectDisposedException>(() => stream.ReadByte());
+        await stream.DisposeAsync();
+    }
+
+    [TestMethod]
+    public async Task OpenValidatedReadAsync_RejectsContentAndDatabaseMetadataTampering()
+    {
+        using ArtifactFixture fixture = new();
+        EntityId<ProjectIdTag> projectId = fixture.CreateProject();
+        byte[] content = Encoding.UTF8.GetBytes("original validated bytes");
+        string digestStaging = fixture.CreateStagingFile(
+            projectId,
+            "tampered-content.bin",
+            content);
+        ArtifactPromotionRequest digestRequest = fixture.CreateRequest(
+            projectId,
+            ArtifactKind.Proxy,
+            digestStaging,
+            "tampered-content.bin",
+            content);
+        StoredArtifact digestArtifact =
+            await fixture.Store.PromoteAsync(digestRequest);
+        string digestPath = fixture.GetStoragePath(
+            digestArtifact.StorageReference);
+        byte[] changedContent = content.ToArray();
+        changedContent[^1] ^= 0xff;
+        File.WriteAllBytes(digestPath, changedContent);
+
+        ArtifactStoreException digestFailure =
+            await Assert.ThrowsExactlyAsync<ArtifactStoreException>(
+                () => fixture.Store.OpenValidatedReadAsync(digestRequest.Id));
+        AssertSafeException(
+            digestFailure,
+            ArtifactStoreFailureReason.DigestMismatch,
+            reconciliationRequired: false,
+            fixture.DatabasePath,
+            fixture.WorkspacePath,
+            digestPath);
+
+        string metadataStaging = fixture.CreateStagingFile(
+            projectId,
+            "tampered-metadata.bin",
+            content);
+        ArtifactPromotionRequest metadataRequest = fixture.CreateRequest(
+            projectId,
+            ArtifactKind.Preview,
+            metadataStaging,
+            "tampered-metadata.bin",
+            content);
+        _ = await fixture.Store.PromoteAsync(metadataRequest);
+        fixture.Database.ExecuteNonQuery(
+            "UPDATE artifacts SET byte_size = $size WHERE id = $id;",
+            ("$size", content.LongLength + 1),
+            ("$id", metadataRequest.Id.ToString()));
+
+        ArtifactStoreException sizeFailure =
+            await Assert.ThrowsExactlyAsync<ArtifactStoreException>(
+                () => fixture.Store.OpenValidatedReadAsync(metadataRequest.Id));
+        AssertSafeException(
+            sizeFailure,
+            ArtifactStoreFailureReason.SizeMismatch,
+            reconciliationRequired: false,
+            fixture.DatabasePath,
+            fixture.WorkspacePath,
+            metadataRequest.Id.ToString());
+    }
+
+    [TestMethod]
+    public async Task OpenValidatedReadAsync_RejectsMissingArtifactAndRegisteredFile()
+    {
+        using ArtifactFixture fixture = new();
+        EntityId<ProjectIdTag> projectId = fixture.CreateProject();
+        EntityId<ArtifactIdTag> missingId = EntityId<ArtifactIdTag>.New();
+
+        ArtifactStoreException missingRegistration =
+            await Assert.ThrowsExactlyAsync<ArtifactStoreException>(
+                () => fixture.Store.OpenValidatedReadAsync(missingId));
+        AssertSafeException(
+            missingRegistration,
+            ArtifactStoreFailureReason.RegisteredArtifactMissing,
+            reconciliationRequired: false,
+            fixture.DatabasePath,
+            fixture.WorkspacePath,
+            missingId.ToString());
+
+        byte[] content = Encoding.UTF8.GetBytes("registered then removed");
+        string stagingPath = fixture.CreateStagingFile(
+            projectId,
+            "removed.bin",
+            content);
+        ArtifactPromotionRequest request = fixture.CreateRequest(
+            projectId,
+            ArtifactKind.Proxy,
+            stagingPath,
+            "removed.bin",
+            content);
+        StoredArtifact stored = await fixture.Store.PromoteAsync(request);
+        string registeredPath = fixture.GetStoragePath(stored.StorageReference);
+        File.Delete(registeredPath);
+
+        ArtifactStoreException missingFile =
+            await Assert.ThrowsExactlyAsync<ArtifactStoreException>(
+                () => fixture.Store.OpenValidatedReadAsync(request.Id));
+        AssertSafeException(
+            missingFile,
+            ArtifactStoreFailureReason.StagingMissing,
+            reconciliationRequired: false,
+            fixture.DatabasePath,
+            fixture.WorkspacePath,
+            registeredPath);
+    }
+
+    [TestMethod]
+    public async Task OpenValidatedReadAsync_RejectsRegisteredReparsePointWhenLinksAreAvailable()
+    {
+        using ArtifactFixture fixture = new();
+        EntityId<ProjectIdTag> projectId = fixture.CreateProject();
+        byte[] content = Encoding.UTF8.GetBytes("registered link target");
+        string stagingPath = fixture.CreateStagingFile(
+            projectId,
+            "registered-link.bin",
+            content);
+        ArtifactPromotionRequest request = fixture.CreateRequest(
+            projectId,
+            ArtifactKind.Preview,
+            stagingPath,
+            "registered-link.bin",
+            content);
+        StoredArtifact stored = await fixture.Store.PromoteAsync(request);
+        string registeredPath = fixture.GetStoragePath(stored.StorageReference);
+        string targetPath = Path.Combine(fixture.WorkspacePath, "link-target.bin");
+        File.Move(registeredPath, targetPath);
+
+        try
+        {
+            File.CreateSymbolicLink(registeredPath, targetPath);
+        }
+        catch (Exception linkException)
+            when (linkException is IOException or UnauthorizedAccessException or
+                PlatformNotSupportedException)
+        {
+            Assert.Inconclusive("Symbolic links are unavailable in this test environment.");
+            return;
+        }
+
+        if ((File.GetAttributes(registeredPath) & FileAttributes.ReparsePoint) == 0)
+        {
+            Assert.Inconclusive(
+                "The test file system does not expose the link as a reparse point.");
+        }
+
+        ArtifactStoreException exception =
+            await Assert.ThrowsExactlyAsync<ArtifactStoreException>(
+                () => fixture.Store.OpenValidatedReadAsync(request.Id));
+        AssertSafeException(
+            exception,
+            ArtifactStoreFailureReason.ReparsePoint,
+            reconciliationRequired: false,
+            fixture.DatabasePath,
+            fixture.WorkspacePath,
+            registeredPath,
+            targetPath);
+    }
+
+    [TestMethod]
     public void PublicArtifactStoreSurfaceIsConcreteSealedAndImmutable()
     {
         Assert.IsTrue(typeof(ArtifactIdTag).IsPublic);
@@ -907,6 +1147,35 @@ public sealed class ArtifactStoreTests
                 .GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
                 .Select(static property => property.Name)
                 .ToArray());
+
+        Assert.IsTrue(typeof(ValidatedArtifactReadStream).IsPublic);
+        Assert.IsTrue(typeof(ValidatedArtifactReadStream).IsSealed);
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "Id",
+                "ProjectId",
+                "Kind",
+                "ContentDigest",
+                "ByteSize",
+                "CanRead",
+                "CanSeek",
+                "CanWrite",
+                "Length",
+                "Position",
+            },
+            typeof(ValidatedArtifactReadStream)
+                .GetProperties(
+                    BindingFlags.Instance |
+                    BindingFlags.Public |
+                    BindingFlags.DeclaredOnly)
+                .Select(static property => property.Name)
+                .ToArray());
+        Assert.IsFalse(typeof(ValidatedArtifactReadStream)
+            .GetProperties(BindingFlags.Instance | BindingFlags.Public)
+            .Any(static property =>
+                property.Name.Contains("Path", StringComparison.OrdinalIgnoreCase) ||
+                property.Name.Contains("Reference", StringComparison.OrdinalIgnoreCase)));
 
         Assert.IsTrue(typeof(ArtifactStore).IsPublic);
         Assert.IsTrue(typeof(ArtifactStore).IsSealed);

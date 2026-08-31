@@ -60,9 +60,11 @@ public sealed partial class MainWindow : Window
             async () =>
             {
                 // The install directory can be read-only, so the profile stays under the user's local data.
-                string userDataFolder = Path.Combine(
+                string applicationDataDirectory = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "HubRadio.MovieCreator",
+                    "HubRadio.MovieCreator");
+                string userDataFolder = Path.Combine(
+                    applicationDataDirectory,
                     "WebView2");
                 CoreWebView2Environment environment =
                     await CoreWebView2Environment.CreateWithOptionsAsync(
@@ -74,17 +76,18 @@ public sealed partial class MainWindow : Window
                 ApplicationBridgeHandlers bridgeHandlers =
                     ProjectApplicationRuntime.Create(
                     this,
-                    Path.Combine(
-                        Environment.GetFolderPath(
-                            Environment.SpecialFolder.LocalApplicationData),
-                        "HubRadio.MovieCreator"),
+                    applicationDataDirectory,
                     Path.Combine(AppContext.BaseDirectory, "Profiles"));
-
+                PlayerApplicationRuntime playerRuntime =
+                    PlayerApplicationRuntime.Create(applicationDataDirectory);
                 WebViewHost host = new(
                     WebApplicationView.CoreWebView2,
                     Path.Combine(AppContext.BaseDirectory, "WebAssets"),
                     bridgeHandlers.Project.HandleAsync,
-                    jobBridgeHandler ?? bridgeHandlers.Jobs);
+                    jobBridgeHandler ?? bridgeHandlers.Jobs,
+                    playerRuntime.BridgeReader,
+                    playerRuntime.MediaAssetReader,
+                    playerRuntime.Authorization);
                 try
                 {
                     WebApplicationView.Visibility = Visibility.Visible;

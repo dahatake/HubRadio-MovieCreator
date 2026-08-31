@@ -7,7 +7,7 @@ import test from 'node:test'
 import { verifyProductionAssets } from './verify-production-assets.mjs'
 import { verifyRuntimeDependencies } from './verify-runtime-dependencies.mjs'
 
-const csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; font-src 'self'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'"
+const csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https://player-media.appassets.example; connect-src 'none'; font-src 'self'; media-src https://player-media.appassets.example; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'"
 
 const createFixture = async () => {
   const root = await mkdtemp(join(tmpdir(), 'HubRadio.WebAssets.'))
