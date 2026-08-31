@@ -108,9 +108,30 @@ public sealed class FinalRenderServiceTests
             (
                 FinalRenderFailureReason.PolicyDrift,
                 fixture => fixture.CreateRequest(
-                    policySnapshot: new FinalRenderPolicySnapshot(
-                        fixture.PolicyDigest,
-                        FinalRenderFixture.Digest('e')))),
+                    policySnapshot: fixture.CreatePolicySnapshot(
+                        currentDigest: FinalRenderFixture.Digest('e')))),
+            (
+                FinalRenderFailureReason.PolicyDrift,
+                fixture => fixture.CreateRequest(
+                    policySnapshot: fixture.CreatePolicySnapshot(
+                        projectId: EntityId<ProjectIdTag>.New()))),
+            (
+                FinalRenderFailureReason.PolicyDrift,
+                fixture => fixture.CreateRequest(
+                    policySnapshot: fixture.CreatePolicySnapshot(
+                        compositionVersion:
+                            fixture.CreateEquivalentCompositionVersion()))),
+            (
+                FinalRenderFailureReason.PolicyDrift,
+                fixture => fixture.CreateRequest(
+                    policySnapshot: fixture.CreatePolicySnapshot(
+                        graph: fixture.CreateEquivalentGraph()))),
+            (
+                FinalRenderFailureReason.PolicyDrift,
+                fixture => fixture.CreateRequest(
+                    policySnapshot: fixture.CreatePolicySnapshot(
+                        validationContext:
+                            fixture.CreateEquivalentValidationContext()))),
             (
                 FinalRenderFailureReason.GraphDrift,
                 fixture =>
@@ -245,7 +266,8 @@ public sealed class FinalRenderServiceTests
         Assert.IsTrue(first.CanRetry);
 
         JobRetryResult queued = fixture.Service.QueueRetry(request.JobId);
-        FinalRenderRunResult second = await fixture.Service.RunAsync(request);
+        FinalRenderRunResult second = await fixture.Service.RunAsync(
+            fixture.CreateRequest());
 
         Assert.AreEqual(JobRetryOutcome.Queued, queued.Outcome);
         Assert.AreEqual(FinalRenderDisposition.Completed, second.Disposition);
@@ -1002,9 +1024,7 @@ public sealed class FinalRenderServiceTests
                 Version,
                 approvedDigest ?? Version.ContentDigest,
                 approvalEvidence ?? [_defaultApproval ??= AppendApproval()],
-                policySnapshot ?? new FinalRenderPolicySnapshot(
-                    PolicyDigest,
-                    PolicyDigest),
+                policySnapshot ?? CreatePolicySnapshot(),
                 Graph,
                 ValidationContext,
                 ToolBinding,
@@ -1016,6 +1036,64 @@ public sealed class FinalRenderServiceTests
                 ExpectedOutputDigest,
                 ExpectedOutputByteSize,
                 outputCreatedAt ?? OutputCreatedAt);
+
+        internal FinalRenderPolicySnapshot CreatePolicySnapshot(
+            ContentDigest? currentDigest = null,
+            EntityId<ProjectIdTag>? projectId = null,
+            CompositionVersion? compositionVersion = null,
+            RenderGraph? graph = null,
+            RenderGraphValidationContext? validationContext = null) =>
+            new(
+                PolicyDigest,
+                currentDigest ?? PolicyDigest,
+                projectId ?? Project.Id,
+                compositionVersion ?? Version,
+                graph ?? Graph,
+                validationContext ?? ValidationContext);
+
+        internal CompositionVersion CreateEquivalentCompositionVersion() =>
+            new(
+                Version.Id,
+                Version.ProjectId,
+                Version.ParentVersionId,
+                Version.CreatedByActorId,
+                Version.CreatedAt,
+                Version.ChangeReason,
+                Version.ContentDigest,
+                Version.Elements);
+
+        internal RenderGraph CreateEquivalentGraph() =>
+            new(
+                Graph.Id,
+                Graph.CompositionVersionId,
+                Graph.CompositionVersionDigest,
+                Graph.TimelineMapId,
+                Graph.TimelineMapDigest,
+                Graph.ProfileId,
+                Graph.ProfileDigest,
+                Graph.LayoutSpecId,
+                Graph.LayoutSpecDigest,
+                Graph.Template,
+                Graph.Inputs,
+                Graph.Fonts,
+                Graph.Nodes,
+                Graph.OutputNodeId);
+
+        internal RenderGraphValidationContext
+            CreateEquivalentValidationContext() =>
+            new(
+                ValidationContext.Project,
+                ValidationContext.CompositionVersion,
+                ValidationContext.TimelineMap,
+                ValidationContext.TimelineMapDigest,
+                ValidationContext.Profile,
+                ValidationContext.LayoutSpec,
+                ValidationContext.LayoutSpecDigest,
+                ValidationContext.Template,
+                ValidationContext.SourceSpans,
+                ValidationContext.EditorialRecordIds,
+                ValidationContext.Artifacts,
+                ValidationContext.Fonts);
 
         internal StoredApproval AppendApproval()
         {

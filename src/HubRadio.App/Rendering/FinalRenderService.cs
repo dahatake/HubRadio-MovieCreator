@@ -51,20 +51,82 @@ public enum FinalRenderFailureReason
 
 public sealed class FinalRenderPolicySnapshot
 {
-    public FinalRenderPolicySnapshot(
+    private readonly object _sync = new();
+    private FinalRenderPolicySnapshotState _state =
+        FinalRenderPolicySnapshotState.Active;
+
+    internal FinalRenderPolicySnapshot(
         ContentDigest digest,
-        ContentDigest currentDigest)
+        ContentDigest currentDigest,
+        EntityId<ProjectIdTag> projectId,
+        CompositionVersion compositionVersion,
+        RenderGraph graph,
+        RenderGraphValidationContext validationContext)
     {
         ArgumentNullException.ThrowIfNull(digest);
         ArgumentNullException.ThrowIfNull(currentDigest);
+        ArgumentNullException.ThrowIfNull(projectId);
+        ArgumentNullException.ThrowIfNull(compositionVersion);
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(validationContext);
 
         Digest = digest;
         CurrentDigest = currentDigest;
+        ProjectId = projectId;
+        CompositionVersion = compositionVersion;
+        Graph = graph;
+        ValidationContext = validationContext;
     }
 
     public ContentDigest Digest { get; }
 
     public ContentDigest CurrentDigest { get; }
+
+    private EntityId<ProjectIdTag> ProjectId { get; }
+
+    private CompositionVersion CompositionVersion { get; }
+
+    private RenderGraph Graph { get; }
+
+    private RenderGraphValidationContext ValidationContext { get; }
+
+    internal bool Matches(FinalRenderRequest request) =>
+        ProjectId == request.ProjectId
+        && ReferenceEquals(CompositionVersion, request.ApprovedCompositionVersion)
+        && ReferenceEquals(Graph, request.Graph)
+        && ReferenceEquals(ValidationContext, request.ValidationContext);
+
+    internal void ClaimForRun()
+    {
+        lock (_sync)
+        {
+            if (_state != FinalRenderPolicySnapshotState.Active)
+            {
+                throw new InvalidOperationException(
+                    "The final-render policy snapshot is no longer available.");
+            }
+
+            _state = FinalRenderPolicySnapshotState.Claimed;
+        }
+    }
+
+    internal void ExpireIfUnclaimed()
+    {
+        lock (_sync)
+        {
+            if (_state == FinalRenderPolicySnapshotState.Active)
+            {
+                _state = FinalRenderPolicySnapshotState.Expired;
+            }
+        }
+    }
+
+    private enum FinalRenderPolicySnapshotState
+    {
+        Active,
+        Claimed,
+        Expired,
+    }
 }
 
 public sealed class FinalRenderRequest
@@ -412,6 +474,7 @@ public sealed class FinalRenderService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        request.PolicySnapshot.ClaimForRun();
         cancellationToken.ThrowIfCancellationRequested();
         ValidateQueuedJob(request);
 
@@ -818,7 +881,9 @@ public sealed class FinalRenderService
             return FinalRenderFailureReason.ApprovalMismatch;
         }
 
-        if (request.PolicySnapshot.Digest != request.PolicySnapshot.CurrentDigest)
+        if (!request.PolicySnapshot.Matches(request)
+            || request.PolicySnapshot.Digest
+                != request.PolicySnapshot.CurrentDigest)
         {
             return FinalRenderFailureReason.PolicyDrift;
         }
