@@ -42,7 +42,8 @@ public sealed class JobSnapshot
         DateTimeOffset? lastProgressAt,
         DateTimeOffset? lastHeartbeatAt,
         string? errorCode,
-        JobRetryability retryability)
+        JobRetryability retryability,
+        bool cancellationRequested)
     {
         JobId = jobId;
         State = state;
@@ -57,6 +58,7 @@ public sealed class JobSnapshot
         LastHeartbeatAt = lastHeartbeatAt;
         ErrorCode = errorCode;
         Retryability = retryability;
+        CancellationRequested = cancellationRequested;
     }
 
     public EntityId<JobIdTag> JobId { get; }
@@ -84,6 +86,8 @@ public sealed class JobSnapshot
     public string? ErrorCode { get; }
 
     public JobRetryability Retryability { get; }
+
+    internal bool CancellationRequested { get; }
 }
 
 public sealed class JobCoordinatorRunResult
@@ -133,6 +137,14 @@ public sealed class JobRetryResult
     public JobRetryOutcome Outcome { get; }
 
     public JobSnapshot Snapshot { get; }
+}
+
+internal sealed class JobRevisionConflictException : InvalidOperationException
+{
+    internal JobRevisionConflictException()
+        : base("The job revision changed before the requested operation.")
+    {
+    }
 }
 
 public sealed class JobCoordinator
@@ -277,7 +289,20 @@ public sealed class JobCoordinator
     public JobSnapshot GetSnapshot(EntityId<JobIdTag> jobId)
     {
         ArgumentNullException.ThrowIfNull(jobId);
-        return CreateSnapshot(RequireAggregate(jobId));
+        lock (ActiveRunsSync)
+        {
+            StoredJobAggregate aggregate = RequireAggregate(jobId);
+            bool cancellationRequested =
+                ActiveRuns.TryGetValue(jobId, out ActiveRun? activeRun) &&
+                activeRun.CancellationRequested;
+            return CreateSnapshot(aggregate, cancellationRequested);
+        }
+    }
+
+    internal StoredJob? FindStoredJob(EntityId<JobIdTag> jobId)
+    {
+        ArgumentNullException.ThrowIfNull(jobId);
+        return _jobStore.GetJob(jobId);
     }
 
     internal StoredJob GetStoredJob(EntityId<JobIdTag> jobId)
@@ -289,13 +314,37 @@ public sealed class JobCoordinator
 
     public JobCancellationResult RequestCancellation(EntityId<JobIdTag> jobId)
     {
+        return RequestCancellationCore(jobId, expectedRevision: null);
+    }
+
+    internal JobCancellationResult RequestCancellation(
+        EntityId<JobIdTag> jobId,
+        int expectedRevision)
+    {
+        if (expectedRevision < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(expectedRevision),
+                expectedRevision,
+                "An expected revision must not be negative.");
+        }
+
+        return RequestCancellationCore(jobId, expectedRevision);
+    }
+
+    private JobCancellationResult RequestCancellationCore(
+        EntityId<JobIdTag> jobId,
+        int? expectedRevision)
+    {
         ArgumentNullException.ThrowIfNull(jobId);
 
         lock (ActiveRunsSync)
         {
+            StoredJobAggregate aggregate = RequireAggregate(jobId);
+            EnsureExpectedRevision(aggregate, expectedRevision);
             if (!ActiveRuns.TryGetValue(jobId, out ActiveRun? activeRun))
             {
-                JobSnapshot snapshot = GetSnapshot(jobId);
+                JobSnapshot snapshot = CreateSnapshot(aggregate);
                 return new JobCancellationResult(
                     snapshot.State == JobState.Running
                         ? JobCancellationOutcome.NotTracked
@@ -303,7 +352,6 @@ public sealed class JobCoordinator
                     snapshot);
             }
 
-            StoredJobAggregate aggregate = RequireAggregate(jobId);
             if (aggregate.Job.State is not (JobState.Queued or JobState.Running))
             {
                 return new JobCancellationResult(
@@ -344,17 +392,42 @@ public sealed class JobCoordinator
                 requested
                     ? JobCancellationOutcome.Requested
                     : JobCancellationOutcome.AlreadyRequested,
-                GetSnapshot(jobId));
+                CreateSnapshot(
+                    RequireAggregate(jobId),
+                    activeRun.CancellationRequested));
         }
     }
 
     public JobRetryResult QueueRetry(EntityId<JobIdTag> jobId)
+    {
+        return QueueRetryCore(jobId, expectedRevision: null);
+    }
+
+    internal JobRetryResult QueueRetry(
+        EntityId<JobIdTag> jobId,
+        int expectedRevision)
+    {
+        if (expectedRevision < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(expectedRevision),
+                expectedRevision,
+                "An expected revision must not be negative.");
+        }
+
+        return QueueRetryCore(jobId, expectedRevision);
+    }
+
+    private JobRetryResult QueueRetryCore(
+        EntityId<JobIdTag> jobId,
+        int? expectedRevision)
     {
         ArgumentNullException.ThrowIfNull(jobId);
 
         lock (ActiveRunsSync)
         {
             StoredJobAggregate aggregate = RequireAggregate(jobId);
+            EnsureExpectedRevision(aggregate, expectedRevision);
             JobSnapshot snapshot = CreateSnapshot(aggregate);
             if (ActiveRuns.ContainsKey(jobId))
             {
@@ -381,6 +454,16 @@ public sealed class JobCoordinator
             _ = _jobStore.QueueRetry(jobId, aggregate.Revision, queuedAt);
             JobSnapshot queuedSnapshot = CreateSnapshot(RequireAggregate(jobId));
             return new JobRetryResult(JobRetryOutcome.Queued, queuedSnapshot);
+        }
+    }
+
+    private static void EnsureExpectedRevision(
+        StoredJobAggregate aggregate,
+        int? expectedRevision)
+    {
+        if (expectedRevision is int expected && aggregate.Revision != expected)
+        {
+            throw new JobRevisionConflictException();
         }
     }
 
@@ -441,7 +524,9 @@ public sealed class JobCoordinator
         }
     }
 
-    private static JobSnapshot CreateSnapshot(StoredJobAggregate aggregate)
+    internal static JobSnapshot CreateSnapshot(
+        StoredJobAggregate aggregate,
+        bool cancellationRequested = false)
     {
         JobAttempt? currentAttempt = aggregate.Attempts.Count == 0
             ? null
@@ -476,7 +561,8 @@ public sealed class JobCoordinator
             latestProgress?.RecordedAt,
             latestHeartbeat?.RecordedAt,
             errorCode,
-            retryability);
+            retryability,
+            cancellationRequested && aggregate.Job.State == JobState.Running);
     }
 
     private static JobRetryability ClassifyRetryability(string? errorCode)
@@ -498,6 +584,9 @@ public sealed class JobCoordinator
         }
 
         internal CancellationToken Token => _cancellationSource.Token;
+
+        internal bool CancellationRequested =>
+            _cancellationRequested || _cancellationSource.IsCancellationRequested;
 
         internal bool RequestCancellation()
         {

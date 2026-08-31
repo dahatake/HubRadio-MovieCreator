@@ -1,3 +1,4 @@
+import { JobProgressPanel } from './features/jobs/JobProgressPanel'
 import { selectSyncStatus, useAppState, type SyncStatus } from './state'
 import { ProjectWorkspace } from './features/projects/ProjectWorkspace'
 
@@ -42,6 +43,7 @@ function App() {
       </header>
       <div id="project-content">
         <ProjectWorkspace />
+        <JobProgressPanel />
       </div>
     </main>
   )

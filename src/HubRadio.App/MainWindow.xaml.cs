@@ -1,5 +1,5 @@
-using HubRadio.App.Web;
 using HubRadio.App.Projects;
+using HubRadio.App.Web;
 using HubRadio.Infrastructure.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.Web.WebView2.Core;
@@ -10,10 +10,17 @@ public sealed partial class MainWindow : Window
 {
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private readonly MainWindowStartupLifecycle startupLifecycle = new();
+    private readonly JobBridgeRequestHandler? jobBridgeHandler;
     private WebViewHost? webViewHost;
 
     public MainWindow()
+        : this(jobBridgeHandler: null)
     {
+    }
+
+    internal MainWindow(JobBridgeRequestHandler? jobBridgeHandler)
+    {
+        this.jobBridgeHandler = jobBridgeHandler;
         InitializeComponent();
         Closed += (_, _) =>
         {
@@ -64,7 +71,8 @@ public sealed partial class MainWindow : Window
                         new CoreWebView2EnvironmentOptions());
                 await WebApplicationView.EnsureCoreWebView2Async(environment);
 
-                ProjectBridgeHandler projectHandler = ProjectApplicationRuntime.Create(
+                ApplicationBridgeHandlers bridgeHandlers =
+                    ProjectApplicationRuntime.Create(
                     this,
                     Path.Combine(
                         Environment.GetFolderPath(
@@ -75,7 +83,8 @@ public sealed partial class MainWindow : Window
                 WebViewHost host = new(
                     WebApplicationView.CoreWebView2,
                     Path.Combine(AppContext.BaseDirectory, "WebAssets"),
-                    projectHandler.HandleAsync);
+                    bridgeHandlers.Project.HandleAsync,
+                    jobBridgeHandler ?? bridgeHandlers.Jobs);
                 try
                 {
                     WebApplicationView.Visibility = Visibility.Visible;

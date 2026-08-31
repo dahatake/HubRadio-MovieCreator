@@ -345,6 +345,46 @@ public sealed class IngestWorkflowTests
                 MediaInfoWarningCode.VariableRateFieldsDiffer,
             },
             warnings.Select(static warning => warning.Code).ToArray());
+        CollectionAssert.AreEqual(
+            warnings.Select(static warning => warning.Code).ToArray(),
+            IngestWorkflowCheckpointCodec.ReadWarningCodes(
+                    stored.CheckpointPayloadJson,
+                    stored.JobId,
+                    stored.ProjectId,
+                    stored.RequestDigest,
+                    stored.CheckpointStage)
+                .ToArray());
+        string differentRequestDigest =
+            (stored.RequestDigest.Hex[0] == '0' ? "1" : "0") +
+            stored.RequestDigest.Hex[1..];
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            IngestWorkflowCheckpointCodec.ReadWarningCodes(
+                stored.CheckpointPayloadJson,
+                EntityId<JobIdTag>.New(),
+                stored.ProjectId,
+                stored.RequestDigest,
+                stored.CheckpointStage));
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            IngestWorkflowCheckpointCodec.ReadWarningCodes(
+                stored.CheckpointPayloadJson,
+                stored.JobId,
+                EntityId<ProjectIdTag>.New(),
+                stored.RequestDigest,
+                stored.CheckpointStage));
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            IngestWorkflowCheckpointCodec.ReadWarningCodes(
+                stored.CheckpointPayloadJson,
+                stored.JobId,
+                stored.ProjectId,
+                new ContentDigest(differentRequestDigest),
+                stored.CheckpointStage));
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            IngestWorkflowCheckpointCodec.ReadWarningCodes(
+                stored.CheckpointPayloadJson,
+                stored.JobId,
+                stored.ProjectId,
+                stored.RequestDigest,
+                stored.CheckpointStage - 1));
         Assert.IsInstanceOfType<DurationFieldsDifferWarningEvidence>(
             warnings.Single(static warning =>
                 warning.Code == MediaInfoWarningCode.DurationFieldsDiffer).Evidence);
@@ -417,6 +457,18 @@ public sealed class IngestWorkflowTests
         StoredIngestWorkflow changedStored = WithCheckpointPayload(
             stored,
             changed);
+
+        InvalidOperationException warningReadException =
+            Assert.ThrowsExactly<InvalidOperationException>(() =>
+                IngestWorkflowCheckpointCodec.ReadWarningCodes(
+                    changed,
+                    stored.JobId,
+                    stored.ProjectId,
+                    stored.RequestDigest,
+                    stored.CheckpointStage));
+        Assert.AreEqual(
+            "The durable ingest checkpoint is invalid.",
+            warningReadException.Message);
 
         InvalidOperationException exception =
             await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>

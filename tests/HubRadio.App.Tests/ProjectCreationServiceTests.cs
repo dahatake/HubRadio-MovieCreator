@@ -179,7 +179,7 @@ public sealed class ProjectCreationServiceTests
         using ProjectCreationFixture deniedFixture = new(UnauthorizedSid);
         var deniedHandler = new ProjectBridgeHandler(deniedFixture.Service);
         BridgeRequest listRequest = CreateBridgeRequest(
-            BridgeProtocol.ListProjectsMethod,
+            BridgeMethod.ListProjects,
             new JsonObject());
 
         string deniedJson = await deniedHandler.HandleAsync(
@@ -203,7 +203,7 @@ public sealed class ProjectCreationServiceTests
         using ProjectCreationFixture allowedFixture = new(AuthorizedSid);
         var allowedHandler = new ProjectBridgeHandler(allowedFixture.Service);
         string pickedJson = await allowedHandler.HandleAsync(
-            CreateBridgeRequest(BridgeProtocol.PickSourceMethod, new JsonObject()),
+            CreateBridgeRequest(BridgeMethod.PickSource, new JsonObject()),
             CancellationToken.None);
         using JsonDocument picked = JsonDocument.Parse(pickedJson);
         JsonElement result = picked.RootElement.GetProperty("result");
@@ -230,7 +230,7 @@ public sealed class ProjectCreationServiceTests
 
         string conflictJson = await handler.HandleAsync(
             CreateBridgeRequest(
-                BridgeProtocol.SaveDraftMethod,
+                BridgeMethod.SaveDraft,
                 CreateMutationParameters(
                     created.DraftId,
                     expectedRevision: 0,
@@ -241,7 +241,7 @@ public sealed class ProjectCreationServiceTests
         EntityId<AssetIdTag> unavailableCandidate = EntityId<AssetIdTag>.New();
         string sourceLossJson = await handler.HandleAsync(
             CreateBridgeRequest(
-                BridgeProtocol.FinalizeDraftMethod,
+                BridgeMethod.FinalizeDraft,
                 CreateMutationParameters(
                     created.DraftId,
                     expectedRevision: 1,
@@ -461,9 +461,9 @@ public sealed class ProjectCreationServiceTests
     }
 
     private static BridgeRequest CreateBridgeRequest(
-        string method,
+        BridgeMethod method,
         JsonObject parameters) =>
-        new(
+        BridgeRequest.Create(
             Guid.Parse("00112233-4455-6677-8899-aabbccddeeff"),
             method,
             ParseElement(parameters));

@@ -6,7 +6,7 @@ namespace HubRadio.App.Tests;
 public sealed class WebBridgeSchemaTests
 {
     [TestMethod]
-    public void SchemaIsClosedVersionedAndAllowsOnlyExplicitProjectMethods()
+    public void SchemaIsClosedVersionedAndAllowsOnlyCanonicalMethods()
     {
         using JsonDocument document = JsonDocument.Parse(
             File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
@@ -17,6 +17,8 @@ public sealed class WebBridgeSchemaTests
         Assert.AreEqual("WebBridgeMessage", root.GetProperty("title").GetString());
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "96 KiB");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "1 MiB");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "256 UTF-8 bytes");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "4096-byte responses");
         Assert.AreEqual(1, definitions.GetProperty("protocolVersion").GetProperty("const").GetInt32());
         CollectionAssert.AreEqual(
             new[]
@@ -28,6 +30,9 @@ public sealed class WebBridgeSchemaTests
                 "project.saveDraft",
                 "project.pickSource",
                 "project.finalizeDraft",
+                "jobs.getStatus",
+                "jobs.cancel",
+                "jobs.retry",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -51,6 +56,21 @@ public sealed class WebBridgeSchemaTests
             "listResponse",
             "draftResponse",
             "pickSourceResponse",
+            "projectError",
+            "projectErrorResponse",
+            "pingResult",
+            "jobStatusParams",
+            "jobCommandParams",
+            "jobStatusRequest",
+            "jobStatusResponse",
+            "jobCancelRequest",
+            "jobCancelResult",
+            "jobCancelResponse",
+            "jobRetryRequest",
+            "jobRetryResult",
+            "jobRetryResponse",
+            "jobSnapshot",
+            "bridgeError",
             "errorResponse",
         })
         {
@@ -76,6 +96,23 @@ public sealed class WebBridgeSchemaTests
         CollectionAssert.AreEquivalent(
             new[] { "version", "requestId", "method", "error" },
             GetStrings(definitions.GetProperty("errorResponse").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "error" },
+            GetStrings(definitions.GetProperty("projectErrorResponse").GetProperty("required")));
+        Assert.AreEqual(
+            "#/$defs/jobMethod",
+            definitions.GetProperty("errorResponse")
+                .GetProperty("properties")
+                .GetProperty("method")
+                .GetProperty("$ref")
+                .GetString());
+        Assert.AreEqual(
+            "#/$defs/projectMethod",
+            definitions.GetProperty("projectErrorResponse")
+                .GetProperty("properties")
+                .GetProperty("method")
+                .GetProperty("$ref")
+                .GetString());
         CollectionAssert.AreEqual(
             new[]
             {
@@ -96,7 +133,34 @@ public sealed class WebBridgeSchemaTests
             definitions.GetProperty("emptyObject").GetProperty("maxProperties").GetInt32());
         Assert.AreEqual(
             36,
-            definitions.GetProperty("requestId").GetProperty("maxLength").GetInt32());
+            definitions.GetProperty("canonicalId").GetProperty("maxLength").GetInt32());
+        CollectionAssert.AreEquivalent(
+            new[] { "jobId" },
+            GetStrings(definitions.GetProperty("jobStatusParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "jobId", "expectedRevision" },
+            GetStrings(definitions.GetProperty("jobCommandParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "jobId",
+                "kind",
+                "state",
+                "currentAttemptId",
+                "currentAttemptNumber",
+                "revision",
+                "detailsRevision",
+                "updatedAt",
+                "progressRatio",
+                "lastProgressAt",
+                "lastHeartbeatAt",
+                "failure",
+                "retryability",
+                "cancellationRequested",
+                "warnings",
+                "reconciliation",
+            },
+            GetStrings(definitions.GetProperty("jobSnapshot").GetProperty("required")));
     }
 
     [TestMethod]
@@ -127,6 +191,9 @@ public sealed class WebBridgeSchemaTests
         Assert.IsFalse(schema.Contains("windowsSid", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(schema.Contains("sourcePath", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(schema.Contains("filePath", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("credential", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("contentBody", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("processOutput", StringComparison.OrdinalIgnoreCase));
     }
 
     [TestMethod]

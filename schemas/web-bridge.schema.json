@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the bundled HTTPS origin, rejects requests over 96 KiB before parsing, and bounds responses to 1 MiB. Source media crosses this boundary only as an opaque candidate ID; paths and Windows identities are prohibited.",
+  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping and jobs requests are limited to 256 UTF-8 bytes with 4096-byte responses; project requests are limited to 96 KiB with 1 MiB responses. Source media crosses this boundary only as an opaque candidate ID, and sensitive host data is prohibited.",
   "title": "WebBridgeMessage",
   "oneOf": [
     { "$ref": "#/$defs/pingRequest" },
@@ -10,21 +10,30 @@
     { "$ref": "#/$defs/saveDraftRequest" },
     { "$ref": "#/$defs/pickSourceRequest" },
     { "$ref": "#/$defs/finalizeDraftRequest" },
+    { "$ref": "#/$defs/jobStatusRequest" },
+    { "$ref": "#/$defs/jobCancelRequest" },
+    { "$ref": "#/$defs/jobRetryRequest" },
     { "$ref": "#/$defs/pingResponse" },
     { "$ref": "#/$defs/listResponse" },
     { "$ref": "#/$defs/draftResponse" },
     { "$ref": "#/$defs/pickSourceResponse" },
+    { "$ref": "#/$defs/jobStatusResponse" },
+    { "$ref": "#/$defs/jobCancelResponse" },
+    { "$ref": "#/$defs/jobRetryResponse" },
+    { "$ref": "#/$defs/projectErrorResponse" },
     { "$ref": "#/$defs/errorResponse" }
   ],
   "$defs": {
     "protocolVersion": { "const": 1 },
-    "requestId": {
+    "canonicalId": {
       "type": "string",
       "minLength": 36,
       "maxLength": 36,
       "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     },
-    "entityId": { "$ref": "#/$defs/requestId" },
+    "requestId": { "$ref": "#/$defs/canonicalId" },
+    "entityId": { "$ref": "#/$defs/canonicalId" },
+    "jobId": { "$ref": "#/$defs/canonicalId" },
     "timestamp": {
       "type": "string",
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{7}\\+00:00$"
@@ -38,6 +47,16 @@
         }
       ]
     },
+    "jobTimestamp": {
+      "type": "string",
+      "pattern": "^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[0-1])T([0-1][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{7}Z$"
+    },
+    "nullableJobTimestamp": {
+      "oneOf": [
+        { "$ref": "#/$defs/jobTimestamp" },
+        { "type": "null" }
+      ]
+    },
     "method": {
       "enum": [
         "bridge.ping",
@@ -46,7 +65,28 @@
         "project.loadDraft",
         "project.saveDraft",
         "project.pickSource",
+        "project.finalizeDraft",
+        "jobs.getStatus",
+        "jobs.cancel",
+        "jobs.retry"
+      ]
+    },
+    "projectMethod": {
+      "enum": [
+        "project.list",
+        "project.createDraft",
+        "project.loadDraft",
+        "project.saveDraft",
+        "project.pickSource",
         "project.finalizeDraft"
+      ]
+    },
+    "jobMethod": {
+      "enum": [
+        "bridge.ping",
+        "jobs.getStatus",
+        "jobs.cancel",
+        "jobs.retry"
       ]
     },
     "publicationScope": {
@@ -92,6 +132,22 @@
     "optionalPublicationScope": {
       "oneOf": [
         { "$ref": "#/$defs/publicationScope" },
+        { "type": "null" }
+      ]
+    },
+    "nullableId": {
+      "oneOf": [
+        { "$ref": "#/$defs/canonicalId" },
+        { "type": "null" }
+      ]
+    },
+    "nullableRevision": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
         { "type": "null" }
       ]
     },
@@ -157,6 +213,41 @@
         },
         "deadlineSelection": { "$ref": "#/$defs/deadlineInput" },
         "brandTemplateId": { "$ref": "#/$defs/optionalEntityId" }
+      }
+    },
+    "mutateDraftParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["draftId", "expectedRevision", "input"],
+      "properties": {
+        "draftId": { "$ref": "#/$defs/entityId" },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "input": { "$ref": "#/$defs/draftInput" }
+      }
+    },
+    "jobStatusParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobId"],
+      "properties": {
+        "jobId": { "$ref": "#/$defs/jobId" }
+      }
+    },
+    "jobCommandParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobId", "expectedRevision"],
+      "properties": {
+        "jobId": { "$ref": "#/$defs/jobId" },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        }
       }
     },
     "pingRequest": {
@@ -243,18 +334,37 @@
         "params": { "$ref": "#/$defs/mutateDraftParams" }
       }
     },
-    "mutateDraftParams": {
+    "jobStatusRequest": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["draftId", "expectedRevision", "input"],
+      "required": ["version", "requestId", "method", "params"],
       "properties": {
-        "draftId": { "$ref": "#/$defs/entityId" },
-        "expectedRevision": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 2147483647
-        },
-        "input": { "$ref": "#/$defs/draftInput" }
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "jobs.getStatus" },
+        "params": { "$ref": "#/$defs/jobStatusParams" }
+      }
+    },
+    "jobCancelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "jobs.cancel" },
+        "params": { "$ref": "#/$defs/jobCommandParams" }
+      }
+    },
+    "jobRetryRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "jobs.retry" },
+        "params": { "$ref": "#/$defs/jobCommandParams" }
       }
     },
     "catalogOption": {
@@ -359,6 +469,14 @@
         "updatedAt": { "$ref": "#/$defs/timestamp" }
       }
     },
+    "pingResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocolVersion"],
+      "properties": {
+        "protocolVersion": { "$ref": "#/$defs/protocolVersion" }
+      }
+    },
     "pingResponse": {
       "type": "object",
       "additionalProperties": false,
@@ -367,14 +485,7 @@
         "version": { "$ref": "#/$defs/protocolVersion" },
         "requestId": { "$ref": "#/$defs/requestId" },
         "method": { "const": "bridge.ping" },
-        "result": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["protocolVersion"],
-          "properties": {
-            "protocolVersion": { "$ref": "#/$defs/protocolVersion" }
-          }
-        }
+        "result": { "$ref": "#/$defs/pingResult" }
       }
     },
     "listResponse": {
@@ -457,6 +568,194 @@
         }
       }
     },
+    "warningCode": {
+      "enum": [
+        "audioTrackAbsent",
+        "durationFieldsDiffer",
+        "lowResolution",
+        "multipleAudioStreams",
+        "multipleVideoStreams",
+        "signatureFormatMismatch",
+        "unrecognizedContainerSignature",
+        "variableRateFieldsDiffer"
+      ]
+    },
+    "jobSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId",
+        "kind",
+        "state",
+        "currentAttemptId",
+        "currentAttemptNumber",
+        "revision",
+        "detailsRevision",
+        "updatedAt",
+        "progressRatio",
+        "lastProgressAt",
+        "lastHeartbeatAt",
+        "failure",
+        "retryability",
+        "cancellationRequested",
+        "warnings",
+        "reconciliation"
+      ],
+      "properties": {
+        "jobId": { "$ref": "#/$defs/jobId" },
+        "kind": { "enum": ["mediaIngest", "finalRender", "unknown"] },
+        "state": {
+          "enum": [
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled",
+            "interrupted"
+          ]
+        },
+        "currentAttemptId": { "$ref": "#/$defs/nullableId" },
+        "currentAttemptNumber": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "detailsRevision": { "$ref": "#/$defs/nullableRevision" },
+        "updatedAt": { "$ref": "#/$defs/jobTimestamp" },
+        "progressRatio": {
+          "oneOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            { "type": "null" }
+          ]
+        },
+        "lastProgressAt": { "$ref": "#/$defs/nullableJobTimestamp" },
+        "lastHeartbeatAt": { "$ref": "#/$defs/nullableJobTimestamp" },
+        "failure": { "enum": [null, "timedOut", "appRestarted", "other"] },
+        "retryability": {
+          "enum": ["notApplicable", "retryable", "nonRetryable"]
+        },
+        "cancellationRequested": { "type": "boolean" },
+        "warnings": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/warningCode" }
+        },
+        "reconciliation": {
+          "enum": ["notApplicable", "notRequired", "required", "unknown"]
+        }
+      }
+    },
+    "jobStatusResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "jobs.getStatus" },
+        "result": { "$ref": "#/$defs/jobSnapshot" }
+      }
+    },
+    "jobCancelResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "job"],
+      "properties": {
+        "outcome": {
+          "enum": ["requested", "alreadyRequested", "notRunning", "notTracked"]
+        },
+        "job": { "$ref": "#/$defs/jobSnapshot" }
+      }
+    },
+    "jobCancelResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "jobs.cancel" },
+        "result": { "$ref": "#/$defs/jobCancelResult" }
+      }
+    },
+    "jobRetryResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "job"],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "queued",
+            "stateNotEligible",
+            "errorNotRetryable",
+            "coordinatorRunActive"
+          ]
+        },
+        "job": { "$ref": "#/$defs/jobSnapshot" }
+      }
+    },
+    "jobRetryResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "jobs.retry" },
+        "result": { "$ref": "#/$defs/jobRetryResult" }
+      }
+    },
+    "projectError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "enum": [
+            "project.already_finalized",
+            "project.incomplete",
+            "project.invalid_request",
+            "project.not_authorized",
+            "project.not_found",
+            "project.operation_failed",
+            "project.revision_conflict",
+            "project.source_reselection_required"
+          ]
+        },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "projectErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "error"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "$ref": "#/$defs/projectMethod" },
+        "error": { "$ref": "#/$defs/projectError" }
+      }
+    },
+    "bridgeError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "enum": ["forbidden", "notFound", "conflict", "unavailable"]
+        }
+      }
+    },
     "errorResponse": {
       "type": "object",
       "additionalProperties": false,
@@ -464,27 +763,8 @@
       "properties": {
         "version": { "$ref": "#/$defs/protocolVersion" },
         "requestId": { "$ref": "#/$defs/requestId" },
-        "method": { "$ref": "#/$defs/method" },
-        "error": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["code", "message"],
-          "properties": {
-            "code": {
-              "enum": [
-                "project.already_finalized",
-                "project.incomplete",
-                "project.invalid_request",
-                "project.not_authorized",
-                "project.not_found",
-                "project.operation_failed",
-                "project.revision_conflict",
-                "project.source_reselection_required"
-              ]
-            },
-            "message": { "type": "string", "minLength": 1 }
-          }
-        }
+        "method": { "$ref": "#/$defs/jobMethod" },
+        "error": { "$ref": "#/$defs/bridgeError" }
       }
     }
   }

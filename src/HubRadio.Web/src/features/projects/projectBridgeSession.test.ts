@@ -119,6 +119,26 @@ class FakeClient implements BridgeClient {
     throw new Error('Not used by project tests.')
   }
 
+  sendJobStatus(): void {
+    throw new Error('Not used by project tests.')
+  }
+
+  sendJobCancellation(): void {
+    throw new Error('Not used by project tests.')
+  }
+
+  sendJobRetry(): void {
+    throw new Error('Not used by project tests.')
+  }
+
+  abandonJobRequest(): void {
+    throw new Error('Not used by project tests.')
+  }
+
+  onJobResponse(): () => void {
+    throw new Error('Not used by project tests.')
+  }
+
   sendProject(request: ProjectBridgeRequest): void {
     if (this.throwOnSend) {
       throw new Error('native stack C:\\private\\source.mov')

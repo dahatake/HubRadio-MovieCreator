@@ -28,24 +28,24 @@ internal sealed class ProjectBridgeHandler
         {
             return request.Method switch
             {
-                BridgeProtocol.ListProjectsMethod =>
+                BridgeMethod.ListProjects =>
                     WriteOverview(request, service.ListProjects()),
-                BridgeProtocol.CreateDraftMethod =>
+                BridgeMethod.CreateDraft =>
                     WriteDraft(request, service.CreateDraft()),
-                BridgeProtocol.LoadDraftMethod =>
+                BridgeMethod.LoadDraft =>
                     WriteDraft(request, service.LoadDraft(ReadDraftId(request))),
-                BridgeProtocol.SaveDraftMethod =>
+                BridgeMethod.SaveDraft =>
                     WriteDraft(
                         request,
                         service.SaveDraft(
                             ReadDraftId(request),
                             ReadExpectedRevision(request),
                             request.Parameters.GetProperty("input"))),
-                BridgeProtocol.PickSourceMethod =>
+                BridgeMethod.PickSource =>
                     WritePickedSource(
                         request,
                         await service.PickSourceAsync(cancellationToken)),
-                BridgeProtocol.FinalizeDraftMethod =>
+                BridgeMethod.FinalizeDraft =>
                     WriteDraft(
                         request,
                         service.FinalizeDraft(

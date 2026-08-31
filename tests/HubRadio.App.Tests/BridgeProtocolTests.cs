@@ -8,6 +8,7 @@ namespace HubRadio.App.Tests;
 public sealed class BridgeProtocolTests
 {
     private const string RequestId = "00112233-4455-6677-8899-aabbccddeeff";
+    private const string JobId = "11223344-5566-7788-99aa-bbccddeeff00";
 
     [TestMethod]
     public void MessageOriginAllowsOnlyBundledHttpsAuthority()
@@ -56,7 +57,7 @@ public sealed class BridgeProtocolTests
         Assert.IsTrue(accepted);
         Assert.IsNotNull(request);
         Assert.AreEqual(Guid.Parse(RequestId), request.RequestId);
-        Assert.AreEqual(BridgeProtocol.PingMethod, request.Method);
+        Assert.AreEqual(BridgeMethod.Ping, request.Method);
         Assert.AreEqual(0, request.Parameters.EnumerateObject().Count());
         Assert.AreEqual(BridgeRequestRejection.None, rejection);
 
@@ -70,6 +71,75 @@ public sealed class BridgeProtocolTests
         CollectionAssert.AreEquivalent(
             new[] { "version", "requestId", "method", "result" },
             root.EnumerateObject().Select(static property => property.Name).ToArray());
+    }
+
+    [TestMethod]
+    public void JobStatusAcceptsOnlyCanonicalJobIdParameter()
+    {
+        string message = $$"""
+            {"version":1,"requestId":"{{RequestId}}","method":"jobs.getStatus","params":{"jobId":"{{JobId}}"}
+            }
+            """;
+
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            message,
+            out BridgeRequest? request,
+            out BridgeRequestRejection rejection));
+
+        Assert.AreEqual(BridgeRequestRejection.None, rejection);
+        Assert.IsNotNull(request);
+        Assert.AreEqual(BridgeMethod.JobsGetStatus, request.Method);
+        Assert.AreEqual(JobId, request.JobId!.ToString());
+        Assert.IsNull(request.ExpectedRevision);
+    }
+
+    [TestMethod]
+    [DataRow("jobs.cancel", (int)BridgeMethod.JobsCancel)]
+    [DataRow("jobs.retry", (int)BridgeMethod.JobsRetry)]
+    public void JobCommandsAcceptOnlyCanonicalIdAndNonnegativeRevision(
+        string method,
+        int expectedMethod)
+    {
+        string message = $$"""
+            {"version":1,"requestId":"{{RequestId}}","method":"{{method}}","params":{"jobId":"{{JobId}}","expectedRevision":2147483647}
+            }
+            """;
+
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            message,
+            out BridgeRequest? request,
+            out BridgeRequestRejection rejection));
+
+        Assert.AreEqual(BridgeRequestRejection.None, rejection);
+        Assert.IsNotNull(request);
+        Assert.AreEqual((BridgeMethod)expectedMethod, request.Method);
+        Assert.AreEqual(JobId, request.JobId!.ToString());
+        Assert.AreEqual(int.MaxValue, request.ExpectedRevision);
+    }
+
+    [TestMethod]
+    [DataRow("{\"jobId\":\"11223344-5566-7788-99aa-bbccddeeff00\",\"expectedRevision\":-1}")]
+    [DataRow("{\"jobId\":\"11223344-5566-7788-99aa-bbccddeeff00\",\"expectedRevision\":1.5}")]
+    [DataRow("{\"jobId\":\"11223344-5566-7788-99aa-bbccddeeff00\",\"expectedRevision\":2147483648}")]
+    [DataRow("{\"jobId\":\"11223344-5566-7788-99aa-bbccddeeff00\",\"expectedRevision\":1e999999}")]
+    [DataRow("{\"jobId\":\"11223344-5566-7788-99AA-BBCCDDEEFF00\",\"expectedRevision\":0}")]
+    [DataRow("{\"jobId\":\"11223344-5566-7788-99aa-bbccddeeff00\",\"expectedRevision\":0,\"extra\":true}")]
+    [DataRow("{\"jobId\":\"11223344-5566-7788-99aa-bbccddeeff00\"}")]
+    public void JobCommandSchemaViolationsFailClosed(string parameters)
+    {
+        string message =
+            $$"""{"version":1,"requestId":"{{RequestId}}","method":"jobs.retry","params":{{parameters}}}""";
+
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            message,
+            out BridgeRequest? request,
+            out BridgeRequestRejection rejection));
+
+        Assert.IsNull(request);
+        Assert.AreEqual(BridgeRequestRejection.SchemaViolation, rejection);
     }
 
     [TestMethod]
@@ -95,6 +165,95 @@ public sealed class BridgeProtocolTests
             out _,
             out BridgeRequestRejection rejection));
         Assert.AreEqual(BridgeRequestRejection.MessageTooLarge, rejection);
+    }
+
+    [TestMethod]
+    public void ProjectRequestsUseTheIndependentNinetySixKiBBoundary()
+    {
+        string valid = CreateRequest(BridgeProtocol.ListProjectsMethod, "{}");
+        int validBytes = Encoding.UTF8.GetByteCount(valid);
+        Assert.IsLessThanOrEqualTo(
+            BridgeProtocol.MaxProjectRequestUtf8Bytes,
+            validBytes);
+
+        string exactLimit =
+            new string(
+                ' ',
+                BridgeProtocol.MaxProjectRequestUtf8Bytes - validBytes) +
+            valid;
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            exactLimit,
+            out BridgeRequest? request,
+            out BridgeRequestRejection acceptedRejection));
+        Assert.IsNotNull(request);
+        Assert.AreEqual(BridgeMethod.ListProjects, request.Method);
+        Assert.AreEqual(BridgeRequestRejection.None, acceptedRejection);
+
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            exactLimit + " ",
+            out _,
+            out BridgeRequestRejection rejection));
+        Assert.AreEqual(BridgeRequestRejection.MessageTooLarge, rejection);
+    }
+
+    [TestMethod]
+    public void OnlyRecognizedProjectMethodsCanUseTheLargerRequestBudget()
+    {
+        string unknown = CreateRequest("project.unknown", "{}");
+        string oversizedUnknown =
+            new string(
+                ' ',
+                BridgeProtocol.MaxRequestUtf8Bytes -
+                Encoding.UTF8.GetByteCount(unknown) +
+                1) +
+            unknown;
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            oversizedUnknown,
+            out _,
+            out BridgeRequestRejection unknownRejection));
+        Assert.AreEqual(
+            BridgeRequestRejection.MessageTooLarge,
+            unknownRejection);
+
+        string missingMethod =
+            $"{{\"version\":1,\"requestId\":\"{RequestId}\",\"params\":{{}}}}";
+        string oversizedMissingMethod =
+            new string(
+                ' ',
+                BridgeProtocol.MaxRequestUtf8Bytes -
+                Encoding.UTF8.GetByteCount(missingMethod) +
+                1) +
+            missingMethod;
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            oversizedMissingMethod,
+            out _,
+            out BridgeRequestRejection missingMethodRejection));
+        Assert.AreEqual(
+            BridgeRequestRejection.MessageTooLarge,
+            missingMethodRejection);
+
+        string invalidProject = CreateRequest(
+            BridgeProtocol.ListProjectsMethod,
+            "{\"extra\":true}");
+        string projectOverCompactLimit =
+            new string(
+                ' ',
+                BridgeProtocol.MaxRequestUtf8Bytes -
+                Encoding.UTF8.GetByteCount(invalidProject) +
+                1) +
+            invalidProject;
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            projectOverCompactLimit,
+            out _,
+            out BridgeRequestRejection projectRejection));
+        Assert.AreEqual(
+            BridgeRequestRejection.SchemaViolation,
+            projectRejection);
     }
 
     [TestMethod]

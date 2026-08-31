@@ -1,7 +1,10 @@
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using HubRadio.Core.Identity;
+using HubRadio.Core.Jobs;
 using HubRadio.Core.Serialization;
 using HubRadio.Infrastructure.Diagnostics;
 using Microsoft.Web.WebView2.Core;
@@ -18,30 +21,62 @@ internal enum BridgeRequestRejection
     MethodNotAllowed,
 }
 
+internal enum BridgeMethod
+{
+    Ping,
+    ListProjects,
+    CreateDraft,
+    LoadDraft,
+    SaveDraft,
+    PickSource,
+    FinalizeDraft,
+    JobsGetStatus,
+    JobsCancel,
+    JobsRetry,
+}
+
 internal sealed class BridgeRequest
 {
-    internal BridgeRequest(
+    private BridgeRequest(
         Guid requestId,
-        string method,
-        JsonElement parameters)
+        BridgeMethod method,
+        JsonElement parameters,
+        EntityId<JobIdTag>? jobId,
+        int? expectedRevision)
     {
         RequestId = requestId;
         Method = method;
         Parameters = parameters;
+        JobId = jobId;
+        ExpectedRevision = expectedRevision;
     }
 
     internal Guid RequestId { get; }
 
-    internal string Method { get; }
+    internal BridgeMethod Method { get; }
 
     internal JsonElement Parameters { get; }
+
+    internal EntityId<JobIdTag>? JobId { get; }
+
+    internal int? ExpectedRevision { get; }
+
+    internal static BridgeRequest Create(
+        Guid requestId,
+        BridgeMethod method,
+        JsonElement parameters,
+        EntityId<JobIdTag>? jobId = null,
+        int? expectedRevision = null) =>
+        new(requestId, method, parameters, jobId, expectedRevision);
 }
 
 internal static class BridgeProtocol
 {
     internal const int Version = 1;
-    internal const int MaxRequestUtf8Bytes = 96 * 1024;
-    internal const int MaxResponseUtf8Bytes = 1024 * 1024;
+    internal const int MaxRequestUtf8Bytes = 256;
+    internal const int MaxResponseUtf8Bytes = 4096;
+    internal const int MaxProjectRequestUtf8Bytes = 96 * 1024;
+    internal const int MaxProjectResponseUtf8Bytes = 1024 * 1024;
     internal const string PingMethod = "bridge.ping";
     internal const string ListProjectsMethod = "project.list";
     internal const string CreateDraftMethod = "project.createDraft";
@@ -63,6 +98,9 @@ internal static class BridgeProtocol
         "deadlineSelection",
         "brandTemplateId",
     ];
+    internal const string JobsGetStatusMethod = "jobs.getStatus";
+    internal const string JobsCancelMethod = "jobs.cancel";
+    internal const string JobsRetryMethod = "jobs.retry";
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -93,17 +131,28 @@ internal static class BridgeProtocol
             return false;
         }
 
+        int byteCount;
+        try
+        {
+            byteCount = StrictUtf8.GetByteCount(messageJson);
+        }
+        catch (EncoderFallbackException)
+        {
+            rejection = BridgeRequestRejection.MalformedJson;
+            return false;
+        }
+
+        if (byteCount > MaxProjectRequestUtf8Bytes)
+        {
+            rejection = BridgeRequestRejection.MessageTooLarge;
+            return false;
+        }
+
         byte[] canonical;
         try
         {
-            int byteCount = StrictUtf8.GetByteCount(messageJson);
-            if (byteCount > MaxRequestUtf8Bytes)
-            {
-                rejection = BridgeRequestRejection.MessageTooLarge;
-                return false;
-            }
-
-            canonical = CanonicalJson.CanonicalizeToUtf8(StrictUtf8.GetBytes(messageJson));
+            canonical = CanonicalJson.CanonicalizeToUtf8(
+                StrictUtf8.GetBytes(messageJson));
         }
         catch (EncoderFallbackException)
         {
@@ -112,17 +161,49 @@ internal static class BridgeProtocol
         }
         catch (JsonException)
         {
-            rejection = BridgeRequestRejection.MalformedJson;
+            rejection = byteCount > MaxRequestUtf8Bytes
+                ? BridgeRequestRejection.MessageTooLarge
+                : BridgeRequestRejection.MalformedJson;
             return false;
         }
         catch (FormatException)
         {
-            rejection = BridgeRequestRejection.MalformedJson;
+            rejection = byteCount > MaxRequestUtf8Bytes
+                ? BridgeRequestRejection.MessageTooLarge
+                : BridgeRequestRejection.MalformedJson;
+            return false;
+        }
+        catch (OverflowException)
+        {
+            rejection = byteCount > MaxRequestUtf8Bytes
+                ? BridgeRequestRejection.MessageTooLarge
+                : BridgeRequestRejection.MalformedJson;
             return false;
         }
 
         using JsonDocument document = JsonDocument.Parse(canonical);
         JsonElement root = document.RootElement;
+        string? methodName = null;
+        BridgeMethod parsedMethod = default;
+        bool hasKnownMethod = false;
+        if (root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty("method", out JsonElement candidateMethod)
+            && candidateMethod.ValueKind == JsonValueKind.String
+            && candidateMethod.GetString() is string candidateMethodName)
+        {
+            methodName = candidateMethodName;
+            hasKnownMethod = TryParseMethod(methodName, out parsedMethod);
+        }
+
+        int maximumRequestUtf8Bytes = hasKnownMethod
+            ? GetMaximumRequestUtf8Bytes(parsedMethod)
+            : MaxRequestUtf8Bytes;
+        if (byteCount > maximumRequestUtf8Bytes)
+        {
+            rejection = BridgeRequestRejection.MessageTooLarge;
+            return false;
+        }
+
         if (root.ValueKind != JsonValueKind.Object
             || root.EnumerateObject().Count() != 4
             || !root.TryGetProperty("version", out JsonElement version)
@@ -132,9 +213,7 @@ internal static class BridgeProtocol
             || !root.TryGetProperty("requestId", out JsonElement requestId)
             || requestId.ValueKind != JsonValueKind.String
             || !TryParseRequestId(requestId.GetString(), out Guid parsedRequestId)
-            || !root.TryGetProperty("method", out JsonElement method)
-            || method.ValueKind != JsonValueKind.String
-            || method.GetString() is not string parsedMethod
+            || methodName is null
             || !root.TryGetProperty("params", out JsonElement parameters)
             || parameters.ValueKind != JsonValueKind.Object)
         {
@@ -142,22 +221,22 @@ internal static class BridgeProtocol
             return false;
         }
 
-        if (!IsAllowedMethod(parsedMethod))
+        if (!hasKnownMethod)
         {
             rejection = BridgeRequestRejection.MethodNotAllowed;
             return false;
         }
 
-        if (!HasValidParameters(parsedMethod, parameters))
+        if (!TryCreateRequest(
+                parsedRequestId,
+                parsedMethod,
+                parameters,
+                out request))
         {
             rejection = BridgeRequestRejection.SchemaViolation;
             return false;
         }
 
-        request = new BridgeRequest(
-            parsedRequestId,
-            parsedMethod,
-            parameters.Clone());
         rejection = BridgeRequestRejection.None;
         return true;
     }
@@ -165,10 +244,11 @@ internal static class BridgeProtocol
     internal static string CreatePingResponse(BridgeRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-
-        if (!string.Equals(request.Method, PingMethod, StringComparison.Ordinal))
+        if (request.Method != BridgeMethod.Ping)
         {
-            throw new ArgumentException("The request is not a ping request.", nameof(request));
+            throw new ArgumentException(
+                "A ping response requires a ping request.",
+                nameof(request));
         }
 
         return CreateResultResponse(
@@ -188,16 +268,18 @@ internal static class BridgeProtocol
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(writeResult);
 
-        return WriteBoundedResponse(writer =>
-        {
-            writer.WriteStartObject();
-            writer.WriteNumber("version", Version);
-            writer.WriteString("requestId", request.RequestId.ToString("D"));
-            writer.WriteString("method", request.Method);
-            writer.WritePropertyName("result");
-            writeResult(writer);
-            writer.WriteEndObject();
-        });
+        return WriteBoundedResponse(
+            writer =>
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber("version", Version);
+                writer.WriteString("requestId", request.RequestId.ToString("D"));
+                writer.WriteString("method", GetMethodName(request.Method));
+                writer.WritePropertyName("result");
+                writeResult(writer);
+                writer.WriteEndObject();
+            },
+            GetMaximumResponseUtf8Bytes(request.Method));
     }
 
     internal static string CreateErrorResponse(
@@ -207,49 +289,101 @@ internal static class BridgeProtocol
         ArgumentNullException.ThrowIfNull(request);
         StableErrorCodes.Validate(code);
 
-        return WriteBoundedResponse(writer =>
-        {
-            writer.WriteStartObject();
-            writer.WriteNumber("version", Version);
-            writer.WriteString("requestId", request.RequestId.ToString("D"));
-            writer.WriteString("method", request.Method);
-            writer.WriteStartObject("error");
-            writer.WriteString("code", code);
-            writer.WriteString("message", GetErrorMessage(code));
-            writer.WriteEndObject();
-            writer.WriteEndObject();
-        });
+        return WriteBoundedResponse(
+            writer =>
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber("version", Version);
+                writer.WriteString("requestId", request.RequestId.ToString("D"));
+                writer.WriteString("method", GetMethodName(request.Method));
+                writer.WriteStartObject("error");
+                writer.WriteString("code", code);
+                writer.WriteString("message", GetErrorMessage(code));
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            },
+            GetMaximumResponseUtf8Bytes(request.Method));
     }
 
-    private static bool IsAllowedMethod(string method) =>
-        string.Equals(method, PingMethod, StringComparison.Ordinal) ||
-        string.Equals(method, ListProjectsMethod, StringComparison.Ordinal) ||
-        string.Equals(method, CreateDraftMethod, StringComparison.Ordinal) ||
-        string.Equals(method, LoadDraftMethod, StringComparison.Ordinal) ||
-        string.Equals(method, SaveDraftMethod, StringComparison.Ordinal) ||
-        string.Equals(method, PickSourceMethod, StringComparison.Ordinal) ||
-        string.Equals(method, FinalizeDraftMethod, StringComparison.Ordinal);
+    internal static string GetMethodName(BridgeMethod method) =>
+        method switch
+        {
+            BridgeMethod.Ping => PingMethod,
+            BridgeMethod.ListProjects => ListProjectsMethod,
+            BridgeMethod.CreateDraft => CreateDraftMethod,
+            BridgeMethod.LoadDraft => LoadDraftMethod,
+            BridgeMethod.SaveDraft => SaveDraftMethod,
+            BridgeMethod.PickSource => PickSourceMethod,
+            BridgeMethod.FinalizeDraft => FinalizeDraftMethod,
+            BridgeMethod.JobsGetStatus => JobsGetStatusMethod,
+            BridgeMethod.JobsCancel => JobsCancelMethod,
+            BridgeMethod.JobsRetry => JobsRetryMethod,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(method),
+                method,
+                "Unknown bridge method."),
+        };
+
+    internal static int GetMaximumResponseUtf8Bytes(BridgeMethod method) =>
+        IsProjectMethod(method)
+            ? MaxProjectResponseUtf8Bytes
+            : MaxResponseUtf8Bytes;
+
+    internal static bool IsProjectMethod(BridgeMethod method) =>
+        method is
+            BridgeMethod.ListProjects or
+            BridgeMethod.CreateDraft or
+            BridgeMethod.LoadDraft or
+            BridgeMethod.SaveDraft or
+            BridgeMethod.PickSource or
+            BridgeMethod.FinalizeDraft;
+
+    private static int GetMaximumRequestUtf8Bytes(BridgeMethod method) =>
+        IsProjectMethod(method)
+            ? MaxProjectRequestUtf8Bytes
+            : MaxRequestUtf8Bytes;
+
+    private static bool TryParseMethod(
+        string method,
+        out BridgeMethod parsedMethod)
+    {
+        parsedMethod = method switch
+        {
+            PingMethod => BridgeMethod.Ping,
+            ListProjectsMethod => BridgeMethod.ListProjects,
+            CreateDraftMethod => BridgeMethod.CreateDraft,
+            LoadDraftMethod => BridgeMethod.LoadDraft,
+            SaveDraftMethod => BridgeMethod.SaveDraft,
+            PickSourceMethod => BridgeMethod.PickSource,
+            FinalizeDraftMethod => BridgeMethod.FinalizeDraft,
+            JobsGetStatusMethod => BridgeMethod.JobsGetStatus,
+            JobsCancelMethod => BridgeMethod.JobsCancel,
+            JobsRetryMethod => BridgeMethod.JobsRetry,
+            _ => (BridgeMethod)(-1),
+        };
+        return Enum.IsDefined(parsedMethod);
+    }
 
     private static bool HasValidParameters(
-        string method,
+        BridgeMethod method,
         JsonElement parameters)
     {
-        if (string.Equals(method, PingMethod, StringComparison.Ordinal) ||
-            string.Equals(method, ListProjectsMethod, StringComparison.Ordinal) ||
-            string.Equals(method, CreateDraftMethod, StringComparison.Ordinal) ||
-            string.Equals(method, PickSourceMethod, StringComparison.Ordinal))
+        if (method is
+            BridgeMethod.Ping or
+            BridgeMethod.ListProjects or
+            BridgeMethod.CreateDraft or
+            BridgeMethod.PickSource)
         {
             return parameters.EnumerateObject().Any() is false;
         }
 
-        if (string.Equals(method, LoadDraftMethod, StringComparison.Ordinal))
+        if (method == BridgeMethod.LoadDraft)
         {
             return HasExactProperties(parameters, ["draftId"]) &&
                 IsCanonicalEntityId(parameters.GetProperty("draftId"));
         }
 
-        if (string.Equals(method, SaveDraftMethod, StringComparison.Ordinal) ||
-            string.Equals(method, FinalizeDraftMethod, StringComparison.Ordinal))
+        if (method is BridgeMethod.SaveDraft or BridgeMethod.FinalizeDraft)
         {
             return HasExactProperties(
                     parameters,
@@ -425,20 +559,22 @@ internal static class BridgeProtocol
             return false;
         }
 
-        int count = 0;
+        var foundProperties = new HashSet<string>(StringComparer.Ordinal);
         foreach (JsonProperty property in value.EnumerateObject())
         {
-            count++;
-            if (!expectedProperties.Contains(property.Name, StringComparer.Ordinal))
+            if (!expectedProperties.Contains(property.Name, StringComparer.Ordinal) ||
+                !foundProperties.Add(property.Name))
             {
                 return false;
             }
         }
 
-        return count == expectedProperties.Count;
+        return foundProperties.Count == expectedProperties.Count;
     }
 
-    private static string WriteBoundedResponse(Action<Utf8JsonWriter> writeResponse)
+    private static string WriteBoundedResponse(
+        Action<Utf8JsonWriter> writeResponse,
+        int maximumUtf8Bytes)
     {
         ArrayBufferWriter<byte> buffer = new();
         using (var writer = new Utf8JsonWriter(buffer))
@@ -446,10 +582,22 @@ internal static class BridgeProtocol
             writeResponse(writer);
         }
 
-        if (buffer.WrittenCount > MaxResponseUtf8Bytes)
+        if (buffer.WrittenCount > maximumUtf8Bytes)
         {
             throw new InvalidOperationException(
                 "The bridge response exceeds the supported byte limit.");
+        }
+
+        return StrictUtf8.GetString(buffer.WrittenSpan);
+    }
+
+    internal static string GetBoundedResponse(ArrayBufferWriter<byte> buffer)
+    {
+        ArgumentNullException.ThrowIfNull(buffer);
+        if (buffer.WrittenCount > MaxResponseUtf8Bytes)
+        {
+            throw new InvalidOperationException(
+                "The bridge response exceeds the supported size.");
         }
 
         return StrictUtf8.GetString(buffer.WrittenSpan);
@@ -474,6 +622,63 @@ internal static class BridgeProtocol
         _ => "案件操作を完了できませんでした。",
     };
 
+    private static bool TryCreateRequest(
+        Guid requestId,
+        BridgeMethod method,
+        JsonElement parameters,
+        out BridgeRequest? request)
+    {
+        request = null;
+        if (method == BridgeMethod.Ping || IsProjectMethod(method))
+        {
+            if (!HasValidParameters(method, parameters))
+            {
+                return false;
+            }
+
+            request = BridgeRequest.Create(
+                requestId,
+                method,
+                parameters.Clone());
+            return true;
+        }
+
+        int expectedPropertyCount = method == BridgeMethod.JobsGetStatus ? 1 : 2;
+        if (parameters.EnumerateObject().Count() != expectedPropertyCount ||
+            !parameters.TryGetProperty("jobId", out JsonElement jobId) ||
+            jobId.ValueKind != JsonValueKind.String ||
+            !TryParseJobId(jobId.GetString(), out EntityId<JobIdTag>? parsedJobId))
+        {
+            return false;
+        }
+
+        if (method == BridgeMethod.JobsGetStatus)
+        {
+            request = BridgeRequest.Create(
+                requestId,
+                method,
+                parameters.Clone(),
+                parsedJobId);
+            return true;
+        }
+
+        if (!parameters.TryGetProperty(
+                "expectedRevision",
+                out JsonElement expectedRevision) ||
+            !TryParseExpectedRevision(expectedRevision, out int parsedRevision))
+        {
+            return false;
+        }
+
+        request = BridgeRequest.Create(
+            requestId,
+            method,
+            parameters.Clone(),
+            parsedJobId,
+            parsedRevision);
+        return true;
+    }
+
     private static bool TryParseRequestId(string? value, out Guid requestId)
     {
         if (value is not null
@@ -487,23 +692,81 @@ internal static class BridgeProtocol
         requestId = Guid.Empty;
         return false;
     }
+
+    private static bool TryParseJobId(
+        string? value,
+        [NotNullWhen(true)] out EntityId<JobIdTag>? jobId)
+    {
+        if (EntityId<JobIdTag>.TryParse(value, out jobId) &&
+            string.Equals(value, jobId.ToString(), StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        jobId = null;
+        return false;
+    }
+
+    private static bool TryParseExpectedRevision(
+        JsonElement value,
+        out int expectedRevision)
+    {
+        if (value.ValueKind == JsonValueKind.Number &&
+            value.TryGetDecimal(out decimal parsed) &&
+            parsed == decimal.Truncate(parsed) &&
+            parsed is >= 0 and <= int.MaxValue)
+        {
+            expectedRevision = decimal.ToInt32(parsed);
+            return true;
+        }
+
+        expectedRevision = default;
+        return false;
+    }
 }
 
 internal sealed class Bridge : IDisposable
 {
     private readonly CoreWebView2 coreWebView;
-    private readonly Func<BridgeRequest, CancellationToken, Task<string>>? handleRequestAsync;
+    private readonly Func<BridgeRequest, CancellationToken, Task<string>>?
+        handleProjectRequestAsync;
+    private readonly JobBridgeRequestHandler? jobHandler;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private bool isStarted;
     private bool isDisposed;
 
+    internal Bridge(CoreWebView2 coreWebView)
+        : this(
+            coreWebView,
+            handleProjectRequestAsync: null,
+            jobHandler: null)
+    {
+    }
+
     internal Bridge(
         CoreWebView2 coreWebView,
-        Func<BridgeRequest, CancellationToken, Task<string>>? handleRequestAsync = null)
+        Func<BridgeRequest, CancellationToken, Task<string>> handleProjectRequestAsync)
+        : this(coreWebView, handleProjectRequestAsync, jobHandler: null)
+    {
+    }
+
+    internal Bridge(
+        CoreWebView2 coreWebView,
+        JobBridgeRequestHandler? jobHandler)
+        : this(coreWebView, handleProjectRequestAsync: null, jobHandler)
+    {
+    }
+
+    internal Bridge(
+        CoreWebView2 coreWebView,
+        Func<BridgeRequest, CancellationToken, Task<string>>?
+            handleProjectRequestAsync,
+        JobBridgeRequestHandler? jobHandler)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         this.coreWebView = coreWebView;
-        this.handleRequestAsync = handleRequestAsync;
+        this.handleProjectRequestAsync = handleProjectRequestAsync;
+        this.jobHandler = jobHandler;
     }
 
     internal void Start()
@@ -563,39 +826,59 @@ internal sealed class Bridge : IDisposable
         }
 
         string response;
-        if (string.Equals(request.Method, BridgeProtocol.PingMethod, StringComparison.Ordinal))
+        try
         {
-            response = BridgeProtocol.CreatePingResponse(request);
-        }
-        else if (handleRequestAsync is null)
-        {
-            response = BridgeProtocol.CreateErrorResponse(
+            response = await HandleRequestAsync(
                 request,
-                StableErrorCodes.ProjectOperationFailed);
+                lifetimeCancellation.Token);
         }
-        else
+        catch (OperationCanceledException)
         {
-            try
-            {
-                response = await handleRequestAsync(
-                    request,
-                    lifetimeCancellation.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (Exception)
-            {
-                response = BridgeProtocol.CreateErrorResponse(
-                    request,
-                    StableErrorCodes.ProjectOperationFailed);
-            }
+            return;
+        }
+        catch (Exception)
+        {
+            response = CreateUnavailableResponse(request);
         }
 
         if (!isDisposed)
         {
             coreWebView.PostWebMessageAsJson(response);
         }
+    }
+
+    private async Task<string> HandleRequestAsync(
+        BridgeRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.Method == BridgeMethod.Ping)
+        {
+            return BridgeProtocol.CreatePingResponse(request);
+        }
+
+        if (BridgeProtocol.IsProjectMethod(request.Method))
+        {
+            return handleProjectRequestAsync is null
+                ? BridgeProtocol.CreateErrorResponse(
+                    request,
+                    StableErrorCodes.ProjectOperationFailed)
+                : await handleProjectRequestAsync(request, cancellationToken);
+        }
+
+        return jobHandler?.Handle(request) ??
+            JobBridgeResponseSerializer.SerializeError(
+                request,
+                JobBridgeErrorCode.Unavailable);
+    }
+
+    private static string CreateUnavailableResponse(BridgeRequest request)
+    {
+        return BridgeProtocol.IsProjectMethod(request.Method)
+            ? BridgeProtocol.CreateErrorResponse(
+                request,
+                StableErrorCodes.ProjectOperationFailed)
+            : JobBridgeResponseSerializer.SerializeError(
+                request,
+                JobBridgeErrorCode.Unavailable);
     }
 }

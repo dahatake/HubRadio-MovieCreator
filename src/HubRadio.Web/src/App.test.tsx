@@ -20,6 +20,12 @@ describe('App', () => {
     expect(markup).toContain('ホスト接続を確認')
     expect(markup).toContain('案件一覧')
     expect(markup).toContain('新しい案件')
+    expect(markup).toContain('ジョブの進行状況')
+    expect(markup).toContain('<form')
+    expect(markup).toContain('for="job-id"')
+    expect(markup).toContain('id="job-id"')
+    expect(markup).toContain('type="submit"')
+    expect(markup).not.toContain('tabindex="-1"')
   })
 
   it('requires the application state provider', () => {

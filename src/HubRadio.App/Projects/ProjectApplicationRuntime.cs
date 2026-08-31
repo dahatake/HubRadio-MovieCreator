@@ -1,3 +1,4 @@
+using HubRadio.App.Jobs;
 using HubRadio.App.Media;
 using HubRadio.App.Security;
 using HubRadio.App.Web;
@@ -11,9 +12,26 @@ using Microsoft.UI.Xaml;
 
 namespace HubRadio.App.Projects;
 
+internal sealed class ApplicationBridgeHandlers
+{
+    internal ApplicationBridgeHandlers(
+        ProjectBridgeHandler project,
+        JobBridgeRequestHandler jobs)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentNullException.ThrowIfNull(jobs);
+        Project = project;
+        Jobs = jobs;
+    }
+
+    internal ProjectBridgeHandler Project { get; }
+
+    internal JobBridgeRequestHandler Jobs { get; }
+}
+
 internal static class ProjectApplicationRuntime
 {
-    internal static ProjectBridgeHandler Create(
+    internal static ApplicationBridgeHandlers Create(
         Window owner,
         string applicationDataDirectory,
         string profilesDirectory)
@@ -61,6 +79,16 @@ internal static class ProjectApplicationRuntime
                 cancellationToken.ThrowIfCancellationRequested();
                 return candidateId;
             });
-        return new ProjectBridgeHandler(service);
+        var projectHandler = new ProjectBridgeHandler(service);
+        var jobStore = new JobStore(databasePath);
+        var jobCoordinator = new JobCoordinator(
+            jobStore,
+            new LocalJobRunner(jobStore));
+        var jobHandler = new JobBridgeRequestHandler(
+            jobCoordinator,
+            new JobBridgeAuthorization(authorization, actorProvider),
+            new DurableJobBridgeDetailsProvider(
+                new IngestWorkflowStore(databasePath)));
+        return new ApplicationBridgeHandlers(projectHandler, jobHandler);
     }
 }

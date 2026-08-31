@@ -104,6 +104,70 @@ internal sealed class IngestWorkflowCheckpointCodec
         }
     }
 
+    internal static IReadOnlyList<MediaInfoWarningCode> ReadWarningCodes(
+        string canonicalCheckpointJson,
+        EntityId<JobIdTag> expectedJobId,
+        EntityId<ProjectIdTag> expectedProjectId,
+        ContentDigest expectedRequestDigest,
+        int expectedCheckpointStage)
+    {
+        ArgumentNullException.ThrowIfNull(expectedJobId);
+        ArgumentNullException.ThrowIfNull(expectedProjectId);
+        ArgumentNullException.ThrowIfNull(expectedRequestDigest);
+        if (expectedCheckpointStage < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(expectedCheckpointStage),
+                expectedCheckpointStage,
+                "A checkpoint stage must not be negative.");
+        }
+
+        try
+        {
+            CheckpointDto dto = DeserializeCanonical<CheckpointDto>(
+                canonicalCheckpointJson);
+            ValidateShape(dto);
+            if (dto.Stage != expectedCheckpointStage ||
+                !string.Equals(
+                    dto.JobId,
+                    expectedJobId.ToString(),
+                    StringComparison.Ordinal) ||
+                !string.Equals(
+                    dto.RequestDigest,
+                    expectedRequestDigest.Hex,
+                    StringComparison.Ordinal))
+            {
+                throw InvalidCheckpoint();
+            }
+
+            if (dto.MediaInfo is null)
+            {
+                return Array.Empty<MediaInfoWarningCode>();
+            }
+
+            MediaInfo mediaInfo = RestoreMediaInfo(dto.MediaInfo);
+            if (mediaInfo.JobId != expectedJobId ||
+                mediaInfo.ProjectId != expectedProjectId)
+            {
+                throw InvalidCheckpoint();
+            }
+
+            return Array.AsReadOnly(
+                mediaInfo.Warnings
+                    .Select(static warning => warning.Code)
+                    .ToArray());
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+            when (IsDomainValidationFailure(exception))
+        {
+            throw InvalidCheckpoint();
+        }
+    }
+
     internal string Serialize(WorkflowResumeState state)
     {
         ArgumentNullException.ThrowIfNull(state);

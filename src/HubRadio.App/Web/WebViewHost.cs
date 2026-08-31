@@ -9,7 +9,9 @@ internal sealed class WebViewHost : IDisposable
 
     private readonly CoreWebView2 coreWebView;
     private readonly string webAssetsDirectory;
-    private readonly Func<BridgeRequest, CancellationToken, Task<string>>? handleRequestAsync;
+    private readonly Func<BridgeRequest, CancellationToken, Task<string>>?
+        handleProjectRequestAsync;
+    private readonly JobBridgeRequestHandler? jobHandler;
     private Bridge? bridge;
     private TaskCompletionSource? initialNavigation;
     private bool isStarted;
@@ -17,8 +19,46 @@ internal sealed class WebViewHost : IDisposable
 
     internal WebViewHost(
         CoreWebView2 coreWebView,
+        string webAssetsDirectory)
+        : this(
+            coreWebView,
+            webAssetsDirectory,
+            handleProjectRequestAsync: null,
+            jobHandler: null)
+    {
+    }
+
+    internal WebViewHost(
+        CoreWebView2 coreWebView,
         string webAssetsDirectory,
-        Func<BridgeRequest, CancellationToken, Task<string>>? handleRequestAsync = null)
+        Func<BridgeRequest, CancellationToken, Task<string>>
+            handleProjectRequestAsync)
+        : this(
+            coreWebView,
+            webAssetsDirectory,
+            handleProjectRequestAsync,
+            jobHandler: null)
+    {
+    }
+
+    internal WebViewHost(
+        CoreWebView2 coreWebView,
+        string webAssetsDirectory,
+        JobBridgeRequestHandler? jobHandler)
+        : this(
+            coreWebView,
+            webAssetsDirectory,
+            handleProjectRequestAsync: null,
+            jobHandler)
+    {
+    }
+
+    internal WebViewHost(
+        CoreWebView2 coreWebView,
+        string webAssetsDirectory,
+        Func<BridgeRequest, CancellationToken, Task<string>>?
+            handleProjectRequestAsync,
+        JobBridgeRequestHandler? jobHandler)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentException.ThrowIfNullOrWhiteSpace(webAssetsDirectory);
@@ -34,7 +74,8 @@ internal sealed class WebViewHost : IDisposable
 
         this.coreWebView = coreWebView;
         this.webAssetsDirectory = fullPath;
-        this.handleRequestAsync = handleRequestAsync;
+        this.handleProjectRequestAsync = handleProjectRequestAsync;
+        this.jobHandler = jobHandler;
     }
 
     internal async Task StartAsync(CancellationToken cancellationToken = default)
@@ -77,7 +118,10 @@ internal sealed class WebViewHost : IDisposable
             await navigation.Task;
             cancellationToken.ThrowIfCancellationRequested();
 
-            Bridge startedBridge = new(coreWebView, handleRequestAsync);
+            Bridge startedBridge = new(
+                coreWebView,
+                handleProjectRequestAsync,
+                jobHandler);
             startedBridge.Start();
             bridge = startedBridge;
         }

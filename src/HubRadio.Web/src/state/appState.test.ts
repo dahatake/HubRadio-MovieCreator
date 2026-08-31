@@ -16,7 +16,13 @@ import {
 
 const requestId = '00112233-4455-6677-8899-aabbccddeeff'
 const otherRequestId = '11223344-5566-7788-99aa-bbccddeeff00'
-const stateKeys = ['acknowledgedRevision', 'lastError', 'localRevision', 'pending']
+const stateKeys = [
+  'acknowledgedRevision',
+  'jobMonitor',
+  'lastError',
+  'localRevision',
+  'pending',
+]
 
 describe('app state', () => {
   it('starts unsaved with only the canonical state fields', () => {
@@ -25,6 +31,13 @@ describe('app state', () => {
       acknowledgedRevision: null,
       pending: null,
       lastError: null,
+      jobMonitor: {
+        trackedJobId: null,
+        snapshot: null,
+        pending: null,
+        lastCommand: null,
+        lastError: null,
+      },
     })
     expect(selectSyncStatus(initialAppState)).toBe('unsaved')
     expect(hasUnsavedChanges(initialAppState)).toBe(true)
