@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from 'react'
 
 import {
   PROJECT_CREATE_DRAFT_METHOD,
@@ -35,6 +41,32 @@ const wizardSteps = [
   '出演者と期限',
   '確認',
 ] as const
+
+export function getWizardStepAfterKey(
+  currentStep: number,
+  key: string,
+): number | null {
+  if (!Number.isInteger(currentStep) ||
+      currentStep < 0 ||
+      currentStep >= wizardSteps.length) {
+    return null
+  }
+
+  switch (key) {
+    case 'ArrowLeft':
+    case 'ArrowUp':
+      return currentStep === 0 ? wizardSteps.length - 1 : currentStep - 1
+    case 'ArrowRight':
+    case 'ArrowDown':
+      return currentStep === wizardSteps.length - 1 ? 0 : currentStep + 1
+    case 'Home':
+      return 0
+    case 'End':
+      return wizardSteps.length - 1
+    default:
+      return null
+  }
+}
 
 const publicationScopes: readonly Readonly<{
   value: PublicationScope
@@ -125,6 +157,7 @@ export function ProjectWorkspaceView({
 }: ProjectStateContextValue) {
   const [wizardStep, setWizardStep] = useState(0)
   const wizardHeadingRef = useRef<HTMLHeadingElement>(null)
+  const wizardStepRefs = useRef<Array<HTMLButtonElement | null>>([])
   const errorRef = useRef<HTMLDivElement>(null)
   const draftId = state.draft?.draftId ?? null
 
@@ -221,6 +254,20 @@ export function ProjectWorkspaceView({
     )
   }
 
+  const moveWizardStepFromKeyboard = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    currentStep: number,
+  ): void => {
+    const nextStep = getWizardStepAfterKey(currentStep, event.key)
+    if (nextStep === null) {
+      return
+    }
+
+    event.preventDefault()
+    setWizardStep(nextStep)
+    wizardStepRefs.current[nextStep]?.focus()
+  }
+
   return (
     <div className="project-workspace">
       {state.error !== null && (
@@ -312,8 +359,12 @@ export function ProjectWorkspaceView({
                 <li key={label}>
                   <button
                     type="button"
+                    ref={(element) => {
+                      wizardStepRefs.current[index] = element
+                    }}
                     aria-current={wizardStep === index ? 'step' : undefined}
                     onClick={() => setWizardStep(index)}
+                    onKeyDown={(event) => moveWizardStepFromKeyboard(event, index)}
                   >
                     <span aria-hidden="true">{index + 1}</span>
                     {label}

@@ -7,6 +7,7 @@ import type {
   ProjectListItem,
 } from '../../bridge'
 import {
+  getWizardStepAfterKey,
   ProjectWorkspaceView,
 } from './ProjectWorkspace'
 import type { ProjectStateContextValue } from './ProjectStateProvider'
@@ -21,6 +22,34 @@ const adversarialText =
   '<script>globalThis.compromised=true</script><img src=x onerror=alert(1)>&tail'
 
 describe('ProjectWorkspace', () => {
+  it('supports a bounded keyboard flow across every wizard step', () => {
+    expect(getWizardStepAfterKey(0, 'ArrowRight')).toBe(1)
+    expect(getWizardStepAfterKey(1, 'ArrowDown')).toBe(2)
+    expect(getWizardStepAfterKey(2, 'End')).toBe(4)
+    expect(getWizardStepAfterKey(4, 'ArrowRight')).toBe(0)
+    expect(getWizardStepAfterKey(0, 'ArrowLeft')).toBe(4)
+    expect(getWizardStepAfterKey(4, 'ArrowUp')).toBe(3)
+    expect(getWizardStepAfterKey(3, 'Home')).toBe(0)
+    expect(getWizardStepAfterKey(0, 'Tab')).toBeNull()
+    expect(getWizardStepAfterKey(-1, 'ArrowRight')).toBeNull()
+    expect(getWizardStepAfterKey(5, 'ArrowLeft')).toBeNull()
+
+    const input = completeInput()
+    const markup = renderState({
+      ...initialProjectState,
+      canCreate: true,
+      catalog: {
+        outputProfiles: [{ id: profileId, name: 'long-form-1280x720' }],
+        brandTemplates: [{ id: templateId, name: 'development-neutral-long-form' }],
+      },
+      draft: projectDraft(input),
+      input,
+    })
+    expect(markup).toContain('<form')
+    expect(markup).toMatch(/<button[^>]*type="submit"[^>]*>下書きを保存<\/button>/)
+    expect(markup).toMatch(/<button[^>]*type="button"[^>]*>案件を作成<\/button>/)
+  })
+
   it('renders all canonical project-list columns and escapes user-controlled text', () => {
     const markup = renderState({
       ...initialProjectState,
