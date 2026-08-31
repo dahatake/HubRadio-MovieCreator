@@ -567,6 +567,29 @@ public static class TermCandidateService
         return new TermCandidateDecisionResult(candidate, adopted, record, edit);
     }
 
+    internal static bool MatchesCurrentSnapshot(
+        TermCandidate candidate,
+        TranscriptRevision currentRevision,
+        IReadOnlyList<SourceSpan> currentSourceSpans,
+        TermEntry currentTermEntry,
+        out ContentDigest currentRevisionDigest)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentNullException.ThrowIfNull(currentRevision);
+        ArgumentNullException.ThrowIfNull(currentSourceSpans);
+        ArgumentNullException.ThrowIfNull(currentTermEntry);
+        SourceSpan[] spans = ValidateAndCopySourceSpans(
+            currentRevision,
+            currentSourceSpans);
+        currentRevisionDigest = ComputeRevisionDigest(currentRevision);
+        return GetSnapshotFailure(
+            candidate,
+            currentRevision,
+            spans,
+            currentTermEntry,
+            currentRevisionDigest) is null;
+    }
+
     private static void ValidateDecision(
         TermCandidate candidate,
         TranscriptRevision currentRevision,
@@ -611,13 +634,35 @@ public static class TermCandidateService
             throw Failure(TermCandidateFailureReason.CandidateStale);
         }
 
-        if (candidate.SourceRevisionDigest != ComputeRevisionDigest(currentRevision))
+        ContentDigest currentRevisionDigest = ComputeRevisionDigest(
+            currentRevision);
+        if (GetSnapshotFailure(
+                candidate,
+                currentRevision,
+                spans,
+                currentTermEntry,
+                currentRevisionDigest) is { } failureReason)
         {
-            throw Failure(TermCandidateFailureReason.CandidateStale);
+            throw Failure(failureReason);
+        }
+    }
+
+    private static TermCandidateFailureReason? GetSnapshotFailure(
+        TermCandidate candidate,
+        TranscriptRevision currentRevision,
+        IReadOnlyList<SourceSpan> currentSourceSpans,
+        TermEntry currentTermEntry,
+        ContentDigest currentRevisionDigest)
+    {
+        if (candidate.SourceRevisionId != currentRevision.Id
+            || candidate.SourceRevisionDigest != currentRevisionDigest)
+        {
+            return TermCandidateFailureReason.CandidateStale;
         }
 
-        // Bind the decision to the exact OCC snapshot that produced the candidate.
-        // Even a content-equivalent update requires the user to review a fresh candidate.
+        // Bind both display and decision paths to the exact OCC snapshot that
+        // produced the candidate. A content-equivalent update still requires
+        // the user to review a fresh candidate.
         if (candidate.TermEntryId != currentTermEntry.Id
             || candidate.TermEntryVersion != currentTermEntry.Version
             || candidate.TermScope != currentTermEntry.Scope
@@ -630,7 +675,7 @@ public static class TermCandidateService
                 currentTermEntry.Reading,
                 StringComparison.Ordinal))
         {
-            throw Failure(TermCandidateFailureReason.TermEntryChanged);
+            return TermCandidateFailureReason.TermEntryChanged;
         }
 
         for (int utteranceIndex = 0;
@@ -645,13 +690,13 @@ public static class TermCandidateService
                     continue;
                 }
 
-                if (spans[utteranceIndex].Id != candidate.SourceSpanId
+                if (currentSourceSpans[utteranceIndex].Id != candidate.SourceSpanId
                     || !string.Equals(
                         token.Text,
                         candidate.ObservedText,
                         StringComparison.Ordinal))
                 {
-                    throw Failure(TermCandidateFailureReason.CandidateStale);
+                    return TermCandidateFailureReason.CandidateStale;
                 }
 
                 string normalizedObserved = NormalizeForMatching(token.Text);
@@ -661,14 +706,14 @@ public static class TermCandidateService
                     indexedEntry);
                 if (match is null || match.Value.Kind != candidate.MatchKind)
                 {
-                    throw Failure(TermCandidateFailureReason.TermEntryChanged);
+                    return TermCandidateFailureReason.TermEntryChanged;
                 }
 
-                return;
+                return null;
             }
         }
 
-        throw Failure(TermCandidateFailureReason.CandidateStale);
+        return TermCandidateFailureReason.CandidateStale;
     }
 
     private static SourceSpan[] ValidateAndCopySourceSpans(
