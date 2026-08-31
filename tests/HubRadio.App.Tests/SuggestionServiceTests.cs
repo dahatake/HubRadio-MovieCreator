@@ -336,8 +336,8 @@ public sealed class SuggestionServiceTests
                 DecidedAt.AddMinutes(1),
                 "Cancelled decision.",
                 cancellation.Token));
-            Assert.AreEqual(SuggestionStatus.Proposed, second.Status);
-            Assert.HasCount(1, firstResult.DecisionHistory);
+        Assert.AreEqual(SuggestionStatus.Proposed, second.Status);
+        Assert.HasCount(1, firstResult.DecisionHistory);
     }
 
     [TestMethod]
