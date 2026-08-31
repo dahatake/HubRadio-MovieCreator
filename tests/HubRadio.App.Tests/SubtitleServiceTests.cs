@@ -657,6 +657,74 @@ public sealed class SubtitleServiceTests
     }
 
     [TestMethod]
+    public void DisplayPolicyFeedsPreviewAndExportFromTheSameNonDestructiveResult()
+    {
+        Fixture fixture = Fixture.Create();
+        SubtitleCueHistory history = fixture.CreateInitial();
+        SubtitleCueSnapshot snapshot = history.CurrentRevision.Snapshot;
+        SubtitleDisplaySourceCue source = SubtitleDisplayMapper.MapSource(snapshot);
+        var profile = new SubtitleDisplayProfile(
+            Digest('d'),
+            SubtitleCueDisplayMode.Full,
+            SubtitlePunctuationDisplay.HideJapaneseCommaAndPeriod);
+
+        SubtitleDisplayResult result = SubtitleDisplayPolicy.Apply(
+            profile,
+            [source],
+            selectedCueIds: []);
+        SubtitleDisplayedCue preview = result.DisplayedCues.Single();
+        SubtitleFileCue export = SubtitleDisplayMapper.MapForExport(snapshot, preview);
+
+        Assert.AreEqual(preview.DisplayText, export.Text);
+        Assert.AreEqual(snapshot.Cue.Id, export.Cue.Id);
+        Assert.AreEqual(snapshot.Style.ToString(), export.Style.ToString());
+        Assert.AreEqual(snapshot.Text, source.Text);
+        Assert.AreEqual("字幕1", snapshot.Text);
+        Assert.AreEqual(
+            history.CurrentRevision.ContentDigest,
+            SubtitleSnapshotJson.ComputeContentDigest(snapshot));
+    }
+
+    [TestMethod]
+    public void DisplayExportMapperRejectsCrossCueAndStaleTextBindings()
+    {
+        Fixture fixture = Fixture.Create();
+        SubtitleCueSnapshot snapshot = fixture.CreateInitial().CurrentRevision.Snapshot;
+        SubtitleDisplayResult other = SubtitleDisplayPolicy.Apply(
+            new SubtitleDisplayProfile(
+                Digest('d'),
+                SubtitleCueDisplayMode.Full,
+                SubtitlePunctuationDisplay.Preserve),
+            [new SubtitleDisplaySourceCue(
+                new Cue(CueId(99), CueKind.Subtitle, Range(20, 1), "subtitle"),
+                "other")],
+            []);
+
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            SubtitleDisplayMapper.MapForExport(
+                snapshot,
+                other.DisplayedCues.Single()));
+
+        SubtitleDisplayResult reusedIdentity = SubtitleDisplayPolicy.Apply(
+            new SubtitleDisplayProfile(
+                Digest('d'),
+                SubtitleCueDisplayMode.Full,
+                SubtitlePunctuationDisplay.Preserve),
+            [new SubtitleDisplaySourceCue(
+                new Cue(
+                    snapshot.Cue.Id,
+                    CueKind.Subtitle,
+                    Range(30, 1),
+                    snapshot.Cue.RegionName),
+                snapshot.Text)],
+            []);
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            SubtitleDisplayMapper.MapForExport(
+                snapshot,
+                reusedIdentity.DisplayedCues.Single()));
+    }
+
+    [TestMethod]
     public void PublicSurfaceHasOnlyTypedRevisionOperationsAndNoInventedThresholds()
     {
         CollectionAssert.AreEqual(
