@@ -40,9 +40,16 @@ import {
   type TimelineReadRequest,
   type TimelineReadResponse,
 } from '../features/timeline/timelineProtocol'
+import {
+  parseReviewBridgeResponse,
+  type ReviewBridgeMethod,
+  type ReviewBridgeRequest,
+  type ReviewBridgeResponse,
+} from '../features/review/reviewProtocol'
 
 export * from './projectProtocol'
 export * from '../features/timeline/timelineProtocol'
+export * from '../features/review/reviewProtocol'
 
 export interface BridgeMessageEvent {
   readonly data: unknown
@@ -56,7 +63,8 @@ export interface BridgeTransport {
       | PlayerReadRequest
       | PlayerSeekRequest
       | TranscriptRequest
-      | TimelineBridgeRequest,
+      | TimelineBridgeRequest
+      | ReviewBridgeRequest,
   ): void
   addEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
   removeEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
@@ -98,6 +106,11 @@ export interface BridgeClient {
   onTimelineApplyResponse(
     listener: (response: TimelineApplyResponse) => void,
   ): () => void
+  sendReview(request: ReviewBridgeRequest): void
+  abandonReviewRequest(requestId: string): void
+  onReviewResponse(
+    listener: (response: ReviewBridgeResponse) => void,
+  ): () => void
   dispose(): void
 }
 
@@ -109,6 +122,11 @@ interface PendingJobRequest {
 interface PendingTimelineRequest {
   readonly method: TimelineBridgeRequest['method']
   readonly projectId: string
+}
+
+interface PendingReviewRequest {
+  readonly method: ReviewBridgeMethod
+  readonly versionId: string
 }
 
 export function createBridgeClient(transport: BridgeTransport): BridgeClient {
@@ -132,6 +150,10 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
     (response: TimelineApplyResponse) => void
   >()
   const pendingTimelineRequests = new Map<string, PendingTimelineRequest>()
+  const reviewListeners = new Set<
+    (response: ReviewBridgeResponse) => void
+  >()
+  const pendingReviewRequests = new Map<string, PendingReviewRequest>()
   let disposed = false
 
   const receive = (event: BridgeMessageEvent): void => {
@@ -169,6 +191,25 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
         listener(projectResponse)
       }
 
+      return
+    }
+
+    const reviewResponse = parseReviewBridgeResponse(event.data)
+    if (reviewResponse !== null) {
+      const pending = pendingReviewRequests.get(reviewResponse.requestId)
+      if (
+        pending === undefined ||
+        pending.method !== reviewResponse.method ||
+        ('result' in reviewResponse &&
+          reviewResponse.result.versionId !== pending.versionId)
+      ) {
+        return
+      }
+
+      pendingReviewRequests.delete(reviewResponse.requestId)
+      for (const listener of reviewListeners) {
+        listener(reviewResponse)
+      }
       return
     }
 
@@ -391,6 +432,27 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
         timelineApplyListeners.delete(listener)
       }
     },
+    sendReview(request: ReviewBridgeRequest): void {
+      sendCorrelatedReviewRequest(
+        request,
+        transport,
+        pendingReviewRequests,
+        disposed,
+      )
+    },
+    abandonReviewRequest(requestId: string): void {
+      throwIfDisposed(disposed)
+      pendingReviewRequests.delete(requestId)
+    },
+    onReviewResponse(
+      listener: (response: ReviewBridgeResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      reviewListeners.add(listener)
+      return (): void => {
+        reviewListeners.delete(listener)
+      }
+    },
     dispose(): void {
       if (disposed) {
         return
@@ -407,6 +469,8 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       timelineReadListeners.clear()
       timelineApplyListeners.clear()
       pendingTimelineRequests.clear()
+      reviewListeners.clear()
+      pendingReviewRequests.clear()
       transport.removeEventListener('message', receive)
     },
   })
@@ -502,4 +566,27 @@ function responseJobId(
   return response.method === JOBS_GET_STATUS_METHOD
     ? response.result.jobId
     : response.result.job.jobId
+}
+
+function sendCorrelatedReviewRequest(
+  request: ReviewBridgeRequest,
+  transport: BridgeTransport,
+  pendingRequests: Map<string, PendingReviewRequest>,
+  disposed: boolean,
+): void {
+  throwIfDisposed(disposed)
+  if (pendingRequests.size !== 0) {
+    throw new Error('A review bridge request is already pending.')
+  }
+
+  pendingRequests.set(request.requestId, {
+    method: request.method,
+    versionId: request.params.versionId,
+  })
+  try {
+    transport.postMessage(request)
+  } catch (error: unknown) {
+    pendingRequests.delete(request.requestId)
+    throw error
+  }
 }

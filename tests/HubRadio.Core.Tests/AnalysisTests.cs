@@ -507,6 +507,30 @@ public sealed class AnalysisTests
             () => SuggestionReference.FromAdoptedSuggestion(null!));
     }
 
+    [TestMethod]
+    public void PersistedSuggestionReferenceRestoresOnlyRetainedIdentityAndSourceOrigin()
+    {
+        EntityId<SuggestionIdTag> suggestionId = EntityId<SuggestionIdTag>.New();
+        OriginRef origin = OriginRef.FromSourceSpan(
+            EntityId<SourceSpanIdTag>.New());
+
+        SuggestionReference reference =
+            SuggestionReference.FromPersistedReference(suggestionId, origin);
+
+        Assert.AreSame(suggestionId, reference.SuggestionId);
+        Assert.AreSame(origin, reference.Origin);
+        Assert.ThrowsExactly<ArgumentNullException>(() =>
+            SuggestionReference.FromPersistedReference(null!, origin));
+        Assert.ThrowsExactly<ArgumentNullException>(() =>
+            SuggestionReference.FromPersistedReference(suggestionId, null!));
+        ArgumentException unsupportedOrigin =
+            Assert.ThrowsExactly<ArgumentException>(() =>
+                SuggestionReference.FromPersistedReference(
+                    suggestionId,
+                    OriginRef.FromAsset(EntityId<AssetIdTag>.New())));
+        Assert.AreEqual("origin", unsupportedOrigin.ParamName);
+    }
+
     private static ModelRun CreateModelRun(
         string provider = "local-rules",
         string modelIdentifier = "silence-detector",

@@ -605,6 +605,232 @@ public sealed class ReviewStoreTests
     }
 
     [TestMethod]
+    public void CurrentTargetReviewWritesRejectVersionAfterWorkingCopyAdvances()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive(
+                "Current Windows role assignments require a Windows runner.");
+            return;
+        }
+
+        using StoreTestDatabase database = new();
+        var projectStore = new ProjectStore(database.DatabasePath);
+        Project project = CreateProject("Current review target project");
+        projectStore.CreateProject(project, "{\"project\":1}", VersionTime);
+        var initialWorkingCopy = new WorkingCopy(
+            EntityId<WorkingCopyIdTag>.New(),
+            project.Id,
+            baseVersionId: null,
+            VersionTime,
+            VersionTime,
+            elements: []);
+        projectStore.CreateWorkingCopy(
+            initialWorkingCopy,
+            "{\"workingCopy\":1}");
+        var reviewedVersion = new CompositionVersion(
+            EntityId<CompositionVersionIdTag>.New(),
+            project.Id,
+            parentVersionId: null,
+            "editor",
+            VersionTime.AddMinutes(1),
+            "Create the reviewed version.",
+            new ContentDigest(new string('a', 64)),
+            elements: []);
+        projectStore.AppendCompositionVersion(
+            reviewedVersion,
+            "{\"version\":1}");
+        Assert.AreEqual(
+            1,
+            projectStore.UpdateWorkingCopy(
+                new WorkingCopy(
+                    initialWorkingCopy.Id,
+                    project.Id,
+                    reviewedVersion.Id,
+                    initialWorkingCopy.CreatedAt,
+                    VersionTime.AddMinutes(1),
+                    elements: []),
+                "{\"workingCopy\":2}",
+                expectedRevision: 0));
+
+        var store = new ReviewStore(database.DatabasePath);
+        var assignments = new RoleAssignmentStore(database.DatabasePath);
+        Assert.IsTrue(assignments.BootstrapInitialRoles(AdministratorSid));
+        assignments.Assign(
+            ReviewerSid,
+            AuthorizationRole.ContentApprover,
+            AdministratorSid,
+            "Assign content review access for current-target validation.");
+        store.AppendReviewRecord(new ReviewRecord(
+            EntityId<ReviewRecordIdTag>.New(),
+            reviewedVersion,
+            ReviewState.ContentReview,
+            ReviewerSid,
+            ReviewActorRole.ContentApprover,
+            VersionTime.AddMinutes(2),
+            "Begin content review."));
+
+        var nextVersion = new CompositionVersion(
+            EntityId<CompositionVersionIdTag>.New(),
+            project.Id,
+            reviewedVersion.Id,
+            "editor",
+            VersionTime.AddMinutes(3),
+            "Advance the working-copy head.",
+            new ContentDigest(new string('b', 64)),
+            elements: []);
+        projectStore.AppendCompositionVersion(nextVersion, "{\"version\":2}");
+        Assert.AreEqual(
+            2,
+            projectStore.UpdateWorkingCopy(
+                new WorkingCopy(
+                    initialWorkingCopy.Id,
+                    project.Id,
+                    nextVersion.Id,
+                    initialWorkingCopy.CreatedAt,
+                    VersionTime.AddMinutes(3),
+                    elements: []),
+                "{\"workingCopy\":3}",
+                expectedRevision: 1));
+
+        DateTimeOffset attemptedAt = VersionTime.AddMinutes(4);
+        var comment = new ReviewComment(
+            EntityId<ReviewCommentIdTag>.New(),
+            reviewedVersion,
+            default,
+            EntityId<SourceSpanIdTag>.New(),
+            ReviewerSid,
+            ReviewActorRole.ContentApprover,
+            attemptedAt,
+            "Reject evidence for the former current target.");
+        var changeRecord = new ReviewRecord(
+            EntityId<ReviewRecordIdTag>.New(),
+            reviewedVersion,
+            ReviewState.ChangesRequested,
+            ReviewerSid,
+            ReviewActorRole.ContentApprover,
+            attemptedAt,
+            "Reject evidence for the former current target.");
+        var approval = new Approval(
+            EntityId<ApprovalIdTag>.New(),
+            reviewedVersion,
+            ReviewerSid,
+            ReviewActorRole.ContentApprover,
+            attemptedAt,
+            "Reject approval for the former current target.");
+
+        Assert.IsFalse(store.TryAppendAuthorizedCurrentReviewComment(
+            comment,
+            AuthorizationRole.ContentApprover,
+            AuthorizationOperation.RecordContentReview));
+        Assert.IsFalse(store.TryAppendAuthorizedCurrentChangeRequest(
+            comment,
+            changeRecord,
+            ReviewState.ContentReview,
+            AuthorizationRole.ContentApprover,
+            AuthorizationOperation.RecordContentReview));
+        Assert.IsFalse(store.TryAppendAuthorizedCurrentApproval(
+            approval,
+            AuthorizationRole.ContentApprover,
+            AuthorizationOperation.RecordContentReview));
+
+        StoredVersionEvidence evidence = store.GetVersionEvidence(reviewedVersion.Id)
+            ?? throw new AssertFailedException("The reviewed version evidence was not loaded.");
+        Assert.AreEqual(0, evidence.ReviewComments.Count);
+        Assert.AreEqual(0, evidence.Approvals.Count);
+        Assert.AreEqual(1, evidence.ReviewRecords.Count);
+        Assert.AreEqual(ReviewState.ContentReview, evidence.ReviewRecords[0].State);
+    }
+
+    [TestMethod]
+    public void CurrentApprovalDoesNotInventReviewStateEligibility()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive(
+                "Current Windows role assignments require a Windows runner.");
+            return;
+        }
+
+        using StoreTestDatabase database = new();
+        var projectStore = new ProjectStore(database.DatabasePath);
+        Project project = CreateProject("Approval state-race project");
+        projectStore.CreateProject(project, "{\"project\":1}", VersionTime);
+        var workingCopy = new WorkingCopy(
+            EntityId<WorkingCopyIdTag>.New(),
+            project.Id,
+            baseVersionId: null,
+            VersionTime,
+            VersionTime,
+            elements: []);
+        projectStore.CreateWorkingCopy(workingCopy, "{\"workingCopy\":1}");
+        var version = new CompositionVersion(
+            EntityId<CompositionVersionIdTag>.New(),
+            project.Id,
+            parentVersionId: null,
+            "editor",
+            VersionTime.AddMinutes(1),
+            "Create the approval target.",
+            new ContentDigest(new string('a', 64)),
+            elements: []);
+        projectStore.AppendCompositionVersion(version, "{\"version\":1}");
+        Assert.AreEqual(
+            1,
+            projectStore.UpdateWorkingCopy(
+                new WorkingCopy(
+                    workingCopy.Id,
+                    project.Id,
+                    version.Id,
+                    workingCopy.CreatedAt,
+                    VersionTime.AddMinutes(1),
+                    elements: []),
+                "{\"workingCopy\":2}",
+                expectedRevision: 0));
+
+        var store = new ReviewStore(database.DatabasePath);
+        var assignments = new RoleAssignmentStore(database.DatabasePath);
+        Assert.IsTrue(assignments.BootstrapInitialRoles(AdministratorSid));
+        assignments.Assign(
+            ReviewerSid,
+            AuthorizationRole.ContentApprover,
+            AdministratorSid,
+            "Assign content approval for the state-race test.");
+        store.AppendReviewRecord(new ReviewRecord(
+            EntityId<ReviewRecordIdTag>.New(),
+            version,
+            ReviewState.ContentReview,
+            ReviewerSid,
+            ReviewActorRole.ContentApprover,
+            VersionTime.AddMinutes(2),
+            "The caller reads this eligible state."));
+        var approval = new Approval(
+            EntityId<ApprovalIdTag>.New(),
+            version,
+            ReviewerSid,
+            ReviewActorRole.ContentApprover,
+            VersionTime.AddMinutes(4),
+            "Do not persist after the state changes.");
+        store.AppendReviewRecord(new ReviewRecord(
+            EntityId<ReviewRecordIdTag>.New(),
+            version,
+            ReviewState.ChangesRequested,
+            ReviewerSid,
+            ReviewActorRole.ContentApprover,
+            VersionTime.AddMinutes(3),
+            "A concurrent request makes approval ineligible."));
+
+        Assert.IsTrue(
+            store.TryAppendAuthorizedCurrentApproval(
+                approval,
+                AuthorizationRole.ContentApprover,
+                AuthorizationOperation.RecordContentReview));
+
+        Assert.AreEqual(
+            1,
+            store.GetVersionEvidence(version.Id)!.Approvals.Count);
+    }
+
+    [TestMethod]
     public void AuthorizedReviewCommentRejectsMismatchedRoleOperationMapping()
     {
         using StoreTestDatabase database = new();

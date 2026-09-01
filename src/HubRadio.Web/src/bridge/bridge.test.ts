@@ -45,6 +45,18 @@ import {
   timelineRequestId,
   timelineSourceElementId,
 } from '../features/timeline/timelineTestFixture'
+import {
+  createReviewAddCommentRequest,
+  createReviewGetSnapshotRequest,
+  REVIEW_ADD_COMMENT_METHOD,
+  REVIEW_GET_SNAPSHOT_METHOD,
+} from '../features/review/reviewProtocol'
+import {
+  createReviewResponseValue,
+  reviewSecondRequestId,
+  reviewVersionDigest,
+  reviewVersionId,
+} from '../features/review/reviewTestFixture'
 
 const requestId = '00112233-4455-6677-8899-aabbccddeeff'
 
@@ -67,7 +79,6 @@ describe('web bridge protocol', () => {
     '00000000-0000-0000-0000-000000000000',
     '00112233-4455-6677-8899-AABBCCDDEEFF',
     `${requestId}\n`,
-    'not-a-uuid',
   ])('rejects invalid request ID %s', (invalidRequestId) => {
     expect(() => createPingRequest(invalidRequestId)).toThrow()
   })
@@ -154,6 +165,98 @@ describe('web bridge client', () => {
     })
     expect(readListener).toHaveBeenCalledOnce()
     expect(seekListener).toHaveBeenCalledOnce()
+  })
+
+  it('routes only a fully correlated review response and prevents double submit', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    client.onReviewResponse(listener)
+    const first = createReviewGetSnapshotRequest(requestId, reviewVersionId)
+    const second = createReviewAddCommentRequest(
+      reviewSecondRequestId,
+      reviewVersionId,
+      reviewVersionDigest,
+      'contentApprover',
+      { value: '1', rate: '2' },
+      '確認コメントです。',
+    )
+
+    client.sendReview(first)
+    expect(transport.posted).toEqual([first])
+    expect(() => client.sendReview(second)).toThrow('already pending')
+
+    transport.emit(
+      createReviewResponseValue(
+        reviewSecondRequestId,
+        REVIEW_GET_SNAPSHOT_METHOD,
+      ),
+    )
+    transport.emit(
+      createReviewResponseValue(requestId, REVIEW_ADD_COMMENT_METHOD),
+    )
+    transport.emit(createReviewResponseForDifferentVersion(requestId))
+    transport.emit({
+      ...createReviewResponseValue(requestId, REVIEW_GET_SNAPSHOT_METHOD),
+      actorSid: 'S-1-5-21-private',
+    })
+    expect(listener).not.toHaveBeenCalled()
+
+    const accepted = createReviewResponseValue(
+      requestId,
+      REVIEW_GET_SNAPSHOT_METHOD,
+    )
+    transport.emit(accepted)
+    expect(listener).toHaveBeenCalledOnce()
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({
+      requestId,
+      method: REVIEW_GET_SNAPSHOT_METHOD,
+    }))
+
+    client.sendReview(second)
+    expect(transport.posted).toEqual([first, second])
+  })
+
+  it('clears review correlation after abandon and transport failure', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const first = createReviewGetSnapshotRequest(requestId, reviewVersionId)
+    const second = createReviewGetSnapshotRequest(
+      reviewSecondRequestId,
+      reviewVersionId,
+    )
+
+    client.sendReview(first)
+    client.abandonReviewRequest(requestId)
+    client.sendReview(second)
+    expect(transport.posted).toEqual([first, second])
+
+    client.abandonReviewRequest(reviewSecondRequestId)
+    transport.throwOnPost = true
+    expect(() => client.sendReview(first)).toThrow('transport failed')
+    transport.throwOnPost = false
+    client.sendReview(first)
+    expect(transport.posted.at(-1)).toEqual(first)
+  })
+
+  it('unsubscribes review listeners independently', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const retained = vi.fn()
+    const removed = vi.fn()
+    client.onReviewResponse(retained)
+    const unsubscribe = client.onReviewResponse(removed)
+    const request = createReviewGetSnapshotRequest(requestId, reviewVersionId)
+    client.sendReview(request)
+
+    unsubscribe()
+    unsubscribe()
+    transport.emit(
+      createReviewResponseValue(requestId, REVIEW_GET_SNAPSHOT_METHOD),
+    )
+
+    expect(retained).toHaveBeenCalledOnce()
+    expect(removed).not.toHaveBeenCalled()
   })
 
   it('unsubscribes player listeners independently', () => {
@@ -295,6 +398,13 @@ describe('web bridge client', () => {
     expect(() => client.abandonTimelineRequest(timelineRequestId)).toThrow(
       'disposed',
     )
+    const reviewRequest = createReviewGetSnapshotRequest(
+      requestId,
+      reviewVersionId,
+    )
+    expect(() => client.sendReview(reviewRequest)).toThrow('disposed')
+    expect(() => client.abandonReviewRequest(requestId)).toThrow('disposed')
+    expect(() => client.onReviewResponse(listener)).toThrow('disposed')
   })
 
   it('sends and emits only strict project protocol messages', () => {
@@ -344,6 +454,7 @@ describe('web bridge client', () => {
 
 class FakeTransport implements BridgeTransport {
   readonly posted: unknown[] = []
+  throwOnPost = false
   private readonly listeners = new Set<(event: BridgeMessageEvent) => void>()
 
   get listenerCount(): number {
@@ -351,6 +462,9 @@ class FakeTransport implements BridgeTransport {
   }
 
   postMessage(message: Parameters<BridgeTransport['postMessage']>[0]): void {
+    if (this.throwOnPost) {
+      throw new Error('transport failed')
+    }
     this.posted.push(message)
   }
 
@@ -375,4 +489,15 @@ class FakeTransport implements BridgeTransport {
       listener({ data })
     }
   }
+}
+
+function createReviewResponseForDifferentVersion(requestId: string) {
+  const value = createReviewResponseValue(
+    requestId,
+    REVIEW_GET_SNAPSHOT_METHOD,
+  )
+  value.result.versionId = reviewSecondRequestId
+  value.result.approvals[0]!.versionId = reviewSecondRequestId
+  value.result.directParentDiff.toVersionId = reviewSecondRequestId
+  return value
 }

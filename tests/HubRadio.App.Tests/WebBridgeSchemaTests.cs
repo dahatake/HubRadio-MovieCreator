@@ -21,6 +21,9 @@ public sealed class WebBridgeSchemaTests
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "4 MiB");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "256 UTF-8 bytes");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "4096-byte responses");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "24 KiB");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "16 KiB review text");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "full digest");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "reserved intercepted HTTPS media origin");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "current Windows actor");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "never accepted from Web messages");
@@ -53,6 +56,10 @@ public sealed class WebBridgeSchemaTests
                 "transcript.rejectTerm",
                 "timeline.read",
                 "timeline.apply",
+                "review.getSnapshot",
+                "review.addComment",
+                "review.requestChanges",
+                "review.recordApproval",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -72,6 +79,10 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/jobStatusRequest",
                 "#/$defs/jobCancelRequest",
                 "#/$defs/jobRetryRequest",
+                "#/$defs/reviewGetSnapshotRequest",
+                "#/$defs/reviewAddCommentRequest",
+                "#/$defs/reviewRequestChangesRequest",
+                "#/$defs/reviewRecordApprovalRequest",
                 "#/$defs/pingResponse",
                 "#/$defs/listResponse",
                 "#/$defs/draftResponse",
@@ -81,6 +92,8 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/jobRetryResponse",
                 "#/$defs/projectErrorResponse",
                 "#/$defs/errorResponse",
+                "#/$defs/reviewResponse",
+                "#/$defs/reviewErrorResponse",
                 "#/$defs/playerReadRequest",
                 "#/$defs/playerReadResponse",
                 "#/$defs/playerSeekRequest",
@@ -195,6 +208,24 @@ public sealed class WebBridgeSchemaTests
             "timelineReadResponse",
             "timelineApplyRequest",
             "timelineApplyResponse",
+            "reviewGetSnapshotParams",
+            "reviewAddCommentParams",
+            "reviewRequestChangesParams",
+            "reviewRecordApprovalParams",
+            "reviewGetSnapshotRequest",
+            "reviewAddCommentRequest",
+            "reviewRequestChangesRequest",
+            "reviewRecordApprovalRequest",
+            "reviewOutputTime",
+            "reviewComment",
+            "reviewApproval",
+            "reviewCompositionChange",
+            "reviewDirectParentDiff",
+            "reviewAction",
+            "reviewSnapshot",
+            "reviewResponse",
+            "reviewError",
+            "reviewErrorResponse",
         })
         {
             Assert.AreEqual(
@@ -261,6 +292,20 @@ public sealed class WebBridgeSchemaTests
                 .GetProperty("status")
                 .GetProperty("enum")),
             "conflict");
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "review.getSnapshot",
+                "review.addComment",
+                "review.requestChanges",
+                "review.recordApproval",
+            },
+            GetStrings(definitions.GetProperty("reviewMethod").GetProperty("enum")));
+        Assert.AreEqual(
+            "^[0-9a-f]{64}(?![\\s\\S])",
+            definitions.GetProperty("contentDigest").GetProperty("pattern").GetString());
+        Assert.IsFalse(definitions.TryGetProperty("reviewWorkflowGate", out _));
         CollectionAssert.Contains(
             GetStrings(definitions
                 .GetProperty("playerSeekResult")
@@ -365,6 +410,38 @@ public sealed class WebBridgeSchemaTests
         CollectionAssert.AreEquivalent(
             new[] { "jobId", "expectedRevision" },
             GetStrings(definitions.GetProperty("jobCommandParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "versionId" },
+            GetStrings(definitions.GetProperty("reviewGetSnapshotParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "versionId", "versionDigest", "actorRole", "outputTime", "text" },
+            GetStrings(definitions.GetProperty("reviewAddCommentParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "versionId", "versionDigest", "expectedState", "outputTime", "text" },
+            GetStrings(definitions.GetProperty("reviewRequestChangesParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "versionId", "versionDigest", "actorRole", "reason" },
+            GetStrings(definitions.GetProperty("reviewRecordApprovalParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "result" },
+            GetStrings(definitions.GetProperty("reviewResponse").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "error" },
+            GetStrings(definitions.GetProperty("reviewErrorResponse").GetProperty("required")));
+        Assert.AreEqual(
+            3,
+            definitions.GetProperty("reviewSnapshot")
+                .GetProperty("properties")
+                .GetProperty("actions")
+                .GetProperty("minItems")
+                .GetInt32());
+        Assert.AreEqual(
+            5,
+            definitions.GetProperty("reviewAction")
+                .GetProperty("properties")
+                .GetProperty("actorRoles")
+                .GetProperty("maxItems")
+                .GetInt32());
         CollectionAssert.AreEquivalent(
             new[]
             {

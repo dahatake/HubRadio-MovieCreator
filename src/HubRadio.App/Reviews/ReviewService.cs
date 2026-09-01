@@ -35,6 +35,128 @@ public sealed class ReviewService
         DateTimeOffset createdAt,
         string text)
     {
+        (ReviewComment comment, AuthorizationRole authorizationRole,
+            AuthorizationOperation operation) = PrepareTimecodeComment(
+            commentId,
+            compositionVersion,
+            timelineMap,
+            outputTime,
+            actorSid,
+            actorRole,
+            createdAt,
+            text);
+
+        _reviewStore.AppendAuthorizedReviewComment(
+            comment,
+            authorizationRole,
+            operation);
+        return comment;
+    }
+
+    internal bool TryAddCurrentTimecodeComment(
+        EntityId<ReviewCommentIdTag> commentId,
+        CompositionVersion compositionVersion,
+        TimelineMap timelineMap,
+        RationalTime outputTime,
+        string actorSid,
+        ReviewActorRole actorRole,
+        DateTimeOffset createdAt,
+        string text)
+    {
+        (ReviewComment comment, AuthorizationRole authorizationRole,
+            AuthorizationOperation operation) = PrepareTimecodeComment(
+            commentId,
+            compositionVersion,
+            timelineMap,
+            outputTime,
+            actorSid,
+            actorRole,
+            createdAt,
+            text);
+        return _reviewStore.TryAppendAuthorizedCurrentReviewComment(
+            comment,
+            authorizationRole,
+            operation);
+    }
+
+    public ReviewRecord RequestChanges(
+        EntityId<ReviewCommentIdTag> commentId,
+        EntityId<ReviewRecordIdTag> reviewRecordId,
+        CompositionVersion compositionVersion,
+        TimelineMap timelineMap,
+        ReviewState expectedCurrentState,
+        RationalTime outputTime,
+        string actorSid,
+        ReviewActorRole actorRole,
+        DateTimeOffset recordedAt,
+        string text)
+    {
+        (ReviewComment comment, ReviewRecord reviewRecord,
+            AuthorizationRole authorizationRole,
+            AuthorizationOperation operation) = PrepareChangeRequest(
+            commentId,
+            reviewRecordId,
+            compositionVersion,
+            timelineMap,
+            expectedCurrentState,
+            outputTime,
+            actorSid,
+            actorRole,
+            recordedAt,
+            text);
+        _reviewStore.AppendAuthorizedChangeRequest(
+            comment,
+            reviewRecord,
+            expectedCurrentState,
+            authorizationRole,
+            operation);
+        return reviewRecord;
+    }
+
+    internal bool TryRequestChangesOnCurrentVersion(
+        EntityId<ReviewCommentIdTag> commentId,
+        EntityId<ReviewRecordIdTag> reviewRecordId,
+        CompositionVersion compositionVersion,
+        TimelineMap timelineMap,
+        ReviewState expectedCurrentState,
+        RationalTime outputTime,
+        string actorSid,
+        ReviewActorRole actorRole,
+        DateTimeOffset recordedAt,
+        string text)
+    {
+        (ReviewComment comment, ReviewRecord reviewRecord,
+            AuthorizationRole authorizationRole,
+            AuthorizationOperation operation) = PrepareChangeRequest(
+            commentId,
+            reviewRecordId,
+            compositionVersion,
+            timelineMap,
+            expectedCurrentState,
+            outputTime,
+            actorSid,
+            actorRole,
+            recordedAt,
+            text);
+        return _reviewStore.TryAppendAuthorizedCurrentChangeRequest(
+            comment,
+            reviewRecord,
+            expectedCurrentState,
+            authorizationRole,
+            operation);
+    }
+
+    private (ReviewComment Comment, AuthorizationRole AuthorizationRole,
+        AuthorizationOperation Operation) PrepareTimecodeComment(
+        EntityId<ReviewCommentIdTag> commentId,
+        CompositionVersion compositionVersion,
+        TimelineMap timelineMap,
+        RationalTime outputTime,
+        string actorSid,
+        ReviewActorRole actorRole,
+        DateTimeOffset createdAt,
+        string text)
+    {
         ArgumentNullException.ThrowIfNull(commentId);
         ArgumentNullException.ThrowIfNull(compositionVersion);
         ArgumentNullException.ThrowIfNull(timelineMap);
@@ -56,15 +178,12 @@ public sealed class ReviewService
             actorRole,
             createdAt,
             text);
-
-        _reviewStore.AppendAuthorizedReviewComment(
-            comment,
-            authorizationRole,
-            operation);
-        return comment;
+        return (comment, authorizationRole, operation);
     }
 
-    public ReviewRecord RequestChanges(
+    private (ReviewComment Comment, ReviewRecord ReviewRecord,
+        AuthorizationRole AuthorizationRole,
+        AuthorizationOperation Operation) PrepareChangeRequest(
         EntityId<ReviewCommentIdTag> commentId,
         EntityId<ReviewRecordIdTag> reviewRecordId,
         CompositionVersion compositionVersion,
@@ -123,14 +242,7 @@ public sealed class ReviewService
             actorRole,
             recordedAt,
             text);
-
-        _reviewStore.AppendAuthorizedChangeRequest(
-            comment,
-            reviewRecord,
-            expectedCurrentState,
-            authorizationRole,
-            operation);
-        return reviewRecord;
+        return (comment, reviewRecord, authorizationRole, operation);
     }
 
     private static EntityId<SourceSpanIdTag> ResolveSourceSpanId(

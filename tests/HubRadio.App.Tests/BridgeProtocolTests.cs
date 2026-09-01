@@ -9,6 +9,9 @@ public sealed class BridgeProtocolTests
 {
     private const string RequestId = "00112233-4455-6677-8899-aabbccddeeff";
     private const string JobId = "11223344-5566-7788-99aa-bbccddeeff00";
+    private const string VersionId = "11112222-3333-4444-8555-666677778888";
+    private const string VersionDigest =
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     [TestMethod]
     public void MessageOriginAllowsOnlyBundledHttpsAuthority()
@@ -432,6 +435,171 @@ public sealed class BridgeProtocolTests
                 out BridgeRequestRejection rejection));
             Assert.AreEqual(BridgeRequestRejection.SchemaViolation, rejection);
         }
+    }
+
+    [TestMethod]
+    public void EveryReviewMethodAcceptsOnlyExactVersionBoundParameters()
+    {
+        string outputTime = "{\"value\":\"1\",\"rate\":\"2\"}";
+        (string Method, string Parameters, BridgeMethod Expected)[] valid =
+        [
+            (
+                BridgeProtocol.ReviewGetSnapshotMethod,
+                $"{{\"versionId\":\"{VersionId}\"}}",
+                BridgeMethod.ReviewGetSnapshot),
+            (
+                BridgeProtocol.ReviewAddCommentMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"actorRole\":\"contentApprover\",\"outputTime\":{outputTime},\"text\":\"確認コメントです。\"}}",
+                BridgeMethod.ReviewAddComment),
+            (
+                BridgeProtocol.ReviewRequestChangesMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"expectedState\":\"contentReview\",\"outputTime\":{outputTime},\"text\":\"修正してください。\"}}",
+                BridgeMethod.ReviewRequestChanges),
+            (
+                BridgeProtocol.ReviewRecordApprovalMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"actorRole\":\"rightsApprover\",\"reason\":\"内容を承認します。\"}}",
+                BridgeMethod.ReviewRecordApproval),
+        ];
+
+        foreach ((string method, string parameters, BridgeMethod expected) in valid)
+        {
+            Assert.IsTrue(
+                BridgeProtocol.TryParseRequest(
+                    WebViewHost.EntryPoint,
+                    CreateRequest(method, parameters),
+                    out BridgeRequest? request,
+                    out BridgeRequestRejection rejection),
+                $"{method}: {rejection}");
+            Assert.IsNotNull(request);
+            Assert.AreEqual(expected, request.Method);
+            Assert.AreEqual(VersionId, request.Parameters.GetProperty("versionId").GetString());
+        }
+
+        string[] invalid =
+        [
+            CreateRequest(
+                BridgeProtocol.ReviewGetSnapshotMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"actorSid\":\"S-1-5-21-private\"}}"),
+            CreateRequest(
+                BridgeProtocol.ReviewAddCommentMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"actorRole\":\"contentApprover\",\"outputTime\":{outputTime},\"text\":\"確認\",\"actorSid\":\"S-1-5-21-private\"}}"),
+            CreateRequest(
+                BridgeProtocol.ReviewAddCommentMethod,
+                $"{{\"versionId\":\"{VersionId[..^1]}A\",\"versionDigest\":\"{VersionDigest}\",\"actorRole\":\"contentApprover\",\"outputTime\":{outputTime},\"text\":\"確認\"}}"),
+            CreateRequest(
+                BridgeProtocol.ReviewRecordApprovalMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest.ToUpperInvariant()}\",\"actorRole\":\"contentApprover\",\"reason\":\"承認\"}}"),
+            CreateRequest(
+                BridgeProtocol.ReviewAddCommentMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"actorRole\":\"contentApprover\",\"outputTime\":{{\"value\":\"2\",\"rate\":\"4\"}},\"text\":\"確認\"}}"),
+            CreateRequest(
+                BridgeProtocol.ReviewAddCommentMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"actorRole\":\"contentApprover\",\"outputTime\":{{\"value\":\"-1\",\"rate\":\"1\"}},\"text\":\"確認\"}}"),
+            CreateRequest(
+                BridgeProtocol.ReviewAddCommentMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"actorRole\":\"contentApprover\",\"outputTime\":{{\"value\":1,\"rate\":2}},\"text\":\"確認\"}}"),
+            CreateRequest(
+                BridgeProtocol.ReviewRequestChangesMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"expectedState\":\"ContentReview\",\"outputTime\":{outputTime},\"text\":\"修正\"}}"),
+            CreateRequest(
+                BridgeProtocol.ReviewRecordApprovalMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"actorRole\":\"contentApprover\",\"reason\":\" 承認\"}}"),
+            CreateRequest(
+                BridgeProtocol.ReviewAddCommentMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"outputTime\":{outputTime},\"text\":\"役割なし\"}}"),
+            CreateRequest(
+                BridgeProtocol.ReviewAddCommentMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"actorRole\":\"administrator\",\"outputTime\":{outputTime},\"text\":\"管理者迂回なし\"}}"),
+            CreateRequest(
+                BridgeProtocol.ReviewRecordApprovalMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"actorRole\":\"editor\",\"reason\":\"承認役割ではない\"}}"),
+        ];
+
+        foreach (string message in invalid)
+        {
+            Assert.IsFalse(BridgeProtocol.TryParseRequest(
+                WebViewHost.EntryPoint,
+                message,
+                out BridgeRequest? request,
+                out BridgeRequestRejection rejection));
+            Assert.IsNull(request);
+            Assert.AreEqual(BridgeRequestRejection.SchemaViolation, rejection);
+        }
+    }
+
+    [TestMethod]
+    public void ReviewTextUsesExactUtf8LimitAndRejectsInvalidUnicode()
+    {
+        string validText = new('x', BridgeProtocol.MaxReviewTextUtf8Bytes);
+        string invalidText = validText + "x";
+        string valid = CreateRequest(
+            BridgeProtocol.ReviewRecordApprovalMethod,
+            $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"actorRole\":\"contentApprover\",\"reason\":{JsonSerializer.Serialize(validText)}}}");
+        string oversizedText = CreateRequest(
+            BridgeProtocol.ReviewRecordApprovalMethod,
+            $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"actorRole\":\"contentApprover\",\"reason\":{JsonSerializer.Serialize(invalidText)}}}");
+
+        Assert.AreEqual(
+            BridgeProtocol.MaxReviewTextUtf8Bytes,
+            Encoding.UTF8.GetByteCount(validText));
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            valid,
+            out BridgeRequest? request,
+            out BridgeRequestRejection acceptedRejection));
+        Assert.IsNotNull(request);
+        Assert.AreEqual(BridgeRequestRejection.None, acceptedRejection);
+
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            oversizedText,
+            out _,
+            out BridgeRequestRejection rejected));
+        Assert.AreEqual(BridgeRequestRejection.SchemaViolation, rejected);
+
+        string invalidUnicode = CreateRequest(
+            BridgeProtocol.ReviewRecordApprovalMethod,
+            $"{{\"versionId\":\"{VersionId}\",\"versionDigest\":\"{VersionDigest}\",\"actorRole\":\"contentApprover\",\"reason\":\"invalid-\uD800\"}}");
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            invalidUnicode,
+            out _,
+            out BridgeRequestRejection unicodeRejection));
+        Assert.AreEqual(BridgeRequestRejection.MalformedJson, unicodeRejection);
+    }
+
+    [TestMethod]
+    public void ReviewRequestsUseAnIndependentTwentyFourKiBBoundary()
+    {
+        string valid = CreateRequest(
+            BridgeProtocol.ReviewGetSnapshotMethod,
+            $"{{\"versionId\":\"{VersionId}\"}}");
+        int validBytes = Encoding.UTF8.GetByteCount(valid);
+        string exactLimit =
+            new string(
+                ' ',
+                BridgeProtocol.MaxReviewRequestUtf8Bytes - validBytes) +
+            valid;
+
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            exactLimit,
+            out BridgeRequest? request,
+            out BridgeRequestRejection acceptedRejection));
+        Assert.IsNotNull(request);
+        Assert.AreEqual(BridgeMethod.ReviewGetSnapshot, request.Method);
+        Assert.AreEqual(BridgeRequestRejection.None, acceptedRejection);
+
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            exactLimit + " ",
+            out _,
+            out BridgeRequestRejection rejected));
+        Assert.AreEqual(BridgeRequestRejection.MessageTooLarge, rejected);
+        Assert.AreEqual(
+            BridgeProtocol.MaxReviewResponseUtf8Bytes,
+            BridgeProtocol.GetMaximumResponseUtf8Bytes(
+                BridgeMethod.ReviewGetSnapshot));
     }
 
     [TestMethod]

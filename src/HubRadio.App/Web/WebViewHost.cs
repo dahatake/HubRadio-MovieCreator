@@ -13,6 +13,8 @@ internal sealed class WebViewHost : IDisposable
     private readonly string webAssetsDirectory;
     private readonly Func<BridgeRequest, CancellationToken, Task<string>>?
         handleProjectRequestAsync;
+    private readonly Func<BridgeRequest, CancellationToken, Task<string>>?
+        handleReviewRequestAsync;
     private readonly JobBridgeRequestHandler? jobHandler;
     private readonly TimelineBridgeRequestHandler? timelineHandler;
     private readonly IPlayerBridgeReader playerReader;
@@ -32,7 +34,9 @@ internal sealed class WebViewHost : IDisposable
             coreWebView,
             webAssetsDirectory,
             handleProjectRequestAsync: null,
+            handleReviewRequestAsync: null,
             jobHandler: null,
+            timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
             UnavailablePlayerMediaAssetReader.Instance,
             DeniedPlayerAccessAuthorization.Instance)
@@ -48,7 +52,9 @@ internal sealed class WebViewHost : IDisposable
             coreWebView,
             webAssetsDirectory,
             handleProjectRequestAsync,
+            handleReviewRequestAsync: null,
             jobHandler: null,
+            timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
             UnavailablePlayerMediaAssetReader.Instance,
             DeniedPlayerAccessAuthorization.Instance)
@@ -63,7 +69,9 @@ internal sealed class WebViewHost : IDisposable
             coreWebView,
             webAssetsDirectory,
             handleProjectRequestAsync: null,
+            handleReviewRequestAsync: null,
             jobHandler,
+            timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
             UnavailablePlayerMediaAssetReader.Instance,
             DeniedPlayerAccessAuthorization.Instance)
@@ -80,7 +88,9 @@ internal sealed class WebViewHost : IDisposable
             coreWebView,
             webAssetsDirectory,
             handleProjectRequestAsync,
+            handleReviewRequestAsync: null,
             jobHandler,
+            timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
             UnavailablePlayerMediaAssetReader.Instance,
             DeniedPlayerAccessAuthorization.Instance)
@@ -97,7 +107,9 @@ internal sealed class WebViewHost : IDisposable
             coreWebView,
             webAssetsDirectory,
             handleProjectRequestAsync: null,
+            handleReviewRequestAsync: null,
             jobHandler: null,
+            timelineHandler: null,
             playerReader,
             mediaAssetReader,
             playerAuthorization)
@@ -118,6 +130,7 @@ internal sealed class WebViewHost : IDisposable
             coreWebView,
             webAssetsDirectory,
             handleProjectRequestAsync,
+            handleReviewRequestAsync: null,
             jobHandler,
             timelineHandler: null,
             playerReader,
@@ -132,6 +145,8 @@ internal sealed class WebViewHost : IDisposable
         string webAssetsDirectory,
         Func<BridgeRequest, CancellationToken, Task<string>>?
             handleProjectRequestAsync,
+        Func<BridgeRequest, CancellationToken, Task<string>>?
+            handleReviewRequestAsync,
         JobBridgeRequestHandler? jobHandler,
         TimelineBridgeRequestHandler? timelineHandler,
         IPlayerBridgeReader playerReader,
@@ -157,6 +172,7 @@ internal sealed class WebViewHost : IDisposable
         this.coreWebView = coreWebView;
         this.webAssetsDirectory = fullPath;
         this.handleProjectRequestAsync = handleProjectRequestAsync;
+        this.handleReviewRequestAsync = handleReviewRequestAsync;
         this.jobHandler = jobHandler;
         this.timelineHandler = timelineHandler;
         this.playerReader = playerReader;
@@ -211,6 +227,7 @@ internal sealed class WebViewHost : IDisposable
             Bridge startedBridge = new(
                 coreWebView,
                 handleProjectRequestAsync,
+                handleReviewRequestAsync,
                 jobHandler,
                 timelineHandler,
                 playerReader,

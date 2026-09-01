@@ -250,6 +250,31 @@ public sealed class ReviewStore
         AuthorizationRole authorizationRole,
         AuthorizationOperation authorizationOperation)
     {
+        _ = AppendAuthorizedReviewCommentCore(
+            reviewComment,
+            authorizationRole,
+            authorizationOperation,
+            requireCurrentTarget: false);
+    }
+
+    public bool TryAppendAuthorizedCurrentReviewComment(
+        ReviewComment reviewComment,
+        AuthorizationRole authorizationRole,
+        AuthorizationOperation authorizationOperation)
+    {
+        return AppendAuthorizedReviewCommentCore(
+            reviewComment,
+            authorizationRole,
+            authorizationOperation,
+            requireCurrentTarget: true);
+    }
+
+    private bool AppendAuthorizedReviewCommentCore(
+        ReviewComment reviewComment,
+        AuthorizationRole authorizationRole,
+        AuthorizationOperation authorizationOperation,
+        bool requireCurrentTarget)
+    {
         ArgumentNullException.ThrowIfNull(reviewComment);
         ValidateCommentAuthorization(
             reviewComment.ActorRole,
@@ -264,8 +289,24 @@ public sealed class ReviewStore
             reviewComment.ActorId,
             authorizationRole,
             authorizationOperation);
+        if (requireCurrentTarget)
+        {
+            StoredVersionBinding binding = ReadVersionBinding(
+                connection,
+                transaction,
+                reviewComment.CompositionVersionId)
+                ?? throw new InvalidOperationException(
+                    "The review comment composition version does not exist.");
+            ValidateIncomingVersionBinding(binding, reviewComment);
+            if (!IsCurrentVersionTarget(connection, transaction, binding))
+            {
+                return false;
+            }
+        }
+
         InsertReviewComment(connection, transaction, reviewComment);
         transaction.Commit();
+        return true;
     }
 
     public void AppendChangeRequest(
@@ -273,12 +314,13 @@ public sealed class ReviewStore
         ReviewRecord reviewRecord,
         ReviewState expectedCurrentState)
     {
-        AppendChangeRequestCore(
+        _ = AppendChangeRequestCore(
             reviewComment,
             reviewRecord,
             expectedCurrentState,
             authorizationRole: null,
-            authorizationOperation: null);
+            authorizationOperation: null,
+            requireCurrentTarget: false);
     }
 
     public void AppendAuthorizedChangeRequest(
@@ -288,20 +330,38 @@ public sealed class ReviewStore
         AuthorizationRole authorizationRole,
         AuthorizationOperation authorizationOperation)
     {
-        AppendChangeRequestCore(
+        _ = AppendChangeRequestCore(
             reviewComment,
             reviewRecord,
             expectedCurrentState,
             authorizationRole,
-            authorizationOperation);
+            authorizationOperation,
+            requireCurrentTarget: false);
     }
 
-    private void AppendChangeRequestCore(
+    public bool TryAppendAuthorizedCurrentChangeRequest(
+        ReviewComment reviewComment,
+        ReviewRecord reviewRecord,
+        ReviewState expectedCurrentState,
+        AuthorizationRole authorizationRole,
+        AuthorizationOperation authorizationOperation)
+    {
+        return AppendChangeRequestCore(
+            reviewComment,
+            reviewRecord,
+            expectedCurrentState,
+            authorizationRole,
+            authorizationOperation,
+            requireCurrentTarget: true);
+    }
+
+    private bool AppendChangeRequestCore(
         ReviewComment reviewComment,
         ReviewRecord reviewRecord,
         ReviewState expectedCurrentState,
         AuthorizationRole? authorizationRole,
-        AuthorizationOperation? authorizationOperation)
+        AuthorizationOperation? authorizationOperation,
+        bool requireCurrentTarget)
     {
         ArgumentNullException.ThrowIfNull(reviewComment);
         ArgumentNullException.ThrowIfNull(reviewRecord);
@@ -332,6 +392,11 @@ public sealed class ReviewStore
             ?? throw new InvalidOperationException(
                 "The change request composition version does not exist.");
         ValidateIncomingVersionBinding(binding, reviewComment, reviewRecord);
+        if (requireCurrentTarget &&
+            !IsCurrentVersionTarget(connection, transaction, binding))
+        {
+            return false;
+        }
 
         IReadOnlyList<StoredReviewRecord> persistedRecords = ReadReviewRecords(
             connection,
@@ -354,6 +419,7 @@ public sealed class ReviewStore
         InsertReviewComment(connection, transaction, reviewComment);
         InsertReviewRecord(connection, transaction, reviewRecord);
         transaction.Commit();
+        return true;
     }
 
     public void AppendApproval(Approval approval)
@@ -370,6 +436,31 @@ public sealed class ReviewStore
         Approval approval,
         AuthorizationRole authorizationRole,
         AuthorizationOperation authorizationOperation)
+    {
+        _ = AppendAuthorizedApprovalCore(
+            approval,
+            authorizationRole,
+            authorizationOperation,
+            requireCurrentTarget: false);
+    }
+
+    public bool TryAppendAuthorizedCurrentApproval(
+        Approval approval,
+        AuthorizationRole authorizationRole,
+        AuthorizationOperation authorizationOperation)
+    {
+        return AppendAuthorizedApprovalCore(
+            approval,
+            authorizationRole,
+            authorizationOperation,
+            requireCurrentTarget: true);
+    }
+
+    private bool AppendAuthorizedApprovalCore(
+        Approval approval,
+        AuthorizationRole authorizationRole,
+        AuthorizationOperation authorizationOperation,
+        bool requireCurrentTarget)
     {
         ArgumentNullException.ThrowIfNull(approval);
         ValidateApprovalAuthorization(
@@ -392,8 +483,15 @@ public sealed class ReviewStore
             ?? throw new InvalidOperationException(
                 "The approval composition version does not exist.");
         ValidateIncomingVersionBinding(binding, approval);
+        if (requireCurrentTarget &&
+            !IsCurrentVersionTarget(connection, transaction, binding))
+        {
+            return false;
+        }
+
         InsertApproval(connection, transaction, approval);
         transaction.Commit();
+        return true;
     }
 
     private static void InsertApproval(
@@ -726,6 +824,19 @@ public sealed class ReviewStore
 
     private static void ValidateIncomingVersionBinding(
         StoredVersionBinding binding,
+        ReviewComment reviewComment)
+    {
+        if (reviewComment.ProjectId != binding.ProjectId
+            || reviewComment.CompositionVersionId != binding.CompositionVersionId
+            || reviewComment.CompositionVersionDigest != binding.CompositionVersionDigest)
+        {
+            throw new InvalidOperationException(
+                "The review comment does not match the stored composition version.");
+        }
+    }
+
+    private static void ValidateIncomingVersionBinding(
+        StoredVersionBinding binding,
         ReviewComment reviewComment,
         ReviewRecord reviewRecord)
     {
@@ -812,6 +923,42 @@ public sealed class ReviewStore
         }
 
         return binding;
+    }
+
+    private static bool IsCurrentVersionTarget(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        StoredVersionBinding binding)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT base_version_id
+            FROM working_copies
+            WHERE project_id = $project_id;
+            """;
+        SqliteStoreSupport.AddText(
+            command,
+            "$project_id",
+            binding.ProjectId.ToString());
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            throw new InvalidOperationException(
+                "The review target project does not have a working copy.");
+        }
+
+        EntityId<CompositionVersionIdTag>? currentVersionId =
+            SqliteStoreSupport.ReadNullableEntityId<CompositionVersionIdTag>(
+                reader,
+                0,
+                "working copy");
+        if (reader.Read())
+        {
+            throw SqliteStoreSupport.InvalidStoredData("working copy");
+        }
+
+        return currentVersionId == binding.CompositionVersionId;
     }
 
     private static IReadOnlyList<StoredReviewRecord> ReadReviewRecords(

@@ -5,6 +5,7 @@ using System.Text.Json;
 using HubRadio.Core.Analysis;
 using HubRadio.Core.Compositions;
 using HubRadio.Core.Identity;
+using HubRadio.Core.Projects;
 using HubRadio.Core.Provenance;
 using HubRadio.Core.Serialization;
 using HubRadio.Core.Time;
@@ -407,6 +408,105 @@ internal static class CompositionSnapshotJson
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
 
+    internal static CompositionVersion ReadVersion(string canonicalJson)
+    {
+        ArgumentNullException.ThrowIfNull(canonicalJson);
+
+        try
+        {
+            byte[] utf8 = StrictUtf8.GetBytes(canonicalJson);
+            byte[] canonicalUtf8 = CanonicalJson.CanonicalizeToUtf8(utf8);
+            if (!utf8.AsSpan().SequenceEqual(canonicalUtf8))
+            {
+                throw new FormatException(
+                    "A stored composition version must use its canonical JSON representation.");
+            }
+
+            using JsonDocument document = JsonDocument.Parse(canonicalUtf8);
+            JsonElement root = document.RootElement;
+            bool hasParent = root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("parentVersionId", out _);
+            EnsureExactProperties(
+                root,
+                hasParent
+                    ? [
+                        "id",
+                        "projectId",
+                        "parentVersionId",
+                        "createdByActorId",
+                        "createdAt",
+                        "changeReason",
+                        "contentDigest",
+                        "elements",
+                    ]
+                    : [
+                        "id",
+                        "projectId",
+                        "createdByActorId",
+                        "createdAt",
+                        "changeReason",
+                        "contentDigest",
+                        "elements",
+                    ]);
+
+            EntityId<CompositionVersionIdTag> id =
+                ReadEntityId<CompositionVersionIdTag>(root, "id");
+            EntityId<ProjectIdTag> projectId =
+                ReadEntityId<ProjectIdTag>(root, "projectId");
+            EntityId<CompositionVersionIdTag>? parentVersionId = hasParent
+                ? ReadEntityId<CompositionVersionIdTag>(root, "parentVersionId")
+                : null;
+            string createdByActorId = ReadString(root, "createdByActorId");
+            DateTimeOffset createdAt = ReadTimestamp(root, "createdAt");
+            string changeReason = ReadString(root, "changeReason");
+            ContentDigest contentDigest = ReadContentDigest(root, "contentDigest");
+            IReadOnlyList<CompositionElement> elements = ReadElements(
+                root.GetProperty("elements"));
+            ContentDigest computedDigest = ContentDigest.Compute(
+                WriteElementsObjectToUtf8(elements));
+            if (computedDigest != contentDigest)
+            {
+                throw new FormatException(
+                    "The stored composition-version digest does not match its elements.");
+            }
+
+            var version = new CompositionVersion(
+                id,
+                projectId,
+                parentVersionId,
+                createdByActorId,
+                createdAt,
+                changeReason,
+                contentDigest,
+                elements);
+            if (!string.Equals(
+                    canonicalJson,
+                    WriteVersion(version),
+                    StringComparison.Ordinal))
+            {
+                throw new FormatException(
+                    "The stored composition version does not match its canonical domain representation.");
+            }
+
+            return version;
+        }
+        catch (FormatException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+            when (exception is JsonException or
+                EncoderFallbackException or
+                ArgumentException or
+                InvalidOperationException or
+                OverflowException)
+        {
+            throw new FormatException(
+                "The stored composition version is invalid.",
+                exception);
+        }
+    }
+
     internal static byte[] WriteElementsObjectToUtf8(
         IReadOnlyList<CompositionElement> elements)
     {
@@ -462,6 +562,267 @@ internal static class CompositionSnapshotJson
             WriteElements(writer, workingCopy.Elements);
             writer.WriteEndObject();
         }));
+    }
+
+    private static IReadOnlyList<CompositionElement> ReadElements(
+        JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            throw new FormatException("Composition elements must be an array.");
+        }
+
+        var elements = new List<CompositionElement>(value.GetArrayLength());
+        foreach (JsonElement element in value.EnumerateArray())
+        {
+            elements.Add(ReadElement(element));
+        }
+
+        return elements;
+    }
+
+    private static CompositionElement ReadElement(JsonElement value)
+    {
+        bool hasSourceRange = value.ValueKind == JsonValueKind.Object &&
+            value.TryGetProperty("sourceRange", out _);
+        bool hasAdoptedSuggestion = value.ValueKind == JsonValueKind.Object &&
+            value.TryGetProperty("adoptedSuggestion", out _);
+        var expectedProperties = new List<string>
+        {
+            "id",
+            "outputRange",
+            "origin",
+        };
+        if (hasSourceRange)
+        {
+            expectedProperties.Add("sourceRange");
+        }
+
+        if (hasAdoptedSuggestion)
+        {
+            expectedProperties.Add("adoptedSuggestion");
+        }
+
+        EnsureExactProperties(value, expectedProperties);
+        EntityId<CompositionElementIdTag> id =
+            ReadEntityId<CompositionElementIdTag>(value, "id");
+        TimeRange outputRange = ReadTimeRange(
+            value.GetProperty("outputRange"),
+            allowNegativeStart: false);
+        OriginRef origin = ReadOrigin(value.GetProperty("origin"));
+        if ((origin.Kind == OriginKind.SourceSpan) != hasSourceRange)
+        {
+            throw new FormatException(
+                "Only SourceSpan composition elements require a source range.");
+        }
+
+        TimeRange? sourceRange = hasSourceRange
+            ? ReadTimeRange(
+                value.GetProperty("sourceRange"),
+                allowNegativeStart: true)
+            : null;
+        SuggestionReference? adoptedSuggestion = hasAdoptedSuggestion
+            ? ReadSuggestionReference(value.GetProperty("adoptedSuggestion"))
+            : null;
+        return new CompositionElement(
+            id,
+            outputRange,
+            origin,
+            adoptedSuggestion,
+            sourceRange);
+    }
+
+    private static TimeRange ReadTimeRange(
+        JsonElement value,
+        bool allowNegativeStart)
+    {
+        EnsureExactProperties(value, ["start", "duration"]);
+        RationalTime start = ReadRationalTime(value.GetProperty("start"));
+        RationalTime duration = ReadRationalTime(value.GetProperty("duration"));
+        if ((!allowNegativeStart && start < default(RationalTime)) ||
+            duration <= default(RationalTime))
+        {
+            throw new FormatException("The stored time range is outside its valid bounds.");
+        }
+
+        return new TimeRange(start, duration);
+    }
+
+    private static RationalTime ReadRationalTime(JsonElement value)
+    {
+        EnsureExactProperties(value, ["value", "rate"]);
+        JsonElement numeratorValue = value.GetProperty("value");
+        JsonElement rateValue = value.GetProperty("rate");
+        if (numeratorValue.ValueKind != JsonValueKind.Number ||
+            !TryReadMathematicalInt64(numeratorValue, out long numerator) ||
+            rateValue.ValueKind != JsonValueKind.Number ||
+            !TryReadMathematicalInt64(rateValue, out long rate) ||
+            rate <= 0)
+        {
+            throw new FormatException(
+                "A stored rational time must contain signed 64-bit value and positive rate integers.");
+        }
+
+        var time = new RationalTime(numerator, rate);
+        if (time.Value != numerator || time.Rate != rate)
+        {
+            throw new FormatException("A stored rational time must be reduced.");
+        }
+
+        return time;
+    }
+
+    private static bool TryReadMathematicalInt64(
+        JsonElement value,
+        out long result)
+    {
+        if (value.TryGetDecimal(out decimal number) &&
+            number == decimal.Truncate(number) &&
+            number is >= long.MinValue and <= long.MaxValue)
+        {
+            result = decimal.ToInt64(number);
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    private static OriginRef ReadOrigin(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Object ||
+            !value.TryGetProperty("kind", out JsonElement kindValue) ||
+            kindValue.ValueKind != JsonValueKind.String)
+        {
+            throw new FormatException("A stored composition origin is invalid.");
+        }
+
+        return kindValue.GetString() switch
+        {
+            "sourceSpan" => ReadSourceSpanOrigin(value),
+            "asset" => ReadAssetOrigin(value),
+            "editorialRecord" => ReadEditorialRecordOrigin(value),
+            _ => throw new FormatException("A stored composition origin kind is invalid."),
+        };
+    }
+
+    private static OriginRef ReadSourceSpanOrigin(JsonElement value)
+    {
+        EnsureExactProperties(value, ["kind", "sourceSpanId"]);
+        return OriginRef.FromSourceSpan(
+            ReadEntityId<SourceSpanIdTag>(value, "sourceSpanId"));
+    }
+
+    private static OriginRef ReadAssetOrigin(JsonElement value)
+    {
+        EnsureExactProperties(value, ["kind", "assetId"]);
+        return OriginRef.FromAsset(ReadEntityId<AssetIdTag>(value, "assetId"));
+    }
+
+    private static OriginRef ReadEditorialRecordOrigin(JsonElement value)
+    {
+        EnsureExactProperties(value, ["kind", "editorialRecordId"]);
+        return OriginRef.FromEditorialRecord(
+            ReadEntityId<EditorialRecordIdTag>(value, "editorialRecordId"));
+    }
+
+    private static SuggestionReference ReadSuggestionReference(JsonElement value)
+    {
+        EnsureExactProperties(value, ["suggestionId", "origin"]);
+        EntityId<SuggestionIdTag> suggestionId =
+            ReadEntityId<SuggestionIdTag>(value, "suggestionId");
+        OriginRef origin = ReadOrigin(value.GetProperty("origin"));
+        return SuggestionReference.FromPersistedReference(suggestionId, origin);
+    }
+
+    private static EntityId<TTag> ReadEntityId<TTag>(
+        JsonElement value,
+        string propertyName)
+    {
+        string text = ReadString(value, propertyName);
+        if (!EntityId<TTag>.TryParse(text, out EntityId<TTag>? id) ||
+            !string.Equals(text, id.ToString(), StringComparison.Ordinal))
+        {
+            throw new FormatException("A stored entity ID is not canonical.");
+        }
+
+        return id;
+    }
+
+    private static ContentDigest ReadContentDigest(
+        JsonElement value,
+        string propertyName)
+    {
+        string text = ReadString(value, propertyName);
+        if (!ContentDigest.TryParse(text, out ContentDigest? digest) ||
+            !string.Equals(text, digest.Hex, StringComparison.Ordinal))
+        {
+            throw new FormatException("A stored content digest is not canonical.");
+        }
+
+        return digest;
+    }
+
+    private static DateTimeOffset ReadTimestamp(
+        JsonElement value,
+        string propertyName)
+    {
+        string text = ReadString(value, propertyName);
+        if (!DateTimeOffset.TryParseExact(
+                text,
+                "O",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out DateTimeOffset timestamp) ||
+            timestamp.Offset != TimeSpan.Zero ||
+            !string.Equals(
+                text,
+                timestamp.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+                StringComparison.Ordinal))
+        {
+            throw new FormatException("A stored composition timestamp is not canonical UTC.");
+        }
+
+        return timestamp;
+    }
+
+    private static string ReadString(JsonElement value, string propertyName)
+    {
+        JsonElement property = value.GetProperty(propertyName);
+        if (property.ValueKind != JsonValueKind.String ||
+            property.GetString() is not string text)
+        {
+            throw new FormatException("A required stored composition string is invalid.");
+        }
+
+        return text;
+    }
+
+    private static void EnsureExactProperties(
+        JsonElement value,
+        IReadOnlyList<string> expectedProperties)
+    {
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            throw new FormatException("A stored composition object is invalid.");
+        }
+
+        var found = new HashSet<string>(StringComparer.Ordinal);
+        foreach (JsonProperty property in value.EnumerateObject())
+        {
+            if (!expectedProperties.Contains(property.Name, StringComparer.Ordinal) ||
+                !found.Add(property.Name))
+            {
+                throw new FormatException(
+                    "A stored composition object contains an unexpected property.");
+            }
+        }
+
+        if (found.Count != expectedProperties.Count)
+        {
+            throw new FormatException(
+                "A stored composition object is missing a required property.");
+        }
     }
 
     private static byte[] WriteCanonical(Action<Utf8JsonWriter> writeValue)

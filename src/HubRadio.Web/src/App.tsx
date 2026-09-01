@@ -5,6 +5,7 @@ import {
   PlayerPanel,
   type PlayerTimelinePosition,
 } from './features/player'
+import { ReviewPanel } from './features/review'
 import { TimelineEditor } from './features/timeline'
 import { selectSyncStatus, useAppState, type SyncStatus } from './state'
 import { ProjectWorkspace } from './features/projects/ProjectWorkspace'
@@ -60,6 +61,7 @@ function App() {
           initialProjectId={playerPosition?.projectId}
           playerPosition={playerPosition}
         />
+        <ReviewPanel />
       </div>
     </main>
   )

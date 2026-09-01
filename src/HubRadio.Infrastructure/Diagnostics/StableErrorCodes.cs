@@ -17,6 +17,12 @@ public static class StableErrorCodes
     public const string ProjectRevisionConflict = "project.revision_conflict";
     public const string ProjectSourceReselectionRequired =
         "project.source_reselection_required";
+    public const string ReviewConflict = "review.conflict";
+    public const string ReviewInvalidRequest = "review.invalid_request";
+    public const string ReviewNotAuthorized = "review.not_authorized";
+    public const string ReviewNotFound = "review.not_found";
+    public const string ReviewOperationFailed = "review.operation_failed";
+    public const string ReviewStaleVersion = "review.stale_version";
     public const string WebViewInitializationFailed = "webview.initialization_failed";
     public const string WebViewRuntimeUnavailable = "webview.runtime_unavailable";
     public const string WorkerInvalidMessage = "worker.invalid_message";
@@ -36,6 +42,12 @@ public static class StableErrorCodes
         ProjectOperationFailed,
         ProjectRevisionConflict,
         ProjectSourceReselectionRequired,
+        ReviewConflict,
+        ReviewInvalidRequest,
+        ReviewNotAuthorized,
+        ReviewNotFound,
+        ReviewOperationFailed,
+        ReviewStaleVersion,
         WebViewInitializationFailed,
         WebViewRuntimeUnavailable,
         WorkerInvalidMessage,
@@ -60,6 +72,12 @@ public static class StableErrorCodes
             code,
             ProjectSourceReselectionRequired,
             StringComparison.Ordinal) ||
+        string.Equals(code, ReviewConflict, StringComparison.Ordinal) ||
+        string.Equals(code, ReviewInvalidRequest, StringComparison.Ordinal) ||
+        string.Equals(code, ReviewNotAuthorized, StringComparison.Ordinal) ||
+        string.Equals(code, ReviewNotFound, StringComparison.Ordinal) ||
+        string.Equals(code, ReviewOperationFailed, StringComparison.Ordinal) ||
+        string.Equals(code, ReviewStaleVersion, StringComparison.Ordinal) ||
         string.Equals(code, WebViewInitializationFailed, StringComparison.Ordinal) ||
         string.Equals(code, WebViewRuntimeUnavailable, StringComparison.Ordinal) ||
         string.Equals(code, WorkerInvalidMessage, StringComparison.Ordinal) ||

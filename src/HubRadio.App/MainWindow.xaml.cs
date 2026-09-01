@@ -84,6 +84,7 @@ public sealed partial class MainWindow : Window
                     WebApplicationView.CoreWebView2,
                     Path.Combine(AppContext.BaseDirectory, "WebAssets"),
                     bridgeHandlers.Project.HandleAsync,
+                    bridgeHandlers.Review.HandleAsync,
                     jobBridgeHandler ?? bridgeHandlers.Jobs,
                     bridgeHandlers.Timeline,
                     playerRuntime.BridgeReader,

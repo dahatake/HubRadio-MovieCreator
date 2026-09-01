@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; ping and jobs use 4096-byte responses, project and timeline requests use 96 KiB with 1 MiB responses, transcript requests use 16 KiB with 4 MiB responses, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every player, transcript, and timeline operation and every media GET; actor and role claims are never accepted from Web messages. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, arbitrary URLs, and sensitive host data are prohibited.",
+  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; ping and jobs use 4096-byte responses, project and timeline requests use 96 KiB with 1 MiB responses, transcript requests use 16 KiB with 4 MiB responses, review requests use 24 KiB with 1 MiB responses and 16 KiB review text, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every protected operation and every media GET; actor identity is never accepted from Web messages, and any requested acting role is untrusted intent revalidated against current native assignments. Review mutations pin the exact composition-version ID and full digest, while rational time remains reduced integer evidence. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, arbitrary URLs, and sensitive host data are prohibited.",
   "title": "WebBridgeMessage",
   "oneOf": [
     { "$ref": "#/$defs/pingRequest" },
@@ -13,6 +13,10 @@
     { "$ref": "#/$defs/jobStatusRequest" },
     { "$ref": "#/$defs/jobCancelRequest" },
     { "$ref": "#/$defs/jobRetryRequest" },
+    { "$ref": "#/$defs/reviewGetSnapshotRequest" },
+    { "$ref": "#/$defs/reviewAddCommentRequest" },
+    { "$ref": "#/$defs/reviewRequestChangesRequest" },
+    { "$ref": "#/$defs/reviewRecordApprovalRequest" },
     { "$ref": "#/$defs/pingResponse" },
     { "$ref": "#/$defs/listResponse" },
     { "$ref": "#/$defs/draftResponse" },
@@ -22,6 +26,8 @@
     { "$ref": "#/$defs/jobRetryResponse" },
     { "$ref": "#/$defs/projectErrorResponse" },
     { "$ref": "#/$defs/errorResponse" },
+    { "$ref": "#/$defs/reviewResponse" },
+    { "$ref": "#/$defs/reviewErrorResponse" },
     { "$ref": "#/$defs/playerReadRequest" },
     { "$ref": "#/$defs/playerReadResponse" },
     { "$ref": "#/$defs/playerSeekRequest" },
@@ -98,7 +104,11 @@
         "transcript.adoptTerm",
         "transcript.rejectTerm",
         "timeline.read",
-        "timeline.apply"
+        "timeline.apply",
+        "review.getSnapshot",
+        "review.addComment",
+        "review.requestChanges",
+        "review.recordApproval"
       ]
     },
     "projectMethod": {
@@ -117,6 +127,14 @@
         "jobs.getStatus",
         "jobs.cancel",
         "jobs.retry"
+      ]
+    },
+    "reviewMethod": {
+      "enum": [
+        "review.getSnapshot",
+        "review.addComment",
+        "review.requestChanges",
+        "review.recordApproval"
       ]
     },
     "publicationScope": {
@@ -630,6 +648,381 @@
         "rate": {
           "$ref": "#/$defs/positiveInt64String"
         }
+      }
+    },
+    "nonnegativeInt64String": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]{0,18})(?![\\s\\S])"
+    },
+    "reviewText": {
+      "type": "string",
+      "$comment": "Native and Web consumers additionally require trimmed nonblank valid Unicode and enforce the exact 16 KiB UTF-8 byte limit.",
+      "minLength": 1,
+      "maxLength": 16384
+    },
+    "reviewState": {
+      "enum": [
+        "editing",
+        "editorReview",
+        "performerReview",
+        "contentReview",
+        "brandReview",
+        "changesRequested",
+        "approved",
+        "publicationBlocked",
+        "finalRendering",
+        "qualityControl",
+        "exported",
+        "published"
+      ]
+    },
+    "reviewActorRole": {
+      "enum": [
+        "editor",
+        "performerReviewer",
+        "contentApprover",
+        "brandApprover",
+        "rightsApprover",
+        "administrator"
+      ]
+    },
+    "reviewAuthorActorRole": {
+      "enum": [
+        "editor",
+        "performerReviewer",
+        "contentApprover",
+        "brandApprover",
+        "rightsApprover"
+      ]
+    },
+    "reviewApprovalActorRole": {
+      "enum": [
+        "contentApprover",
+        "brandApprover",
+        "rightsApprover"
+      ]
+    },
+    "nullableReviewState": {
+      "oneOf": [
+        { "$ref": "#/$defs/reviewState" },
+        { "type": "null" }
+      ]
+    },
+    "nullableReviewActorRole": {
+      "oneOf": [
+        { "$ref": "#/$defs/reviewActorRole" },
+        { "type": "null" }
+      ]
+    },
+    "nullableTimestamp": {
+      "oneOf": [
+        { "$ref": "#/$defs/timestamp" },
+        { "type": "null" }
+      ]
+    },
+    "reviewOutputTime": {
+      "type": "object",
+      "$comment": "The exact nonnegative reduced signed-Int64 output time. Native and Web consumers enforce Int64 bounds and greatest-common-divisor 1.",
+      "additionalProperties": false,
+      "required": ["value", "rate"],
+      "properties": {
+        "value": { "$ref": "#/$defs/nonnegativeInt64String" },
+        "rate": { "$ref": "#/$defs/positiveInt64String" }
+      }
+    },
+    "reviewGetSnapshotParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["versionId"],
+      "properties": {
+        "versionId": { "$ref": "#/$defs/entityId" }
+      }
+    },
+    "reviewAddCommentParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "versionId",
+        "versionDigest",
+        "actorRole",
+        "outputTime",
+        "text"
+      ],
+      "properties": {
+        "versionId": { "$ref": "#/$defs/entityId" },
+        "versionDigest": { "$ref": "#/$defs/contentDigest" },
+        "actorRole": { "$ref": "#/$defs/reviewAuthorActorRole" },
+        "outputTime": { "$ref": "#/$defs/reviewOutputTime" },
+        "text": { "$ref": "#/$defs/reviewText" }
+      }
+    },
+    "reviewRequestChangesParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "versionId",
+        "versionDigest",
+        "expectedState",
+        "outputTime",
+        "text"
+      ],
+      "properties": {
+        "versionId": { "$ref": "#/$defs/entityId" },
+        "versionDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedState": { "$ref": "#/$defs/reviewState" },
+        "outputTime": { "$ref": "#/$defs/reviewOutputTime" },
+        "text": { "$ref": "#/$defs/reviewText" }
+      }
+    },
+    "reviewRecordApprovalParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["versionId", "versionDigest", "actorRole", "reason"],
+      "properties": {
+        "versionId": { "$ref": "#/$defs/entityId" },
+        "versionDigest": { "$ref": "#/$defs/contentDigest" },
+        "actorRole": { "$ref": "#/$defs/reviewApprovalActorRole" },
+        "reason": { "$ref": "#/$defs/reviewText" }
+      }
+    },
+    "reviewGetSnapshotRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "review.getSnapshot" },
+        "params": { "$ref": "#/$defs/reviewGetSnapshotParams" }
+      }
+    },
+    "reviewAddCommentRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "review.addComment" },
+        "params": { "$ref": "#/$defs/reviewAddCommentParams" }
+      }
+    },
+    "reviewRequestChangesRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "review.requestChanges" },
+        "params": { "$ref": "#/$defs/reviewRequestChangesParams" }
+      }
+    },
+    "reviewRecordApprovalRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "review.recordApproval" },
+        "params": { "$ref": "#/$defs/reviewRecordApprovalParams" }
+      }
+    },
+    "reviewComment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "outputTime",
+        "sourceSpanId",
+        "actorRole",
+        "createdAt",
+        "text"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "outputTime": { "$ref": "#/$defs/reviewOutputTime" },
+        "sourceSpanId": { "$ref": "#/$defs/entityId" },
+        "actorRole": { "$ref": "#/$defs/reviewActorRole" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "text": { "$ref": "#/$defs/reviewText" }
+      }
+    },
+    "reviewApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "versionId",
+        "versionDigest",
+        "actorRole",
+        "approvedAt",
+        "reason",
+        "validity"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "versionId": { "$ref": "#/$defs/entityId" },
+        "versionDigest": { "$ref": "#/$defs/contentDigest" },
+        "actorRole": { "$ref": "#/$defs/reviewApprovalActorRole" },
+        "approvedAt": { "$ref": "#/$defs/timestamp" },
+        "reason": { "$ref": "#/$defs/reviewText" },
+        "validity": { "enum": ["valid", "stale"] }
+      }
+    },
+    "reviewCompositionChange": {
+      "type": "object",
+      "$comment": "Consumers enforce the null/index combination for added, removed, moved, and modified kinds and reject duplicate element IDs.",
+      "additionalProperties": false,
+      "required": ["kind", "elementId", "previousIndex", "currentIndex"],
+      "properties": {
+        "kind": { "enum": ["added", "removed", "moved", "modified"] },
+        "elementId": { "$ref": "#/$defs/entityId" },
+        "previousIndex": {
+          "oneOf": [
+            { "$ref": "#/$defs/nonnegativeInt32" },
+            { "type": "null" }
+          ]
+        },
+        "currentIndex": {
+          "oneOf": [
+            { "$ref": "#/$defs/nonnegativeInt32" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "reviewDirectParentDiff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fromVersionId", "toVersionId", "changes"],
+      "properties": {
+        "fromVersionId": { "$ref": "#/$defs/entityId" },
+        "toVersionId": { "$ref": "#/$defs/entityId" },
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/reviewCompositionChange" }
+        }
+      }
+    },
+    "reviewAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "$comment": "actorRoles is the native-authorized set available to the current actor for this operation. Consumers require a nonempty canonical subset only for authorized actions and an empty array otherwise.",
+      "required": ["kind", "status", "actorRoles"],
+      "properties": {
+        "kind": {
+          "enum": ["addComment", "requestChanges", "recordApproval"]
+        },
+        "status": {
+          "enum": [
+            "authorized",
+            "actorNotAuthorized",
+            "alreadyRecorded",
+            "stateNotEligible",
+            "targetNotCurrent",
+            "reviewStateUnrecorded",
+            "publicationBlocked"
+          ]
+        },
+        "actorRoles": {
+          "type": "array",
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/reviewAuthorActorRole" }
+        }
+      }
+    },
+    "reviewSnapshot": {
+      "type": "object",
+      "$comment": "Consumers enforce state-metadata nullability, current-target action precedence, approval validity against exact version ID plus full digest, direct-parent bindings, canonical action order, and action-role consistency.",
+      "additionalProperties": false,
+      "required": [
+        "versionId",
+        "versionDigest",
+        "createdAt",
+        "parentVersionId",
+        "isCurrentTarget",
+        "reviewState",
+        "reviewStateReason",
+        "reviewStateRecordedAt",
+        "reviewStateActorRole",
+        "comments",
+        "approvals",
+        "directParentDiff",
+        "actions"
+      ],
+      "properties": {
+        "versionId": { "$ref": "#/$defs/entityId" },
+        "versionDigest": { "$ref": "#/$defs/contentDigest" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "parentVersionId": { "$ref": "#/$defs/optionalEntityId" },
+        "isCurrentTarget": { "type": "boolean" },
+        "reviewState": { "$ref": "#/$defs/nullableReviewState" },
+        "reviewStateReason": { "$ref": "#/$defs/optionalString" },
+        "reviewStateRecordedAt": { "$ref": "#/$defs/nullableTimestamp" },
+        "reviewStateActorRole": { "$ref": "#/$defs/nullableReviewActorRole" },
+        "comments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/reviewComment" }
+        },
+        "approvals": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/reviewApproval" }
+        },
+        "directParentDiff": {
+          "oneOf": [
+            { "$ref": "#/$defs/reviewDirectParentDiff" },
+            { "type": "null" }
+          ]
+        },
+        "actions": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/reviewAction" }
+        }
+      }
+    },
+    "reviewResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "$ref": "#/$defs/reviewMethod" },
+        "result": { "$ref": "#/$defs/reviewSnapshot" }
+      }
+    },
+    "reviewError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "enum": [
+            "review.conflict",
+            "review.invalid_request",
+            "review.not_authorized",
+            "review.not_found",
+            "review.operation_failed",
+            "review.stale_version"
+          ]
+        },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "reviewErrorResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "error"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "$ref": "#/$defs/reviewMethod" },
+        "error": { "$ref": "#/$defs/reviewError" }
       }
     },
     "proxyMediaReference": {

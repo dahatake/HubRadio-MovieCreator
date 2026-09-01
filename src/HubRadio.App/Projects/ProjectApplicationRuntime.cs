@@ -1,5 +1,6 @@
 using HubRadio.App.Jobs;
 using HubRadio.App.Media;
+using HubRadio.App.Reviews;
 using HubRadio.App.Security;
 using HubRadio.App.Web;
 using HubRadio.Core.Identity;
@@ -18,16 +19,19 @@ internal sealed class ApplicationBridgeHandlers
         ProjectBridgeHandler project,
         JobBridgeRequestHandler jobs,
         TimelineBridgeRequestHandler timeline,
-        TranscriptBridgeRequestHandler transcript)
+        TranscriptBridgeRequestHandler transcript,
+        ReviewBridgeHandler review)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
         ArgumentNullException.ThrowIfNull(timeline);
         ArgumentNullException.ThrowIfNull(transcript);
+        ArgumentNullException.ThrowIfNull(review);
         Project = project;
         Jobs = jobs;
         Timeline = timeline;
         Transcript = transcript;
+        Review = review;
     }
 
     internal ProjectBridgeHandler Project { get; }
@@ -37,6 +41,8 @@ internal sealed class ApplicationBridgeHandlers
     internal TimelineBridgeRequestHandler Timeline { get; }
 
     internal TranscriptBridgeRequestHandler Transcript { get; }
+
+    internal ReviewBridgeHandler Review { get; }
 }
 
 internal static class ProjectApplicationRuntime
@@ -105,10 +111,18 @@ internal static class ProjectApplicationRuntime
         var timelineHandler = new TimelineBridgeRequestHandler(
             new ProjectStore(databasePath),
             new TimelineBridgeAuthorization(authorization, actorProvider));
+        var reviewStore = new ReviewStore(databasePath);
+        var reviewHandler = new ReviewBridgeHandler(
+            new ReviewWorkspaceService(
+                new ProjectStore(databasePath),
+                reviewStore,
+                authorization,
+                actorProvider.GetCurrentSid));
         return new ApplicationBridgeHandlers(
             projectHandler,
             jobHandler,
             timelineHandler,
-            transcriptHandler);
+            transcriptHandler,
+            reviewHandler);
     }
 }

@@ -6,6 +6,7 @@ using System.Text.Json;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Jobs;
 using HubRadio.Core.Serialization;
+using HubRadio.Core.Time;
 using HubRadio.Infrastructure.Database;
 using HubRadio.Infrastructure.Diagnostics;
 using Microsoft.Web.WebView2.Core;
@@ -44,6 +45,10 @@ internal enum BridgeMethod
     TranscriptRejectTerm,
     TimelineRead,
     TimelineApply,
+    ReviewGetSnapshot,
+    ReviewAddComment,
+    ReviewRequestChanges,
+    ReviewRecordApproval,
 }
 
 internal sealed class BridgeRequest
@@ -122,6 +127,9 @@ internal static class BridgeProtocol
     internal const int MaxResponseUtf8Bytes = 4096;
     internal const int MaxProjectRequestUtf8Bytes = 96 * 1024;
     internal const int MaxProjectResponseUtf8Bytes = 1024 * 1024;
+    internal const int MaxReviewRequestUtf8Bytes = 24 * 1024;
+    internal const int MaxReviewResponseUtf8Bytes = 1024 * 1024;
+    internal const int MaxReviewTextUtf8Bytes = 16 * 1024;
     internal const int MaxPlayerResponseUtf8Bytes =
         IngestWorkflowStore.MaximumPayloadUtf8Bytes;
     internal const int MaxTranscriptRequestUtf8Bytes = 16 * 1024;
@@ -161,6 +169,10 @@ internal static class BridgeProtocol
     internal const string TranscriptRejectTermMethod = "transcript.rejectTerm";
     internal const string TimelineReadMethod = "timeline.read";
     internal const string TimelineApplyMethod = "timeline.apply";
+    internal const string ReviewGetSnapshotMethod = "review.getSnapshot";
+    internal const string ReviewAddCommentMethod = "review.addComment";
+    internal const string ReviewRequestChangesMethod = "review.requestChanges";
+    internal const string ReviewRecordApprovalMethod = "review.recordApproval";
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -388,6 +400,10 @@ internal static class BridgeProtocol
             BridgeMethod.TranscriptRejectTerm => TranscriptRejectTermMethod,
             BridgeMethod.TimelineRead => TimelineReadMethod,
             BridgeMethod.TimelineApply => TimelineApplyMethod,
+            BridgeMethod.ReviewGetSnapshot => ReviewGetSnapshotMethod,
+            BridgeMethod.ReviewAddComment => ReviewAddCommentMethod,
+            BridgeMethod.ReviewRequestChanges => ReviewRequestChangesMethod,
+            BridgeMethod.ReviewRecordApproval => ReviewRecordApprovalMethod,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(method),
                 method,
@@ -401,6 +417,7 @@ internal static class BridgeProtocol
                 MaxPlayerResponseUtf8Bytes,
             _ when IsTranscriptMethod(method) => MaxTranscriptResponseUtf8Bytes,
             _ when IsLargePayloadMethod(method) => MaxProjectResponseUtf8Bytes,
+            _ when IsReviewMethod(method) => MaxReviewResponseUtf8Bytes,
             _ => MaxResponseUtf8Bytes,
         };
 
@@ -428,12 +445,21 @@ internal static class BridgeProtocol
     private static bool IsLargePayloadMethod(BridgeMethod method) =>
         IsProjectMethod(method) || IsTimelineMethod(method);
 
+    internal static bool IsReviewMethod(BridgeMethod method) =>
+        method is
+            BridgeMethod.ReviewGetSnapshot or
+            BridgeMethod.ReviewAddComment or
+            BridgeMethod.ReviewRequestChanges or
+            BridgeMethod.ReviewRecordApproval;
+
     private static int GetMaximumRequestUtf8Bytes(BridgeMethod method) =>
         IsLargePayloadMethod(method)
             ? MaxProjectRequestUtf8Bytes
             : IsTranscriptMethod(method)
                 ? MaxTranscriptRequestUtf8Bytes
-                : MaxRequestUtf8Bytes;
+                : IsReviewMethod(method)
+                    ? MaxReviewRequestUtf8Bytes
+                    : MaxRequestUtf8Bytes;
 
     private static bool TryParseMethod(
         string method,
@@ -461,6 +487,10 @@ internal static class BridgeProtocol
             TranscriptRejectTermMethod => BridgeMethod.TranscriptRejectTerm,
             TimelineReadMethod => BridgeMethod.TimelineRead,
             TimelineApplyMethod => BridgeMethod.TimelineApply,
+            ReviewGetSnapshotMethod => BridgeMethod.ReviewGetSnapshot,
+            ReviewAddCommentMethod => BridgeMethod.ReviewAddComment,
+            ReviewRequestChangesMethod => BridgeMethod.ReviewRequestChanges,
+            ReviewRecordApprovalMethod => BridgeMethod.ReviewRecordApproval,
             _ => (BridgeMethod)(-1),
         };
         return Enum.IsDefined(parsedMethod);
@@ -516,7 +546,174 @@ internal static class BridgeProtocol
                 parameters);
         }
 
+        if (method == BridgeMethod.ReviewGetSnapshot)
+        {
+            return HasExactProperties(parameters, ["versionId"]) &&
+                IsCanonicalEntityId(parameters.GetProperty("versionId"));
+        }
+
+        if (method == BridgeMethod.ReviewAddComment)
+        {
+            return HasExactProperties(
+                    parameters,
+                    [
+                        "versionId",
+                        "versionDigest",
+                        "actorRole",
+                        "outputTime",
+                        "text",
+                    ]) &&
+                IsCanonicalEntityId(parameters.GetProperty("versionId")) &&
+                IsCanonicalDigest(parameters.GetProperty("versionDigest")) &&
+                IsReviewAuthorRole(parameters.GetProperty("actorRole")) &&
+                IsReviewOutputTime(parameters.GetProperty("outputTime")) &&
+                IsReviewText(parameters.GetProperty("text"));
+        }
+
+        if (method == BridgeMethod.ReviewRequestChanges)
+        {
+            return HasExactProperties(
+                    parameters,
+                    [
+                        "versionId",
+                        "versionDigest",
+                        "expectedState",
+                        "outputTime",
+                        "text",
+                    ]) &&
+                IsCanonicalEntityId(parameters.GetProperty("versionId")) &&
+                IsCanonicalDigest(parameters.GetProperty("versionDigest")) &&
+                IsReviewState(parameters.GetProperty("expectedState")) &&
+                IsReviewOutputTime(parameters.GetProperty("outputTime")) &&
+                IsReviewText(parameters.GetProperty("text"));
+        }
+
+        if (method == BridgeMethod.ReviewRecordApproval)
+        {
+            return HasExactProperties(
+                    parameters,
+                    ["versionId", "versionDigest", "actorRole", "reason"]) &&
+                IsCanonicalEntityId(parameters.GetProperty("versionId")) &&
+                IsCanonicalDigest(parameters.GetProperty("versionDigest")) &&
+                IsReviewApprovalRole(parameters.GetProperty("actorRole")) &&
+                IsReviewText(parameters.GetProperty("reason"));
+        }
+
         return false;
+    }
+
+    private static bool IsCanonicalDigest(JsonElement value) =>
+        value.ValueKind == JsonValueKind.String &&
+        TryParseDigest(value.GetString(), out _);
+
+    private static bool IsReviewOutputTime(JsonElement value)
+    {
+        if (!HasExactProperties(value, ["value", "rate"]))
+        {
+            return false;
+        }
+
+        if (!TryReadCanonicalInt64String(
+                value.GetProperty("value"),
+                allowZero: true,
+                out long numerator) ||
+            !TryReadCanonicalInt64String(
+                value.GetProperty("rate"),
+                allowZero: false,
+                out long rate))
+        {
+            return false;
+        }
+
+        var outputTime = new RationalTime(numerator, rate);
+        return outputTime.Value == numerator && outputTime.Rate == rate;
+    }
+
+    private static bool TryReadCanonicalInt64String(
+        JsonElement value,
+        bool allowZero,
+        out long parsed)
+    {
+        if (value.ValueKind != JsonValueKind.String ||
+            value.GetString() is not string text ||
+            !long.TryParse(
+                text,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out parsed) ||
+            parsed < (allowZero ? 0 : 1))
+        {
+            parsed = default;
+            return false;
+        }
+
+        return string.Equals(
+            text,
+            parsed.ToString(CultureInfo.InvariantCulture),
+            StringComparison.Ordinal);
+    }
+
+    private static bool IsReviewState(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        return value.GetString() is
+            "editing" or
+            "editorReview" or
+            "performerReview" or
+            "contentReview" or
+            "brandReview" or
+            "changesRequested" or
+            "approved" or
+            "publicationBlocked" or
+            "finalRendering" or
+            "qualityControl" or
+            "exported" or
+            "published";
+    }
+
+    private static bool IsReviewAuthorRole(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        return value.GetString() is
+            "editor" or
+            "performerReviewer" or
+            "contentApprover" or
+            "brandApprover" or
+            "rightsApprover";
+    }
+
+    private static bool IsReviewApprovalRole(JsonElement value) =>
+        IsReviewAuthorRole(value) && value.GetString() is
+            "contentApprover" or
+            "brandApprover" or
+            "rightsApprover";
+
+    private static bool IsReviewText(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.String ||
+            value.GetString() is not string text ||
+            string.IsNullOrWhiteSpace(text) ||
+            !string.Equals(text, text.Trim(), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        try
+        {
+            return StrictUtf8.GetByteCount(text) <= MaxReviewTextUtf8Bytes;
+        }
+        catch (EncoderFallbackException)
+        {
+            return false;
+        }
     }
 
     private static bool IsDraftInput(JsonElement input)
@@ -767,11 +964,6 @@ internal static class BridgeProtocol
             IsNonnegativeInt32(parameters.GetProperty("termEntryVersion"));
     }
 
-    private static bool IsCanonicalDigest(JsonElement value) =>
-        value.ValueKind == JsonValueKind.String &&
-        ContentDigest.TryParse(value.GetString(), out ContentDigest? digest) &&
-        string.Equals(value.GetString(), digest.Hex, StringComparison.Ordinal);
-
     private static bool IsRequiredText(JsonElement value) =>
         value.ValueKind == JsonValueKind.String &&
         value.GetString() is string text &&
@@ -871,6 +1063,18 @@ internal static class BridgeProtocol
             "下書きが別の操作で更新されました。再読み込みしてください。",
         StableErrorCodes.ProjectSourceReselectionRequired =>
             "元動画をもう一度選択してください。",
+        StableErrorCodes.ReviewConflict =>
+            "レビュー状態が更新されました。再読み込みしてください。",
+        StableErrorCodes.ReviewInvalidRequest =>
+            "レビュー入力を確認してください。",
+        StableErrorCodes.ReviewNotAuthorized =>
+            "このレビュー操作を実行する権限がありません。",
+        StableErrorCodes.ReviewNotFound =>
+            "指定された構成版が見つかりません。",
+        StableErrorCodes.ReviewStaleVersion =>
+            "対象版は現行版ではありません。レビューを再読み込みしてください。",
+        StableErrorCodes.ReviewOperationFailed =>
+            "レビュー操作を完了できませんでした。",
         _ => "案件操作を完了できませんでした。",
     };
 
@@ -883,7 +1087,8 @@ internal static class BridgeProtocol
         request = null;
         if (method == BridgeMethod.Ping ||
             IsProjectMethod(method) ||
-            IsTimelineMethod(method))
+            IsTimelineMethod(method) ||
+            IsReviewMethod(method))
         {
             if (!HasValidParameters(method, parameters))
             {
@@ -1077,6 +1282,8 @@ internal sealed class Bridge : IDisposable
     private readonly CoreWebView2 coreWebView;
     private readonly Func<BridgeRequest, CancellationToken, Task<string>>?
         handleProjectRequestAsync;
+    private readonly Func<BridgeRequest, CancellationToken, Task<string>>?
+        handleReviewRequestAsync;
     private readonly JobBridgeRequestHandler? jobHandler;
     private readonly TimelineBridgeRequestHandler? timelineHandler;
     private readonly PlayerBridgeRequestHandler playerHandler;
@@ -1089,6 +1296,7 @@ internal sealed class Bridge : IDisposable
         : this(
             coreWebView,
             handleProjectRequestAsync: null,
+            handleReviewRequestAsync: null,
             jobHandler: null,
             timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
@@ -1102,6 +1310,7 @@ internal sealed class Bridge : IDisposable
         : this(
             coreWebView,
             handleProjectRequestAsync,
+            handleReviewRequestAsync: null,
             jobHandler: null,
             timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
@@ -1115,6 +1324,7 @@ internal sealed class Bridge : IDisposable
         : this(
             coreWebView,
             handleProjectRequestAsync: null,
+            handleReviewRequestAsync: null,
             jobHandler,
             timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
@@ -1129,6 +1339,7 @@ internal sealed class Bridge : IDisposable
         : this(
             coreWebView,
             handleProjectRequestAsync: null,
+            handleReviewRequestAsync: null,
             jobHandler: null,
             timelineHandler: null,
             playerReader,
@@ -1147,6 +1358,7 @@ internal sealed class Bridge : IDisposable
         : this(
             coreWebView,
             handleProjectRequestAsync,
+            handleReviewRequestAsync: null,
             jobHandler,
             timelineHandler: null,
             playerReader,
@@ -1159,6 +1371,50 @@ internal sealed class Bridge : IDisposable
         CoreWebView2 coreWebView,
         Func<BridgeRequest, CancellationToken, Task<string>>?
             handleProjectRequestAsync,
+        Func<BridgeRequest, CancellationToken, Task<string>>?
+            handleReviewRequestAsync,
+        JobBridgeRequestHandler? jobHandler,
+        IPlayerBridgeReader playerReader,
+        IPlayerAccessAuthorization playerAuthorization)
+        : this(
+            coreWebView,
+            handleProjectRequestAsync,
+            handleReviewRequestAsync,
+            jobHandler,
+            timelineHandler: null,
+            playerReader,
+            playerAuthorization,
+            transcriptHandler: null)
+    {
+    }
+
+    internal Bridge(
+        CoreWebView2 coreWebView,
+        Func<BridgeRequest, CancellationToken, Task<string>>?
+            handleProjectRequestAsync,
+        JobBridgeRequestHandler? jobHandler,
+        TimelineBridgeRequestHandler? timelineHandler,
+        IPlayerBridgeReader playerReader,
+        IPlayerAccessAuthorization playerAuthorization,
+        TranscriptBridgeRequestHandler? transcriptHandler = null)
+        : this(
+            coreWebView,
+            handleProjectRequestAsync,
+            handleReviewRequestAsync: null,
+            jobHandler,
+            timelineHandler,
+            playerReader,
+            playerAuthorization,
+            transcriptHandler)
+    {
+    }
+
+    internal Bridge(
+        CoreWebView2 coreWebView,
+        Func<BridgeRequest, CancellationToken, Task<string>>?
+            handleProjectRequestAsync,
+        Func<BridgeRequest, CancellationToken, Task<string>>?
+            handleReviewRequestAsync,
         JobBridgeRequestHandler? jobHandler,
         TimelineBridgeRequestHandler? timelineHandler,
         IPlayerBridgeReader playerReader,
@@ -1170,6 +1426,7 @@ internal sealed class Bridge : IDisposable
         ArgumentNullException.ThrowIfNull(playerAuthorization);
         this.coreWebView = coreWebView;
         this.handleProjectRequestAsync = handleProjectRequestAsync;
+        this.handleReviewRequestAsync = handleReviewRequestAsync;
         this.jobHandler = jobHandler;
         this.timelineHandler = timelineHandler;
         this.transcriptHandler = transcriptHandler;
@@ -1274,6 +1531,15 @@ internal sealed class Bridge : IDisposable
                 : await handleProjectRequestAsync(request, cancellationToken);
         }
 
+        if (BridgeProtocol.IsReviewMethod(request.Method))
+        {
+            return handleReviewRequestAsync is null
+                ? BridgeProtocol.CreateErrorResponse(
+                    request,
+                    StableErrorCodes.ReviewOperationFailed)
+                : await handleReviewRequestAsync(request, cancellationToken);
+        }
+
         if (request.Method is BridgeMethod.PlayerRead or BridgeMethod.PlayerSeek)
         {
             return await playerHandler.HandleAsync(request, cancellationToken);
@@ -1338,6 +1604,13 @@ internal sealed class Bridge : IDisposable
                 TimelineBridgeStatus.Unavailable,
                 snapshot: null,
                 revision: null);
+        }
+
+        if (BridgeProtocol.IsReviewMethod(request.Method))
+        {
+            return BridgeProtocol.CreateErrorResponse(
+                request,
+                StableErrorCodes.ReviewOperationFailed);
         }
 
         return BridgeProtocol.IsProjectMethod(request.Method)

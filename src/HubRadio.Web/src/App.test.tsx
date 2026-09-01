@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import App from './App'
 import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
+import { ReviewStateProvider } from './features/review'
 import { AppStateProvider } from './state'
 
 describe('App', () => {
@@ -10,7 +11,9 @@ describe('App', () => {
     const markup = renderToStaticMarkup(
       <AppStateProvider>
         <ProjectStateProvider>
-          <App />
+          <ReviewStateProvider>
+            <App />
+          </ReviewStateProvider>
         </ProjectStateProvider>
       </AppStateProvider>,
     )
@@ -24,6 +27,8 @@ describe('App', () => {
     expect(markup).toContain('文字起こし編集')
     expect(markup).toContain('編集タイムライン')
     expect(markup).toContain('Canvas は表示専用')
+    expect(markup).toContain('レビュー・コメント・承認')
+    expect(markup).toContain('レビュー対象は未選択です')
     expect(markup).toContain('<form')
     expect(markup).toContain('for="job-id"')
     expect(markup).toContain('id="job-id"')
@@ -45,5 +50,17 @@ describe('App', () => {
         </AppStateProvider>,
       ),
     ).toThrow('useProjectState must be used within a ProjectStateProvider.')
+  })
+
+  it('requires the review state provider', () => {
+    expect(() =>
+      renderToStaticMarkup(
+        <AppStateProvider>
+          <ProjectStateProvider>
+            <App />
+          </ProjectStateProvider>
+        </AppStateProvider>,
+      ),
+    ).toThrow('useReviewState must be used within a ReviewStateProvider.')
   })
 })

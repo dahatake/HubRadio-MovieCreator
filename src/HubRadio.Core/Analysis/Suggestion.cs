@@ -129,18 +129,23 @@ public sealed class SuggestionReference
 
     internal static SuggestionReference RestoreFromCanonicalSnapshot(
         EntityId<SuggestionIdTag> suggestionId,
+        OriginRef origin) =>
+        FromPersistedReference(suggestionId, origin);
+
+    /// <summary>
+    /// Restores the exact identity and origin retained by a persisted composition reference.
+    /// </summary>
+    /// <remarks>
+    /// A persisted reference intentionally contains no model-run, suggestion-kind, or reason
+    /// fields. This factory validates the retained source origin without inventing those facts.
+    /// </remarks>
+    public static SuggestionReference FromPersistedReference(
+        EntityId<SuggestionIdTag> suggestionId,
         OriginRef origin)
     {
         ArgumentNullException.ThrowIfNull(suggestionId);
         ArgumentNullException.ThrowIfNull(origin);
-
-        if (origin.Kind != OriginKind.SourceSpan)
-        {
-            throw new ArgumentException(
-                "A canonical adopted-suggestion reference must retain a SourceSpan origin.",
-                nameof(origin));
-        }
-
+        AnalysisValidation.ValidateSourceSpanOrigin(origin, nameof(origin));
         return new SuggestionReference(suggestionId, origin);
     }
 }

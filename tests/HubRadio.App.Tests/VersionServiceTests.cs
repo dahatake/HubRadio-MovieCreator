@@ -613,6 +613,21 @@ public sealed class VersionServiceTests
             adopted.GetProperty("origin").GetRawText());
         Assert.IsFalse(elements[1].TryGetProperty("sourceRange", out _));
         Assert.IsFalse(elements[2].TryGetProperty("sourceRange", out _));
+        CompositionVersion restored = CompositionSnapshotJson.ReadVersion(
+            result.CanonicalVersionJson);
+        Assert.AreEqual(result.Version.Id, restored.Id);
+        Assert.AreEqual(result.Version.ProjectId, restored.ProjectId);
+        Assert.AreEqual(result.Version.ParentVersionId, restored.ParentVersionId);
+        Assert.AreEqual(result.Version.CreatedByActorId, restored.CreatedByActorId);
+        Assert.AreEqual(result.Version.CreatedAt, restored.CreatedAt);
+        Assert.AreEqual(result.Version.ChangeReason, restored.ChangeReason);
+        Assert.AreEqual(result.Version.ContentDigest, restored.ContentDigest);
+        CollectionAssert.AreEqual(
+            result.Version.Elements.ToArray(),
+            restored.Elements.ToArray());
+        Assert.AreEqual(
+            result.CanonicalVersionJson,
+            CompositionSnapshotJson.WriteVersion(restored));
         AssertCanonicalAndSchemaShaped(
             result.CanonicalVersionJson,
             "schemas/composition-version.schema.json");
@@ -644,6 +659,111 @@ public sealed class VersionServiceTests
         StringAssert.Contains(invalidUnicode.Message, "valid Unicode");
         Assert.IsNull(store.GetCompositionVersion(invalidTextVersionId));
         Assert.AreEqual(1, store.GetWorkingCopy(result.WorkingCopy.ProjectId)!.Revision);
+    }
+
+    [TestMethod]
+    public void SnapshotJsonReaderRejectsNoncanonicalAndTamperedStoredVersions()
+    {
+        using ServiceTestDatabase database = new();
+        CompositionElement element = CreateAssetElement(
+            Id<CompositionElementIdTag>("60000000-0000-4000-8000-000000000001"),
+            Id<AssetIdTag>("70000000-0000-4000-8000-000000000001"),
+            start: default,
+            duration: new RationalTime(1, 1));
+        (ProjectStore store, _, WorkingCopy draft) = CreateStoredDraft(database, [element]);
+        CheckpointResult result = new VersionService(store).Checkpoint(
+            draft,
+            0,
+            Id<CompositionVersionIdTag>("90000000-0000-4000-8000-000000000001"),
+            "actor",
+            InitialTime.AddMinutes(1),
+            "Create a strict snapshot.");
+        string canonical = result.CanonicalVersionJson;
+        string upperVersionId = canonical.Replace(
+            result.Version.Id.ToString(),
+            $"{result.Version.Id.ToString()[..^1]}A",
+            StringComparison.Ordinal);
+        string canonicalTimestamp = result.Version.CreatedAt
+            .ToUniversalTime()
+            .ToString("O", CultureInfo.InvariantCulture);
+        string nonUtcTimestamp = canonical.Replace(
+            JsonSerializer.Serialize(canonicalTimestamp),
+            JsonSerializer.Serialize(
+                canonicalTimestamp.Replace("+00:00", "Z", StringComparison.Ordinal)),
+            StringComparison.Ordinal);
+        string unreducedTime = canonical.Replace(
+            "\"duration\":{\"rate\":1,\"value\":1}",
+            "\"duration\":{\"rate\":2,\"value\":2}",
+            StringComparison.Ordinal);
+        string wrongDigest = canonical.Replace(
+            result.Version.ContentDigest.Hex,
+            new string(
+                result.Version.ContentDigest.Hex[0] == 'f' ? 'e' : 'f',
+                64),
+            StringComparison.Ordinal);
+        string assetOrigin =
+            $"\"origin\":{{\"assetId\":\"{element.Origin.AssetId}\",\"kind\":\"asset\"}}";
+        string openUnion = canonical.Replace(
+            assetOrigin,
+            assetOrigin[..^1] +
+                ",\"sourceSpanId\":\"40000000-0000-4000-8000-000000000001\"}",
+            StringComparison.Ordinal);
+        string unexpectedRootProperty = canonical[..^1] + ",\"unexpected\":true}";
+
+        (string Name, string Json)[] invalid =
+        [
+            ("leading whitespace", " " + canonical),
+            ("uppercase version ID", upperVersionId),
+            ("non-canonical UTC timestamp", nonUtcTimestamp),
+            ("unreduced rational time", unreducedTime),
+            ("mismatched content digest", wrongDigest),
+            ("open origin union", openUnion),
+            ("unexpected root property", unexpectedRootProperty),
+        ];
+        foreach ((string name, string candidate) in invalid)
+        {
+            Assert.AreNotEqual(
+                canonical,
+                candidate,
+                $"The {name} candidate must differ from the canonical snapshot.");
+            Assert.ThrowsExactly<FormatException>(
+                () => CompositionSnapshotJson.ReadVersion(candidate),
+                $"The {name} candidate must be rejected.");
+        }
+
+        Assert.ThrowsExactly<ArgumentNullException>(
+            () => CompositionSnapshotJson.ReadVersion(null!));
+    }
+
+    [TestMethod]
+    public void SnapshotJsonReaderAcceptsCanonicalExponentFormIntegerTokens()
+    {
+        using ServiceTestDatabase database = new();
+        CompositionElement element = CreateAssetElement(
+            start: new RationalTime(1280, 3),
+            duration: new RationalTime(1, 30_000));
+        (ProjectStore store, _, WorkingCopy draft) =
+            CreateStoredDraft(database, [element]);
+        CheckpointResult result = new VersionService(store).Checkpoint(
+            draft,
+            0,
+            EntityId<CompositionVersionIdTag>.New(),
+            "actor",
+            InitialTime.AddMinutes(1),
+            "Exercise canonical exponent integers.");
+
+        StringAssert.Contains(result.CanonicalVersionJson, "\"value\":128e1");
+        StringAssert.Contains(result.CanonicalVersionJson, "\"rate\":3e4");
+
+        CompositionVersion restored = CompositionSnapshotJson.ReadVersion(
+            result.CanonicalVersionJson);
+
+        Assert.AreEqual(result.Version.ContentDigest, restored.ContentDigest);
+        Assert.AreEqual(new RationalTime(1280, 3), restored.Elements[0].OutputRange.Start);
+        Assert.AreEqual(new RationalTime(1, 30_000), restored.Elements[0].OutputRange.Duration);
+        Assert.AreEqual(
+            result.CanonicalVersionJson,
+            CompositionSnapshotJson.WriteVersion(restored));
     }
 
     [TestMethod]

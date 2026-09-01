@@ -54,6 +54,52 @@ public sealed class ApprovalService
         DateTimeOffset approvedAt,
         string reason)
     {
+        (Approval approval, AuthorizationRole authorizationRole,
+            AuthorizationOperation operation) = PrepareApproval(
+            approvalId,
+            compositionVersion,
+            actorSid,
+            actorRole,
+            approvedAt,
+            reason);
+        _reviewStore.AppendAuthorizedApproval(
+            approval,
+            authorizationRole,
+            operation);
+        return approval;
+    }
+
+    internal bool TryRecordCurrentApproval(
+        EntityId<ApprovalIdTag> approvalId,
+        CompositionVersion compositionVersion,
+        string actorSid,
+        ReviewActorRole actorRole,
+        DateTimeOffset approvedAt,
+        string reason)
+    {
+        (Approval approval, AuthorizationRole authorizationRole,
+            AuthorizationOperation operation) = PrepareApproval(
+            approvalId,
+            compositionVersion,
+            actorSid,
+            actorRole,
+            approvedAt,
+            reason);
+        return _reviewStore.TryAppendAuthorizedCurrentApproval(
+            approval,
+            authorizationRole,
+            operation);
+    }
+
+    private (Approval Approval, AuthorizationRole AuthorizationRole,
+        AuthorizationOperation Operation) PrepareApproval(
+        EntityId<ApprovalIdTag> approvalId,
+        CompositionVersion compositionVersion,
+        string actorSid,
+        ReviewActorRole actorRole,
+        DateTimeOffset approvedAt,
+        string reason)
+    {
         ArgumentNullException.ThrowIfNull(approvalId);
         ArgumentNullException.ThrowIfNull(compositionVersion);
 
@@ -67,11 +113,7 @@ public sealed class ApprovalService
         (AuthorizationRole authorizationRole, AuthorizationOperation operation) =
             GetApprovalAuthorization(actorRole);
         _authorizationService.DemandAs(actorSid, authorizationRole, operation);
-        _reviewStore.AppendAuthorizedApproval(
-            approval,
-            authorizationRole,
-            operation);
-        return approval;
+        return (approval, authorizationRole, operation);
     }
 
     /// <summary>
