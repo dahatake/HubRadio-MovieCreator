@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Canonical immutable delivery inventory. Every artifact is bound by this envelope to one project, composition version, successful render manifest, and render profile. Approval and storage path policy are separate contracts.",
+  "$comment": "Canonical immutable delivery inventory. Every artifact is bound by this envelope to one project, composition version, successful render manifest, and render profile. R-026 subtitle variants additionally bind their graph, display policy, subtitle evidence, and optional subtitle-free sidecar. Approval and storage path policy are separate contracts.",
   "title": "DeliveryManifest",
   "type": "object",
   "additionalProperties": false,
@@ -36,6 +36,16 @@
     "profileDigest": {
       "$ref": "#/$defs/contentDigest"
     },
+    "subtitleVariant": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/subtitleDeliveryVariantEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "artifacts": {
       "type": "array",
       "minItems": 1,
@@ -66,6 +76,79 @@
         },
         {
           "type": "null"
+        }
+      ]
+    },
+    "subtitleDeliveryVariantEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "renderGraphId",
+        "displayProfileDigest",
+        "subtitleEvidenceDigest",
+        "sidecarArtifact"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "burnedIn",
+            "subtitleFree"
+          ]
+        },
+        "renderGraphId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "displayProfileDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "subtitleEvidenceDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "sidecarArtifact": {
+          "oneOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/manifestArtifact"
+                },
+                {
+                  "properties": {
+                    "type": {
+                      "const": "subtitle"
+                    },
+                    "language": {
+                      "$ref": "#/$defs/nonBlankText"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "burnedIn"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "sidecarArtifact": {
+                "type": "null"
+              }
+            }
+          }
         }
       ]
     },

@@ -18,6 +18,8 @@ public sealed class RenderManifestTests
         Assert.IsTrue(typeof(RenderManifestIdTag).IsSealed);
         Assert.IsTrue(typeof(DeliveryManifestIdTag).IsPublic);
         Assert.IsTrue(typeof(DeliveryManifestIdTag).IsSealed);
+        Assert.IsTrue(typeof(SubtitleDeliveryVariantKind).IsPublic);
+        Assert.IsTrue(typeof(SubtitleDeliveryVariantKind).IsEnum);
 
         AssertPublicGetOnlyProperties(
             typeof(RenderManifest),
@@ -48,7 +50,15 @@ public sealed class RenderManifestTests
             "RenderManifestId",
             "ProfileId",
             "ProfileDigest",
-            "Artifacts");
+            "Artifacts",
+            "SubtitleVariant");
+        AssertPublicGetOnlyProperties(
+            typeof(SubtitleDeliveryVariantEvidence),
+            "Kind",
+            "RenderGraphId",
+            "DisplayProfileDigest",
+            "SubtitleEvidenceDigest",
+            "SidecarArtifact");
     }
 
     [TestMethod]
@@ -282,7 +292,149 @@ public sealed class RenderManifestTests
         Assert.AreEqual(render.ProfileId, delivery.ProfileId);
         Assert.AreEqual(render.ProfileDigest, delivery.ProfileDigest);
         CollectionAssert.AreEqual(new[] { video, subtitle }, delivery.Artifacts.ToArray());
+        Assert.IsNull(delivery.SubtitleVariant);
         AssertReadOnly(delivery.Artifacts);
+    }
+
+    [TestMethod]
+    public void DeliveryManifestExplicitlyBindsSubtitleVariantAndOptionalSidecar()
+    {
+        RenderManifest render = CreateRenderManifest();
+        ManifestArtifact video = CreateArtifact();
+        ManifestArtifact sidecar = new(
+            "subtitle",
+            "text/vtt",
+            "ja",
+            88,
+            Digest('a'),
+            "objects/aa/subtitle.vtt");
+        var burnedIn = new SubtitleDeliveryVariantEvidence(
+            SubtitleDeliveryVariantKind.BurnedIn,
+            EntityId<RenderGraphIdTag>.New(),
+            Digest('d'),
+            Digest('e'),
+            sidecarArtifact: null);
+        var subtitleFree = new SubtitleDeliveryVariantEvidence(
+            SubtitleDeliveryVariantKind.SubtitleFree,
+            EntityId<RenderGraphIdTag>.New(),
+            Digest('d'),
+            Digest('e'),
+            sidecar);
+
+        DeliveryManifest burnedDelivery = new(
+            EntityId<DeliveryManifestIdTag>.New(),
+            render,
+            [video],
+            burnedIn);
+        DeliveryManifest freeDelivery = new(
+            EntityId<DeliveryManifestIdTag>.New(),
+            render,
+            [video, sidecar],
+            subtitleFree);
+
+        Assert.AreSame(burnedIn, burnedDelivery.SubtitleVariant);
+        Assert.AreSame(subtitleFree, freeDelivery.SubtitleVariant);
+        Assert.AreSame(sidecar, freeDelivery.SubtitleVariant!.SidecarArtifact);
+    }
+
+    [TestMethod]
+    public void SubtitleVariantEvidenceRejectsAmbiguousOrUnlocalizedSidecars()
+    {
+        ManifestArtifact sidecar = new(
+            "subtitle",
+            "text/vtt",
+            "ja",
+            88,
+            Digest('a'),
+            "objects/aa/subtitle.vtt");
+        ManifestArtifact unlocalized = new(
+            "subtitle",
+            "text/vtt",
+            language: null,
+            88,
+            Digest('a'),
+            "objects/aa/subtitle.vtt");
+        ManifestArtifact wrongType = new(
+            "transcript",
+            "text/plain",
+            "ja",
+            88,
+            Digest('a'),
+            "objects/aa/transcript.txt");
+
+        AssertParamName<ArgumentOutOfRangeException>(
+            "kind",
+            () => new SubtitleDeliveryVariantEvidence(
+                (SubtitleDeliveryVariantKind)99,
+                EntityId<RenderGraphIdTag>.New(),
+                Digest('d'),
+                Digest('e'),
+                sidecarArtifact: null));
+        AssertParamName<ArgumentException>(
+            "sidecarArtifact",
+            () => new SubtitleDeliveryVariantEvidence(
+                SubtitleDeliveryVariantKind.BurnedIn,
+                EntityId<RenderGraphIdTag>.New(),
+                Digest('d'),
+                Digest('e'),
+                sidecar));
+        AssertParamName<ArgumentException>(
+            "sidecarArtifact",
+            () => new SubtitleDeliveryVariantEvidence(
+                SubtitleDeliveryVariantKind.SubtitleFree,
+                EntityId<RenderGraphIdTag>.New(),
+                Digest('d'),
+                Digest('e'),
+                unlocalized));
+        AssertParamName<ArgumentException>(
+            "sidecarArtifact",
+            () => new SubtitleDeliveryVariantEvidence(
+                SubtitleDeliveryVariantKind.SubtitleFree,
+                EntityId<RenderGraphIdTag>.New(),
+                Digest('d'),
+                Digest('e'),
+                wrongType));
+    }
+
+    [TestMethod]
+    public void DeliveryManifestRejectsSubtitleInventoryThatDiffersFromVariantEvidence()
+    {
+        RenderManifest render = CreateRenderManifest();
+        ManifestArtifact video = CreateArtifact();
+        ManifestArtifact sidecar = new(
+            "subtitle",
+            "text/vtt",
+            "ja",
+            88,
+            Digest('a'),
+            "objects/aa/subtitle.vtt");
+        var subtitleFree = new SubtitleDeliveryVariantEvidence(
+            SubtitleDeliveryVariantKind.SubtitleFree,
+            EntityId<RenderGraphIdTag>.New(),
+            Digest('d'),
+            Digest('e'),
+            sidecar);
+        var burnedIn = new SubtitleDeliveryVariantEvidence(
+            SubtitleDeliveryVariantKind.BurnedIn,
+            EntityId<RenderGraphIdTag>.New(),
+            Digest('d'),
+            Digest('e'),
+            sidecarArtifact: null);
+
+        AssertParamName<ArgumentException>(
+            "subtitleVariant",
+            () => new DeliveryManifest(
+                EntityId<DeliveryManifestIdTag>.New(),
+                render,
+                [video],
+                subtitleFree));
+        AssertParamName<ArgumentException>(
+            "subtitleVariant",
+            () => new DeliveryManifest(
+                EntityId<DeliveryManifestIdTag>.New(),
+                render,
+                [video, sidecar],
+                burnedIn));
     }
 
     [TestMethod]

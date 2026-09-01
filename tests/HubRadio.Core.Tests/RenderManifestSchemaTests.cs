@@ -96,6 +96,88 @@ public sealed class RenderManifestSchemaTests
     }
 
     [TestMethod]
+    public void DeliverySchemaCarriesClosedOptionalSubtitleVariantEvidence()
+    {
+        using JsonDocument document = LoadSchema(DeliverySchemaPath);
+        JsonElement root = document.RootElement;
+        JsonElement definitions = root.GetProperty("$defs");
+        JsonElement property = root
+            .GetProperty("properties")
+            .GetProperty("subtitleVariant");
+        JsonElement[] alternatives = property.GetProperty("oneOf")
+            .EnumerateArray()
+            .ToArray();
+
+        Assert.AreEqual(
+            "#/$defs/subtitleDeliveryVariantEvidence",
+            alternatives[0].GetProperty("$ref").GetString());
+        Assert.AreEqual("null", alternatives[1].GetProperty("type").GetString());
+        CollectionAssert.DoesNotContain(
+            GetStrings(root.GetProperty("required")),
+            "subtitleVariant");
+
+        JsonElement evidence = definitions.GetProperty(
+            "subtitleDeliveryVariantEvidence");
+        Assert.AreEqual(
+            JsonValueKind.False,
+            evidence.GetProperty("additionalProperties").ValueKind);
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "kind",
+                "renderGraphId",
+                "displayProfileDigest",
+                "subtitleEvidenceDigest",
+                "sidecarArtifact",
+            },
+            GetStrings(evidence.GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "burnedIn", "subtitleFree" },
+            GetStrings(evidence.GetProperty("properties")
+                .GetProperty("kind")
+                .GetProperty("enum")));
+        JsonElement[] sidecarAlternatives = evidence
+            .GetProperty("properties")
+            .GetProperty("sidecarArtifact")
+            .GetProperty("oneOf")
+            .EnumerateArray()
+            .ToArray();
+        JsonElement sidecarOverrides = sidecarAlternatives[0]
+            .GetProperty("allOf")[1]
+            .GetProperty("properties");
+        Assert.AreEqual(
+            "subtitle",
+            sidecarOverrides.GetProperty("type")
+                .GetProperty("const")
+                .GetString());
+        Assert.AreEqual(
+            "#/$defs/nonBlankText",
+            sidecarOverrides.GetProperty("language")
+                .GetProperty("$ref")
+                .GetString());
+        Assert.AreEqual(
+            "null",
+            sidecarAlternatives[1].GetProperty("type").GetString());
+        JsonElement burnedInConstraint = evidence
+            .GetProperty("allOf")[0];
+        Assert.AreEqual(
+            "burnedIn",
+            burnedInConstraint.GetProperty("if")
+                .GetProperty("properties")
+                .GetProperty("kind")
+                .GetProperty("const")
+                .GetString());
+        Assert.AreEqual(
+            "null",
+            burnedInConstraint.GetProperty("then")
+                .GetProperty("properties")
+                .GetProperty("sidecarArtifact")
+                .GetProperty("type")
+                .GetString());
+        StringAssert.Contains(GetString(root, "$comment"), "R-026");
+    }
+
+    [TestMethod]
     public void SchemasUseCanonicalLowercaseSha256AndUuidForms()
     {
         foreach (string path in new[] { RenderSchemaPath, DeliverySchemaPath })

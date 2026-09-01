@@ -8,6 +8,7 @@ using HubRadio.Core.Projects;
 using HubRadio.Core.Provenance;
 using HubRadio.Core.Rendering;
 using HubRadio.Core.Reviews;
+using HubRadio.Core.Subtitles;
 using HubRadio.Core.Time;
 using HubRadio.Infrastructure.Database;
 using HubRadio.Infrastructure.Files;
@@ -65,6 +66,140 @@ public sealed class DeliveryServiceTests
         Assert.AreEqual("video", result.Manifest.Artifacts[0].ArtifactType);
         Assert.AreEqual(2, fixture.RegisteredArtifacts.Count);
         Assert.AreEqual(1, fixture.ValidatedArtifactCount);
+    }
+
+    [TestMethod]
+    public async Task CreateAsync_BindsExplicitSubtitleVariantIntoManifestAndEvidenceDigest()
+    {
+        DeliveryFixture fixture = new();
+        DeliveryCreationResult legacy = await fixture.CreateAsync();
+        var variant = new SubtitleDeliveryVariantEvidence(
+            SubtitleDeliveryVariantKind.SubtitleFree,
+            fixture.Graph.Id,
+            Digest('e'),
+            Digest('f'),
+            fixture.SubtitleManifestArtifact);
+
+        DeliveryCreationResult explicitResult = await fixture.Service.CreateAsync(
+            fixture.ManifestId,
+            fixture.Project,
+            fixture.Version,
+            fixture.RenderManifest,
+            fixture.ValidationContext,
+            fixture.QualityControl,
+            fixture.Approvals,
+            fixture.ArtifactEvidence,
+            variant);
+
+        Assert.AreSame(variant, explicitResult.Manifest.SubtitleVariant);
+        Assert.AreEqual(
+            SubtitleDeliveryVariantKind.SubtitleFree,
+            explicitResult.Manifest.SubtitleVariant!.Kind);
+        Assert.AreEqual(
+            fixture.SubtitleManifestArtifact,
+            explicitResult.Manifest.SubtitleVariant.SidecarArtifact);
+        Assert.AreNotEqual(legacy.EvidenceDigest, explicitResult.EvidenceDigest);
+        Assert.AreEqual(
+            legacy.ApprovalEvidenceDigest,
+            explicitResult.ApprovalEvidenceDigest);
+        Assert.AreEqual(
+            legacy.UsedSourceSpansDigest,
+            explicitResult.UsedSourceSpansDigest);
+    }
+
+    [TestMethod]
+    public async Task CreateAsync_AcceptsBurnedInVariantWithMatchingQcEvidence()
+    {
+        DeliveryFixture fixture = new();
+        (
+            RenderManifest renderManifest,
+            RenderGraphValidationContext validationContext,
+            OutputQcResult qualityControl,
+            SubtitleDeliveryVariantEvidence variant) =
+            fixture.CreateBurnedInVariantCase();
+
+        DeliveryCreationResult result = await fixture.Service.CreateAsync(
+            EntityId<DeliveryManifestIdTag>.New(),
+            fixture.Project,
+            fixture.Version,
+            renderManifest,
+            validationContext,
+            qualityControl,
+            fixture.Approvals,
+            [new(fixture.VideoArtifactId, fixture.VideoManifestArtifact)],
+            variant);
+
+        Assert.AreSame(variant, result.Manifest.SubtitleVariant);
+        Assert.AreEqual(
+            SubtitleDeliveryVariantKind.BurnedIn,
+            result.Manifest.SubtitleVariant!.Kind);
+        Assert.IsNull(result.Manifest.SubtitleVariant.SidecarArtifact);
+        Assert.AreEqual(
+            variant.DisplayProfileDigest,
+            qualityControl.SubtitleDisplayProfileDigest);
+        CollectionAssert.Contains(
+            qualityControl.RequiredHumanReviewAreas.ToArray(),
+            OutputQcReviewArea.SubtitlePresentation);
+        Assert.AreEqual(1, fixture.ApprovalEvaluationCount);
+        Assert.AreEqual(1, fixture.ValidatedArtifactCount);
+    }
+
+    [TestMethod]
+    public async Task CreateAsync_RejectsSubtitleVariantGraphAndPolarityDrift()
+    {
+        DeliveryFixture fixture = new();
+        var wrongGraph = new SubtitleDeliveryVariantEvidence(
+            SubtitleDeliveryVariantKind.SubtitleFree,
+            EntityId<RenderGraphIdTag>.New(),
+            Digest('e'),
+            Digest('f'),
+            fixture.SubtitleManifestArtifact);
+
+        DeliveryException graphException =
+            await Assert.ThrowsExactlyAsync<DeliveryException>(() =>
+                fixture.Service.CreateAsync(
+                    EntityId<DeliveryManifestIdTag>.New(),
+                    fixture.Project,
+                    fixture.Version,
+                    fixture.RenderManifest,
+                    fixture.ValidationContext,
+                    fixture.QualityControl,
+                    fixture.Approvals,
+                    fixture.ArtifactEvidence,
+                    wrongGraph));
+
+        Assert.AreEqual(
+            DeliveryFailureReason.RenderEvidenceMismatch,
+            graphException.Reason);
+        Assert.AreEqual(0, fixture.ApprovalEvaluationCount);
+        Assert.AreEqual(0, fixture.ValidatedArtifactCount);
+
+        var wrongPolarity = new SubtitleDeliveryVariantEvidence(
+            SubtitleDeliveryVariantKind.BurnedIn,
+            fixture.Graph.Id,
+            Digest('e'),
+            Digest('f'),
+            sidecarArtifact: null);
+        DeliveryException polarityException =
+            await Assert.ThrowsExactlyAsync<DeliveryException>(() =>
+                fixture.Service.CreateAsync(
+                    EntityId<DeliveryManifestIdTag>.New(),
+                    fixture.Project,
+                    fixture.Version,
+                    fixture.RenderManifest,
+                    fixture.ValidationContext,
+                    fixture.QualityControl,
+                    fixture.Approvals,
+                    [new(
+                        fixture.VideoArtifactId,
+                        fixture.VideoManifestArtifact)],
+                    wrongPolarity));
+
+        Assert.AreEqual(
+            DeliveryFailureReason.RenderEvidenceMismatch,
+            polarityException.Reason);
+        Assert.AreEqual(0, fixture.ApprovalEvaluationCount);
+        Assert.AreEqual(0, fixture.ValidatedArtifactCount);
     }
 
     [TestMethod]
@@ -745,15 +880,27 @@ public sealed class DeliveryServiceTests
             constructors[0].GetParameters()
                 .Select(static parameter => parameter.ParameterType)
                 .ToArray());
-        CollectionAssert.AreEqual(
-            new[] { nameof(DeliveryService.CreateAsync) },
-            typeof(DeliveryService).GetMethods(
-                    BindingFlags.Public
-                    | BindingFlags.Instance
-                    | BindingFlags.DeclaredOnly)
-                .Where(static method => !method.IsSpecialName)
-                .Select(static method => method.Name)
-                .ToArray());
+        MethodInfo[] createMethods = typeof(DeliveryService).GetMethods(
+                BindingFlags.Public
+                | BindingFlags.Instance
+                | BindingFlags.DeclaredOnly)
+            .Where(static method => !method.IsSpecialName)
+            .ToArray();
+        Assert.AreEqual(2, createMethods.Length);
+        Assert.IsTrue(createMethods.All(static method =>
+            method.Name == nameof(DeliveryService.CreateAsync)));
+        CollectionAssert.AreEquivalent(
+            new[] { 9, 10 },
+            createMethods.Select(static method =>
+                method.GetParameters().Length).ToArray());
+        MethodInfo variantMethod = createMethods.Single(static method =>
+            method.GetParameters().Length == 10);
+        Assert.AreEqual(
+            typeof(SubtitleDeliveryVariantEvidence),
+            variantMethod.GetParameters()[8].ParameterType);
+        Assert.AreEqual(
+            typeof(CancellationToken),
+            variantMethod.GetParameters()[^1].ParameterType);
         AssertImmutablePublicType(
             typeof(DeliveryCreationResult),
             "Manifest",
@@ -1130,7 +1277,8 @@ public sealed class DeliveryServiceTests
         internal RenderProfile CreateProfile(
             EntityId<RenderProfileIdTag> id,
             ContentDigest digest,
-            EntityId<LayoutSpecIdTag>? layoutSpecId = null) =>
+            EntityId<LayoutSpecIdTag>? layoutSpecId = null,
+            bool subtitleBurnIn = false) =>
             new(
                 id,
                 "delivery-profile",
@@ -1146,7 +1294,7 @@ public sealed class DeliveryServiceTests
                 Template?.VersionDigest ?? Digest('2'),
                 "h264",
                 "aac",
-                subtitleBurnIn: false);
+                subtitleBurnIn);
 
         internal RenderManifest CreateRenderManifest(
             RenderProfile? profile = null,
@@ -1202,7 +1350,8 @@ public sealed class DeliveryServiceTests
             StoredArtifact artifact,
             RenderManifest renderManifest,
             RenderGraph? graph = null,
-            RenderGraphValidationContext? validationContext = null)
+            RenderGraphValidationContext? validationContext = null,
+            OutputQcSubtitleEvidence? subtitleEvidence = null)
         {
             RenderGraph targetGraph = graph ?? Graph;
             var request = new OutputQcRequest(
@@ -1210,7 +1359,7 @@ public sealed class DeliveryServiceTests
                 renderManifest,
                 targetGraph,
                 validationContext ?? ValidationContext,
-                subtitleEvidence: null,
+                subtitleEvidence,
                 TimeSpan.FromMinutes(1));
             var timingEntry = new OutputQcTimingEntry(
                 sequence: 0,
@@ -1240,6 +1389,156 @@ public sealed class DeliveryServiceTests
                 decode,
                 luma,
                 audioMeasurements: null);
+        }
+
+        internal (
+            RenderManifest RenderManifest,
+            RenderGraphValidationContext ValidationContext,
+            OutputQcResult QualityControl,
+            SubtitleDeliveryVariantEvidence Variant)
+            CreateBurnedInVariantCase()
+        {
+            var fullRect = new NormalizedRect(
+                default,
+                default,
+                new RationalNumber(1, 1),
+                new RationalNumber(1, 1));
+            var layout = new LayoutSpec(
+                EntityId<LayoutSpecIdTag>.New(),
+                16,
+                9,
+                [
+                    new LayoutRegion(
+                        "main",
+                        fullRect,
+                        LayoutRegionRole.Video),
+                    new LayoutRegion(
+                        "subtitle",
+                        fullRect,
+                        LayoutRegionRole.Subtitle),
+                ],
+                safeZones: []);
+            ContentDigest layoutSpecDigest = Digest('a');
+            RenderProfile profile = CreateProfile(
+                EntityId<RenderProfileIdTag>.New(),
+                Digest('e'),
+                layout.Id,
+                subtitleBurnIn: true);
+            EntityId<EditorialRecordIdTag> editorialRecordId =
+                EntityId<EditorialRecordIdTag>.New();
+            OriginRef subtitleOrigin =
+                OriginRef.FromEditorialRecord(editorialRecordId);
+            TimeRange outputRange = Version.Elements.Single().OutputRange;
+            var cue = new Cue(
+                EntityId<CueIdTag>.New(),
+                CueKind.Subtitle,
+                outputRange,
+                "subtitle");
+            var subtitleInput = new RenderGraphInput(
+                EntityId<RenderInputIdTag>.New(),
+                RenderInputKind.Subtitle,
+                Digest('f'),
+                17,
+                subtitleOrigin);
+            RenderNode video = Graph.Nodes.Single(static node =>
+                node.Kind == RenderNodeKind.Video);
+            RenderNode subtitle = RenderNode.Subtitle(
+                EntityId<RenderNodeIdTag>.New(),
+                subtitleInput.Id,
+                video.Id,
+                cue,
+                subtitleOrigin);
+            RenderNode output = RenderNode.Output(
+                EntityId<RenderNodeIdTag>.New(),
+                [subtitle.Id],
+                outputRange);
+            var font = new RenderFontEvidence("Test Sans", Digest('1'));
+            var graph = new RenderGraph(
+                EntityId<RenderGraphIdTag>.New(),
+                Version.Id,
+                Version.ContentDigest,
+                TimelineMap.Id,
+                TimelineMapDigest,
+                profile.Id,
+                profile.ProfileDigest,
+                layout.Id,
+                layoutSpecDigest,
+                Template,
+                [.. Graph.Inputs, subtitleInput],
+                [font],
+                [video, subtitle, output],
+                output.Id);
+            var validationContext = new RenderGraphValidationContext(
+                Project,
+                Version,
+                TimelineMap,
+                TimelineMapDigest,
+                profile,
+                layout,
+                layoutSpecDigest,
+                Template,
+                [UnusedSourceSpan, UsedSourceSpan],
+                [editorialRecordId],
+                [
+                    new RenderArtifactEvidence(
+                        InputId,
+                        Asset.ContentDigest,
+                        Asset.ByteSize),
+                    new RenderArtifactEvidence(
+                        subtitleInput.Id,
+                        subtitleInput.ContentDigest,
+                        subtitleInput.ByteSize),
+                ],
+                [font]);
+            var renderManifest = new RenderManifest(
+                EntityId<RenderManifestIdTag>.New(),
+                Version,
+                TimelineMap,
+                TimelineMapDigest,
+                profile,
+                RenderManifest.ConfigurationDigest,
+                RenderManifest.ApplicationVersion,
+                RenderManifest.ApplicationDigest,
+                [
+                    new RenderInputEvidence("source", Asset.ContentDigest),
+                    new RenderInputEvidence(
+                        "subtitle",
+                        subtitleInput.ContentDigest),
+                ],
+                RenderManifest.Tools,
+                RenderManifest.Models,
+                [font],
+                [VideoManifestArtifact]);
+            ContentDigest displayProfileDigest = Digest('6');
+            SubtitleDisplayResult displayResult = SubtitleDisplayPolicy.Apply(
+                new SubtitleDisplayProfile(
+                    displayProfileDigest,
+                    SubtitleCueDisplayMode.Full,
+                    SubtitlePunctuationDisplay.Preserve),
+                [new SubtitleDisplaySourceCue(cue, "caption")],
+                selectedCueIds: []);
+            var subtitleEvidence = new OutputQcSubtitleEvidence(
+                Digest('7'),
+                displayProfileDigest,
+                displayResult,
+                layouts: []);
+            OutputQcResult qualityControl = CreateQualityControl(
+                _registeredArtifacts[VideoArtifactId],
+                renderManifest,
+                graph,
+                validationContext,
+                subtitleEvidence);
+            var variant = new SubtitleDeliveryVariantEvidence(
+                SubtitleDeliveryVariantKind.BurnedIn,
+                graph.Id,
+                displayProfileDigest,
+                Digest('0'),
+                sidecarArtifact: null);
+            return (
+                renderManifest,
+                validationContext,
+                qualityControl,
+                variant);
         }
 
         internal StoredApproval CreateApproval(

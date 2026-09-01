@@ -287,6 +287,107 @@ public sealed class FfmpegCompilerTests
     }
 
     [TestMethod]
+    public async Task BurnedInCueChainCompilesEveryVerifiedSubtitleInputOnce()
+    {
+        using Fixture fixture = Fixture.Create();
+        RenderGraphInput firstInput = fixture.Graph.Inputs.Single(static input =>
+            input.Kind == RenderInputKind.Subtitle);
+        RenderNode firstSubtitle = fixture.Graph.Nodes.Single(static node =>
+            node.Kind == RenderNodeKind.Subtitle);
+        RenderNode audio = fixture.Graph.Nodes.Single(static node =>
+            node.Kind == RenderNodeKind.Audio);
+        RenderNode originalOutput = fixture.Graph.Nodes.Single(node =>
+            node.Id == fixture.Graph.OutputNodeId);
+        var secondInput = new RenderGraphInput(
+            Id<RenderInputIdTag>(0x78000020, 9),
+            RenderInputKind.Subtitle,
+            Digest('8'),
+            81,
+            firstInput.Origin);
+        RenderNode secondSubtitle = RenderNode.Subtitle(
+            Id<RenderNodeIdTag>(0x78000021, 9),
+            secondInput.Id,
+            firstSubtitle.Id,
+            new Cue(
+                Id<CueIdTag>(0x78000019, 9),
+                CueKind.Subtitle,
+                Range(3, 1),
+                firstSubtitle.Cue!.RegionName),
+            firstInput.Origin);
+        RenderNode output = RenderNode.Output(
+            originalOutput.Id,
+            [secondSubtitle.Id, audio.Id],
+            originalOutput.OutputRange);
+        var graph = new RenderGraph(
+            fixture.Graph.Id,
+            fixture.Graph.CompositionVersionId,
+            fixture.Graph.CompositionVersionDigest,
+            fixture.Graph.TimelineMapId,
+            fixture.Graph.TimelineMapDigest,
+            fixture.Graph.ProfileId,
+            fixture.Graph.ProfileDigest,
+            fixture.Graph.LayoutSpecId,
+            fixture.Graph.LayoutSpecDigest,
+            fixture.Graph.Template,
+            [.. fixture.Graph.Inputs, secondInput],
+            fixture.Graph.Fonts,
+            [
+                .. fixture.Graph.Nodes.Where(node =>
+                    node.Id != fixture.Graph.OutputNodeId),
+                secondSubtitle,
+                output,
+            ],
+            output.Id);
+        var context = new RenderGraphValidationContext(
+            fixture.Context.Project,
+            fixture.Context.CompositionVersion,
+            fixture.Context.TimelineMap,
+            fixture.Context.TimelineMapDigest,
+            fixture.Context.Profile,
+            fixture.Context.LayoutSpec,
+            fixture.Context.LayoutSpecDigest,
+            fixture.Context.Template,
+            fixture.Context.SourceSpans,
+            fixture.Context.EditorialRecordIds,
+            [
+                .. fixture.Context.Artifacts,
+                new RenderArtifactEvidence(
+                    secondInput.Id,
+                    secondInput.ContentDigest,
+                    secondInput.ByteSize),
+            ],
+            fixture.Context.Fonts);
+        FfmpegInputBinding secondBinding = fixture.Binding(
+            secondInput.Id,
+            "subtitle-2.ass",
+            secondInput.ContentDigest,
+            secondInput.ByteSize);
+
+        FfmpegCompilation compilation = await CompileAsync(
+            fixture,
+            fixture.Request(
+                graph: graph,
+                context: context,
+                bindings: [.. fixture.Bindings, secondBinding]));
+
+        Assert.AreEqual(
+            2,
+            compilation.FilterScript.Split(
+                "subtitles=filename=",
+                StringSplitOptions.None).Length - 1);
+        Assert.AreEqual(
+            1,
+            compilation.FilterScript.Split(
+                Path.GetFileName(fixture.SubtitlePath),
+                StringSplitOptions.None).Length - 1);
+        Assert.AreEqual(
+            1,
+            compilation.FilterScript.Split(
+                "subtitle-2.ass",
+                StringSplitOptions.None).Length - 1);
+    }
+
+    [TestMethod]
     public async Task EverySupportedTransitionUsesOnlyClosedFilterNames()
     {
         using Fixture fixture = Fixture.Create(subtitleBurnIn: false);

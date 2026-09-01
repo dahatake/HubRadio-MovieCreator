@@ -6,7 +6,7 @@
 **計画日:** 2026年8月26日  
 **計画状態:** Stage 0は2026年8月27日に人手承認済み。
 
-2026年8月31日時点で138/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-012、A-001〜A-009/A-011/A-014/A-016〜A-021、R-001〜R-018/R-025、U-001〜U-004、S-001/S-002/S-004〜S-010/S-012〜S-015、Z-001〜Z-007、PK-001〜PK-005、Q-007を実装・検証した。`PK-006`はPackaging Project、unsigned manual fallback、unpack verifierまで実装済みだが、別のclean Windowsへのinstall証拠を待つため完了数へ含めない。
+2026年8月31日時点で139/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-012、A-001〜A-009/A-011/A-014/A-016〜A-021、R-001〜R-018/R-025/R-026、U-001〜U-004、S-001/S-002/S-004〜S-010/S-012〜S-015、Z-001〜Z-007、PK-001〜PK-005、Q-007を実装・検証した。`PK-006`はPackaging Project、unsigned manual fallback、unpack verifierまで実装済みだが、別のclean Windowsへのinstall証拠を待つため完了数へ含めない。
 
 `S-003`のコードは実装済みだが、別の非管理者Windows accountによる受入証拠を待つため完了数へ含めない。
 
@@ -18,11 +18,11 @@
 
 `PK-001`はWindows x64 / CPython 3.12向けruntime 25件とtest-only 4件のwheelをexact-version・SHA-256・binary-onlyで固定し、同一hostのfresh CPython 3.12.10 AMD64 venvでdownload済みwheelhouseだけから全29件をoffline再現した。`pip check`、version checks、worker 80/80、wheel filename/size/hash/artifact-set hash、canonical Release buildは成功した。これは別のclean Windows machine、Python runtime、ASR model、CUDA、MSIX、完全なlicense/CVE/SBOM、release readinessを証明しない。
 
-`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中65件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。
+`ST-008`、`A-010`、`A-015`はcondition-false、`A-012`、`A-013`は再評価保留である。全203件中64件は未完了で、そのうち5件が現在condition-falseまたは再評価保留である。
 
 SQLite業務store、永続job、worker protocol、編集操作、review/approval、durable媒体取込・PTS・proxy・waveform/sprite、固定CPU ASR runner、元音声抽出とdecoded-frame基準の元時刻写像、worker結果のTranscriptRevision正規化、人による不変Transcript改訂、案件/シリーズ用語辞書CRUD、ローカル文字起こしsensitivity candidate scan、ACL、audit、backup/restore、Japan Eastの限定Azure評価resource、desktop Entra authentication、選択spanだけをmaskして送信前diffと送信先条件を表示しdigestへ結合するlocal-only payload確認境界まで実装済みである。
 
-実コンテンツのnetwork送信、response validation、fallback、end-user cloud feature、業務UI、R-019〜R-024/R-026のpreview・render・delivery、署名済み配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布、release readinessは未承認。
+実コンテンツのnetwork送信、response validation、fallback、end-user cloud feature、業務UI、R-019〜R-024のpreview・render・delivery、署名済み配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布、release readinessは未承認。
 
 `PK-006`のclean Windows install gateは保留し、依存解放済みの`R-019`と`R-020`から実行可能なtaskを継続する。`Z-008`は2つ目の実在する生成系文章候補実装が現れるまで開始せず、A-009の削除候補をその条件へ読み替えない。held taskは成立証拠と別承認なしに解除しない。
 
@@ -350,7 +350,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 
 ### 5.8 R — 非破壊編集、字幕、レンダー
 
-**実行状態: R-001〜R-018、R-025は完了。** 型付き編集、TimelineMap再構築、version/checkpoint、profile、manual layout/keyframe、字幕生成・編集・出力、長尺構成、typed transition、Render IR/FFmpeg compile、非破壊字幕表示まで実装・検証済みである。
+**実行状態: R-001〜R-018、R-025、R-026は完了。** 型付き編集、TimelineMap再構築、version/checkpoint、profile、manual layout/keyframe、字幕生成・編集・出力、長尺構成、typed transition、Render IR/FFmpeg compile、非破壊字幕表示、同一Compositionからの字幕焼き込み版・字幕なし版生成まで実装・検証済みである。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
@@ -379,7 +379,7 @@ NFR-007は、版付きJSON Schema、純粋なドメイン境界、モデル実�
 | R-023 | 人が選んだ元フレームを版付きtemplateへ合成してthumbnail出力する | `APP/Thumbnails/ManualThumbnailService.cs`、tests | M-010,R-004,R-018 / `L-M` | 元PTS、template版、OriginRef、hashを保持し、候補自動評価なしでもPNGを出力 | FR-021/031 | ローカル処理 |
 | R-024 | transcript、chapter、投稿文、編集指示、review、使用区間を付帯成果物へserializeする | `APP/Delivery/AncillaryArtifactExporter.cs`、tests | A-004,A-020,R-002,R-003,R-022,S-009。E-013は任意 / `L-C` | 各ファイルがcomposition/review版、language、hash、OriginRefを持ちDeliveryManifestへ登録 | FR-025/031/032 | なし |
 | R-025 | **完了。** 字幕の句読点表示と全文/選択Cue表示を非破壊に切り替える | `CORE/Subtitles/SubtitleDisplayPolicy.cs`、tests | R-010,R-012 / `L-C` | transcript原文を変えず、profileごとの差分をpreview/exportで一致させる | FR-009/012 | なし |
-| R-026 | 字幕焼き込み版と字幕なし版を同じCompositionから生成する | `APP/Rendering/SubtitleVariantService.cs`、tests | R-013,R-017〜R-022,R-025 / `L-M` | 版・映像・音声を共有した2出力をDeliveryManifestで区別 | FR-012/031 | ローカル処理 |
+| R-026 | **完了。** 字幕焼き込み版と字幕なし版を同じCompositionから生成する | `APP/Rendering/SubtitleVariantService.cs`、tests | R-013,R-017〜R-022,R-025 / `L-M` | 版・映像・音声を共有した2出力をDeliveryManifestで区別 | FR-012/031 | ローカル処理 |
 
 ### 5.9 U — Windows UI
 
@@ -687,4 +687,4 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**`PK-006`は同一host実装・unpack検証済みだが、別のclean Windowsへのinstall証拠を待つため未完了のまま保持する。次は依存解放済みの`R-019`と`R-020`から実行可能なtaskを継続する。未完了は残り65 taskである。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在する生成系文章候補実装が揃うまで抽象もsenderも作らず、A-009の削除候補をその条件へ読み替えない。**
+**`PK-006`は同一host実装・unpack検証済みだが、別のclean Windowsへのinstall証拠を待つため未完了のまま保持する。次は依存解放済みの`R-019`と`R-020`から実行可能なtaskを継続する。未完了は残り64 taskである。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在する生成系文章候補実装が揃うまで抽象もsenderも作らず、A-009の削除候補をその条件へ読み替えない。**

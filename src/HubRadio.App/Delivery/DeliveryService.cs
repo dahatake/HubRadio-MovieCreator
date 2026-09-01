@@ -162,6 +162,59 @@ public sealed class DeliveryService
             artifactEvidence,
         CancellationToken cancellationToken = default)
     {
+        return await CreateCoreAsync(
+            manifestId,
+            project,
+            compositionVersion,
+            renderManifest,
+            validationContext,
+            qualityControl,
+            approvalEvidence,
+            artifactEvidence,
+            subtitleVariant: null,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<DeliveryCreationResult> CreateAsync(
+        EntityId<DeliveryManifestIdTag> manifestId,
+        Project project,
+        CompositionVersion compositionVersion,
+        RenderManifest renderManifest,
+        RenderGraphValidationContext validationContext,
+        OutputQcResult qualityControl,
+        IReadOnlyList<StoredApproval> approvalEvidence,
+        IReadOnlyList<KeyValuePair<EntityId<ArtifactIdTag>, ManifestArtifact>>
+            artifactEvidence,
+        SubtitleDeliveryVariantEvidence subtitleVariant,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(subtitleVariant);
+        return await CreateCoreAsync(
+            manifestId,
+            project,
+            compositionVersion,
+            renderManifest,
+            validationContext,
+            qualityControl,
+            approvalEvidence,
+            artifactEvidence,
+            subtitleVariant,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<DeliveryCreationResult> CreateCoreAsync(
+        EntityId<DeliveryManifestIdTag> manifestId,
+        Project project,
+        CompositionVersion compositionVersion,
+        RenderManifest renderManifest,
+        RenderGraphValidationContext validationContext,
+        OutputQcResult qualityControl,
+        IReadOnlyList<StoredApproval> approvalEvidence,
+        IReadOnlyList<KeyValuePair<EntityId<ArtifactIdTag>, ManifestArtifact>>
+            artifactEvidence,
+        SubtitleDeliveryVariantEvidence? subtitleVariant,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(manifestId);
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(compositionVersion);
@@ -195,6 +248,10 @@ public sealed class DeliveryService
             validationContext,
             qualityControl,
             bindings);
+        ValidateSubtitleVariant(
+            validationContext,
+            qualityControl,
+            subtitleVariant);
         SourceSpan[] usedSourceSpans = ResolveUsedSourceSpans(
             project,
             compositionVersion,
@@ -217,10 +274,19 @@ public sealed class DeliveryService
         DeliveryManifest manifest;
         try
         {
-            manifest = new DeliveryManifest(
-                manifestId,
-                renderManifest,
-                bindings.Select(static binding => binding.Artifact).ToArray());
+            ManifestArtifact[] artifacts = bindings
+                .Select(static binding => binding.Artifact)
+                .ToArray();
+            manifest = subtitleVariant is null
+                ? new DeliveryManifest(
+                    manifestId,
+                    renderManifest,
+                    artifacts)
+                : new DeliveryManifest(
+                    manifestId,
+                    renderManifest,
+                    artifacts,
+                    subtitleVariant);
         }
         catch (ArgumentException)
         {
@@ -519,6 +585,48 @@ public sealed class DeliveryService
         if (!matches)
         {
             throw Failure(DeliveryFailureReason.QualityControlMismatch);
+        }
+    }
+
+    private static void ValidateSubtitleVariant(
+        RenderGraphValidationContext validationContext,
+        OutputQcResult qualityControl,
+        SubtitleDeliveryVariantEvidence? subtitleVariant)
+    {
+        if (subtitleVariant is null)
+        {
+            return;
+        }
+
+        bool hasSubtitleEvidence =
+            qualityControl.SubtitleLayoutProfileDigest is not null
+            && qualityControl.SubtitleDisplayProfileDigest is not null;
+        bool subtitlePresentationReviewRequired =
+            qualityControl.RequiredHumanReviewAreas.Contains(
+                OutputQcReviewArea.SubtitlePresentation);
+        bool matches = subtitleVariant.RenderGraphId
+                == qualityControl.RenderGraphId
+            && qualityControl.SubtitleStreamIndex is null
+            && qualityControl.SubtitleTiming is null
+            && subtitleVariant.Kind switch
+            {
+                SubtitleDeliveryVariantKind.BurnedIn =>
+                    validationContext.Profile.SubtitleBurnIn
+                    && hasSubtitleEvidence
+                    && subtitlePresentationReviewRequired
+                    && qualityControl.SubtitleDisplayProfileDigest
+                        == subtitleVariant.DisplayProfileDigest,
+                SubtitleDeliveryVariantKind.SubtitleFree =>
+                    !validationContext.Profile.SubtitleBurnIn
+                    && !hasSubtitleEvidence
+                    && !subtitlePresentationReviewRequired
+                    && qualityControl.SubtitleLayoutProfileDigest is null
+                    && qualityControl.SubtitleDisplayProfileDigest is null,
+                _ => false,
+            };
+        if (!matches)
+        {
+            throw Failure(DeliveryFailureReason.RenderEvidenceMismatch);
         }
     }
 
@@ -872,6 +980,7 @@ public sealed class DeliveryService
         AppendText(hash, manifest.RenderManifestId.ToString());
         AppendText(hash, manifest.ProfileId.ToString());
         AppendDigest(hash, manifest.ProfileDigest);
+        AppendSubtitleVariant(hash, manifest.SubtitleVariant);
         AppendRenderManifest(hash, renderManifest);
         AppendQualityControl(hash, qualityControl);
         AppendDigest(hash, usedSourceSpansDigest);
@@ -888,6 +997,29 @@ public sealed class DeliveryService
         }
 
         return ContentDigest.FromBytes(hash.GetHashAndReset());
+    }
+
+    private static void AppendSubtitleVariant(
+        IncrementalHash hash,
+        SubtitleDeliveryVariantEvidence? subtitleVariant)
+    {
+        if (subtitleVariant is null)
+        {
+            return;
+        }
+
+        AppendText(
+            hash,
+            "HubRadio.MovieCreator.SubtitleDeliveryVariant/v1");
+        AppendText(hash, subtitleVariant.Kind.ToString());
+        AppendText(hash, subtitleVariant.RenderGraphId.ToString());
+        AppendDigest(hash, subtitleVariant.DisplayProfileDigest);
+        AppendDigest(hash, subtitleVariant.SubtitleEvidenceDigest);
+        AppendBoolean(hash, subtitleVariant.SidecarArtifact is not null);
+        if (subtitleVariant.SidecarArtifact is not null)
+        {
+            AppendManifestArtifact(hash, subtitleVariant.SidecarArtifact);
+        }
     }
 
     private static void AppendRenderManifest(

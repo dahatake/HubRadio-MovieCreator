@@ -461,6 +461,83 @@ public sealed class RenderGraphValidatorTests
     }
 
     [TestMethod]
+    public void BurnedInSubtitleNodesMayFormALinearCueChainOnly()
+    {
+        Fixture fixture = Fixture.Create();
+        var secondInput = new RenderGraphInput(
+            InputId(9),
+            RenderInputKind.Subtitle,
+            Digest('9'),
+            81,
+            fixture.EditorialOrigin);
+        RenderNode secondSubtitle = RenderNode.Subtitle(
+            NodeId(9),
+            secondInput.Id,
+            fixture.SubtitleNode.Id,
+            new Cue(
+                Id<CueIdTag>(0x7700001a, 9),
+                CueKind.Subtitle,
+                Range(3, 1),
+                "subtitle"),
+            fixture.EditorialOrigin);
+        RenderNode output = RenderNode.Output(
+            fixture.OutputNode.Id,
+            [secondSubtitle.Id, fixture.AudioNode.Id],
+            fixture.OutputNode.OutputRange);
+        RenderGraph graph = fixture.GraphWith(
+            inputs: [.. fixture.Graph.Inputs, secondInput],
+            nodes:
+            [
+                fixture.VideoNode,
+                fixture.AudioNode,
+                fixture.SubtitleNode,
+                fixture.GraphicNode,
+                fixture.TransitionNode,
+                secondSubtitle,
+                output,
+            ]);
+        RenderGraphValidationContext context = fixture.ContextWith(
+            artifacts:
+            [
+                .. fixture.Context.Artifacts,
+                new RenderArtifactEvidence(
+                    secondInput.Id,
+                    secondInput.ContentDigest,
+                    secondInput.ByteSize),
+            ]);
+
+        RenderGraphValidationResult burnedIn = RenderGraphValidator.Validate(
+            graph,
+            context);
+
+        Assert.IsTrue(burnedIn.IsValid);
+        Assert.HasCount(0, burnedIn.Issues);
+
+        var subtitleStreamProfile = new RenderProfile(
+            fixture.Profile.Id,
+            fixture.Profile.Name,
+            fixture.Profile.ProfileDigest,
+            fixture.Profile.Width,
+            fixture.Profile.Height,
+            fixture.Profile.FrameRateNumerator,
+            fixture.Profile.FrameRateDenominator,
+            fixture.Profile.LayoutSpecId,
+            fixture.Profile.TemplateId,
+            fixture.Profile.TemplateVersionDigest,
+            fixture.Profile.VideoCodec,
+            fixture.Profile.AudioCodec,
+            subtitleBurnIn: false);
+        AssertIssue(
+            RenderGraphValidator.Validate(
+                graph,
+                fixture.ContextWith(
+                    profile: subtitleStreamProfile,
+                    artifacts: context.Artifacts)),
+            RenderGraphValidationIssueKind.NodeDependencyKindMismatch,
+            nodeId: secondSubtitle.Id);
+    }
+
+    [TestMethod]
     public void SourceBackedAudioRangeMustRemainInsideItsSourceSpan()
     {
         Fixture fixture = Fixture.Create(useSourceSpanVideo: true);

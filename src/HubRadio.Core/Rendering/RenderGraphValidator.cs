@@ -436,7 +436,11 @@ public static class RenderGraphValidator
 
             ValidateNodeInput(node, inputs, issues);
             ValidateNodeOrigin(node, inputs, context, issues);
-            ValidateNodeDependencies(node, nodes, issues);
+            ValidateNodeDependencies(
+                node,
+                nodes,
+                context.Profile.SubtitleBurnIn,
+                issues);
             ValidateNodeLayout(node, context.LayoutSpec, issues);
             if (node.Kind == RenderNodeKind.Video
                 && !context.TimelineMap.Entries.Any(entry =>
@@ -604,13 +608,30 @@ public static class RenderGraphValidator
     private static void ValidateNodeDependencies(
         RenderNode node,
         IReadOnlyDictionary<EntityId<RenderNodeIdTag>, RenderNode> nodes,
+        bool subtitleBurnIn,
         IssueCollector issues)
     {
         RenderNode[] resolvedInputs = node.InputNodeIds
             .Where(nodes.ContainsKey)
             .Select(id => nodes[id])
             .ToArray();
-        if (node.Kind is RenderNodeKind.Subtitle or RenderNodeKind.Graphic)
+        if (node.Kind == RenderNodeKind.Subtitle)
+        {
+            if (resolvedInputs.Length != 1
+                || !IsVisualProducer(resolvedInputs[0].Kind)
+                    && !(subtitleBurnIn
+                        && resolvedInputs[0].Kind
+                            == RenderNodeKind.Subtitle))
+            {
+                issues.Add(
+                    RenderGraphValidationIssueKind.NodeDependencyKindMismatch,
+                    node.Id);
+            }
+
+            return;
+        }
+
+        if (node.Kind == RenderNodeKind.Graphic)
         {
             if (resolvedInputs.Length != 1
                 || !IsVisualProducer(resolvedInputs[0].Kind))
