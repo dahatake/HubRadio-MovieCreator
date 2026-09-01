@@ -57,6 +57,21 @@ import {
   reviewVersionDigest,
   reviewVersionId,
 } from '../features/review/reviewTestFixture'
+import {
+  createThumbnailCancelRequest,
+  createThumbnailGenerateRequest,
+  createThumbnailReadRequest,
+} from '../features/thumbnails/thumbnailProtocol'
+import {
+  createThumbnailCancelResponseValue,
+  createThumbnailGenerateResponseValue,
+  createThumbnailReadResponseValue,
+  thumbnailEvidenceDigest,
+  thumbnailGenerationId,
+  thumbnailJobId,
+  thumbnailPlayerEvidenceDigest,
+  thumbnailTemplateId,
+} from '../features/thumbnails/thumbnailTestFixture'
 
 const requestId = '00112233-4455-6677-8899-aabbccddeeff'
 
@@ -259,6 +274,53 @@ describe('web bridge client', () => {
     expect(removed).not.toHaveBeenCalled()
   })
 
+  it('sends and routes only strict thumbnail evidence operations', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const readListener = vi.fn()
+    const generateListener = vi.fn()
+    const cancelListener = vi.fn()
+    client.onThumbnailReadResponse(readListener)
+    client.onThumbnailGenerateResponse(generateListener)
+    client.onThumbnailCancelResponse(cancelListener)
+    const params = {
+      jobId: thumbnailJobId,
+      generationId: thumbnailGenerationId,
+      digest: thumbnailEvidenceDigest,
+      playerDigest: thumbnailPlayerEvidenceDigest,
+      templateId: thumbnailTemplateId,
+      proxyFrameSequence: 1,
+    } as const
+
+    client.sendThumbnailRead(requestId, thumbnailJobId)
+    client.sendThumbnailGenerate(requestId, params)
+    client.sendThumbnailCancellation(requestId, thumbnailGenerationId)
+    expect(transport.posted).toEqual([
+      createThumbnailReadRequest(requestId, thumbnailJobId),
+      createThumbnailGenerateRequest(requestId, params),
+      createThumbnailCancelRequest(requestId, thumbnailGenerationId),
+    ])
+
+    transport.emit(createThumbnailReadResponseValue())
+    transport.emit(createThumbnailGenerateResponseValue())
+    transport.emit(createThumbnailCancelResponseValue())
+    expect(readListener).toHaveBeenCalledOnce()
+    expect(generateListener).toHaveBeenCalledOnce()
+    expect(cancelListener).toHaveBeenCalledOnce()
+
+    transport.emit({
+      ...createThumbnailGenerateResponseValue(),
+      actorSid: 'S-1-5-21-private',
+    })
+    transport.emit({
+      version: 1,
+      requestId,
+      method: 'thumbnail.recommend',
+      result: {},
+    })
+    expect(generateListener).toHaveBeenCalledOnce()
+  })
+
   it('unsubscribes player listeners independently', () => {
     const transport = new FakeTransport()
     const client = createBridgeClient(transport)
@@ -405,6 +467,25 @@ describe('web bridge client', () => {
     expect(() => client.sendReview(reviewRequest)).toThrow('disposed')
     expect(() => client.abandonReviewRequest(requestId)).toThrow('disposed')
     expect(() => client.onReviewResponse(listener)).toThrow('disposed')
+    expect(() => client.sendThumbnailRead(requestId, thumbnailJobId)).toThrow(
+      'disposed',
+    )
+    expect(() =>
+      client.sendThumbnailGenerate(requestId, {
+        jobId: thumbnailJobId,
+        generationId: thumbnailGenerationId,
+        digest: thumbnailEvidenceDigest,
+        playerDigest: thumbnailPlayerEvidenceDigest,
+        templateId: thumbnailTemplateId,
+        proxyFrameSequence: 1,
+      }),
+    ).toThrow('disposed')
+    expect(() =>
+      client.sendThumbnailCancellation(requestId, thumbnailGenerationId),
+    ).toThrow('disposed')
+    expect(() => client.onThumbnailReadResponse(listener)).toThrow('disposed')
+    expect(() => client.onThumbnailGenerateResponse(listener)).toThrow('disposed')
+    expect(() => client.onThumbnailCancelResponse(listener)).toThrow('disposed')
   })
 
   it('sends and emits only strict project protocol messages', () => {

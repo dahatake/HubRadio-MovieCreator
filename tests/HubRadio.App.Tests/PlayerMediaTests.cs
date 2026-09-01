@@ -2,6 +2,7 @@ using HubRadio.App.Web;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Projects;
 using HubRadio.Core.Provenance;
+using HubRadio.Infrastructure.Database;
 using HubRadio.Infrastructure.Files;
 
 namespace HubRadio.App.Tests;
@@ -47,6 +48,21 @@ public sealed class PlayerMediaTests
         Assert.AreEqual(Digest, parsed.ContentDigest);
         Assert.IsTrue(WebViewHost.IsAllowedMediaOrigin(expected));
         Assert.IsFalse(WebViewHost.IsAllowedOrigin(expected));
+
+        PlayerMediaAssetReference thumbnail =
+            PlayerMediaAssetReference.GeneratedThumbnail(
+                ProjectId,
+                ArtifactId,
+                Digest);
+        Assert.AreEqual(
+            expected.Replace("/proxy/", "/thumbnail/", StringComparison.Ordinal),
+            thumbnail.Value);
+        Assert.IsTrue(PlayerMediaAssetReference.TryParse(
+            thumbnail.Value,
+            out PlayerMediaAssetReference? parsedThumbnail));
+        Assert.AreEqual(
+            PlayerMediaAssetKind.GeneratedThumbnail,
+            parsedThumbnail!.Kind);
     }
 
     [TestMethod]
@@ -133,6 +149,126 @@ public sealed class PlayerMediaTests
         response.Dispose();
         Assert.IsNotNull(opened);
         Assert.IsFalse(opened.CanRead);
+    }
+
+    [TestMethod]
+    public async Task CreateAsync_GeneratedThumbnailReturnsOnlyDigestBoundPng()
+    {
+        using MediaFixture fixture = new();
+        PlayerMediaAssetReference reference =
+            PlayerMediaAssetReference.GeneratedThumbnail(
+                ProjectId,
+                ArtifactId,
+                Digest);
+        var reader = new StubAssetReader(fixture.Open);
+        var factory = new PlayerMediaResponseFactory(
+            reader,
+            AllowPlayerAccessAuthorization.Instance);
+
+        using PlayerMediaResponse response = await factory.CreateAsync(
+            "GET",
+            reference.Value,
+            rangeHeader: null);
+
+        Assert.AreEqual(200, response.StatusCode);
+        AssertHeader(response.Headers, "Content-Type: image/png");
+        AssertHeader(response.Headers, $"Content-Length: {fixture.Content.Length}");
+        Assert.AreEqual(reference.Value, reader.LastReference!.Value);
+        Assert.IsFalse(response.Headers.Contains(
+            @"C:\",
+            StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task ArtifactReader_OpensR023BindingDigestPathWithOutputDigestReference()
+    {
+        string rootPath = Path.Combine(
+            Path.GetTempPath(),
+            string.Concat(
+                "HubRadio.ThumbnailMedia.",
+                Guid.NewGuid().ToString("N")));
+        try
+        {
+            string workspacePath = Path.Combine(rootPath, "workspace");
+            Directory.CreateDirectory(workspacePath);
+            string databasePath = Path.Combine(rootPath, "store.db");
+            _ = DatabaseMigrator.Migrate(
+                databasePath,
+                Path.Combine(rootPath, "backups"));
+            var createdAt = new DateTimeOffset(
+                2041,
+                2,
+                3,
+                4,
+                5,
+                6,
+                TimeSpan.Zero);
+            new ProjectStore(databasePath).CreateProject(
+                new Project(
+                    ProjectId,
+                    "Generated thumbnail media",
+                    "Verify opaque thumbnail media reads.",
+                    "Test audience",
+                    PublicationScope.InternalOnly,
+                    deadline: null,
+                    assets: [],
+                    performers: []),
+                "{\"project\":true}",
+                createdAt);
+            var store = new ArtifactStore(databasePath, workspacePath);
+            byte[] content = [137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3];
+            ContentDigest outputDigest = ContentDigest.Compute(content);
+            ContentDigest bindingDigest = new(new string('b', 64));
+            string stagingPath = Path.Combine(
+                workspacePath,
+                "projects",
+                ProjectId.ToString(),
+                "staging",
+                "thumbnail.ready");
+            Directory.CreateDirectory(Path.GetDirectoryName(stagingPath)!);
+            File.WriteAllBytes(stagingPath, content);
+            _ = await store.PromoteAsync(new ArtifactPromotionRequest(
+                ArtifactId,
+                ProjectId,
+                ArtifactKind.Render,
+                stagingPath,
+                string.Concat(
+                    "thumbnails/",
+                    ArtifactId.ToString(),
+                    "/",
+                    bindingDigest.Hex,
+                    ".png"),
+                outputDigest,
+                content.LongLength,
+                createdAt));
+            var reader = new ArtifactStorePlayerMediaAssetReader(store);
+            PlayerMediaAssetReference reference =
+                PlayerMediaAssetReference.GeneratedThumbnail(
+                    ProjectId,
+                    ArtifactId,
+                    outputDigest);
+
+            await using ValidatedArtifactReadStream? stream =
+                await reader.OpenAsync(reference, CancellationToken.None);
+
+            Assert.IsNotNull(stream);
+            byte[] actual = new byte[content.Length];
+            await stream.ReadExactlyAsync(actual);
+            CollectionAssert.AreEqual(content, actual);
+            Assert.IsNull(await reader.OpenAsync(
+                PlayerMediaAssetReference.GeneratedThumbnail(
+                    ProjectId,
+                    ArtifactId,
+                    new ContentDigest(new string('f', 64))),
+                CancellationToken.None));
+        }
+        finally
+        {
+            if (Directory.Exists(rootPath))
+            {
+                Directory.Delete(rootPath, recursive: true);
+            }
+        }
     }
 
     [TestMethod]
@@ -454,11 +590,26 @@ public sealed class PlayerMediaTests
             var artifact = new StoredArtifact(
                 id ?? reference.ArtifactId,
                 projectId ?? reference.ProjectId,
-                kind ?? ArtifactKind.Proxy,
-                string.Concat(
-                    "projects/",
-                    (projectId ?? reference.ProjectId).ToString(),
-                    "/proxy/proxy.mp4"),
+                kind ?? reference.Kind switch
+                {
+                    PlayerMediaAssetKind.ProxyVideo => ArtifactKind.Proxy,
+                    PlayerMediaAssetKind.ThumbnailSprite => ArtifactKind.Preview,
+                    PlayerMediaAssetKind.GeneratedThumbnail => ArtifactKind.Render,
+                    _ => throw new ArgumentOutOfRangeException(nameof(reference)),
+                },
+                reference.Kind == PlayerMediaAssetKind.GeneratedThumbnail
+                    ? string.Concat(
+                        "projects/",
+                        (projectId ?? reference.ProjectId).ToString(),
+                        "/renders/thumbnails/",
+                        (id ?? reference.ArtifactId).ToString(),
+                        "/",
+                        new string('b', 64),
+                        ".png")
+                    : string.Concat(
+                        "projects/",
+                        (projectId ?? reference.ProjectId).ToString(),
+                        "/proxy/proxy.mp4"),
                 digest ?? reference.ContentDigest,
                 byteSize ?? Content.LongLength,
                 new DateTimeOffset(

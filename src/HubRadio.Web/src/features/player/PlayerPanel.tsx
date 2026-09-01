@@ -58,16 +58,28 @@ export type PlayerBridgeClient = Pick<
   | 'dispose'
 >
 
+export interface PlayerExactFrameSelection {
+  readonly jobId: string
+  readonly projectId: string
+  readonly sourceAssetId: string
+  readonly playerEvidenceDigest: string
+  readonly frame: PlayerFrame
+}
+
 export interface PlayerPanelProps {
   readonly createClient?: () => PlayerBridgeClient
   readonly initialJobId?: string
   readonly onPositionChange?: (position: PlayerTimelinePosition | null) => void
+  readonly onSelectionChange?: (
+    selection: PlayerExactFrameSelection | null,
+  ) => void
 }
 
 export function PlayerPanel({
   createClient = createHostBridgeClient,
   initialJobId = '',
   onPositionChange,
+  onSelectionChange,
 }: PlayerPanelProps) {
   const [state, dispatch] = useReducer(playerStateReducer, {
     ...initialPlayerState,
@@ -75,9 +87,11 @@ export function PlayerPanel({
   })
   const [isPlaying, setIsPlaying] = useState(false)
   const stateRef = useRef<PlayerState>(state)
+  const selectionChangeRef = useRef(onSelectionChange)
   const clientRef = useRef<PlayerBridgeClient | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   stateRef.current = state
+  selectionChangeRef.current = onSelectionChange
 
   useEffect(() => {
     let client: PlayerBridgeClient
@@ -216,6 +230,24 @@ export function PlayerPanel({
           }),
     )
   }, [currentFrame, onPositionChange, state.snapshot])
+
+  useEffect(() => {
+    const snapshot = state.snapshot
+    const jobId = state.jobId
+    onSelectionChange?.(
+      snapshot === null || jobId === null || currentFrame === null
+        ? null
+        : Object.freeze({
+            jobId,
+            projectId: snapshot.projectId,
+            sourceAssetId: snapshot.sourceAssetId,
+            playerEvidenceDigest: snapshot.evidenceDigest,
+            frame: currentFrame,
+          }),
+    )
+  }, [currentFrame, onSelectionChange, state.jobId, state.snapshot])
+
+  useEffect(() => () => selectionChangeRef.current?.(null), [])
   const canLoad =
     isCanonicalEntityId(state.jobIdInput) && state.status !== 'loading'
   const seekDisabled =

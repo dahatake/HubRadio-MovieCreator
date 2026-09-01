@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; ping and jobs use 4096-byte responses, project and timeline requests use 96 KiB with 1 MiB responses, transcript requests use 16 KiB with 4 MiB responses, review requests use 24 KiB with 1 MiB responses and 16 KiB review text, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every protected operation and every media GET; actor identity is never accepted from Web messages, and any requested acting role is untrusted intent revalidated against current native assignments. Review mutations pin the exact composition-version ID and full digest, while rational time remains reduced integer evidence. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, arbitrary URLs, and sensitive host data are prohibited.",
+  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; ping and jobs use 4096-byte responses, project, timeline, and thumbnail requests use 96 KiB with 1 MiB responses, transcript requests use 16 KiB with 4 MiB responses, review requests use 24 KiB with 1 MiB responses and 16 KiB review text, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every protected operation and every media GET; actor identity is never accepted from Web messages, and any requested acting role is untrusted intent revalidated against current native assignments. Review mutations pin the exact composition-version ID and full digest, while rational time remains reduced integer evidence. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, arbitrary URLs, SIDs, commands, authentication secrets, process output, template filesystem locations, and sensitive host data are prohibited.",
   "title": "WebBridgeMessage",
   "oneOf": [
     { "$ref": "#/$defs/pingRequest" },
@@ -47,7 +47,13 @@
     { "$ref": "#/$defs/timelineReadRequest" },
     { "$ref": "#/$defs/timelineReadResponse" },
     { "$ref": "#/$defs/timelineApplyRequest" },
-    { "$ref": "#/$defs/timelineApplyResponse" }
+    { "$ref": "#/$defs/timelineApplyResponse" },
+    { "$ref": "#/$defs/thumbnailReadRequest" },
+    { "$ref": "#/$defs/thumbnailReadResponse" },
+    { "$ref": "#/$defs/thumbnailGenerateRequest" },
+    { "$ref": "#/$defs/thumbnailGenerateResponse" },
+    { "$ref": "#/$defs/thumbnailCancelRequest" },
+    { "$ref": "#/$defs/thumbnailCancelResponse" }
   ],
   "$defs": {
     "protocolVersion": { "const": 1 },
@@ -97,6 +103,9 @@
         "jobs.retry",
         "player.read",
         "player.seek",
+        "thumbnail.read",
+        "thumbnail.generate",
+        "thumbnail.cancel",
         "transcript.read",
         "transcript.editToken",
         "transcript.setSpeaker",
@@ -2606,6 +2615,151 @@
         }
       ]
     },
+    "thumbnailMediaReference": {
+      "type": "string",
+      "pattern": "^https://player-media\\.appassets\\.example/media/v1/(?!00000000-0000-0000-0000-000000000000/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/thumbnail/(?!00000000-0000-0000-0000-000000000000/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "thumbnailRights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "externalPublicationAllowed"],
+      "properties": {
+        "status": { "enum": ["approved", "unconfirmed", "rejected"] },
+        "externalPublicationAllowed": { "type": "boolean" }
+      }
+    },
+    "thumbnailTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approvalId",
+        "approvalDigest",
+        "approvalRole",
+        "approvedAt",
+        "templateId",
+        "name",
+        "templateVersionDigest",
+        "renderProfileId",
+        "renderProfileDigest",
+        "layoutSpecId",
+        "layoutSpecDigest",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "approvalId": { "$ref": "#/$defs/entityId" },
+        "approvalDigest": { "$ref": "#/$defs/contentDigest" },
+        "approvalRole": { "const": "brandApprover" },
+        "approvedAt": { "$ref": "#/$defs/timestamp" },
+        "templateId": { "$ref": "#/$defs/entityId" },
+        "name": { "type": "string", "minLength": 1 },
+        "templateVersionDigest": { "$ref": "#/$defs/contentDigest" },
+        "renderProfileId": { "$ref": "#/$defs/entityId" },
+        "renderProfileDigest": { "$ref": "#/$defs/contentDigest" },
+        "layoutSpecId": { "$ref": "#/$defs/entityId" },
+        "layoutSpecDigest": { "$ref": "#/$defs/contentDigest" },
+        "width": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+      }
+    },
+    "thumbnailSnapshot": {
+      "type": "object",
+      "$comment": "The evidence digest binds the exact durable source, source rights, source PTS index, proxy frame map, U-007 player evidence, and every trusted approved template/profile/layout option. No recommendation or score is present.",
+      "additionalProperties": false,
+      "required": [
+        "evidenceDigest",
+        "playerEvidenceDigest",
+        "projectId",
+        "sourceArtifactId",
+        "sourceAssetId",
+        "sourceContentDigest",
+        "sourceRightsDigest",
+        "sourcePtsIndexDigest",
+        "proxyFrameMapDigest",
+        "sourcePresentationStart",
+        "sourcePresentationEnd",
+        "rights",
+        "templates"
+      ],
+      "properties": {
+        "evidenceDigest": { "$ref": "#/$defs/contentDigest" },
+        "playerEvidenceDigest": { "$ref": "#/$defs/contentDigest" },
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "sourceArtifactId": { "$ref": "#/$defs/entityId" },
+        "sourceAssetId": { "$ref": "#/$defs/entityId" },
+        "sourceContentDigest": { "$ref": "#/$defs/contentDigest" },
+        "sourceRightsDigest": { "$ref": "#/$defs/contentDigest" },
+        "sourcePtsIndexDigest": { "$ref": "#/$defs/contentDigest" },
+        "proxyFrameMapDigest": { "$ref": "#/$defs/contentDigest" },
+        "sourcePresentationStart": { "$ref": "#/$defs/rationalTime" },
+        "sourcePresentationEnd": { "$ref": "#/$defs/rationalTime" },
+        "rights": { "$ref": "#/$defs/thumbnailRights" },
+        "templates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/thumbnailTemplate" }
+        }
+      }
+    },
+    "thumbnailReadParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jobId"],
+      "properties": {
+        "jobId": { "$ref": "#/$defs/jobId" }
+      }
+    },
+    "thumbnailGenerateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "jobId",
+        "generationId",
+        "digest",
+        "playerDigest",
+        "templateId",
+        "proxyFrameSequence"
+      ],
+      "properties": {
+        "jobId": { "$ref": "#/$defs/jobId" },
+        "generationId": { "$ref": "#/$defs/entityId" },
+        "digest": { "$ref": "#/$defs/contentDigest" },
+        "playerDigest": { "$ref": "#/$defs/contentDigest" },
+        "templateId": { "$ref": "#/$defs/entityId" },
+        "proxyFrameSequence": { "$ref": "#/$defs/nonnegativeInt32" }
+      }
+    },
+    "thumbnailCancelParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generationId"],
+      "properties": {
+        "generationId": { "$ref": "#/$defs/entityId" }
+      }
+    },
+    "thumbnailReadResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot"],
+          "properties": {
+            "status": { "const": "available" },
+            "snapshot": { "$ref": "#/$defs/thumbnailSnapshot" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot"],
+          "properties": {
+            "status": {
+              "enum": ["forbidden", "unavailable", "stale", "mismatched"]
+            },
+            "snapshot": { "type": "null" }
+          }
+        }
+      ]
+    },
     "transcriptReadResponse": {
       "type": "object",
       "additionalProperties": false,
@@ -2744,6 +2898,243 @@
         "requestId": { "$ref": "#/$defs/requestId" },
         "method": { "const": "timeline.apply" },
         "result": { "$ref": "#/$defs/timelineApplyResult" }
+      }
+    },
+    "thumbnailOutputSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactId",
+        "assetId",
+        "contentDigest",
+        "ptsIndexDigest",
+        "frameMapDigest",
+        "rightsStatus",
+        "externalPublicationAllowed"
+      ],
+      "properties": {
+        "artifactId": { "$ref": "#/$defs/entityId" },
+        "assetId": { "$ref": "#/$defs/entityId" },
+        "contentDigest": { "$ref": "#/$defs/contentDigest" },
+        "ptsIndexDigest": { "$ref": "#/$defs/contentDigest" },
+        "frameMapDigest": { "$ref": "#/$defs/contentDigest" },
+        "rightsStatus": { "const": "approved" },
+        "externalPublicationAllowed": { "const": true }
+      }
+    },
+    "thumbnailOutputSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proxyFrameSequence",
+        "sourceFrameSequence",
+        "sourcePresentationTime",
+        "selectedAt"
+      ],
+      "properties": {
+        "proxyFrameSequence": { "$ref": "#/$defs/nonnegativeInt32" },
+        "sourceFrameSequence": { "$ref": "#/$defs/nonnegativeInt32" },
+        "sourcePresentationTime": { "$ref": "#/$defs/rationalTime" },
+        "selectedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "thumbnailOutputTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approvalId",
+        "approvalDigest",
+        "approvalRole",
+        "approvedAt",
+        "templateId",
+        "templateVersionDigest",
+        "renderProfileId",
+        "renderProfileDigest",
+        "layoutSpecId",
+        "layoutSpecDigest"
+      ],
+      "properties": {
+        "approvalId": { "$ref": "#/$defs/entityId" },
+        "approvalDigest": { "$ref": "#/$defs/contentDigest" },
+        "approvalRole": { "const": "brandApprover" },
+        "approvedAt": { "$ref": "#/$defs/timestamp" },
+        "templateId": { "$ref": "#/$defs/entityId" },
+        "templateVersionDigest": { "$ref": "#/$defs/contentDigest" },
+        "renderProfileId": { "$ref": "#/$defs/entityId" },
+        "renderProfileDigest": { "$ref": "#/$defs/contentDigest" },
+        "layoutSpecId": { "$ref": "#/$defs/entityId" },
+        "layoutSpecDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "thumbnailOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generationId",
+        "artifactId",
+        "projectId",
+        "mediaReference",
+        "bindingDigest",
+        "contentDigest",
+        "byteSize",
+        "width",
+        "height",
+        "createdAt",
+        "wasAlreadyRegistered",
+        "source",
+        "selection",
+        "template",
+        "origin"
+      ],
+      "properties": {
+        "generationId": { "$ref": "#/$defs/entityId" },
+        "artifactId": { "$ref": "#/$defs/entityId" },
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "mediaReference": { "$ref": "#/$defs/thumbnailMediaReference" },
+        "bindingDigest": { "$ref": "#/$defs/contentDigest" },
+        "contentDigest": { "$ref": "#/$defs/contentDigest" },
+        "byteSize": { "$ref": "#/$defs/positiveInt64String" },
+        "width": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "wasAlreadyRegistered": { "type": "boolean" },
+        "source": { "$ref": "#/$defs/thumbnailOutputSource" },
+        "selection": { "$ref": "#/$defs/thumbnailOutputSelection" },
+        "template": { "$ref": "#/$defs/thumbnailOutputTemplate" },
+        "origin": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "assetId"],
+          "properties": {
+            "kind": { "const": "asset" },
+            "assetId": { "$ref": "#/$defs/entityId" }
+          }
+        }
+      }
+    },
+    "thumbnailGenerateResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "output"],
+          "properties": {
+            "status": { "const": "available" },
+            "output": { "$ref": "#/$defs/thumbnailOutput" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "output"],
+          "properties": {
+            "status": {
+              "enum": [
+                "forbidden",
+                "unavailable",
+                "stale",
+                "mismatched",
+                "invalidTime",
+                "rightsNotApproved",
+                "templateUnavailable",
+                "cancelled",
+                "conflict",
+                "failed"
+              ]
+            },
+            "output": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "thumbnailCancelResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "outcome"],
+          "properties": {
+            "status": { "const": "available" },
+            "outcome": {
+              "enum": ["requested", "alreadyRequested", "notRunning", "notFound"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "outcome"],
+          "properties": {
+            "status": { "enum": ["forbidden", "unavailable"] },
+            "outcome": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "thumbnailReadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "thumbnail.read" },
+        "params": { "$ref": "#/$defs/thumbnailReadParams" }
+      }
+    },
+    "thumbnailReadResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "thumbnail.read" },
+        "result": { "$ref": "#/$defs/thumbnailReadResult" }
+      }
+    },
+    "thumbnailGenerateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "thumbnail.generate" },
+        "params": { "$ref": "#/$defs/thumbnailGenerateParams" }
+      }
+    },
+    "thumbnailGenerateResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "thumbnail.generate" },
+        "result": { "$ref": "#/$defs/thumbnailGenerateResult" }
+      }
+    },
+    "thumbnailCancelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "thumbnail.cancel" },
+        "params": { "$ref": "#/$defs/thumbnailCancelParams" }
+      }
+    },
+    "thumbnailCancelResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "thumbnail.cancel" },
+        "result": { "$ref": "#/$defs/thumbnailCancelResult" }
       }
     }
   }

@@ -80,6 +80,10 @@ public sealed partial class MainWindow : Window
                     Path.Combine(AppContext.BaseDirectory, "Profiles"));
                 PlayerApplicationRuntime playerRuntime =
                     PlayerApplicationRuntime.Create(applicationDataDirectory);
+                ThumbnailApplicationRuntime thumbnailRuntime =
+                    ThumbnailApplicationRuntime.Create(
+                        applicationDataDirectory,
+                        Path.Combine(AppContext.BaseDirectory, "Profiles"));
                 WebViewHost host = new(
                     WebApplicationView.CoreWebView2,
                     Path.Combine(AppContext.BaseDirectory, "WebAssets"),
@@ -90,7 +94,8 @@ public sealed partial class MainWindow : Window
                     playerRuntime.BridgeReader,
                     playerRuntime.MediaAssetReader,
                     playerRuntime.Authorization,
-                    bridgeHandlers.Transcript);
+                    bridgeHandlers.Transcript,
+                    thumbnailRuntime.RequestHandler);
                 try
                 {
                     WebApplicationView.Visibility = Visibility.Visible;

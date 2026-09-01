@@ -5,7 +5,9 @@ using System.Text;
 using System.Text.Json;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Jobs;
+using HubRadio.Core.Layout;
 using HubRadio.Core.Serialization;
+using HubRadio.Core.Templates;
 using HubRadio.Core.Time;
 using HubRadio.Infrastructure.Database;
 using HubRadio.Infrastructure.Diagnostics;
@@ -37,6 +39,9 @@ internal enum BridgeMethod
     JobsRetry,
     PlayerRead,
     PlayerSeek,
+    ThumbnailRead,
+    ThumbnailGenerate,
+    ThumbnailCancel,
     TranscriptRead,
     TranscriptEditToken,
     TranscriptSetSpeaker,
@@ -60,7 +65,10 @@ internal sealed class BridgeRequest
         EntityId<JobIdTag>? jobId,
         int? expectedRevision,
         ContentDigest? evidenceDigest,
-        int? proxyFrameSequence)
+        int? proxyFrameSequence,
+        Guid? generationId,
+        ContentDigest? playerEvidenceDigest,
+        EntityId<TemplateIdTag>? templateId)
     {
         RequestId = requestId;
         Method = method;
@@ -69,6 +77,9 @@ internal sealed class BridgeRequest
         ExpectedRevision = expectedRevision;
         EvidenceDigest = evidenceDigest;
         ProxyFrameSequence = proxyFrameSequence;
+        GenerationId = generationId;
+        PlayerEvidenceDigest = playerEvidenceDigest;
+        TemplateId = templateId;
     }
 
     internal BridgeRequest(
@@ -84,7 +95,10 @@ internal sealed class BridgeRequest
             jobId,
             expectedRevision: null,
             evidenceDigest,
-            proxyFrameSequence)
+            proxyFrameSequence,
+            generationId: null,
+            playerEvidenceDigest: null,
+            templateId: null)
     {
     }
 
@@ -102,6 +116,12 @@ internal sealed class BridgeRequest
 
     internal int? ProxyFrameSequence { get; }
 
+    internal Guid? GenerationId { get; }
+
+    internal ContentDigest? PlayerEvidenceDigest { get; }
+
+    internal EntityId<TemplateIdTag>? TemplateId { get; }
+
     internal static BridgeRequest Create(
         Guid requestId,
         BridgeMethod method,
@@ -109,7 +129,10 @@ internal sealed class BridgeRequest
         EntityId<JobIdTag>? jobId = null,
         int? expectedRevision = null,
         ContentDigest? evidenceDigest = null,
-        int? proxyFrameSequence = null) =>
+        int? proxyFrameSequence = null,
+        Guid? generationId = null,
+        ContentDigest? playerEvidenceDigest = null,
+        EntityId<TemplateIdTag>? templateId = null) =>
         new(
             requestId,
             method,
@@ -117,7 +140,10 @@ internal sealed class BridgeRequest
             jobId,
             expectedRevision,
             evidenceDigest,
-            proxyFrameSequence);
+            proxyFrameSequence,
+            generationId,
+            playerEvidenceDigest,
+            templateId);
 }
 
 internal static class BridgeProtocol
@@ -134,6 +160,10 @@ internal static class BridgeProtocol
         IngestWorkflowStore.MaximumPayloadUtf8Bytes;
     internal const int MaxTranscriptRequestUtf8Bytes = 16 * 1024;
     internal const int MaxTranscriptResponseUtf8Bytes = 4 * 1024 * 1024;
+    internal const int MaxThumbnailRequestUtf8Bytes =
+        MaxProjectRequestUtf8Bytes;
+    internal const int MaxThumbnailResponseUtf8Bytes =
+        MaxProjectResponseUtf8Bytes;
     internal const string PingMethod = "bridge.ping";
     internal const string ListProjectsMethod = "project.list";
     internal const string CreateDraftMethod = "project.createDraft";
@@ -160,6 +190,9 @@ internal static class BridgeProtocol
     internal const string JobsRetryMethod = "jobs.retry";
     internal const string PlayerReadMethod = "player.read";
     internal const string PlayerSeekMethod = "player.seek";
+    internal const string ThumbnailReadMethod = "thumbnail.read";
+    internal const string ThumbnailGenerateMethod = "thumbnail.generate";
+    internal const string ThumbnailCancelMethod = "thumbnail.cancel";
     internal const string TranscriptReadMethod = "transcript.read";
     internal const string TranscriptEditTokenMethod = "transcript.editToken";
     internal const string TranscriptSetSpeakerMethod = "transcript.setSpeaker";
@@ -392,6 +425,9 @@ internal static class BridgeProtocol
             BridgeMethod.JobsRetry => JobsRetryMethod,
             BridgeMethod.PlayerRead => PlayerReadMethod,
             BridgeMethod.PlayerSeek => PlayerSeekMethod,
+            BridgeMethod.ThumbnailRead => ThumbnailReadMethod,
+            BridgeMethod.ThumbnailGenerate => ThumbnailGenerateMethod,
+            BridgeMethod.ThumbnailCancel => ThumbnailCancelMethod,
             BridgeMethod.TranscriptRead => TranscriptReadMethod,
             BridgeMethod.TranscriptEditToken => TranscriptEditTokenMethod,
             BridgeMethod.TranscriptSetSpeaker => TranscriptSetSpeakerMethod,
@@ -415,6 +451,9 @@ internal static class BridgeProtocol
         {
             BridgeMethod.PlayerRead or BridgeMethod.PlayerSeek =>
                 MaxPlayerResponseUtf8Bytes,
+            BridgeMethod.ThumbnailRead or
+            BridgeMethod.ThumbnailGenerate or
+            BridgeMethod.ThumbnailCancel => MaxThumbnailResponseUtf8Bytes,
             _ when IsTranscriptMethod(method) => MaxTranscriptResponseUtf8Bytes,
             _ when IsLargePayloadMethod(method) => MaxProjectResponseUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewResponseUtf8Bytes,
@@ -453,13 +492,16 @@ internal static class BridgeProtocol
             BridgeMethod.ReviewRecordApproval;
 
     private static int GetMaximumRequestUtf8Bytes(BridgeMethod method) =>
-        IsLargePayloadMethod(method)
-            ? MaxProjectRequestUtf8Bytes
-            : IsTranscriptMethod(method)
-                ? MaxTranscriptRequestUtf8Bytes
-                : IsReviewMethod(method)
-                    ? MaxReviewRequestUtf8Bytes
-                    : MaxRequestUtf8Bytes;
+        method switch
+        {
+            _ when IsLargePayloadMethod(method) => MaxProjectRequestUtf8Bytes,
+            BridgeMethod.ThumbnailRead or
+            BridgeMethod.ThumbnailGenerate or
+            BridgeMethod.ThumbnailCancel => MaxThumbnailRequestUtf8Bytes,
+            _ when IsTranscriptMethod(method) => MaxTranscriptRequestUtf8Bytes,
+            _ when IsReviewMethod(method) => MaxReviewRequestUtf8Bytes,
+            _ => MaxRequestUtf8Bytes,
+        };
 
     private static bool TryParseMethod(
         string method,
@@ -479,6 +521,9 @@ internal static class BridgeProtocol
             JobsRetryMethod => BridgeMethod.JobsRetry,
             PlayerReadMethod => BridgeMethod.PlayerRead,
             PlayerSeekMethod => BridgeMethod.PlayerSeek,
+            ThumbnailReadMethod => BridgeMethod.ThumbnailRead,
+            ThumbnailGenerateMethod => BridgeMethod.ThumbnailGenerate,
+            ThumbnailCancelMethod => BridgeMethod.ThumbnailCancel,
             TranscriptReadMethod => BridgeMethod.TranscriptRead,
             TranscriptEditTokenMethod => BridgeMethod.TranscriptEditToken,
             TranscriptSetSpeakerMethod => BridgeMethod.TranscriptSetSpeaker,
@@ -1125,6 +1170,18 @@ internal static class BridgeProtocol
                 out request);
         }
 
+        if (method is
+            BridgeMethod.ThumbnailRead or
+            BridgeMethod.ThumbnailGenerate or
+            BridgeMethod.ThumbnailCancel)
+        {
+            return TryCreateThumbnailRequest(
+                requestId,
+                method,
+                parameters,
+                out request);
+        }
+
         int expectedPropertyCount = method == BridgeMethod.JobsGetStatus ? 1 : 2;
         if (parameters.EnumerateObject().Count() != expectedPropertyCount ||
             !parameters.TryGetProperty("jobId", out JsonElement jobId) ||
@@ -1217,6 +1274,107 @@ internal static class BridgeProtocol
         return true;
     }
 
+    private static bool TryCreateThumbnailRequest(
+        Guid requestId,
+        BridgeMethod method,
+        JsonElement parameters,
+        out BridgeRequest? request)
+    {
+        request = null;
+        if (method == BridgeMethod.ThumbnailCancel)
+        {
+            if (!HasExactProperties(parameters, ["generationId"]) ||
+                parameters.GetProperty("generationId").ValueKind !=
+                    JsonValueKind.String ||
+                !TryParseRequestId(
+                    parameters.GetProperty("generationId").GetString(),
+                    out Guid parsedGenerationId))
+            {
+                return false;
+            }
+
+            request = BridgeRequest.Create(
+                requestId,
+                method,
+                parameters.Clone(),
+                generationId: parsedGenerationId);
+            return true;
+        }
+
+        if (!parameters.TryGetProperty("jobId", out JsonElement jobId) ||
+            jobId.ValueKind != JsonValueKind.String ||
+            !TryParseJobId(
+                jobId.GetString(),
+                out EntityId<JobIdTag>? parsedJobId))
+        {
+            return false;
+        }
+
+        if (method == BridgeMethod.ThumbnailRead)
+        {
+            if (!HasExactProperties(parameters, ["jobId"]))
+            {
+                return false;
+            }
+
+            request = BridgeRequest.Create(
+                requestId,
+                method,
+                parameters.Clone(),
+                parsedJobId);
+            return true;
+        }
+
+        if (!HasExactProperties(
+                parameters,
+                [
+                    "jobId",
+                    "generationId",
+                    "digest",
+                    "playerDigest",
+                    "templateId",
+                    "proxyFrameSequence",
+                ]) ||
+            parameters.GetProperty("generationId").ValueKind !=
+                JsonValueKind.String ||
+            !TryParseRequestId(
+                parameters.GetProperty("generationId").GetString(),
+                out Guid generationId) ||
+            parameters.GetProperty("digest").ValueKind !=
+                JsonValueKind.String ||
+            !TryParseDigest(
+                parameters.GetProperty("digest").GetString(),
+                out ContentDigest? evidenceDigest) ||
+            parameters.GetProperty("playerDigest").ValueKind !=
+                JsonValueKind.String ||
+            !TryParseDigest(
+                parameters.GetProperty("playerDigest").GetString(),
+                out ContentDigest? playerEvidenceDigest) ||
+            parameters.GetProperty("templateId").ValueKind !=
+                JsonValueKind.String ||
+            !TryParseEntityId<TemplateIdTag>(
+                parameters.GetProperty("templateId").GetString(),
+                out EntityId<TemplateIdTag>? templateId) ||
+            !TryParseExpectedRevision(
+                parameters.GetProperty("proxyFrameSequence"),
+                out int proxyFrameSequence))
+        {
+            return false;
+        }
+
+        request = BridgeRequest.Create(
+            requestId,
+            method,
+            parameters.Clone(),
+            parsedJobId,
+            evidenceDigest: evidenceDigest,
+            proxyFrameSequence: proxyFrameSequence,
+            generationId: generationId,
+            playerEvidenceDigest: playerEvidenceDigest,
+            templateId: templateId);
+        return true;
+    }
+
     private static bool TryParseRequestId(string? value, out Guid requestId)
     {
         if (value is not null
@@ -1242,6 +1400,20 @@ internal static class BridgeProtocol
         }
 
         jobId = null;
+        return false;
+    }
+
+    private static bool TryParseEntityId<TTag>(
+        string? value,
+        [NotNullWhen(true)] out EntityId<TTag>? entityId)
+    {
+        if (EntityId<TTag>.TryParse(value, out entityId) &&
+            string.Equals(value, entityId.ToString(), StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        entityId = null;
         return false;
     }
 
@@ -1288,6 +1460,7 @@ internal sealed class Bridge : IDisposable
     private readonly TimelineBridgeRequestHandler? timelineHandler;
     private readonly PlayerBridgeRequestHandler playerHandler;
     private readonly TranscriptBridgeRequestHandler? transcriptHandler;
+    private readonly ThumbnailBridgeRequestHandler? thumbnailHandler;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private bool isStarted;
     private bool isDisposed;
@@ -1300,7 +1473,9 @@ internal sealed class Bridge : IDisposable
             jobHandler: null,
             timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
-            DeniedPlayerAccessAuthorization.Instance)
+            DeniedPlayerAccessAuthorization.Instance,
+            transcriptHandler: null,
+            thumbnailHandler: null)
     {
     }
 
@@ -1314,7 +1489,9 @@ internal sealed class Bridge : IDisposable
             jobHandler: null,
             timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
-            DeniedPlayerAccessAuthorization.Instance)
+            DeniedPlayerAccessAuthorization.Instance,
+            transcriptHandler: null,
+            thumbnailHandler: null)
     {
     }
 
@@ -1328,7 +1505,9 @@ internal sealed class Bridge : IDisposable
             jobHandler,
             timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
-            DeniedPlayerAccessAuthorization.Instance)
+            DeniedPlayerAccessAuthorization.Instance,
+            transcriptHandler: null,
+            thumbnailHandler: null)
     {
     }
 
@@ -1343,7 +1522,9 @@ internal sealed class Bridge : IDisposable
             jobHandler: null,
             timelineHandler: null,
             playerReader,
-            playerAuthorization)
+            playerAuthorization,
+            transcriptHandler: null,
+            thumbnailHandler: null)
     {
     }
 
@@ -1354,7 +1535,8 @@ internal sealed class Bridge : IDisposable
         JobBridgeRequestHandler? jobHandler,
         IPlayerBridgeReader playerReader,
         IPlayerAccessAuthorization playerAuthorization,
-        TranscriptBridgeRequestHandler? transcriptHandler = null)
+        TranscriptBridgeRequestHandler? transcriptHandler = null,
+        ThumbnailBridgeRequestHandler? thumbnailHandler = null)
         : this(
             coreWebView,
             handleProjectRequestAsync,
@@ -1363,7 +1545,8 @@ internal sealed class Bridge : IDisposable
             timelineHandler: null,
             playerReader,
             playerAuthorization,
-            transcriptHandler)
+            transcriptHandler,
+            thumbnailHandler)
     {
     }
 
@@ -1384,7 +1567,8 @@ internal sealed class Bridge : IDisposable
             timelineHandler: null,
             playerReader,
             playerAuthorization,
-            transcriptHandler: null)
+            transcriptHandler: null,
+            thumbnailHandler: null)
     {
     }
 
@@ -1396,7 +1580,8 @@ internal sealed class Bridge : IDisposable
         TimelineBridgeRequestHandler? timelineHandler,
         IPlayerBridgeReader playerReader,
         IPlayerAccessAuthorization playerAuthorization,
-        TranscriptBridgeRequestHandler? transcriptHandler = null)
+        TranscriptBridgeRequestHandler? transcriptHandler = null,
+        ThumbnailBridgeRequestHandler? thumbnailHandler = null)
         : this(
             coreWebView,
             handleProjectRequestAsync,
@@ -1405,7 +1590,8 @@ internal sealed class Bridge : IDisposable
             timelineHandler,
             playerReader,
             playerAuthorization,
-            transcriptHandler)
+            transcriptHandler,
+            thumbnailHandler)
     {
     }
 
@@ -1419,7 +1605,8 @@ internal sealed class Bridge : IDisposable
         TimelineBridgeRequestHandler? timelineHandler,
         IPlayerBridgeReader playerReader,
         IPlayerAccessAuthorization playerAuthorization,
-        TranscriptBridgeRequestHandler? transcriptHandler = null)
+        TranscriptBridgeRequestHandler? transcriptHandler = null,
+        ThumbnailBridgeRequestHandler? thumbnailHandler = null)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentNullException.ThrowIfNull(playerReader);
@@ -1430,6 +1617,7 @@ internal sealed class Bridge : IDisposable
         this.jobHandler = jobHandler;
         this.timelineHandler = timelineHandler;
         this.transcriptHandler = transcriptHandler;
+        this.thumbnailHandler = thumbnailHandler;
         playerHandler = new PlayerBridgeRequestHandler(
             playerReader,
             playerAuthorization);
@@ -1556,6 +1744,18 @@ internal sealed class Bridge : IDisposable
                     cancellationToken);
         }
 
+        if (request.Method is
+            BridgeMethod.ThumbnailRead or
+            BridgeMethod.ThumbnailGenerate or
+            BridgeMethod.ThumbnailCancel)
+        {
+            return thumbnailHandler is null
+                ? CreateUnavailableResponse(request)
+                : await thumbnailHandler.HandleAsync(
+                    request,
+                    cancellationToken);
+        }
+
         if (BridgeProtocol.IsTimelineMethod(request.Method))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -1611,6 +1811,30 @@ internal sealed class Bridge : IDisposable
             return BridgeProtocol.CreateErrorResponse(
                 request,
                 StableErrorCodes.ReviewOperationFailed);
+        }
+
+        if (request.Method == BridgeMethod.ThumbnailRead)
+        {
+            return ThumbnailBridgeJson.WriteReadResponse(
+                request,
+                ThumbnailBridgeReadResult.Failure(
+                    ThumbnailBridgeStatus.Unavailable));
+        }
+
+        if (request.Method == BridgeMethod.ThumbnailGenerate)
+        {
+            return ThumbnailBridgeJson.WriteGenerationResponse(
+                request,
+                ThumbnailBridgeGenerationResult.Failure(
+                    ThumbnailBridgeStatus.Unavailable));
+        }
+
+        if (request.Method == BridgeMethod.ThumbnailCancel)
+        {
+            return ThumbnailBridgeJson.WriteCancellationResponse(
+                request,
+                ThumbnailBridgeStatus.Unavailable,
+                outcome: null);
         }
 
         return BridgeProtocol.IsProjectMethod(request.Method)

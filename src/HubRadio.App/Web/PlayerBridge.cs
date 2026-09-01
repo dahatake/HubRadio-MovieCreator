@@ -27,6 +27,7 @@ internal enum PlayerMediaAssetKind
 {
     ProxyVideo,
     ThumbnailSprite,
+    GeneratedThumbnail,
 }
 
 internal sealed class PlayerMediaAssetReference
@@ -47,6 +48,7 @@ internal sealed class PlayerMediaAssetReference
         {
             PlayerMediaAssetKind.ProxyVideo => "proxy",
             PlayerMediaAssetKind.ThumbnailSprite => "sprite",
+            PlayerMediaAssetKind.GeneratedThumbnail => "thumbnail",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(kind),
                 kind,
@@ -102,6 +104,21 @@ internal sealed class PlayerMediaAssetReference
             projectId,
             artifactId,
             PlayerMediaAssetKind.ThumbnailSprite,
+            contentDigest);
+    }
+
+    internal static PlayerMediaAssetReference GeneratedThumbnail(
+        EntityId<ProjectIdTag> projectId,
+        EntityId<ArtifactIdTag> artifactId,
+        ContentDigest contentDigest)
+    {
+        ArgumentNullException.ThrowIfNull(projectId);
+        ArgumentNullException.ThrowIfNull(artifactId);
+        ArgumentNullException.ThrowIfNull(contentDigest);
+        return new PlayerMediaAssetReference(
+            projectId,
+            artifactId,
+            PlayerMediaAssetKind.GeneratedThumbnail,
             contentDigest);
     }
 
@@ -179,6 +196,9 @@ internal sealed class PlayerMediaAssetReference
                 return true;
             case "sprite":
                 kind = PlayerMediaAssetKind.ThumbnailSprite;
+                return true;
+            case "thumbnail":
+                kind = PlayerMediaAssetKind.GeneratedThumbnail;
                 return true;
             default:
                 kind = default;

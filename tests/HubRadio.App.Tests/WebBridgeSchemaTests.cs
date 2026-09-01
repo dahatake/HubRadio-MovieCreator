@@ -48,6 +48,9 @@ public sealed class WebBridgeSchemaTests
                 "jobs.retry",
                 "player.read",
                 "player.seek",
+                "thumbnail.read",
+                "thumbnail.generate",
+                "thumbnail.cancel",
                 "transcript.read",
                 "transcript.editToken",
                 "transcript.setSpeaker",
@@ -114,6 +117,12 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/timelineReadResponse",
                 "#/$defs/timelineApplyRequest",
                 "#/$defs/timelineApplyResponse",
+                "#/$defs/thumbnailReadRequest",
+                "#/$defs/thumbnailReadResponse",
+                "#/$defs/thumbnailGenerateRequest",
+                "#/$defs/thumbnailGenerateResponse",
+                "#/$defs/thumbnailCancelRequest",
+                "#/$defs/thumbnailCancelResponse",
             },
             root.GetProperty("oneOf")
                 .EnumerateArray()
@@ -226,6 +235,22 @@ public sealed class WebBridgeSchemaTests
             "reviewResponse",
             "reviewError",
             "reviewErrorResponse",
+            "thumbnailRights",
+            "thumbnailTemplate",
+            "thumbnailSnapshot",
+            "thumbnailReadParams",
+            "thumbnailGenerateParams",
+            "thumbnailCancelParams",
+            "thumbnailOutputSource",
+            "thumbnailOutputSelection",
+            "thumbnailOutputTemplate",
+            "thumbnailOutput",
+            "thumbnailReadRequest",
+            "thumbnailReadResponse",
+            "thumbnailGenerateRequest",
+            "thumbnailGenerateResponse",
+            "thumbnailCancelRequest",
+            "thumbnailCancelResponse",
         })
         {
             Assert.AreEqual(
@@ -306,6 +331,70 @@ public sealed class WebBridgeSchemaTests
             "^[0-9a-f]{64}(?![\\s\\S])",
             definitions.GetProperty("contentDigest").GetProperty("pattern").GetString());
         Assert.IsFalse(definitions.TryGetProperty("reviewWorkflowGate", out _));
+
+        string thumbnailMediaPattern = definitions
+            .GetProperty("thumbnailMediaReference")
+            .GetProperty("pattern")
+            .GetString()!;
+        StringAssert.Contains(
+            thumbnailMediaPattern,
+            "player-media\\.appassets\\.example/media/v1/");
+        StringAssert.Contains(thumbnailMediaPattern, "/thumbnail/");
+        StringAssert.Contains(thumbnailMediaPattern, "[0-9a-f]{64}");
+        Assert.AreEqual(
+            "approved",
+            definitions.GetProperty("thumbnailOutputSource")
+                .GetProperty("properties")
+                .GetProperty("rightsStatus")
+                .GetProperty("const")
+                .GetString());
+        Assert.IsTrue(definitions.GetProperty("thumbnailOutputSource")
+            .GetProperty("properties")
+            .GetProperty("externalPublicationAllowed")
+            .GetProperty("const")
+            .GetBoolean());
+        Assert.AreEqual(
+            "brandApprover",
+            definitions.GetProperty("thumbnailTemplate")
+                .GetProperty("properties")
+                .GetProperty("approvalRole")
+                .GetProperty("const")
+                .GetString());
+        Assert.AreEqual(
+            "brandApprover",
+            definitions.GetProperty("thumbnailOutputTemplate")
+                .GetProperty("properties")
+                .GetProperty("approvalRole")
+                .GetProperty("const")
+                .GetString());
+        Assert.IsFalse(definitions.GetProperty("thumbnailTemplate")
+            .GetProperty("properties")
+            .GetProperty("name")
+            .TryGetProperty("maxLength", out _));
+        Assert.IsFalse(definitions.GetProperty("thumbnailSnapshot")
+            .GetProperty("properties")
+            .GetProperty("templates")
+            .TryGetProperty("maxItems", out _));
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "forbidden",
+                "unavailable",
+                "stale",
+                "mismatched",
+                "invalidTime",
+                "rightsNotApproved",
+                "templateUnavailable",
+                "cancelled",
+                "conflict",
+                "failed",
+            },
+            GetStrings(definitions
+                .GetProperty("thumbnailGenerateResult")
+                .GetProperty("oneOf")[1]
+                .GetProperty("properties")
+                .GetProperty("status")
+                .GetProperty("enum")));
         CollectionAssert.Contains(
             GetStrings(definitions
                 .GetProperty("playerSeekResult")
@@ -391,6 +480,23 @@ public sealed class WebBridgeSchemaTests
         CollectionAssert.AreEquivalent(
             new[] { "workingCopyId", "projectId", "baseVersionId", "revision", "createdAt", "updatedAt", "elements" },
             GetStrings(definitions.GetProperty("timelineSnapshot").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "jobId" },
+            GetStrings(definitions.GetProperty("thumbnailReadParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "jobId",
+                "generationId",
+                "digest",
+                "playerDigest",
+                "templateId",
+                "proxyFrameSequence",
+            },
+            GetStrings(definitions.GetProperty("thumbnailGenerateParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "generationId" },
+            GetStrings(definitions.GetProperty("thumbnailCancelParams").GetProperty("required")));
         StringAssert.Contains(
             definitions.GetProperty("playerSeekParams")
                 .GetProperty("properties")
@@ -694,6 +800,15 @@ public sealed class WebBridgeSchemaTests
         Assert.IsFalse(schema.Contains("credential", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(schema.Contains("contentBody", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(schema.Contains("processOutput", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("selectedByActor", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("\"approvalActor\"", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("approvalReason", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("evidenceReference", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("templatePath", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("commandLine", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("faceDetection", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("qualityScore", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("frameRecommendation", StringComparison.OrdinalIgnoreCase));
     }
 
     [TestMethod]

@@ -20,6 +20,7 @@ internal sealed class WebViewHost : IDisposable
     private readonly IPlayerBridgeReader playerReader;
     private readonly IPlayerAccessAuthorization playerAuthorization;
     private readonly TranscriptBridgeRequestHandler? transcriptHandler;
+    private readonly ThumbnailBridgeRequestHandler? thumbnailHandler;
     private readonly PlayerMediaResponseFactory mediaResponseFactory;
     private readonly CancellationTokenSource mediaCancellation = new();
     private Bridge? bridge;
@@ -39,7 +40,9 @@ internal sealed class WebViewHost : IDisposable
             timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
             UnavailablePlayerMediaAssetReader.Instance,
-            DeniedPlayerAccessAuthorization.Instance)
+            DeniedPlayerAccessAuthorization.Instance,
+            transcriptHandler: null,
+            thumbnailHandler: null)
     {
     }
 
@@ -57,7 +60,9 @@ internal sealed class WebViewHost : IDisposable
             timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
             UnavailablePlayerMediaAssetReader.Instance,
-            DeniedPlayerAccessAuthorization.Instance)
+            DeniedPlayerAccessAuthorization.Instance,
+            transcriptHandler: null,
+            thumbnailHandler: null)
     {
     }
 
@@ -74,7 +79,9 @@ internal sealed class WebViewHost : IDisposable
             timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
             UnavailablePlayerMediaAssetReader.Instance,
-            DeniedPlayerAccessAuthorization.Instance)
+            DeniedPlayerAccessAuthorization.Instance,
+            transcriptHandler: null,
+            thumbnailHandler: null)
     {
     }
 
@@ -93,7 +100,9 @@ internal sealed class WebViewHost : IDisposable
             timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
             UnavailablePlayerMediaAssetReader.Instance,
-            DeniedPlayerAccessAuthorization.Instance)
+            DeniedPlayerAccessAuthorization.Instance,
+            transcriptHandler: null,
+            thumbnailHandler: null)
     {
     }
 
@@ -112,7 +121,9 @@ internal sealed class WebViewHost : IDisposable
             timelineHandler: null,
             playerReader,
             mediaAssetReader,
-            playerAuthorization)
+            playerAuthorization,
+            transcriptHandler: null,
+            thumbnailHandler: null)
     {
     }
 
@@ -125,7 +136,8 @@ internal sealed class WebViewHost : IDisposable
         IPlayerBridgeReader playerReader,
         IPlayerMediaAssetReader mediaAssetReader,
         IPlayerAccessAuthorization playerAuthorization,
-        TranscriptBridgeRequestHandler? transcriptHandler = null)
+        TranscriptBridgeRequestHandler? transcriptHandler = null,
+        ThumbnailBridgeRequestHandler? thumbnailHandler = null)
         : this(
             coreWebView,
             webAssetsDirectory,
@@ -136,7 +148,8 @@ internal sealed class WebViewHost : IDisposable
             playerReader,
             mediaAssetReader,
             playerAuthorization,
-            transcriptHandler)
+            transcriptHandler,
+            thumbnailHandler)
     {
     }
 
@@ -152,7 +165,8 @@ internal sealed class WebViewHost : IDisposable
         IPlayerBridgeReader playerReader,
         IPlayerMediaAssetReader mediaAssetReader,
         IPlayerAccessAuthorization playerAuthorization,
-        TranscriptBridgeRequestHandler? transcriptHandler = null)
+        TranscriptBridgeRequestHandler? transcriptHandler = null,
+        ThumbnailBridgeRequestHandler? thumbnailHandler = null)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentException.ThrowIfNullOrWhiteSpace(webAssetsDirectory);
@@ -178,6 +192,7 @@ internal sealed class WebViewHost : IDisposable
         this.playerReader = playerReader;
         this.playerAuthorization = playerAuthorization;
         this.transcriptHandler = transcriptHandler;
+        this.thumbnailHandler = thumbnailHandler;
         mediaResponseFactory = new PlayerMediaResponseFactory(
             mediaAssetReader,
             playerAuthorization);
@@ -232,7 +247,8 @@ internal sealed class WebViewHost : IDisposable
                 timelineHandler,
                 playerReader,
                 playerAuthorization,
-                transcriptHandler);
+                transcriptHandler,
+                thumbnailHandler);
             startedBridge.Start();
             bridge = startedBridge;
         }

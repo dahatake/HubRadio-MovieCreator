@@ -12,7 +12,11 @@ import {
   type PlayerSeekResponse,
   type PlayerTimelinePosition,
 } from './playerProtocol'
-import { PlayerPanel, type PlayerBridgeClient } from './PlayerPanel'
+import {
+  PlayerPanel,
+  type PlayerBridgeClient,
+  type PlayerExactFrameSelection,
+} from './PlayerPanel'
 import {
   createPlayerReadResponseValue,
   createPlayerSeekResponseValue,
@@ -244,6 +248,41 @@ describe('PlayerPanel', () => {
     ])
   })
 
+  it('shares the exact U-007 frame tuple without collapsing time domains', () => {
+    const client = new FakeBridgeClient()
+    const observed: Array<PlayerExactFrameSelection | null> = []
+    renderPlayer(
+      client,
+      playerJobId,
+      undefined,
+      (selection) => observed.push(selection),
+    )
+    completeRead(client)
+
+    expect(observed.at(-1)).toMatchObject({
+      jobId: playerJobId,
+      projectId: playerProjectId,
+      playerEvidenceDigest,
+      frame: {
+        proxyFrameSequence: 0,
+        proxyPresentationTime: { value: '0', rate: '1' },
+        sourceFrameSequence: 0,
+        sourcePresentationTime: { value: '-1', rate: '10' },
+        outputPresentationTime: null,
+      },
+    })
+
+    pressKey(requiredElement('.video-stage'), 'ArrowRight')
+    completeSeek(client, 0)
+    expect(observed.at(-1)?.frame).toMatchObject({
+      proxyFrameSequence: 1,
+      proxyPresentationTime: { value: '1001', rate: '30000' },
+      sourceFrameSequence: 1,
+      sourcePresentationTime: { value: '0', rate: '1' },
+      outputPresentationTime: null,
+    })
+  })
+
   it('retains canonical evidence when media fails and recovers on can-play', () => {
     const client = new FakeBridgeClient()
     renderPlayer(client)
@@ -306,6 +345,7 @@ describe('PlayerPanel', () => {
     client: FakeBridgeClient,
     initialJobId = playerJobId,
     onPositionChange?: (position: PlayerTimelinePosition | null) => void,
+    onSelectionChange?: (selection: PlayerExactFrameSelection | null) => void,
   ): void {
     act(() => {
       root.render(
@@ -313,6 +353,7 @@ describe('PlayerPanel', () => {
           createClient={() => client}
           initialJobId={initialJobId}
           onPositionChange={onPositionChange}
+          onSelectionChange={onSelectionChange}
         />,
       )
     })

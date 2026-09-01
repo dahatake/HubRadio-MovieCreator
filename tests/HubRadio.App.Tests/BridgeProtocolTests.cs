@@ -146,6 +146,123 @@ public sealed class BridgeProtocolTests
     }
 
     [TestMethod]
+    public void ThumbnailRequestsAreClosedCanonicalAndShareExtendedBudget()
+    {
+        const string generationId =
+            "22334455-6677-4889-9aab-ccddeeff0011";
+        const string templateId =
+            "33445566-7788-499a-8bbc-ddeeff001122";
+        string digest = new('a', 64);
+        string playerDigest = new('b', 64);
+        string read = CreateRequest(
+            BridgeProtocol.ThumbnailReadMethod,
+            $"{{\"jobId\":\"{JobId}\"}}");
+        string generate = CreateRequest(
+            BridgeProtocol.ThumbnailGenerateMethod,
+            $"{{\"jobId\":\"{JobId}\",\"generationId\":\"{generationId}\",\"digest\":\"{digest}\",\"playerDigest\":\"{playerDigest}\",\"templateId\":\"{templateId}\",\"proxyFrameSequence\":2147483647}}");
+        string cancel = CreateRequest(
+            BridgeProtocol.ThumbnailCancelMethod,
+            $"{{\"generationId\":\"{generationId}\"}}");
+
+        Assert.IsGreaterThan(
+            BridgeProtocol.MaxRequestUtf8Bytes,
+            Encoding.UTF8.GetByteCount(generate));
+        Assert.IsLessThanOrEqualTo(
+            BridgeProtocol.MaxThumbnailRequestUtf8Bytes,
+            Encoding.UTF8.GetByteCount(generate));
+        foreach (string message in new[] { read, generate, cancel })
+        {
+            Assert.IsTrue(BridgeProtocol.TryParseRequest(
+                WebViewHost.EntryPoint,
+                message,
+                out BridgeRequest? parsed,
+                out BridgeRequestRejection rejection),
+                rejection.ToString());
+            Assert.IsNotNull(parsed);
+        }
+
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            generate,
+            out BridgeRequest? generation,
+            out BridgeRequestRejection generationRejection));
+        Assert.AreEqual(BridgeRequestRejection.None, generationRejection);
+        Assert.IsNotNull(generation);
+        Assert.AreEqual(BridgeMethod.ThumbnailGenerate, generation.Method);
+        Assert.AreEqual(JobId, generation.JobId!.ToString());
+        Assert.AreEqual(Guid.Parse(generationId), generation.GenerationId);
+        Assert.AreEqual(digest, generation.EvidenceDigest!.Hex);
+        Assert.AreEqual(playerDigest, generation.PlayerEvidenceDigest!.Hex);
+        Assert.AreEqual(templateId, generation.TemplateId!.ToString());
+        Assert.AreEqual(int.MaxValue, generation.ProxyFrameSequence);
+
+        string exactLimit = new(
+            ' ',
+            BridgeProtocol.MaxThumbnailRequestUtf8Bytes -
+                Encoding.UTF8.GetByteCount(generate));
+        exactLimit += generate;
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            exactLimit,
+            out _,
+            out BridgeRequestRejection exactRejection));
+        Assert.AreEqual(BridgeRequestRejection.None, exactRejection);
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            exactLimit + " ",
+            out _,
+            out BridgeRequestRejection oversizedRejection));
+        Assert.AreEqual(
+            BridgeRequestRejection.MessageTooLarge,
+            oversizedRejection);
+
+        string[] invalid =
+        [
+            generate.Replace(digest, digest.ToUpperInvariant(),
+                StringComparison.Ordinal),
+            generate.Replace(playerDigest, playerDigest + "0",
+                StringComparison.Ordinal),
+            generate.Replace(templateId, templateId.ToUpperInvariant(),
+                StringComparison.Ordinal),
+            generate.Replace("2147483647", "-1", StringComparison.Ordinal),
+            generate.Replace("2147483647", "0.5", StringComparison.Ordinal),
+            generate.Replace(
+                $"\"generationId\":\"{generationId}\"",
+                "\"generationId\":42",
+                StringComparison.Ordinal),
+            generate.Replace(
+                $"\"digest\":\"{digest}\"",
+                "\"digest\":false",
+                StringComparison.Ordinal),
+            generate.Replace(
+                $"\"templateId\":\"{templateId}\"",
+                "\"templateId\":{}",
+                StringComparison.Ordinal),
+            cancel.Replace(
+                $"\"generationId\":\"{generationId}\"",
+                "\"generationId\":[]",
+                StringComparison.Ordinal),
+            generate.Replace(
+                "\"proxyFrameSequence\":2147483647",
+                "\"proxyFrameSequence\":2147483647,\"actorSid\":\"S-1-5-21-private\"",
+                StringComparison.Ordinal),
+        ];
+        foreach (string message in invalid)
+        {
+            Assert.IsFalse(BridgeProtocol.TryParseRequest(
+                WebViewHost.EntryPoint,
+                message,
+                out BridgeRequest? rejected,
+                out BridgeRequestRejection rejection),
+                message);
+            Assert.IsNull(rejected);
+            Assert.AreEqual(
+                BridgeRequestRejection.SchemaViolation,
+                rejection);
+        }
+    }
+
+    [TestMethod]
     public void SizeLimitIsEnforcedBeforeParsingAtTheDocumentedBoundary()
     {
         string valid = CreateRequest();

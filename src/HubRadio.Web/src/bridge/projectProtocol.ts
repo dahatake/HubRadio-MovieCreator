@@ -1,4 +1,7 @@
-import { BRIDGE_PROTOCOL_VERSION } from './protocol'
+import {
+  BRIDGE_MAX_PROJECT_REQUEST_UTF8_BYTES,
+  BRIDGE_PROTOCOL_VERSION,
+} from './protocol'
 
 export const PROJECT_LIST_METHOD = 'project.list' as const
 export const PROJECT_CREATE_DRAFT_METHOD = 'project.createDraft' as const
@@ -6,7 +9,8 @@ export const PROJECT_LOAD_DRAFT_METHOD = 'project.loadDraft' as const
 export const PROJECT_SAVE_DRAFT_METHOD = 'project.saveDraft' as const
 export const PROJECT_PICK_SOURCE_METHOD = 'project.pickSource' as const
 export const PROJECT_FINALIZE_DRAFT_METHOD = 'project.finalizeDraft' as const
-export const MAX_BRIDGE_REQUEST_UTF8_BYTES = 96 * 1024
+export const MAX_BRIDGE_REQUEST_UTF8_BYTES =
+  BRIDGE_MAX_PROJECT_REQUEST_UTF8_BYTES
 
 export type ProjectBridgeMethod =
   | typeof PROJECT_LIST_METHOD

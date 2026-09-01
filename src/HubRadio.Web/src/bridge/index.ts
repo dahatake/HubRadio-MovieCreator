@@ -46,6 +46,19 @@ import {
   type ReviewBridgeRequest,
   type ReviewBridgeResponse,
 } from '../features/review/reviewProtocol'
+import {
+  createThumbnailCancelRequest,
+  createThumbnailGenerateRequest,
+  createThumbnailReadRequest,
+  parseThumbnailCancelResponse,
+  parseThumbnailGenerateResponse,
+  parseThumbnailReadResponse,
+  type ThumbnailBridgeRequest,
+  type ThumbnailCancelResponse,
+  type ThumbnailGenerateParams,
+  type ThumbnailGenerateResponse,
+  type ThumbnailReadResponse,
+} from '../features/thumbnails/thumbnailProtocol'
 
 export * from './projectProtocol'
 export * from '../features/timeline/timelineProtocol'
@@ -64,7 +77,8 @@ export interface BridgeTransport {
       | PlayerSeekRequest
       | TranscriptRequest
       | TimelineBridgeRequest
-      | ReviewBridgeRequest,
+      | ReviewBridgeRequest
+      | ThumbnailBridgeRequest,
   ): void
   addEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
   removeEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
@@ -111,6 +125,21 @@ export interface BridgeClient {
   onReviewResponse(
     listener: (response: ReviewBridgeResponse) => void,
   ): () => void
+  sendThumbnailRead(requestId: string, jobId: string): void
+  onThumbnailReadResponse(
+    listener: (response: ThumbnailReadResponse) => void,
+  ): () => void
+  sendThumbnailGenerate(
+    requestId: string,
+    params: ThumbnailGenerateParams,
+  ): void
+  onThumbnailGenerateResponse(
+    listener: (response: ThumbnailGenerateResponse) => void,
+  ): () => void
+  sendThumbnailCancellation(requestId: string, generationId: string): void
+  onThumbnailCancelResponse(
+    listener: (response: ThumbnailCancelResponse) => void,
+  ): () => void
   dispose(): void
 }
 
@@ -154,6 +183,15 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
     (response: ReviewBridgeResponse) => void
   >()
   const pendingReviewRequests = new Map<string, PendingReviewRequest>()
+  const thumbnailReadListeners = new Set<
+    (response: ThumbnailReadResponse) => void
+  >()
+  const thumbnailGenerateListeners = new Set<
+    (response: ThumbnailGenerateResponse) => void
+  >()
+  const thumbnailCancelListeners = new Set<
+    (response: ThumbnailCancelResponse) => void
+  >()
   let disposed = false
 
   const receive = (event: BridgeMessageEvent): void => {
@@ -237,6 +275,14 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       return
     }
 
+    const thumbnailReadResponse = parseThumbnailReadResponse(event.data)
+    if (thumbnailReadResponse !== null) {
+      for (const listener of thumbnailReadListeners) {
+        listener(thumbnailReadResponse)
+      }
+      return
+    }
+
     const timelineReadResponse = parseTimelineReadResponse(event.data)
     if (timelineReadResponse !== null) {
       const pending = pendingTimelineRequests.get(timelineReadResponse.requestId)
@@ -256,6 +302,14 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       return
     }
 
+    const thumbnailGenerateResponse = parseThumbnailGenerateResponse(event.data)
+    if (thumbnailGenerateResponse !== null) {
+      for (const listener of thumbnailGenerateListeners) {
+        listener(thumbnailGenerateResponse)
+      }
+      return
+    }
+
     const timelineApplyResponse = parseTimelineApplyResponse(event.data)
     if (timelineApplyResponse !== null) {
       const pending = pendingTimelineRequests.get(timelineApplyResponse.requestId)
@@ -271,6 +325,14 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       pendingTimelineRequests.delete(timelineApplyResponse.requestId)
       for (const listener of timelineApplyListeners) {
         listener(timelineApplyResponse)
+      }
+      return
+    }
+
+    const thumbnailCancelResponse = parseThumbnailCancelResponse(event.data)
+    if (thumbnailCancelResponse !== null) {
+      for (const listener of thumbnailCancelListeners) {
+        listener(thumbnailCancelResponse)
       }
     }
   }
@@ -453,6 +515,50 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
         reviewListeners.delete(listener)
       }
     },
+    sendThumbnailRead(requestId: string, jobId: string): void {
+      throwIfDisposed(disposed)
+      transport.postMessage(createThumbnailReadRequest(requestId, jobId))
+    },
+    onThumbnailReadResponse(
+      listener: (response: ThumbnailReadResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      thumbnailReadListeners.add(listener)
+      return (): void => {
+        thumbnailReadListeners.delete(listener)
+      }
+    },
+    sendThumbnailGenerate(
+      requestId: string,
+      params: ThumbnailGenerateParams,
+    ): void {
+      throwIfDisposed(disposed)
+      transport.postMessage(createThumbnailGenerateRequest(requestId, params))
+    },
+    onThumbnailGenerateResponse(
+      listener: (response: ThumbnailGenerateResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      thumbnailGenerateListeners.add(listener)
+      return (): void => {
+        thumbnailGenerateListeners.delete(listener)
+      }
+    },
+    sendThumbnailCancellation(requestId: string, generationId: string): void {
+      throwIfDisposed(disposed)
+      transport.postMessage(
+        createThumbnailCancelRequest(requestId, generationId),
+      )
+    },
+    onThumbnailCancelResponse(
+      listener: (response: ThumbnailCancelResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      thumbnailCancelListeners.add(listener)
+      return (): void => {
+        thumbnailCancelListeners.delete(listener)
+      }
+    },
     dispose(): void {
       if (disposed) {
         return
@@ -471,6 +577,9 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       pendingTimelineRequests.clear()
       reviewListeners.clear()
       pendingReviewRequests.clear()
+      thumbnailReadListeners.clear()
+      thumbnailGenerateListeners.clear()
+      thumbnailCancelListeners.clear()
       transport.removeEventListener('message', receive)
     },
   })

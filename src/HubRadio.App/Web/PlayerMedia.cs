@@ -108,6 +108,7 @@ internal sealed class ArtifactStorePlayerMediaAssetReader : IPlayerMediaAssetRea
             {
                 PlayerMediaAssetKind.ProxyVideo => ArtifactKind.Proxy,
                 PlayerMediaAssetKind.ThumbnailSprite => ArtifactKind.Preview,
+                PlayerMediaAssetKind.GeneratedThumbnail => ArtifactKind.Render,
                 _ => throw new InvalidOperationException(
                     "The player media asset kind is unsupported."),
             };
@@ -142,16 +143,28 @@ internal sealed class ArtifactStorePlayerMediaAssetReader : IPlayerMediaAssetRea
                         StringComparison.Ordinal);
             }
 
+            if (expected.Kind == PlayerMediaAssetKind.ThumbnailSprite)
+            {
+                return segments.Length == 6 &&
+                    string.Equals(segments[2], "previews", StringComparison.Ordinal) &&
+                    IsCanonicalAssetId(segments[3]) &&
+                    IsCanonicalArtifactId(segments[4]) &&
+                    string.Equals(
+                        segments[5],
+                        string.Concat(
+                            expected.ArtifactId.ToString(),
+                            ".sprite.png"),
+                        StringComparison.Ordinal);
+            }
+
             return segments.Length == 6 &&
-                string.Equals(segments[2], "previews", StringComparison.Ordinal) &&
-                IsCanonicalAssetId(segments[3]) &&
-                IsCanonicalArtifactId(segments[4]) &&
+                string.Equals(segments[2], "renders", StringComparison.Ordinal) &&
+                string.Equals(segments[3], "thumbnails", StringComparison.Ordinal) &&
                 string.Equals(
-                    segments[5],
-                    string.Concat(
-                        expected.ArtifactId.ToString(),
-                        ".sprite.png"),
-                    StringComparison.Ordinal);
+                    segments[4],
+                    expected.ArtifactId.ToString(),
+                    StringComparison.Ordinal) &&
+                IsCanonicalDigestFileName(segments[5]);
         }
 
         static bool IsCanonicalAssetId(string value) =>
@@ -165,6 +178,19 @@ internal sealed class ArtifactStorePlayerMediaAssetReader : IPlayerMediaAssetRea
                 value,
                 out EntityId<ArtifactIdTag>? parsed) &&
             string.Equals(value, parsed.ToString(), StringComparison.Ordinal);
+
+        static bool IsCanonicalDigestFileName(string value)
+        {
+            const string extension = ".png";
+            return value.EndsWith(extension, StringComparison.Ordinal) &&
+                ContentDigest.TryParse(
+                    value[..^extension.Length],
+                    out ContentDigest? parsed) &&
+                string.Equals(
+                    value,
+                    string.Concat(parsed.Hex, extension),
+                    StringComparison.Ordinal);
+        }
 
         static bool HasSameRegistration(
             StoredArtifact expected,
@@ -315,6 +341,7 @@ internal sealed class PlayerMediaResponseFactory
             {
                 PlayerMediaAssetKind.ProxyVideo => ProxyContentType,
                 PlayerMediaAssetKind.ThumbnailSprite => SpriteContentType,
+                PlayerMediaAssetKind.GeneratedThumbnail => SpriteContentType,
                 _ => throw new InvalidOperationException(
                     "The player media asset kind is unsupported."),
             };
@@ -337,6 +364,7 @@ internal sealed class PlayerMediaResponseFactory
         {
             PlayerMediaAssetKind.ProxyVideo => ArtifactKind.Proxy,
             PlayerMediaAssetKind.ThumbnailSprite => ArtifactKind.Preview,
+            PlayerMediaAssetKind.GeneratedThumbnail => ArtifactKind.Render,
             _ => throw new InvalidOperationException(
                 "The player media asset kind is unsupported."),
         };

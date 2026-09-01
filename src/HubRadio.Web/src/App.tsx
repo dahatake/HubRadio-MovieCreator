@@ -3,10 +3,12 @@ import { useState } from 'react'
 import { JobProgressPanel } from './features/jobs/JobProgressPanel'
 import {
   PlayerPanel,
+  type PlayerExactFrameSelection,
   type PlayerTimelinePosition,
 } from './features/player'
 import { ReviewPanel } from './features/review'
 import { TimelineEditor } from './features/timeline'
+import { ThumbnailPanel } from './features/thumbnails'
 import { selectSyncStatus, useAppState, type SyncStatus } from './state'
 import { ProjectWorkspace } from './features/projects/ProjectWorkspace'
 import { TranscriptPanel } from './features/transcript/TranscriptPanel'
@@ -23,6 +25,8 @@ function App() {
   const syncStatus = selectSyncStatus(state)
   const [playerPosition, setPlayerPosition] =
     useState<PlayerTimelinePosition | null>(null)
+  const [playerSelection, setPlayerSelection] =
+    useState<PlayerExactFrameSelection | null>(null)
 
   return (
     <main className="app-shell" aria-labelledby="app-title">
@@ -55,7 +59,11 @@ function App() {
       <div id="project-content">
         <ProjectWorkspace />
         <JobProgressPanel />
-        <PlayerPanel onPositionChange={setPlayerPosition} />
+        <PlayerPanel
+          onPositionChange={setPlayerPosition}
+          onSelectionChange={setPlayerSelection}
+        />
+        <ThumbnailPanel selection={playerSelection} />
         <TranscriptPanel />
         <TimelineEditor
           initialProjectId={playerPosition?.projectId}

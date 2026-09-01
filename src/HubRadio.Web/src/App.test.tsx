@@ -29,6 +29,8 @@ describe('App', () => {
     expect(markup).toContain('Canvas は表示専用')
     expect(markup).toContain('レビュー・コメント・承認')
     expect(markup).toContain('レビュー対象は未選択です')
+    expect(markup).toContain('手動サムネイル生成')
+    expect(markup).toContain('プレイヤーで正確なフレームを選択してください')
     expect(markup).toContain('<form')
     expect(markup).toContain('for="job-id"')
     expect(markup).toContain('id="job-id"')
