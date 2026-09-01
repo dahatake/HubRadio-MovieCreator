@@ -12,4 +12,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\HubRadio.App\HubRadio.App.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Acceptance\AC005_Traceability.cs"
+             Link="Acceptance\AC005_Traceability.cs" />
+  </ItemGroup>
 </Project>
