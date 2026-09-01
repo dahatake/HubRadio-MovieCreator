@@ -5,6 +5,7 @@ import App from './App'
 import { ComparisonStateProvider } from './features/compare'
 import { DeliveryStateProvider } from './features/delivery'
 import { LayoutStateProvider } from './features/layout'
+import { PreviewModeProvider } from './features/preview-modes'
 import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
 import { ReviewStateProvider } from './features/review'
 import { AppStateProvider } from './state'
@@ -14,15 +15,17 @@ describe('App', () => {
     const markup = renderToStaticMarkup(
       <AppStateProvider>
         <ProjectStateProvider>
-          <ComparisonStateProvider>
-            <ReviewStateProvider>
-              <DeliveryStateProvider>
-                <LayoutStateProvider>
-                  <App />
-                </LayoutStateProvider>
-              </DeliveryStateProvider>
-            </ReviewStateProvider>
-          </ComparisonStateProvider>
+          <PreviewModeProvider>
+            <ComparisonStateProvider>
+              <ReviewStateProvider>
+                <DeliveryStateProvider>
+                  <LayoutStateProvider>
+                    <App />
+                  </LayoutStateProvider>
+                </DeliveryStateProvider>
+              </ReviewStateProvider>
+            </ComparisonStateProvider>
+          </PreviewModeProvider>
         </ProjectStateProvider>
       </AppStateProvider>,
     )
@@ -33,6 +36,8 @@ describe('App', () => {
     expect(markup).toContain('案件一覧')
     expect(markup).toContain('新しい案件')
     expect(markup).toContain('ジョブの進行状況')
+    expect(markup).toContain('プレビューモード')
+    expect(markup).toContain('動画・媒体のプレビュー根拠がありません')
     expect(markup).toContain('文字起こし編集')
     expect(markup).toContain('編集タイムライン')
     expect(markup).toContain('Canvas は表示専用')
@@ -61,7 +66,9 @@ describe('App', () => {
     expect(() =>
       renderToStaticMarkup(
         <AppStateProvider>
-          <App />
+          <PreviewModeProvider>
+            <App />
+          </PreviewModeProvider>
         </AppStateProvider>,
       ),
     ).toThrow('useProjectState must be used within a ProjectStateProvider.')
@@ -72,13 +79,15 @@ describe('App', () => {
       renderToStaticMarkup(
         <AppStateProvider>
           <ProjectStateProvider>
-            <ComparisonStateProvider>
-              <DeliveryStateProvider>
-                <LayoutStateProvider>
-                  <App />
-                </LayoutStateProvider>
-              </DeliveryStateProvider>
-            </ComparisonStateProvider>
+            <PreviewModeProvider>
+              <ComparisonStateProvider>
+                <DeliveryStateProvider>
+                  <LayoutStateProvider>
+                    <App />
+                  </LayoutStateProvider>
+                </DeliveryStateProvider>
+              </ComparisonStateProvider>
+            </PreviewModeProvider>
           </ProjectStateProvider>
         </AppStateProvider>,
       ),
@@ -90,13 +99,15 @@ describe('App', () => {
       renderToStaticMarkup(
         <AppStateProvider>
           <ProjectStateProvider>
-            <ReviewStateProvider>
-              <DeliveryStateProvider>
-                <LayoutStateProvider>
-                  <App />
-                </LayoutStateProvider>
-              </DeliveryStateProvider>
-            </ReviewStateProvider>
+            <PreviewModeProvider>
+              <ReviewStateProvider>
+                <DeliveryStateProvider>
+                  <LayoutStateProvider>
+                    <App />
+                  </LayoutStateProvider>
+                </DeliveryStateProvider>
+              </ReviewStateProvider>
+            </PreviewModeProvider>
           </ProjectStateProvider>
         </AppStateProvider>,
       ),
@@ -110,13 +121,15 @@ describe('App', () => {
       renderToStaticMarkup(
         <AppStateProvider>
           <ProjectStateProvider>
-            <ComparisonStateProvider>
-              <ReviewStateProvider>
-                <LayoutStateProvider>
-                  <App />
-                </LayoutStateProvider>
-              </ReviewStateProvider>
-            </ComparisonStateProvider>
+            <PreviewModeProvider>
+              <ComparisonStateProvider>
+                <ReviewStateProvider>
+                  <LayoutStateProvider>
+                    <App />
+                  </LayoutStateProvider>
+                </ReviewStateProvider>
+              </ComparisonStateProvider>
+            </PreviewModeProvider>
           </ProjectStateProvider>
         </AppStateProvider>,
       ),
@@ -128,16 +141,30 @@ describe('App', () => {
       renderToStaticMarkup(
         <AppStateProvider>
           <ProjectStateProvider>
-            <ComparisonStateProvider>
-              <ReviewStateProvider>
-                <DeliveryStateProvider>
-                  <App />
-                </DeliveryStateProvider>
-              </ReviewStateProvider>
-            </ComparisonStateProvider>
+            <PreviewModeProvider>
+              <ComparisonStateProvider>
+                <ReviewStateProvider>
+                  <DeliveryStateProvider>
+                    <App />
+                  </DeliveryStateProvider>
+                </ReviewStateProvider>
+              </ComparisonStateProvider>
+            </PreviewModeProvider>
           </ProjectStateProvider>
         </AppStateProvider>,
       ),
     ).toThrow('useLayoutState must be used within a LayoutStateProvider.')
+  })
+
+  it('requires the preview mode provider', () => {
+    expect(() =>
+      renderToStaticMarkup(
+        <AppStateProvider>
+          <App />
+        </AppStateProvider>,
+      ),
+    ).toThrow(
+      'usePreviewModes must be used within a PreviewModeProvider.',
+    )
   })
 })

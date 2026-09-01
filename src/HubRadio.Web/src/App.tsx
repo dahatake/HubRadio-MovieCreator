@@ -9,6 +9,10 @@ import {
   type PlayerExactFrameSelection,
   type PlayerTimelinePosition,
 } from './features/player'
+import {
+  PreviewModeControls,
+  usePreviewModes,
+} from './features/preview-modes'
 import { ReviewPanel } from './features/review'
 import { TimelineEditor } from './features/timeline'
 import { ThumbnailPanel } from './features/thumbnails'
@@ -26,6 +30,7 @@ const statusMessages: Readonly<Record<SyncStatus, string>> = {
 
 function App() {
   const { state, synchronize } = useAppState()
+  const { state: previewModes } = usePreviewModes()
   const syncStatus = selectSyncStatus(state)
   const [playerPosition, setPlayerPosition] =
     useState<PlayerTimelinePosition | null>(null)
@@ -63,18 +68,23 @@ function App() {
       <div id="project-content">
         <ProjectWorkspace />
         <JobProgressPanel />
+        <PreviewModeControls selection={playerSelection} />
         <PlayerPanel
+          previewModes={previewModes}
           onPositionChange={setPlayerPosition}
           onSelectionChange={setPlayerSelection}
         />
-        <ThumbnailPanel selection={playerSelection} />
+        <ThumbnailPanel
+          selection={playerSelection}
+          previewReduced={previewModes.thumbnailReduced}
+        />
         <AnalysisPanel />
         <TranscriptPanel />
         <TimelineEditor
           initialProjectId={playerPosition?.projectId}
           playerPosition={playerPosition}
         />
-        <LayoutPanel />
+        <LayoutPanel previewModes={previewModes} />
         <ComparePanel />
         <ReviewPanel />
         <DeliveryPanel />

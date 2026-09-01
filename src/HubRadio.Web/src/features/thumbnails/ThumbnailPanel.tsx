@@ -74,12 +74,14 @@ export interface ThumbnailPanelProps {
   readonly selection: PlayerExactFrameSelection | null
   readonly createClient?: () => ThumbnailBridgeClient
   readonly createId?: () => string
+  readonly previewReduced?: boolean
 }
 
 export function ThumbnailPanel({
   selection,
   createClient = createHostBridgeClient,
   createId = createCanonicalId,
+  previewReduced = false,
 }: ThumbnailPanelProps) {
   const [state, dispatch] = useReducer(
     thumbnailStateReducer,
@@ -265,7 +267,11 @@ export function ThumbnailPanel({
   }
 
   return (
-    <section className="thumbnail-card" aria-labelledby="thumbnail-title">
+    <section
+      className="thumbnail-card"
+      aria-labelledby="thumbnail-title"
+      data-thumbnail-preview={previewReduced ? 'reduced' : 'fit'}
+    >
       <div className="thumbnail-heading">
         <div>
           <p className="eyebrow">Exact frame · approved template</p>
@@ -457,6 +463,7 @@ export function ThumbnailPanel({
                     <figcaption>
                       {state.output.width} × {state.output.height} PNG ·{' '}
                       {state.output.byteSize} bytes
+                      {previewReduced ? '・縮小表示（拡大なし）' : ''}
                     </figcaption>
                   </figure>
                   <dl className="thumbnail-output-evidence">

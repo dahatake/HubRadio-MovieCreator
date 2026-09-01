@@ -114,6 +114,30 @@ describe('ThumbnailPanel', () => {
     expect(container.textContent).toContain('exact source PTS-1/20')
   })
 
+  it('reduces only the preview presentation and keeps native output dimensions', () => {
+    const client = new FakeThumbnailClient()
+    renderPanel(client, true)
+    completeRead(client)
+    clickButton('選択フレームから生成')
+
+    const value = createThumbnailGenerateResponseValue()
+    value.requestId = generationRequestId
+    const output = (
+      value.result as {
+        output: { width: number; height: number }
+      }
+    ).output
+    act(() => client.emitGenerate(requireGenerateResponse(value)))
+
+    expect(
+      requiredElement<HTMLElement>('.thumbnail-card').dataset.thumbnailPreview,
+    ).toBe('reduced')
+    const image = requiredElement<HTMLImageElement>('.thumbnail-preview img')
+    expect(image.getAttribute('width')).toBe(String(output.width))
+    expect(image.getAttribute('height')).toBe(String(output.height))
+    expect(container.textContent).toContain('縮小表示（拡大なし）')
+  })
+
   it('keeps generation pending while cancellation is acknowledged, then accepts cancelled completion', () => {
     const client = new FakeThumbnailClient()
     renderPanel(client)
@@ -229,13 +253,17 @@ describe('ThumbnailPanel', () => {
     root = createRoot(container)
   })
 
-  function renderPanel(client: FakeThumbnailClient): void {
+  function renderPanel(
+    client: FakeThumbnailClient,
+    previewReduced = false,
+  ): void {
     act(() => {
       root.render(
         <ThumbnailPanel
           selection={createSelection()}
           createClient={() => client}
           createId={createIdSequence()}
+          previewReduced={previewReduced}
         />,
       )
     })

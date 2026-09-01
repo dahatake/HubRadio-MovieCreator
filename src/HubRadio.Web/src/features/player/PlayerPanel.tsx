@@ -10,6 +10,11 @@ import {
 } from 'react'
 
 import { createHostBridgeClient, type BridgeClient } from '../../bridge'
+import { GenericUiMask } from '../preview-modes/GenericUiMask'
+import {
+  initialPreviewModeState,
+  type PreviewModeState,
+} from '../preview-modes/previewModeState'
 import {
   findProxyFrameAtDerivedMediaSeconds,
   findProxyFrameAtSourceTime,
@@ -69,6 +74,7 @@ export interface PlayerExactFrameSelection {
 export interface PlayerPanelProps {
   readonly createClient?: () => PlayerBridgeClient
   readonly initialJobId?: string
+  readonly previewModes?: PreviewModeState
   readonly onPositionChange?: (position: PlayerTimelinePosition | null) => void
   readonly onSelectionChange?: (
     selection: PlayerExactFrameSelection | null,
@@ -78,6 +84,7 @@ export interface PlayerPanelProps {
 export function PlayerPanel({
   createClient = createHostBridgeClient,
   initialJobId = '',
+  previewModes = initialPreviewModeState,
   onPositionChange,
   onSelectionChange,
 }: PlayerPanelProps) {
@@ -86,6 +93,7 @@ export function PlayerPanel({
     jobIdInput: initialJobId,
   })
   const [isPlaying, setIsPlaying] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
   const stateRef = useRef<PlayerState>(state)
   const selectionChangeRef = useRef(onSelectionChange)
   const clientRef = useRef<PlayerBridgeClient | null>(null)
@@ -372,17 +380,30 @@ export function PlayerPanel({
           <p>動画・波形・サムネイルは正規の根拠確認後に表示されます。</p>
         </div>
       ) : (
-        <div className="player-workspace">
+        <div
+          className="player-workspace"
+          data-preview-orientation={previewModes.orientation ?? 'source'}
+          data-mobile-preview={String(previewModes.mobilePreview)}
+          data-audio-only={String(previewModes.audioOnly)}
+        >
           <div
             className="video-stage"
+            data-preview-orientation={previewModes.orientation ?? 'source'}
+            data-audio-only={String(previewModes.audioOnly)}
             tabIndex={0}
             onKeyDown={onPlayerKeyDown}
-            aria-label="代理動画。左右矢印で1フレーム移動、HomeとEndで端へ移動、Spaceで再生と一時停止"
+            aria-label={
+              previewModes.audioOnly
+                ? '音声のみプレビュー。左右矢印で1フレーム移動、HomeとEndで端へ移動、Spaceで再生と一時停止'
+                : '代理動画。左右矢印で1フレーム移動、HomeとEndで端へ移動、Spaceで再生と一時停止'
+            }
           >
             <video
               ref={videoRef}
               src={state.snapshot.proxy.mediaReference}
               playsInline
+              muted={isMuted}
+              aria-hidden={previewModes.audioOnly ? 'true' : undefined}
               preload="metadata"
               onCanPlay={() => dispatch({ type: 'mediaAvailable' })}
               onPlay={() => setIsPlaying(true)}
@@ -396,6 +417,16 @@ export function PlayerPanel({
             >
               代理動画を再生できません。
             </video>
+            {previewModes.audioOnly ? (
+              <div className="audio-only-placeholder" role="note">
+                <strong>音声のみプレビュー</strong>
+                <span>映像を隠しています。再生位置と波形は同じ player evidence を使用します。</span>
+              </div>
+            ) : null}
+            <GenericUiMask
+              visible={previewModes.genericUiMaskVisible}
+              audioOnly={previewModes.audioOnly}
+            />
           </div>
 
           <WaveformView
@@ -411,6 +442,15 @@ export function PlayerPanel({
               aria-label={isPlaying ? '代理動画を一時停止' : '代理動画を再生'}
             >
               {isPlaying ? '一時停止' : '再生'}
+            </button>
+            <button
+              type="button"
+              className="mute-toggle"
+              aria-pressed={isMuted}
+              aria-label={isMuted ? '音声のミュートを解除' : '音声をミュート'}
+              onClick={() => setIsMuted((current) => !current)}
+            >
+              {isMuted ? 'ミュート解除' : 'ミュート'}
             </button>
             <button
               type="button"

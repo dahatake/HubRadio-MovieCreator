@@ -7,6 +7,7 @@ import { ComparisonStateProvider } from './features/compare'
 import { DeliveryStateProvider } from './features/delivery'
 import { LayoutStateProvider } from './features/layout'
 import { PlayerNavigationProvider } from './features/player'
+import { PreviewModeProvider } from './features/preview-modes'
 import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
 import { ReviewStateProvider } from './features/review'
 import { AppStateProvider } from './state'
@@ -22,17 +23,19 @@ createRoot(rootElement).render(
   <StrictMode>
     <AppStateProvider>
       <ProjectStateProvider>
-        <PlayerNavigationProvider>
-          <LayoutStateProvider>
-            <ComparisonStateProvider>
-              <ReviewStateProvider>
-                <DeliveryStateProvider>
-                  <App />
-                </DeliveryStateProvider>
-              </ReviewStateProvider>
-            </ComparisonStateProvider>
-          </LayoutStateProvider>
-        </PlayerNavigationProvider>
+        <PreviewModeProvider>
+          <PlayerNavigationProvider>
+            <LayoutStateProvider>
+              <ComparisonStateProvider>
+                <ReviewStateProvider>
+                  <DeliveryStateProvider>
+                    <App />
+                  </DeliveryStateProvider>
+                </ReviewStateProvider>
+              </ComparisonStateProvider>
+            </LayoutStateProvider>
+          </PlayerNavigationProvider>
+        </PreviewModeProvider>
       </ProjectStateProvider>
     </AppStateProvider>
   </StrictMode>,

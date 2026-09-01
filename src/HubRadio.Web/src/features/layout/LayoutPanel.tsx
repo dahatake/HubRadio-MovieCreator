@@ -5,6 +5,10 @@ import {
   SubtitleEditor,
   SubtitleVariantSelector,
 } from '../subtitles'
+import {
+  initialPreviewModeState,
+  type PreviewModeState,
+} from '../preview-modes/previewModeState'
 import { KeyframeEditor } from './KeyframeEditor'
 import { LayoutPreview, type LayoutVariantChoice } from './LayoutPreview'
 import { ManualLayoutEditor } from './ManualLayoutEditor'
@@ -28,8 +32,14 @@ const failureMessages: Readonly<
   unavailable: 'production layout provider は利用できません。利用可能な状態を画面側で補完していません。',
 }
 
-export function LayoutPanel() {
-  return <LayoutPanelView {...useLayoutState()} />
+export interface LayoutPanelProps {
+  readonly previewModes?: PreviewModeState
+}
+
+export function LayoutPanel({
+  previewModes = initialPreviewModeState,
+}: LayoutPanelProps = {}) {
+  return <LayoutPanelView {...useLayoutState()} previewModes={previewModes} />
 }
 
 export function LayoutPanelView({
@@ -39,7 +49,8 @@ export function LayoutPanelView({
   refreshSnapshot,
   applyOperation,
   clearError,
-}: LayoutStateContextValue) {
+  previewModes = initialPreviewModeState,
+}: LayoutStateContextValue & Readonly<{ previewModes?: PreviewModeState }>) {
   const pending = state.pending !== null
   const failureStatus = state.status !== null &&
     state.status !== 'available' &&
@@ -153,6 +164,7 @@ export function LayoutPanelView({
           snapshot={state.snapshot}
           disabled={pending}
           applyOperation={applyOperation}
+          previewModes={previewModes}
         />
       )}
     </section>
@@ -163,10 +175,12 @@ function LayoutWorkspace({
   snapshot,
   disabled,
   applyOperation,
+  previewModes,
 }: Readonly<{
   snapshot: LayoutSnapshot
   disabled: boolean
   applyOperation: LayoutStateContextValue['applyOperation']
+  previewModes: PreviewModeState
 }>) {
   const [variantChoice, setVariantChoice] = useState<LayoutVariantChoice>(null)
   const [displayProfileDigest, setDisplayProfileDigest] = useState<string | null>(
@@ -227,11 +241,15 @@ function LayoutWorkspace({
         <div><dt>Output</dt><dd>{snapshot.output.width} × {snapshot.output.height}（9:16）</dd></div>
       </dl>
 
-      <div className="layout-preview-grid">
+      <div
+        className="layout-preview-grid"
+        data-mobile-preview={String(previewModes.mobilePreview)}
+      >
         <LayoutPreview
           snapshot={snapshot}
           variantChoice={variantChoice}
           subtitleDisplay={activeDisplay}
+          previewModes={previewModes}
         />
         <div className="layout-preview-controls">
           <SubtitleDisplaySelector
