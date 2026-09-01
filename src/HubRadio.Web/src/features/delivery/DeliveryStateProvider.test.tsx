@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -129,6 +130,28 @@ describe('DeliveryStateProvider integration', () => {
     expect(button.disabled).toBe(true)
     submit(requiredElement<HTMLFormElement>('.delivery-trace-form'))
     expect(client.sent).toHaveLength(1)
+  })
+
+  it('moves through every evidence section with roving keyboard focus', async () => {
+    loadSnapshot()
+    completeAvailable(requiredSent(0), false)
+    const user = userEvent.setup({ document })
+    const tabs = [...container.querySelectorAll<HTMLButtonElement>(
+      '.delivery-evidence-tabs [role="tab"]',
+    )]
+    expect(tabs).toHaveLength(6)
+
+    act(() => tabs[0]!.focus())
+    await act(async () => user.keyboard('[End]'))
+    expect(document.activeElement).toBe(tabs[5])
+    expect(tabs[5]!.getAttribute('aria-selected')).toBe('true')
+    expect(
+      requiredElement<HTMLElement>('#delivery-evidence-panel-trace').hidden,
+    ).toBe(false)
+
+    await act(async () => user.keyboard('[Home]'))
+    expect(document.activeElement).toBe(tabs[0])
+    expect(tabs[0]!.getAttribute('aria-selected')).toBe('true')
   })
 
   it('abandons an in-flight request and disposes its native client on unmount', () => {

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -357,6 +358,53 @@ describe('LayoutStateProvider integration', () => {
       expectedRevisionDigest: layoutCueDigest,
       edit: { kind: 'text', text: '修正版の字幕' },
       reason: '重なりを手動で確認して本文を修正',
+    })
+  })
+
+  it('edits a subtitle revision through keyboard focus order and Enter', async () => {
+    loadAndComplete()
+    const user = userEvent.setup({ document })
+    const cueOption = requiredElement<HTMLButtonElement>(
+      '[aria-label="字幕 Cue 一覧"] [role="option"]',
+    )
+    act(() => cueOption.focus())
+
+    await act(async () => user.keyboard('[Tab]'))
+    expect(document.activeElement).toBe(buttonByText('元時刻へ移動'))
+
+    await act(async () => user.keyboard('[Tab]'))
+    expect(document.activeElement).toBe(
+      requiredElement<HTMLSelectElement>('select[name="subtitle-edit-kind"]'),
+    )
+
+    await act(async () => user.keyboard('[Tab]'))
+    const text = requiredElement<HTMLTextAreaElement>(
+      '.subtitle-editor-grid > section:first-child textarea',
+    )
+    expect(document.activeElement).toBe(text)
+    await act(async () => user.clear(text))
+    await act(async () => user.keyboard('キーボードで修正した字幕'))
+
+    await act(async () => user.keyboard('[Tab]'))
+    const reason = requiredElement<HTMLInputElement>(
+      'input[name="subtitle-reason"]',
+    )
+    expect(document.activeElement).toBe(reason)
+    await act(async () => user.keyboard('キーボード操作を確認'))
+
+    await act(async () => user.keyboard('[Tab]'))
+    const submitButton = buttonByText('字幕 revision を作成')
+    expect(document.activeElement).toBe(submitButton)
+    await act(async () => user.keyboard('[Enter]'))
+
+    expect(document.activeElement).toBe(submitButton)
+    expect(requiredApply(1).params.operation).toEqual({
+      kind: 'editSubtitle',
+      cueId: layoutCueId,
+      expectedRevisionId: layoutCueRevisionId,
+      expectedRevisionDigest: layoutCueDigest,
+      edit: { kind: 'text', text: 'キーボードで修正した字幕' },
+      reason: 'キーボード操作を確認',
     })
   })
 

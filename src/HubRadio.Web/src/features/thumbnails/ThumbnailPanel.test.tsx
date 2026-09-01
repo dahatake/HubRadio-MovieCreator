@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -112,6 +113,28 @@ describe('ThumbnailPanel', () => {
     expect(container.textContent).toContain('output SHA-256')
     expect(container.textContent).toContain(thumbnailOutputDigest)
     expect(container.textContent).toContain('exact source PTS-1/20')
+  })
+
+  it('loads evidence and starts generation with keyboard activation', async () => {
+    const client = new FakeThumbnailClient()
+    renderPanel(client)
+    const user = userEvent.setup({ document })
+    const load = requiredButton('信頼済み根拠を読み込む')
+    act(() => load.focus())
+    await act(async () => user.keyboard('[Enter]'))
+
+    const read = client.reads[0]
+    if (read === undefined) throw new Error('Expected read request.')
+    const value = createThumbnailReadResponseValue()
+    value.requestId = read.requestId
+    act(() => client.emitRead(requireReadResponse(value)))
+
+    const generate = requiredButton('選択フレームから生成')
+    act(() => generate.focus())
+    await act(async () => user.keyboard('[Enter]'))
+    expect(document.activeElement).toBe(generate)
+    expect(client.generates).toHaveLength(1)
+    expect(client.generates[0]?.params.proxyFrameSequence).toBe(1)
   })
 
   it('reduces only the preview presentation and keeps native output dimensions', () => {

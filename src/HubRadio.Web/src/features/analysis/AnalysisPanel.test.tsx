@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -152,6 +153,27 @@ describe('AnalysisPanelView', () => {
       },
     })
     expect(JSON.stringify(client.sent[1])).not.toMatch(/elementId|cueId|splitOffset/u)
+  })
+
+  it('enters a reason and adopts a candidate with keyboard input', async () => {
+    const client = renderAvailable()
+    const user = userEvent.setup({ document })
+    const reason = requiredElement<HTMLInputElement>('.analysis-reason input')
+    act(() => reason.focus())
+    await act(async () => user.keyboard('候補を確認'))
+
+    const card = cardContaining('用語修正候補', '用語辞書')
+    const adopt = [...card.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === '採用')
+    if (adopt === undefined) throw new Error('Expected an adoption button.')
+    act(() => adopt.focus())
+    await act(async () => user.keyboard('[Enter]'))
+
+    expect(document.activeElement).toBe(adopt)
+    expect(client.sent[1]).toMatchObject({
+      method: 'analysis.adopt',
+      params: { reason: '候補を確認' },
+    })
   })
 
   it('updates exactly one topic field with analysis and metadata OCC', () => {

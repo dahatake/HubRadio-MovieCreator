@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -143,6 +144,29 @@ describe('ReviewStateProvider integration', () => {
     expect(client.sent.filter(
       (request) => request.method === REVIEW_RECORD_APPROVAL_METHOD,
     )).toHaveLength(1)
+  })
+
+  it('moves among review action panels with roving keyboard focus', async () => {
+    loadSnapshot()
+    completeSnapshot(requiredSent(0))
+    const user = userEvent.setup({ document })
+    const tabs = [...container.querySelectorAll<HTMLButtonElement>(
+      '.review-action-tabs [role="tab"]',
+    )]
+    expect(tabs).toHaveLength(3)
+
+    act(() => tabs[0]!.focus())
+    await act(async () => user.keyboard('[End]'))
+    expect(document.activeElement).toBe(tabs[2])
+    expect(tabs[2]!.getAttribute('aria-selected')).toBe('true')
+    expect(
+      requiredElement<HTMLElement>('#review-action-panel-recordApproval')
+        .hidden,
+    ).toBe(false)
+
+    await act(async () => user.keyboard('[Home]'))
+    expect(document.activeElement).toBe(tabs[0])
+    expect(tabs[0]!.getAttribute('aria-selected')).toBe('true')
   })
 
   it('abandons an in-flight request and disposes its native client on unmount', () => {

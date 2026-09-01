@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -113,6 +114,26 @@ describe('TimelineEditor', () => {
     expect(container.textContent).toContain('revision 4')
     expect(container.textContent).toContain('未送信 0')
     expect(buttonByText('未送信操作を元に戻す').disabled).toBe(true)
+  })
+
+  it('selects the accessible element fallback and deletes by keyboard', async () => {
+    const client = new FakeTimelineBridgeClient()
+    renderTimeline(client, () => timelineRequestId)
+    submitLoad()
+    act(() => client.emitRead(readResponse(client.sentReads[0]!.requestId)))
+    const user = userEvent.setup({ document })
+    const firstElement = elementButtons()[0]!
+
+    act(() => firstElement.focus())
+    await act(async () => user.keyboard('[Enter]'))
+    expect(firstElement.getAttribute('aria-pressed')).toBe('true')
+
+    const canvas = requiredElement<HTMLCanvasElement>('.timeline-canvas')
+    act(() => canvas.focus())
+    await act(async () => user.keyboard('[Delete]'))
+    expect(document.activeElement).toBe(canvas)
+    expect(elementButtons()).toHaveLength(1)
+    expect(container.textContent).toContain('未送信 1')
   })
 
   it('splits only at the exact synchronized playhead, never from pixel geometry', () => {

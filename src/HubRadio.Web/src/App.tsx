@@ -65,7 +65,7 @@ function App() {
           </button>
         </div>
       </header>
-      <div id="project-content">
+      <div id="project-content" tabIndex={-1}>
         <ProjectWorkspace />
         <JobProgressPanel />
         <PreviewModeControls selection={playerSelection} />

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import userEvent from '@testing-library/user-event'
 import { act, useCallback, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -109,6 +110,31 @@ describe('preview modes with the U-007 player', () => {
     expect(requiredButton('ミュート').getAttribute('aria-pressed')).toBe(
       'false',
     )
+  })
+
+  it('exposes and changes mute state through keyboard activation', async () => {
+    loadPlayer()
+    const user = userEvent.setup({ document })
+    const video = requiredElement<HTMLVideoElement>('video')
+    const mute = requiredButton('ミュート')
+    act(() => mute.focus())
+
+    expect(mute.getAttribute('aria-label')).toBe('音声をミュート')
+    expect(mute.getAttribute('aria-pressed')).toBe('false')
+    expect(video.muted).toBe(false)
+
+    await act(async () => user.keyboard('[Enter]'))
+    const unmute = requiredButton('ミュート解除')
+    expect(document.activeElement).toBe(unmute)
+    expect(unmute.getAttribute('aria-label')).toBe('音声のミュートを解除')
+    expect(unmute.getAttribute('aria-pressed')).toBe('true')
+    expect(video.muted).toBe(true)
+
+    await act(async () => user.keyboard('[Space]'))
+    expect(requiredButton('ミュート').getAttribute('aria-pressed')).toBe(
+      'false',
+    )
+    expect(video.muted).toBe(false)
   })
 
   it('keeps missing video explicit and retains evidence without a mode seek', () => {

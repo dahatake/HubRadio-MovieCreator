@@ -1,5 +1,10 @@
+// @vitest-environment jsdom
+
+import userEvent from '@testing-library/user-event'
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type {
   ProjectDraft,
@@ -48,6 +53,66 @@ describe('ProjectWorkspace', () => {
     expect(markup).toContain('<form')
     expect(markup).toMatch(/<button[^>]*type="submit"[^>]*>下書きを保存<\/button>/)
     expect(markup).toMatch(/<button[^>]*type="button"[^>]*>案件を作成<\/button>/)
+  })
+
+  it('executes wizard navigation and finalization with keyboard input', async () => {
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
+      .IS_REACT_ACT_ENVIRONMENT = true
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    const finalizeDraft = vi.fn()
+    const input = completeInput()
+    const state: ProjectState = {
+      ...initialProjectState,
+      canCreate: true,
+      catalog: {
+        outputProfiles: [{ id: profileId, name: 'long-form-1280x720' }],
+        brandTemplates: [{ id: templateId, name: 'development-neutral-long-form' }],
+      },
+      draft: projectDraft(input),
+      input,
+    }
+
+    try {
+      act(() => {
+        root.render(
+          <ProjectWorkspaceView
+            {...contextFor(state)}
+            finalizeDraft={finalizeDraft}
+          />,
+        )
+      })
+      const user = userEvent.setup({ document })
+      const steps = [...container.querySelectorAll<HTMLButtonElement>(
+        '.wizard-progress button',
+      )]
+      expect(steps).toHaveLength(5)
+
+      act(() => steps[0]!.focus())
+      await act(async () => user.keyboard('[End]'))
+      expect(document.activeElement).toBe(steps[4])
+      expect(steps[4]!.getAttribute('aria-current')).toBe('step')
+
+      await act(async () => user.keyboard('[Home]'))
+      expect(document.activeElement).toBe(steps[0])
+      expect(steps[0]!.getAttribute('aria-current')).toBe('step')
+
+      await act(async () => user.keyboard('[End]'))
+      const finish = [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent?.trim() === '案件を作成')
+      if (finish === undefined) {
+        throw new Error('Expected the project finalization button.')
+      }
+      act(() => finish.focus())
+      await act(async () => user.keyboard('[Enter]'))
+      expect(finalizeDraft).toHaveBeenCalledOnce()
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+      delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
+        .IS_REACT_ACT_ENVIRONMENT
+    }
   })
 
   it('renders all canonical project-list columns and escapes user-controlled text', () => {

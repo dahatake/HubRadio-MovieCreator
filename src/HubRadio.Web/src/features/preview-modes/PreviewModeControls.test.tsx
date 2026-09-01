@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { readFileSync } from 'node:fs'
+import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -65,6 +66,41 @@ describe('PreviewModeControls', () => {
     expect(container.textContent).toContain('サムネイル縮小')
     expect(container.textContent).toContain('mobile 配置')
     expect(container.textContent).toContain('音声のみ')
+  })
+
+  it('changes subtitle visibility and orientation with keyboard input', async () => {
+    renderControls(null)
+    const user = userEvent.setup({ document })
+    const card = requiredElement<HTMLElement>('.preview-mode-card')
+    const subtitles = [...container.querySelectorAll<HTMLInputElement>(
+      'input[type="checkbox"]',
+    )].find((input) => input.closest('label')?.textContent === '字幕を表示')
+    if (subtitles === undefined) {
+      throw new Error('Expected the subtitle visibility control.')
+    }
+
+    act(() => subtitles.focus())
+    expect(subtitles.checked).toBe(true)
+    await act(async () => user.keyboard('[Space]'))
+    expect(subtitles.checked).toBe(false)
+    expect(card.dataset.subtitlesVisible).toBe('false')
+
+    const landscape = requiredElement<HTMLInputElement>(
+      'input[value="landscape"]',
+    )
+    const portrait = requiredElement<HTMLInputElement>(
+      'input[value="portrait"]',
+    )
+    act(() => landscape.focus())
+    await act(async () => user.keyboard('[Space]'))
+    expect(landscape.checked).toBe(true)
+    expect(card.dataset.previewOrientation).toBe('landscape')
+
+    act(() => portrait.focus())
+    await act(async () => user.keyboard('[Space]'))
+    expect(document.activeElement).toBe(portrait)
+    expect(portrait.checked).toBe(true)
+    expect(card.dataset.previewOrientation).toBe('portrait')
   })
 
   it('shows missing media explicitly while all switches remain offline', () => {

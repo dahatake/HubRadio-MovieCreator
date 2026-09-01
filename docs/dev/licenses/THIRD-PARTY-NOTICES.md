@@ -77,7 +77,7 @@ The following are tracked because they affect reproducibility and later SBOM gen
 
 - .NET SDK 10.0.400 selected by `global.json`.
 - Node.js 24.19.0 and PowerShell 7.6.5 were observed on the Stage 0 host but are not pinned by repository artifacts; their controlled-toolchain artifacts and license evidence remain pending.
-- npm 11.17.0, TypeScript 7.0.2, Vite 8.2.2, Vitest 4.1.11, and the three direct `@types` packages.
+- npm 11.17.0, TypeScript 7.0.2, Vite 8.2.2, Vitest 4.1.11, `@testing-library/dom` 10.4.1, `@testing-library/user-event` 14.6.1, and the three direct `@types` packages.
 - setuptools 84.0.0 and pytest 9.0.0 are exact, hash-locked PK-001 artifacts. pytest and its test-only transitive wheels are excluded from the product runtime lock.
 - MSTest.Sdk 4.3.3 and its assets-resolved direct test packages: MSTest.TestAdapter 4.3.3, MSTest.TestFramework 4.3.3, Microsoft.Testing.Extensions.CodeCoverage 18.9.0, and Microsoft.Testing.Extensions.TrxReport 2.3.3.
 - Microsoft.Windows.SDK.BuildTools 10.0.26100.1 and `makeappx.exe`, used only for the unsigned Stage 0 packaging feasibility run.

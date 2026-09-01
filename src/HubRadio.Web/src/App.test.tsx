@@ -53,7 +53,9 @@ describe('App', () => {
     expect(markup).toContain('for="job-id"')
     expect(markup).toContain('id="job-id"')
     expect(markup).toContain('type="submit"')
-    expect(markup).not.toContain('tabindex="-1"')
+    expect(markup).toContain(
+      '<div id="project-content" tabindex="-1">',
+    )
   })
 
   it('requires the application state provider', () => {
