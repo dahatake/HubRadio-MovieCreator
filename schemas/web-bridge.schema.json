@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; delivery requests use 512 UTF-8 bytes with 1 MiB responses; ping and jobs use 4096-byte responses, comparison requests use 4 KiB with 1 MiB responses, project, timeline, and thumbnail requests use 96 KiB with 1 MiB responses, transcript requests use 16 KiB with 4 MiB responses, review requests use 24 KiB with 1 MiB responses and 16 KiB review text, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every protected operation and every media GET; actor identity is never accepted from Web messages, and any requested acting role is untrusted intent revalidated against current native assignments. Review mutations and comparisons pin exact composition-version IDs and full digests, while rational time remains reduced integer evidence; delivery snapshots expose only natively revalidated full-digest evidence and preserve that machine QC still requires human review, has no approved numeric thresholds, and cannot independently authorize delivery. Comparisons expose only durable composition evidence and mark unsupported semantic features unavailable instead of inferring them. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, storage references, arbitrary URLs, download capabilities, SIDs, commands, authentication secrets, process output, template filesystem locations, and sensitive host data are prohibited.",
+  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; delivery requests use 512 UTF-8 bytes with 1 MiB responses; ping and jobs use 4096-byte responses, comparison requests use 4 KiB with 1 MiB responses, project, timeline, and thumbnail requests use 96 KiB with 1 MiB responses, transcript requests use 16 KiB with 4 MiB responses, analysis requests use 64 KiB with 4 MiB responses, review requests use 24 KiB with 1 MiB responses and 16 KiB review text, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every protected operation and every media GET; actor identity is never accepted from Web messages, and any requested acting role is untrusted intent revalidated against current native assignments. Analysis reads require project viewing authority, analysis decisions require analysis-decision authority, and every mutation pins the analysis revision ID plus digest; topic updates also pin the metadata revision ID. Analysis adoption targets are native-owned and never accepted from Web messages. Analysis adoption and topic edits are staged with persisted=false and adoptionPersistence=notPersisted; persistence remains a separate explicit workflow. Sensitivity findings expose only classification, reason code, source binding, and source time, never matched values. Review mutations and comparisons pin exact composition-version IDs and full digests, while rational time remains reduced integer evidence; delivery snapshots expose only natively revalidated full-digest evidence and preserve that machine QC still requires human review, has no approved numeric thresholds, and cannot independently authorize delivery. Comparisons expose only durable composition evidence and mark unsupported semantic features unavailable instead of inferring them. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, storage references, arbitrary URLs, download capabilities, SIDs, commands, authentication secrets or values, process output, prompt or response content, template filesystem locations, and sensitive host data are prohibited.",
   "title": "WebBridgeMessage",
   "oneOf": [
     { "$ref": "#/$defs/pingRequest" },
@@ -46,6 +46,14 @@
     { "$ref": "#/$defs/transcriptRemoveSpeakerResponse" },
     { "$ref": "#/$defs/transcriptAdoptTermResponse" },
     { "$ref": "#/$defs/transcriptRejectTermResponse" },
+    { "$ref": "#/$defs/analysisReadRequest" },
+    { "$ref": "#/$defs/analysisRejectRequest" },
+    { "$ref": "#/$defs/analysisAdoptRequest" },
+    { "$ref": "#/$defs/analysisUpdateTopicRequest" },
+    { "$ref": "#/$defs/analysisReadResponse" },
+    { "$ref": "#/$defs/analysisRejectResponse" },
+    { "$ref": "#/$defs/analysisAdoptResponse" },
+    { "$ref": "#/$defs/analysisUpdateTopicResponse" },
     { "$ref": "#/$defs/timelineReadRequest" },
     { "$ref": "#/$defs/timelineReadResponse" },
     { "$ref": "#/$defs/timelineApplyRequest" },
@@ -116,6 +124,10 @@
         "transcript.removeSpeaker",
         "transcript.adoptTerm",
         "transcript.rejectTerm",
+        "analysis.read",
+        "analysis.reject",
+        "analysis.adopt",
+        "analysis.updateTopic",
         "timeline.read",
         "timeline.apply",
         "review.getSnapshot",
@@ -150,6 +162,14 @@
         "review.addComment",
         "review.requestChanges",
         "review.recordApproval"
+      ]
+    },
+    "analysisMethod": {
+      "enum": [
+        "analysis.read",
+        "analysis.reject",
+        "analysis.adopt",
+        "analysis.updateTopic"
       ]
     },
     "publicationScope": {
@@ -2825,6 +2845,1211 @@
           }
         }
       ]
+    },
+    "analysisFailureStatus": {
+      "enum": [
+        "forbidden",
+        "unavailable",
+        "staleBase",
+        "conflict",
+        "noChange",
+        "invalid"
+      ]
+    },
+    "analysisReadParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" }
+      }
+    },
+    "analysisDecisionParams": {
+      "type": "object",
+      "$comment": "The Web supplies only candidate identity, analysis OCC evidence, and a reason. Element IDs, cue IDs, split offsets, transcript targets, and every other adoption target are native-owned and prohibited by additionalProperties=false.",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "revisionId",
+        "digest",
+        "candidateId",
+        "reason"
+      ],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "revisionId": { "$ref": "#/$defs/entityId" },
+        "digest": { "$ref": "#/$defs/contentDigest" },
+        "candidateId": { "$ref": "#/$defs/entityId" },
+        "reason": { "$ref": "#/$defs/transcriptRequiredText" }
+      }
+    },
+    "analysisTopicUpdate": {
+      "$comment": "Exactly one topic metadata field is changed per request.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["field", "text"],
+          "properties": {
+            "field": { "const": "title" },
+            "text": { "$ref": "#/$defs/transcriptRequiredText" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["field", "text"],
+          "properties": {
+            "field": { "const": "summary" },
+            "text": {
+              "oneOf": [
+                { "$ref": "#/$defs/transcriptRequiredText" },
+                { "type": "null" }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["field", "speakerId"],
+          "properties": {
+            "field": { "const": "mainSpeaker" },
+            "speakerId": { "$ref": "#/$defs/optionalEntityId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["field", "values"],
+          "properties": {
+            "field": { "const": "keywords" },
+            "values": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/transcriptRequiredText" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["field", "sourceSpanIds"],
+          "properties": {
+            "field": { "const": "importantStatements" },
+            "sourceSpanIds": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/entityId" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["field", "text"],
+          "properties": {
+            "field": { "const": "audience" },
+            "text": { "$ref": "#/$defs/transcriptRequiredText" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["field", "values"],
+          "properties": {
+            "field": { "const": "publicationCautions" },
+            "values": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/transcriptRequiredText" }
+            }
+          }
+        }
+      ]
+    },
+    "analysisUpdateTopicParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "revisionId",
+        "digest",
+        "topicId",
+        "expectedTopicRevisionId",
+        "update",
+        "reason"
+      ],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "revisionId": { "$ref": "#/$defs/entityId" },
+        "digest": { "$ref": "#/$defs/contentDigest" },
+        "topicId": { "$ref": "#/$defs/entityId" },
+        "expectedTopicRevisionId": { "$ref": "#/$defs/entityId" },
+        "update": { "$ref": "#/$defs/analysisTopicUpdate" },
+        "reason": { "$ref": "#/$defs/transcriptRequiredText" }
+      }
+    },
+    "analysisReadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "analysis.read" },
+        "params": { "$ref": "#/$defs/analysisReadParams" }
+      }
+    },
+    "analysisRejectRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "analysis.reject" },
+        "params": { "$ref": "#/$defs/analysisDecisionParams" }
+      }
+    },
+    "analysisAdoptRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "analysis.adopt" },
+        "params": { "$ref": "#/$defs/analysisDecisionParams" }
+      }
+    },
+    "analysisUpdateTopicRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "analysis.updateTopic" },
+        "params": { "$ref": "#/$defs/analysisUpdateTopicParams" }
+      }
+    },
+    "analysisTimeRange": {
+      "type": "object",
+      "$comment": "The native writer emits a positive duration and non-overflowing end; consumers enforce those arithmetic invariants.",
+      "additionalProperties": false,
+      "required": ["start", "duration"],
+      "properties": {
+        "start": { "$ref": "#/$defs/rationalTime" },
+        "duration": { "$ref": "#/$defs/rationalTime" }
+      }
+    },
+    "analysisSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceSpanId", "range"],
+      "properties": {
+        "sourceSpanId": { "$ref": "#/$defs/entityId" },
+        "range": { "$ref": "#/$defs/analysisTimeRange" }
+      }
+    },
+    "analysisSpeaker": {
+      "type": "object",
+      "$comment": "Speaker editing remains on the canonical transcript path; this projection binds the current display to a source-time range for integrated review.",
+      "additionalProperties": false,
+      "required": [
+        "speakerId",
+        "performerId",
+        "format",
+        "isAssigned",
+        "isVisible",
+        "text",
+        "titleConfirmedAt",
+        "titleOrAffiliationConfirmationRequired",
+        "source"
+      ],
+      "properties": {
+        "speakerId": { "$ref": "#/$defs/entityId" },
+        "performerId": { "$ref": "#/$defs/optionalEntityId" },
+        "format": {
+          "oneOf": [
+            { "$ref": "#/$defs/transcriptDisplayFormat" },
+            { "type": "null" }
+          ]
+        },
+        "isAssigned": { "type": "boolean" },
+        "isVisible": { "type": "boolean" },
+        "text": {
+          "oneOf": [
+            { "$ref": "#/$defs/transcriptRequiredText" },
+            { "type": "null" }
+          ]
+        },
+        "titleConfirmedAt": { "$ref": "#/$defs/nullableTranscriptTimestamp" },
+        "titleOrAffiliationConfirmationRequired": { "type": "boolean" },
+        "source": { "$ref": "#/$defs/analysisSource" }
+      }
+    },
+    "analysisTopicMainSpeaker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "speakerId",
+        "performerId",
+        "displayVisible",
+        "displayText",
+        "titleOrAffiliationConfirmationRequired",
+        "overlapDuration"
+      ],
+      "properties": {
+        "speakerId": { "$ref": "#/$defs/entityId" },
+        "performerId": { "$ref": "#/$defs/optionalEntityId" },
+        "displayVisible": { "type": "boolean" },
+        "displayText": {
+          "oneOf": [
+            { "$ref": "#/$defs/transcriptRequiredText" },
+            { "type": "null" }
+          ]
+        },
+        "titleOrAffiliationConfirmationRequired": { "type": "boolean" },
+        "overlapDuration": { "$ref": "#/$defs/rationalTime" }
+      }
+    },
+    "analysisMetadataOrigin": {
+      "enum": [
+        "unset",
+        "deterministicPlaceholder",
+        "projectSnapshot",
+        "deterministicTranscriptOverlap",
+        "manualEditorial"
+      ]
+    },
+    "analysisMetadataField": {
+      "enum": [
+        "initial",
+        "title",
+        "summary",
+        "mainSpeaker",
+        "keywords",
+        "importantStatements",
+        "audience",
+        "publicationCautions"
+      ]
+    },
+    "analysisTopic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topicId",
+        "topicRangeRevisionId",
+        "metadataId",
+        "metadataRevisionId",
+        "parentMetadataRevisionId",
+        "range",
+        "startBoundaryCandidateId",
+        "endBoundaryCandidateId",
+        "title",
+        "titleOrigin",
+        "titleRequiresManualReview",
+        "summary",
+        "summaryOrigin",
+        "mainSpeaker",
+        "mainSpeakerOrigin",
+        "mainSpeakerTieUnresolved",
+        "keywords",
+        "keywordsOrigin",
+        "importantStatementSourceSpanIds",
+        "importantStatementsOrigin",
+        "audience",
+        "audienceOrigin",
+        "publicationCautions",
+        "publicationCautionsOrigin",
+        "changedField",
+        "createdAt",
+        "reason"
+      ],
+      "properties": {
+        "topicId": { "$ref": "#/$defs/entityId" },
+        "topicRangeRevisionId": { "$ref": "#/$defs/entityId" },
+        "metadataId": { "$ref": "#/$defs/entityId" },
+        "metadataRevisionId": { "$ref": "#/$defs/entityId" },
+        "parentMetadataRevisionId": { "$ref": "#/$defs/optionalEntityId" },
+        "range": { "$ref": "#/$defs/analysisTimeRange" },
+        "startBoundaryCandidateId": { "$ref": "#/$defs/optionalEntityId" },
+        "endBoundaryCandidateId": { "$ref": "#/$defs/optionalEntityId" },
+        "title": { "$ref": "#/$defs/transcriptRequiredText" },
+        "titleOrigin": { "$ref": "#/$defs/analysisMetadataOrigin" },
+        "titleRequiresManualReview": { "type": "boolean" },
+        "summary": {
+          "oneOf": [
+            { "$ref": "#/$defs/transcriptRequiredText" },
+            { "type": "null" }
+          ]
+        },
+        "summaryOrigin": { "$ref": "#/$defs/analysisMetadataOrigin" },
+        "mainSpeaker": {
+          "oneOf": [
+            { "$ref": "#/$defs/analysisTopicMainSpeaker" },
+            { "type": "null" }
+          ]
+        },
+        "mainSpeakerOrigin": { "$ref": "#/$defs/analysisMetadataOrigin" },
+        "mainSpeakerTieUnresolved": { "type": "boolean" },
+        "keywords": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/transcriptRequiredText" }
+        },
+        "keywordsOrigin": { "$ref": "#/$defs/analysisMetadataOrigin" },
+        "importantStatementSourceSpanIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/entityId" }
+        },
+        "importantStatementsOrigin": { "$ref": "#/$defs/analysisMetadataOrigin" },
+        "audience": { "$ref": "#/$defs/transcriptRequiredText" },
+        "audienceOrigin": { "$ref": "#/$defs/analysisMetadataOrigin" },
+        "publicationCautions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/transcriptRequiredText" }
+        },
+        "publicationCautionsOrigin": { "$ref": "#/$defs/analysisMetadataOrigin" },
+        "changedField": { "$ref": "#/$defs/analysisMetadataField" },
+        "createdAt": { "$ref": "#/$defs/transcriptTimestamp" },
+        "reason": { "$ref": "#/$defs/transcriptRequiredText" }
+      }
+    },
+    "analysisDetection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detectionId", "kind", "description", "confidence"],
+      "properties": {
+        "detectionId": { "$ref": "#/$defs/entityId" },
+        "kind": {
+          "enum": [
+            "silence",
+            "repetition",
+            "preparationConversation",
+            "recordingProblem",
+            "contextDeviation",
+            "audioEvent",
+            "editorialInstruction",
+            "topicBoundary"
+          ]
+        },
+        "description": { "$ref": "#/$defs/transcriptRequiredText" },
+        "confidence": { "$ref": "#/$defs/transcriptConfidence" }
+      }
+    },
+    "analysisTermPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "sourceRevisionId",
+        "sourceRevisionDigest",
+        "sourceSpanId",
+        "tokenId",
+        "termScopeKind",
+        "termScopeId",
+        "termEntryId",
+        "termEntryVersion",
+        "dictionaryReading",
+        "observedText",
+        "proposedText",
+        "matchKind"
+      ],
+      "properties": {
+        "producer": { "const": "termCorrection" },
+        "sourceRevisionId": { "$ref": "#/$defs/entityId" },
+        "sourceRevisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "sourceSpanId": { "$ref": "#/$defs/entityId" },
+        "tokenId": { "$ref": "#/$defs/entityId" },
+        "termScopeKind": { "enum": ["project", "series"] },
+        "termScopeId": { "$ref": "#/$defs/entityId" },
+        "termEntryId": { "$ref": "#/$defs/entityId" },
+        "termEntryVersion": { "$ref": "#/$defs/nonnegativeInt32" },
+        "dictionaryReading": { "$ref": "#/$defs/transcriptRequiredText" },
+        "observedText": { "$ref": "#/$defs/transcriptRequiredText" },
+        "proposedText": { "$ref": "#/$defs/transcriptRequiredText" },
+        "matchKind": {
+          "enum": [
+            "writtenFormCompatibilityVariant",
+            "writtenFormCaseVariant",
+            "dictionaryReading"
+          ]
+        }
+      }
+    },
+    "analysisSilencePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "detection",
+        "thresholdVersion",
+        "analysisStartSample",
+        "analysisEndSample",
+        "noiseDb",
+        "minimumDuration",
+        "sampleRoundingRule",
+        "productionApproved",
+        "automaticDeletionAllowed"
+      ],
+      "properties": {
+        "producer": { "const": "silence" },
+        "detection": { "$ref": "#/$defs/analysisDetection" },
+        "thresholdVersion": { "$ref": "#/$defs/transcriptRequiredText" },
+        "analysisStartSample": { "$ref": "#/$defs/nonnegativeInt64String" },
+        "analysisEndSample": { "$ref": "#/$defs/nonnegativeInt64String" },
+        "noiseDb": { "type": "number" },
+        "minimumDuration": { "$ref": "#/$defs/rationalTime" },
+        "sampleRoundingRule": { "$ref": "#/$defs/transcriptRequiredText" },
+        "productionApproved": { "const": false },
+        "automaticDeletionAllowed": { "const": false }
+      }
+    },
+    "analysisEditorialPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "detection",
+        "sourceRevisionId",
+        "sourceRevisionDigest",
+        "dictionaryVersion",
+        "matchedPhrase",
+        "normalizedSentenceStart",
+        "normalizedMatchLength",
+        "usesUtteranceTimingFallback",
+        "usesPartialTokenCoverage"
+      ],
+      "properties": {
+        "producer": { "const": "editorialPhrase" },
+        "detection": { "$ref": "#/$defs/analysisDetection" },
+        "sourceRevisionId": { "$ref": "#/$defs/entityId" },
+        "sourceRevisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "dictionaryVersion": { "$ref": "#/$defs/transcriptRequiredText" },
+        "matchedPhrase": { "$ref": "#/$defs/transcriptRequiredText" },
+        "normalizedSentenceStart": { "$ref": "#/$defs/nonnegativeInt32" },
+        "normalizedMatchLength": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "usesUtteranceTimingFallback": { "type": "boolean" },
+        "usesPartialTokenCoverage": { "type": "boolean" }
+      }
+    },
+    "analysisRepetitionPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "candidateKey",
+        "sourceRevisionId",
+        "sourceRevisionDigest",
+        "sourceSpanId",
+        "evidenceTokenIds",
+        "ruleVersion",
+        "automaticDeletionAllowed",
+        "humanReviewRequired",
+        "features"
+      ],
+      "properties": {
+        "producer": { "const": "repetition" },
+        "candidateKey": { "$ref": "#/$defs/contentDigest" },
+        "sourceRevisionId": { "$ref": "#/$defs/entityId" },
+        "sourceRevisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "sourceSpanId": { "$ref": "#/$defs/entityId" },
+        "evidenceTokenIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/entityId" }
+        },
+        "ruleVersion": { "$ref": "#/$defs/transcriptRequiredText" },
+        "automaticDeletionAllowed": { "type": "boolean" },
+        "humanReviewRequired": { "type": "boolean" },
+        "features": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rule",
+            "comparisonSourceSpanId",
+            "comparisonTokenIds",
+            "matchingTokenCount",
+            "exactNfkcMatch",
+            "structurallyAdjacent",
+            "sameSpeakerRequired",
+            "candidateIsLaterOccurrence",
+            "retentionChoiceRequired"
+          ],
+          "properties": {
+            "rule": { "$ref": "#/$defs/transcriptRequiredText" },
+            "comparisonSourceSpanId": { "$ref": "#/$defs/entityId" },
+            "comparisonTokenIds": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/entityId" }
+            },
+            "matchingTokenCount": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2147483647
+            },
+            "exactNfkcMatch": { "type": "boolean" },
+            "structurallyAdjacent": { "type": "boolean" },
+            "sameSpeakerRequired": { "type": "boolean" },
+            "candidateIsLaterOccurrence": { "type": "boolean" },
+            "retentionChoiceRequired": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "analysisTopicBoundaryPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "detection",
+        "sourceRevisionId",
+        "sourceRevisionDigest",
+        "suggestedBoundary",
+        "ruleVersion",
+        "features"
+      ],
+      "properties": {
+        "producer": { "const": "topicBoundary" },
+        "detection": { "$ref": "#/$defs/analysisDetection" },
+        "sourceRevisionId": { "$ref": "#/$defs/entityId" },
+        "sourceRevisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "suggestedBoundary": { "$ref": "#/$defs/rationalTime" },
+        "ruleVersion": { "$ref": "#/$defs/transcriptRequiredText" },
+        "features": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "previousUtteranceId",
+            "currentUtteranceId",
+            "previousSourceSpanId",
+            "currentSourceSpanId",
+            "previousSpeakerId",
+            "currentSpeakerId",
+            "previousRange",
+            "currentRange",
+            "observedGap",
+            "speakerChanged",
+            "structurallyAdjacent",
+            "semanticClassificationPerformed",
+            "approvedPauseOrSimilarityThresholdApplied",
+            "optionalShotBoundaryUsed"
+          ],
+          "properties": {
+            "previousUtteranceId": { "$ref": "#/$defs/entityId" },
+            "currentUtteranceId": { "$ref": "#/$defs/entityId" },
+            "previousSourceSpanId": { "$ref": "#/$defs/entityId" },
+            "currentSourceSpanId": { "$ref": "#/$defs/entityId" },
+            "previousSpeakerId": { "$ref": "#/$defs/entityId" },
+            "currentSpeakerId": { "$ref": "#/$defs/entityId" },
+            "previousRange": { "$ref": "#/$defs/analysisTimeRange" },
+            "currentRange": { "$ref": "#/$defs/analysisTimeRange" },
+            "observedGap": { "$ref": "#/$defs/rationalTime" },
+            "speakerChanged": { "type": "boolean" },
+            "structurallyAdjacent": { "type": "boolean" },
+            "semanticClassificationPerformed": { "type": "boolean" },
+            "approvedPauseOrSimilarityThresholdApplied": { "type": "boolean" },
+            "optionalShotBoundaryUsed": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "analysisAudioPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "detection",
+        "eventKind",
+        "evidenceMethods",
+        "analysisStartSample",
+        "analysisEndSample",
+        "manualListeningConfirmed",
+        "technicalWarningOnly",
+        "automaticDeletionAllowed",
+        "explicitHumanDecisionRequired"
+      ],
+      "properties": {
+        "producer": { "const": "audioReview" },
+        "detection": { "$ref": "#/$defs/analysisDetection" },
+        "eventKind": { "enum": ["cough", "noise", "wait", "recordingQuality"] },
+        "evidenceMethods": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "manualListening",
+              "ffmpegSilence",
+              "waveformLowEnergy",
+              "waveformClipping",
+              "yamnetHeld",
+              "sileroVadBenchmarkOnly"
+            ]
+          }
+        },
+        "analysisStartSample": { "$ref": "#/$defs/nonnegativeInt64String" },
+        "analysisEndSample": { "$ref": "#/$defs/nonnegativeInt64String" },
+        "manualListeningConfirmed": { "type": "boolean" },
+        "technicalWarningOnly": { "type": "boolean" },
+        "automaticDeletionAllowed": { "type": "boolean" },
+        "explicitHumanDecisionRequired": { "type": "boolean" }
+      }
+    },
+    "analysisContextPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "detection",
+        "sourceRevisionId",
+        "sourceRevisionDigest",
+        "ruleVersion",
+        "features",
+        "explicitHumanDecisionRequired"
+      ],
+      "properties": {
+        "producer": { "const": "contextDeviation" },
+        "detection": { "$ref": "#/$defs/analysisDetection" },
+        "sourceRevisionId": { "$ref": "#/$defs/entityId" },
+        "sourceRevisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "ruleVersion": { "$ref": "#/$defs/transcriptRequiredText" },
+        "features": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "position",
+            "utteranceId",
+            "sourceSpanId",
+            "speakerId",
+            "utteranceRange",
+            "previousTopicId",
+            "nextTopicId",
+            "distanceToNearestTopicRange",
+            "fullyOutsideExplicitTopicRanges",
+            "semanticDistanceComputed",
+            "timeThresholdApplied",
+            "automaticDeletionAllowed"
+          ],
+          "properties": {
+            "position": {
+              "enum": [
+                "leadingBeforeFirstTopic",
+                "betweenTopicRanges",
+                "trailingAfterLastTopic"
+              ]
+            },
+            "utteranceId": { "$ref": "#/$defs/entityId" },
+            "sourceSpanId": { "$ref": "#/$defs/entityId" },
+            "speakerId": { "$ref": "#/$defs/entityId" },
+            "utteranceRange": { "$ref": "#/$defs/analysisTimeRange" },
+            "previousTopicId": { "$ref": "#/$defs/optionalEntityId" },
+            "nextTopicId": { "$ref": "#/$defs/optionalEntityId" },
+            "distanceToNearestTopicRange": { "$ref": "#/$defs/rationalTime" },
+            "fullyOutsideExplicitTopicRanges": { "type": "boolean" },
+            "semanticDistanceComputed": { "type": "boolean" },
+            "timeThresholdApplied": { "type": "boolean" },
+            "automaticDeletionAllowed": { "type": "boolean" }
+          }
+        },
+        "explicitHumanDecisionRequired": { "type": "boolean" }
+      }
+    },
+    "analysisEmphasisPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "sourceRevisionId",
+        "sourceRevisionDigest",
+        "topicMetadataRevisionId",
+        "ruleVersion",
+        "text",
+        "textSource",
+        "isExactOriginalText",
+        "reasons",
+        "termEvidence",
+        "automaticAdoptionAllowed"
+      ],
+      "properties": {
+        "producer": { "const": "emphasis" },
+        "sourceRevisionId": { "$ref": "#/$defs/entityId" },
+        "sourceRevisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "topicMetadataRevisionId": { "$ref": "#/$defs/entityId" },
+        "ruleVersion": { "$ref": "#/$defs/transcriptRequiredText" },
+        "text": { "$ref": "#/$defs/transcriptRequiredText" },
+        "textSource": { "enum": ["originalTranscript", "manualSummary"] },
+        "isExactOriginalText": { "type": "boolean" },
+        "reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "importantStatement",
+              "number",
+              "productName",
+              "publicationCaution",
+              "keyword",
+              "answerAfterExplicitQuestion",
+              "topicTransitionSummary"
+            ]
+          }
+        },
+        "termEvidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["termEntryId", "termEntryVersion", "writtenForm"],
+            "properties": {
+              "termEntryId": { "$ref": "#/$defs/entityId" },
+              "termEntryVersion": { "$ref": "#/$defs/nonnegativeInt32" },
+              "writtenForm": { "$ref": "#/$defs/transcriptRequiredText" }
+            }
+          }
+        },
+        "automaticAdoptionAllowed": { "type": "boolean" }
+      }
+    },
+    "analysisCandidatePayload": {
+      "oneOf": [
+        { "$ref": "#/$defs/analysisTermPayload" },
+        { "$ref": "#/$defs/analysisSilencePayload" },
+        { "$ref": "#/$defs/analysisEditorialPayload" },
+        { "$ref": "#/$defs/analysisRepetitionPayload" },
+        { "$ref": "#/$defs/analysisTopicBoundaryPayload" },
+        { "$ref": "#/$defs/analysisAudioPayload" },
+        { "$ref": "#/$defs/analysisContextPayload" },
+        { "$ref": "#/$defs/analysisEmphasisPayload" }
+      ]
+    },
+    "analysisDecision": {
+      "type": "object",
+      "$comment": "Consumers enforce decision/status consistency and require exactly one native adoption output shape for adopted decisions.",
+      "additionalProperties": false,
+      "required": [
+        "decisionId",
+        "candidateId",
+        "producer",
+        "suggestionKind",
+        "decision",
+        "statusAfterDecision",
+        "sourceDigest",
+        "decidedAt",
+        "reason",
+        "replacementCandidateId",
+        "resultingTranscriptRevisionId",
+        "adoptedReference"
+      ],
+      "properties": {
+        "decisionId": { "$ref": "#/$defs/entityId" },
+        "candidateId": { "$ref": "#/$defs/entityId" },
+        "producer": {
+          "enum": [
+            "termCorrection",
+            "silence",
+            "editorialPhrase",
+            "repetition",
+            "topicBoundary",
+            "audioReview",
+            "contextDeviation",
+            "emphasis"
+          ]
+        },
+        "suggestionKind": {
+          "enum": ["deleteRange", "topicBoundary", "highlight", "termCorrection"]
+        },
+        "decision": { "enum": ["rejected", "modified", "adopted"] },
+        "statusAfterDecision": { "enum": ["reviewed", "rejected", "adopted"] },
+        "sourceDigest": { "$ref": "#/$defs/contentDigest" },
+        "decidedAt": { "$ref": "#/$defs/transcriptTimestamp" },
+        "reason": { "$ref": "#/$defs/transcriptRequiredText" },
+        "replacementCandidateId": { "$ref": "#/$defs/optionalEntityId" },
+        "resultingTranscriptRevisionId": { "$ref": "#/$defs/optionalEntityId" },
+        "adoptedReference": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["candidateId", "sourceSpanId"],
+              "properties": {
+                "candidateId": { "$ref": "#/$defs/entityId" },
+                "sourceSpanId": { "$ref": "#/$defs/entityId" }
+              }
+            },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "analysisCandidate": {
+      "type": "object",
+      "$comment": "Consumers enforce matching producer/payload discriminators, display-kind/suggestion-kind mappings, decision consistency, current-only actions, and canAdopt=false for technical warnings.",
+      "additionalProperties": false,
+      "required": [
+        "candidateId",
+        "modelRunId",
+        "producer",
+        "suggestionKind",
+        "displayKind",
+        "status",
+        "freshness",
+        "canAdopt",
+        "canReject",
+        "sourceDigest",
+        "source",
+        "reason",
+        "confidence",
+        "missingContext",
+        "warning",
+        "parentCandidateId",
+        "replacementCandidateId",
+        "decision",
+        "payload"
+      ],
+      "properties": {
+        "candidateId": { "$ref": "#/$defs/entityId" },
+        "modelRunId": { "$ref": "#/$defs/entityId" },
+        "producer": {
+          "enum": [
+            "termCorrection",
+            "silence",
+            "editorialPhrase",
+            "repetition",
+            "topicBoundary",
+            "audioReview",
+            "contextDeviation",
+            "emphasis"
+          ]
+        },
+        "suggestionKind": {
+          "enum": ["deleteRange", "topicBoundary", "highlight", "termCorrection"]
+        },
+        "displayKind": {
+          "enum": [
+            "termCorrection",
+            "deleteCandidate",
+            "topicBoundary",
+            "highlight",
+            "technicalWarning"
+          ]
+        },
+        "status": { "enum": ["proposed", "reviewed", "rejected", "adopted"] },
+        "freshness": { "enum": ["current", "stale"] },
+        "canAdopt": { "type": "boolean" },
+        "canReject": { "type": "boolean" },
+        "sourceDigest": { "$ref": "#/$defs/contentDigest" },
+        "source": { "$ref": "#/$defs/analysisSource" },
+        "reason": { "$ref": "#/$defs/transcriptRequiredText" },
+        "confidence": { "$ref": "#/$defs/transcriptConfidence" },
+        "missingContext": {
+          "oneOf": [
+            { "$ref": "#/$defs/transcriptRequiredText" },
+            { "type": "null" }
+          ]
+        },
+        "warning": {
+          "oneOf": [
+            { "$ref": "#/$defs/transcriptRequiredText" },
+            { "type": "null" }
+          ]
+        },
+        "parentCandidateId": { "$ref": "#/$defs/optionalEntityId" },
+        "replacementCandidateId": { "$ref": "#/$defs/optionalEntityId" },
+        "decision": {
+          "oneOf": [
+            { "$ref": "#/$defs/analysisDecision" },
+            { "type": "null" }
+          ]
+        },
+        "payload": { "$ref": "#/$defs/analysisCandidatePayload" }
+      }
+    },
+    "analysisSensitivityFinding": {
+      "type": "object",
+      "$comment": "Matched values, offsets, paths, and host data are intentionally absent. Only safe classification and source-time evidence cross the bridge.",
+      "additionalProperties": false,
+      "required": ["utteranceId", "sourceSpanId", "kind", "reasonCode", "sourceRange"],
+      "properties": {
+        "utteranceId": { "$ref": "#/$defs/entityId" },
+        "sourceSpanId": { "$ref": "#/$defs/entityId" },
+        "kind": {
+          "enum": [
+            "emailAddress",
+            "internalNetworkLocation",
+            "credentialPattern",
+            "dictionaryTerm"
+          ]
+        },
+        "reasonCode": {
+          "enum": [
+            "sensitivity.email-address",
+            "sensitivity.internal-network-location",
+            "sensitivity.credential-pattern",
+            "sensitivity.dictionary-term"
+          ]
+        },
+        "sourceRange": { "$ref": "#/$defs/analysisTimeRange" }
+      }
+    },
+    "analysisSensitivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revisionId",
+        "ruleSetVersion",
+        "isComplete",
+        "requiresExternalOutputWarning",
+        "findings"
+      ],
+      "properties": {
+        "revisionId": { "$ref": "#/$defs/entityId" },
+        "ruleSetVersion": { "$ref": "#/$defs/transcriptRequiredText" },
+        "isComplete": { "type": "boolean" },
+        "requiresExternalOutputWarning": { "type": "boolean" },
+        "findings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/analysisSensitivityFinding" }
+        }
+      }
+    },
+    "analysisEditOperation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "elementId", "splitOffset", "rightElementId"],
+          "properties": {
+            "kind": { "const": "delete" },
+            "elementId": { "$ref": "#/$defs/entityId" },
+            "splitOffset": { "type": "null" },
+            "rightElementId": { "type": "null" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "elementId", "splitOffset", "rightElementId"],
+          "properties": {
+            "kind": { "const": "split" },
+            "elementId": { "$ref": "#/$defs/entityId" },
+            "splitOffset": { "$ref": "#/$defs/rationalTime" },
+            "rightElementId": { "$ref": "#/$defs/entityId" }
+          }
+        }
+      ]
+    },
+    "analysisCue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cueId", "kind", "outputRange", "regionName"],
+      "properties": {
+        "cueId": { "$ref": "#/$defs/entityId" },
+        "kind": { "const": "graphic" },
+        "outputRange": { "$ref": "#/$defs/analysisTimeRange" },
+        "regionName": {
+          "oneOf": [
+            { "$ref": "#/$defs/transcriptRequiredText" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "analysisStagedChange": {
+      "$comment": "Every adoption or topic edit is explicitly nonpersistent; persistence is a separate workflow.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "candidateId",
+            "sourceRevisionId",
+            "resultingRevisionId",
+            "persisted"
+          ],
+          "properties": {
+            "kind": { "const": "transcriptRevision" },
+            "candidateId": { "$ref": "#/$defs/entityId" },
+            "sourceRevisionId": { "$ref": "#/$defs/entityId" },
+            "resultingRevisionId": { "$ref": "#/$defs/entityId" },
+            "persisted": { "const": false }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "candidateId", "operation", "persisted"],
+          "properties": {
+            "kind": { "const": "editOperation" },
+            "candidateId": { "$ref": "#/$defs/entityId" },
+            "operation": { "$ref": "#/$defs/analysisEditOperation" },
+            "persisted": { "const": false }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "candidateId", "cue", "persisted"],
+          "properties": {
+            "kind": { "const": "cue" },
+            "candidateId": { "$ref": "#/$defs/entityId" },
+            "cue": { "$ref": "#/$defs/analysisCue" },
+            "persisted": { "const": false }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "topicId",
+            "revisionId",
+            "parentRevisionId",
+            "field",
+            "persisted"
+          ],
+          "properties": {
+            "kind": { "const": "topicMetadataRevision" },
+            "topicId": { "$ref": "#/$defs/entityId" },
+            "revisionId": { "$ref": "#/$defs/entityId" },
+            "parentRevisionId": { "$ref": "#/$defs/entityId" },
+            "field": {
+              "enum": [
+                "title",
+                "summary",
+                "mainSpeaker",
+                "keywords",
+                "importantStatements",
+                "audience",
+                "publicationCautions"
+              ]
+            },
+            "persisted": { "const": false }
+          }
+        }
+      ]
+    },
+    "analysisSnapshot": {
+      "type": "object",
+      "$comment": "Native snapshots are authoritative. Consumers verify unique identities, cross-reference integrity, producer/payload consistency, source revision binding, decision state, sensitivity reason mapping, and nonpersistent staging.",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "revisionId",
+        "revisionDigest",
+        "createdAt",
+        "sourceRevisionId",
+        "sourceRevisionDigest",
+        "speakers",
+        "topics",
+        "candidates",
+        "sensitivity",
+        "stagedChanges",
+        "adoptionPersistence"
+      ],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "revisionId": { "$ref": "#/$defs/entityId" },
+        "revisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "createdAt": { "$ref": "#/$defs/transcriptTimestamp" },
+        "sourceRevisionId": { "$ref": "#/$defs/entityId" },
+        "sourceRevisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "speakers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/analysisSpeaker" }
+        },
+        "topics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/analysisTopic" }
+        },
+        "candidates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/analysisCandidate" }
+        },
+        "sensitivity": { "$ref": "#/$defs/analysisSensitivity" },
+        "stagedChanges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/analysisStagedChange" }
+        },
+        "adoptionPersistence": { "const": "notPersisted" }
+      }
+    },
+    "analysisResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot"],
+          "properties": {
+            "status": { "const": "available" },
+            "snapshot": { "$ref": "#/$defs/analysisSnapshot" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot"],
+          "properties": {
+            "status": { "$ref": "#/$defs/analysisFailureStatus" },
+            "snapshot": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "analysisReadResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "analysis.read" },
+        "result": { "$ref": "#/$defs/analysisResult" }
+      }
+    },
+    "analysisRejectResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "analysis.reject" },
+        "result": { "$ref": "#/$defs/analysisResult" }
+      }
+    },
+    "analysisAdoptResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "analysis.adopt" },
+        "result": { "$ref": "#/$defs/analysisResult" }
+      }
+    },
+    "analysisUpdateTopicResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "analysis.updateTopic" },
+        "result": { "$ref": "#/$defs/analysisResult" }
+      }
     },
     "thumbnailMediaReference": {
       "type": "string",

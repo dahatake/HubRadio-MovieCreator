@@ -32,6 +32,11 @@ import {
   type TranscriptResponse,
 } from '../features/transcript/transcriptProtocol'
 import {
+  parseAnalysisResponse,
+  type AnalysisRequest,
+  type AnalysisResponse,
+} from '../features/analysis/analysisProtocol'
+import {
   parseTimelineApplyResponse,
   parseTimelineReadResponse,
   type TimelineApplyRequest,
@@ -89,6 +94,7 @@ export interface BridgeTransport {
       | PlayerReadRequest
       | PlayerSeekRequest
       | TranscriptRequest
+      | AnalysisRequest
       | TimelineBridgeRequest
       | ReviewBridgeRequest
       | ComparisonReadRequest
@@ -125,6 +131,10 @@ export interface BridgeClient {
   sendTranscript(request: TranscriptRequest): void
   onTranscriptResponse(
     listener: (response: TranscriptResponse) => void,
+  ): () => void
+  sendAnalysis(request: AnalysisRequest): void
+  onAnalysisResponse(
+    listener: (response: AnalysisResponse) => void,
   ): () => void
   sendTimelineRead(request: TimelineReadRequest): void
   sendTimelineApply(request: TimelineApplyRequest): void
@@ -208,6 +218,9 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
   >()
   const transcriptListeners = new Set<
     (response: TranscriptResponse) => void
+  >()
+  const analysisListeners = new Set<
+    (response: AnalysisResponse) => void
   >()
   const timelineReadListeners = new Set<
     (response: TimelineReadResponse) => void
@@ -358,6 +371,14 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
     if (transcriptResponse !== null) {
       for (const listener of transcriptListeners) {
         listener(transcriptResponse)
+      }
+      return
+    }
+
+    const analysisResponse = parseAnalysisResponse(event.data)
+    if (analysisResponse !== null) {
+      for (const listener of analysisListeners) {
+        listener(analysisResponse)
       }
       return
     }
@@ -543,6 +564,19 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
         transcriptListeners.delete(listener)
       }
     },
+    sendAnalysis(request: AnalysisRequest): void {
+      throwIfDisposed(disposed)
+      transport.postMessage(request)
+    },
+    onAnalysisResponse(
+      listener: (response: AnalysisResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      analysisListeners.add(listener)
+      return (): void => {
+        analysisListeners.delete(listener)
+      }
+    },
     sendTimelineRead(request: TimelineReadRequest): void {
       sendCorrelatedTimelineRequest(
         request,
@@ -701,6 +735,7 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       playerReadListeners.clear()
       playerSeekListeners.clear()
       transcriptListeners.clear()
+      analysisListeners.clear()
       timelineReadListeners.clear()
       timelineApplyListeners.clear()
       pendingTimelineRequests.clear()

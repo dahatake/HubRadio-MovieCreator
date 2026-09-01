@@ -25,6 +25,10 @@ public sealed class WebBridgeSchemaTests
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "comparison requests use 4 KiB");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "16 KiB review text");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "512 UTF-8 bytes");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "analysis requests use 64 KiB");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "Analysis adoption targets are native-owned");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "persisted=false");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "never matched values");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "full digest");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "mark unsupported semantic features unavailable");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "reserved intercepted HTTPS media origin");
@@ -60,6 +64,10 @@ public sealed class WebBridgeSchemaTests
                 "transcript.removeSpeaker",
                 "transcript.adoptTerm",
                 "transcript.rejectTerm",
+                "analysis.read",
+                "analysis.reject",
+                "analysis.adopt",
+                "analysis.updateTopic",
                 "timeline.read",
                 "timeline.apply",
                 "review.getSnapshot",
@@ -120,6 +128,14 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/transcriptRemoveSpeakerResponse",
                 "#/$defs/transcriptAdoptTermResponse",
                 "#/$defs/transcriptRejectTermResponse",
+                "#/$defs/analysisReadRequest",
+                "#/$defs/analysisRejectRequest",
+                "#/$defs/analysisAdoptRequest",
+                "#/$defs/analysisUpdateTopicRequest",
+                "#/$defs/analysisReadResponse",
+                "#/$defs/analysisRejectResponse",
+                "#/$defs/analysisAdoptResponse",
+                "#/$defs/analysisUpdateTopicResponse",
                 "#/$defs/timelineReadRequest",
                 "#/$defs/timelineReadResponse",
                 "#/$defs/timelineApplyRequest",
@@ -213,6 +229,37 @@ public sealed class WebBridgeSchemaTests
             "transcriptRemoveSpeakerResponse",
             "transcriptAdoptTermResponse",
             "transcriptRejectTermResponse",
+            "analysisReadParams",
+            "analysisDecisionParams",
+            "analysisUpdateTopicParams",
+            "analysisReadRequest",
+            "analysisRejectRequest",
+            "analysisAdoptRequest",
+            "analysisUpdateTopicRequest",
+            "analysisTimeRange",
+            "analysisSource",
+            "analysisSpeaker",
+            "analysisTopicMainSpeaker",
+            "analysisTopic",
+            "analysisDetection",
+            "analysisTermPayload",
+            "analysisSilencePayload",
+            "analysisEditorialPayload",
+            "analysisRepetitionPayload",
+            "analysisTopicBoundaryPayload",
+            "analysisAudioPayload",
+            "analysisContextPayload",
+            "analysisEmphasisPayload",
+            "analysisDecision",
+            "analysisCandidate",
+            "analysisSensitivityFinding",
+            "analysisSensitivity",
+            "analysisCue",
+            "analysisSnapshot",
+            "analysisReadResponse",
+            "analysisRejectResponse",
+            "analysisAdoptResponse",
+            "analysisUpdateTopicResponse",
             "timelineTimeRange",
             "timelineElement",
             "timelineSnapshot",
@@ -909,6 +956,215 @@ public sealed class WebBridgeSchemaTests
     }
 
     [TestMethod]
+    public void AnalysisSchemaMatchesClosedRuntimeContract()
+    {
+        using JsonDocument document = JsonDocument.Parse(
+            File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
+        JsonElement definitions = document.RootElement.GetProperty("$defs");
+
+        string[] methods =
+        [
+            "analysis.read",
+            "analysis.reject",
+            "analysis.adopt",
+            "analysis.updateTopic",
+        ];
+        CollectionAssert.AreEqual(
+            methods,
+            GetStrings(definitions.GetProperty("analysisMethod").GetProperty("enum")));
+
+        (string Definition, string Method)[] requests =
+        [
+            ("analysisReadRequest", methods[0]),
+            ("analysisRejectRequest", methods[1]),
+            ("analysisAdoptRequest", methods[2]),
+            ("analysisUpdateTopicRequest", methods[3]),
+        ];
+        foreach ((string definitionName, string method) in requests)
+        {
+            JsonElement definition = definitions.GetProperty(definitionName);
+            CollectionAssert.AreEquivalent(
+                new[] { "version", "requestId", "method", "params" },
+                GetStrings(definition.GetProperty("required")));
+            Assert.AreEqual(
+                method,
+                definition.GetProperty("properties")
+                    .GetProperty("method")
+                    .GetProperty("const")
+                    .GetString());
+        }
+
+        (string Definition, string Method)[] responses =
+        [
+            ("analysisReadResponse", methods[0]),
+            ("analysisRejectResponse", methods[1]),
+            ("analysisAdoptResponse", methods[2]),
+            ("analysisUpdateTopicResponse", methods[3]),
+        ];
+        foreach ((string definitionName, string method) in responses)
+        {
+            JsonElement definition = definitions.GetProperty(definitionName);
+            CollectionAssert.AreEquivalent(
+                new[] { "version", "requestId", "method", "result" },
+                GetStrings(definition.GetProperty("required")));
+            Assert.AreEqual(
+                method,
+                definition.GetProperty("properties")
+                    .GetProperty("method")
+                    .GetProperty("const")
+                    .GetString());
+            Assert.AreEqual(
+                "#/$defs/analysisResult",
+                definition.GetProperty("properties")
+                    .GetProperty("result")
+                    .GetProperty("$ref")
+                    .GetString());
+        }
+
+        CollectionAssert.AreEquivalent(
+            new[] { "projectId" },
+            GetStrings(definitions.GetProperty("analysisReadParams").GetProperty("required")));
+        CollectionAssert.AreEqual(
+            new[] { "projectId", "revisionId", "digest", "candidateId", "reason" },
+            GetStrings(definitions.GetProperty("analysisDecisionParams").GetProperty("required")));
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "projectId",
+                "revisionId",
+                "digest",
+                "topicId",
+                "expectedTopicRevisionId",
+                "update",
+                "reason",
+            },
+            GetStrings(definitions.GetProperty("analysisUpdateTopicParams").GetProperty("required")));
+        Assert.AreEqual(
+            7,
+            definitions.GetProperty("analysisTopicUpdate").GetProperty("oneOf").GetArrayLength());
+        foreach (JsonElement update in definitions.GetProperty("analysisTopicUpdate")
+                     .GetProperty("oneOf")
+                     .EnumerateArray())
+        {
+            Assert.AreEqual(JsonValueKind.False, update.GetProperty("additionalProperties").ValueKind);
+            Assert.AreEqual(2, update.GetProperty("required").GetArrayLength());
+        }
+
+        JsonElement decisionProperties = definitions.GetProperty("analysisDecisionParams")
+            .GetProperty("properties");
+        foreach (string nativeOwnedTarget in new[]
+        {
+            "elementId",
+            "cueId",
+            "splitOffset",
+            "rightElementId",
+            "tokenId",
+            "termEntryId",
+        })
+        {
+            Assert.IsFalse(decisionProperties.TryGetProperty(nativeOwnedTarget, out _));
+        }
+        StringAssert.Contains(
+            definitions.GetProperty("analysisDecisionParams").GetProperty("$comment").GetString()!,
+            "native-owned");
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "projectId",
+                "revisionId",
+                "revisionDigest",
+                "createdAt",
+                "sourceRevisionId",
+                "sourceRevisionDigest",
+                "speakers",
+                "topics",
+                "candidates",
+                "sensitivity",
+                "stagedChanges",
+                "adoptionPersistence",
+            },
+            GetStrings(definitions.GetProperty("analysisSnapshot").GetProperty("required")));
+        Assert.AreEqual(
+            "notPersisted",
+            definitions.GetProperty("analysisSnapshot")
+                .GetProperty("properties")
+                .GetProperty("adoptionPersistence")
+                .GetProperty("const")
+                .GetString());
+
+        JsonElement stagedChanges = definitions.GetProperty("analysisStagedChange")
+            .GetProperty("oneOf");
+        Assert.AreEqual(4, stagedChanges.GetArrayLength());
+        foreach (JsonElement stagedChange in stagedChanges.EnumerateArray())
+        {
+            Assert.AreEqual(JsonValueKind.False, stagedChange.GetProperty("additionalProperties").ValueKind);
+            Assert.IsFalse(
+                stagedChange.GetProperty("properties")
+                    .GetProperty("persisted")
+                    .GetProperty("const")
+                    .GetBoolean());
+        }
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "termCorrection",
+                "silence",
+                "editorialPhrase",
+                "repetition",
+                "topicBoundary",
+                "audioReview",
+                "contextDeviation",
+                "emphasis",
+            },
+            definitions.GetProperty("analysisCandidatePayload")
+                .GetProperty("oneOf")
+                .EnumerateArray()
+                .Select(item => definitions
+                    .GetProperty(item.GetProperty("$ref").GetString()!["#/$defs/".Length..])
+                    .GetProperty("properties")
+                    .GetProperty("producer")
+                    .GetProperty("const")
+                    .GetString())
+                .ToArray());
+        Assert.AreEqual(
+            8,
+            definitions.GetProperty("analysisCandidatePayload").GetProperty("oneOf").GetArrayLength());
+        Assert.AreEqual(
+            JsonValueKind.False,
+            definitions.GetProperty("analysisSensitivityFinding")
+                .GetProperty("additionalProperties")
+                .ValueKind);
+        JsonElement sensitivityProperties = definitions.GetProperty("analysisSensitivityFinding")
+            .GetProperty("properties");
+        Assert.IsFalse(sensitivityProperties.TryGetProperty("matchedValue", out _));
+        Assert.IsFalse(sensitivityProperties.TryGetProperty("startOffset", out _));
+        Assert.IsFalse(sensitivityProperties.TryGetProperty("length", out _));
+        CollectionAssert.Contains(
+            GetStrings(sensitivityProperties.GetProperty("kind").GetProperty("enum")),
+            "credentialPattern");
+
+        JsonElement resultAlternatives = definitions.GetProperty("analysisResult")
+            .GetProperty("oneOf");
+        Assert.AreEqual(
+            "available",
+            resultAlternatives[0].GetProperty("properties")
+                .GetProperty("status")
+                .GetProperty("const")
+                .GetString());
+        CollectionAssert.AreEqual(
+            new[] { "forbidden", "unavailable", "staleBase", "conflict", "noChange", "invalid" },
+            GetStrings(definitions.GetProperty("analysisFailureStatus").GetProperty("enum")));
+        Assert.AreEqual(
+            "null",
+            resultAlternatives[1].GetProperty("properties")
+                .GetProperty("snapshot")
+                .GetProperty("type")
+                .GetString());
+    }
+
+    [TestMethod]
     public void ListSchemaRepresentsUnknownColumnsAsNullAndNeverDefinesPrivateValues()
     {
         using JsonDocument document = JsonDocument.Parse(
@@ -936,7 +1192,9 @@ public sealed class WebBridgeSchemaTests
         Assert.IsFalse(schema.Contains("windowsSid", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(schema.Contains("sourcePath", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(schema.Contains("filePath", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(schema.Contains("credential", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("\"credential\":", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("credentialValue", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("matchedValue", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(schema.Contains("contentBody", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(schema.Contains("processOutput", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(schema.Contains("selectedByActor", StringComparison.OrdinalIgnoreCase));

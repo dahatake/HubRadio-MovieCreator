@@ -22,7 +22,8 @@ internal sealed class ApplicationBridgeHandlers
         TranscriptBridgeRequestHandler transcript,
         ReviewBridgeHandler review,
         ComparisonBridgeRequestHandler comparison,
-        DeliveryBridgeRequestHandler delivery)
+        DeliveryBridgeRequestHandler delivery,
+        AnalysisBridgeRequestHandler analysis)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
@@ -31,6 +32,7 @@ internal sealed class ApplicationBridgeHandlers
         ArgumentNullException.ThrowIfNull(review);
         ArgumentNullException.ThrowIfNull(comparison);
         ArgumentNullException.ThrowIfNull(delivery);
+        ArgumentNullException.ThrowIfNull(analysis);
         Project = project;
         Jobs = jobs;
         Timeline = timeline;
@@ -38,6 +40,7 @@ internal sealed class ApplicationBridgeHandlers
         Review = review;
         Comparison = comparison;
         Delivery = delivery;
+        Analysis = analysis;
     }
 
     internal ProjectBridgeHandler Project { get; }
@@ -53,6 +56,8 @@ internal sealed class ApplicationBridgeHandlers
     internal ComparisonBridgeRequestHandler Comparison { get; }
 
     internal DeliveryBridgeRequestHandler Delivery { get; }
+
+    internal AnalysisBridgeRequestHandler Analysis { get; }
 }
 
 internal static class ProjectApplicationRuntime
@@ -119,6 +124,9 @@ internal static class ProjectApplicationRuntime
             new TranscriptBridgeRuntime(),
             new TranscriptBridgeAuthorization(authorization, actorProvider));
         var projectStore = new ProjectStore(databasePath);
+        var analysisHandler = new AnalysisBridgeRequestHandler(
+            new AnalysisBridgeRuntime(),
+            new AnalysisBridgeAuthorization(authorization, actorProvider));
         var timelineHandler = new TimelineBridgeRequestHandler(
             projectStore,
             new TimelineBridgeAuthorization(authorization, actorProvider));
@@ -142,6 +150,7 @@ internal static class ProjectApplicationRuntime
             transcriptHandler,
             reviewHandler,
             comparisonHandler,
-            deliveryHandler);
+            deliveryHandler,
+            analysisHandler);
     }
 }

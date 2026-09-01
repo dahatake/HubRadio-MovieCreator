@@ -23,6 +23,7 @@ internal sealed class WebViewHost : IDisposable
     private readonly ThumbnailBridgeRequestHandler? thumbnailHandler;
     private readonly ComparisonBridgeRequestHandler? comparisonHandler;
     private readonly DeliveryBridgeRequestHandler? deliveryHandler;
+    private readonly AnalysisBridgeRequestHandler? analysisHandler;
     private readonly PlayerMediaResponseFactory mediaResponseFactory;
     private readonly CancellationTokenSource mediaCancellation = new();
     private Bridge? bridge;
@@ -141,7 +142,8 @@ internal sealed class WebViewHost : IDisposable
         TranscriptBridgeRequestHandler? transcriptHandler = null,
         ThumbnailBridgeRequestHandler? thumbnailHandler = null,
         ComparisonBridgeRequestHandler? comparisonHandler = null,
-        DeliveryBridgeRequestHandler? deliveryHandler = null)
+        DeliveryBridgeRequestHandler? deliveryHandler = null,
+        AnalysisBridgeRequestHandler? analysisHandler = null)
         : this(
             coreWebView,
             webAssetsDirectory,
@@ -155,7 +157,8 @@ internal sealed class WebViewHost : IDisposable
             transcriptHandler,
             thumbnailHandler,
             comparisonHandler,
-            deliveryHandler)
+            deliveryHandler,
+            analysisHandler)
     {
     }
 
@@ -174,7 +177,8 @@ internal sealed class WebViewHost : IDisposable
         TranscriptBridgeRequestHandler? transcriptHandler = null,
         ThumbnailBridgeRequestHandler? thumbnailHandler = null,
         ComparisonBridgeRequestHandler? comparisonHandler = null,
-        DeliveryBridgeRequestHandler? deliveryHandler = null)
+        DeliveryBridgeRequestHandler? deliveryHandler = null,
+        AnalysisBridgeRequestHandler? analysisHandler = null)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentException.ThrowIfNullOrWhiteSpace(webAssetsDirectory);
@@ -203,6 +207,7 @@ internal sealed class WebViewHost : IDisposable
         this.thumbnailHandler = thumbnailHandler;
         this.comparisonHandler = comparisonHandler;
         this.deliveryHandler = deliveryHandler;
+        this.analysisHandler = analysisHandler;
         mediaResponseFactory = new PlayerMediaResponseFactory(
             mediaAssetReader,
             playerAuthorization);
@@ -260,7 +265,8 @@ internal sealed class WebViewHost : IDisposable
                 transcriptHandler,
                 thumbnailHandler,
                 comparisonHandler,
-                deliveryHandler);
+                deliveryHandler,
+                analysisHandler);
             startedBridge.Start();
             bridge = startedBridge;
         }

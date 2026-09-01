@@ -14,6 +14,7 @@ import { ThumbnailPanel } from './features/thumbnails'
 import { selectSyncStatus, useAppState, type SyncStatus } from './state'
 import { ProjectWorkspace } from './features/projects/ProjectWorkspace'
 import { TranscriptPanel } from './features/transcript/TranscriptPanel'
+import { AnalysisPanel } from './features/analysis/AnalysisPanel'
 
 const statusMessages: Readonly<Record<SyncStatus, string>> = {
   unsaved: 'ホスト接続は未確認です',
@@ -66,6 +67,7 @@ function App() {
           onSelectionChange={setPlayerSelection}
         />
         <ThumbnailPanel selection={playerSelection} />
+        <AnalysisPanel />
         <TranscriptPanel />
         <TimelineEditor
           initialProjectId={playerPosition?.projectId}

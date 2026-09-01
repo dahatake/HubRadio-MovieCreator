@@ -48,6 +48,10 @@ internal enum BridgeMethod
     TranscriptRemoveSpeaker,
     TranscriptAdoptTerm,
     TranscriptRejectTerm,
+    AnalysisRead,
+    AnalysisReject,
+    AnalysisAdopt,
+    AnalysisUpdateTopic,
     TimelineRead,
     TimelineApply,
     ReviewGetSnapshot,
@@ -166,6 +170,8 @@ internal static class BridgeProtocol
         IngestWorkflowStore.MaximumPayloadUtf8Bytes;
     internal const int MaxTranscriptRequestUtf8Bytes = 16 * 1024;
     internal const int MaxTranscriptResponseUtf8Bytes = 4 * 1024 * 1024;
+    internal const int MaxAnalysisRequestUtf8Bytes = 64 * 1024;
+    internal const int MaxAnalysisResponseUtf8Bytes = 4 * 1024 * 1024;
     internal const int MaxThumbnailRequestUtf8Bytes =
         MaxProjectRequestUtf8Bytes;
     internal const int MaxThumbnailResponseUtf8Bytes =
@@ -206,6 +212,10 @@ internal static class BridgeProtocol
         "transcript.removeSpeaker";
     internal const string TranscriptAdoptTermMethod = "transcript.adoptTerm";
     internal const string TranscriptRejectTermMethod = "transcript.rejectTerm";
+    internal const string AnalysisReadMethod = "analysis.read";
+    internal const string AnalysisRejectMethod = "analysis.reject";
+    internal const string AnalysisAdoptMethod = "analysis.adopt";
+    internal const string AnalysisUpdateTopicMethod = "analysis.updateTopic";
     internal const string TimelineReadMethod = "timeline.read";
     internal const string TimelineApplyMethod = "timeline.apply";
     internal const string ReviewGetSnapshotMethod = "review.getSnapshot";
@@ -442,6 +452,10 @@ internal static class BridgeProtocol
             BridgeMethod.TranscriptRemoveSpeaker => TranscriptRemoveSpeakerMethod,
             BridgeMethod.TranscriptAdoptTerm => TranscriptAdoptTermMethod,
             BridgeMethod.TranscriptRejectTerm => TranscriptRejectTermMethod,
+            BridgeMethod.AnalysisRead => AnalysisReadMethod,
+            BridgeMethod.AnalysisReject => AnalysisRejectMethod,
+            BridgeMethod.AnalysisAdopt => AnalysisAdoptMethod,
+            BridgeMethod.AnalysisUpdateTopic => AnalysisUpdateTopicMethod,
             BridgeMethod.TimelineRead => TimelineReadMethod,
             BridgeMethod.TimelineApply => TimelineApplyMethod,
             BridgeMethod.ReviewGetSnapshot => ReviewGetSnapshotMethod,
@@ -465,6 +479,7 @@ internal static class BridgeProtocol
             BridgeMethod.ThumbnailGenerate or
             BridgeMethod.ThumbnailCancel => MaxThumbnailResponseUtf8Bytes,
             _ when IsTranscriptMethod(method) => MaxTranscriptResponseUtf8Bytes,
+            _ when IsAnalysisMethod(method) => MaxAnalysisResponseUtf8Bytes,
             _ when IsLargePayloadMethod(method) => MaxProjectResponseUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewResponseUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonResponseUtf8Bytes,
@@ -493,6 +508,13 @@ internal static class BridgeProtocol
     internal static bool IsTimelineMethod(BridgeMethod method) =>
         method is BridgeMethod.TimelineRead or BridgeMethod.TimelineApply;
 
+    internal static bool IsAnalysisMethod(BridgeMethod method) =>
+        method is
+            BridgeMethod.AnalysisRead or
+            BridgeMethod.AnalysisReject or
+            BridgeMethod.AnalysisAdopt or
+            BridgeMethod.AnalysisUpdateTopic;
+
     private static bool IsLargePayloadMethod(BridgeMethod method) =>
         IsProjectMethod(method) || IsTimelineMethod(method);
 
@@ -517,6 +539,7 @@ internal static class BridgeProtocol
             BridgeMethod.ThumbnailGenerate or
             BridgeMethod.ThumbnailCancel => MaxThumbnailRequestUtf8Bytes,
             _ when IsTranscriptMethod(method) => MaxTranscriptRequestUtf8Bytes,
+            _ when IsAnalysisMethod(method) => MaxAnalysisRequestUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewRequestUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonRequestUtf8Bytes,
             BridgeMethod.DeliveryRead => MaxDeliveryRequestUtf8Bytes,
@@ -550,6 +573,10 @@ internal static class BridgeProtocol
             TranscriptRemoveSpeakerMethod => BridgeMethod.TranscriptRemoveSpeaker,
             TranscriptAdoptTermMethod => BridgeMethod.TranscriptAdoptTerm,
             TranscriptRejectTermMethod => BridgeMethod.TranscriptRejectTerm,
+            AnalysisReadMethod => BridgeMethod.AnalysisRead,
+            AnalysisRejectMethod => BridgeMethod.AnalysisReject,
+            AnalysisAdoptMethod => BridgeMethod.AnalysisAdopt,
+            AnalysisUpdateTopicMethod => BridgeMethod.AnalysisUpdateTopic,
             TimelineReadMethod => BridgeMethod.TimelineRead,
             TimelineApplyMethod => BridgeMethod.TimelineApply,
             ReviewGetSnapshotMethod => BridgeMethod.ReviewGetSnapshot,
@@ -1057,6 +1084,110 @@ internal static class BridgeProtocol
             IsNonnegativeInt32(parameters.GetProperty("termEntryVersion"));
     }
 
+    private static bool HasValidAnalysisParameters(
+        BridgeMethod method,
+        JsonElement parameters)
+    {
+        if (method == BridgeMethod.AnalysisRead)
+        {
+            return HasExactProperties(parameters, ["projectId"]) &&
+                IsCanonicalEntityId(parameters.GetProperty("projectId"));
+        }
+
+        string[] expectedProperties = method switch
+        {
+            BridgeMethod.AnalysisReject or BridgeMethod.AnalysisAdopt =>
+            [
+                "projectId",
+                "revisionId",
+                "digest",
+                "candidateId",
+                "reason",
+            ],
+            BridgeMethod.AnalysisUpdateTopic =>
+            [
+                "projectId",
+                "revisionId",
+                "digest",
+                "topicId",
+                "expectedTopicRevisionId",
+                "update",
+                "reason",
+            ],
+            _ => [],
+        };
+        if (expectedProperties.Length == 0 ||
+            !HasExactProperties(parameters, expectedProperties) ||
+            !IsCanonicalEntityId(parameters.GetProperty("projectId")) ||
+            !IsCanonicalEntityId(parameters.GetProperty("revisionId")) ||
+            !IsCanonicalDigest(parameters.GetProperty("digest")) ||
+            !IsRequiredText(parameters.GetProperty("reason")))
+        {
+            return false;
+        }
+
+        if (method is BridgeMethod.AnalysisReject or BridgeMethod.AnalysisAdopt)
+        {
+            return IsCanonicalEntityId(parameters.GetProperty("candidateId"));
+        }
+
+        return IsCanonicalEntityId(parameters.GetProperty("topicId")) &&
+            IsCanonicalEntityId(
+                parameters.GetProperty("expectedTopicRevisionId")) &&
+            IsAnalysisTopicUpdate(parameters.GetProperty("update"));
+    }
+
+    private static bool IsAnalysisTopicUpdate(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Object ||
+            !value.TryGetProperty("field", out JsonElement field) ||
+            field.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        return field.GetString() switch
+        {
+            "title" or "audience" =>
+                HasExactProperties(value, ["field", "text"]) &&
+                IsRequiredText(value.GetProperty("text")),
+            "summary" =>
+                HasExactProperties(value, ["field", "text"]) &&
+                (value.GetProperty("text").ValueKind == JsonValueKind.Null ||
+                    IsRequiredText(value.GetProperty("text"))),
+            "mainSpeaker" =>
+                HasExactProperties(value, ["field", "speakerId"]) &&
+                IsNullOrCanonicalEntityId(value.GetProperty("speakerId")),
+            "keywords" or "publicationCautions" =>
+                HasExactProperties(value, ["field", "values"]) &&
+                IsArrayOfRequiredText(value.GetProperty("values")),
+            "importantStatements" =>
+                HasExactProperties(value, ["field", "sourceSpanIds"]) &&
+                IsArrayOfCanonicalEntityIds(
+                    value.GetProperty("sourceSpanIds")),
+            _ => false,
+        };
+    }
+
+    private static bool IsArrayOfRequiredText(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        var values = new HashSet<string>(StringComparer.Ordinal);
+        foreach (JsonElement item in value.EnumerateArray())
+        {
+            if (!IsRequiredText(item) || !values.Add(item.GetString()!))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static bool IsRequiredText(JsonElement value) =>
         value.ValueKind == JsonValueKind.String &&
         value.GetString() is string text &&
@@ -1200,6 +1331,20 @@ internal static class BridgeProtocol
         if (IsTranscriptMethod(method))
         {
             if (!HasValidTranscriptParameters(method, parameters))
+            {
+                return false;
+            }
+
+            request = BridgeRequest.Create(
+                requestId,
+                method,
+                parameters.Clone());
+            return true;
+        }
+
+        if (IsAnalysisMethod(method))
+        {
+            if (!HasValidAnalysisParameters(method, parameters))
             {
                 return false;
             }
@@ -1513,6 +1658,7 @@ internal sealed class Bridge : IDisposable
     private readonly TranscriptBridgeRequestHandler? transcriptHandler;
     private readonly ThumbnailBridgeRequestHandler? thumbnailHandler;
     private readonly DeliveryBridgeRequestHandler? deliveryHandler;
+    private readonly AnalysisBridgeRequestHandler? analysisHandler;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private bool isStarted;
     private bool isDisposed;
@@ -1668,7 +1814,8 @@ internal sealed class Bridge : IDisposable
         TranscriptBridgeRequestHandler? transcriptHandler = null,
         ThumbnailBridgeRequestHandler? thumbnailHandler = null,
         ComparisonBridgeRequestHandler? comparisonHandler = null,
-        DeliveryBridgeRequestHandler? deliveryHandler = null)
+        DeliveryBridgeRequestHandler? deliveryHandler = null,
+        AnalysisBridgeRequestHandler? analysisHandler = null)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentNullException.ThrowIfNull(playerReader);
@@ -1682,6 +1829,7 @@ internal sealed class Bridge : IDisposable
         this.transcriptHandler = transcriptHandler;
         this.thumbnailHandler = thumbnailHandler;
         this.deliveryHandler = deliveryHandler;
+        this.analysisHandler = analysisHandler;
         playerHandler = new PlayerBridgeRequestHandler(
             playerReader,
             playerAuthorization);
@@ -1817,6 +1965,17 @@ internal sealed class Bridge : IDisposable
                     cancellationToken);
         }
 
+        if (BridgeProtocol.IsAnalysisMethod(request.Method))
+        {
+            return analysisHandler is null
+                ? AnalysisBridgeJson.WriteResponse(
+                    request,
+                    AnalysisBridgeOperationResult.Unavailable())
+                : await analysisHandler.HandleAsync(
+                    request,
+                    cancellationToken);
+        }
+
         if (request.Method is
             BridgeMethod.ThumbnailRead or
             BridgeMethod.ThumbnailGenerate or
@@ -1880,6 +2039,13 @@ internal sealed class Bridge : IDisposable
             return TranscriptBridgeJson.WriteResponse(
                 request,
                 TranscriptBridgeOperationResult.Unavailable());
+        }
+
+        if (BridgeProtocol.IsAnalysisMethod(request.Method))
+        {
+            return AnalysisBridgeJson.WriteResponse(
+                request,
+                AnalysisBridgeOperationResult.Unavailable());
         }
 
         if (BridgeProtocol.IsTimelineMethod(request.Method))
