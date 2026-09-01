@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import App from './App'
 import { ComparisonStateProvider } from './features/compare'
+import { DeliveryStateProvider } from './features/delivery'
 import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
 import { ReviewStateProvider } from './features/review'
 import { AppStateProvider } from './state'
@@ -14,7 +15,9 @@ describe('App', () => {
         <ProjectStateProvider>
           <ComparisonStateProvider>
             <ReviewStateProvider>
-              <App />
+              <DeliveryStateProvider>
+                <App />
+              </DeliveryStateProvider>
             </ReviewStateProvider>
           </ComparisonStateProvider>
         </ProjectStateProvider>
@@ -65,7 +68,9 @@ describe('App', () => {
         <AppStateProvider>
           <ProjectStateProvider>
             <ComparisonStateProvider>
-              <App />
+              <DeliveryStateProvider>
+                <App />
+              </DeliveryStateProvider>
             </ComparisonStateProvider>
           </ProjectStateProvider>
         </AppStateProvider>,
@@ -79,7 +84,9 @@ describe('App', () => {
         <AppStateProvider>
           <ProjectStateProvider>
             <ReviewStateProvider>
-              <App />
+              <DeliveryStateProvider>
+                <App />
+              </DeliveryStateProvider>
             </ReviewStateProvider>
           </ProjectStateProvider>
         </AppStateProvider>,
@@ -87,5 +94,21 @@ describe('App', () => {
     ).toThrow(
       'useComparisonState must be used within a ComparisonStateProvider.',
     )
+  })
+
+  it('requires the delivery state provider', () => {
+    expect(() =>
+      renderToStaticMarkup(
+        <AppStateProvider>
+          <ProjectStateProvider>
+            <ComparisonStateProvider>
+              <ReviewStateProvider>
+                <App />
+              </ReviewStateProvider>
+            </ComparisonStateProvider>
+          </ProjectStateProvider>
+        </AppStateProvider>,
+      ),
+    ).toThrow('useDeliveryState must be used within a DeliveryStateProvider.')
   })
 })

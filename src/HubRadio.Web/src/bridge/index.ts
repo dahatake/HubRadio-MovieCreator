@@ -52,6 +52,12 @@ import {
   type ComparisonReadResponse,
 } from '../features/compare/compareProtocol'
 import {
+  deliveryOutputTimesEqual,
+  parseDeliveryReadResponse,
+  type DeliveryReadRequest,
+  type DeliveryReadResponse,
+} from '../features/delivery/deliveryProtocol'
+import {
   createThumbnailCancelRequest,
   createThumbnailGenerateRequest,
   createThumbnailReadRequest,
@@ -69,6 +75,7 @@ export * from './projectProtocol'
 export * from '../features/timeline/timelineProtocol'
 export * from '../features/review/reviewProtocol'
 export * from '../features/compare/compareProtocol'
+export * from '../features/delivery/deliveryProtocol'
 
 export interface BridgeMessageEvent {
   readonly data: unknown
@@ -85,6 +92,7 @@ export interface BridgeTransport {
       | TimelineBridgeRequest
       | ReviewBridgeRequest
       | ComparisonReadRequest
+      | DeliveryReadRequest
       | ThumbnailBridgeRequest,
   ): void
   addEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
@@ -137,6 +145,11 @@ export interface BridgeClient {
   onComparisonResponse(
     listener: (response: ComparisonReadResponse) => void,
   ): () => void
+  sendDelivery(request: DeliveryReadRequest): void
+  abandonDeliveryRequest(requestId: string): void
+  onDeliveryResponse(
+    listener: (response: DeliveryReadResponse) => void,
+  ): () => void
   sendThumbnailRead(requestId: string, jobId: string): void
   onThumbnailReadResponse(
     listener: (response: ThumbnailReadResponse) => void,
@@ -177,6 +190,11 @@ interface PendingComparisonRequest {
   readonly rightVersionDigest: string
 }
 
+interface PendingDeliveryRequest {
+  readonly versionId: string
+  readonly outputTime: DeliveryReadRequest['params']['outputTime']
+}
+
 export function createBridgeClient(transport: BridgeTransport): BridgeClient {
   const pingListeners = new Set<(response: BridgePingResponse) => void>()
   const projectListeners = new Set<(response: ProjectBridgeResponse) => void>()
@@ -209,6 +227,10 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
     string,
     PendingComparisonRequest
   >()
+  const deliveryListeners = new Set<
+    (response: DeliveryReadResponse) => void
+  >()
+  const pendingDeliveryRequests = new Map<string, PendingDeliveryRequest>()
   const thumbnailReadListeners = new Set<
     (response: ThumbnailReadResponse) => void
   >()
@@ -295,6 +317,23 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       pendingComparisonRequests.delete(comparisonResponse.requestId)
       for (const listener of comparisonListeners) {
         listener(comparisonResponse)
+      }
+      return
+    }
+
+    const deliveryResponse = parseDeliveryReadResponse(event.data)
+    if (deliveryResponse !== null) {
+      const pending = pendingDeliveryRequests.get(deliveryResponse.requestId)
+      if (
+        pending === undefined ||
+        !deliveryResponseMatchesPending(deliveryResponse, pending)
+      ) {
+        return
+      }
+
+      pendingDeliveryRequests.delete(deliveryResponse.requestId)
+      for (const listener of deliveryListeners) {
+        listener(deliveryResponse)
       }
       return
     }
@@ -584,6 +623,27 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
         comparisonListeners.delete(listener)
       }
     },
+    sendDelivery(request: DeliveryReadRequest): void {
+      sendCorrelatedDeliveryRequest(
+        request,
+        transport,
+        pendingDeliveryRequests,
+        disposed,
+      )
+    },
+    abandonDeliveryRequest(requestId: string): void {
+      throwIfDisposed(disposed)
+      pendingDeliveryRequests.delete(requestId)
+    },
+    onDeliveryResponse(
+      listener: (response: DeliveryReadResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      deliveryListeners.add(listener)
+      return (): void => {
+        deliveryListeners.delete(listener)
+      }
+    },
     sendThumbnailRead(requestId: string, jobId: string): void {
       throwIfDisposed(disposed)
       transport.postMessage(createThumbnailReadRequest(requestId, jobId))
@@ -648,6 +708,8 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       pendingReviewRequests.clear()
       comparisonListeners.clear()
       pendingComparisonRequests.clear()
+      deliveryListeners.clear()
+      pendingDeliveryRequests.clear()
       thumbnailReadListeners.clear()
       thumbnailGenerateListeners.clear()
       thumbnailCancelListeners.clear()
@@ -794,4 +856,45 @@ function sendCorrelatedComparisonRequest(
     pendingRequests.delete(request.requestId)
     throw error
   }
+}
+
+function sendCorrelatedDeliveryRequest(
+  request: DeliveryReadRequest,
+  transport: BridgeTransport,
+  pendingRequests: Map<string, PendingDeliveryRequest>,
+  disposed: boolean,
+): void {
+  throwIfDisposed(disposed)
+  if (pendingRequests.size !== 0) {
+    throw new Error('A delivery bridge request is already pending.')
+  }
+
+  pendingRequests.set(request.requestId, {
+    versionId: request.params.versionId,
+    outputTime: request.params.outputTime,
+  })
+  try {
+    transport.postMessage(request)
+  } catch (error: unknown) {
+    pendingRequests.delete(request.requestId)
+    throw error
+  }
+}
+
+function deliveryResponseMatchesPending(
+  response: DeliveryReadResponse,
+  pending: PendingDeliveryRequest,
+): boolean {
+  if (response.result.status !== 'available') {
+    return true
+  }
+  if (response.result.snapshot.versionId !== pending.versionId) {
+    return false
+  }
+
+  const responseTime = response.result.trace?.outputTime ?? null
+  return pending.outputTime === null
+    ? responseTime === null
+    : responseTime !== null &&
+        deliveryOutputTimesEqual(responseTime, pending.outputTime)
 }

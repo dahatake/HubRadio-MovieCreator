@@ -55,6 +55,7 @@ internal enum BridgeMethod
     ReviewRequestChanges,
     ReviewRecordApproval,
     ComparisonRead,
+    DeliveryRead,
 }
 
 internal sealed class BridgeRequest
@@ -159,6 +160,8 @@ internal static class BridgeProtocol
     internal const int MaxReviewTextUtf8Bytes = 16 * 1024;
     internal const int MaxComparisonRequestUtf8Bytes = 4 * 1024;
     internal const int MaxComparisonResponseUtf8Bytes = 1024 * 1024;
+    internal const int MaxDeliveryRequestUtf8Bytes = 512;
+    internal const int MaxDeliveryResponseUtf8Bytes = 1024 * 1024;
     internal const int MaxPlayerResponseUtf8Bytes =
         IngestWorkflowStore.MaximumPayloadUtf8Bytes;
     internal const int MaxTranscriptRequestUtf8Bytes = 16 * 1024;
@@ -210,6 +213,7 @@ internal static class BridgeProtocol
     internal const string ReviewRequestChangesMethod = "review.requestChanges";
     internal const string ReviewRecordApprovalMethod = "review.recordApproval";
     internal const string ComparisonReadMethod = "compare.read";
+    internal const string DeliveryReadMethod = "delivery.read";
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -445,6 +449,7 @@ internal static class BridgeProtocol
             BridgeMethod.ReviewRequestChanges => ReviewRequestChangesMethod,
             BridgeMethod.ReviewRecordApproval => ReviewRecordApprovalMethod,
             BridgeMethod.ComparisonRead => ComparisonReadMethod,
+            BridgeMethod.DeliveryRead => DeliveryReadMethod,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(method),
                 method,
@@ -463,6 +468,7 @@ internal static class BridgeProtocol
             _ when IsLargePayloadMethod(method) => MaxProjectResponseUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewResponseUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonResponseUtf8Bytes,
+            BridgeMethod.DeliveryRead => MaxDeliveryResponseUtf8Bytes,
             _ => MaxResponseUtf8Bytes,
         };
 
@@ -500,6 +506,9 @@ internal static class BridgeProtocol
     internal static bool IsComparisonMethod(BridgeMethod method) =>
         method == BridgeMethod.ComparisonRead;
 
+    internal static bool IsDeliveryMethod(BridgeMethod method) =>
+        method == BridgeMethod.DeliveryRead;
+
     private static int GetMaximumRequestUtf8Bytes(BridgeMethod method) =>
         method switch
         {
@@ -510,6 +519,7 @@ internal static class BridgeProtocol
             _ when IsTranscriptMethod(method) => MaxTranscriptRequestUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewRequestUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonRequestUtf8Bytes,
+            BridgeMethod.DeliveryRead => MaxDeliveryRequestUtf8Bytes,
             _ => MaxRequestUtf8Bytes,
         };
 
@@ -547,6 +557,7 @@ internal static class BridgeProtocol
             ReviewRequestChangesMethod => BridgeMethod.ReviewRequestChanges,
             ReviewRecordApprovalMethod => BridgeMethod.ReviewRecordApproval,
             ComparisonReadMethod => BridgeMethod.ComparisonRead,
+            DeliveryReadMethod => BridgeMethod.DeliveryRead,
             _ => (BridgeMethod)(-1),
         };
         return Enum.IsDefined(parsedMethod);
@@ -671,8 +682,18 @@ internal static class BridgeProtocol
                 IsCanonicalDigest(parameters.GetProperty("rightVersionDigest"));
         }
 
+        if (method == BridgeMethod.DeliveryRead)
+        {
+            return HasExactProperties(parameters, ["versionId", "outputTime"]) &&
+                IsCanonicalEntityId(parameters.GetProperty("versionId")) &&
+                IsNullOrReviewOutputTime(parameters.GetProperty("outputTime"));
+        }
+
         return false;
     }
+
+    private static bool IsNullOrReviewOutputTime(JsonElement value) =>
+        value.ValueKind == JsonValueKind.Null || IsReviewOutputTime(value);
 
     private static bool IsCanonicalDigest(JsonElement value) =>
         value.ValueKind == JsonValueKind.String &&
@@ -1161,7 +1182,8 @@ internal static class BridgeProtocol
             IsProjectMethod(method) ||
             IsTimelineMethod(method) ||
             IsReviewMethod(method) ||
-            IsComparisonMethod(method))
+            IsComparisonMethod(method) ||
+            IsDeliveryMethod(method))
         {
             if (!HasValidParameters(method, parameters))
             {
@@ -1490,6 +1512,7 @@ internal sealed class Bridge : IDisposable
     private readonly PlayerBridgeRequestHandler playerHandler;
     private readonly TranscriptBridgeRequestHandler? transcriptHandler;
     private readonly ThumbnailBridgeRequestHandler? thumbnailHandler;
+    private readonly DeliveryBridgeRequestHandler? deliveryHandler;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private bool isStarted;
     private bool isDisposed;
@@ -1566,7 +1589,8 @@ internal sealed class Bridge : IDisposable
         IPlayerAccessAuthorization playerAuthorization,
         TranscriptBridgeRequestHandler? transcriptHandler = null,
         ThumbnailBridgeRequestHandler? thumbnailHandler = null,
-        ComparisonBridgeRequestHandler? comparisonHandler = null)
+        ComparisonBridgeRequestHandler? comparisonHandler = null,
+        DeliveryBridgeRequestHandler? deliveryHandler = null)
         : this(
             coreWebView,
             handleProjectRequestAsync,
@@ -1577,7 +1601,8 @@ internal sealed class Bridge : IDisposable
             playerAuthorization,
             transcriptHandler,
             thumbnailHandler,
-            comparisonHandler)
+            comparisonHandler,
+            deliveryHandler)
     {
     }
 
@@ -1613,7 +1638,8 @@ internal sealed class Bridge : IDisposable
         IPlayerAccessAuthorization playerAuthorization,
         TranscriptBridgeRequestHandler? transcriptHandler = null,
         ThumbnailBridgeRequestHandler? thumbnailHandler = null,
-        ComparisonBridgeRequestHandler? comparisonHandler = null)
+        ComparisonBridgeRequestHandler? comparisonHandler = null,
+        DeliveryBridgeRequestHandler? deliveryHandler = null)
         : this(
             coreWebView,
             handleProjectRequestAsync,
@@ -1624,7 +1650,8 @@ internal sealed class Bridge : IDisposable
             playerAuthorization,
             transcriptHandler,
             thumbnailHandler,
-            comparisonHandler)
+            comparisonHandler,
+            deliveryHandler)
     {
     }
 
@@ -1640,7 +1667,8 @@ internal sealed class Bridge : IDisposable
         IPlayerAccessAuthorization playerAuthorization,
         TranscriptBridgeRequestHandler? transcriptHandler = null,
         ThumbnailBridgeRequestHandler? thumbnailHandler = null,
-        ComparisonBridgeRequestHandler? comparisonHandler = null)
+        ComparisonBridgeRequestHandler? comparisonHandler = null,
+        DeliveryBridgeRequestHandler? deliveryHandler = null)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentNullException.ThrowIfNull(playerReader);
@@ -1653,6 +1681,7 @@ internal sealed class Bridge : IDisposable
         this.comparisonHandler = comparisonHandler;
         this.transcriptHandler = transcriptHandler;
         this.thumbnailHandler = thumbnailHandler;
+        this.deliveryHandler = deliveryHandler;
         playerHandler = new PlayerBridgeRequestHandler(
             playerReader,
             playerAuthorization);
@@ -1811,6 +1840,18 @@ internal sealed class Bridge : IDisposable
                     revision: null);
         }
 
+        if (BridgeProtocol.IsDeliveryMethod(request.Method))
+        {
+            return deliveryHandler is null
+                ? DeliveryBridgeJson.WriteResponse(
+                    request,
+                    DeliveryBridgeReadResult.Failure(
+                        DeliveryBridgeStatus.Unavailable))
+                : await deliveryHandler.HandleAsync(
+                    request,
+                    cancellationToken);
+        }
+
         return jobHandler?.Handle(request) ??
             JobBridgeResponseSerializer.SerializeError(
                 request,
@@ -1862,6 +1903,14 @@ internal sealed class Bridge : IDisposable
             return ComparisonBridgeJson.WriteResponse(
                 request,
                 ComparisonBridgeStatus.Unavailable);
+        }
+
+        if (BridgeProtocol.IsDeliveryMethod(request.Method))
+        {
+            return DeliveryBridgeJson.WriteResponse(
+                request,
+                DeliveryBridgeReadResult.Failure(
+                    DeliveryBridgeStatus.Unavailable));
         }
 
         if (request.Method == BridgeMethod.ThumbnailRead)

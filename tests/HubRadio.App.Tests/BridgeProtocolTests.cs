@@ -720,6 +720,88 @@ public sealed class BridgeProtocolTests
     }
 
     [TestMethod]
+    public void DeliveryReadAcceptsOnlyExactVersionAndOptionalReducedOutputTime()
+    {
+        string withoutTrace = CreateRequest(
+            BridgeProtocol.DeliveryReadMethod,
+            $"{{\"versionId\":\"{VersionId}\",\"outputTime\":null}}");
+        string withTrace = CreateRequest(
+            BridgeProtocol.DeliveryReadMethod,
+            $"{{\"versionId\":\"{VersionId}\",\"outputTime\":{{\"value\":\"1\",\"rate\":\"2\"}}}}");
+
+        foreach (string message in new[] { withoutTrace, withTrace })
+        {
+            Assert.IsTrue(BridgeProtocol.TryParseRequest(
+                WebViewHost.EntryPoint,
+                message,
+                out BridgeRequest? request,
+                out BridgeRequestRejection rejection),
+                rejection.ToString());
+            Assert.IsNotNull(request);
+            Assert.AreEqual(BridgeMethod.DeliveryRead, request.Method);
+            Assert.AreEqual(
+                VersionId,
+                request.Parameters.GetProperty("versionId").GetString());
+        }
+
+        string[] invalid =
+        [
+            CreateRequest(
+                BridgeProtocol.DeliveryReadMethod,
+                $"{{\"versionId\":\"{VersionId}\"}}"),
+            CreateRequest(
+                BridgeProtocol.DeliveryReadMethod,
+                $"{{\"versionId\":\"{VersionId[..^1]}A\",\"outputTime\":null}}"),
+            CreateRequest(
+                BridgeProtocol.DeliveryReadMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"outputTime\":{{\"value\":\"-1\",\"rate\":\"1\"}}}}"),
+            CreateRequest(
+                BridgeProtocol.DeliveryReadMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"outputTime\":{{\"value\":\"2\",\"rate\":\"4\"}}}}"),
+            CreateRequest(
+                BridgeProtocol.DeliveryReadMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"outputTime\":{{\"value\":1,\"rate\":2}}}}"),
+            CreateRequest(
+                BridgeProtocol.DeliveryReadMethod,
+                $"{{\"versionId\":\"{VersionId}\",\"outputTime\":null,\"actorSid\":\"S-1-5-21-private\"}}"),
+        ];
+        foreach (string message in invalid)
+        {
+            Assert.IsFalse(BridgeProtocol.TryParseRequest(
+                WebViewHost.EntryPoint,
+                message,
+                out BridgeRequest? request,
+                out BridgeRequestRejection rejection));
+            Assert.IsNull(request);
+            Assert.AreEqual(BridgeRequestRejection.SchemaViolation, rejection);
+        }
+
+        int bytes = Encoding.UTF8.GetByteCount(withTrace);
+        string exactLimit = new(
+            ' ',
+            BridgeProtocol.MaxDeliveryRequestUtf8Bytes - bytes);
+        exactLimit += withTrace;
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            exactLimit,
+            out _,
+            out BridgeRequestRejection exactRejection));
+        Assert.AreEqual(BridgeRequestRejection.None, exactRejection);
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            exactLimit + " ",
+            out _,
+            out BridgeRequestRejection oversizedRejection));
+        Assert.AreEqual(
+            BridgeRequestRejection.MessageTooLarge,
+            oversizedRejection);
+        Assert.AreEqual(
+            BridgeProtocol.MaxDeliveryResponseUtf8Bytes,
+            BridgeProtocol.GetMaximumResponseUtf8Bytes(
+                BridgeMethod.DeliveryRead));
+    }
+
+    [TestMethod]
     public void ErrorResponseIsCorrelatedClosedAndContainsNoExceptionOrPrivateDetail()
     {
         Assert.IsTrue(BridgeProtocol.TryParseRequest(

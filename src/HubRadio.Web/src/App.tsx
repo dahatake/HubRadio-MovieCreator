@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { ComparePanel } from './features/compare'
 import { JobProgressPanel } from './features/jobs/JobProgressPanel'
+import { DeliveryPanel } from './features/delivery'
 import {
   PlayerPanel,
   type PlayerExactFrameSelection,
@@ -72,6 +73,7 @@ function App() {
         />
         <ComparePanel />
         <ReviewPanel />
+        <DeliveryPanel />
       </div>
     </main>
   )

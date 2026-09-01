@@ -21,7 +21,8 @@ internal sealed class ApplicationBridgeHandlers
         TimelineBridgeRequestHandler timeline,
         TranscriptBridgeRequestHandler transcript,
         ReviewBridgeHandler review,
-        ComparisonBridgeRequestHandler comparison)
+        ComparisonBridgeRequestHandler comparison,
+        DeliveryBridgeRequestHandler delivery)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
@@ -29,12 +30,14 @@ internal sealed class ApplicationBridgeHandlers
         ArgumentNullException.ThrowIfNull(transcript);
         ArgumentNullException.ThrowIfNull(review);
         ArgumentNullException.ThrowIfNull(comparison);
+        ArgumentNullException.ThrowIfNull(delivery);
         Project = project;
         Jobs = jobs;
         Timeline = timeline;
         Transcript = transcript;
         Review = review;
         Comparison = comparison;
+        Delivery = delivery;
     }
 
     internal ProjectBridgeHandler Project { get; }
@@ -48,6 +51,8 @@ internal sealed class ApplicationBridgeHandlers
     internal ReviewBridgeHandler Review { get; }
 
     internal ComparisonBridgeRequestHandler Comparison { get; }
+
+    internal DeliveryBridgeRequestHandler Delivery { get; }
 }
 
 internal static class ProjectApplicationRuntime
@@ -127,12 +132,16 @@ internal static class ProjectApplicationRuntime
         var comparisonHandler = new ComparisonBridgeRequestHandler(
             projectStore,
             new ComparisonBridgeAuthorization(authorization, actorProvider));
+        var deliveryHandler = new DeliveryBridgeRequestHandler(
+            UnavailableDeliveryEvidenceProvider.Instance,
+            new DeliveryAccessAuthorization(authorization, actorProvider));
         return new ApplicationBridgeHandlers(
             projectHandler,
             jobHandler,
             timelineHandler,
             transcriptHandler,
             reviewHandler,
-            comparisonHandler);
+            comparisonHandler,
+            deliveryHandler);
     }
 }

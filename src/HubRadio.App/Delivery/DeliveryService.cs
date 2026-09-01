@@ -898,7 +898,7 @@ public sealed class DeliveryService
         && first.ByteSize == second.ByteSize
         && first.CreatedAt.EqualsExact(second.CreatedAt);
 
-    private static ContentDigest ComputeUsedSourceSpansDigest(
+    internal static ContentDigest ComputeUsedSourceSpansDigest(
         EntityId<ProjectIdTag> projectId,
         CompositionVersion compositionVersion,
         IReadOnlyList<SourceSpan> sourceSpans)
@@ -929,7 +929,7 @@ public sealed class DeliveryService
         return ContentDigest.FromBytes(hash.GetHashAndReset());
     }
 
-    private static ContentDigest ComputeApprovalEvidenceDigest(
+    internal static ContentDigest ComputeApprovalEvidenceDigest(
         EntityId<ProjectIdTag> projectId,
         CompositionVersion compositionVersion,
         IReadOnlyList<StoredApproval> approvals)
@@ -997,6 +997,77 @@ public sealed class DeliveryService
         }
 
         return ContentDigest.FromBytes(hash.GetHashAndReset());
+    }
+
+    internal static ContentDigest ComputeDeliveryEvidenceDigest(
+        DeliveryManifest manifest,
+        RenderManifest renderManifest,
+        OutputQcResult qualityControl,
+        ContentDigest usedSourceSpansDigest,
+        ContentDigest approvalEvidenceDigest,
+        IReadOnlyList<KeyValuePair<
+            EntityId<ArtifactIdTag>,
+            ManifestArtifact>> artifactEvidence,
+        IReadOnlyList<StoredArtifact> registeredArtifacts,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(renderManifest);
+        ArgumentNullException.ThrowIfNull(qualityControl);
+        ArgumentNullException.ThrowIfNull(usedSourceSpansDigest);
+        ArgumentNullException.ThrowIfNull(approvalEvidenceDigest);
+        ArgumentNullException.ThrowIfNull(artifactEvidence);
+        ArgumentNullException.ThrowIfNull(registeredArtifacts);
+
+        ArtifactBinding[] bindings = SnapshotArtifacts(
+            artifactEvidence,
+            cancellationToken);
+        if (registeredArtifacts.Count != bindings.Length)
+        {
+            throw new ArgumentException(
+                "Registered artifact metadata must cover every delivery binding.",
+                nameof(registeredArtifacts));
+        }
+
+        var registeredById = new Dictionary<
+            EntityId<ArtifactIdTag>,
+            StoredArtifact>();
+        foreach (StoredArtifact artifact in registeredArtifacts)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (artifact is null ||
+                !registeredById.TryAdd(artifact.Id, artifact))
+            {
+                throw new ArgumentException(
+                    "Registered artifact metadata must have unique identities.",
+                    nameof(registeredArtifacts));
+            }
+        }
+
+        var orderedRegistered = new StoredArtifact[bindings.Length];
+        for (int index = 0; index < bindings.Length; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!registeredById.TryGetValue(
+                    bindings[index].ArtifactId,
+                    out StoredArtifact? registered))
+            {
+                throw new ArgumentException(
+                    "Registered artifact metadata does not match the delivery bindings.",
+                    nameof(registeredArtifacts));
+            }
+
+            orderedRegistered[index] = registered;
+        }
+
+        return ComputeDeliveryEvidenceDigest(
+            manifest,
+            renderManifest,
+            qualityControl,
+            usedSourceSpansDigest,
+            approvalEvidenceDigest,
+            bindings,
+            orderedRegistered);
     }
 
     private static void AppendSubtitleVariant(

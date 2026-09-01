@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 
 import App from './App'
 import { ComparisonStateProvider } from './features/compare'
+import { DeliveryStateProvider } from './features/delivery'
 import { PlayerNavigationProvider } from './features/player'
 import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
 import { ReviewStateProvider } from './features/review'
@@ -23,7 +24,9 @@ createRoot(rootElement).render(
         <PlayerNavigationProvider>
           <ComparisonStateProvider>
             <ReviewStateProvider>
-              <App />
+              <DeliveryStateProvider>
+                <App />
+              </DeliveryStateProvider>
             </ReviewStateProvider>
           </ComparisonStateProvider>
         </PlayerNavigationProvider>

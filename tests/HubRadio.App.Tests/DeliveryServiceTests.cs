@@ -931,7 +931,7 @@ public sealed class DeliveryServiceTests
     private static ContentDigest Digest(char value) =>
         new(new string(value, 64));
 
-    private sealed class DeliveryFixture
+    internal sealed class DeliveryFixture
     {
         private const string EditorSid =
             "S-1-5-21-1000-2000-3000-5001";

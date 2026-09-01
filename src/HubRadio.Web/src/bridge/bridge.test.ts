@@ -70,6 +70,15 @@ import {
   createComparisonResponseValue,
 } from '../features/compare/compareTestFixture'
 import {
+  createDeliveryReadRequest,
+} from '../features/delivery/deliveryProtocol'
+import {
+  createDeliveryResponseValue,
+  deliverySecondRequestId,
+  deliverySecondVersionId,
+  deliveryVersionId,
+} from '../features/delivery/deliveryTestFixture'
+import {
   createThumbnailCancelRequest,
   createThumbnailGenerateRequest,
   createThumbnailReadRequest,
@@ -365,6 +374,81 @@ describe('web bridge client', () => {
     expect(transport.posted.at(-1)).toEqual(first)
   })
 
+  it('routes only a fully correlated delivery response and prevents double submit', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    client.onDeliveryResponse(listener)
+    const first = createDeliveryReadRequest(
+      requestId,
+      deliveryVersionId,
+      null,
+    )
+    const second = createDeliveryReadRequest(
+      deliverySecondRequestId,
+      deliveryVersionId,
+      { value: '1', rate: '2' },
+    )
+
+    client.sendDelivery(first)
+    expect(transport.posted).toEqual([first])
+    expect(() => client.sendDelivery(second)).toThrow('already pending')
+
+    transport.emit(createDeliveryResponseValue(deliverySecondRequestId, false))
+    transport.emit(createDeliveryResponseForDifferentVersion(requestId, false))
+    transport.emit(createDeliveryResponseValue(requestId, true))
+    transport.emit({
+      ...createDeliveryResponseValue(requestId, false),
+      storageReference: 'C:\\private\\master.mp4',
+    })
+    expect(listener).not.toHaveBeenCalled()
+
+    transport.emit(createDeliveryResponseValue(requestId, false))
+    expect(listener).toHaveBeenCalledOnce()
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({
+      requestId,
+      method: 'delivery.read',
+    }))
+
+    client.sendDelivery(second)
+    const wrongTime = createDeliveryResponseValue(deliverySecondRequestId, true)
+    if (wrongTime.result.trace === null) {
+      throw new Error('Expected delivery trace fixture.')
+    }
+    wrongTime.result.trace.outputTime = { value: '3', rate: '4' }
+    transport.emit(wrongTime)
+    expect(listener).toHaveBeenCalledOnce()
+    transport.emit(createDeliveryResponseValue(deliverySecondRequestId, true))
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
+  it('clears delivery correlation after abandon and transport failure', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const first = createDeliveryReadRequest(
+      requestId,
+      deliveryVersionId,
+      null,
+    )
+    const second = createDeliveryReadRequest(
+      deliverySecondRequestId,
+      deliveryVersionId,
+      null,
+    )
+
+    client.sendDelivery(first)
+    client.abandonDeliveryRequest(requestId)
+    client.sendDelivery(second)
+    expect(transport.posted).toEqual([first, second])
+
+    client.abandonDeliveryRequest(deliverySecondRequestId)
+    transport.throwOnPost = true
+    expect(() => client.sendDelivery(first)).toThrow('transport failed')
+    transport.throwOnPost = false
+    client.sendDelivery(first)
+    expect(transport.posted.at(-1)).toEqual(first)
+  })
+
   it('sends and routes only strict thumbnail evidence operations', () => {
     const transport = new FakeTransport()
     const client = createBridgeClient(transport)
@@ -570,6 +654,14 @@ describe('web bridge client', () => {
       'disposed',
     )
     expect(() => client.onComparisonResponse(listener)).toThrow('disposed')
+    const deliveryRequest = createDeliveryReadRequest(
+      requestId,
+      deliveryVersionId,
+      null,
+    )
+    expect(() => client.sendDelivery(deliveryRequest)).toThrow('disposed')
+    expect(() => client.abandonDeliveryRequest(requestId)).toThrow('disposed')
+    expect(() => client.onDeliveryResponse(listener)).toThrow('disposed')
     expect(() => client.sendThumbnailRead(requestId, thumbnailJobId)).toThrow(
       'disposed',
     )
@@ -683,5 +775,14 @@ function createReviewResponseForDifferentVersion(requestId: string) {
   value.result.versionId = reviewSecondRequestId
   value.result.approvals[0]!.versionId = reviewSecondRequestId
   value.result.directParentDiff.toVersionId = reviewSecondRequestId
+  return value
+}
+
+function createDeliveryResponseForDifferentVersion(
+  requestId: string,
+  includeTrace: boolean,
+) {
+  const value = createDeliveryResponseValue(requestId, includeTrace)
+  value.result.snapshot.versionId = deliverySecondVersionId
   return value
 }

@@ -16,6 +16,9 @@ public sealed class BridgeProtocolSecurityTests
     [DataRow("review.approve")]
     [DataRow("review.getSnapshot;calc")]
     [DataRow("review.getSnapsh\u043et")]
+    [DataRow("delivery.download")]
+    [DataRow("delivery.read;calc")]
+    [DataRow("delivery.re\u0430d")]
     public void AdversarialUnknownMethodsAreRejectedWithoutReflection(string method)
     {
         string message =
@@ -46,6 +49,26 @@ public sealed class BridgeProtocolSecurityTests
     {
         string message =
             $"{{\"version\":1,\"requestId\":\"{RequestId}\",\"method\":\"review.getSnapshot\",\"params\":{parameters}}}";
+
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            message,
+            out BridgeRequest? request,
+            out BridgeRequestRejection rejection));
+        Assert.IsNull(request);
+        Assert.AreEqual(BridgeRequestRejection.SchemaViolation, rejection);
+    }
+
+    [TestMethod]
+    [DataRow("{\"versionId\":\"11112222-3333-4444-8555-666677778888\",\"outputTime\":null,\"actorSid\":\"S-1-5-21-1\"}")]
+    [DataRow("{\"versionId\":\"11112222-3333-4444-8555-666677778888\",\"outputTime\":null,\"storageReference\":\"C:\\\\private\\\\delivery.mp4\"}")]
+    [DataRow("{\"versionId\":\"11112222-3333-4444-8555-666677778888\",\"outputTime\":null,\"downloadUrl\":\"https://evil.example/file\"}")]
+    [DataRow("{\"versionId\":\"11112222-3333-4444-8555-666677778888\",\"outputTime\":null,\"__proto__\":{\"actorRole\":\"administrator\"}}")]
+    public void DeliveryReadRejectsIdentityStorageDownloadAndOpenParameters(
+        string parameters)
+    {
+        string message =
+            $"{{\"version\":1,\"requestId\":\"{RequestId}\",\"method\":\"delivery.read\",\"params\":{parameters}}}";
 
         Assert.IsFalse(BridgeProtocol.TryParseRequest(
             WebViewHost.EntryPoint,

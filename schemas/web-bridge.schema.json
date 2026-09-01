@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; ping and jobs use 4096-byte responses, comparison requests use 4 KiB with 1 MiB responses, project, timeline, and thumbnail requests use 96 KiB with 1 MiB responses, transcript requests use 16 KiB with 4 MiB responses, review requests use 24 KiB with 1 MiB responses and 16 KiB review text, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every protected operation and every media GET; actor identity is never accepted from Web messages, and any requested acting role is untrusted intent revalidated against current native assignments. Review mutations and comparisons pin exact composition-version IDs and full digests, while rational time remains reduced integer evidence. Comparisons expose only durable composition evidence and mark unsupported semantic features unavailable instead of inferring them. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, arbitrary URLs, SIDs, commands, authentication secrets, process output, template filesystem locations, and sensitive host data are prohibited.",
+  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; delivery requests use 512 UTF-8 bytes with 1 MiB responses; ping and jobs use 4096-byte responses, comparison requests use 4 KiB with 1 MiB responses, project, timeline, and thumbnail requests use 96 KiB with 1 MiB responses, transcript requests use 16 KiB with 4 MiB responses, review requests use 24 KiB with 1 MiB responses and 16 KiB review text, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every protected operation and every media GET; actor identity is never accepted from Web messages, and any requested acting role is untrusted intent revalidated against current native assignments. Review mutations and comparisons pin exact composition-version IDs and full digests, while rational time remains reduced integer evidence; delivery snapshots expose only natively revalidated full-digest evidence and preserve that machine QC still requires human review, has no approved numeric thresholds, and cannot independently authorize delivery. Comparisons expose only durable composition evidence and mark unsupported semantic features unavailable instead of inferring them. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, storage references, arbitrary URLs, download capabilities, SIDs, commands, authentication secrets, process output, template filesystem locations, and sensitive host data are prohibited.",
   "title": "WebBridgeMessage",
   "oneOf": [
     { "$ref": "#/$defs/pingRequest" },
@@ -55,7 +55,9 @@
     { "$ref": "#/$defs/thumbnailGenerateRequest" },
     { "$ref": "#/$defs/thumbnailGenerateResponse" },
     { "$ref": "#/$defs/thumbnailCancelRequest" },
-    { "$ref": "#/$defs/thumbnailCancelResponse" }
+    { "$ref": "#/$defs/thumbnailCancelResponse" },
+    { "$ref": "#/$defs/deliveryReadRequest" },
+    { "$ref": "#/$defs/deliveryReadResponse" }
   ],
   "$defs": {
     "protocolVersion": { "const": 1 },
@@ -120,7 +122,8 @@
         "review.addComment",
         "review.requestChanges",
         "review.recordApproval",
-        "compare.read"
+        "compare.read",
+        "delivery.read"
       ]
     },
     "projectMethod": {
@@ -3343,6 +3346,468 @@
         "requestId": { "$ref": "#/$defs/requestId" },
         "method": { "const": "thumbnail.cancel" },
         "result": { "$ref": "#/$defs/thumbnailCancelResult" }
+      }
+    },
+    "deliveryReadParams": {
+      "type": "object",
+      "$comment": "outputTime is optional lookup intent represented explicitly as null or one exact nonnegative reduced rational.",
+      "additionalProperties": false,
+      "required": ["versionId", "outputTime"],
+      "properties": {
+        "versionId": { "$ref": "#/$defs/entityId" },
+        "outputTime": {
+          "oneOf": [
+            { "$ref": "#/$defs/reviewOutputTime" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "deliveryArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactId",
+        "artifactType",
+        "mediaType",
+        "language",
+        "byteSize",
+        "sha256"
+      ],
+      "properties": {
+        "artifactId": { "$ref": "#/$defs/entityId" },
+        "artifactType": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "mediaType": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "language": {
+          "oneOf": [
+            { "type": "string", "minLength": 1, "maxLength": 4096 },
+            { "type": "null" }
+          ]
+        },
+        "byteSize": { "$ref": "#/$defs/positiveInt64String" },
+        "sha256": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "deliveryReviewRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewRecordId", "state", "actorRole", "recordedAt"],
+      "properties": {
+        "reviewRecordId": { "$ref": "#/$defs/entityId" },
+        "state": { "$ref": "#/$defs/reviewState" },
+        "actorRole": { "$ref": "#/$defs/reviewActorRole" },
+        "recordedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "deliveryApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvalId", "actorRole", "approvedAt"],
+      "properties": {
+        "approvalId": { "$ref": "#/$defs/entityId" },
+        "actorRole": { "$ref": "#/$defs/reviewApprovalActorRole" },
+        "approvedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "deliveryReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["records", "approvals"],
+      "properties": {
+        "records": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": { "$ref": "#/$defs/deliveryReviewRecord" }
+        },
+        "approvals": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": { "$ref": "#/$defs/deliveryApproval" }
+        }
+      }
+    },
+    "deliveryRights": {
+      "type": "object",
+      "$comment": "Evidence presence is exposed without leaking its path or arbitrary reference. Per-asset publication permission is distinct from project publicationScope.",
+      "additionalProperties": false,
+      "required": [
+        "assetId",
+        "sourceDigest",
+        "status",
+        "evidenceRecorded",
+        "allowedUse",
+        "externalPublicationAllowed"
+      ],
+      "properties": {
+        "assetId": { "$ref": "#/$defs/entityId" },
+        "sourceDigest": { "$ref": "#/$defs/contentDigest" },
+        "status": { "enum": ["unconfirmed", "approved", "rejected"] },
+        "evidenceRecorded": { "type": "boolean" },
+        "allowedUse": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "externalPublicationAllowed": { "type": "boolean" }
+      }
+    },
+    "deliveryQcStream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "streamIndex",
+        "observedCount",
+        "presentationStart",
+        "presentationEnd",
+        "observedDuration",
+        "evidenceDigest"
+      ],
+      "properties": {
+        "streamIndex": { "$ref": "#/$defs/nonnegativeInt32" },
+        "observedCount": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "presentationStart": { "$ref": "#/$defs/rationalTime" },
+        "presentationEnd": { "$ref": "#/$defs/rationalTime" },
+        "observedDuration": { "$ref": "#/$defs/rationalTime" },
+        "evidenceDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "deliveryQcSubtitleTiming": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["streamIndex", "observedCueCount", "evidenceDigest"],
+          "properties": {
+            "streamIndex": { "type": "null" },
+            "observedCueCount": { "type": "null" },
+            "evidenceDigest": { "type": "null" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["streamIndex", "observedCueCount", "evidenceDigest"],
+          "properties": {
+            "streamIndex": { "$ref": "#/$defs/nonnegativeInt32" },
+            "observedCueCount": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+            "evidenceDigest": { "$ref": "#/$defs/contentDigest" }
+          }
+        }
+      ]
+    },
+    "deliveryQcDuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected",
+        "videoDelta",
+        "audioDelta",
+        "audioVideoStartOffset",
+        "audioVideoEndOffset"
+      ],
+      "properties": {
+        "expected": { "$ref": "#/$defs/rationalTime" },
+        "videoDelta": { "$ref": "#/$defs/rationalTime" },
+        "audioDelta": {
+          "oneOf": [{ "$ref": "#/$defs/rationalTime" }, { "type": "null" }]
+        },
+        "audioVideoStartOffset": {
+          "oneOf": [{ "$ref": "#/$defs/rationalTime" }, { "type": "null" }]
+        },
+        "audioVideoEndOffset": {
+          "oneOf": [{ "$ref": "#/$defs/rationalTime" }, { "type": "null" }]
+        }
+      }
+    },
+    "deliveryDecimalString": {
+      "type": "string",
+      "pattern": "^-?(?:0|[1-9][0-9]{0,28})(?:\\.[0-9]{1,28})?(?![\\s\\S])"
+    },
+    "deliveryQcLuma": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "measuredFrameCount",
+        "minimumFrameAverage",
+        "maximumFrameAverage",
+        "meanFrameAverage",
+        "evidenceDigest"
+      ],
+      "properties": {
+        "measuredFrameCount": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "minimumFrameAverage": { "$ref": "#/$defs/deliveryDecimalString" },
+        "maximumFrameAverage": { "$ref": "#/$defs/deliveryDecimalString" },
+        "meanFrameAverage": { "$ref": "#/$defs/deliveryDecimalString" },
+        "evidenceDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "deliveryQcMeasuredValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "const": "finite" },
+            "value": { "$ref": "#/$defs/deliveryDecimalString" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "enum": ["negativeInfinity", "positiveInfinity"] },
+            "value": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "deliveryQcAudio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["integratedLoudnessLufs", "truePeakDbfs", "evidenceDigest"],
+      "properties": {
+        "integratedLoudnessLufs": { "$ref": "#/$defs/deliveryQcMeasuredValue" },
+        "truePeakDbfs": { "$ref": "#/$defs/deliveryQcMeasuredValue" },
+        "evidenceDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "deliveryQcTool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "executableDigest", "executableByteSize"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "version": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "executableDigest": { "$ref": "#/$defs/contentDigest" },
+        "executableByteSize": { "$ref": "#/$defs/positiveInt64String" }
+      }
+    },
+    "deliveryQcReviewArea": {
+      "enum": [
+        "duration",
+        "audioVideoSynchronization",
+        "subtitlePresentation",
+        "screenLuma",
+        "programLoudness",
+        "truePeak"
+      ]
+    },
+    "deliveryQualityControl": {
+      "type": "object",
+      "$comment": "Successful machine evidence does not apply approved numeric thresholds and cannot independently authorize delivery; every available result still requires human review.",
+      "additionalProperties": false,
+      "required": [
+        "artifactId",
+        "sha256",
+        "byteSize",
+        "machineChecksPassed",
+        "humanReviewRequired",
+        "approvedNumericThresholdsApplied",
+        "canProceedToDelivery",
+        "decodedSuccessfully",
+        "probeEvidenceDigest",
+        "videoTiming",
+        "audioTiming",
+        "subtitleTiming",
+        "duration",
+        "luma",
+        "audio",
+        "tools",
+        "requiredHumanReviewAreas"
+      ],
+      "properties": {
+        "artifactId": { "$ref": "#/$defs/entityId" },
+        "sha256": { "$ref": "#/$defs/contentDigest" },
+        "byteSize": { "$ref": "#/$defs/positiveInt64String" },
+        "machineChecksPassed": { "const": true },
+        "humanReviewRequired": { "const": true },
+        "approvedNumericThresholdsApplied": { "const": false },
+        "canProceedToDelivery": { "const": false },
+        "decodedSuccessfully": { "const": true },
+        "probeEvidenceDigest": { "$ref": "#/$defs/contentDigest" },
+        "videoTiming": { "$ref": "#/$defs/deliveryQcStream" },
+        "audioTiming": {
+          "oneOf": [{ "$ref": "#/$defs/deliveryQcStream" }, { "type": "null" }]
+        },
+        "subtitleTiming": { "$ref": "#/$defs/deliveryQcSubtitleTiming" },
+        "duration": { "$ref": "#/$defs/deliveryQcDuration" },
+        "luma": { "$ref": "#/$defs/deliveryQcLuma" },
+        "audio": {
+          "oneOf": [{ "$ref": "#/$defs/deliveryQcAudio" }, { "type": "null" }]
+        },
+        "tools": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": { "$ref": "#/$defs/deliveryQcTool" }
+        },
+        "requiredHumanReviewAreas": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/deliveryQcReviewArea" }
+        }
+      }
+    },
+    "deliverySourceSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceSpanId", "assetId", "streamId", "start", "end", "sourceDigest"],
+      "properties": {
+        "sourceSpanId": { "$ref": "#/$defs/entityId" },
+        "assetId": { "$ref": "#/$defs/entityId" },
+        "streamId": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "start": { "$ref": "#/$defs/rationalTime" },
+        "end": { "$ref": "#/$defs/rationalTime" },
+        "sourceDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "deliveryTrace": {
+      "$comment": "The resolved SourceSpan alternative preserves exact rational output/source times; notFound is an explicit half-open-range miss and never invents an origin.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "outputTime", "originKind", "originId", "sourceTime", "sourceSpan"],
+          "properties": {
+            "status": { "const": "notFound" },
+            "outputTime": { "$ref": "#/$defs/reviewOutputTime" },
+            "originKind": { "type": "null" },
+            "originId": { "type": "null" },
+            "sourceTime": { "type": "null" },
+            "sourceSpan": { "type": "null" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "outputTime", "originKind", "originId", "sourceTime", "sourceSpan"],
+          "properties": {
+            "status": { "const": "resolved" },
+            "outputTime": { "$ref": "#/$defs/reviewOutputTime" },
+            "originKind": { "const": "sourceSpan" },
+            "originId": { "$ref": "#/$defs/entityId" },
+            "sourceTime": { "$ref": "#/$defs/rationalTime" },
+            "sourceSpan": { "$ref": "#/$defs/deliverySourceSpan" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "outputTime", "originKind", "originId", "sourceTime", "sourceSpan"],
+          "properties": {
+            "status": { "const": "resolved" },
+            "outputTime": { "$ref": "#/$defs/reviewOutputTime" },
+            "originKind": { "enum": ["asset", "editorialRecord"] },
+            "originId": { "$ref": "#/$defs/entityId" },
+            "sourceTime": { "type": "null" },
+            "sourceSpan": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "deliverySnapshot": {
+      "type": "object",
+      "$comment": "The native host validates all artifact, graph, timeline, QC, approval, source-span, rights, and version bindings before emitting this allowlisted snapshot. Storage references and download capabilities are intentionally absent.",
+      "additionalProperties": false,
+      "required": [
+        "deliveryManifestId",
+        "projectId",
+        "versionId",
+        "versionDigest",
+        "renderManifestId",
+        "profileId",
+        "profileDigest",
+        "deliveryEvidenceDigest",
+        "usedSourceSpansDigest",
+        "approvalEvidenceDigest",
+        "publicationScope",
+        "artifacts",
+        "review",
+        "rights",
+        "qualityControl"
+      ],
+      "properties": {
+        "deliveryManifestId": { "$ref": "#/$defs/entityId" },
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "versionId": { "$ref": "#/$defs/entityId" },
+        "versionDigest": { "$ref": "#/$defs/contentDigest" },
+        "renderManifestId": { "$ref": "#/$defs/entityId" },
+        "profileId": { "$ref": "#/$defs/entityId" },
+        "profileDigest": { "$ref": "#/$defs/contentDigest" },
+        "deliveryEvidenceDigest": { "$ref": "#/$defs/contentDigest" },
+        "usedSourceSpansDigest": { "$ref": "#/$defs/contentDigest" },
+        "approvalEvidenceDigest": { "$ref": "#/$defs/contentDigest" },
+        "publicationScope": { "$ref": "#/$defs/publicationScope" },
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1024,
+          "items": { "$ref": "#/$defs/deliveryArtifact" }
+        },
+        "review": { "$ref": "#/$defs/deliveryReview" },
+        "rights": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": { "$ref": "#/$defs/deliveryRights" }
+        },
+        "qualityControl": { "$ref": "#/$defs/deliveryQualityControl" }
+      }
+    },
+    "deliveryReadResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot", "trace"],
+          "properties": {
+            "status": { "const": "available" },
+            "snapshot": { "$ref": "#/$defs/deliverySnapshot" },
+            "trace": {
+              "oneOf": [{ "$ref": "#/$defs/deliveryTrace" }, { "type": "null" }]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot", "trace"],
+          "properties": {
+            "status": {
+              "enum": [
+                "forbidden",
+                "unavailable",
+                "incomplete",
+                "mismatched",
+                "qualityControlFailed"
+              ]
+            },
+            "snapshot": { "type": "null" },
+            "trace": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "deliveryReadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "delivery.read" },
+        "params": { "$ref": "#/$defs/deliveryReadParams" }
+      }
+    },
+    "deliveryReadResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "delivery.read" },
+        "result": { "$ref": "#/$defs/deliveryReadResult" }
       }
     }
   }

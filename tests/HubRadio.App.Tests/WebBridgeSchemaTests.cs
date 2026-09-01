@@ -24,6 +24,7 @@ public sealed class WebBridgeSchemaTests
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "24 KiB");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "comparison requests use 4 KiB");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "16 KiB review text");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "512 UTF-8 bytes");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "full digest");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "mark unsupported semantic features unavailable");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "reserved intercepted HTTPS media origin");
@@ -66,6 +67,7 @@ public sealed class WebBridgeSchemaTests
                 "review.requestChanges",
                 "review.recordApproval",
                 "compare.read",
+                "delivery.read",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -128,6 +130,8 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/thumbnailGenerateResponse",
                 "#/$defs/thumbnailCancelRequest",
                 "#/$defs/thumbnailCancelResponse",
+                "#/$defs/deliveryReadRequest",
+                "#/$defs/deliveryReadResponse",
             },
             root.GetProperty("oneOf")
                 .EnumerateArray()
@@ -265,6 +269,22 @@ public sealed class WebBridgeSchemaTests
             "thumbnailGenerateResponse",
             "thumbnailCancelRequest",
             "thumbnailCancelResponse",
+            "deliveryReadParams",
+            "deliveryArtifact",
+            "deliveryReviewRecord",
+            "deliveryApproval",
+            "deliveryReview",
+            "deliveryRights",
+            "deliveryQcStream",
+            "deliveryQcDuration",
+            "deliveryQcLuma",
+            "deliveryQcAudio",
+            "deliveryQcTool",
+            "deliveryQualityControl",
+            "deliverySourceSpan",
+            "deliverySnapshot",
+            "deliveryReadRequest",
+            "deliveryReadResponse",
         })
         {
             Assert.AreEqual(
@@ -472,6 +492,41 @@ public sealed class WebBridgeSchemaTests
                 .GetProperty("status")
                 .GetProperty("enum")),
             "forbidden");
+        JsonElement deliveryQc = definitions
+            .GetProperty("deliveryQualityControl")
+            .GetProperty("properties");
+        Assert.IsTrue(deliveryQc
+            .GetProperty("machineChecksPassed")
+            .GetProperty("const")
+            .GetBoolean());
+        Assert.IsTrue(deliveryQc
+            .GetProperty("humanReviewRequired")
+            .GetProperty("const")
+            .GetBoolean());
+        Assert.IsFalse(deliveryQc
+            .GetProperty("approvedNumericThresholdsApplied")
+            .GetProperty("const")
+            .GetBoolean());
+        Assert.IsFalse(deliveryQc
+            .GetProperty("canProceedToDelivery")
+            .GetProperty("const")
+            .GetBoolean());
+        Assert.AreEqual(
+            "#/$defs/reviewApprovalActorRole",
+            definitions.GetProperty("deliveryApproval")
+                .GetProperty("properties")
+                .GetProperty("actorRole")
+                .GetProperty("$ref")
+                .GetString());
+        JsonElement deliveryArtifactProperties = definitions
+            .GetProperty("deliveryArtifact")
+            .GetProperty("properties");
+        Assert.IsFalse(deliveryArtifactProperties.TryGetProperty(
+            "storageReference",
+            out _));
+        Assert.IsFalse(definitions.GetProperty("deliverySnapshot")
+            .GetProperty("properties")
+            .TryGetProperty("download", out _));
     }
 
     [TestMethod]
@@ -609,6 +664,15 @@ public sealed class WebBridgeSchemaTests
         CollectionAssert.AreEquivalent(
             new[] { "version", "requestId", "method", "result" },
             GetStrings(definitions.GetProperty("comparisonReadResponse").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "versionId", "outputTime" },
+            GetStrings(definitions.GetProperty("deliveryReadParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "params" },
+            GetStrings(definitions.GetProperty("deliveryReadRequest").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "result" },
+            GetStrings(definitions.GetProperty("deliveryReadResponse").GetProperty("required")));
         Assert.AreEqual(
             3,
             definitions.GetProperty("reviewSnapshot")
