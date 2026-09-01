@@ -26,6 +26,14 @@ import {
   playerEvidenceDigest,
   playerJobId,
 } from '../features/player/playerTestFixture'
+import {
+  TRANSCRIPT_READ_METHOD,
+  createTranscriptReadRequest,
+} from '../features/transcript/transcriptProtocol'
+import {
+  createTranscriptResponseValue,
+  projectId,
+} from '../features/transcript/transcriptTestFixture'
 
 const requestId = '00112233-4455-6677-8899-aabbccddeeff'
 
@@ -153,6 +161,31 @@ describe('web bridge client', () => {
     expect(removed).not.toHaveBeenCalled()
   })
 
+  it('sends closed transcript requests and routes only strict responses', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    const unsubscribe = client.onTranscriptResponse(listener)
+    const request = createTranscriptReadRequest(requestId, projectId)
+
+    client.sendTranscript(request)
+    expect(transport.posted).toEqual([request])
+
+    transport.emit({
+      ...createTranscriptResponseValue(),
+      actorSid: 'S-1-5-18',
+    })
+    expect(listener).not.toHaveBeenCalled()
+
+    transport.emit(createTranscriptResponseValue())
+    expect(listener).toHaveBeenCalledOnce()
+    expect(listener.mock.calls[0]?.[0].method).toBe(TRANSCRIPT_READ_METHOD)
+
+    unsubscribe()
+    transport.emit(createTranscriptResponseValue())
+    expect(listener).toHaveBeenCalledOnce()
+  })
+
   it('unsubscribes listeners and removes the transport handler on disposal', () => {
     const transport = new FakeTransport()
     const client = createBridgeClient(transport)
@@ -179,6 +212,10 @@ describe('web bridge client', () => {
     ).toThrow('disposed')
     expect(() => client.onPlayerReadResponse(listener)).toThrow('disposed')
     expect(() => client.onPlayerSeekResponse(listener)).toThrow('disposed')
+    expect(() =>
+      client.sendTranscript(createTranscriptReadRequest(requestId, projectId)),
+    ).toThrow('disposed')
+    expect(() => client.onTranscriptResponse(listener)).toThrow('disposed')
   })
 
   it('sends and emits only strict project protocol messages', () => {

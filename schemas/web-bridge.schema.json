@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; ping and jobs use 4096-byte responses, project requests use 96 KiB with 1 MiB responses, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every player read, seek, and media GET; actor and role claims are never accepted from Web messages. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, arbitrary URLs, and sensitive host data are prohibited.",
+  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; ping and jobs use 4096-byte responses, project requests use 96 KiB with 1 MiB responses, transcript requests use 16 KiB with 4 MiB responses, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every player and transcript operation and every media GET; actor and role claims are never accepted from Web messages. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, arbitrary URLs, and sensitive host data are prohibited.",
   "title": "WebBridgeMessage",
   "oneOf": [
     { "$ref": "#/$defs/pingRequest" },
@@ -25,7 +25,19 @@
     { "$ref": "#/$defs/playerReadRequest" },
     { "$ref": "#/$defs/playerReadResponse" },
     { "$ref": "#/$defs/playerSeekRequest" },
-    { "$ref": "#/$defs/playerSeekResponse" }
+    { "$ref": "#/$defs/playerSeekResponse" },
+    { "$ref": "#/$defs/transcriptReadRequest" },
+    { "$ref": "#/$defs/transcriptEditTokenRequest" },
+    { "$ref": "#/$defs/transcriptSetSpeakerRequest" },
+    { "$ref": "#/$defs/transcriptRemoveSpeakerRequest" },
+    { "$ref": "#/$defs/transcriptAdoptTermRequest" },
+    { "$ref": "#/$defs/transcriptRejectTermRequest" },
+    { "$ref": "#/$defs/transcriptReadResponse" },
+    { "$ref": "#/$defs/transcriptEditTokenResponse" },
+    { "$ref": "#/$defs/transcriptSetSpeakerResponse" },
+    { "$ref": "#/$defs/transcriptRemoveSpeakerResponse" },
+    { "$ref": "#/$defs/transcriptAdoptTermResponse" },
+    { "$ref": "#/$defs/transcriptRejectTermResponse" }
   ],
   "$defs": {
     "protocolVersion": { "const": 1 },
@@ -74,7 +86,13 @@
         "jobs.cancel",
         "jobs.retry",
         "player.read",
-        "player.seek"
+        "player.seek",
+        "transcript.read",
+        "transcript.editToken",
+        "transcript.setSpeaker",
+        "transcript.removeSpeaker",
+        "transcript.adoptTerm",
+        "transcript.rejectTerm"
       ]
     },
     "projectMethod": {
@@ -1340,6 +1358,743 @@
         "result": {
           "$ref": "#/$defs/playerSeekResult"
         }
+      }
+    },
+    "transcriptTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?!0000)[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[0-1])T([0-1][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{7}\\+00:00$"
+    },
+    "nullableTranscriptTimestamp": {
+      "oneOf": [
+        { "$ref": "#/$defs/transcriptTimestamp" },
+        { "type": "null" }
+      ]
+    },
+    "transcriptRequiredText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S(?:[\\s\\S]*\\S)?(?![\\s\\S])"
+    },
+    "transcriptMethod": {
+      "enum": [
+        "transcript.read",
+        "transcript.editToken",
+        "transcript.setSpeaker",
+        "transcript.removeSpeaker",
+        "transcript.adoptTerm",
+        "transcript.rejectTerm"
+      ]
+    },
+    "transcriptFailureStatus": {
+      "enum": [
+        "forbidden",
+        "unavailable",
+        "staleBase",
+        "conflict",
+        "noChange",
+        "invalid"
+      ]
+    },
+    "transcriptDisplayFormat": {
+      "enum": [
+        "fullName",
+        "surname",
+        "role",
+        "hidden"
+      ]
+    },
+    "transcriptTimingReason": {
+      "enum": [
+        "workerReported",
+        "missingRawTiming",
+        "nonPositiveRawDuration",
+        "outsideUtterance",
+        "outsideAnalysisAudio",
+        "nonPositiveRoundedDuration",
+        "overlapsPreviousTimedToken"
+      ]
+    },
+    "transcriptDependencyNode": {
+      "enum": [
+        "termCandidates",
+        "editorialPhraseCandidates",
+        "repetitionCandidates",
+        "topicBoundaryCandidates",
+        "topicRangeBinding",
+        "contextDeviationCandidates",
+        "speakerAssignmentBinding",
+        "topicMetadata",
+        "emphasisCandidates"
+      ]
+    },
+    "transcriptTimeRange": {
+      "type": "object",
+      "$comment": "The native writer emits a positive duration and a non-overflowing end; consumers enforce those arithmetic invariants.",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "duration"
+      ],
+      "properties": {
+        "start": { "$ref": "#/$defs/rationalTime" },
+        "duration": { "$ref": "#/$defs/rationalTime" }
+      }
+    },
+    "transcriptConfidence": {
+      "oneOf": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        { "type": "null" }
+      ]
+    },
+    "transcriptPerformer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "displayName",
+        "role",
+        "titleConfirmedAt"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "displayName": { "$ref": "#/$defs/transcriptRequiredText" },
+        "role": { "$ref": "#/$defs/transcriptRequiredText" },
+        "titleConfirmedAt": { "$ref": "#/$defs/nullableTranscriptTimestamp" }
+      }
+    },
+    "transcriptSpeaker": {
+      "type": "object",
+      "$comment": "Consumers additionally verify performer bindings and exact full-name, role, surname, and confirmation projections.",
+      "additionalProperties": false,
+      "required": [
+        "speakerId",
+        "performerId",
+        "format",
+        "isAssigned",
+        "isVisible",
+        "text",
+        "titleConfirmedAt",
+        "titleOrAffiliationConfirmationRequired"
+      ],
+      "properties": {
+        "speakerId": { "$ref": "#/$defs/entityId" },
+        "performerId": { "$ref": "#/$defs/optionalEntityId" },
+        "format": {
+          "oneOf": [
+            { "$ref": "#/$defs/transcriptDisplayFormat" },
+            { "type": "null" }
+          ]
+        },
+        "isAssigned": { "type": "boolean" },
+        "isVisible": { "type": "boolean" },
+        "text": {
+          "oneOf": [
+            { "$ref": "#/$defs/transcriptRequiredText" },
+            { "type": "null" }
+          ]
+        },
+        "titleConfirmedAt": { "$ref": "#/$defs/nullableTranscriptTimestamp" },
+        "titleOrAffiliationConfirmationRequired": { "type": "boolean" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "performerId": { "type": "null" },
+            "format": { "type": "null" },
+            "isAssigned": { "const": false },
+            "isVisible": { "const": true },
+            "text": { "$ref": "#/$defs/transcriptRequiredText" },
+            "titleConfirmedAt": { "type": "null" },
+            "titleOrAffiliationConfirmationRequired": { "const": false }
+          }
+        },
+        {
+          "properties": {
+            "performerId": { "$ref": "#/$defs/entityId" },
+            "format": { "const": "hidden" },
+            "isAssigned": { "const": true },
+            "isVisible": { "const": false },
+            "text": { "type": "null" }
+          }
+        },
+        {
+          "properties": {
+            "performerId": { "$ref": "#/$defs/entityId" },
+            "format": { "enum": ["fullName", "surname", "role"] },
+            "isAssigned": { "const": true },
+            "isVisible": { "const": true },
+            "text": { "$ref": "#/$defs/transcriptRequiredText" }
+          }
+        }
+      ]
+    },
+    "transcriptToken": {
+      "type": "object",
+      "$comment": "Consumers verify that a timed token lies within its utterance and that effectiveSeekSourceTime is exactly the token start or parent utterance start.",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text",
+        "range",
+        "recognitionConfidence",
+        "manualTimingAdjustmentRequired",
+        "timingReviewReasons",
+        "effectiveSeekSourceTime",
+        "seekUsesUtteranceRange"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "text": { "$ref": "#/$defs/transcriptRequiredText" },
+        "range": {
+          "oneOf": [
+            { "$ref": "#/$defs/transcriptTimeRange" },
+            { "type": "null" }
+          ]
+        },
+        "recognitionConfidence": { "$ref": "#/$defs/transcriptConfidence" },
+        "manualTimingAdjustmentRequired": { "type": "boolean" },
+        "timingReviewReasons": {
+          "type": "array",
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/transcriptTimingReason" }
+        },
+        "effectiveSeekSourceTime": { "$ref": "#/$defs/rationalTime" },
+        "seekUsesUtteranceRange": { "type": "boolean" }
+      }
+    },
+    "transcriptSentence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text",
+        "tokens"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "text": { "$ref": "#/$defs/transcriptRequiredText" },
+        "tokens": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/transcriptToken" }
+        }
+      }
+    },
+    "transcriptUtterance": {
+      "type": "object",
+      "$comment": "Consumers verify canonical hierarchy IDs, source-span uniqueness, monotonic timing, confidence, and consistent speaker projections.",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sourceSpanId",
+        "text",
+        "range",
+        "recognitionConfidence",
+        "manualTimingAdjustmentRequired",
+        "timingReviewReasons",
+        "speaker",
+        "sentences"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "sourceSpanId": { "$ref": "#/$defs/entityId" },
+        "text": { "$ref": "#/$defs/transcriptRequiredText" },
+        "range": { "$ref": "#/$defs/transcriptTimeRange" },
+        "recognitionConfidence": { "$ref": "#/$defs/transcriptConfidence" },
+        "manualTimingAdjustmentRequired": { "type": "boolean" },
+        "timingReviewReasons": {
+          "type": "array",
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/transcriptTimingReason" }
+        },
+        "speaker": { "$ref": "#/$defs/transcriptSpeaker" },
+        "sentences": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/transcriptSentence" }
+        }
+      }
+    },
+    "transcriptTermCandidate": {
+      "type": "object",
+      "$comment": "Rule-derived term candidates intentionally have no invented confidence classification; consumers verify token, source-span, and observed-text bindings.",
+      "additionalProperties": false,
+      "required": [
+        "candidateId",
+        "sourceSpanId",
+        "tokenId",
+        "termEntryId",
+        "termEntryVersion",
+        "dictionaryReading",
+        "observedText",
+        "proposedText",
+        "matchKind",
+        "confidence"
+      ],
+      "properties": {
+        "candidateId": { "$ref": "#/$defs/entityId" },
+        "sourceSpanId": { "$ref": "#/$defs/entityId" },
+        "tokenId": { "$ref": "#/$defs/entityId" },
+        "termEntryId": { "$ref": "#/$defs/entityId" },
+        "termEntryVersion": { "$ref": "#/$defs/nonnegativeInt32" },
+        "dictionaryReading": { "$ref": "#/$defs/transcriptRequiredText" },
+        "observedText": { "$ref": "#/$defs/transcriptRequiredText" },
+        "proposedText": { "$ref": "#/$defs/transcriptRequiredText" },
+        "matchKind": {
+          "enum": [
+            "writtenFormCompatibilityVariant",
+            "writtenFormCaseVariant",
+            "dictionaryReading"
+          ]
+        },
+        "confidence": { "$ref": "#/$defs/transcriptConfidence" }
+      }
+    },
+    "transcriptTermDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateId",
+        "decision",
+        "sourceRevisionId",
+        "sourceRevisionDigest",
+        "tokenId",
+        "termEntryId",
+        "termEntryVersion",
+        "decidedAt",
+        "reason",
+        "resultingRevisionId"
+      ],
+      "properties": {
+        "candidateId": { "$ref": "#/$defs/entityId" },
+        "decision": { "enum": ["adopted", "rejected"] },
+        "sourceRevisionId": { "$ref": "#/$defs/entityId" },
+        "sourceRevisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "tokenId": { "$ref": "#/$defs/entityId" },
+        "termEntryId": { "$ref": "#/$defs/entityId" },
+        "termEntryVersion": { "$ref": "#/$defs/nonnegativeInt32" },
+        "decidedAt": { "$ref": "#/$defs/transcriptTimestamp" },
+        "reason": { "$ref": "#/$defs/transcriptRequiredText" },
+        "resultingRevisionId": { "$ref": "#/$defs/optionalEntityId" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "decision": { "const": "adopted" },
+            "resultingRevisionId": { "$ref": "#/$defs/entityId" }
+          }
+        },
+        {
+          "properties": {
+            "decision": { "const": "rejected" },
+            "resultingRevisionId": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "transcriptTextChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "utteranceId",
+        "sentenceId",
+        "tokenId",
+        "previousText",
+        "currentText"
+      ],
+      "properties": {
+        "kind": { "enum": ["utterance", "sentence", "token"] },
+        "utteranceId": { "$ref": "#/$defs/entityId" },
+        "sentenceId": { "$ref": "#/$defs/optionalEntityId" },
+        "tokenId": { "$ref": "#/$defs/optionalEntityId" },
+        "previousText": { "$ref": "#/$defs/transcriptRequiredText" },
+        "currentText": { "$ref": "#/$defs/transcriptRequiredText" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": { "const": "utterance" },
+            "sentenceId": { "type": "null" },
+            "tokenId": { "type": "null" }
+          }
+        },
+        {
+          "properties": {
+            "kind": { "const": "sentence" },
+            "sentenceId": { "$ref": "#/$defs/entityId" },
+            "tokenId": { "type": "null" }
+          }
+        },
+        {
+          "properties": {
+            "kind": { "const": "token" },
+            "sentenceId": { "$ref": "#/$defs/entityId" },
+            "tokenId": { "$ref": "#/$defs/entityId" }
+          }
+        }
+      ]
+    },
+    "transcriptStaleRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceRevisionId",
+        "sourceRevisionDigest",
+        "revisionId",
+        "revisionDigest"
+      ],
+      "properties": {
+        "sourceRevisionId": { "$ref": "#/$defs/entityId" },
+        "sourceRevisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "revisionId": { "$ref": "#/$defs/entityId" },
+        "revisionDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "transcriptInvalidation": {
+      "type": "object",
+      "$comment": "Consumers verify the canonical node order and exact stale, recomputation, and manual-rebinding sets for edited versus unedited snapshots.",
+      "additionalProperties": false,
+      "required": [
+        "staleNodes",
+        "recomputationNodes",
+        "manualRebindingNodes"
+      ],
+      "properties": {
+        "staleNodes": {
+          "type": "array",
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/transcriptDependencyNode" }
+        },
+        "recomputationNodes": {
+          "type": "array",
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/transcriptDependencyNode" }
+        },
+        "manualRebindingNodes": {
+          "type": "array",
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/transcriptDependencyNode" }
+        }
+      }
+    },
+    "transcriptSnapshot": {
+      "type": "object",
+      "$comment": "Native snapshots are authoritative. Consumers reject duplicate hierarchy IDs, broken cross-references, invalid OCC evidence, decided candidates still listed as pending, and inconsistent diff/stale/invalidation evidence.",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "revisionId",
+        "revisionDigest",
+        "parentRevisionId",
+        "changeSource",
+        "createdAt",
+        "speakerRevisionId",
+        "performers",
+        "utterances",
+        "termCandidates",
+        "termDecisions",
+        "diff",
+        "staleRange",
+        "invalidation"
+      ],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "revisionId": { "$ref": "#/$defs/entityId" },
+        "revisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "parentRevisionId": { "$ref": "#/$defs/optionalEntityId" },
+        "changeSource": { "enum": ["machine", "human"] },
+        "createdAt": { "$ref": "#/$defs/transcriptTimestamp" },
+        "speakerRevisionId": { "$ref": "#/$defs/optionalEntityId" },
+        "performers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/transcriptPerformer" }
+        },
+        "utterances": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/transcriptUtterance" }
+        },
+        "termCandidates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/transcriptTermCandidate" }
+        },
+        "termDecisions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/transcriptTermDecision" }
+        },
+        "diff": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/transcriptTextChange" }
+        },
+        "staleRange": {
+          "oneOf": [
+            { "$ref": "#/$defs/transcriptStaleRange" },
+            { "type": "null" }
+          ]
+        },
+        "invalidation": { "$ref": "#/$defs/transcriptInvalidation" }
+      }
+    },
+    "transcriptReadParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" }
+      }
+    },
+    "transcriptEditTokenParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "revisionId",
+        "digest",
+        "tokenId",
+        "expectedText",
+        "revisedText",
+        "reason"
+      ],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "revisionId": { "$ref": "#/$defs/entityId" },
+        "digest": { "$ref": "#/$defs/contentDigest" },
+        "tokenId": { "$ref": "#/$defs/entityId" },
+        "expectedText": { "$ref": "#/$defs/transcriptRequiredText" },
+        "revisedText": { "$ref": "#/$defs/transcriptRequiredText" },
+        "reason": { "$ref": "#/$defs/transcriptRequiredText" }
+      }
+    },
+    "transcriptSetSpeakerParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "revisionId",
+        "digest",
+        "expectedSpeakerRevisionId",
+        "speakerId",
+        "performerId",
+        "surname",
+        "displayFormat",
+        "reason"
+      ],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "revisionId": { "$ref": "#/$defs/entityId" },
+        "digest": { "$ref": "#/$defs/contentDigest" },
+        "expectedSpeakerRevisionId": { "$ref": "#/$defs/optionalEntityId" },
+        "speakerId": { "$ref": "#/$defs/entityId" },
+        "performerId": { "$ref": "#/$defs/entityId" },
+        "surname": { "$ref": "#/$defs/transcriptRequiredText" },
+        "displayFormat": { "$ref": "#/$defs/transcriptDisplayFormat" },
+        "reason": { "$ref": "#/$defs/transcriptRequiredText" }
+      }
+    },
+    "transcriptRemoveSpeakerParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "revisionId",
+        "digest",
+        "expectedSpeakerRevisionId",
+        "speakerId",
+        "reason"
+      ],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "revisionId": { "$ref": "#/$defs/entityId" },
+        "digest": { "$ref": "#/$defs/contentDigest" },
+        "expectedSpeakerRevisionId": { "$ref": "#/$defs/optionalEntityId" },
+        "speakerId": { "$ref": "#/$defs/entityId" },
+        "reason": { "$ref": "#/$defs/transcriptRequiredText" }
+      }
+    },
+    "transcriptTermDecisionParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "revisionId",
+        "digest",
+        "candidateId",
+        "termEntryId",
+        "termEntryVersion",
+        "reason"
+      ],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "revisionId": { "$ref": "#/$defs/entityId" },
+        "digest": { "$ref": "#/$defs/contentDigest" },
+        "candidateId": { "$ref": "#/$defs/entityId" },
+        "termEntryId": { "$ref": "#/$defs/entityId" },
+        "termEntryVersion": { "$ref": "#/$defs/nonnegativeInt32" },
+        "reason": { "$ref": "#/$defs/transcriptRequiredText" }
+      }
+    },
+    "transcriptReadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "transcript.read" },
+        "params": { "$ref": "#/$defs/transcriptReadParams" }
+      }
+    },
+    "transcriptEditTokenRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "transcript.editToken" },
+        "params": { "$ref": "#/$defs/transcriptEditTokenParams" }
+      }
+    },
+    "transcriptSetSpeakerRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "transcript.setSpeaker" },
+        "params": { "$ref": "#/$defs/transcriptSetSpeakerParams" }
+      }
+    },
+    "transcriptRemoveSpeakerRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "transcript.removeSpeaker" },
+        "params": { "$ref": "#/$defs/transcriptRemoveSpeakerParams" }
+      }
+    },
+    "transcriptAdoptTermRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "transcript.adoptTerm" },
+        "params": { "$ref": "#/$defs/transcriptTermDecisionParams" }
+      }
+    },
+    "transcriptRejectTermRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "transcript.rejectTerm" },
+        "params": { "$ref": "#/$defs/transcriptTermDecisionParams" }
+      }
+    },
+    "transcriptResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot"],
+          "properties": {
+            "status": { "const": "available" },
+            "snapshot": { "$ref": "#/$defs/transcriptSnapshot" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot"],
+          "properties": {
+            "status": { "$ref": "#/$defs/transcriptFailureStatus" },
+            "snapshot": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "transcriptReadResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "transcript.read" },
+        "result": { "$ref": "#/$defs/transcriptResult" }
+      }
+    },
+    "transcriptEditTokenResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "transcript.editToken" },
+        "result": { "$ref": "#/$defs/transcriptResult" }
+      }
+    },
+    "transcriptSetSpeakerResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "transcript.setSpeaker" },
+        "result": { "$ref": "#/$defs/transcriptResult" }
+      }
+    },
+    "transcriptRemoveSpeakerResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "transcript.removeSpeaker" },
+        "result": { "$ref": "#/$defs/transcriptResult" }
+      }
+    },
+    "transcriptAdoptTermResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "transcript.adoptTerm" },
+        "result": { "$ref": "#/$defs/transcriptResult" }
+      }
+    },
+    "transcriptRejectTermResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "transcript.rejectTerm" },
+        "result": { "$ref": "#/$defs/transcriptResult" }
       }
     }
   }

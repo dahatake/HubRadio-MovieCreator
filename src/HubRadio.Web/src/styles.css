@@ -1469,3 +1469,433 @@ input[type="radio"] {
     grid-template-columns: 1fr;
   }
 }
+
+.transcript-panel {
+  width: 100%;
+  margin-top: 1.5rem;
+  overflow: hidden;
+  background: var(--cp-surface);
+  border: 1px solid var(--cp-border);
+  border-radius: 1rem;
+  box-shadow: var(--cp-card-shadow);
+}
+
+.transcript-heading,
+.transcript-heading-actions,
+.utterance-header,
+.utterance-actions,
+.candidate-actions,
+.token-edit-actions,
+.speaker-editor-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.transcript-heading,
+.utterance-header {
+  justify-content: space-between;
+}
+
+.transcript-heading {
+  gap: 1.5rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border-bottom: 1px solid var(--cp-border);
+}
+
+.transcript-heading h2,
+.utterance-header h3,
+.term-candidate-section h3,
+.term-decision-section h3,
+.transcript-diff h3,
+.transcript-invalidation h3,
+.transcript-invalidation h4,
+.speaker-editor h3 {
+  margin: 0;
+}
+
+.transcript-heading-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.transcript-status {
+  max-width: 30rem;
+  margin: 0;
+  padding: 0.55rem 0.8rem;
+  color: var(--cp-text-muted);
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-align: right;
+  background: var(--cp-surface-soft);
+  border: 1px solid var(--cp-border);
+  border-radius: 999px;
+}
+
+.transcript-status[data-transcript-status="available"],
+.transcript-status[data-transcript-status="noChange"] {
+  color: var(--cp-text);
+  border-color: var(--cp-success);
+}
+
+.transcript-status[data-transcript-status="loading"] {
+  color: var(--cp-text);
+  border-color: var(--cp-link);
+}
+
+.transcript-status[data-transcript-status="forbidden"],
+.transcript-status[data-transcript-status="unavailable"],
+.transcript-status[data-transcript-status="staleBase"],
+.transcript-status[data-transcript-status="conflict"],
+.transcript-status[data-transcript-status="invalid"],
+.transcript-status[data-transcript-status="bridgeUnavailable"],
+.transcript-status[data-transcript-status="sendFailed"] {
+  color: var(--cp-text);
+  border-color: var(--cp-danger);
+}
+
+.transcript-empty {
+  display: grid;
+  min-height: 10rem;
+  padding: 2rem;
+  color: var(--cp-text-muted);
+  text-align: center;
+  place-content: center;
+}
+
+.transcript-empty p {
+  margin: 0;
+}
+
+.transcript-workspace {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.transcript-reason {
+  display: grid;
+  max-width: 42rem;
+  gap: 0.4rem;
+  color: var(--cp-text);
+  font-weight: 800;
+}
+
+.transcript-confidence-note,
+.transcript-input-error,
+.transcript-navigation-status,
+.transcript-review-flag {
+  margin: 0;
+  padding: 0.8rem 1rem;
+  line-height: 1.55;
+  background: var(--cp-surface-soft);
+  border: 1px solid var(--cp-border);
+  border-left: 0.3rem solid var(--cp-warning);
+  border-radius: 0.55rem;
+}
+
+.transcript-input-error {
+  border-color: var(--cp-danger);
+}
+
+.transcript-navigation-status {
+  border-left-color: var(--cp-link);
+}
+
+.transcript-review-flag p,
+.transcript-review-flag ul {
+  margin: 0.35rem 0 0;
+}
+
+.transcript-evidence-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.transcript-evidence-summary span {
+  max-width: 100%;
+  padding: 0.3rem 0.65rem;
+  overflow-wrap: anywhere;
+  color: var(--cp-text-muted);
+  font: 650 0.78rem ui-monospace, "Cascadia Mono", Consolas, monospace;
+  background: var(--cp-surface-soft);
+  border: 1px solid var(--cp-border);
+  border-radius: 999px;
+}
+
+.utterance-list,
+.sentence-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.utterance-card {
+  min-width: 0;
+  padding: 1rem;
+  background: var(--cp-bg-elevated);
+  border: 1px solid var(--cp-border);
+  border-left: 0.3rem solid var(--cp-accent);
+  border-radius: 0.75rem;
+}
+
+.utterance-header {
+  align-items: flex-start;
+  margin-bottom: 0.85rem;
+}
+
+.utterance-header p,
+.sentence-label {
+  margin: 0.3rem 0 0;
+  color: var(--cp-text-muted);
+  line-height: 1.5;
+}
+
+.utterance-actions,
+.candidate-actions,
+.token-edit-actions,
+.speaker-editor-actions {
+  flex-wrap: wrap;
+}
+
+.utterance-actions button,
+.candidate-actions button,
+.token-edit-actions button,
+.speaker-editor-actions button {
+  min-height: 2.25rem;
+  padding: 0.4rem 0.7rem;
+}
+
+.sentence-list {
+  margin-top: 0.85rem;
+}
+
+.sentence-card {
+  min-width: 0;
+  padding: 0.85rem;
+  background: var(--cp-surface);
+  border: 1px solid var(--cp-border);
+  border-radius: 0.65rem;
+}
+
+.token-list {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.7rem;
+}
+
+.token-control {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) minmax(9rem, auto) 1fr;
+  gap: 0.6rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.65rem;
+  background: var(--cp-surface-soft);
+  border: 1px solid var(--cp-border);
+  border-radius: 0.55rem;
+}
+
+.token-text-button,
+.token-time-button {
+  min-height: 2.25rem;
+  padding: 0.4rem 0.65rem;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.token-text-button {
+  color: var(--cp-link);
+}
+
+.token-time-button {
+  font: 650 0.8rem ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+.token-control > span {
+  color: var(--cp-text-muted);
+  font-size: 0.85rem;
+}
+
+.token-control > .transcript-review-flag {
+  grid-column: 1 / -1;
+}
+
+.token-editing {
+  grid-template-columns: minmax(12rem, 1fr) auto auto;
+  border-color: var(--cp-accent);
+  box-shadow: inset 0 0 0 1px var(--cp-accent);
+}
+
+.token-editing label,
+.token-editing input {
+  min-width: 0;
+  width: 100%;
+}
+
+.token-key-help {
+  white-space: nowrap;
+}
+
+.speaker-editor,
+.term-candidate-section,
+.term-decision-section,
+.transcript-diff,
+.transcript-invalidation {
+  min-width: 0;
+  padding: 1rem;
+  background: var(--cp-surface-soft);
+  border: 1px solid var(--cp-border);
+  border-radius: 0.75rem;
+}
+
+.speaker-editor {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.speaker-editor h3,
+.speaker-editor-actions {
+  grid-column: 1 / -1;
+}
+
+.speaker-editor label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 700;
+}
+
+.term-candidate-section > p,
+.term-decision-section > p,
+.transcript-diff > p,
+.transcript-invalidation > p {
+  margin: 0.65rem 0 0;
+  color: var(--cp-text-muted);
+}
+
+.term-candidate-section ul,
+.term-decision-section ul,
+.transcript-diff ul,
+.transcript-invalidation ul {
+  margin: 0.75rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.term-candidate-section li,
+.term-decision-section li,
+.transcript-diff li {
+  margin-top: 0.55rem;
+}
+
+.term-candidate-section li {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.term-candidate-section li p {
+  margin: 0.25rem 0 0;
+  color: var(--cp-text-muted);
+}
+
+.term-decision-section li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.term-decision-section time {
+  color: var(--cp-text-muted);
+  font-size: 0.8rem;
+}
+
+.transcript-diff li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.7rem;
+}
+
+.transcript-diff del,
+.transcript-diff ins {
+  padding: 0.25rem 0.4rem;
+  overflow-wrap: anywhere;
+  border-radius: 0.3rem;
+  text-decoration: none;
+}
+
+.transcript-diff del {
+  background: color-mix(in srgb, var(--cp-danger) 13%, transparent);
+}
+
+.transcript-diff ins {
+  background: color-mix(in srgb, var(--cp-success) 13%, transparent);
+}
+
+.transcript-stale-evidence {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0.75rem 0;
+}
+
+.transcript-stale-evidence > div {
+  min-width: 0;
+  padding: 0.65rem;
+  background: var(--cp-surface);
+  border: 1px solid var(--cp-border);
+  border-radius: 0.5rem;
+}
+
+.transcript-stale-evidence dt {
+  color: var(--cp-text-muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.transcript-stale-evidence dd {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+  font: 650 0.78rem ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+.transcript-invalidation > div {
+  margin-top: 0.85rem;
+}
+
+.transcript-invalidation h4 {
+  font-size: 0.95rem;
+}
+
+@media (max-width: 52rem) {
+  .transcript-heading,
+  .utterance-header,
+  .term-candidate-section li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .transcript-heading-actions {
+    justify-content: flex-start;
+  }
+
+  .transcript-status {
+    max-width: none;
+    text-align: left;
+  }
+
+  .speaker-editor,
+  .token-control,
+  .token-editing,
+  .term-decision-section li,
+  .transcript-diff li,
+  .transcript-stale-evidence {
+    grid-template-columns: 1fr;
+  }
+
+  .token-control > .transcript-review-flag {
+    grid-column: 1;
+  }
+}

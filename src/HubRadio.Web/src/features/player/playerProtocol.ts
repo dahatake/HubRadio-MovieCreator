@@ -336,6 +336,37 @@ export function findProxyFrameAtDerivedMediaSeconds(
   return null
 }
 
+export function findProxyFrameAtSourceTime(
+  snapshot: PlayerSnapshot,
+  sourceTime: RationalTime,
+): number | null {
+  if (
+    compareRationals(sourceTime, snapshot.sourcePresentationStart) < 0 ||
+    compareRationals(sourceTime, snapshot.sourcePresentationEnd) >= 0
+  ) {
+    return null
+  }
+
+  let low = 0
+  let high = snapshot.frames.length - 1
+  let matchedSequence: number | null = null
+  while (low <= high) {
+    const middle = low + Math.floor((high - low) / 2)
+    const frame = snapshot.frames[middle]
+    if (frame === undefined) {
+      return null
+    }
+    if (compareRationals(frame.sourcePresentationTime, sourceTime) <= 0) {
+      matchedSequence = frame.proxyFrameSequence
+      low = middle + 1
+    } else {
+      high = middle - 1
+    }
+  }
+
+  return matchedSequence
+}
+
 export const findProxyFrameAtDerivedSeconds =
   findProxyFrameAtDerivedMediaSeconds
 

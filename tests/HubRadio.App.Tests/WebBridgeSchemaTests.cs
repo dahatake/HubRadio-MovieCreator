@@ -17,6 +17,8 @@ public sealed class WebBridgeSchemaTests
         Assert.AreEqual("WebBridgeMessage", root.GetProperty("title").GetString());
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "96 KiB");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "1 MiB");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "16 KiB");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "4 MiB");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "256 UTF-8 bytes");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "4096-byte responses");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "reserved intercepted HTTPS media origin");
@@ -38,6 +40,12 @@ public sealed class WebBridgeSchemaTests
                 "jobs.retry",
                 "player.read",
                 "player.seek",
+                "transcript.read",
+                "transcript.editToken",
+                "transcript.setSpeaker",
+                "transcript.removeSpeaker",
+                "transcript.adoptTerm",
+                "transcript.rejectTerm",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -70,6 +78,18 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/playerReadResponse",
                 "#/$defs/playerSeekRequest",
                 "#/$defs/playerSeekResponse",
+                "#/$defs/transcriptReadRequest",
+                "#/$defs/transcriptEditTokenRequest",
+                "#/$defs/transcriptSetSpeakerRequest",
+                "#/$defs/transcriptRemoveSpeakerRequest",
+                "#/$defs/transcriptAdoptTermRequest",
+                "#/$defs/transcriptRejectTermRequest",
+                "#/$defs/transcriptReadResponse",
+                "#/$defs/transcriptEditTokenResponse",
+                "#/$defs/transcriptSetSpeakerResponse",
+                "#/$defs/transcriptRemoveSpeakerResponse",
+                "#/$defs/transcriptAdoptTermResponse",
+                "#/$defs/transcriptRejectTermResponse",
             },
             root.GetProperty("oneOf")
                 .EnumerateArray()
@@ -122,6 +142,35 @@ public sealed class WebBridgeSchemaTests
             "playerFrame",
             "playerPosition",
             "rationalTime",
+            "transcriptTimeRange",
+            "transcriptPerformer",
+            "transcriptSpeaker",
+            "transcriptToken",
+            "transcriptSentence",
+            "transcriptUtterance",
+            "transcriptTermCandidate",
+            "transcriptTermDecision",
+            "transcriptTextChange",
+            "transcriptStaleRange",
+            "transcriptInvalidation",
+            "transcriptSnapshot",
+            "transcriptReadParams",
+            "transcriptEditTokenParams",
+            "transcriptSetSpeakerParams",
+            "transcriptRemoveSpeakerParams",
+            "transcriptTermDecisionParams",
+            "transcriptReadRequest",
+            "transcriptEditTokenRequest",
+            "transcriptSetSpeakerRequest",
+            "transcriptRemoveSpeakerRequest",
+            "transcriptAdoptTermRequest",
+            "transcriptRejectTermRequest",
+            "transcriptReadResponse",
+            "transcriptEditTokenResponse",
+            "transcriptSetSpeakerResponse",
+            "transcriptRemoveSpeakerResponse",
+            "transcriptAdoptTermResponse",
+            "transcriptRejectTermResponse",
         })
         {
             Assert.AreEqual(
@@ -284,6 +333,204 @@ public sealed class WebBridgeSchemaTests
                 "reconciliation",
             },
             GetStrings(definitions.GetProperty("jobSnapshot").GetProperty("required")));
+    }
+
+    [TestMethod]
+    public void TranscriptSchemaMatchesClosedRuntimeContract()
+    {
+        using JsonDocument document = JsonDocument.Parse(
+            File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
+        JsonElement definitions = document.RootElement.GetProperty("$defs");
+
+        string[] methods =
+        [
+            "transcript.read",
+            "transcript.editToken",
+            "transcript.setSpeaker",
+            "transcript.removeSpeaker",
+            "transcript.adoptTerm",
+            "transcript.rejectTerm",
+        ];
+        CollectionAssert.AreEqual(
+            methods,
+            GetStrings(definitions.GetProperty("transcriptMethod").GetProperty("enum")));
+
+        (string Definition, string Method)[] requests =
+        [
+            ("transcriptReadRequest", methods[0]),
+            ("transcriptEditTokenRequest", methods[1]),
+            ("transcriptSetSpeakerRequest", methods[2]),
+            ("transcriptRemoveSpeakerRequest", methods[3]),
+            ("transcriptAdoptTermRequest", methods[4]),
+            ("transcriptRejectTermRequest", methods[5]),
+        ];
+        foreach ((string definitionName, string method) in requests)
+        {
+            JsonElement definition = definitions.GetProperty(definitionName);
+            CollectionAssert.AreEquivalent(
+                new[] { "version", "requestId", "method", "params" },
+                GetStrings(definition.GetProperty("required")));
+            Assert.AreEqual(
+                method,
+                definition.GetProperty("properties")
+                    .GetProperty("method")
+                    .GetProperty("const")
+                    .GetString());
+        }
+
+        (string Definition, string Method)[] responses =
+        [
+            ("transcriptReadResponse", methods[0]),
+            ("transcriptEditTokenResponse", methods[1]),
+            ("transcriptSetSpeakerResponse", methods[2]),
+            ("transcriptRemoveSpeakerResponse", methods[3]),
+            ("transcriptAdoptTermResponse", methods[4]),
+            ("transcriptRejectTermResponse", methods[5]),
+        ];
+        foreach ((string definitionName, string method) in responses)
+        {
+            JsonElement definition = definitions.GetProperty(definitionName);
+            CollectionAssert.AreEquivalent(
+                new[] { "version", "requestId", "method", "result" },
+                GetStrings(definition.GetProperty("required")));
+            Assert.AreEqual(
+                method,
+                definition.GetProperty("properties")
+                    .GetProperty("method")
+                    .GetProperty("const")
+                    .GetString());
+            Assert.AreEqual(
+                "#/$defs/transcriptResult",
+                definition.GetProperty("properties")
+                    .GetProperty("result")
+                    .GetProperty("$ref")
+                    .GetString());
+        }
+
+        CollectionAssert.AreEquivalent(
+            new[] { "projectId" },
+            GetStrings(definitions.GetProperty("transcriptReadParams")
+                .GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "projectId",
+                "revisionId",
+                "digest",
+                "tokenId",
+                "expectedText",
+                "revisedText",
+                "reason",
+            },
+            GetStrings(definitions.GetProperty("transcriptEditTokenParams")
+                .GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "projectId",
+                "revisionId",
+                "digest",
+                "expectedSpeakerRevisionId",
+                "speakerId",
+                "performerId",
+                "surname",
+                "displayFormat",
+                "reason",
+            },
+            GetStrings(definitions.GetProperty("transcriptSetSpeakerParams")
+                .GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "projectId",
+                "revisionId",
+                "digest",
+                "expectedSpeakerRevisionId",
+                "speakerId",
+                "reason",
+            },
+            GetStrings(definitions.GetProperty("transcriptRemoveSpeakerParams")
+                .GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "projectId",
+                "revisionId",
+                "digest",
+                "candidateId",
+                "termEntryId",
+                "termEntryVersion",
+                "reason",
+            },
+            GetStrings(definitions.GetProperty("transcriptTermDecisionParams")
+                .GetProperty("required")));
+
+        JsonElement resultAlternatives = definitions.GetProperty("transcriptResult")
+            .GetProperty("oneOf");
+        Assert.AreEqual(
+            "available",
+            resultAlternatives[0].GetProperty("properties")
+                .GetProperty("status")
+                .GetProperty("const")
+                .GetString());
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "forbidden",
+                "unavailable",
+                "staleBase",
+                "conflict",
+                "noChange",
+                "invalid",
+            },
+            GetStrings(definitions.GetProperty("transcriptFailureStatus")
+                .GetProperty("enum")));
+        Assert.AreEqual(
+            "null",
+            resultAlternatives[1].GetProperty("properties")
+                .GetProperty("snapshot")
+                .GetProperty("type")
+                .GetString());
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "projectId",
+                "revisionId",
+                "revisionDigest",
+                "parentRevisionId",
+                "changeSource",
+                "createdAt",
+                "speakerRevisionId",
+                "performers",
+                "utterances",
+                "termCandidates",
+                "termDecisions",
+                "diff",
+                "staleRange",
+                "invalidation",
+            },
+            GetStrings(definitions.GetProperty("transcriptSnapshot")
+                .GetProperty("required")));
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "sourceRevisionId",
+                "sourceRevisionDigest",
+                "revisionId",
+                "revisionDigest",
+            },
+            GetStrings(definitions.GetProperty("transcriptStaleRange")
+                .GetProperty("required")));
+
+        string schema = document.RootElement.GetRawText();
+        Assert.IsFalse(schema.Contains("confidenceClass", StringComparison.Ordinal));
+        Assert.IsFalse(schema.Contains("actorSid", StringComparison.OrdinalIgnoreCase));
+        StringAssert.Contains(
+            definitions.GetProperty("transcriptTermCandidate")
+                .GetProperty("$comment")
+                .GetString()!,
+            "no invented confidence classification");
     }
 
     [TestMethod]

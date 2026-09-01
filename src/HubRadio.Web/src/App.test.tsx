@@ -21,6 +21,7 @@ describe('App', () => {
     expect(markup).toContain('案件一覧')
     expect(markup).toContain('新しい案件')
     expect(markup).toContain('ジョブの進行状況')
+    expect(markup).toContain('文字起こし編集')
     expect(markup).toContain('<form')
     expect(markup).toContain('for="job-id"')
     expect(markup).toContain('id="job-id"')

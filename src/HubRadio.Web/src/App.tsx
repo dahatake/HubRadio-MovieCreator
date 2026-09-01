@@ -2,6 +2,7 @@ import { JobProgressPanel } from './features/jobs/JobProgressPanel'
 import { PlayerPanel } from './features/player'
 import { selectSyncStatus, useAppState, type SyncStatus } from './state'
 import { ProjectWorkspace } from './features/projects/ProjectWorkspace'
+import { TranscriptPanel } from './features/transcript/TranscriptPanel'
 
 const statusMessages: Readonly<Record<SyncStatus, string>> = {
   unsaved: 'ホスト接続は未確認です',
@@ -46,6 +47,7 @@ function App() {
         <ProjectWorkspace />
         <JobProgressPanel />
         <PlayerPanel />
+        <TranscriptPanel />
       </div>
     </main>
   )

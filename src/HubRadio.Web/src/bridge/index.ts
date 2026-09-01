@@ -26,6 +26,11 @@ import {
   type PlayerSeekRequest,
   type PlayerSeekResponse,
 } from '../features/player/playerProtocol'
+import {
+  parseTranscriptResponse,
+  type TranscriptRequest,
+  type TranscriptResponse,
+} from '../features/transcript/transcriptProtocol'
 
 export * from './projectProtocol'
 
@@ -39,7 +44,8 @@ export interface BridgeTransport {
       | BridgeRequest
       | ProjectBridgeRequest
       | PlayerReadRequest
-      | PlayerSeekRequest,
+      | PlayerSeekRequest
+      | TranscriptRequest,
   ): void
   addEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
   removeEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
@@ -68,6 +74,10 @@ export interface BridgeClient {
   onPlayerSeekResponse(
     listener: (response: PlayerSeekResponse) => void,
   ): () => void
+  sendTranscript(request: TranscriptRequest): void
+  onTranscriptResponse(
+    listener: (response: TranscriptResponse) => void,
+  ): () => void
   dispose(): void
 }
 
@@ -86,6 +96,9 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
   >()
   const playerSeekListeners = new Set<
     (response: PlayerSeekResponse) => void
+  >()
+  const transcriptListeners = new Set<
+    (response: TranscriptResponse) => void
   >()
   let disposed = false
 
@@ -139,6 +152,14 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
     if (playerSeekResponse !== null) {
       for (const listener of playerSeekListeners) {
         listener(playerSeekResponse)
+      }
+      return
+    }
+
+    const transcriptResponse = parseTranscriptResponse(event.data)
+    if (transcriptResponse !== null) {
+      for (const listener of transcriptListeners) {
+        listener(transcriptResponse)
       }
     }
   }
@@ -249,6 +270,19 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
         playerSeekListeners.delete(listener)
       }
     },
+    sendTranscript(request: TranscriptRequest): void {
+      throwIfDisposed(disposed)
+      transport.postMessage(request)
+    },
+    onTranscriptResponse(
+      listener: (response: TranscriptResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      transcriptListeners.add(listener)
+      return (): void => {
+        transcriptListeners.delete(listener)
+      }
+    },
     dispose(): void {
       if (disposed) {
         return
@@ -261,6 +295,7 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       pendingJobRequests.clear()
       playerReadListeners.clear()
       playerSeekListeners.clear()
+      transcriptListeners.clear()
       transport.removeEventListener('message', receive)
     },
   })

@@ -16,17 +16,22 @@ internal sealed class ApplicationBridgeHandlers
 {
     internal ApplicationBridgeHandlers(
         ProjectBridgeHandler project,
-        JobBridgeRequestHandler jobs)
+        JobBridgeRequestHandler jobs,
+        TranscriptBridgeRequestHandler transcript)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
+        ArgumentNullException.ThrowIfNull(transcript);
         Project = project;
         Jobs = jobs;
+        Transcript = transcript;
     }
 
     internal ProjectBridgeHandler Project { get; }
 
     internal JobBridgeRequestHandler Jobs { get; }
+
+    internal TranscriptBridgeRequestHandler Transcript { get; }
 }
 
 internal static class ProjectApplicationRuntime
@@ -89,6 +94,12 @@ internal static class ProjectApplicationRuntime
             new JobBridgeAuthorization(authorization, actorProvider),
             new DurableJobBridgeDetailsProvider(
                 new IngestWorkflowStore(databasePath)));
-        return new ApplicationBridgeHandlers(projectHandler, jobHandler);
+        var transcriptHandler = new TranscriptBridgeRequestHandler(
+            new TranscriptBridgeRuntime(),
+            new TranscriptBridgeAuthorization(authorization, actorProvider));
+        return new ApplicationBridgeHandlers(
+            projectHandler,
+            jobHandler,
+            transcriptHandler);
     }
 }

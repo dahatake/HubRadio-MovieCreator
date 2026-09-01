@@ -16,6 +16,7 @@ internal sealed class WebViewHost : IDisposable
     private readonly JobBridgeRequestHandler? jobHandler;
     private readonly IPlayerBridgeReader playerReader;
     private readonly IPlayerAccessAuthorization playerAuthorization;
+    private readonly TranscriptBridgeRequestHandler? transcriptHandler;
     private readonly PlayerMediaResponseFactory mediaResponseFactory;
     private readonly CancellationTokenSource mediaCancellation = new();
     private Bridge? bridge;
@@ -110,7 +111,8 @@ internal sealed class WebViewHost : IDisposable
         JobBridgeRequestHandler? jobHandler,
         IPlayerBridgeReader playerReader,
         IPlayerMediaAssetReader mediaAssetReader,
-        IPlayerAccessAuthorization playerAuthorization)
+        IPlayerAccessAuthorization playerAuthorization,
+        TranscriptBridgeRequestHandler? transcriptHandler = null)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentException.ThrowIfNullOrWhiteSpace(webAssetsDirectory);
@@ -133,6 +135,7 @@ internal sealed class WebViewHost : IDisposable
         this.jobHandler = jobHandler;
         this.playerReader = playerReader;
         this.playerAuthorization = playerAuthorization;
+        this.transcriptHandler = transcriptHandler;
         mediaResponseFactory = new PlayerMediaResponseFactory(
             mediaAssetReader,
             playerAuthorization);
@@ -184,7 +187,8 @@ internal sealed class WebViewHost : IDisposable
                 handleProjectRequestAsync,
                 jobHandler,
                 playerReader,
-                playerAuthorization);
+                playerAuthorization,
+                transcriptHandler);
             startedBridge.Start();
             bridge = startedBridge;
         }

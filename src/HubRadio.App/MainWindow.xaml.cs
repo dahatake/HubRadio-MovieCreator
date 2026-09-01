@@ -87,7 +87,8 @@ public sealed partial class MainWindow : Window
                     jobBridgeHandler ?? bridgeHandlers.Jobs,
                     playerRuntime.BridgeReader,
                     playerRuntime.MediaAssetReader,
-                    playerRuntime.Authorization);
+                    playerRuntime.Authorization,
+                    bridgeHandlers.Transcript);
                 try
                 {
                     WebApplicationView.Visibility = Visibility.Visible;

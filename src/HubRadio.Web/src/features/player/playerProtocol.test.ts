@@ -9,6 +9,7 @@ import {
   createPlayerReadRequest,
   createPlayerSeekRequest,
   findProxyFrameAtDerivedMediaSeconds,
+  findProxyFrameAtSourceTime,
   parsePlayerReadResponse,
   parsePlayerSeekResponse,
   positionMatchesFrame,
@@ -351,6 +352,23 @@ describe('player bridge protocol', () => {
       1001 / 30000,
     )
   })
+
+  it('maps source time with canonical source-frame floor boundaries', () => {
+    const parsed = parsePlayerReadResponse(createPlayerReadResponseValue())
+    if (parsed?.result.status !== 'available') {
+      throw new Error('Expected available player evidence.')
+    }
+    const snapshot = parsed.result.snapshot
+
+    expect(findProxyFrameAtSourceTime(snapshot, { value: '-11', rate: '100' })).toBeNull()
+    expect(findProxyFrameAtSourceTime(snapshot, { value: '-1', rate: '10' })).toBe(0)
+    expect(findProxyFrameAtSourceTime(snapshot, { value: '0', rate: '1' })).toBe(1)
+    expect(findProxyFrameAtSourceTime(snapshot, { value: '1', rate: '25' })).toBe(1)
+    expect(findProxyFrameAtSourceTime(snapshot, { value: '1', rate: '20' })).toBe(2)
+    expect(findProxyFrameAtSourceTime(snapshot, { value: '1', rate: '10' })).toBe(2)
+    expect(findProxyFrameAtSourceTime(snapshot, snapshot.sourcePresentationEnd)).toBeNull()
+  })
+
 })
 
 type PlayerValue = ReturnType<typeof clonePlayerValue>

@@ -1,10 +1,21 @@
 export { PlayerPanel } from './PlayerPanel'
 export type { PlayerPanelProps } from './PlayerPanel'
 export {
+  PlayerNavigationProvider,
+  usePlayerSourceNavigation,
+  usePlayerSourceSeekRegistration,
+} from './PlayerNavigationProvider'
+export type {
+  PlayerSourceSeekHandler,
+  PlayerSourceSeekOutcome,
+  PlayerSourceSeekTarget,
+} from './PlayerNavigationProvider'
+export {
   createPlayerReadRequest,
   createPlayerSeekRequest,
   findProxyFrameAtDerivedMediaSeconds,
   findProxyFrameAtDerivedSeconds,
+  findProxyFrameAtSourceTime,
   formatRationalTime,
   isCanonicalEntityId,
   parsePlayerReadResponse,

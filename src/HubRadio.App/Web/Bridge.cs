@@ -36,6 +36,12 @@ internal enum BridgeMethod
     JobsRetry,
     PlayerRead,
     PlayerSeek,
+    TranscriptRead,
+    TranscriptEditToken,
+    TranscriptSetSpeaker,
+    TranscriptRemoveSpeaker,
+    TranscriptAdoptTerm,
+    TranscriptRejectTerm,
 }
 
 internal sealed class BridgeRequest
@@ -116,6 +122,8 @@ internal static class BridgeProtocol
     internal const int MaxProjectResponseUtf8Bytes = 1024 * 1024;
     internal const int MaxPlayerResponseUtf8Bytes =
         IngestWorkflowStore.MaximumPayloadUtf8Bytes;
+    internal const int MaxTranscriptRequestUtf8Bytes = 16 * 1024;
+    internal const int MaxTranscriptResponseUtf8Bytes = 4 * 1024 * 1024;
     internal const string PingMethod = "bridge.ping";
     internal const string ListProjectsMethod = "project.list";
     internal const string CreateDraftMethod = "project.createDraft";
@@ -142,6 +150,13 @@ internal static class BridgeProtocol
     internal const string JobsRetryMethod = "jobs.retry";
     internal const string PlayerReadMethod = "player.read";
     internal const string PlayerSeekMethod = "player.seek";
+    internal const string TranscriptReadMethod = "transcript.read";
+    internal const string TranscriptEditTokenMethod = "transcript.editToken";
+    internal const string TranscriptSetSpeakerMethod = "transcript.setSpeaker";
+    internal const string TranscriptRemoveSpeakerMethod =
+        "transcript.removeSpeaker";
+    internal const string TranscriptAdoptTermMethod = "transcript.adoptTerm";
+    internal const string TranscriptRejectTermMethod = "transcript.rejectTerm";
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -361,6 +376,12 @@ internal static class BridgeProtocol
             BridgeMethod.JobsRetry => JobsRetryMethod,
             BridgeMethod.PlayerRead => PlayerReadMethod,
             BridgeMethod.PlayerSeek => PlayerSeekMethod,
+            BridgeMethod.TranscriptRead => TranscriptReadMethod,
+            BridgeMethod.TranscriptEditToken => TranscriptEditTokenMethod,
+            BridgeMethod.TranscriptSetSpeaker => TranscriptSetSpeakerMethod,
+            BridgeMethod.TranscriptRemoveSpeaker => TranscriptRemoveSpeakerMethod,
+            BridgeMethod.TranscriptAdoptTerm => TranscriptAdoptTermMethod,
+            BridgeMethod.TranscriptRejectTerm => TranscriptRejectTermMethod,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(method),
                 method,
@@ -372,6 +393,7 @@ internal static class BridgeProtocol
         {
             BridgeMethod.PlayerRead or BridgeMethod.PlayerSeek =>
                 MaxPlayerResponseUtf8Bytes,
+            _ when IsTranscriptMethod(method) => MaxTranscriptResponseUtf8Bytes,
             _ when IsProjectMethod(method) => MaxProjectResponseUtf8Bytes,
             _ => MaxResponseUtf8Bytes,
         };
@@ -385,10 +407,21 @@ internal static class BridgeProtocol
             BridgeMethod.PickSource or
             BridgeMethod.FinalizeDraft;
 
+    internal static bool IsTranscriptMethod(BridgeMethod method) =>
+        method is
+            BridgeMethod.TranscriptRead or
+            BridgeMethod.TranscriptEditToken or
+            BridgeMethod.TranscriptSetSpeaker or
+            BridgeMethod.TranscriptRemoveSpeaker or
+            BridgeMethod.TranscriptAdoptTerm or
+            BridgeMethod.TranscriptRejectTerm;
+
     private static int GetMaximumRequestUtf8Bytes(BridgeMethod method) =>
         IsProjectMethod(method)
             ? MaxProjectRequestUtf8Bytes
-            : MaxRequestUtf8Bytes;
+            : IsTranscriptMethod(method)
+                ? MaxTranscriptRequestUtf8Bytes
+                : MaxRequestUtf8Bytes;
 
     private static bool TryParseMethod(
         string method,
@@ -408,6 +441,12 @@ internal static class BridgeProtocol
             JobsRetryMethod => BridgeMethod.JobsRetry,
             PlayerReadMethod => BridgeMethod.PlayerRead,
             PlayerSeekMethod => BridgeMethod.PlayerSeek,
+            TranscriptReadMethod => BridgeMethod.TranscriptRead,
+            TranscriptEditTokenMethod => BridgeMethod.TranscriptEditToken,
+            TranscriptSetSpeakerMethod => BridgeMethod.TranscriptSetSpeaker,
+            TranscriptRemoveSpeakerMethod => BridgeMethod.TranscriptRemoveSpeaker,
+            TranscriptAdoptTermMethod => BridgeMethod.TranscriptAdoptTerm,
+            TranscriptRejectTermMethod => BridgeMethod.TranscriptRejectTerm,
             _ => (BridgeMethod)(-1),
         };
         return Enum.IsDefined(parsedMethod);
@@ -609,9 +648,122 @@ internal static class BridgeProtocol
         TryParseRequestId(value.GetString(), out _);
 
     private static bool IsNonnegativeInt32(JsonElement value) =>
-        value.ValueKind == JsonValueKind.Number &&
-        value.TryGetInt32(out int parsed) &&
-        parsed >= 0;
+        TryParseExpectedRevision(value, out _);
+
+    private static bool HasValidTranscriptParameters(
+        BridgeMethod method,
+        JsonElement parameters)
+    {
+        if (method == BridgeMethod.TranscriptRead)
+        {
+            return HasExactProperties(parameters, ["projectId"]) &&
+                IsCanonicalEntityId(parameters.GetProperty("projectId"));
+        }
+
+        string[] expectedProperties = method switch
+        {
+            BridgeMethod.TranscriptEditToken =>
+            [
+                "projectId",
+                "revisionId",
+                "digest",
+                "tokenId",
+                "expectedText",
+                "revisedText",
+                "reason",
+            ],
+            BridgeMethod.TranscriptSetSpeaker =>
+            [
+                "projectId",
+                "revisionId",
+                "digest",
+                "expectedSpeakerRevisionId",
+                "speakerId",
+                "performerId",
+                "surname",
+                "displayFormat",
+                "reason",
+            ],
+            BridgeMethod.TranscriptRemoveSpeaker =>
+            [
+                "projectId",
+                "revisionId",
+                "digest",
+                "expectedSpeakerRevisionId",
+                "speakerId",
+                "reason",
+            ],
+            BridgeMethod.TranscriptAdoptTerm or
+            BridgeMethod.TranscriptRejectTerm =>
+            [
+                "projectId",
+                "revisionId",
+                "digest",
+                "candidateId",
+                "termEntryId",
+                "termEntryVersion",
+                "reason",
+            ],
+            _ => [],
+        };
+        if (expectedProperties.Length == 0 ||
+            !HasExactProperties(parameters, expectedProperties) ||
+            !IsCanonicalEntityId(parameters.GetProperty("projectId")) ||
+            !IsCanonicalEntityId(parameters.GetProperty("revisionId")) ||
+            !IsCanonicalDigest(parameters.GetProperty("digest")) ||
+            !IsRequiredText(parameters.GetProperty("reason")))
+        {
+            return false;
+        }
+
+        if (method == BridgeMethod.TranscriptEditToken)
+        {
+            return IsCanonicalEntityId(parameters.GetProperty("tokenId")) &&
+                IsRequiredText(parameters.GetProperty("expectedText")) &&
+                IsRequiredText(parameters.GetProperty("revisedText"));
+        }
+
+        if (method == BridgeMethod.TranscriptSetSpeaker)
+        {
+            return IsNullOrCanonicalEntityId(
+                    parameters.GetProperty("expectedSpeakerRevisionId")) &&
+                IsCanonicalEntityId(parameters.GetProperty("speakerId")) &&
+                IsCanonicalEntityId(parameters.GetProperty("performerId")) &&
+                IsRequiredText(parameters.GetProperty("surname")) &&
+                IsSpeakerDisplayFormat(
+                    parameters.GetProperty("displayFormat"));
+        }
+
+        if (method == BridgeMethod.TranscriptRemoveSpeaker)
+        {
+            return IsNullOrCanonicalEntityId(
+                    parameters.GetProperty("expectedSpeakerRevisionId")) &&
+                IsCanonicalEntityId(parameters.GetProperty("speakerId"));
+        }
+
+        return IsCanonicalEntityId(parameters.GetProperty("candidateId")) &&
+            IsCanonicalEntityId(parameters.GetProperty("termEntryId")) &&
+            IsNonnegativeInt32(parameters.GetProperty("termEntryVersion"));
+    }
+
+    private static bool IsCanonicalDigest(JsonElement value) =>
+        value.ValueKind == JsonValueKind.String &&
+        ContentDigest.TryParse(value.GetString(), out ContentDigest? digest) &&
+        string.Equals(value.GetString(), digest.Hex, StringComparison.Ordinal);
+
+    private static bool IsRequiredText(JsonElement value) =>
+        value.ValueKind == JsonValueKind.String &&
+        value.GetString() is string text &&
+        !string.IsNullOrWhiteSpace(text) &&
+        string.Equals(text, text.Trim(), StringComparison.Ordinal);
+
+    private static bool IsSpeakerDisplayFormat(JsonElement value) =>
+        value.ValueKind == JsonValueKind.String &&
+        value.GetString() is
+            "fullName" or
+            "surname" or
+            "role" or
+            "hidden";
 
     private static bool HasExactProperties(
         JsonElement value,
@@ -711,6 +863,20 @@ internal static class BridgeProtocol
         if (method == BridgeMethod.Ping || IsProjectMethod(method))
         {
             if (!HasValidParameters(method, parameters))
+            {
+                return false;
+            }
+
+            request = BridgeRequest.Create(
+                requestId,
+                method,
+                parameters.Clone());
+            return true;
+        }
+
+        if (IsTranscriptMethod(method))
+        {
+            if (!HasValidTranscriptParameters(method, parameters))
             {
                 return false;
             }
@@ -890,6 +1056,7 @@ internal sealed class Bridge : IDisposable
         handleProjectRequestAsync;
     private readonly JobBridgeRequestHandler? jobHandler;
     private readonly PlayerBridgeRequestHandler playerHandler;
+    private readonly TranscriptBridgeRequestHandler? transcriptHandler;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private bool isStarted;
     private bool isDisposed;
@@ -947,7 +1114,8 @@ internal sealed class Bridge : IDisposable
             handleProjectRequestAsync,
         JobBridgeRequestHandler? jobHandler,
         IPlayerBridgeReader playerReader,
-        IPlayerAccessAuthorization playerAuthorization)
+        IPlayerAccessAuthorization playerAuthorization,
+        TranscriptBridgeRequestHandler? transcriptHandler = null)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentNullException.ThrowIfNull(playerReader);
@@ -955,6 +1123,7 @@ internal sealed class Bridge : IDisposable
         this.coreWebView = coreWebView;
         this.handleProjectRequestAsync = handleProjectRequestAsync;
         this.jobHandler = jobHandler;
+        this.transcriptHandler = transcriptHandler;
         playerHandler = new PlayerBridgeRequestHandler(
             playerReader,
             playerAuthorization);
@@ -1061,6 +1230,17 @@ internal sealed class Bridge : IDisposable
             return await playerHandler.HandleAsync(request, cancellationToken);
         }
 
+        if (BridgeProtocol.IsTranscriptMethod(request.Method))
+        {
+            return transcriptHandler is null
+                ? TranscriptBridgeJson.WriteResponse(
+                    request,
+                    TranscriptBridgeOperationResult.Unavailable())
+                : await transcriptHandler.HandleAsync(
+                    request,
+                    cancellationToken);
+        }
+
         return jobHandler?.Handle(request) ??
             JobBridgeResponseSerializer.SerializeError(
                 request,
@@ -1082,6 +1262,13 @@ internal sealed class Bridge : IDisposable
                 request,
                 PlayerBridgeStatus.Unavailable,
                 position: null);
+        }
+
+        if (BridgeProtocol.IsTranscriptMethod(request.Method))
+        {
+            return TranscriptBridgeJson.WriteResponse(
+                request,
+                TranscriptBridgeOperationResult.Unavailable());
         }
 
         return BridgeProtocol.IsProjectMethod(request.Method)

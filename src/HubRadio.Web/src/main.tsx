@@ -3,6 +3,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import App from './App'
+import { PlayerNavigationProvider } from './features/player'
 import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
 import { AppStateProvider } from './state'
 import './styles.css'
@@ -17,7 +18,9 @@ createRoot(rootElement).render(
   <StrictMode>
     <AppStateProvider>
       <ProjectStateProvider>
-        <App />
+        <PlayerNavigationProvider>
+          <App />
+        </PlayerNavigationProvider>
       </ProjectStateProvider>
     </AppStateProvider>
   </StrictMode>,

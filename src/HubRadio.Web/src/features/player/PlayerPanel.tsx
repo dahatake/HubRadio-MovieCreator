@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useReducer,
   useRef,
@@ -11,6 +12,7 @@ import {
 import { createHostBridgeClient, type BridgeClient } from '../../bridge'
 import {
   findProxyFrameAtDerivedMediaSeconds,
+  findProxyFrameAtSourceTime,
   formatRationalTime,
   isCanonicalEntityId,
   positionMatchesFrame,
@@ -27,6 +29,10 @@ import {
   type PlayerState,
   type PlayerStatus,
 } from './playerState'
+import {
+  usePlayerSourceSeekRegistration,
+  type PlayerSourceSeekHandler,
+} from './PlayerNavigationProvider'
 
 const statusMessages: Readonly<Record<PlayerStatus, string>> = {
   idle: '取込ジョブを指定してください',
@@ -135,6 +141,65 @@ export function PlayerPanel({
     setIsPlaying(false)
   }, [state.snapshot?.evidenceDigest])
 
+  const requestSeek = useCallback((proxyFrameSequence: number): boolean => {
+    const current = stateRef.current
+    const snapshot = current.snapshot
+    const jobId = current.jobId
+    if (
+      snapshot === null ||
+      jobId === null ||
+      current.pendingSeek !== null ||
+      !Number.isInteger(proxyFrameSequence) ||
+      proxyFrameSequence < 0 ||
+      proxyFrameSequence >= snapshot.frames.length
+    ) {
+      return false
+    }
+
+    const requestId = createRequestId()
+    dispatch({ type: 'seekRequested', requestId, proxyFrameSequence })
+    const client = clientRef.current
+    if (client === null) {
+      dispatch({ type: 'bridgeUnavailable' })
+      return false
+    }
+    try {
+      client.sendPlayerSeek(
+        requestId,
+        jobId,
+        snapshot.evidenceDigest,
+        proxyFrameSequence,
+      )
+      return true
+    } catch {
+      dispatch({ type: 'bridgeSendFailed', requestId })
+      return false
+    }
+  }, [])
+
+  const requestSourceSeek = useCallback<PlayerSourceSeekHandler>(
+    (target) => {
+      const current = stateRef.current
+      const snapshot = current.snapshot
+      if (snapshot === null || current.jobId === null) {
+        return 'unavailable'
+      }
+      if (target.projectId !== snapshot.projectId) {
+        return 'projectMismatch'
+      }
+      if (current.pendingSeek !== null) {
+        return 'busy'
+      }
+      const sequence = findProxyFrameAtSourceTime(snapshot, target.sourceTime)
+      if (sequence === null) {
+        return 'outOfRange'
+      }
+      return requestSeek(sequence) ? 'requested' : 'unavailable'
+    },
+    [requestSeek],
+  )
+  usePlayerSourceSeekRegistration(requestSourceSeek)
+
   const currentFrame = selectCurrentFrame(state)
   const canLoad =
     isCanonicalEntityId(state.jobIdInput) && state.status !== 'loading'
@@ -160,38 +225,6 @@ export function PlayerPanel({
     }
     try {
       client.sendPlayerRead(requestId, state.jobIdInput)
-    } catch {
-      dispatch({ type: 'bridgeSendFailed', requestId })
-    }
-  }
-
-  const requestSeek = (proxyFrameSequence: number): void => {
-    const snapshot = state.snapshot
-    const jobId = state.jobId
-    if (
-      snapshot === null ||
-      jobId === null ||
-      !Number.isInteger(proxyFrameSequence) ||
-      proxyFrameSequence < 0 ||
-      proxyFrameSequence >= snapshot.frames.length
-    ) {
-      return
-    }
-
-    const requestId = createRequestId()
-    dispatch({ type: 'seekRequested', requestId, proxyFrameSequence })
-    const client = clientRef.current
-    if (client === null) {
-      dispatch({ type: 'bridgeUnavailable' })
-      return
-    }
-    try {
-      client.sendPlayerSeek(
-        requestId,
-        jobId,
-        snapshot.evidenceDigest,
-        proxyFrameSequence,
-      )
     } catch {
       dispatch({ type: 'bridgeSendFailed', requestId })
     }
