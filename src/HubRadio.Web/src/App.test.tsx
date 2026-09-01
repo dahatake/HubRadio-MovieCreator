@@ -54,6 +54,9 @@ describe('App', () => {
     expect(markup).toContain('id="job-id"')
     expect(markup).toContain('type="submit"')
     expect(markup).toContain(
+      '<a class="skip-link" href="#project-content">メインコンテンツへ移動</a>',
+    )
+    expect(markup).toContain(
       '<div id="project-content" tabindex="-1">',
     )
   })
