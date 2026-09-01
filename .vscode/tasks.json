@@ -1,0 +1,117 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "PK-005 web verification",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-File",
+				"C:\\Users\\dahatake\\AppData\\Local\\Temp\\hubradio-pk005-phase1.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "PK-005 App clean integration verification",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-File",
+				"C:\\Users\\dahatake\\AppData\\Local\\Temp\\hubradio-pk005-phase2.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "PK-005 clean build and test verification",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-File",
+				"C:\\Users\\dahatake\\AppData\\Local\\Temp\\hubradio-pk005-phase3.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "U-009 isolated native verification",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-File",
+				"C:\\Users\\dahatake\\AppData\\Local\\Temp\\hubradio-u009-native-9f2c1a7e.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "U-009 isolated diff audit",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-File",
+				"C:\\Users\\dahatake\\AppData\\Local\\Temp\\hubradio-u009-audit-4b7e2c19.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "U-009 isolated web verification",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-File",
+				"C:\\Users\\dahatake\\AppData\\Local\\Temp\\hubradio-u009-web-6d31ac42.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "U-009 isolated web verification final",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-File",
+				"C:\\Users\\dahatake\\AppData\\Local\\Temp\\hubradio-u009-web-b84f27d1.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "U-009 isolated native verification final",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-File",
+				"C:\\Users\\dahatake\\AppData\\Local\\Temp\\hubradio-u009-native-final-c51e8a30.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		}
+	]
+}
