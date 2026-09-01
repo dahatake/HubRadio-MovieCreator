@@ -31,8 +31,18 @@ import {
   type TranscriptRequest,
   type TranscriptResponse,
 } from '../features/transcript/transcriptProtocol'
+import {
+  parseTimelineApplyResponse,
+  parseTimelineReadResponse,
+  type TimelineApplyRequest,
+  type TimelineApplyResponse,
+  type TimelineBridgeRequest,
+  type TimelineReadRequest,
+  type TimelineReadResponse,
+} from '../features/timeline/timelineProtocol'
 
 export * from './projectProtocol'
+export * from '../features/timeline/timelineProtocol'
 
 export interface BridgeMessageEvent {
   readonly data: unknown
@@ -45,7 +55,8 @@ export interface BridgeTransport {
       | ProjectBridgeRequest
       | PlayerReadRequest
       | PlayerSeekRequest
-      | TranscriptRequest,
+      | TranscriptRequest
+      | TimelineBridgeRequest,
   ): void
   addEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
   removeEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
@@ -78,12 +89,26 @@ export interface BridgeClient {
   onTranscriptResponse(
     listener: (response: TranscriptResponse) => void,
   ): () => void
+  sendTimelineRead(request: TimelineReadRequest): void
+  sendTimelineApply(request: TimelineApplyRequest): void
+  abandonTimelineRequest(requestId: string): void
+  onTimelineReadResponse(
+    listener: (response: TimelineReadResponse) => void,
+  ): () => void
+  onTimelineApplyResponse(
+    listener: (response: TimelineApplyResponse) => void,
+  ): () => void
   dispose(): void
 }
 
 interface PendingJobRequest {
   readonly method: BridgeJobMethod
   readonly jobId: string
+}
+
+interface PendingTimelineRequest {
+  readonly method: TimelineBridgeRequest['method']
+  readonly projectId: string
 }
 
 export function createBridgeClient(transport: BridgeTransport): BridgeClient {
@@ -100,6 +125,13 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
   const transcriptListeners = new Set<
     (response: TranscriptResponse) => void
   >()
+  const timelineReadListeners = new Set<
+    (response: TimelineReadResponse) => void
+  >()
+  const timelineApplyListeners = new Set<
+    (response: TimelineApplyResponse) => void
+  >()
+  const pendingTimelineRequests = new Map<string, PendingTimelineRequest>()
   let disposed = false
 
   const receive = (event: BridgeMessageEvent): void => {
@@ -160,6 +192,44 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
     if (transcriptResponse !== null) {
       for (const listener of transcriptListeners) {
         listener(transcriptResponse)
+      }
+      return
+    }
+
+    const timelineReadResponse = parseTimelineReadResponse(event.data)
+    if (timelineReadResponse !== null) {
+      const pending = pendingTimelineRequests.get(timelineReadResponse.requestId)
+      if (
+        pending === undefined ||
+        pending.method !== timelineReadResponse.method ||
+        (timelineReadResponse.result.status === 'available' &&
+          timelineReadResponse.result.snapshot.projectId !== pending.projectId)
+      ) {
+        return
+      }
+
+      pendingTimelineRequests.delete(timelineReadResponse.requestId)
+      for (const listener of timelineReadListeners) {
+        listener(timelineReadResponse)
+      }
+      return
+    }
+
+    const timelineApplyResponse = parseTimelineApplyResponse(event.data)
+    if (timelineApplyResponse !== null) {
+      const pending = pendingTimelineRequests.get(timelineApplyResponse.requestId)
+      if (
+        pending === undefined ||
+        pending.method !== timelineApplyResponse.method ||
+        (timelineApplyResponse.result.status === 'available' &&
+          timelineApplyResponse.result.snapshot.projectId !== pending.projectId)
+      ) {
+        return
+      }
+
+      pendingTimelineRequests.delete(timelineApplyResponse.requestId)
+      for (const listener of timelineApplyListeners) {
+        listener(timelineApplyResponse)
       }
     }
   }
@@ -283,6 +353,44 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
         transcriptListeners.delete(listener)
       }
     },
+    sendTimelineRead(request: TimelineReadRequest): void {
+      sendCorrelatedTimelineRequest(
+        request,
+        transport,
+        pendingTimelineRequests,
+        disposed,
+      )
+    },
+    sendTimelineApply(request: TimelineApplyRequest): void {
+      sendCorrelatedTimelineRequest(
+        request,
+        transport,
+        pendingTimelineRequests,
+        disposed,
+      )
+    },
+    abandonTimelineRequest(requestId: string): void {
+      throwIfDisposed(disposed)
+      pendingTimelineRequests.delete(requestId)
+    },
+    onTimelineReadResponse(
+      listener: (response: TimelineReadResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      timelineReadListeners.add(listener)
+      return (): void => {
+        timelineReadListeners.delete(listener)
+      }
+    },
+    onTimelineApplyResponse(
+      listener: (response: TimelineApplyResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      timelineApplyListeners.add(listener)
+      return (): void => {
+        timelineApplyListeners.delete(listener)
+      }
+    },
     dispose(): void {
       if (disposed) {
         return
@@ -296,6 +404,9 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       playerReadListeners.clear()
       playerSeekListeners.clear()
       transcriptListeners.clear()
+      timelineReadListeners.clear()
+      timelineApplyListeners.clear()
+      pendingTimelineRequests.clear()
       transport.removeEventListener('message', receive)
     },
   })
@@ -353,6 +464,29 @@ function sendCorrelatedJobRequest(
   pendingRequests.set(request.requestId, {
     method: request.method,
     jobId: request.params.jobId,
+  })
+  try {
+    transport.postMessage(request)
+  } catch (error: unknown) {
+    pendingRequests.delete(request.requestId)
+    throw error
+  }
+}
+
+function sendCorrelatedTimelineRequest(
+  request: TimelineBridgeRequest,
+  transport: BridgeTransport,
+  pendingRequests: Map<string, PendingTimelineRequest>,
+  disposed: boolean,
+): void {
+  throwIfDisposed(disposed)
+  if (pendingRequests.has(request.requestId)) {
+    throw new Error('The timeline bridge request ID is already pending.')
+  }
+
+  pendingRequests.set(request.requestId, {
+    method: request.method,
+    projectId: request.params.projectId,
   })
   try {
     transport.postMessage(request)

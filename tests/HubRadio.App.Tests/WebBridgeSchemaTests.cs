@@ -25,6 +25,11 @@ public sealed class WebBridgeSchemaTests
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "current Windows actor");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "never accepted from Web messages");
         Assert.AreEqual(1, definitions.GetProperty("protocolVersion").GetProperty("const").GetInt32());
+        Assert.IsTrue(
+            definitions.GetProperty("timestamp")
+                .GetProperty("pattern")
+                .GetString()!
+                .EndsWith("(?![\\s\\S])", StringComparison.Ordinal));
         CollectionAssert.AreEqual(
             new[]
             {
@@ -46,6 +51,8 @@ public sealed class WebBridgeSchemaTests
                 "transcript.removeSpeaker",
                 "transcript.adoptTerm",
                 "transcript.rejectTerm",
+                "timeline.read",
+                "timeline.apply",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -90,6 +97,10 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/transcriptRemoveSpeakerResponse",
                 "#/$defs/transcriptAdoptTermResponse",
                 "#/$defs/transcriptRejectTermResponse",
+                "#/$defs/timelineReadRequest",
+                "#/$defs/timelineReadResponse",
+                "#/$defs/timelineApplyRequest",
+                "#/$defs/timelineApplyResponse",
             },
             root.GetProperty("oneOf")
                 .EnumerateArray()
@@ -171,6 +182,19 @@ public sealed class WebBridgeSchemaTests
             "transcriptRemoveSpeakerResponse",
             "transcriptAdoptTermResponse",
             "transcriptRejectTermResponse",
+            "timelineTimeRange",
+            "timelineElement",
+            "timelineSnapshot",
+            "timelineKeepOperation",
+            "timelineDeleteOperation",
+            "timelineSplitOperation",
+            "timelineMoveOperation",
+            "timelineReadParams",
+            "timelineApplyParams",
+            "timelineReadRequest",
+            "timelineReadResponse",
+            "timelineApplyRequest",
+            "timelineApplyResponse",
         })
         {
             Assert.AreEqual(
@@ -217,6 +241,26 @@ public sealed class WebBridgeSchemaTests
                 .GetProperty("status")
                 .GetProperty("enum")),
             "forbidden");
+        Assert.AreEqual(
+            4,
+            definitions.GetProperty("timelineOperation")
+                .GetProperty("oneOf")
+                .GetArrayLength());
+        Assert.AreEqual(
+            1,
+            definitions.GetProperty("timelineApplyParams")
+                .GetProperty("properties")
+                .GetProperty("operations")
+                .GetProperty("minItems")
+                .GetInt32());
+        CollectionAssert.Contains(
+            GetStrings(definitions
+                .GetProperty("timelineApplyResult")
+                .GetProperty("oneOf")[1]
+                .GetProperty("properties")
+                .GetProperty("status")
+                .GetProperty("enum")),
+            "conflict");
         CollectionAssert.Contains(
             GetStrings(definitions
                 .GetProperty("playerSeekResult")
@@ -293,6 +337,15 @@ public sealed class WebBridgeSchemaTests
         CollectionAssert.AreEquivalent(
             new[] { "jobId", "digest", "proxyFrameSequence" },
             GetStrings(definitions.GetProperty("playerSeekParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "projectId" },
+            GetStrings(definitions.GetProperty("timelineReadParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "projectId", "expectedRevision", "operations" },
+            GetStrings(definitions.GetProperty("timelineApplyParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "workingCopyId", "projectId", "baseVersionId", "revision", "createdAt", "updatedAt", "elements" },
+            GetStrings(definitions.GetProperty("timelineSnapshot").GetProperty("required")));
         StringAssert.Contains(
             definitions.GetProperty("playerSeekParams")
                 .GetProperty("properties")

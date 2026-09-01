@@ -1,5 +1,11 @@
+import { useState } from 'react'
+
 import { JobProgressPanel } from './features/jobs/JobProgressPanel'
-import { PlayerPanel } from './features/player'
+import {
+  PlayerPanel,
+  type PlayerTimelinePosition,
+} from './features/player'
+import { TimelineEditor } from './features/timeline'
 import { selectSyncStatus, useAppState, type SyncStatus } from './state'
 import { ProjectWorkspace } from './features/projects/ProjectWorkspace'
 import { TranscriptPanel } from './features/transcript/TranscriptPanel'
@@ -14,6 +20,8 @@ const statusMessages: Readonly<Record<SyncStatus, string>> = {
 function App() {
   const { state, synchronize } = useAppState()
   const syncStatus = selectSyncStatus(state)
+  const [playerPosition, setPlayerPosition] =
+    useState<PlayerTimelinePosition | null>(null)
 
   return (
     <main className="app-shell" aria-labelledby="app-title">
@@ -46,8 +54,12 @@ function App() {
       <div id="project-content">
         <ProjectWorkspace />
         <JobProgressPanel />
-        <PlayerPanel />
+        <PlayerPanel onPositionChange={setPlayerPosition} />
         <TranscriptPanel />
+        <TimelineEditor
+          initialProjectId={playerPosition?.projectId}
+          playerPosition={playerPosition}
+        />
       </div>
     </main>
   )

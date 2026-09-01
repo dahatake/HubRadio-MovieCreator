@@ -14,6 +14,7 @@ internal sealed class WebViewHost : IDisposable
     private readonly Func<BridgeRequest, CancellationToken, Task<string>>?
         handleProjectRequestAsync;
     private readonly JobBridgeRequestHandler? jobHandler;
+    private readonly TimelineBridgeRequestHandler? timelineHandler;
     private readonly IPlayerBridgeReader playerReader;
     private readonly IPlayerAccessAuthorization playerAuthorization;
     private readonly TranscriptBridgeRequestHandler? transcriptHandler;
@@ -113,6 +114,30 @@ internal sealed class WebViewHost : IDisposable
         IPlayerMediaAssetReader mediaAssetReader,
         IPlayerAccessAuthorization playerAuthorization,
         TranscriptBridgeRequestHandler? transcriptHandler = null)
+        : this(
+            coreWebView,
+            webAssetsDirectory,
+            handleProjectRequestAsync,
+            jobHandler,
+            timelineHandler: null,
+            playerReader,
+            mediaAssetReader,
+            playerAuthorization,
+            transcriptHandler)
+    {
+    }
+
+    internal WebViewHost(
+        CoreWebView2 coreWebView,
+        string webAssetsDirectory,
+        Func<BridgeRequest, CancellationToken, Task<string>>?
+            handleProjectRequestAsync,
+        JobBridgeRequestHandler? jobHandler,
+        TimelineBridgeRequestHandler? timelineHandler,
+        IPlayerBridgeReader playerReader,
+        IPlayerMediaAssetReader mediaAssetReader,
+        IPlayerAccessAuthorization playerAuthorization,
+        TranscriptBridgeRequestHandler? transcriptHandler = null)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentException.ThrowIfNullOrWhiteSpace(webAssetsDirectory);
@@ -133,6 +158,7 @@ internal sealed class WebViewHost : IDisposable
         this.webAssetsDirectory = fullPath;
         this.handleProjectRequestAsync = handleProjectRequestAsync;
         this.jobHandler = jobHandler;
+        this.timelineHandler = timelineHandler;
         this.playerReader = playerReader;
         this.playerAuthorization = playerAuthorization;
         this.transcriptHandler = transcriptHandler;
@@ -186,6 +212,7 @@ internal sealed class WebViewHost : IDisposable
                 coreWebView,
                 handleProjectRequestAsync,
                 jobHandler,
+                timelineHandler,
                 playerReader,
                 playerAuthorization,
                 transcriptHandler);

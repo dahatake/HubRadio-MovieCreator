@@ -85,6 +85,7 @@ public sealed partial class MainWindow : Window
                     Path.Combine(AppContext.BaseDirectory, "WebAssets"),
                     bridgeHandlers.Project.HandleAsync,
                     jobBridgeHandler ?? bridgeHandlers.Jobs,
+                    bridgeHandlers.Timeline,
                     playerRuntime.BridgeReader,
                     playerRuntime.MediaAssetReader,
                     playerRuntime.Authorization,

@@ -126,4 +126,21 @@ public sealed class SuggestionReference
 
         return new SuggestionReference(suggestion.Id, suggestion.Origin);
     }
+
+    internal static SuggestionReference RestoreFromCanonicalSnapshot(
+        EntityId<SuggestionIdTag> suggestionId,
+        OriginRef origin)
+    {
+        ArgumentNullException.ThrowIfNull(suggestionId);
+        ArgumentNullException.ThrowIfNull(origin);
+
+        if (origin.Kind != OriginKind.SourceSpan)
+        {
+            throw new ArgumentException(
+                "A canonical adopted-suggestion reference must retain a SourceSpan origin.",
+                nameof(origin));
+        }
+
+        return new SuggestionReference(suggestionId, origin);
+    }
 }

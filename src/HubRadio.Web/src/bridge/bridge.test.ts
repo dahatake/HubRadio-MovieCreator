@@ -34,6 +34,17 @@ import {
   createTranscriptResponseValue,
   projectId,
 } from '../features/transcript/transcriptTestFixture'
+import {
+  createTimelineApplyRequest,
+  createTimelineReadRequest,
+} from '../features/timeline/timelineProtocol'
+import {
+  createTimelineApplyResponseValue,
+  createTimelineReadResponseValue,
+  timelineProjectId,
+  timelineRequestId,
+  timelineSourceElementId,
+} from '../features/timeline/timelineTestFixture'
 
 const requestId = '00112233-4455-6677-8899-aabbccddeeff'
 
@@ -186,6 +197,64 @@ describe('web bridge client', () => {
     expect(listener).toHaveBeenCalledOnce()
   })
 
+  it('sends and routes only correlated timeline methods and project snapshots', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const readListener = vi.fn()
+    const applyListener = vi.fn()
+    client.onTimelineReadResponse(readListener)
+    client.onTimelineApplyResponse(applyListener)
+    const read = createTimelineReadRequest(timelineRequestId, timelineProjectId)
+    const applyRequestId = '8899aabb-ccdd-4eef-8011-223344556677'
+    const apply = createTimelineApplyRequest(
+      applyRequestId,
+      timelineProjectId,
+      3,
+      [{ kind: 'keep', elementId: timelineSourceElementId }],
+    )
+
+    transport.emit(createTimelineReadResponseValue())
+    expect(readListener).not.toHaveBeenCalled()
+
+    client.sendTimelineRead(read)
+    expect(() => client.sendTimelineRead(read)).toThrow('already pending')
+    const mismatched = createTimelineReadResponseValue()
+    mismatched.result.snapshot.projectId =
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    transport.emit(mismatched)
+    expect(readListener).not.toHaveBeenCalled()
+
+    transport.emit(createTimelineReadResponseValue())
+    expect(readListener).toHaveBeenCalledOnce()
+    expect(applyListener).not.toHaveBeenCalled()
+
+    client.sendTimelineApply(apply)
+    const applyResponse = createTimelineApplyResponseValue()
+    applyResponse.requestId = applyRequestId
+    transport.emit(applyResponse)
+    expect(applyListener).toHaveBeenCalledOnce()
+    expect(transport.posted).toEqual([read, apply])
+  })
+
+  it('abandons timeline correlation and rejects closed extra response fields', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    client.onTimelineReadResponse(listener)
+    const read = createTimelineReadRequest(timelineRequestId, timelineProjectId)
+
+    client.sendTimelineRead(read)
+    client.abandonTimelineRequest(timelineRequestId)
+    transport.emit(createTimelineReadResponseValue())
+    expect(listener).not.toHaveBeenCalled()
+
+    client.sendTimelineRead(read)
+    transport.emit({ ...createTimelineReadResponseValue(), command: 'calc.exe' })
+    expect(listener).not.toHaveBeenCalled()
+    transport.emit(createTimelineReadResponseValue())
+    expect(listener).toHaveBeenCalledOnce()
+  })
+
   it('unsubscribes listeners and removes the transport handler on disposal', () => {
     const transport = new FakeTransport()
     const client = createBridgeClient(transport)
@@ -216,6 +285,16 @@ describe('web bridge client', () => {
       client.sendTranscript(createTranscriptReadRequest(requestId, projectId)),
     ).toThrow('disposed')
     expect(() => client.onTranscriptResponse(listener)).toThrow('disposed')
+    expect(() =>
+      client.sendTimelineRead(
+        createTimelineReadRequest(timelineRequestId, timelineProjectId),
+      ),
+    ).toThrow('disposed')
+    expect(() => client.onTimelineReadResponse(listener)).toThrow('disposed')
+    expect(() => client.onTimelineApplyResponse(listener)).toThrow('disposed')
+    expect(() => client.abandonTimelineRequest(timelineRequestId)).toThrow(
+      'disposed',
+    )
   })
 
   it('sends and emits only strict project protocol messages', () => {

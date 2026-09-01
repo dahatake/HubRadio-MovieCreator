@@ -20,6 +20,7 @@ import {
   rationalToDerivedSeconds,
   type PlayerFrame,
   type PlayerSnapshot,
+  type PlayerTimelinePosition,
 } from './playerProtocol'
 import {
   initialPlayerState,
@@ -60,11 +61,13 @@ export type PlayerBridgeClient = Pick<
 export interface PlayerPanelProps {
   readonly createClient?: () => PlayerBridgeClient
   readonly initialJobId?: string
+  readonly onPositionChange?: (position: PlayerTimelinePosition | null) => void
 }
 
 export function PlayerPanel({
   createClient = createHostBridgeClient,
   initialJobId = '',
+  onPositionChange,
 }: PlayerPanelProps) {
   const [state, dispatch] = useReducer(playerStateReducer, {
     ...initialPlayerState,
@@ -201,6 +204,18 @@ export function PlayerPanel({
   usePlayerSourceSeekRegistration(requestSourceSeek)
 
   const currentFrame = selectCurrentFrame(state)
+  useEffect(() => {
+    const snapshot = state.snapshot
+    onPositionChange?.(
+      snapshot === null || currentFrame === null
+        ? null
+        : Object.freeze({
+            projectId: snapshot.projectId,
+            sourcePresentationTime: currentFrame.sourcePresentationTime,
+            outputPresentationTime: currentFrame.outputPresentationTime,
+          }),
+    )
+  }, [currentFrame, onPositionChange, state.snapshot])
   const canLoad =
     isCanonicalEntityId(state.jobIdInput) && state.status !== 'loading'
   const seekDisabled =

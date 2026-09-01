@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; ping and jobs use 4096-byte responses, project requests use 96 KiB with 1 MiB responses, transcript requests use 16 KiB with 4 MiB responses, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every player and transcript operation and every media GET; actor and role claims are never accepted from Web messages. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, arbitrary URLs, and sensitive host data are prohibited.",
+  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; ping and jobs use 4096-byte responses, project and timeline requests use 96 KiB with 1 MiB responses, transcript requests use 16 KiB with 4 MiB responses, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every player, transcript, and timeline operation and every media GET; actor and role claims are never accepted from Web messages. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, arbitrary URLs, and sensitive host data are prohibited.",
   "title": "WebBridgeMessage",
   "oneOf": [
     { "$ref": "#/$defs/pingRequest" },
@@ -37,7 +37,11 @@
     { "$ref": "#/$defs/transcriptSetSpeakerResponse" },
     { "$ref": "#/$defs/transcriptRemoveSpeakerResponse" },
     { "$ref": "#/$defs/transcriptAdoptTermResponse" },
-    { "$ref": "#/$defs/transcriptRejectTermResponse" }
+    { "$ref": "#/$defs/transcriptRejectTermResponse" },
+    { "$ref": "#/$defs/timelineReadRequest" },
+    { "$ref": "#/$defs/timelineReadResponse" },
+    { "$ref": "#/$defs/timelineApplyRequest" },
+    { "$ref": "#/$defs/timelineApplyResponse" }
   ],
   "$defs": {
     "protocolVersion": { "const": 1 },
@@ -52,7 +56,7 @@
     "jobId": { "$ref": "#/$defs/canonicalId" },
     "timestamp": {
       "type": "string",
-      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{7}\\+00:00$"
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{7}\\+00:00(?![\\s\\S])"
     },
     "inputTimestamp": {
       "oneOf": [
@@ -92,7 +96,9 @@
         "transcript.setSpeaker",
         "transcript.removeSpeaker",
         "transcript.adoptTerm",
-        "transcript.rejectTerm"
+        "transcript.rejectTerm",
+        "timeline.read",
+        "timeline.apply"
       ]
     },
     "projectMethod": {
@@ -1441,6 +1447,47 @@
         "duration": { "$ref": "#/$defs/rationalTime" }
       }
     },
+    "timelineOrigin": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "sourceSpanId"],
+          "properties": {
+            "kind": { "const": "sourceSpan" },
+            "sourceSpanId": { "$ref": "#/$defs/entityId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "assetId"],
+          "properties": {
+            "kind": { "const": "asset" },
+            "assetId": { "$ref": "#/$defs/entityId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "editorialRecordId"],
+          "properties": {
+            "kind": { "const": "editorialRecord" },
+            "editorialRecordId": { "$ref": "#/$defs/entityId" }
+          }
+        }
+      ]
+    },
+    "timelineTimeRange": {
+      "type": "object",
+      "$comment": "Consumers enforce positive duration. Output starts are nonnegative; SourceSpan starts may be negative.",
+      "additionalProperties": false,
+      "required": ["start", "duration"],
+      "properties": {
+        "start": { "$ref": "#/$defs/rationalTime" },
+        "duration": { "$ref": "#/$defs/rationalTime" }
+      }
+    },
     "transcriptConfidence": {
       "oneOf": [
         {
@@ -1853,6 +1900,104 @@
         "projectId": { "$ref": "#/$defs/entityId" }
       }
     },
+    "timelineElement": {
+      "type": "object",
+      "$comment": "Consumers enforce unique stable IDs, a contiguous output sequence from zero, positive durations, and a non-null equal-duration sourceRange only for SourceSpan origins.",
+      "additionalProperties": false,
+      "required": ["id", "outputRange", "origin", "sourceRange"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entityId" },
+        "outputRange": { "$ref": "#/$defs/timelineTimeRange" },
+        "origin": { "$ref": "#/$defs/timelineOrigin" },
+        "sourceRange": {
+          "oneOf": [
+            { "$ref": "#/$defs/timelineTimeRange" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "timelineSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workingCopyId",
+        "projectId",
+        "baseVersionId",
+        "revision",
+        "createdAt",
+        "updatedAt",
+        "elements"
+      ],
+      "properties": {
+        "workingCopyId": { "$ref": "#/$defs/entityId" },
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "baseVersionId": { "$ref": "#/$defs/nullableId" },
+        "revision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" },
+        "elements": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/timelineElement" }
+        }
+      }
+    },
+    "timelineKeepOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "elementId"],
+      "properties": {
+        "kind": { "const": "keep" },
+        "elementId": { "$ref": "#/$defs/entityId" }
+      }
+    },
+    "timelineDeleteOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "elementId"],
+      "properties": {
+        "kind": { "const": "delete" },
+        "elementId": { "$ref": "#/$defs/entityId" }
+      }
+    },
+    "timelineSplitOperation": {
+      "type": "object",
+      "$comment": "Consumers enforce a positive canonical splitOffset and a distinct rightElementId.",
+      "additionalProperties": false,
+      "required": ["kind", "elementId", "splitOffset", "rightElementId"],
+      "properties": {
+        "kind": { "const": "split" },
+        "elementId": { "$ref": "#/$defs/entityId" },
+        "splitOffset": { "$ref": "#/$defs/rationalTime" },
+        "rightElementId": { "$ref": "#/$defs/entityId" }
+      }
+    },
+    "timelineMoveOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "elementId", "targetIndex"],
+      "properties": {
+        "kind": { "const": "move" },
+        "elementId": { "$ref": "#/$defs/entityId" },
+        "targetIndex": { "$ref": "#/$defs/nonnegativeInt32" }
+      }
+    },
+    "timelineOperation": {
+      "oneOf": [
+        { "$ref": "#/$defs/timelineKeepOperation" },
+        { "$ref": "#/$defs/timelineDeleteOperation" },
+        { "$ref": "#/$defs/timelineSplitOperation" },
+        { "$ref": "#/$defs/timelineMoveOperation" }
+      ]
+    },
+    "timelineReadParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" }
+      }
+    },
     "transcriptEditTokenParams": {
       "type": "object",
       "additionalProperties": false,
@@ -1952,6 +2097,43 @@
         "requestId": { "$ref": "#/$defs/requestId" },
         "method": { "const": "transcript.read" },
         "params": { "$ref": "#/$defs/transcriptReadParams" }
+      }
+    },
+    "timelineApplyParams": {
+      "type": "object",
+      "$comment": "The native host replays the complete non-empty operation batch on a detached WorkingCopy and performs one atomic optimistic-concurrency checkpoint of the immutable version and updated working copy.",
+      "additionalProperties": false,
+      "required": ["projectId", "expectedRevision", "operations"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "expectedRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/timelineOperation" }
+        }
+      }
+    },
+    "timelineReadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "timeline.read" },
+        "params": { "$ref": "#/$defs/timelineReadParams" }
+      }
+    },
+    "timelineApplyRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "timeline.apply" },
+        "params": { "$ref": "#/$defs/timelineApplyParams" }
       }
     },
     "transcriptEditTokenRequest": {
@@ -2095,6 +2277,80 @@
         "requestId": { "$ref": "#/$defs/requestId" },
         "method": { "const": "transcript.rejectTerm" },
         "result": { "$ref": "#/$defs/transcriptResult" }
+      }
+    },
+    "timelineReadResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot"],
+          "properties": {
+            "status": { "const": "available" },
+            "snapshot": { "$ref": "#/$defs/timelineSnapshot" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot"],
+          "properties": {
+            "status": { "enum": ["forbidden", "notFound", "unavailable"] },
+            "snapshot": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "timelineApplyResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot"],
+          "properties": {
+            "status": { "const": "available" },
+            "snapshot": { "$ref": "#/$defs/timelineSnapshot" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot"],
+          "properties": {
+            "status": {
+              "enum": [
+                "forbidden",
+                "notFound",
+                "conflict",
+                "invalidOperation",
+                "unavailable"
+              ]
+            },
+            "snapshot": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "timelineReadResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "timeline.read" },
+        "result": { "$ref": "#/$defs/timelineReadResult" }
+      }
+    },
+    "timelineApplyResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "timeline.apply" },
+        "result": { "$ref": "#/$defs/timelineApplyResult" }
       }
     }
   }

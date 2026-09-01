@@ -35,6 +35,7 @@ export type {
   PlayerSeekStatus,
   PlayerSnapshot,
   PlayerSpriteCell,
+  PlayerTimelinePosition,
   PlayerWaveformChannel,
   RationalTime,
 } from './playerProtocol'

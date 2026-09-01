@@ -10,6 +10,7 @@ import {
   parsePlayerSeekResponse,
   type PlayerReadResponse,
   type PlayerSeekResponse,
+  type PlayerTimelinePosition,
 } from './playerProtocol'
 import { PlayerPanel, type PlayerBridgeClient } from './PlayerPanel'
 import {
@@ -98,6 +99,27 @@ describe('PlayerPanel', () => {
     expect(container.textContent).not.toContain('C:\\')
     expect(container.innerHTML).not.toContain('file://')
     expect(container.innerHTML).not.toContain('S-1-5-')
+  })
+
+  it('publishes exact source and output frame time to the timeline integration', () => {
+    const client = new FakeBridgeClient()
+    const positions: Array<PlayerTimelinePosition | null> = []
+    renderPlayer(client, playerJobId, (position) => positions.push(position))
+    submitLoad()
+    const read = client.sentReads[0]
+    if (read === undefined) {
+      throw new Error('Expected one player read request.')
+    }
+    const response = createReadResponseWithOutputTime(read.requestId)
+
+    act(() => client.emitRead(response))
+
+    expect(positions.at(-1)).toEqual({
+      projectId: playerProjectId,
+      sourcePresentationTime: { value: '-1', rate: '10' },
+      outputPresentationTime: { value: '1001', rate: '48000' },
+    })
+    expect(Object.isFrozen(positions.at(-1))).toBe(true)
   })
 
   it('keeps browser seek controls closed while supporting play and pause', () => {
@@ -283,10 +305,15 @@ describe('PlayerPanel', () => {
   function renderPlayer(
     client: FakeBridgeClient,
     initialJobId = playerJobId,
+    onPositionChange?: (position: PlayerTimelinePosition | null) => void,
   ): void {
     act(() => {
       root.render(
-        <PlayerPanel createClient={() => client} initialJobId={initialJobId} />,
+        <PlayerPanel
+          createClient={() => client}
+          initialJobId={initialJobId}
+          onPositionChange={onPositionChange}
+        />,
       )
     })
   }
@@ -427,6 +454,31 @@ function createReadResponse(requestId: string): PlayerReadResponse {
   const parsed = parsePlayerReadResponse(value)
   if (parsed === null) {
     throw new Error('Expected a valid player read response.')
+  }
+  return parsed
+}
+
+function createReadResponseWithOutputTime(
+  requestId: string,
+): PlayerReadResponse {
+  const value = createPlayerReadResponseValue()
+  value.requestId = requestId
+  const firstFrame = (
+    value.result as {
+      snapshot: {
+        frames: Array<{
+          outputPresentationTime: { value: string; rate: string } | null
+        }>
+      }
+    }
+  ).snapshot.frames[0]
+  if (firstFrame === undefined) {
+    throw new Error('Expected the player fixture to contain a frame.')
+  }
+  firstFrame.outputPresentationTime = { value: '1001', rate: '48000' }
+  const parsed = parsePlayerReadResponse(value)
+  if (parsed === null) {
+    throw new Error('Expected a valid player read response with output time.')
   }
   return parsed
 }

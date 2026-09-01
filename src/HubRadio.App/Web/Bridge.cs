@@ -42,6 +42,8 @@ internal enum BridgeMethod
     TranscriptRemoveSpeaker,
     TranscriptAdoptTerm,
     TranscriptRejectTerm,
+    TimelineRead,
+    TimelineApply,
 }
 
 internal sealed class BridgeRequest
@@ -157,6 +159,8 @@ internal static class BridgeProtocol
         "transcript.removeSpeaker";
     internal const string TranscriptAdoptTermMethod = "transcript.adoptTerm";
     internal const string TranscriptRejectTermMethod = "transcript.rejectTerm";
+    internal const string TimelineReadMethod = "timeline.read";
+    internal const string TimelineApplyMethod = "timeline.apply";
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -382,6 +386,8 @@ internal static class BridgeProtocol
             BridgeMethod.TranscriptRemoveSpeaker => TranscriptRemoveSpeakerMethod,
             BridgeMethod.TranscriptAdoptTerm => TranscriptAdoptTermMethod,
             BridgeMethod.TranscriptRejectTerm => TranscriptRejectTermMethod,
+            BridgeMethod.TimelineRead => TimelineReadMethod,
+            BridgeMethod.TimelineApply => TimelineApplyMethod,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(method),
                 method,
@@ -394,7 +400,7 @@ internal static class BridgeProtocol
             BridgeMethod.PlayerRead or BridgeMethod.PlayerSeek =>
                 MaxPlayerResponseUtf8Bytes,
             _ when IsTranscriptMethod(method) => MaxTranscriptResponseUtf8Bytes,
-            _ when IsProjectMethod(method) => MaxProjectResponseUtf8Bytes,
+            _ when IsLargePayloadMethod(method) => MaxProjectResponseUtf8Bytes,
             _ => MaxResponseUtf8Bytes,
         };
 
@@ -416,8 +422,14 @@ internal static class BridgeProtocol
             BridgeMethod.TranscriptAdoptTerm or
             BridgeMethod.TranscriptRejectTerm;
 
+    internal static bool IsTimelineMethod(BridgeMethod method) =>
+        method is BridgeMethod.TimelineRead or BridgeMethod.TimelineApply;
+
+    private static bool IsLargePayloadMethod(BridgeMethod method) =>
+        IsProjectMethod(method) || IsTimelineMethod(method);
+
     private static int GetMaximumRequestUtf8Bytes(BridgeMethod method) =>
-        IsProjectMethod(method)
+        IsLargePayloadMethod(method)
             ? MaxProjectRequestUtf8Bytes
             : IsTranscriptMethod(method)
                 ? MaxTranscriptRequestUtf8Bytes
@@ -447,6 +459,8 @@ internal static class BridgeProtocol
             TranscriptRemoveSpeakerMethod => BridgeMethod.TranscriptRemoveSpeaker,
             TranscriptAdoptTermMethod => BridgeMethod.TranscriptAdoptTerm,
             TranscriptRejectTermMethod => BridgeMethod.TranscriptRejectTerm,
+            TimelineReadMethod => BridgeMethod.TimelineRead,
+            TimelineApplyMethod => BridgeMethod.TimelineApply,
             _ => (BridgeMethod)(-1),
         };
         return Enum.IsDefined(parsedMethod);
@@ -493,6 +507,13 @@ internal static class BridgeProtocol
                 IsCanonicalEntityId(parameters.GetProperty("draftId")) &&
                 IsNonnegativeInt32(parameters.GetProperty("expectedRevision")) &&
                 IsDraftInput(parameters.GetProperty("input"));
+        }
+
+        if (IsTimelineMethod(method))
+        {
+            return TimelineBridgeProtocol.HasValidParameters(
+                method,
+                parameters);
         }
 
         return false;
@@ -860,7 +881,9 @@ internal static class BridgeProtocol
         out BridgeRequest? request)
     {
         request = null;
-        if (method == BridgeMethod.Ping || IsProjectMethod(method))
+        if (method == BridgeMethod.Ping ||
+            IsProjectMethod(method) ||
+            IsTimelineMethod(method))
         {
             if (!HasValidParameters(method, parameters))
             {
@@ -1055,6 +1078,7 @@ internal sealed class Bridge : IDisposable
     private readonly Func<BridgeRequest, CancellationToken, Task<string>>?
         handleProjectRequestAsync;
     private readonly JobBridgeRequestHandler? jobHandler;
+    private readonly TimelineBridgeRequestHandler? timelineHandler;
     private readonly PlayerBridgeRequestHandler playerHandler;
     private readonly TranscriptBridgeRequestHandler? transcriptHandler;
     private readonly CancellationTokenSource lifetimeCancellation = new();
@@ -1066,6 +1090,7 @@ internal sealed class Bridge : IDisposable
             coreWebView,
             handleProjectRequestAsync: null,
             jobHandler: null,
+            timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
             DeniedPlayerAccessAuthorization.Instance)
     {
@@ -1078,6 +1103,7 @@ internal sealed class Bridge : IDisposable
             coreWebView,
             handleProjectRequestAsync,
             jobHandler: null,
+            timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
             DeniedPlayerAccessAuthorization.Instance)
     {
@@ -1090,6 +1116,7 @@ internal sealed class Bridge : IDisposable
             coreWebView,
             handleProjectRequestAsync: null,
             jobHandler,
+            timelineHandler: null,
             UnavailablePlayerBridgeReader.Instance,
             DeniedPlayerAccessAuthorization.Instance)
     {
@@ -1103,6 +1130,7 @@ internal sealed class Bridge : IDisposable
             coreWebView,
             handleProjectRequestAsync: null,
             jobHandler: null,
+            timelineHandler: null,
             playerReader,
             playerAuthorization)
     {
@@ -1116,6 +1144,26 @@ internal sealed class Bridge : IDisposable
         IPlayerBridgeReader playerReader,
         IPlayerAccessAuthorization playerAuthorization,
         TranscriptBridgeRequestHandler? transcriptHandler = null)
+        : this(
+            coreWebView,
+            handleProjectRequestAsync,
+            jobHandler,
+            timelineHandler: null,
+            playerReader,
+            playerAuthorization,
+            transcriptHandler)
+    {
+    }
+
+    internal Bridge(
+        CoreWebView2 coreWebView,
+        Func<BridgeRequest, CancellationToken, Task<string>>?
+            handleProjectRequestAsync,
+        JobBridgeRequestHandler? jobHandler,
+        TimelineBridgeRequestHandler? timelineHandler,
+        IPlayerBridgeReader playerReader,
+        IPlayerAccessAuthorization playerAuthorization,
+        TranscriptBridgeRequestHandler? transcriptHandler = null)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentNullException.ThrowIfNull(playerReader);
@@ -1123,6 +1171,7 @@ internal sealed class Bridge : IDisposable
         this.coreWebView = coreWebView;
         this.handleProjectRequestAsync = handleProjectRequestAsync;
         this.jobHandler = jobHandler;
+        this.timelineHandler = timelineHandler;
         this.transcriptHandler = transcriptHandler;
         playerHandler = new PlayerBridgeRequestHandler(
             playerReader,
@@ -1241,6 +1290,17 @@ internal sealed class Bridge : IDisposable
                     cancellationToken);
         }
 
+        if (BridgeProtocol.IsTimelineMethod(request.Method))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return timelineHandler?.Handle(request) ??
+                TimelineBridgeJson.WriteResponse(
+                    request,
+                    TimelineBridgeStatus.Unavailable,
+                    snapshot: null,
+                    revision: null);
+        }
+
         return jobHandler?.Handle(request) ??
             JobBridgeResponseSerializer.SerializeError(
                 request,
@@ -1269,6 +1329,15 @@ internal sealed class Bridge : IDisposable
             return TranscriptBridgeJson.WriteResponse(
                 request,
                 TranscriptBridgeOperationResult.Unavailable());
+        }
+
+        if (BridgeProtocol.IsTimelineMethod(request.Method))
+        {
+            return TimelineBridgeJson.WriteResponse(
+                request,
+                TimelineBridgeStatus.Unavailable,
+                snapshot: null,
+                revision: null);
         }
 
         return BridgeProtocol.IsProjectMethod(request.Method)

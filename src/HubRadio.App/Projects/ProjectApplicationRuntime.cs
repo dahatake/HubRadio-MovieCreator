@@ -17,19 +17,24 @@ internal sealed class ApplicationBridgeHandlers
     internal ApplicationBridgeHandlers(
         ProjectBridgeHandler project,
         JobBridgeRequestHandler jobs,
+        TimelineBridgeRequestHandler timeline,
         TranscriptBridgeRequestHandler transcript)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
+        ArgumentNullException.ThrowIfNull(timeline);
         ArgumentNullException.ThrowIfNull(transcript);
         Project = project;
         Jobs = jobs;
+        Timeline = timeline;
         Transcript = transcript;
     }
 
     internal ProjectBridgeHandler Project { get; }
 
     internal JobBridgeRequestHandler Jobs { get; }
+
+    internal TimelineBridgeRequestHandler Timeline { get; }
 
     internal TranscriptBridgeRequestHandler Transcript { get; }
 }
@@ -97,9 +102,13 @@ internal static class ProjectApplicationRuntime
         var transcriptHandler = new TranscriptBridgeRequestHandler(
             new TranscriptBridgeRuntime(),
             new TranscriptBridgeAuthorization(authorization, actorProvider));
+        var timelineHandler = new TimelineBridgeRequestHandler(
+            new ProjectStore(databasePath),
+            new TimelineBridgeAuthorization(authorization, actorProvider));
         return new ApplicationBridgeHandlers(
             projectHandler,
             jobHandler,
+            timelineHandler,
             transcriptHandler);
     }
 }

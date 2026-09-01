@@ -35,6 +35,12 @@ export interface PlayerPosition {
   readonly outputPresentationTime: RationalTime | null
 }
 
+export interface PlayerTimelinePosition {
+  readonly projectId: string
+  readonly sourcePresentationTime: RationalTime
+  readonly outputPresentationTime: RationalTime | null
+}
+
 export interface PlayerWaveformChannel {
   readonly channelIndex: number
   readonly minimumSample: number

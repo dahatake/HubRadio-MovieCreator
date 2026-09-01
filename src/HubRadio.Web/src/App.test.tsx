@@ -22,6 +22,8 @@ describe('App', () => {
     expect(markup).toContain('新しい案件')
     expect(markup).toContain('ジョブの進行状況')
     expect(markup).toContain('文字起こし編集')
+    expect(markup).toContain('編集タイムライン')
+    expect(markup).toContain('Canvas は表示専用')
     expect(markup).toContain('<form')
     expect(markup).toContain('for="job-id"')
     expect(markup).toContain('id="job-id"')
