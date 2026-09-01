@@ -1,0 +1,900 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical R-024 ancillary delivery artifact. Every file is bound to one project, composition version, exact review evidence digest, language, payload digest, and explicit OriginRef catalog. Publishing text and chapter entries are evidence-only: absent text remains null, absent lists remain empty, and no title, summary, hashtag, chapter, or prose may be fabricated.",
+  "title": "AncillaryArtifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "exportId",
+    "kind",
+    "projectId",
+    "compositionVersionId",
+    "compositionVersionDigest",
+    "reviewEvidenceDigest",
+    "language",
+    "payloadDigest",
+    "origins",
+    "payload"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "exportId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "transcript",
+        "chapters",
+        "publishingText",
+        "editingInstructions",
+        "reviewEvidence",
+        "usedSourceRanges"
+      ]
+    },
+    "projectId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "compositionVersionId": {
+      "$ref": "#/$defs/entityId"
+    },
+    "compositionVersionDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "reviewEvidenceDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "language": {
+      "$ref": "#/$defs/languageTag"
+    },
+    "payloadDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "origins": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/originRef"
+      }
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "transcript"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/transcriptPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "chapters"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/chaptersPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "publishingText"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/publishingTextPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "editingInstructions"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/editingInstructionsPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "reviewEvidence"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/reviewEvidencePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "usedSourceRanges"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/usedSourceRangesPayload"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonBlankText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "languageTag": {
+      "type": "string",
+      "pattern": "^[A-Za-z]{1,8}(?:-[A-Za-z0-9]{1,8})*$"
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]\\.[0-9]{7}\\+00:00$"
+    },
+    "nullableEntityId": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/entityId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullableContentDigest": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/contentDigest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nullableIndex": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "nonNegativeRationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "positiveDuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "timeRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "duration"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/rationalTime"
+        },
+        "duration": {
+          "$ref": "#/$defs/positiveDuration"
+        }
+      }
+    },
+    "sourceSpanOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceSpanId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "sourceSpan"
+        },
+        "sourceSpanId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "assetOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "assetId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "asset"
+        },
+        "assetId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "editorialRecordOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "editorialRecordId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "editorialRecord"
+        },
+        "editorialRecordId": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "originRef": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sourceSpanOrigin"
+        },
+        {
+          "$ref": "#/$defs/assetOrigin"
+        },
+        {
+          "$ref": "#/$defs/editorialRecordOrigin"
+        }
+      ]
+    },
+    "sourceSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "assetId",
+        "streamId",
+        "range",
+        "sourceDigest",
+        "transcriptRevisionId",
+        "transcriptTokenIds"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "assetId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "streamId": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "range": {
+          "$ref": "#/$defs/timeRange"
+        },
+        "sourceDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "transcriptRevisionId": {
+          "$ref": "#/$defs/nullableEntityId"
+        },
+        "transcriptTokenIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/entityId"
+          }
+        }
+      }
+    },
+    "transcriptPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transcriptRevisionDigest",
+        "revision",
+        "sourceSpans"
+      ],
+      "properties": {
+        "transcriptRevisionDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "revision": {
+          "$comment": "The embedded revision uses the closed canonical transcript contract.",
+          "$ref": "transcript.schema.json"
+        },
+        "sourceSpans": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sourceSpan"
+          }
+        }
+      }
+    },
+    "chapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topicMetadataId",
+        "topicMetadataRevisionId",
+        "topicRangeId",
+        "topicRangeRevisionId",
+        "range",
+        "title",
+        "titleValueOrigin",
+        "origin"
+      ],
+      "properties": {
+        "topicMetadataId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "topicMetadataRevisionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "topicRangeId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "topicRangeRevisionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "range": {
+          "$ref": "#/$defs/timeRange"
+        },
+        "title": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "titleValueOrigin": {
+          "const": "manualEditorial"
+        },
+        "origin": {
+          "$ref": "#/$defs/editorialRecordOrigin"
+        }
+      }
+    },
+    "chaptersPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transcriptRevisionId",
+        "transcriptRevisionDigest",
+        "chapters"
+      ],
+      "properties": {
+        "transcriptRevisionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "transcriptRevisionDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "chapters": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/chapter"
+          }
+        }
+      }
+    },
+    "attributedText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "origin"
+      ],
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "origin": {
+          "$ref": "#/$defs/originRef"
+        }
+      }
+    },
+    "nullableAttributedText": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/attributedText"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "publishingTextPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "summary",
+        "postText",
+        "hashtags"
+      ],
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/nullableAttributedText"
+        },
+        "summary": {
+          "$ref": "#/$defs/nullableAttributedText"
+        },
+        "postText": {
+          "$ref": "#/$defs/nullableAttributedText"
+        },
+        "hashtags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/attributedText"
+          }
+        }
+      }
+    },
+    "adoptedSuggestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "suggestionId",
+        "origin"
+      ],
+      "properties": {
+        "suggestionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "origin": {
+          "$ref": "#/$defs/originRef"
+        }
+      }
+    },
+    "compositionElement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "outputRange",
+        "origin"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "outputRange": {
+          "$ref": "#/$defs/timeRange"
+        },
+        "origin": {
+          "$ref": "#/$defs/originRef"
+        },
+        "sourceRange": {
+          "$ref": "#/$defs/timeRange"
+        },
+        "adoptedSuggestion": {
+          "$ref": "#/$defs/adoptedSuggestion"
+        }
+      }
+    },
+    "nullableCompositionElement": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/compositionElement"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "compositionChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "elementId",
+        "previousIndex",
+        "currentIndex",
+        "previousElement",
+        "currentElement"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "added",
+            "removed",
+            "moved",
+            "modified"
+          ]
+        },
+        "elementId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "previousIndex": {
+          "$ref": "#/$defs/nullableIndex"
+        },
+        "currentIndex": {
+          "$ref": "#/$defs/nullableIndex"
+        },
+        "previousElement": {
+          "$ref": "#/$defs/nullableCompositionElement"
+        },
+        "currentElement": {
+          "$ref": "#/$defs/nullableCompositionElement"
+        }
+      }
+    },
+    "editingInstructionsPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fromVersionId",
+        "fromVersionDigest",
+        "toVersionId",
+        "toVersionDigest",
+        "changes"
+      ],
+      "properties": {
+        "fromVersionId": {
+          "$ref": "#/$defs/nullableEntityId"
+        },
+        "fromVersionDigest": {
+          "$ref": "#/$defs/nullableContentDigest"
+        },
+        "toVersionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "toVersionDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "changes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/compositionChange"
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "fromVersionId": {
+              "$ref": "#/$defs/entityId"
+            },
+            "fromVersionDigest": {
+              "$ref": "#/$defs/contentDigest"
+            }
+          }
+        },
+        {
+          "properties": {
+            "fromVersionId": {
+              "type": "null"
+            },
+            "fromVersionDigest": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "reviewRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "actorId",
+        "actorRole",
+        "recordedAt",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "editing",
+            "editorReview",
+            "performerReview",
+            "contentReview",
+            "brandReview",
+            "changesRequested",
+            "approved",
+            "publicationBlocked",
+            "finalRendering",
+            "qualityControl",
+            "exported",
+            "published"
+          ]
+        },
+        "actorId": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "actorRole": {
+          "$ref": "#/$defs/reviewActorRole"
+        },
+        "recordedAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonBlankText"
+        }
+      }
+    },
+    "reviewComment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "outputTime",
+        "sourceSpanId",
+        "actorId",
+        "actorRole",
+        "createdAt",
+        "text"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "outputTime": {
+          "$ref": "#/$defs/nonNegativeRationalTime"
+        },
+        "sourceSpanId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "actorId": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "actorRole": {
+          "$ref": "#/$defs/reviewActorRole"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "text": {
+          "$ref": "#/$defs/nonBlankText"
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "actorId",
+        "actorRole",
+        "approvedAt",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "actorId": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "actorRole": {
+          "type": "string",
+          "enum": [
+            "contentApprover",
+            "brandApprover",
+            "rightsApprover"
+          ]
+        },
+        "approvedAt": {
+          "$ref": "#/$defs/utcTimestamp"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonBlankText"
+        }
+      }
+    },
+    "reviewActorRole": {
+      "type": "string",
+      "enum": [
+        "editor",
+        "performerReviewer",
+        "contentApprover",
+        "brandApprover",
+        "rightsApprover",
+        "administrator"
+      ]
+    },
+    "reviewEvidencePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "compositionVersionId",
+        "compositionVersionDigest",
+        "reviewRecords",
+        "reviewComments",
+        "approvals"
+      ],
+      "properties": {
+        "projectId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "compositionVersionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "compositionVersionDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "reviewRecords": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/reviewRecord"
+          }
+        },
+        "reviewComments": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/reviewComment"
+          }
+        },
+        "approvals": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/approval"
+          }
+        }
+      }
+    },
+    "usedSourceRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compositionElementId",
+        "outputRange",
+        "origin",
+        "sourceRange",
+        "sourceSpan"
+      ],
+      "properties": {
+        "compositionElementId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "outputRange": {
+          "$ref": "#/$defs/timeRange"
+        },
+        "origin": {
+          "$ref": "#/$defs/sourceSpanOrigin"
+        },
+        "sourceRange": {
+          "$ref": "#/$defs/timeRange"
+        },
+        "sourceSpan": {
+          "$ref": "#/$defs/sourceSpan"
+        }
+      }
+    },
+    "usedSourceRangesPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entries"
+      ],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/usedSourceRange"
+          }
+        }
+      }
+    }
+  }
+}
