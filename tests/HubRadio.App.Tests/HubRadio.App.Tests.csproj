@@ -16,5 +16,7 @@
   <ItemGroup>
     <Compile Include="..\Acceptance\AC005_Traceability.cs"
              Link="Acceptance\AC005_Traceability.cs" />
+    <Compile Include="..\Acceptance\Must_VerticalManual.cs"
+             Link="Acceptance\Must_VerticalManual.cs" />
   </ItemGroup>
 </Project>
