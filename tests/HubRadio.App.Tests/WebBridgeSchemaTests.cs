@@ -76,6 +76,8 @@ public sealed class WebBridgeSchemaTests
                 "review.recordApproval",
                 "compare.read",
                 "delivery.read",
+                "layout.read",
+                "layout.apply",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -148,6 +150,10 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/thumbnailCancelResponse",
                 "#/$defs/deliveryReadRequest",
                 "#/$defs/deliveryReadResponse",
+                "#/$defs/layoutReadRequest",
+                "#/$defs/layoutApplyRequest",
+                "#/$defs/layoutReadResponse",
+                "#/$defs/layoutApplyResponse",
             },
             root.GetProperty("oneOf")
                 .EnumerateArray()
@@ -332,6 +338,52 @@ public sealed class WebBridgeSchemaTests
             "deliverySnapshot",
             "deliveryReadRequest",
             "deliveryReadResponse",
+            "layoutRational",
+            "layoutPositiveRational",
+            "layoutZeroRational",
+            "layoutOneRational",
+            "layoutRect",
+            "layoutNormalizedRect",
+            "layoutFullFrameRect",
+            "layoutTimeRange",
+            "layoutManualSourceInput",
+            "layoutManualOperation",
+            "layoutKeyframeInput",
+            "layoutKeyframeSegmentInput",
+            "layoutKeyframeOperation",
+            "layoutTextEdit",
+            "layoutTimingEdit",
+            "layoutStyleEdit",
+            "layoutSubtitlePlacementEdit",
+            "layoutTeropRegionEdit",
+            "layoutSubtitleOperation",
+            "layoutTeropOperation",
+            "layoutReadParams",
+            "layoutApplyParams",
+            "layoutReadRequest",
+            "layoutApplyRequest",
+            "layoutPixelRect",
+            "layoutResolvedGeometry",
+            "layoutOutput",
+            "layoutRegion",
+            "layoutOutputSafeZone",
+            "layoutProjection",
+            "layoutSource",
+            "layoutTemplate",
+            "layoutManualPlacement",
+            "layoutKeyframeEvaluation",
+            "layoutKeyframeTrack",
+            "layoutSubtitleEvaluation",
+            "layoutSubtitleResolution",
+            "layoutSubtitleCue",
+            "layoutSubtitleDisplayedCue",
+            "layoutSubtitleDisplay",
+            "layoutTeropCue",
+            "layoutBurnedInVariant",
+            "layoutSubtitleFreeVariant",
+            "layoutSnapshot",
+            "layoutReadResponse",
+            "layoutApplyResponse",
         })
         {
             Assert.AreEqual(
@@ -720,6 +772,24 @@ public sealed class WebBridgeSchemaTests
         CollectionAssert.AreEquivalent(
             new[] { "version", "requestId", "method", "result" },
             GetStrings(definitions.GetProperty("deliveryReadResponse").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "projectId", "evaluationTime" },
+            GetStrings(definitions.GetProperty("layoutReadParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "projectId", "expectedRevision", "operation" },
+            GetStrings(definitions.GetProperty("layoutApplyParams").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "params" },
+            GetStrings(definitions.GetProperty("layoutReadRequest").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "params" },
+            GetStrings(definitions.GetProperty("layoutApplyRequest").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "result" },
+            GetStrings(definitions.GetProperty("layoutReadResponse").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "result" },
+            GetStrings(definitions.GetProperty("layoutApplyResponse").GetProperty("required")));
         Assert.AreEqual(
             3,
             definitions.GetProperty("reviewSnapshot")
@@ -1162,6 +1232,170 @@ public sealed class WebBridgeSchemaTests
                 .GetProperty("snapshot")
                 .GetProperty("type")
                 .GetString());
+    }
+
+    [TestMethod]
+    public void LayoutSchemaMatchesClosedNativeAggregateContract()
+    {
+        using JsonDocument document = JsonDocument.Parse(
+            File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
+        JsonElement definitions = document.RootElement.GetProperty("$defs");
+
+        CollectionAssert.AreEqual(
+            new[] { "layout.read", "layout.apply" },
+            GetStrings(definitions.GetProperty("method").GetProperty("enum"))[^2..]);
+        StringAssert.Contains(
+            definitions.GetProperty("layoutProtocolLimits")
+                .GetProperty("$comment").GetString()!,
+            "64 KiB");
+        StringAssert.Contains(
+            definitions.GetProperty("layoutProtocolLimits")
+                .GetProperty("$comment").GetString()!,
+            "4 MiB");
+        StringAssert.Contains(
+            definitions.GetProperty("layoutProtocolLimits")
+                .GetProperty("$comment").GetString()!,
+            "Actor identity");
+        StringAssert.Contains(
+            definitions.GetProperty("layoutApplyParams")
+                .GetProperty("$comment").GetString()!,
+            "optimistic-concurrency");
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "singleSubjectCrop",
+                "twoSpeakerStack",
+                "speakerMaterialStack",
+                "materialWithSpeakerInset",
+                "importantRegionZoom",
+                "blurredSourceBackground",
+                "fixedTemplatePlacement",
+            },
+            GetStrings(definitions.GetProperty("layoutManualMode").GetProperty("enum")));
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "#/$defs/layoutManualOperation",
+                "#/$defs/layoutKeyframeOperation",
+                "#/$defs/layoutSubtitleOperation",
+                "#/$defs/layoutTeropOperation",
+            },
+            definitions.GetProperty("layoutOperation")
+                .GetProperty("oneOf")
+                .EnumerateArray()
+                .Select(static item => item.GetProperty("$ref").GetString())
+                .ToArray());
+        Assert.AreEqual(
+            2,
+            definitions.GetProperty("layoutManualOperation")
+                .GetProperty("properties")
+                .GetProperty("sources")
+                .GetProperty("maxItems")
+                .GetInt32());
+        Assert.AreEqual(
+            256,
+            definitions.GetProperty("layoutKeyframeOperation")
+                .GetProperty("properties")
+                .GetProperty("segments")
+                .GetProperty("maxItems")
+                .GetInt32());
+        Assert.AreEqual(
+            256,
+            definitions.GetProperty("layoutKeyframeSegmentInput")
+                .GetProperty("properties")
+                .GetProperty("keyframes")
+                .GetProperty("maxItems")
+                .GetInt32());
+        Assert.AreEqual(
+            "output-frame-bounds",
+            definitions.GetProperty("layoutOutputSafeZone")
+                .GetProperty("properties")
+                .GetProperty("name")
+                .GetProperty("const")
+                .GetString());
+        Assert.AreEqual(
+            1,
+            definitions.GetProperty("layoutProjection")
+                .GetProperty("properties")
+                .GetProperty("safeZones")
+                .GetProperty("maxItems")
+                .GetInt32());
+        Assert.AreEqual(
+            "1",
+            definitions.GetProperty("layoutOneRational")
+                .GetProperty("properties")
+                .GetProperty("numerator")
+                .GetProperty("const")
+                .GetString());
+        Assert.AreEqual(
+            "notPersisted",
+            definitions.GetProperty("layoutSnapshot")
+                .GetProperty("properties")
+                .GetProperty("persistence")
+                .GetProperty("const")
+                .GetString());
+        CollectionAssert.AreEqual(
+            new[] { "full", "selected" },
+            GetStrings(definitions.GetProperty("layoutSubtitleDisplay")
+                .GetProperty("properties")
+                .GetProperty("cueMode")
+                .GetProperty("enum")));
+        CollectionAssert.AreEqual(
+            new[] { "preserve", "hideJapaneseCommaAndPeriod" },
+            GetStrings(definitions.GetProperty("layoutSubtitleDisplay")
+                .GetProperty("properties")
+                .GetProperty("punctuationDisplay")
+                .GetProperty("enum")));
+        CollectionAssert.Contains(
+            GetStrings(definitions.GetProperty("layoutSnapshot")
+                .GetProperty("required")),
+            "subtitleDisplays");
+        Assert.AreEqual(
+            4,
+            definitions.GetProperty("layoutSnapshot")
+                .GetProperty("properties")
+                .GetProperty("subtitleDisplays")
+                .GetProperty("maxItems")
+                .GetInt32());
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "forbidden",
+                "notFound",
+                "conflict",
+                "noChange",
+                "invalid",
+                "unavailable",
+            },
+            GetStrings(definitions.GetProperty("layoutResult")
+                .GetProperty("oneOf")[1]
+                .GetProperty("properties")
+                .GetProperty("status")
+                .GetProperty("enum")));
+        StringAssert.Contains(
+            definitions.GetProperty("layoutVariantPair")
+                .GetProperty("oneOf")[1]
+                .GetProperty("$comment")
+                .GetString()!,
+            "does not trigger rendering");
+
+        JsonElement snapshotProperties = definitions
+            .GetProperty("layoutSnapshot")
+            .GetProperty("properties");
+        foreach (string forbidden in new[]
+        {
+            "actorSid",
+            "sourcePath",
+            "provider",
+            "confidence",
+            "faceCandidates",
+            "persist",
+            "render",
+        })
+        {
+            Assert.IsFalse(snapshotProperties.TryGetProperty(forbidden, out _));
+        }
     }
 
     [TestMethod]

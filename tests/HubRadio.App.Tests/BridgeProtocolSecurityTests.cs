@@ -19,6 +19,9 @@ public sealed class BridgeProtocolSecurityTests
     [DataRow("delivery.download")]
     [DataRow("delivery.read;calc")]
     [DataRow("delivery.re\u0430d")]
+    [DataRow("layout.render")]
+    [DataRow("layout.apply;calc")]
+    [DataRow("layout.re\u0430d")]
     public void AdversarialUnknownMethodsAreRejectedWithoutReflection(string method)
     {
         string message =
@@ -69,6 +72,41 @@ public sealed class BridgeProtocolSecurityTests
     {
         string message =
             $"{{\"version\":1,\"requestId\":\"{RequestId}\",\"method\":\"delivery.read\",\"params\":{parameters}}}";
+
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            message,
+            out BridgeRequest? request,
+            out BridgeRequestRejection rejection));
+        Assert.IsNull(request);
+        Assert.AreEqual(BridgeRequestRejection.SchemaViolation, rejection);
+    }
+
+    [TestMethod]
+    [DataRow("{\"projectId\":\"11112222-3333-4444-8555-666677778888\",\"evaluationTime\":null,\"actorSid\":\"S-1-5-21-1\"}")]
+    [DataRow("{\"projectId\":\"11112222-3333-4444-8555-666677778888\",\"evaluationTime\":null,\"sourcePath\":\"C:\\\\private\\\\source.mov\"}")]
+    [DataRow("{\"projectId\":\"11112222-3333-4444-8555-666677778888\",\"evaluationTime\":null,\"provider\":\"attacker\"}")]
+    [DataRow("{\"projectId\":\"11112222-3333-4444-8555-666677778888\",\"evaluationTime\":null,\"__proto__\":{\"actorRole\":\"administrator\"}}")]
+    public void LayoutReadRejectsIdentityPathProviderAndOpenParameters(
+        string parameters)
+    {
+        string message =
+            $"{{\"version\":1,\"requestId\":\"{RequestId}\",\"method\":\"layout.read\",\"params\":{parameters}}}";
+
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            message,
+            out BridgeRequest? request,
+            out BridgeRequestRejection rejection));
+        Assert.IsNull(request);
+        Assert.AreEqual(BridgeRequestRejection.SchemaViolation, rejection);
+    }
+
+    [TestMethod]
+    public void LayoutApplyRejectsIdentityInsideClosedOperation()
+    {
+        string message =
+            $"{{\"version\":1,\"requestId\":\"{RequestId}\",\"method\":\"layout.apply\",\"params\":{{\"projectId\":\"11112222-3333-4444-8555-666677778888\",\"expectedRevision\":0,\"operation\":{{\"kind\":\"setManualLayout\",\"mode\":\"singleSubjectCrop\",\"staticCropDecision\":\"singleStaticCropSufficient\",\"sources\":[],\"templateId\":null,\"actorSid\":\"S-1-5-21-1\"}}}}}}";
 
         Assert.IsFalse(BridgeProtocol.TryParseRequest(
             WebViewHost.EntryPoint,

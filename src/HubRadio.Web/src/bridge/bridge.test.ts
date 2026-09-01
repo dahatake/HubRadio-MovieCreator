@@ -79,6 +79,21 @@ import {
   deliveryVersionId,
 } from '../features/delivery/deliveryTestFixture'
 import {
+  LAYOUT_APPLY_METHOD,
+  createLayoutApplyRequest,
+  createLayoutReadRequest,
+} from '../features/layout/layoutProtocol'
+import {
+  createLayoutResponseValue,
+  layoutCueDigest,
+  layoutCueId,
+  layoutCueRevisionId,
+  layoutProjectId,
+  layoutRequestId,
+  layoutSecondProjectId,
+  layoutSecondRequestId,
+} from '../features/layout/layoutTestFixture'
+import {
   createThumbnailCancelRequest,
   createThumbnailGenerateRequest,
   createThumbnailReadRequest,
@@ -449,6 +464,88 @@ describe('web bridge client', () => {
     expect(transport.posted.at(-1)).toEqual(first)
   })
 
+  it('routes only fully method- and project-correlated layout responses', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    client.onLayoutResponse(listener)
+    const read = createLayoutReadRequest(
+      layoutRequestId,
+      layoutProjectId,
+      null,
+    )
+    const apply = createLayoutApplyRequest(
+      layoutSecondRequestId,
+      layoutProjectId,
+      3,
+      {
+        kind: 'editSubtitle',
+        cueId: layoutCueId,
+        expectedRevisionId: layoutCueRevisionId,
+        expectedRevisionDigest: layoutCueDigest,
+        edit: { kind: 'text', text: '更新字幕' },
+        reason: '字幕を修正します。',
+      },
+    )
+
+    client.sendLayout(read)
+    expect(transport.posted).toEqual([read])
+    expect(() => client.sendLayout(read)).toThrow('already pending')
+
+    transport.emit(createLayoutResponseValue(layoutSecondRequestId))
+    transport.emit(createLayoutResponseValue(layoutRequestId, LAYOUT_APPLY_METHOD))
+    const wrongProject = createLayoutResponseValue(layoutRequestId)
+    wrongProject.result.snapshot.projectId = layoutSecondProjectId
+    transport.emit(wrongProject)
+    transport.emit({
+      ...createLayoutResponseValue(layoutRequestId),
+      sourcePath: 'C:\\private\\source.mov',
+    })
+    expect(listener).not.toHaveBeenCalled()
+
+    transport.emit(createLayoutResponseValue(layoutRequestId))
+    expect(listener).toHaveBeenCalledOnce()
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: layoutRequestId,
+      method: 'layout.read',
+    }))
+
+    client.sendLayout(apply)
+    transport.emit(createLayoutResponseValue(
+      layoutSecondRequestId,
+      LAYOUT_APPLY_METHOD,
+    ))
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(transport.posted).toEqual([read, apply])
+  })
+
+  it('clears layout correlation after abandon and transport failure', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const first = createLayoutReadRequest(
+      layoutRequestId,
+      layoutProjectId,
+      null,
+    )
+    const second = createLayoutReadRequest(
+      layoutSecondRequestId,
+      layoutProjectId,
+      null,
+    )
+
+    client.sendLayout(first)
+    client.abandonLayoutRequest(layoutRequestId)
+    client.sendLayout(second)
+    expect(transport.posted).toEqual([first, second])
+
+    client.abandonLayoutRequest(layoutSecondRequestId)
+    transport.throwOnPost = true
+    expect(() => client.sendLayout(first)).toThrow('transport failed')
+    transport.throwOnPost = false
+    client.sendLayout(first)
+    expect(transport.posted.at(-1)).toEqual(first)
+  })
+
   it('sends and routes only strict thumbnail evidence operations', () => {
     const transport = new FakeTransport()
     const client = createBridgeClient(transport)
@@ -662,6 +759,16 @@ describe('web bridge client', () => {
     expect(() => client.sendDelivery(deliveryRequest)).toThrow('disposed')
     expect(() => client.abandonDeliveryRequest(requestId)).toThrow('disposed')
     expect(() => client.onDeliveryResponse(listener)).toThrow('disposed')
+    const layoutRequest = createLayoutReadRequest(
+      layoutRequestId,
+      layoutProjectId,
+      null,
+    )
+    expect(() => client.sendLayout(layoutRequest)).toThrow('disposed')
+    expect(() => client.abandonLayoutRequest(layoutRequestId)).toThrow(
+      'disposed',
+    )
+    expect(() => client.onLayoutResponse(listener)).toThrow('disposed')
     expect(() => client.sendThumbnailRead(requestId, thumbnailJobId)).toThrow(
       'disposed',
     )

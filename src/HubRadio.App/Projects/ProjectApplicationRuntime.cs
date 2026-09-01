@@ -23,7 +23,8 @@ internal sealed class ApplicationBridgeHandlers
         ReviewBridgeHandler review,
         ComparisonBridgeRequestHandler comparison,
         DeliveryBridgeRequestHandler delivery,
-        AnalysisBridgeRequestHandler analysis)
+        AnalysisBridgeRequestHandler analysis,
+        LayoutSubtitleBridgeRequestHandler layoutSubtitles)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
@@ -33,6 +34,7 @@ internal sealed class ApplicationBridgeHandlers
         ArgumentNullException.ThrowIfNull(comparison);
         ArgumentNullException.ThrowIfNull(delivery);
         ArgumentNullException.ThrowIfNull(analysis);
+        ArgumentNullException.ThrowIfNull(layoutSubtitles);
         Project = project;
         Jobs = jobs;
         Timeline = timeline;
@@ -41,6 +43,7 @@ internal sealed class ApplicationBridgeHandlers
         Comparison = comparison;
         Delivery = delivery;
         Analysis = analysis;
+        LayoutSubtitles = layoutSubtitles;
     }
 
     internal ProjectBridgeHandler Project { get; }
@@ -58,6 +61,8 @@ internal sealed class ApplicationBridgeHandlers
     internal DeliveryBridgeRequestHandler Delivery { get; }
 
     internal AnalysisBridgeRequestHandler Analysis { get; }
+
+    internal LayoutSubtitleBridgeRequestHandler LayoutSubtitles { get; }
 }
 
 internal static class ProjectApplicationRuntime
@@ -143,6 +148,11 @@ internal static class ProjectApplicationRuntime
         var deliveryHandler = new DeliveryBridgeRequestHandler(
             UnavailableDeliveryEvidenceProvider.Instance,
             new DeliveryAccessAuthorization(authorization, actorProvider));
+        var layoutSubtitleHandler = new LayoutSubtitleBridgeRequestHandler(
+            UnavailableLayoutSubtitleBridgeRuntime.Instance,
+            new LayoutSubtitleBridgeAuthorization(
+                authorization,
+                actorProvider));
         return new ApplicationBridgeHandlers(
             projectHandler,
             jobHandler,
@@ -151,6 +161,7 @@ internal static class ProjectApplicationRuntime
             reviewHandler,
             comparisonHandler,
             deliveryHandler,
-            analysisHandler);
+            analysisHandler,
+            layoutSubtitleHandler);
     }
 }

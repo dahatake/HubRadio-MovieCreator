@@ -60,6 +60,8 @@ internal enum BridgeMethod
     ReviewRecordApproval,
     ComparisonRead,
     DeliveryRead,
+    LayoutRead,
+    LayoutApply,
 }
 
 internal sealed class BridgeRequest
@@ -172,6 +174,8 @@ internal static class BridgeProtocol
     internal const int MaxTranscriptResponseUtf8Bytes = 4 * 1024 * 1024;
     internal const int MaxAnalysisRequestUtf8Bytes = 64 * 1024;
     internal const int MaxAnalysisResponseUtf8Bytes = 4 * 1024 * 1024;
+    internal const int MaxLayoutRequestUtf8Bytes = 64 * 1024;
+    internal const int MaxLayoutResponseUtf8Bytes = 4 * 1024 * 1024;
     internal const int MaxThumbnailRequestUtf8Bytes =
         MaxProjectRequestUtf8Bytes;
     internal const int MaxThumbnailResponseUtf8Bytes =
@@ -224,6 +228,8 @@ internal static class BridgeProtocol
     internal const string ReviewRecordApprovalMethod = "review.recordApproval";
     internal const string ComparisonReadMethod = "compare.read";
     internal const string DeliveryReadMethod = "delivery.read";
+    internal const string LayoutReadMethod = "layout.read";
+    internal const string LayoutApplyMethod = "layout.apply";
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -464,6 +470,8 @@ internal static class BridgeProtocol
             BridgeMethod.ReviewRecordApproval => ReviewRecordApprovalMethod,
             BridgeMethod.ComparisonRead => ComparisonReadMethod,
             BridgeMethod.DeliveryRead => DeliveryReadMethod,
+            BridgeMethod.LayoutRead => LayoutReadMethod,
+            BridgeMethod.LayoutApply => LayoutApplyMethod,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(method),
                 method,
@@ -480,6 +488,7 @@ internal static class BridgeProtocol
             BridgeMethod.ThumbnailCancel => MaxThumbnailResponseUtf8Bytes,
             _ when IsTranscriptMethod(method) => MaxTranscriptResponseUtf8Bytes,
             _ when IsAnalysisMethod(method) => MaxAnalysisResponseUtf8Bytes,
+            _ when IsLayoutMethod(method) => MaxLayoutResponseUtf8Bytes,
             _ when IsLargePayloadMethod(method) => MaxProjectResponseUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewResponseUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonResponseUtf8Bytes,
@@ -531,6 +540,9 @@ internal static class BridgeProtocol
     internal static bool IsDeliveryMethod(BridgeMethod method) =>
         method == BridgeMethod.DeliveryRead;
 
+    internal static bool IsLayoutMethod(BridgeMethod method) =>
+        method is BridgeMethod.LayoutRead or BridgeMethod.LayoutApply;
+
     private static int GetMaximumRequestUtf8Bytes(BridgeMethod method) =>
         method switch
         {
@@ -540,6 +552,7 @@ internal static class BridgeProtocol
             BridgeMethod.ThumbnailCancel => MaxThumbnailRequestUtf8Bytes,
             _ when IsTranscriptMethod(method) => MaxTranscriptRequestUtf8Bytes,
             _ when IsAnalysisMethod(method) => MaxAnalysisRequestUtf8Bytes,
+            _ when IsLayoutMethod(method) => MaxLayoutRequestUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewRequestUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonRequestUtf8Bytes,
             BridgeMethod.DeliveryRead => MaxDeliveryRequestUtf8Bytes,
@@ -585,6 +598,8 @@ internal static class BridgeProtocol
             ReviewRecordApprovalMethod => BridgeMethod.ReviewRecordApproval,
             ComparisonReadMethod => BridgeMethod.ComparisonRead,
             DeliveryReadMethod => BridgeMethod.DeliveryRead,
+            LayoutReadMethod => BridgeMethod.LayoutRead,
+            LayoutApplyMethod => BridgeMethod.LayoutApply,
             _ => (BridgeMethod)(-1),
         };
         return Enum.IsDefined(parsedMethod);
@@ -714,6 +729,13 @@ internal static class BridgeProtocol
             return HasExactProperties(parameters, ["versionId", "outputTime"]) &&
                 IsCanonicalEntityId(parameters.GetProperty("versionId")) &&
                 IsNullOrReviewOutputTime(parameters.GetProperty("outputTime"));
+        }
+
+        if (IsLayoutMethod(method))
+        {
+            return LayoutSubtitleBridgeProtocol.HasValidParameters(
+                method,
+                parameters);
         }
 
         return false;
@@ -1314,7 +1336,8 @@ internal static class BridgeProtocol
             IsTimelineMethod(method) ||
             IsReviewMethod(method) ||
             IsComparisonMethod(method) ||
-            IsDeliveryMethod(method))
+            IsDeliveryMethod(method) ||
+            IsLayoutMethod(method))
         {
             if (!HasValidParameters(method, parameters))
             {
@@ -1659,6 +1682,8 @@ internal sealed class Bridge : IDisposable
     private readonly ThumbnailBridgeRequestHandler? thumbnailHandler;
     private readonly DeliveryBridgeRequestHandler? deliveryHandler;
     private readonly AnalysisBridgeRequestHandler? analysisHandler;
+    private readonly LayoutSubtitleBridgeRequestHandler?
+        layoutSubtitleHandler;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private bool isStarted;
     private bool isDisposed;
@@ -1815,7 +1840,8 @@ internal sealed class Bridge : IDisposable
         ThumbnailBridgeRequestHandler? thumbnailHandler = null,
         ComparisonBridgeRequestHandler? comparisonHandler = null,
         DeliveryBridgeRequestHandler? deliveryHandler = null,
-        AnalysisBridgeRequestHandler? analysisHandler = null)
+        AnalysisBridgeRequestHandler? analysisHandler = null,
+        LayoutSubtitleBridgeRequestHandler? layoutSubtitleHandler = null)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentNullException.ThrowIfNull(playerReader);
@@ -1830,6 +1856,7 @@ internal sealed class Bridge : IDisposable
         this.thumbnailHandler = thumbnailHandler;
         this.deliveryHandler = deliveryHandler;
         this.analysisHandler = analysisHandler;
+        this.layoutSubtitleHandler = layoutSubtitleHandler;
         playerHandler = new PlayerBridgeRequestHandler(
             playerReader,
             playerAuthorization);
@@ -2011,6 +2038,18 @@ internal sealed class Bridge : IDisposable
                     cancellationToken);
         }
 
+        if (BridgeProtocol.IsLayoutMethod(request.Method))
+        {
+            return layoutSubtitleHandler is null
+                ? LayoutSubtitleBridgeJson.WriteResponse(
+                    request,
+                    LayoutSubtitleBridgeOperationResult.Failure(
+                        LayoutSubtitleBridgeStatus.Unavailable))
+                : await layoutSubtitleHandler.HandleAsync(
+                    request,
+                    cancellationToken);
+        }
+
         return jobHandler?.Handle(request) ??
             JobBridgeResponseSerializer.SerializeError(
                 request,
@@ -2077,6 +2116,14 @@ internal sealed class Bridge : IDisposable
                 request,
                 DeliveryBridgeReadResult.Failure(
                     DeliveryBridgeStatus.Unavailable));
+        }
+
+        if (BridgeProtocol.IsLayoutMethod(request.Method))
+        {
+            return LayoutSubtitleBridgeJson.WriteResponse(
+                request,
+                LayoutSubtitleBridgeOperationResult.Failure(
+                    LayoutSubtitleBridgeStatus.Unavailable));
         }
 
         if (request.Method == BridgeMethod.ThumbnailRead)

@@ -63,6 +63,11 @@ import {
   type DeliveryReadResponse,
 } from '../features/delivery/deliveryProtocol'
 import {
+  parseLayoutBridgeResponse,
+  type LayoutBridgeRequest,
+  type LayoutBridgeResponse,
+} from '../features/layout/layoutProtocol'
+import {
   createThumbnailCancelRequest,
   createThumbnailGenerateRequest,
   createThumbnailReadRequest,
@@ -81,6 +86,7 @@ export * from '../features/timeline/timelineProtocol'
 export * from '../features/review/reviewProtocol'
 export * from '../features/compare/compareProtocol'
 export * from '../features/delivery/deliveryProtocol'
+export * from '../features/layout/layoutProtocol'
 
 export interface BridgeMessageEvent {
   readonly data: unknown
@@ -99,6 +105,7 @@ export interface BridgeTransport {
       | ReviewBridgeRequest
       | ComparisonReadRequest
       | DeliveryReadRequest
+      | LayoutBridgeRequest
       | ThumbnailBridgeRequest,
   ): void
   addEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
@@ -160,6 +167,11 @@ export interface BridgeClient {
   onDeliveryResponse(
     listener: (response: DeliveryReadResponse) => void,
   ): () => void
+  sendLayout(request: LayoutBridgeRequest): void
+  abandonLayoutRequest(requestId: string): void
+  onLayoutResponse(
+    listener: (response: LayoutBridgeResponse) => void,
+  ): () => void
   sendThumbnailRead(requestId: string, jobId: string): void
   onThumbnailReadResponse(
     listener: (response: ThumbnailReadResponse) => void,
@@ -205,6 +217,11 @@ interface PendingDeliveryRequest {
   readonly outputTime: DeliveryReadRequest['params']['outputTime']
 }
 
+interface PendingLayoutRequest {
+  readonly method: LayoutBridgeRequest['method']
+  readonly projectId: string
+}
+
 export function createBridgeClient(transport: BridgeTransport): BridgeClient {
   const pingListeners = new Set<(response: BridgePingResponse) => void>()
   const projectListeners = new Set<(response: ProjectBridgeResponse) => void>()
@@ -244,6 +261,10 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
     (response: DeliveryReadResponse) => void
   >()
   const pendingDeliveryRequests = new Map<string, PendingDeliveryRequest>()
+  const layoutListeners = new Set<
+    (response: LayoutBridgeResponse) => void
+  >()
+  const pendingLayoutRequests = new Map<string, PendingLayoutRequest>()
   const thumbnailReadListeners = new Set<
     (response: ThumbnailReadResponse) => void
   >()
@@ -347,6 +368,25 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       pendingDeliveryRequests.delete(deliveryResponse.requestId)
       for (const listener of deliveryListeners) {
         listener(deliveryResponse)
+      }
+      return
+    }
+
+    const layoutResponse = parseLayoutBridgeResponse(event.data)
+    if (layoutResponse !== null) {
+      const pending = pendingLayoutRequests.get(layoutResponse.requestId)
+      if (
+        pending === undefined ||
+        pending.method !== layoutResponse.method ||
+        (layoutResponse.result.status === 'available' &&
+          layoutResponse.result.snapshot.projectId !== pending.projectId)
+      ) {
+        return
+      }
+
+      pendingLayoutRequests.delete(layoutResponse.requestId)
+      for (const listener of layoutListeners) {
+        listener(layoutResponse)
       }
       return
     }
@@ -678,6 +718,27 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
         deliveryListeners.delete(listener)
       }
     },
+    sendLayout(request: LayoutBridgeRequest): void {
+      sendCorrelatedLayoutRequest(
+        request,
+        transport,
+        pendingLayoutRequests,
+        disposed,
+      )
+    },
+    abandonLayoutRequest(requestId: string): void {
+      throwIfDisposed(disposed)
+      pendingLayoutRequests.delete(requestId)
+    },
+    onLayoutResponse(
+      listener: (response: LayoutBridgeResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      layoutListeners.add(listener)
+      return (): void => {
+        layoutListeners.delete(listener)
+      }
+    },
     sendThumbnailRead(requestId: string, jobId: string): void {
       throwIfDisposed(disposed)
       transport.postMessage(createThumbnailReadRequest(requestId, jobId))
@@ -745,6 +806,8 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       pendingComparisonRequests.clear()
       deliveryListeners.clear()
       pendingDeliveryRequests.clear()
+      layoutListeners.clear()
+      pendingLayoutRequests.clear()
       thumbnailReadListeners.clear()
       thumbnailGenerateListeners.clear()
       thumbnailCancelListeners.clear()
@@ -932,4 +995,27 @@ function deliveryResponseMatchesPending(
     ? responseTime === null
     : responseTime !== null &&
         deliveryOutputTimesEqual(responseTime, pending.outputTime)
+}
+
+function sendCorrelatedLayoutRequest(
+  request: LayoutBridgeRequest,
+  transport: BridgeTransport,
+  pendingRequests: Map<string, PendingLayoutRequest>,
+  disposed: boolean,
+): void {
+  throwIfDisposed(disposed)
+  if (pendingRequests.has(request.requestId)) {
+    throw new Error('The layout bridge request ID is already pending.')
+  }
+
+  pendingRequests.set(request.requestId, {
+    method: request.method,
+    projectId: request.params.projectId,
+  })
+  try {
+    transport.postMessage(request)
+  } catch (error: unknown) {
+    pendingRequests.delete(request.requestId)
+    throw error
+  }
 }

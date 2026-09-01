@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { ComparePanel } from './features/compare'
 import { JobProgressPanel } from './features/jobs/JobProgressPanel'
 import { DeliveryPanel } from './features/delivery'
+import { LayoutPanel } from './features/layout'
 import {
   PlayerPanel,
   type PlayerExactFrameSelection,
@@ -73,6 +74,7 @@ function App() {
           initialProjectId={playerPosition?.projectId}
           playerPosition={playerPosition}
         />
+        <LayoutPanel />
         <ComparePanel />
         <ReviewPanel />
         <DeliveryPanel />

@@ -98,7 +98,8 @@ public sealed partial class MainWindow : Window
                     thumbnailRuntime.RequestHandler,
                     bridgeHandlers.Comparison,
                     bridgeHandlers.Delivery,
-                    bridgeHandlers.Analysis);
+                    bridgeHandlers.Analysis,
+                    bridgeHandlers.LayoutSubtitles);
                 try
                 {
                     WebApplicationView.Visibility = Visibility.Visible;

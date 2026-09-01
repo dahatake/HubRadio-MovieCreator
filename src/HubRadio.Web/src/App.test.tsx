@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import App from './App'
 import { ComparisonStateProvider } from './features/compare'
 import { DeliveryStateProvider } from './features/delivery'
+import { LayoutStateProvider } from './features/layout'
 import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
 import { ReviewStateProvider } from './features/review'
 import { AppStateProvider } from './state'
@@ -16,7 +17,9 @@ describe('App', () => {
           <ComparisonStateProvider>
             <ReviewStateProvider>
               <DeliveryStateProvider>
-                <App />
+                <LayoutStateProvider>
+                  <App />
+                </LayoutStateProvider>
               </DeliveryStateProvider>
             </ReviewStateProvider>
           </ComparisonStateProvider>
@@ -33,6 +36,8 @@ describe('App', () => {
     expect(markup).toContain('文字起こし編集')
     expect(markup).toContain('編集タイムライン')
     expect(markup).toContain('Canvas は表示専用')
+    expect(markup).toContain('縦型レイアウト・字幕・テロップ')
+    expect(markup).toContain('レイアウトは未選択です')
     expect(markup).toContain('構成版の比較')
     expect(markup).toContain('比較結果はまだありません')
     expect(markup).toContain('レビュー・コメント・承認')
@@ -69,7 +74,9 @@ describe('App', () => {
           <ProjectStateProvider>
             <ComparisonStateProvider>
               <DeliveryStateProvider>
-                <App />
+                <LayoutStateProvider>
+                  <App />
+                </LayoutStateProvider>
               </DeliveryStateProvider>
             </ComparisonStateProvider>
           </ProjectStateProvider>
@@ -85,7 +92,9 @@ describe('App', () => {
           <ProjectStateProvider>
             <ReviewStateProvider>
               <DeliveryStateProvider>
-                <App />
+                <LayoutStateProvider>
+                  <App />
+                </LayoutStateProvider>
               </DeliveryStateProvider>
             </ReviewStateProvider>
           </ProjectStateProvider>
@@ -103,12 +112,32 @@ describe('App', () => {
           <ProjectStateProvider>
             <ComparisonStateProvider>
               <ReviewStateProvider>
-                <App />
+                <LayoutStateProvider>
+                  <App />
+                </LayoutStateProvider>
               </ReviewStateProvider>
             </ComparisonStateProvider>
           </ProjectStateProvider>
         </AppStateProvider>,
       ),
     ).toThrow('useDeliveryState must be used within a DeliveryStateProvider.')
+  })
+
+  it('requires the layout state provider', () => {
+    expect(() =>
+      renderToStaticMarkup(
+        <AppStateProvider>
+          <ProjectStateProvider>
+            <ComparisonStateProvider>
+              <ReviewStateProvider>
+                <DeliveryStateProvider>
+                  <App />
+                </DeliveryStateProvider>
+              </ReviewStateProvider>
+            </ComparisonStateProvider>
+          </ProjectStateProvider>
+        </AppStateProvider>,
+      ),
+    ).toThrow('useLayoutState must be used within a LayoutStateProvider.')
   })
 })

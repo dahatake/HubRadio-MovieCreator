@@ -65,7 +65,11 @@
     { "$ref": "#/$defs/thumbnailCancelRequest" },
     { "$ref": "#/$defs/thumbnailCancelResponse" },
     { "$ref": "#/$defs/deliveryReadRequest" },
-    { "$ref": "#/$defs/deliveryReadResponse" }
+    { "$ref": "#/$defs/deliveryReadResponse" },
+    { "$ref": "#/$defs/layoutReadRequest" },
+    { "$ref": "#/$defs/layoutApplyRequest" },
+    { "$ref": "#/$defs/layoutReadResponse" },
+    { "$ref": "#/$defs/layoutApplyResponse" }
   ],
   "$defs": {
     "protocolVersion": { "const": 1 },
@@ -135,7 +139,9 @@
         "review.requestChanges",
         "review.recordApproval",
         "compare.read",
-        "delivery.read"
+        "delivery.read",
+        "layout.read",
+        "layout.apply"
       ]
     },
     "projectMethod": {
@@ -5033,6 +5039,935 @@
         "requestId": { "$ref": "#/$defs/requestId" },
         "method": { "const": "delivery.read" },
         "result": { "$ref": "#/$defs/deliveryReadResult" }
+      }
+    },
+    "layoutProtocolLimits": {
+      "$comment": "layout.read and layout.apply requests are limited to exactly 64 KiB of well-formed UTF-8 and responses to 4 MiB. Native code enforces exact Int64 bounds, reduced rationals, normalized-rectangle arithmetic, total keyframe count <= 256, direct-child composition lineage, aggregate/cue optimistic concurrency, and response bounds before installing mutations. Actor identity, face/provider evidence, paths, persistence capabilities, and render commands never cross this boundary."
+    },
+    "layoutText": {
+      "type": "string",
+      "$comment": "Native code additionally requires trimmed nonblank well-formed Unicode and enforces the exact 16 KiB UTF-8 byte limit.",
+      "minLength": 1,
+      "maxLength": 16384
+    },
+    "layoutRational": {
+      "type": "object",
+      "$comment": "The numerator and positive denominator are canonical signed-Int64 strings. Native and Web consumers additionally enforce Int64 bounds and greatest-common-divisor 1.",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": { "$ref": "#/$defs/signedInt64String" },
+        "denominator": { "$ref": "#/$defs/positiveInt64String" }
+      }
+    },
+    "layoutPositiveRational": {
+      "type": "object",
+      "$comment": "The positive numerator and denominator are canonical signed-Int64 strings. Native and Web consumers additionally enforce Int64 bounds and greatest-common-divisor 1.",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": { "$ref": "#/$defs/positiveInt64String" },
+        "denominator": { "$ref": "#/$defs/positiveInt64String" }
+      }
+    },
+    "layoutZeroRational": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": { "const": "0" },
+        "denominator": { "const": "1" }
+      }
+    },
+    "layoutOneRational": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": { "const": "1" },
+        "denominator": { "const": "1" }
+      }
+    },
+    "layoutRect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "$ref": "#/$defs/layoutRational" },
+        "y": { "$ref": "#/$defs/layoutRational" },
+        "width": { "$ref": "#/$defs/layoutPositiveRational" },
+        "height": { "$ref": "#/$defs/layoutPositiveRational" }
+      }
+    },
+    "layoutNormalizedRect": {
+      "type": "object",
+      "$comment": "Native and Web consumers additionally enforce x,y >= 0, x+width <= 1, y+height <= 1, exact rational arithmetic, and exact pixel alignment where pixels are emitted.",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "$ref": "#/$defs/layoutRational" },
+        "y": { "$ref": "#/$defs/layoutRational" },
+        "width": { "$ref": "#/$defs/layoutPositiveRational" },
+        "height": { "$ref": "#/$defs/layoutPositiveRational" }
+      }
+    },
+    "layoutFullFrameRect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "$ref": "#/$defs/layoutZeroRational" },
+        "y": { "$ref": "#/$defs/layoutZeroRational" },
+        "width": { "$ref": "#/$defs/layoutOneRational" },
+        "height": { "$ref": "#/$defs/layoutOneRational" }
+      }
+    },
+    "layoutTimeRange": {
+      "type": "object",
+      "$comment": "Native and Web consumers additionally enforce a strictly positive duration using exact rational arithmetic.",
+      "additionalProperties": false,
+      "required": ["start", "duration"],
+      "properties": {
+        "start": { "$ref": "#/$defs/rationalTime" },
+        "duration": { "$ref": "#/$defs/rationalTime" }
+      }
+    },
+    "layoutManualMode": {
+      "enum": [
+        "singleSubjectCrop",
+        "twoSpeakerStack",
+        "speakerMaterialStack",
+        "materialWithSpeakerInset",
+        "importantRegionZoom",
+        "blurredSourceBackground",
+        "fixedTemplatePlacement"
+      ]
+    },
+    "layoutDestinationSlot": {
+      "enum": [
+        "singleSubject",
+        "topSpeaker",
+        "bottomSpeaker",
+        "stackedSpeaker",
+        "stackedMaterial",
+        "mainMaterial",
+        "speakerInset",
+        "zoomedImportantRegion",
+        "blurredBackground",
+        "foregroundSubject",
+        "templateVideo"
+      ]
+    },
+    "layoutCueStyle": {
+      "enum": ["normal", "emphasis", "caution", "quote"]
+    },
+    "layoutManualSourceInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceAssetId", "crop", "subject", "destination"],
+      "properties": {
+        "sourceAssetId": { "$ref": "#/$defs/entityId" },
+        "crop": { "$ref": "#/$defs/layoutNormalizedRect" },
+        "subject": { "$ref": "#/$defs/layoutNormalizedRect" },
+        "destination": { "$ref": "#/$defs/layoutNormalizedRect" }
+      }
+    },
+    "layoutManualOperation": {
+      "type": "object",
+      "$comment": "The four stack/background modes require exactly two sources; all other modes require exactly one. fixedTemplatePlacement alone requires templateId.",
+      "additionalProperties": false,
+      "required": ["kind", "mode", "staticCropDecision", "sources", "templateId"],
+      "properties": {
+        "kind": { "const": "setManualLayout" },
+        "mode": { "$ref": "#/$defs/layoutManualMode" },
+        "staticCropDecision": {
+          "enum": ["singleStaticCropSufficient", "manualKeyframesRequired"]
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/layoutManualSourceInput" }
+        },
+        "templateId": { "$ref": "#/$defs/nullableId" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "twoSpeakerStack",
+                  "speakerMaterialStack",
+                  "materialWithSpeakerInset",
+                  "blurredSourceBackground"
+                ]
+              }
+            },
+            "required": ["mode"]
+          },
+          "then": {
+            "properties": {
+              "sources": { "minItems": 2, "maxItems": 2 }
+            }
+          },
+          "else": {
+            "properties": {
+              "sources": { "minItems": 1, "maxItems": 1 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "mode": { "const": "fixedTemplatePlacement" } },
+            "required": ["mode"]
+          },
+          "then": {
+            "properties": { "templateId": { "$ref": "#/$defs/entityId" } }
+          },
+          "else": {
+            "properties": { "templateId": { "type": "null" } }
+          }
+        }
+      ]
+    },
+    "layoutKeyframeInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["time", "sourceCrop", "destination", "interpolation"],
+      "properties": {
+        "time": { "$ref": "#/$defs/rationalTime" },
+        "sourceCrop": { "$ref": "#/$defs/layoutNormalizedRect" },
+        "destination": { "$ref": "#/$defs/layoutNormalizedRect" },
+        "interpolation": { "enum": ["hold", "linear"] }
+      }
+    },
+    "layoutKeyframeSegmentInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["range", "keyframes"],
+      "properties": {
+        "range": { "$ref": "#/$defs/layoutTimeRange" },
+        "keyframes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/layoutKeyframeInput" }
+        }
+      }
+    },
+    "layoutKeyframeOperation": {
+      "type": "object",
+      "$comment": "Native and Web consumers additionally enforce at most 256 keyframes across all segments, exact segment coverage, ordering, and track continuity.",
+      "additionalProperties": false,
+      "required": ["kind", "sourceAssetId", "destinationSlot", "segments", "evaluationTime"],
+      "properties": {
+        "kind": { "const": "setKeyframes" },
+        "sourceAssetId": { "$ref": "#/$defs/entityId" },
+        "destinationSlot": { "$ref": "#/$defs/layoutDestinationSlot" },
+        "segments": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/layoutKeyframeSegmentInput" }
+        },
+        "evaluationTime": { "$ref": "#/$defs/rationalTime" }
+      }
+    },
+    "layoutTextEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "text"],
+      "properties": {
+        "kind": { "const": "text" },
+        "text": { "$ref": "#/$defs/layoutText" }
+      }
+    },
+    "layoutTimingEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "outputRange"],
+      "properties": {
+        "kind": { "const": "timing" },
+        "outputRange": { "$ref": "#/$defs/layoutTimeRange" }
+      }
+    },
+    "layoutStyleEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "style"],
+      "properties": {
+        "kind": { "const": "style" },
+        "style": { "$ref": "#/$defs/layoutCueStyle" }
+      }
+    },
+    "layoutSubtitlePlacementEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "regionName", "rect"],
+      "properties": {
+        "kind": { "const": "placement" },
+        "regionName": { "$ref": "#/$defs/layoutText" },
+        "rect": { "$ref": "#/$defs/layoutRect" }
+      }
+    },
+    "layoutTeropRegionEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "regionName"],
+      "properties": {
+        "kind": { "const": "region" },
+        "regionName": { "$ref": "#/$defs/layoutText" }
+      }
+    },
+    "layoutSubtitleEdit": {
+      "oneOf": [
+        { "$ref": "#/$defs/layoutTextEdit" },
+        { "$ref": "#/$defs/layoutTimingEdit" },
+        { "$ref": "#/$defs/layoutStyleEdit" },
+        { "$ref": "#/$defs/layoutSubtitlePlacementEdit" }
+      ]
+    },
+    "layoutTeropEdit": {
+      "oneOf": [
+        { "$ref": "#/$defs/layoutTextEdit" },
+        { "$ref": "#/$defs/layoutTimingEdit" },
+        { "$ref": "#/$defs/layoutStyleEdit" },
+        { "$ref": "#/$defs/layoutTeropRegionEdit" }
+      ]
+    },
+    "layoutSubtitleOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "cueId", "expectedRevisionId", "expectedRevisionDigest", "edit", "reason"],
+      "properties": {
+        "kind": { "const": "editSubtitle" },
+        "cueId": { "$ref": "#/$defs/entityId" },
+        "expectedRevisionId": { "$ref": "#/$defs/entityId" },
+        "expectedRevisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "edit": { "$ref": "#/$defs/layoutSubtitleEdit" },
+        "reason": { "$ref": "#/$defs/layoutText" }
+      }
+    },
+    "layoutTeropOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "cueId", "expectedRevisionId", "expectedRevisionDigest", "edit", "reason"],
+      "properties": {
+        "kind": { "const": "editTerop" },
+        "cueId": { "$ref": "#/$defs/entityId" },
+        "expectedRevisionId": { "$ref": "#/$defs/entityId" },
+        "expectedRevisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "edit": { "$ref": "#/$defs/layoutTeropEdit" },
+        "reason": { "$ref": "#/$defs/layoutText" }
+      }
+    },
+    "layoutOperation": {
+      "oneOf": [
+        { "$ref": "#/$defs/layoutManualOperation" },
+        { "$ref": "#/$defs/layoutKeyframeOperation" },
+        { "$ref": "#/$defs/layoutSubtitleOperation" },
+        { "$ref": "#/$defs/layoutTeropOperation" }
+      ]
+    },
+    "layoutReadParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "evaluationTime"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "evaluationTime": {
+          "oneOf": [
+            { "$ref": "#/$defs/rationalTime" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "layoutApplyParams": {
+      "type": "object",
+      "$comment": "expectedRevision is aggregate optimistic-concurrency evidence; cue edits independently pin the current immutable cue revision ID and digest.",
+      "additionalProperties": false,
+      "required": ["projectId", "expectedRevision", "operation"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "expectedRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "operation": { "$ref": "#/$defs/layoutOperation" }
+      }
+    },
+    "layoutReadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "layout.read" },
+        "params": { "$ref": "#/$defs/layoutReadParams" }
+      }
+    },
+    "layoutApplyRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "layout.apply" },
+        "params": { "$ref": "#/$defs/layoutApplyParams" }
+      }
+    },
+    "layoutPixelRect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "$ref": "#/$defs/nonnegativeInt32" },
+        "y": { "$ref": "#/$defs/nonnegativeInt32" },
+        "width": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+      }
+    },
+    "layoutResolvedGeometry": {
+      "type": "object",
+      "$comment": "pixels is the authoritative native exact-rational projection of rect, not browser floating-point geometry.",
+      "additionalProperties": false,
+      "required": ["rect", "pixels"],
+      "properties": {
+        "rect": { "$ref": "#/$defs/layoutNormalizedRect" },
+        "pixels": { "$ref": "#/$defs/layoutPixelRect" }
+      }
+    },
+    "layoutOutput": {
+      "type": "object",
+      "$comment": "Native and Web consumers enforce width/height == aspectWidth/aspectHeight and aspectWidth:aspectHeight == 9:16 by exact cross multiplication.",
+      "additionalProperties": false,
+      "required": ["width", "height", "aspectWidth", "aspectHeight"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "aspectWidth": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "aspectHeight": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+      }
+    },
+    "layoutRegion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role", "rect", "pixels"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["video", "material", "subtitle", "graphic"] },
+        "rect": { "$ref": "#/$defs/layoutNormalizedRect" },
+        "pixels": { "$ref": "#/$defs/layoutPixelRect" }
+      }
+    },
+    "layoutOutputSafeZone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "rect", "pixels"],
+      "properties": {
+        "name": { "const": "output-frame-bounds" },
+        "rect": { "$ref": "#/$defs/layoutFullFrameRect" },
+        "pixels": { "$ref": "#/$defs/layoutPixelRect" }
+      }
+    },
+    "layoutProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layoutSpecId", "regions", "safeZones"],
+      "properties": {
+        "layoutSpecId": { "$ref": "#/$defs/entityId" },
+        "regions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/layoutRegion" }
+        },
+        "safeZones": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": { "$ref": "#/$defs/layoutOutputSafeZone" }
+        }
+      }
+    },
+    "layoutSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceAssetId", "displayWidth", "displayHeight"],
+      "properties": {
+        "sourceAssetId": { "$ref": "#/$defs/entityId" },
+        "displayWidth": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "displayHeight": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+      }
+    },
+    "layoutTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["templateId", "name", "versionDigest"],
+      "properties": {
+        "templateId": { "$ref": "#/$defs/entityId" },
+        "name": { "type": "string", "minLength": 1 },
+        "versionDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "layoutManualPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceAssetId",
+        "sourceWidth",
+        "sourceHeight",
+        "sourceCrop",
+        "subject",
+        "destination",
+        "destinationSlot",
+        "semanticRole",
+        "treatment"
+      ],
+      "properties": {
+        "sourceAssetId": { "$ref": "#/$defs/entityId" },
+        "sourceWidth": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "sourceHeight": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "sourceCrop": { "$ref": "#/$defs/layoutResolvedGeometry" },
+        "subject": { "$ref": "#/$defs/layoutResolvedGeometry" },
+        "destination": { "$ref": "#/$defs/layoutResolvedGeometry" },
+        "destinationSlot": { "$ref": "#/$defs/layoutDestinationSlot" },
+        "semanticRole": {
+          "enum": ["subject", "speaker", "material", "importantRegion", "templateVideo"]
+        },
+        "treatment": { "enum": ["standard", "blurredBackground"] }
+      }
+    },
+    "layoutManualSelection": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "status", "placements", "template"],
+          "properties": {
+            "mode": { "$ref": "#/$defs/layoutManualMode" },
+            "status": { "enum": ["resolved", "manualKeyframesRequired"] },
+            "placements": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "items": { "$ref": "#/$defs/layoutManualPlacement" }
+            },
+            "template": {
+              "oneOf": [
+                { "$ref": "#/$defs/layoutTemplate" },
+                { "type": "null" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "layoutKeyframeEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestedTime",
+        "sourceCrop",
+        "destination",
+        "sourcePixels",
+        "destinationPixels",
+        "segmentIndex"
+      ],
+      "properties": {
+        "requestedTime": { "$ref": "#/$defs/rationalTime" },
+        "sourceCrop": { "$ref": "#/$defs/layoutNormalizedRect" },
+        "destination": { "$ref": "#/$defs/layoutNormalizedRect" },
+        "sourcePixels": { "$ref": "#/$defs/layoutPixelRect" },
+        "destinationPixels": { "$ref": "#/$defs/layoutPixelRect" },
+        "segmentIndex": { "$ref": "#/$defs/nonnegativeInt32" }
+      }
+    },
+    "layoutKeyframeTrack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceAssetId",
+        "destinationSlot",
+        "sourceWidth",
+        "sourceHeight",
+        "outputWidth",
+        "outputHeight",
+        "range",
+        "segments",
+        "evaluation"
+      ],
+      "properties": {
+        "sourceAssetId": { "$ref": "#/$defs/entityId" },
+        "destinationSlot": { "$ref": "#/$defs/layoutDestinationSlot" },
+        "sourceWidth": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "sourceHeight": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "outputWidth": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "outputHeight": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "range": { "$ref": "#/$defs/layoutTimeRange" },
+        "segments": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/layoutKeyframeSegmentInput" }
+        },
+        "evaluation": { "$ref": "#/$defs/layoutKeyframeEvaluation" }
+      }
+    },
+    "layoutSubtitleEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateId",
+        "regionName",
+        "rect",
+        "pixels",
+        "hardConstraints",
+        "softConstraints",
+        "softCost"
+      ],
+      "properties": {
+        "candidateId": { "$ref": "#/$defs/entityId" },
+        "regionName": { "type": "string", "minLength": 1 },
+        "rect": { "$ref": "#/$defs/layoutRect" },
+        "pixels": {
+          "oneOf": [
+            { "$ref": "#/$defs/layoutPixelRect" },
+            { "type": "null" }
+          ]
+        },
+        "hardConstraints": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "noPlacementCandidate",
+              "sourceTimingAdjustmentRequired",
+              "requiredSafeZoneMissing",
+              "outsideOutputFrame",
+              "unknownLayoutRegion",
+              "layoutRegionIsNotSubtitle",
+              "outsideSubtitleRegion",
+              "outsideRequiredSafeZone",
+              "prohibitedRegionOverlap"
+            ]
+          }
+        },
+        "softConstraints": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "faceRegionOverlap",
+              "materialRegionOverlap",
+              "graphicRegionOverlap",
+              "placementChanged"
+            ]
+          }
+        },
+        "softCost": { "$ref": "#/$defs/signedInt64String" }
+      }
+    },
+    "layoutSubtitleResolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "layoutSpecId",
+        "profileVersionDigest",
+        "globalHardConstraints",
+        "evaluations",
+        "selectedCandidateId"
+      ],
+      "properties": {
+        "status": { "enum": ["resolved", "manualAdjustmentRequired"] },
+        "layoutSpecId": { "$ref": "#/$defs/entityId" },
+        "profileVersionDigest": { "$ref": "#/$defs/contentDigest" },
+        "globalHardConstraints": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "noPlacementCandidate",
+              "sourceTimingAdjustmentRequired",
+              "requiredSafeZoneMissing",
+              "outsideOutputFrame",
+              "unknownLayoutRegion",
+              "layoutRegionIsNotSubtitle",
+              "outsideSubtitleRegion",
+              "outsideRequiredSafeZone",
+              "prohibitedRegionOverlap"
+            ]
+          }
+        },
+        "evaluations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/layoutSubtitleEvaluation" }
+        },
+        "selectedCandidateId": { "$ref": "#/$defs/nullableId" }
+      }
+    },
+    "layoutSubtitleCue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cueId",
+        "revisionId",
+        "revisionDigest",
+        "compositionVersionId",
+        "text",
+        "style",
+        "outputRange",
+        "sourceRange",
+        "revisionCount",
+        "layoutResolution"
+      ],
+      "properties": {
+        "cueId": { "$ref": "#/$defs/entityId" },
+        "revisionId": { "$ref": "#/$defs/entityId" },
+        "revisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "compositionVersionId": { "$ref": "#/$defs/entityId" },
+        "text": { "type": "string", "minLength": 1 },
+        "style": { "$ref": "#/$defs/layoutCueStyle" },
+        "outputRange": { "$ref": "#/$defs/layoutTimeRange" },
+        "sourceRange": { "$ref": "#/$defs/layoutTimeRange" },
+        "revisionCount": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "layoutResolution": { "$ref": "#/$defs/layoutSubtitleResolution" }
+      }
+    },
+    "layoutSubtitleDisplayedCue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cueId", "text", "textChanged"],
+      "properties": {
+        "cueId": { "$ref": "#/$defs/entityId" },
+        "text": { "type": "string", "minLength": 1 },
+        "textChanged": { "type": "boolean" }
+      }
+    },
+    "layoutSubtitleDisplay": {
+      "type": "object",
+      "$comment": "Each option is an explicit SubtitleDisplayProfile and selected-Cue projection evaluated by the native SubtitleDisplayPolicy. The UI does not infer modes from a digest.",
+      "additionalProperties": false,
+      "required": [
+        "profileVersionDigest",
+        "cueMode",
+        "punctuationDisplay",
+        "selectedCueIds",
+        "sourceCueCount",
+        "displayedCues",
+        "omittedCueIds"
+      ],
+      "properties": {
+        "profileVersionDigest": { "$ref": "#/$defs/contentDigest" },
+        "cueMode": { "enum": ["full", "selected"] },
+        "punctuationDisplay": {
+          "enum": ["preserve", "hideJapaneseCommaAndPeriod"]
+        },
+        "selectedCueIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/entityId" }
+        },
+        "sourceCueCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "displayedCues": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/layoutSubtitleDisplayedCue" }
+        },
+        "omittedCueIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/entityId" }
+        }
+      }
+    },
+    "layoutTeropCue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cueId",
+        "revisionId",
+        "revisionDigest",
+        "compositionVersionId",
+        "sourceKind",
+        "text",
+        "style",
+        "regionName",
+        "outputRange",
+        "revisionCount"
+      ],
+      "properties": {
+        "cueId": { "$ref": "#/$defs/entityId" },
+        "revisionId": { "$ref": "#/$defs/entityId" },
+        "revisionDigest": { "$ref": "#/$defs/contentDigest" },
+        "compositionVersionId": { "$ref": "#/$defs/entityId" },
+        "sourceKind": { "enum": ["adoptedSuggestion", "manualEditorial"] },
+        "text": { "type": "string", "minLength": 1 },
+        "style": { "$ref": "#/$defs/layoutCueStyle" },
+        "regionName": { "type": "string", "minLength": 1 },
+        "outputRange": { "$ref": "#/$defs/layoutTimeRange" },
+        "revisionCount": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+      }
+    },
+    "layoutBurnedInVariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deliveryManifestId", "renderGraphId"],
+      "properties": {
+        "deliveryManifestId": { "$ref": "#/$defs/entityId" },
+        "renderGraphId": { "$ref": "#/$defs/entityId" }
+      }
+    },
+    "layoutSubtitleFreeVariant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deliveryManifestId", "renderGraphId", "hasSidecar"],
+      "properties": {
+        "deliveryManifestId": { "$ref": "#/$defs/entityId" },
+        "renderGraphId": { "$ref": "#/$defs/entityId" },
+        "hasSidecar": { "type": "boolean" }
+      }
+    },
+    "layoutVariantPair": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "$comment": "This is immutable delivery evidence only. Selecting either variant does not trigger rendering or fabricate a burn-in switch.",
+          "additionalProperties": false,
+          "required": [
+            "compositionVersionId",
+            "compositionVersionDigest",
+            "displayProfileDigest",
+            "subtitleEvidenceDigest",
+            "burnedIn",
+            "subtitleFree"
+          ],
+          "properties": {
+            "compositionVersionId": { "$ref": "#/$defs/entityId" },
+            "compositionVersionDigest": { "$ref": "#/$defs/contentDigest" },
+            "displayProfileDigest": { "$ref": "#/$defs/contentDigest" },
+            "subtitleEvidenceDigest": { "$ref": "#/$defs/contentDigest" },
+            "burnedIn": { "$ref": "#/$defs/layoutBurnedInVariant" },
+            "subtitleFree": { "$ref": "#/$defs/layoutSubtitleFreeVariant" }
+          }
+        }
+      ]
+    },
+    "layoutSnapshot": {
+      "type": "object",
+      "$comment": "This aggregate is a native-authoritative projection. persistence is always notPersisted; preview and future render compilation consume the same normalized/native-pixel geometry and immutable composition evidence.",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "revision",
+        "compositionVersionId",
+        "compositionVersionDigest",
+        "persistence",
+        "output",
+        "layout",
+        "sources",
+        "templates",
+        "manualSelection",
+        "keyframeTracks",
+        "subtitles",
+        "subtitleDisplays",
+        "terops",
+        "variantPair"
+      ],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "revision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "compositionVersionId": { "$ref": "#/$defs/entityId" },
+        "compositionVersionDigest": { "$ref": "#/$defs/contentDigest" },
+        "persistence": { "const": "notPersisted" },
+        "output": { "$ref": "#/$defs/layoutOutput" },
+        "layout": { "$ref": "#/$defs/layoutProjection" },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/layoutSource" }
+        },
+        "templates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/layoutTemplate" }
+        },
+        "manualSelection": { "$ref": "#/$defs/layoutManualSelection" },
+        "keyframeTracks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/layoutKeyframeTrack" }
+        },
+        "subtitles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/layoutSubtitleCue" }
+        },
+        "subtitleDisplays": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/layoutSubtitleDisplay" }
+        },
+        "terops": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/layoutTeropCue" }
+        },
+        "variantPair": { "$ref": "#/$defs/layoutVariantPair" }
+      }
+    },
+    "layoutResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot"],
+          "properties": {
+            "status": { "const": "available" },
+            "snapshot": { "$ref": "#/$defs/layoutSnapshot" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "snapshot"],
+          "properties": {
+            "status": {
+              "enum": [
+                "forbidden",
+                "notFound",
+                "conflict",
+                "noChange",
+                "invalid",
+                "unavailable"
+              ]
+            },
+            "snapshot": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "layoutReadResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "layout.read" },
+        "result": { "$ref": "#/$defs/layoutResult" }
+      }
+    },
+    "layoutApplyResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "layout.apply" },
+        "result": { "$ref": "#/$defs/layoutResult" }
       }
     }
   }
