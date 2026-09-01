@@ -3,6 +3,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import App from './App'
+import { ComparisonStateProvider } from './features/compare'
 import { PlayerNavigationProvider } from './features/player'
 import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
 import { ReviewStateProvider } from './features/review'
@@ -20,9 +21,11 @@ createRoot(rootElement).render(
     <AppStateProvider>
       <ProjectStateProvider>
         <PlayerNavigationProvider>
-          <ReviewStateProvider>
-            <App />
-          </ReviewStateProvider>
+          <ComparisonStateProvider>
+            <ReviewStateProvider>
+              <App />
+            </ReviewStateProvider>
+          </ComparisonStateProvider>
         </PlayerNavigationProvider>
       </ProjectStateProvider>
     </AppStateProvider>

@@ -22,8 +22,10 @@ public sealed class WebBridgeSchemaTests
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "256 UTF-8 bytes");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "4096-byte responses");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "24 KiB");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "comparison requests use 4 KiB");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "16 KiB review text");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "full digest");
+        StringAssert.Contains(root.GetProperty("$comment").GetString()!, "mark unsupported semantic features unavailable");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "reserved intercepted HTTPS media origin");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "current Windows actor");
         StringAssert.Contains(root.GetProperty("$comment").GetString()!, "never accepted from Web messages");
@@ -63,6 +65,7 @@ public sealed class WebBridgeSchemaTests
                 "review.addComment",
                 "review.requestChanges",
                 "review.recordApproval",
+                "compare.read",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -86,6 +89,7 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/reviewAddCommentRequest",
                 "#/$defs/reviewRequestChangesRequest",
                 "#/$defs/reviewRecordApprovalRequest",
+                "#/$defs/comparisonReadRequest",
                 "#/$defs/pingResponse",
                 "#/$defs/listResponse",
                 "#/$defs/draftResponse",
@@ -97,6 +101,7 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/errorResponse",
                 "#/$defs/reviewResponse",
                 "#/$defs/reviewErrorResponse",
+                "#/$defs/comparisonReadResponse",
                 "#/$defs/playerReadRequest",
                 "#/$defs/playerReadResponse",
                 "#/$defs/playerSeekRequest",
@@ -235,6 +240,15 @@ public sealed class WebBridgeSchemaTests
             "reviewResponse",
             "reviewError",
             "reviewErrorResponse",
+            "comparisonReadParams",
+            "comparisonReadRequest",
+            "comparisonFeatureAvailability",
+            "comparisonTimeRange",
+            "comparisonUsedSourceRange",
+            "comparisonVersion",
+            "comparisonAdoptionChange",
+            "comparison",
+            "comparisonReadResponse",
             "thumbnailRights",
             "thumbnailTemplate",
             "thumbnailSnapshot",
@@ -331,6 +345,61 @@ public sealed class WebBridgeSchemaTests
             "^[0-9a-f]{64}(?![\\s\\S])",
             definitions.GetProperty("contentDigest").GetProperty("pattern").GetString());
         Assert.IsFalse(definitions.TryGetProperty("reviewWorkflowGate", out _));
+
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "leftVersionId",
+                "leftVersionDigest",
+                "rightVersionId",
+                "rightVersionDigest",
+            },
+            GetStrings(definitions.GetProperty("comparisonReadParams")
+                .GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "forbidden",
+                "notFound",
+                "staleVersion",
+                "invalidComparison",
+                "unavailable",
+            },
+            GetStrings(definitions.GetProperty("comparisonReadResult")
+                .GetProperty("oneOf")[1]
+                .GetProperty("properties")
+                .GetProperty("status")
+                .GetProperty("enum")));
+        JsonElement comparisonFeatures = definitions
+            .GetProperty("comparisonFeatureAvailability");
+        string[] expectedComparisonFeatures =
+        [
+            "openingHook",
+            "subtitleStyle",
+            "telopCount",
+            "transitions",
+            "effects",
+            "callToAction",
+            "destination",
+            "warnings",
+        ];
+        CollectionAssert.AreEquivalent(
+            expectedComparisonFeatures,
+            GetStrings(comparisonFeatures.GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            expectedComparisonFeatures,
+            comparisonFeatures.GetProperty("properties")
+                .EnumerateObject()
+                .Select(static property => property.Name)
+                .ToArray());
+        foreach (JsonProperty feature in comparisonFeatures
+            .GetProperty("properties")
+            .EnumerateObject())
+        {
+            Assert.AreEqual(
+                "unavailable",
+                feature.Value.GetProperty("const").GetString());
+        }
 
         string thumbnailMediaPattern = definitions
             .GetProperty("thumbnailMediaReference")
@@ -534,6 +603,12 @@ public sealed class WebBridgeSchemaTests
         CollectionAssert.AreEquivalent(
             new[] { "version", "requestId", "method", "error" },
             GetStrings(definitions.GetProperty("reviewErrorResponse").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "params" },
+            GetStrings(definitions.GetProperty("comparisonReadRequest").GetProperty("required")));
+        CollectionAssert.AreEquivalent(
+            new[] { "version", "requestId", "method", "result" },
+            GetStrings(definitions.GetProperty("comparisonReadResponse").GetProperty("required")));
         Assert.AreEqual(
             3,
             definitions.GetProperty("reviewSnapshot")

@@ -47,6 +47,11 @@ import {
   type ReviewBridgeResponse,
 } from '../features/review/reviewProtocol'
 import {
+  parseComparisonReadResponse,
+  type ComparisonReadRequest,
+  type ComparisonReadResponse,
+} from '../features/compare/compareProtocol'
+import {
   createThumbnailCancelRequest,
   createThumbnailGenerateRequest,
   createThumbnailReadRequest,
@@ -63,6 +68,7 @@ import {
 export * from './projectProtocol'
 export * from '../features/timeline/timelineProtocol'
 export * from '../features/review/reviewProtocol'
+export * from '../features/compare/compareProtocol'
 
 export interface BridgeMessageEvent {
   readonly data: unknown
@@ -78,6 +84,7 @@ export interface BridgeTransport {
       | TranscriptRequest
       | TimelineBridgeRequest
       | ReviewBridgeRequest
+      | ComparisonReadRequest
       | ThumbnailBridgeRequest,
   ): void
   addEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
@@ -125,6 +132,11 @@ export interface BridgeClient {
   onReviewResponse(
     listener: (response: ReviewBridgeResponse) => void,
   ): () => void
+  sendComparison(request: ComparisonReadRequest): void
+  abandonComparisonRequest(requestId: string): void
+  onComparisonResponse(
+    listener: (response: ComparisonReadResponse) => void,
+  ): () => void
   sendThumbnailRead(requestId: string, jobId: string): void
   onThumbnailReadResponse(
     listener: (response: ThumbnailReadResponse) => void,
@@ -158,6 +170,13 @@ interface PendingReviewRequest {
   readonly versionId: string
 }
 
+interface PendingComparisonRequest {
+  readonly leftVersionId: string
+  readonly leftVersionDigest: string
+  readonly rightVersionId: string
+  readonly rightVersionDigest: string
+}
+
 export function createBridgeClient(transport: BridgeTransport): BridgeClient {
   const pingListeners = new Set<(response: BridgePingResponse) => void>()
   const projectListeners = new Set<(response: ProjectBridgeResponse) => void>()
@@ -183,6 +202,13 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
     (response: ReviewBridgeResponse) => void
   >()
   const pendingReviewRequests = new Map<string, PendingReviewRequest>()
+  const comparisonListeners = new Set<
+    (response: ComparisonReadResponse) => void
+  >()
+  const pendingComparisonRequests = new Map<
+    string,
+    PendingComparisonRequest
+  >()
   const thumbnailReadListeners = new Set<
     (response: ThumbnailReadResponse) => void
   >()
@@ -247,6 +273,28 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       pendingReviewRequests.delete(reviewResponse.requestId)
       for (const listener of reviewListeners) {
         listener(reviewResponse)
+      }
+      return
+    }
+
+    const comparisonResponse = parseComparisonReadResponse(event.data)
+    if (comparisonResponse !== null) {
+      const pending = pendingComparisonRequests.get(comparisonResponse.requestId)
+      const comparison = comparisonResponse.result.comparison
+      if (
+        pending === undefined ||
+        (comparison !== null &&
+          (comparison.left.versionId !== pending.leftVersionId ||
+            comparison.left.versionDigest !== pending.leftVersionDigest ||
+            comparison.right.versionId !== pending.rightVersionId ||
+            comparison.right.versionDigest !== pending.rightVersionDigest))
+      ) {
+        return
+      }
+
+      pendingComparisonRequests.delete(comparisonResponse.requestId)
+      for (const listener of comparisonListeners) {
+        listener(comparisonResponse)
       }
       return
     }
@@ -515,6 +563,27 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
         reviewListeners.delete(listener)
       }
     },
+    sendComparison(request: ComparisonReadRequest): void {
+      sendCorrelatedComparisonRequest(
+        request,
+        transport,
+        pendingComparisonRequests,
+        disposed,
+      )
+    },
+    abandonComparisonRequest(requestId: string): void {
+      throwIfDisposed(disposed)
+      pendingComparisonRequests.delete(requestId)
+    },
+    onComparisonResponse(
+      listener: (response: ComparisonReadResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      comparisonListeners.add(listener)
+      return (): void => {
+        comparisonListeners.delete(listener)
+      }
+    },
     sendThumbnailRead(requestId: string, jobId: string): void {
       throwIfDisposed(disposed)
       transport.postMessage(createThumbnailReadRequest(requestId, jobId))
@@ -577,6 +646,8 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       pendingTimelineRequests.clear()
       reviewListeners.clear()
       pendingReviewRequests.clear()
+      comparisonListeners.clear()
+      pendingComparisonRequests.clear()
       thumbnailReadListeners.clear()
       thumbnailGenerateListeners.clear()
       thumbnailCancelListeners.clear()
@@ -691,6 +762,31 @@ function sendCorrelatedReviewRequest(
   pendingRequests.set(request.requestId, {
     method: request.method,
     versionId: request.params.versionId,
+  })
+  try {
+    transport.postMessage(request)
+  } catch (error: unknown) {
+    pendingRequests.delete(request.requestId)
+    throw error
+  }
+}
+
+function sendCorrelatedComparisonRequest(
+  request: ComparisonReadRequest,
+  transport: BridgeTransport,
+  pendingRequests: Map<string, PendingComparisonRequest>,
+  disposed: boolean,
+): void {
+  throwIfDisposed(disposed)
+  if (pendingRequests.size !== 0) {
+    throw new Error('A comparison bridge request is already pending.')
+  }
+
+  pendingRequests.set(request.requestId, {
+    leftVersionId: request.params.leftVersionId,
+    leftVersionDigest: request.params.leftVersionDigest,
+    rightVersionId: request.params.rightVersionId,
+    rightVersionDigest: request.params.rightVersionDigest,
   })
   try {
     transport.postMessage(request)

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 
+import { ComparePanel } from './features/compare'
 import { JobProgressPanel } from './features/jobs/JobProgressPanel'
 import {
   PlayerPanel,
@@ -69,6 +70,7 @@ function App() {
           initialProjectId={playerPosition?.projectId}
           playerPosition={playerPosition}
         />
+        <ComparePanel />
         <ReviewPanel />
       </div>
     </main>

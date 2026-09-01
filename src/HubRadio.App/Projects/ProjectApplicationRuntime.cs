@@ -20,18 +20,21 @@ internal sealed class ApplicationBridgeHandlers
         JobBridgeRequestHandler jobs,
         TimelineBridgeRequestHandler timeline,
         TranscriptBridgeRequestHandler transcript,
-        ReviewBridgeHandler review)
+        ReviewBridgeHandler review,
+        ComparisonBridgeRequestHandler comparison)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
         ArgumentNullException.ThrowIfNull(timeline);
         ArgumentNullException.ThrowIfNull(transcript);
         ArgumentNullException.ThrowIfNull(review);
+        ArgumentNullException.ThrowIfNull(comparison);
         Project = project;
         Jobs = jobs;
         Timeline = timeline;
         Transcript = transcript;
         Review = review;
+        Comparison = comparison;
     }
 
     internal ProjectBridgeHandler Project { get; }
@@ -43,6 +46,8 @@ internal sealed class ApplicationBridgeHandlers
     internal TranscriptBridgeRequestHandler Transcript { get; }
 
     internal ReviewBridgeHandler Review { get; }
+
+    internal ComparisonBridgeRequestHandler Comparison { get; }
 }
 
 internal static class ProjectApplicationRuntime
@@ -108,21 +113,26 @@ internal static class ProjectApplicationRuntime
         var transcriptHandler = new TranscriptBridgeRequestHandler(
             new TranscriptBridgeRuntime(),
             new TranscriptBridgeAuthorization(authorization, actorProvider));
+        var projectStore = new ProjectStore(databasePath);
         var timelineHandler = new TimelineBridgeRequestHandler(
-            new ProjectStore(databasePath),
+            projectStore,
             new TimelineBridgeAuthorization(authorization, actorProvider));
         var reviewStore = new ReviewStore(databasePath);
         var reviewHandler = new ReviewBridgeHandler(
             new ReviewWorkspaceService(
-                new ProjectStore(databasePath),
+                projectStore,
                 reviewStore,
                 authorization,
                 actorProvider.GetCurrentSid));
+        var comparisonHandler = new ComparisonBridgeRequestHandler(
+            projectStore,
+            new ComparisonBridgeAuthorization(authorization, actorProvider));
         return new ApplicationBridgeHandlers(
             projectHandler,
             jobHandler,
             timelineHandler,
             transcriptHandler,
-            reviewHandler);
+            reviewHandler,
+            comparisonHandler);
     }
 }

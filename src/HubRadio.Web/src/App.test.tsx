@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import App from './App'
+import { ComparisonStateProvider } from './features/compare'
 import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
 import { ReviewStateProvider } from './features/review'
 import { AppStateProvider } from './state'
@@ -11,9 +12,11 @@ describe('App', () => {
     const markup = renderToStaticMarkup(
       <AppStateProvider>
         <ProjectStateProvider>
-          <ReviewStateProvider>
-            <App />
-          </ReviewStateProvider>
+          <ComparisonStateProvider>
+            <ReviewStateProvider>
+              <App />
+            </ReviewStateProvider>
+          </ComparisonStateProvider>
         </ProjectStateProvider>
       </AppStateProvider>,
     )
@@ -27,6 +30,8 @@ describe('App', () => {
     expect(markup).toContain('文字起こし編集')
     expect(markup).toContain('編集タイムライン')
     expect(markup).toContain('Canvas は表示専用')
+    expect(markup).toContain('構成版の比較')
+    expect(markup).toContain('比較結果はまだありません')
     expect(markup).toContain('レビュー・コメント・承認')
     expect(markup).toContain('レビュー対象は未選択です')
     expect(markup).toContain('手動サムネイル生成')
@@ -59,10 +64,28 @@ describe('App', () => {
       renderToStaticMarkup(
         <AppStateProvider>
           <ProjectStateProvider>
-            <App />
+            <ComparisonStateProvider>
+              <App />
+            </ComparisonStateProvider>
           </ProjectStateProvider>
         </AppStateProvider>,
       ),
     ).toThrow('useReviewState must be used within a ReviewStateProvider.')
+  })
+
+  it('requires the comparison state provider', () => {
+    expect(() =>
+      renderToStaticMarkup(
+        <AppStateProvider>
+          <ProjectStateProvider>
+            <ReviewStateProvider>
+              <App />
+            </ReviewStateProvider>
+          </ProjectStateProvider>
+        </AppStateProvider>,
+      ),
+    ).toThrow(
+      'useComparisonState must be used within a ComparisonStateProvider.',
+    )
   })
 })

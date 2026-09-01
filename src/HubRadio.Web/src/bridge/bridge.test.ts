@@ -58,6 +58,18 @@ import {
   reviewVersionId,
 } from '../features/review/reviewTestFixture'
 import {
+  createComparisonReadRequest,
+} from '../features/compare/compareProtocol'
+import {
+  comparisonLeftDigest,
+  comparisonLeftVersionId,
+  comparisonRequestId,
+  comparisonRightDigest,
+  comparisonRightVersionId,
+  comparisonSecondRequestId,
+  createComparisonResponseValue,
+} from '../features/compare/compareTestFixture'
+import {
   createThumbnailCancelRequest,
   createThumbnailGenerateRequest,
   createThumbnailReadRequest,
@@ -274,6 +286,85 @@ describe('web bridge client', () => {
     expect(removed).not.toHaveBeenCalled()
   })
 
+  it('routes only the fully correlated four-part comparison target', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    client.onComparisonResponse(listener)
+    const first = createComparisonReadRequest(
+      comparisonRequestId,
+      comparisonLeftVersionId,
+      comparisonLeftDigest,
+      comparisonRightVersionId,
+      comparisonRightDigest,
+    )
+    const second = createComparisonReadRequest(
+      comparisonSecondRequestId,
+      comparisonLeftVersionId,
+      comparisonLeftDigest,
+      comparisonRightVersionId,
+      comparisonRightDigest,
+    )
+
+    client.sendComparison(first)
+    expect(transport.posted).toEqual([first])
+    expect(() => client.sendComparison(second)).toThrow('already pending')
+
+    transport.emit(createComparisonResponseValue(comparisonSecondRequestId))
+    const wrongVersion = createComparisonResponseValue(comparisonRequestId)
+    wrongVersion.result.comparison.left.versionId = comparisonSecondRequestId
+    transport.emit(wrongVersion)
+    const wrongDigest = createComparisonResponseValue(comparisonRequestId)
+    wrongDigest.result.comparison.right.versionDigest = 'c'.repeat(64)
+    transport.emit(wrongDigest)
+    transport.emit({
+      ...createComparisonResponseValue(comparisonRequestId),
+      actorSid: 'S-1-5-21-private',
+    })
+    expect(listener).not.toHaveBeenCalled()
+
+    const accepted = createComparisonResponseValue(comparisonRequestId)
+    transport.emit(accepted)
+    expect(listener).toHaveBeenCalledOnce()
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: comparisonRequestId,
+      method: 'compare.read',
+    }))
+    client.sendComparison(second)
+    expect(transport.posted).toEqual([first, second])
+  })
+
+  it('clears comparison correlation after abandon and transport failure', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const first = createComparisonReadRequest(
+      comparisonRequestId,
+      comparisonLeftVersionId,
+      comparisonLeftDigest,
+      comparisonRightVersionId,
+      comparisonRightDigest,
+    )
+    const second = createComparisonReadRequest(
+      comparisonSecondRequestId,
+      comparisonLeftVersionId,
+      comparisonLeftDigest,
+      comparisonRightVersionId,
+      comparisonRightDigest,
+    )
+
+    client.sendComparison(first)
+    client.abandonComparisonRequest(comparisonRequestId)
+    client.sendComparison(second)
+    expect(transport.posted).toEqual([first, second])
+
+    client.abandonComparisonRequest(comparisonSecondRequestId)
+    transport.throwOnPost = true
+    expect(() => client.sendComparison(first)).toThrow('transport failed')
+    transport.throwOnPost = false
+    client.sendComparison(first)
+    expect(transport.posted.at(-1)).toEqual(first)
+  })
+
   it('sends and routes only strict thumbnail evidence operations', () => {
     const transport = new FakeTransport()
     const client = createBridgeClient(transport)
@@ -467,6 +558,18 @@ describe('web bridge client', () => {
     expect(() => client.sendReview(reviewRequest)).toThrow('disposed')
     expect(() => client.abandonReviewRequest(requestId)).toThrow('disposed')
     expect(() => client.onReviewResponse(listener)).toThrow('disposed')
+    const comparisonRequest = createComparisonReadRequest(
+      comparisonRequestId,
+      comparisonLeftVersionId,
+      comparisonLeftDigest,
+      comparisonRightVersionId,
+      comparisonRightDigest,
+    )
+    expect(() => client.sendComparison(comparisonRequest)).toThrow('disposed')
+    expect(() => client.abandonComparisonRequest(comparisonRequestId)).toThrow(
+      'disposed',
+    )
+    expect(() => client.onComparisonResponse(listener)).toThrow('disposed')
     expect(() => client.sendThumbnailRead(requestId, thumbnailJobId)).toThrow(
       'disposed',
     )

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; ping and jobs use 4096-byte responses, project, timeline, and thumbnail requests use 96 KiB with 1 MiB responses, transcript requests use 16 KiB with 4 MiB responses, review requests use 24 KiB with 1 MiB responses and 16 KiB review text, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every protected operation and every media GET; actor identity is never accepted from Web messages, and any requested acting role is untrusted intent revalidated against current native assignments. Review mutations pin the exact composition-version ID and full digest, while rational time remains reduced integer evidence. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, arbitrary URLs, SIDs, commands, authentication secrets, process output, template filesystem locations, and sensitive host data are prohibited.",
+  "$comment": "Closed WebView2 bridge protocol v1. The native host accepts requests only from the exact bundled HTTPS origin. Ping, jobs, and player requests are limited to 256 UTF-8 bytes; ping and jobs use 4096-byte responses, comparison requests use 4 KiB with 1 MiB responses, project, timeline, and thumbnail requests use 96 KiB with 1 MiB responses, transcript requests use 16 KiB with 4 MiB responses, review requests use 24 KiB with 1 MiB responses and 16 KiB review text, and player responses share the existing 64 MiB ingest recovery envelope. The native host authorizes its current Windows actor for every protected operation and every media GET; actor identity is never accepted from Web messages, and any requested acting role is untrusted intent revalidated against current native assignments. Review mutations and comparisons pin exact composition-version IDs and full digests, while rational time remains reduced integer evidence. Comparisons expose only durable composition evidence and mark unsupported semantic features unavailable instead of inferring them. Source media crosses this boundary only as an opaque candidate ID, and player media uses project, kind, artifact, and digest-bound references on the reserved intercepted HTTPS media origin. Raw paths, arbitrary URLs, SIDs, commands, authentication secrets, process output, template filesystem locations, and sensitive host data are prohibited.",
   "title": "WebBridgeMessage",
   "oneOf": [
     { "$ref": "#/$defs/pingRequest" },
@@ -17,6 +17,7 @@
     { "$ref": "#/$defs/reviewAddCommentRequest" },
     { "$ref": "#/$defs/reviewRequestChangesRequest" },
     { "$ref": "#/$defs/reviewRecordApprovalRequest" },
+    { "$ref": "#/$defs/comparisonReadRequest" },
     { "$ref": "#/$defs/pingResponse" },
     { "$ref": "#/$defs/listResponse" },
     { "$ref": "#/$defs/draftResponse" },
@@ -28,6 +29,7 @@
     { "$ref": "#/$defs/errorResponse" },
     { "$ref": "#/$defs/reviewResponse" },
     { "$ref": "#/$defs/reviewErrorResponse" },
+    { "$ref": "#/$defs/comparisonReadResponse" },
     { "$ref": "#/$defs/playerReadRequest" },
     { "$ref": "#/$defs/playerReadResponse" },
     { "$ref": "#/$defs/playerSeekRequest" },
@@ -117,7 +119,8 @@
         "review.getSnapshot",
         "review.addComment",
         "review.requestChanges",
-        "review.recordApproval"
+        "review.recordApproval",
+        "compare.read"
       ]
     },
     "projectMethod": {
@@ -1032,6 +1035,211 @@
         "requestId": { "$ref": "#/$defs/requestId" },
         "method": { "$ref": "#/$defs/reviewMethod" },
         "error": { "$ref": "#/$defs/reviewError" }
+      }
+    },
+    "comparisonReadParams": {
+      "type": "object",
+      "$comment": "Both exact immutable composition versions are identified by canonical IDs and full lowercase SHA-256 content digests.",
+      "additionalProperties": false,
+      "required": [
+        "leftVersionId",
+        "leftVersionDigest",
+        "rightVersionId",
+        "rightVersionDigest"
+      ],
+      "properties": {
+        "leftVersionId": { "$ref": "#/$defs/entityId" },
+        "leftVersionDigest": { "$ref": "#/$defs/contentDigest" },
+        "rightVersionId": { "$ref": "#/$defs/entityId" },
+        "rightVersionDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "comparisonReadRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "compare.read" },
+        "params": { "$ref": "#/$defs/comparisonReadParams" }
+      }
+    },
+    "comparisonFeatureAvailability": {
+      "type": "object",
+      "$comment": "These semantic categories are not durably retrievable for an arbitrary composition version and must never be inferred from generic elements or suggestion IDs.",
+      "additionalProperties": false,
+      "required": [
+        "openingHook",
+        "subtitleStyle",
+        "telopCount",
+        "transitions",
+        "effects",
+        "callToAction",
+        "destination",
+        "warnings"
+      ],
+      "properties": {
+        "openingHook": { "const": "unavailable" },
+        "subtitleStyle": { "const": "unavailable" },
+        "telopCount": { "const": "unavailable" },
+        "transitions": { "const": "unavailable" },
+        "effects": { "const": "unavailable" },
+        "callToAction": { "const": "unavailable" },
+        "destination": { "const": "unavailable" },
+        "warnings": { "const": "unavailable" }
+      }
+    },
+    "comparisonTimeRange": {
+      "type": "object",
+      "$comment": "Consumers enforce positive duration; output starts are nonnegative while source starts may be negative.",
+      "additionalProperties": false,
+      "required": ["start", "duration"],
+      "properties": {
+        "start": { "$ref": "#/$defs/rationalTime" },
+        "duration": { "$ref": "#/$defs/rationalTime" }
+      }
+    },
+    "comparisonUsedSourceRange": {
+      "type": "object",
+      "$comment": "The sourceSpanId and exact source/output ranges are durable provenance evidence for one composition element; no asset equivalence is inferred.",
+      "additionalProperties": false,
+      "required": [
+        "elementId",
+        "sourceSpanId",
+        "sourceRange",
+        "outputRange"
+      ],
+      "properties": {
+        "elementId": { "$ref": "#/$defs/entityId" },
+        "sourceSpanId": { "$ref": "#/$defs/entityId" },
+        "sourceRange": { "$ref": "#/$defs/comparisonTimeRange" },
+        "outputRange": { "$ref": "#/$defs/comparisonTimeRange" }
+      }
+    },
+    "comparisonVersion": {
+      "type": "object",
+      "$comment": "A private-safe exact-version projection. Playback duration is the maximum output-range end, or 0/1 for an empty version. Consumers reject duplicate element IDs and invalid rational ranges.",
+      "additionalProperties": false,
+      "required": [
+        "versionId",
+        "versionDigest",
+        "createdAt",
+        "changeReason",
+        "playbackDuration",
+        "usedSourceRanges",
+        "features"
+      ],
+      "properties": {
+        "versionId": { "$ref": "#/$defs/entityId" },
+        "versionDigest": { "$ref": "#/$defs/contentDigest" },
+        "createdAt": { "$ref": "#/$defs/timestamp" },
+        "changeReason": { "type": "string", "minLength": 1 },
+        "playbackDuration": { "$ref": "#/$defs/rationalTime" },
+        "usedSourceRanges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/comparisonUsedSourceRange" }
+        },
+        "features": { "$ref": "#/$defs/comparisonFeatureAvailability" }
+      }
+    },
+    "comparisonAdoptionChange": {
+      "type": "object",
+      "$comment": "Consumers enforce the exact null combination for adopted, removed, and replaced changes and reject duplicate element IDs.",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "elementId",
+        "previousSuggestionId",
+        "currentSuggestionId"
+      ],
+      "properties": {
+        "kind": { "enum": ["adopted", "removed", "replaced"] },
+        "elementId": { "$ref": "#/$defs/entityId" },
+        "previousSuggestionId": { "$ref": "#/$defs/optionalEntityId" },
+        "currentSuggestionId": { "$ref": "#/$defs/optionalEntityId" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": { "const": "adopted" },
+            "previousSuggestionId": { "type": "null" },
+            "currentSuggestionId": { "$ref": "#/$defs/entityId" }
+          }
+        },
+        {
+          "properties": {
+            "kind": { "const": "removed" },
+            "previousSuggestionId": { "$ref": "#/$defs/entityId" },
+            "currentSuggestionId": { "type": "null" }
+          }
+        },
+        {
+          "properties": {
+            "kind": { "const": "replaced" },
+            "previousSuggestionId": { "$ref": "#/$defs/entityId" },
+            "currentSuggestionId": { "$ref": "#/$defs/entityId" }
+          }
+        }
+      ]
+    },
+    "comparison": {
+      "type": "object",
+      "$comment": "Consumers bind both snapshots to the requested IDs and full digests, validate ordered composition changes, reject duplicate element or adoption-change IDs, and require identical snapshots with empty changes when both version IDs are the same.",
+      "additionalProperties": false,
+      "required": ["left", "right", "elementChanges", "adoptionChanges"],
+      "properties": {
+        "left": { "$ref": "#/$defs/comparisonVersion" },
+        "right": { "$ref": "#/$defs/comparisonVersion" },
+        "elementChanges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/reviewCompositionChange" }
+        },
+        "adoptionChanges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/comparisonAdoptionChange" }
+        }
+      }
+    },
+    "comparisonReadResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "comparison"],
+          "properties": {
+            "status": { "const": "available" },
+            "comparison": { "$ref": "#/$defs/comparison" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "comparison"],
+          "properties": {
+            "status": {
+              "enum": [
+                "forbidden",
+                "notFound",
+                "staleVersion",
+                "invalidComparison",
+                "unavailable"
+              ]
+            },
+            "comparison": { "type": "null" }
+          }
+        }
+      ]
+    },
+    "comparisonReadResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "compare.read" },
+        "result": { "$ref": "#/$defs/comparisonReadResult" }
       }
     },
     "proxyMediaReference": {
