@@ -5,7 +5,7 @@
 **設計根拠:** `docs/dev/research/default-settings-research.md`、`docs/dev/decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md`、`docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **初版計画日:** 2026年8月26日
 **再baseline日:** 2026年9月2日
-**計画状態:** `V2-000`文書再baselineと`V2-001`設定domain/schemaを完了。利用者指示によりproduction実装を再開。
+**計画状態:** `V2-000`〜`V2-003`とV2-002/V2-003 shared bootstrapを完了。利用者指示によりproduction実装を継続中。
 
 ### 旧203 task baselineの履歴snapshot
 
@@ -95,8 +95,8 @@ SQLite業務store、永続job、worker protocol、編集操作、review/approval
 |---|---|---|---|---|
 | `V2-000` | **完了。** 要求版0.2、既定値調査、ADR-0009、task再baseline | なし | 出典scope、全203 ID分類、文書link、[敵対的レビュー](../reviews/v2-defaults-adversarial-review.md)がPASS。production code変更なし | 全要求 |
 | `V2-001` | **完了。** `DefaultSettingsProfile`、設定値、根拠区分、snapshot、digestのdomain/schema。[敵対的レビュー](../reviews/v2-001-default-settings-profile-adversarial-review.md)はPASS | V2-000,D-002,D-008,D-012 | canonical round-trip、unknown/invalid value拒否、版・digest固定 | FR-033,NFR-003/006/008 |
-| `V2-002` | 設定store、既定解決、個別/全reset、案件snapshot migration | V2-001,D-013,D-014 | 新規案件だけへ即時適用、既存版不変、migration rollback | FR-033,AC-006 |
-| `V2-003` | 調査済みrender/subtitle/audio/transition/template profile | V2-001,R-004〜R-007,R-010〜R-016 | 台帳値・scopeと一致し、現行placeholderをproduction承認済みと誤表示しない | FR-008〜FR-016,FR-020/031 |
+| `V2-002` | **完了。** schema 8、設定store、OCC、案件snapshot、個別/全reset。[敵対的レビュー](../reviews/v2-002-default-settings-store-adversarial-review.md)はPASS | V2-001,D-013,D-014 | 新規案件だけへ即時適用、既存版不変、migration rollback | FR-033,AC-006 |
+| `V2-003` | **完了。** 調査済み123設定のrender/subtitle/audio/transition/neutral profile。[敵対的レビュー](../reviews/v2-003-default-settings-profile-adversarial-review.md)はPASS | V2-001,R-004〜R-007,R-010〜R-016 | 台帳値・scopeと一致し、現行placeholderをproduction承認済みと誤表示しない | FR-008〜FR-016,FR-020/031 |
 | `V2-004` | 元動画だけから安全なProject draftと成果物setを作るapplication/bridge契約 | V2-002,M-001,D-004 | filename stem、安全fallback、1入力、path非開示。登壇者、URL、公開先、hashtag、期限等の架空metadataを作らない | §6,FR-001/025,AC-001 |
 | `V2-005` | かんたん編集UI | V2-004,U-001〜U-004 | 元動画、設定要約、社内限定、開始/取消だけで開始でき、10項目wizardを要求しない | NFR-001,§14.1,AC-001 |
 | `V2-006` | 全体設定UI | V2-002,U-004 | 5群、現在値、初期値、用途、根拠、個別/全reset、keyboard操作 | FR-033,NFR-001/005,AC-006 |
@@ -155,7 +155,7 @@ flowchart TD
    V2013 --> V2014[V2-014 acceptance / package]
 ```
 
-`V2-001`は完了した。次は依存が成立した`V2-002`設定storeと`V2-003`具体profileを、変更範囲を分離して並列実行できる。
+`V2-002`と`V2-003`は個別の全回帰・敵対的レビューを完了し、[shared bootstrap統合レビュー](../reviews/v2-settings-bootstrap-integration-adversarial-review.md)もPASSした。次は依存が成立した`V2-004`、`V2-006`、`V2-007`、`V2-009`を変更範囲を分離して並列実行できる。
 
 ### 0.6 全task共通の実行契約
 

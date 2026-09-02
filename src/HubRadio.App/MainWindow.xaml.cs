@@ -77,7 +77,11 @@ public sealed partial class MainWindow : Window
                     ProjectApplicationRuntime.Create(
                     this,
                     applicationDataDirectory,
-                    Path.Combine(AppContext.BaseDirectory, "Profiles"));
+                    Path.Combine(AppContext.BaseDirectory, "Profiles"),
+                    Path.Combine(
+                        AppContext.BaseDirectory,
+                        "DefaultSettings",
+                        "Profiles"));
                 PlayerApplicationRuntime playerRuntime =
                     PlayerApplicationRuntime.Create(applicationDataDirectory);
                 ThumbnailApplicationRuntime thumbnailRuntime =

@@ -1,3 +1,4 @@
+using HubRadio.App.DefaultSettings;
 using HubRadio.App.Jobs;
 using HubRadio.App.Media;
 using HubRadio.App.Reviews;
@@ -70,11 +71,13 @@ internal static class ProjectApplicationRuntime
     internal static ApplicationBridgeHandlers Create(
         Window owner,
         string applicationDataDirectory,
-        string profilesDirectory)
+        string profilesDirectory,
+        string defaultSettingsProfilesDirectory)
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationDataDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(profilesDirectory);
+        ArgumentException.ThrowIfNullOrWhiteSpace(defaultSettingsProfilesDirectory);
 
         var actorProvider = new WindowsActorProvider();
         string actorSid = actorProvider.GetCurrentSid();
@@ -94,6 +97,10 @@ internal static class ProjectApplicationRuntime
         _ = DatabaseMigrator.Migrate(
             databasePath,
             Path.Combine(workspacePath, "backups"));
+        _ = new BundledDefaultSettingsBootstrap(
+            new DefaultSettingsStore(databasePath)).Initialize(
+                defaultSettingsProfilesDirectory,
+                DateTimeOffset.UtcNow);
         var authorization = new AuthorizationService(
             new RoleAssignmentStore(databasePath));
         _ = authorization.BootstrapInitialRoles(actorSid);
