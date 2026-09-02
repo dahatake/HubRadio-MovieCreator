@@ -5,7 +5,7 @@
 **設計根拠:** `docs/dev/research/default-settings-research.md`、`docs/dev/decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md`、`docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **初版計画日:** 2026年8月26日
 **再baseline日:** 2026年9月2日
-**計画状態:** `V2-000`文書再baseline完了。利用者指示によりproduction実装を一時停止。
+**計画状態:** `V2-000`文書再baselineと`V2-001`設定domain/schemaを完了。利用者指示によりproduction実装を再開。
 
 ### 旧203 task baselineの履歴snapshot
 
@@ -89,12 +89,12 @@ SQLite業務store、永続job、worker protocol、編集操作、review/approval
 
 ### 0.4 版0.2で追加するtask
 
-新task IDは旧203件と混同しないよう`V2-*`を使う。production実装の再開指示があるまで、`V2-001`以降を開始しない。各taskはfocused test、関連回帰、差分監査、独立した敵対的レビューを完了してから次へ進む。
+新task IDは旧203件と混同しないよう`V2-*`を使う。production実装は利用者指示により再開済みである。各taskはfocused test、関連回帰、差分監査、独立した敵対的レビューを完了してから次へ進む。
 
 | ID | 目的 / 主成果物 | 依存 | 完了条件 | 主要求 |
 |---|---|---|---|---|
 | `V2-000` | **完了。** 要求版0.2、既定値調査、ADR-0009、task再baseline | なし | 出典scope、全203 ID分類、文書link、[敵対的レビュー](../reviews/v2-defaults-adversarial-review.md)がPASS。production code変更なし | 全要求 |
-| `V2-001` | `DefaultSettingsProfile`、設定値、根拠区分、snapshot、digestのdomain/schema | V2-000,D-002,D-008,D-012 | canonical round-trip、unknown/invalid value拒否、版・digest固定 | FR-033,NFR-003/006/008 |
+| `V2-001` | **完了。** `DefaultSettingsProfile`、設定値、根拠区分、snapshot、digestのdomain/schema。[敵対的レビュー](../reviews/v2-001-default-settings-profile-adversarial-review.md)はPASS | V2-000,D-002,D-008,D-012 | canonical round-trip、unknown/invalid value拒否、版・digest固定 | FR-033,NFR-003/006/008 |
 | `V2-002` | 設定store、既定解決、個別/全reset、案件snapshot migration | V2-001,D-013,D-014 | 新規案件だけへ即時適用、既存版不変、migration rollback | FR-033,AC-006 |
 | `V2-003` | 調査済みrender/subtitle/audio/transition/template profile | V2-001,R-004〜R-007,R-010〜R-016 | 台帳値・scopeと一致し、現行placeholderをproduction承認済みと誤表示しない | FR-008〜FR-016,FR-020/031 |
 | `V2-004` | 元動画だけから安全なProject draftと成果物setを作るapplication/bridge契約 | V2-002,M-001,D-004 | filename stem、安全fallback、1入力、path非開示。登壇者、URL、公開先、hashtag、期限等の架空metadataを作らない | §6,FR-001/025,AC-001 |
@@ -134,8 +134,7 @@ SQLite業務store、永続job、worker protocol、編集操作、review/approval
 
 ```mermaid
 flowchart TD
-   V2000[V2-000 文書baseline] --> PAUSE{実装再開の利用者指示}
-   PAUSE --> V2001[V2-001 設定domain]
+   V2000[V2-000 文書baseline] --> V2001[V2-001 設定domain]
    V2001 --> V2002[V2-002 設定store]
    V2001 --> V2003[V2-003 profile]
    V2002 --> V2004[V2-004 source-only契約]
@@ -156,7 +155,7 @@ flowchart TD
    V2013 --> V2014[V2-014 acceptance / package]
 ```
 
-`V2-001`以降はproduction実装であり、現在は停止する。文書完了task`V2-000`の判定だけを先に行う。
+`V2-001`は完了した。次は依存が成立した`V2-002`設定storeと`V2-003`具体profileを、変更範囲を分離して並列実行できる。
 
 ### 0.6 全task共通の実行契約
 
@@ -838,4 +837,4 @@ flowchart TD
 7. トレーサビリティ表に要求の抜けがないこと。
 
 > [!WARNING]
-> これは旧要求版0.1の終了時点における実行指示だった。要求版0.2では`R-019/R-020`の直接継続、残り64件、`S-003` cross-account gateは失効している。現在の順序は§0.5を使い、利用者が実装再開を指示するまで`V2-001`以降を開始しない。`Z-008`の二つ目の実在実装というYAGNI条件と、A-009を生成系実装へ読み替えない制約は維持する。
+> これは旧要求版0.1の終了時点における実行指示だった。要求版0.2では`R-019/R-020`の直接継続、残り64件、`S-003` cross-account gateは失効している。production実装は利用者指示により再開済みであり、現在の順序は§0.5を使う。`Z-008`の二つ目の実在実装というYAGNI条件と、A-009を生成系実装へ読み替えない制約は維持する。

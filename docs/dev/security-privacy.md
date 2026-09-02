@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、企業向け動画、文字起こし、出演者情報、内部資料を扱うため、ローカル優先、単一利用者、社内限定、非破壊処理を基本境界にします。
 
 > [!IMPORTANT]
-> Stage 0と既存製品基盤の一部は実装済みです。2026-09-02に[要求版0.2](../requirement-definition.md)と[ADR-0009](decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)でsource-only quick startへ再baselineしました。新しい設定、state、export policy、自動代理評価flowは未実装です。以下には既存境界と計画が混在するため、[詳細実装計画 §0](planning/implementation-plan.md#0-要求版02の現在baseline)も確認してください。
+> Stage 0と既存製品基盤の一部は実装済みです。2026-09-02に[要求版0.2](../requirement-definition.md)と[ADR-0009](decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)でsource-only quick startへ再baselineし、production実装を再開しました。版付き既定設定のdomain/schemaは実装済みですが、設定store/UI、単一利用者state、export policy、自動代理評価flowは未実装です。以下には既存境界と計画が混在するため、[詳細実装計画 §0](planning/implementation-plan.md#0-要求版02の現在baseline)も確認してください。
 
 ## 既定のデータ境界
 

@@ -4,7 +4,7 @@
 
 ## 現在の品質境界
 
-`.NET`、React、Python worker、PowerShellの自動testと一括buildは実装済みです。2026-09-02の既存実行記録は[アクセシビリティ評価記録](accessibility/test-report.md)等に残します。ただし、要求版0.2で追加するsource-only quick start、設定画面、自動decision、標準成果物、自動代理評価flowは未実装で、production実装は一時停止中です。
+`.NET`、React、Python worker、PowerShellの自動testと一括buildは実装済みです。2026-09-02の既存実行記録は[アクセシビリティ評価記録](accessibility/test-report.md)等に残します。要求版0.2のproduction実装は再開し、版付き既定設定domain/schemaを実装・[独立レビュー](reviews/v2-001-default-settings-profile-adversarial-review.md)済みです。source-only quick start、設定store/UI、自動decision、標準成果物、自動代理評価flowは未実装です。
 
 既存実装と検証証拠には次の仕組みがあります。
 
@@ -70,6 +70,7 @@
 - [実現方式調査の敵対的レビュー](reviews/adversarial-review.md)
 - [実装進行成果物の敵対的レビュー](reviews/implementation-adversarial-review.md)
 - [要求版0.2・既定設定・再baseline敵対的レビュー](reviews/v2-defaults-adversarial-review.md)
+- [V2-001版付き既定設定domain/schema敵対的レビュー](reviews/v2-001-default-settings-profile-adversarial-review.md)
 
 ## 変更ごとの最小確認
 

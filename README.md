@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、企業向けのトーク、対談、インタビュー動画から、用途に合わせた複数形式の動画を作るための編集支援アプリケーションです。
 
 > [!IMPORTANT]
-> 現在は技術検証と要求再baselineの段階で、一般利用者向けのアプリケーションやインストーラーはまだ提供していません。以下のsource-only quick start、設定画面、自動代理評価は計画であり、現在実行できる手順ではありません。production実装は一時停止中です。
+> 要求再baseline後のproduction実装を再開し、版付き既定設定のdomain/schemaまで実装しました。一般利用者向けのアプリケーションやインストーラーはまだ提供していません。以下のsource-only quick start、設定画面、自動代理評価は引き続き計画中であり、現在実行できる手順ではありません。
 
 ## できるようになること
 
@@ -82,7 +82,7 @@ HubRadio MovieCreator は、企業向けのトーク、対談、インタビュ�
 |---|---|
 | 一般利用者向けアプリ | 未提供 |
 | インストーラー | 未提供 |
-| 技術検証 | Stage 0・Foundationと既存Stage 1基盤の一部は実装済み。2026-09-02に要求を再baselineし、新quick start、設定画面、自動decision、標準成果物、自動代理評価は未実装。clean Windows install、cloud送信、完成したrender/export flowも未完了 |
+| 技術検証 | Stage 0・Foundationと既存Stage 1基盤の一部、および版付き既定設定のdomain/schemaは実装済み。新quick start、設定store/UI、自動decision、標準成果物、自動代理評価は未実装。clean Windows install、cloud送信、完成したrender/export flowも未完了 |
 | 対象予定 | Windows 11 x64の単一PC・単一標準ユーザー |
 | 外部への自動公開 | 対象外 |
 | クラウド利用 | 評価resourceは作成済み。実コンテンツを送る利用者機能は未提供 |

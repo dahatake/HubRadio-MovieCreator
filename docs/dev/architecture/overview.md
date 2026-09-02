@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、Windows 11 x64 の単一 PC で動作する、ローカル優先の動画編集支援アプリケーションとして設計しています。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation、および既存の一部Stage 1基盤は実装済みです。一方、2026-09-02に[要求版0.2](../../requirement-definition.md)と[ADR-0009](../decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)でsource-only quick start、版付き既定値、単一利用者、社内限定、自動代理評価へ再baselineしました。新しいquick start、設定画面、自動編集の標準成果物、評価flowは**未実装**で、production実装は一時停止中です。旧review/approval型と試験は履歴・互換資産であり、新要求の完了証拠ではありません。
+> Stage 0 と Foundation、および既存の一部Stage 1基盤は実装済みです。2026-09-02に[要求版0.2](../../requirement-definition.md)と[ADR-0009](../decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)でsource-only quick start、版付き既定値、単一利用者、社内限定、自動代理評価へ再baselineし、production実装を再開しました。版付き既定設定のdomain/schemaは実装済みです。新しいquick start、設定store/UI、自動編集の標準成果物、評価flowは**未実装**です。旧review/approval型と試験は履歴・互換資産であり、新要求の完了証拠ではありません。
 >
 > [ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外す判断は維持します。SQLite業務store、永続job/worker protocol、編集操作、durable媒体取込、proxy・preview素材、境界試験、ACL、audit、backup/restore、Python wheel hash lock等の既存証拠も、要求版0.2と矛盾しない範囲で再利用します。
 

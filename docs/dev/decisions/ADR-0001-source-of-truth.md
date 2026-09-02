@@ -47,6 +47,8 @@
 | `docs/dev/planning/implementation-plan.md` | V2-000完了、V2-001以降停止 | `def0085015c7f37e797a1b3cfcd9a44a4f04dfd3bf11c5d4c368c9a655db7069` |
 | `docs/dev/reviews/v2-defaults-adversarial-review.md` | PASS（文書baselineのみ） | `201ae085cb585a4dfe39551c06f82bbd88e6655c5a48ebe07482b09d71199f2c` |
 
+上表は`V2-000`完了時点の履歴である。その後、2026-09-02の利用者指示によりproduction実装を再開し、現在の実行状態は[`implementation-plan.md` §0](../planning/implementation-plan.md#0-要求版02の現在baseline)とtaskごとの敵対的レビューで管理する。
+
 指定されていた `/hve-dev/requirement-definition.md` はリポジトリに存在しない。したがって、存在しないパスを推測して作成したり、別内容の要求定義として扱ったりしない。
 
 ## 変更規則
@@ -60,4 +62,4 @@
 
 ## 結果
 
-後続taskは、この優先順位、要求版0.2、ADR-0009、現在計画§0を入力として実行する。利用者が実装再開を指示するまでproduction taskを開始しない。
+後続taskは、この優先順位、要求版0.2、ADR-0009、現在計画§0を入力として実行する。production実装は利用者指示により再開済みであり、各taskの依存、試験、独立した敵対的レビューを満たして順に進める。

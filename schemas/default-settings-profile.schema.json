@@ -1,0 +1,429 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Canonical immutable default-settings profile. contentDigest covers schemaVersion, name, version, and the sorted settings array; it excludes id and contentDigest. Runtime validation additionally enforces numeric ordering and exact digest agreement.",
+  "title": "DefaultSettingsProfile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "version",
+    "contentDigest",
+    "settings"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "id": {
+      "$ref": "#/$defs/entityId"
+    },
+    "name": {
+      "$ref": "#/$defs/nonBlankText"
+    },
+    "version": {
+      "$ref": "#/$defs/semanticVersion"
+    },
+    "contentDigest": {
+      "$ref": "#/$defs/contentDigest"
+    },
+    "settings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/settingDefinition"
+      },
+      "$comment": "Items are sorted by key and runtime validation rejects duplicate keys."
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "semanticVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "nonBlankText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "settingKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][A-Za-z0-9]*(\\.[a-z][A-Za-z0-9]*)*$"
+    },
+    "settingGroup": {
+      "type": "string",
+      "enum": [
+        "projectAndOutput",
+        "editing",
+        "subtitlesAndGraphics",
+        "audioAndAssets",
+        "privacyAndStorage"
+      ]
+    },
+    "settingUnit": {
+      "type": "string",
+      "enum": [
+        "none",
+        "count",
+        "milliseconds",
+        "seconds",
+        "frames",
+        "pixels",
+        "hertz",
+        "bitsPerSecond",
+        "percent",
+        "charactersPerSecond",
+        "fullWidthCharacters",
+        "decibels",
+        "decibelsFullScale",
+        "loudnessUnitsFullScale"
+      ]
+    },
+    "settingValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/booleanValue"
+        },
+        {
+          "$ref": "#/$defs/integerValue"
+        },
+        {
+          "$ref": "#/$defs/rationalValue"
+        },
+        {
+          "$ref": "#/$defs/textValue"
+        },
+        {
+          "$ref": "#/$defs/textListValue"
+        }
+      ]
+    },
+    "nullableSettingValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/settingValue"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "booleanValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "boolean"
+      ],
+      "properties": {
+        "kind": {
+          "const": "boolean"
+        },
+        "boolean": {
+          "type": "boolean"
+        }
+      }
+    },
+    "integerValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "integer"
+      ],
+      "properties": {
+        "kind": {
+          "const": "integer"
+        },
+        "integer": {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "rationalValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "numerator",
+        "denominator"
+      ],
+      "properties": {
+        "kind": {
+          "const": "rational"
+        },
+        "numerator": {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "textValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "text"
+      ],
+      "properties": {
+        "kind": {
+          "const": "text"
+        },
+        "text": {
+          "$ref": "#/$defs/nonBlankText"
+        }
+      }
+    },
+    "textListValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "values"
+      ],
+      "properties": {
+        "kind": {
+          "const": "textList"
+        },
+        "values": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonBlankText"
+          }
+        }
+      }
+    },
+    "evidence": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/productDecisionEvidence"
+        },
+        {
+          "$ref": "#/$defs/userDecisionEvidence"
+        },
+        {
+          "$ref": "#/$defs/currentImplementationEvidence"
+        },
+        {
+          "$ref": "#/$defs/externalEvidence"
+        }
+      ]
+    },
+    "productDecisionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "productDecision"
+        },
+        "sourceId": {
+          "const": "productDecision"
+        }
+      }
+    },
+    "userDecisionEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "userDecision"
+        },
+        "sourceId": {
+          "type": "string",
+          "pattern": "^U[0-9]{2}$"
+        }
+      }
+    },
+    "currentImplementationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceId"
+      ],
+      "properties": {
+        "kind": {
+          "const": "currentImplementation"
+        },
+        "sourceId": {
+          "type": "string",
+          "pattern": "^C[0-9]{2}$"
+        }
+      }
+    },
+    "externalEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sourceId"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "specification",
+            "officialRecommendation",
+            "peerReviewedFinding",
+            "practicalGuidance"
+          ]
+        },
+        "sourceId": {
+          "type": "string",
+          "pattern": "^R[0-9]{2}$"
+        }
+      }
+    },
+    "settingDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "group",
+        "isAdvanced",
+        "displayName",
+        "description",
+        "unit",
+        "defaultValue",
+        "minimum",
+        "maximum",
+        "allowedTextValues",
+        "evidence"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/settingKey"
+        },
+        "group": {
+          "$ref": "#/$defs/settingGroup"
+        },
+        "isAdvanced": {
+          "type": "boolean"
+        },
+        "displayName": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "description": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "unit": {
+          "$ref": "#/$defs/settingUnit"
+        },
+        "defaultValue": {
+          "$ref": "#/$defs/settingValue"
+        },
+        "minimum": {
+          "$ref": "#/$defs/nullableSettingValue"
+        },
+        "maximum": {
+          "$ref": "#/$defs/nullableSettingValue"
+        },
+        "allowedTextValues": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonBlankText"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "defaultValue": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "boolean",
+                      "text",
+                      "textList"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "unit": {
+                "const": "none"
+              },
+              "minimum": {
+                "type": "null"
+              },
+              "maximum": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "defaultValue": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "boolean",
+                      "integer",
+                      "rational",
+                      "textList"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "allowedTextValues": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
