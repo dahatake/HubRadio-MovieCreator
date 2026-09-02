@@ -34,6 +34,8 @@ public sealed class DatabaseMigratorTests
     private const string SeriesId = "abababab-abab-4bab-8bab-abababababab";
     private const string ProjectCreationDraftId = "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd";
     private const string OtherProjectCreationDraftId = "dededede-dede-4ede-8ede-dededededede";
+    private const string DefaultSettingsProfileId = "a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1";
+    private const string OtherDefaultSettingsProfileId = "b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2";
     private const string DigestA =
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     private const string DigestB =
@@ -57,7 +59,7 @@ public sealed class DatabaseMigratorTests
             timeProvider);
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(7, result.SchemaVersion);
+        Assert.AreEqual(8, result.SchemaVersion);
         Assert.AreEqual(64, result.SchemaDigest.Hex.Length);
         Assert.AreEqual(result.SchemaDigest.Hex, result.SchemaDigest.Hex.ToLowerInvariant());
         Assert.IsTrue(typeof(DatabaseMigrationResult).IsSealed);
@@ -73,7 +75,7 @@ public sealed class DatabaseMigratorTests
         Assert.IsTrue(
             Regex.IsMatch(
                 Path.GetFileName(backupPath),
-                "^hubradio-before-schema-007-20300102T0304056789012Z-[0-9a-f]{32}\\.db$",
+                "^hubradio-before-schema-008-20300102T0304056789012Z-[0-9a-f]{32}\\.db$",
                 RegexOptions.CultureInvariant));
         Assert.AreEqual(1, GetBackupFiles(temporary).Length);
 
@@ -91,12 +93,15 @@ public sealed class DatabaseMigratorTests
             "audit_chain_entries",
             "audit_events",
             "composition_versions",
+            "default_settings_global",
+            "default_settings_profiles",
             "ingest_workflows",
             "job_attempts",
             "job_heartbeats",
             "job_progress",
             "jobs",
             "project_creation_drafts",
+            "project_default_settings",
             "projects",
             "review_comments",
             "review_records",
@@ -110,6 +115,19 @@ public sealed class DatabaseMigratorTests
         Dictionary<string, string[]> expectedColumns = new(StringComparer.Ordinal)
         {
             ["schema_migrations"] = ["version", "name", "content_digest", "applied_at"],
+            ["default_settings_profiles"] =
+                ["profile_id", "profile_version", "profile_digest", "profile_payload"],
+            ["default_settings_global"] =
+            [
+                "singleton_id",
+                "profile_id",
+                "profile_version",
+                "profile_digest",
+                "snapshot_digest",
+                "snapshot_payload",
+                "revision",
+                "updated_at",
+            ],
             ["projects"] =
                 ["id", "revision", "publication_scope", "deadline", "payload", "updated_at"],
             ["project_creation_drafts"] =
@@ -120,6 +138,19 @@ public sealed class DatabaseMigratorTests
                 "updated_at",
                 "finalized_project_id",
                 "finalized_at",
+            ],
+            ["project_default_settings"] =
+            [
+                "project_id",
+                "profile_id",
+                "profile_version",
+                "profile_digest",
+                "initial_snapshot_digest",
+                "initial_snapshot_payload",
+                "current_snapshot_digest",
+                "current_snapshot_payload",
+                "revision",
+                "updated_at",
             ],
             ["composition_versions"] =
                 ["id", "project_id", "parent_version_id", "content_digest", "created_at", "payload"],
@@ -254,6 +285,33 @@ public sealed class DatabaseMigratorTests
             CollectionAssert.AreEqual(columns, GetTableColumns(connection, table), table);
         }
 
+        CollectionAssert.AreEqual(
+            new[] { "profile_id", "profile_version" },
+            GetPrimaryKeyColumns(connection, "default_settings_profiles"));
+        CollectionAssert.AreEqual(
+            new[] { "singleton_id" },
+            GetPrimaryKeyColumns(connection, "default_settings_global"));
+        CollectionAssert.AreEqual(
+            new[] { "project_id" },
+            GetPrimaryKeyColumns(connection, "project_default_settings"));
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "default_settings_profiles:profile_id->profile_id:RESTRICT:RESTRICT",
+                "default_settings_profiles:profile_version->profile_version:RESTRICT:RESTRICT",
+                "default_settings_profiles:profile_digest->profile_digest:RESTRICT:RESTRICT",
+            },
+            GetForeignKeyBindings(connection, "default_settings_global"));
+        CollectionAssert.AreEquivalent(
+            new[]
+            {
+                "default_settings_profiles:profile_id->profile_id:RESTRICT:RESTRICT",
+                "default_settings_profiles:profile_version->profile_version:RESTRICT:RESTRICT",
+                "default_settings_profiles:profile_digest->profile_digest:RESTRICT:RESTRICT",
+                "projects:project_id->id:RESTRICT:RESTRICT",
+            },
+            GetForeignKeyBindings(connection, "project_default_settings"));
+
         using (SqliteCommand strictCommand = connection.CreateCommand())
         {
             strictCommand.CommandText = """
@@ -291,6 +349,7 @@ public sealed class DatabaseMigratorTests
             "idx_jobs_project_id",
             "idx_jobs_state_created_at",
             "idx_project_creation_drafts_updated_at",
+            "idx_project_default_settings_profile",
             "idx_review_comments_project_id",
             "idx_review_comments_version",
             "idx_review_records_project_id",
@@ -305,6 +364,24 @@ public sealed class DatabaseMigratorTests
         CollectionAssert.AreEqual(
             new[] { "composition_version_id", "project_id", "composition_version_digest" },
             GetIndexColumns(connection, "idx_review_comments_version"));
+        CollectionAssert.AreEqual(
+            new[] { "profile_id", "profile_version", "profile_digest" },
+            GetIndexColumns(connection, "idx_project_default_settings_profile"));
+
+        foreach (string settingsTable in new[]
+                 {
+                     "default_settings_profiles",
+                     "default_settings_global",
+                     "project_default_settings",
+                 })
+        {
+            Assert.AreEqual(
+                0L,
+                ExecuteScalarInt64(
+                    connection,
+                    $"SELECT COUNT(*) FROM {settingsTable};"),
+                settingsTable);
+        }
 
         AssertNoCascadeForeignKeys(connection, expectedTables);
 
@@ -325,6 +402,7 @@ public sealed class DatabaseMigratorTests
                 (5, "005_term_entries", ReadEmbeddedMigrationDigest("005_term_entries")),
                 (6, "006_ingest_workflows", ReadEmbeddedMigrationDigest("006_ingest_workflows")),
                 (7, "007_project_creation_drafts", ReadEmbeddedMigrationDigest("007_project_creation_drafts")),
+                (8, "008_default_settings", ReadEmbeddedMigrationDigest("008_default_settings")),
             ];
             foreach ((long version, string name, ContentDigest digest) in expectedMigrations)
             {
@@ -346,6 +424,7 @@ public sealed class DatabaseMigratorTests
         Assert.AreNotEqual(ReadEmbeddedMigrationDigest("005_term_entries"), result.SchemaDigest);
         Assert.AreNotEqual(ReadEmbeddedMigrationDigest("006_ingest_workflows"), result.SchemaDigest);
         Assert.AreNotEqual(ReadEmbeddedMigrationDigest("007_project_creation_drafts"), result.SchemaDigest);
+        Assert.AreNotEqual(ReadEmbeddedMigrationDigest("008_default_settings"), result.SchemaDigest);
         AssertDatabaseChecksPass(connection);
     }
 
@@ -361,7 +440,7 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(1)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(7, result.SchemaVersion);
+        Assert.AreEqual(8, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
 
         string backupPath = result.BackupPath
@@ -401,12 +480,15 @@ public sealed class DatabaseMigratorTests
         CollectionAssert.AreEquivalent(
             new[]
             {
+                "default_settings_global",
+                "default_settings_profiles",
                 "ingest_workflows",
                 "job_attempts",
                 "job_heartbeats",
                 "job_progress",
                 "jobs",
                 "project_creation_drafts",
+                "project_default_settings",
             },
             GetUserTableNames(upgraded)
                 .Except(versionOneTables)
@@ -426,6 +508,7 @@ public sealed class DatabaseMigratorTests
                 "idx_jobs_project_id",
                 "idx_jobs_state_created_at",
                 "idx_project_creation_drafts_updated_at",
+                "idx_project_default_settings_profile",
                 "idx_term_entries_project_written_form_reading",
                 "idx_term_entries_series_written_form_reading",
             },
@@ -436,7 +519,7 @@ public sealed class DatabaseMigratorTests
             1L,
             ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM projects;"));
         Assert.AreEqual(
-            7L,
+            8L,
             ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
         Assert.AreEqual(
             "001_initial",
@@ -513,6 +596,16 @@ public sealed class DatabaseMigratorTests
             ExecuteScalarString(
                 upgraded,
                 "SELECT content_digest FROM schema_migrations WHERE version = 7;"));
+        Assert.AreEqual(
+            "008_default_settings",
+            ExecuteScalarString(
+                upgraded,
+                "SELECT name FROM schema_migrations WHERE version = 8;"));
+        Assert.AreEqual(
+            ReadEmbeddedMigrationDigest("008_default_settings").Hex,
+            ExecuteScalarString(
+                upgraded,
+                "SELECT content_digest FROM schema_migrations WHERE version = 8;"));
         AssertDatabaseChecksPass(upgraded);
     }
 
@@ -1276,6 +1369,141 @@ public sealed class DatabaseMigratorTests
     }
 
     [TestMethod]
+    public void Schema_DefaultSettingsEnforcesIdentityBoundsBindingsAndRestrictedDeletes()
+    {
+        using TemporaryDatabase temporary = CreateMigratedDatabase();
+        using SqliteConnection connection = OpenConnection(temporary.DatabasePath);
+        Assert.AreEqual(
+            1L,
+            ExecuteScalarInt64(connection, "PRAGMA foreign_keys;"));
+
+        InsertDefaultSettingsProfile(
+            connection,
+            DefaultSettingsProfileId,
+            "1.0.0",
+            DigestA,
+            [1]);
+        AssertConstraintViolation(
+            () => InsertDefaultSettingsProfile(
+                connection,
+                DefaultSettingsProfileId.ToUpperInvariant(),
+                "1.0.0",
+                DigestB,
+                [1]));
+        AssertConstraintViolation(
+            () => InsertDefaultSettingsProfile(
+                connection,
+                OtherDefaultSettingsProfileId,
+                "01.0.0",
+                DigestB,
+                [1]));
+        AssertConstraintViolation(
+            () => InsertDefaultSettingsProfile(
+                connection,
+                OtherDefaultSettingsProfileId,
+                "1.0.0",
+                DigestB.ToUpperInvariant(),
+                [1]));
+        AssertConstraintViolation(
+            () => InsertDefaultSettingsProfile(
+                connection,
+                OtherDefaultSettingsProfileId,
+                "1.0.0",
+                DigestB,
+                Array.Empty<byte>()));
+        AssertConstraintViolation(
+            () => ExecuteNonQuery(
+                connection,
+                """
+                    INSERT INTO default_settings_profiles (
+                        profile_id,
+                        profile_version,
+                        profile_digest,
+                        profile_payload
+                    )
+                    VALUES ($profile_id, '1.0.0', $digest, zeroblob($size));
+                    """,
+                ("$profile_id", OtherDefaultSettingsProfileId),
+                ("$digest", DigestB),
+                ("$size", DefaultSettingsStore.MaximumCanonicalJsonUtf8Bytes + 1L)));
+
+        AssertConstraintViolation(
+            () => InsertGlobalDefaultSettings(
+                connection,
+                singletonId: 1,
+                DefaultSettingsProfileId,
+                "1.0.0",
+                DigestB));
+        InsertGlobalDefaultSettings(
+            connection,
+            singletonId: 1,
+            DefaultSettingsProfileId,
+            "1.0.0",
+            DigestA);
+        AssertConstraintViolation(
+            () => InsertGlobalDefaultSettings(
+                connection,
+                singletonId: 2,
+                DefaultSettingsProfileId,
+                "1.0.0",
+                DigestA));
+
+        AssertConstraintViolation(
+            () => InsertProjectDefaultSettings(
+                connection,
+                ProjectId,
+                DefaultSettingsProfileId,
+                "1.0.0",
+                DigestA));
+        InsertProject(connection, ProjectId);
+        AssertConstraintViolation(
+            () => InsertProjectDefaultSettings(
+                connection,
+                ProjectId,
+                DefaultSettingsProfileId,
+                "1.0.0",
+                DigestB));
+        InsertProjectDefaultSettings(
+            connection,
+            ProjectId,
+            DefaultSettingsProfileId,
+            "1.0.0",
+            DigestA);
+
+        AssertConstraintViolation(
+            () => ExecuteNonQuery(
+                connection,
+                """
+                    UPDATE default_settings_profiles
+                    SET profile_id = $replacement_profile_id
+                    WHERE profile_id = $profile_id;
+                    """,
+                ("$replacement_profile_id", OtherDefaultSettingsProfileId),
+                ("$profile_id", DefaultSettingsProfileId)));
+        AssertConstraintViolation(
+            () => ExecuteNonQuery(
+                connection,
+                """
+                    UPDATE projects
+                    SET id = $replacement_project_id
+                    WHERE id = $project_id;
+                    """,
+                ("$replacement_project_id", OtherProjectId),
+                ("$project_id", ProjectId)));
+        AssertConstraintViolation(
+            () => ExecuteNonQuery(
+                connection,
+                "DELETE FROM default_settings_profiles WHERE profile_id = $profile_id;",
+                ("$profile_id", DefaultSettingsProfileId)));
+        AssertConstraintViolation(
+            () => ExecuteNonQuery(
+                connection,
+                "DELETE FROM projects WHERE id = $id;",
+                ("$id", ProjectId)));
+        AssertDatabaseChecksPass(connection);
+    }
+
+    [TestMethod]
     public void Migrate_ExactVersionThreeAppliesRemainingMigrationsWithBackupDigestAndIdempotence()
     {
         using TemporaryDatabase temporary = new();
@@ -1287,10 +1515,10 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(3)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(7, result.SchemaVersion);
+        Assert.AreEqual(8, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
         string backupPath = result.BackupPath
-            ?? throw new AssertFailedException("The 003 to 007 upgrade must create a backup.");
+            ?? throw new AssertFailedException("The 003 to 008 upgrade must create a backup.");
         using (SqliteConnection backup = OpenConnection(backupPath, SqliteOpenMode.ReadOnly))
         {
             Assert.AreEqual(
@@ -1317,7 +1545,7 @@ public sealed class DatabaseMigratorTests
         using (SqliteConnection upgraded = OpenConnection(temporary.DatabasePath))
         {
             Assert.AreEqual(
-                7L,
+                8L,
                 ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
             Assert.AreEqual(
                 1L,
@@ -1355,10 +1583,10 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(4)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(7, result.SchemaVersion);
+        Assert.AreEqual(8, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
         string backupPath = result.BackupPath
-            ?? throw new AssertFailedException("The 004 to 007 upgrade must create a backup.");
+            ?? throw new AssertFailedException("The 004 to 008 upgrade must create a backup.");
         using (SqliteConnection backup = OpenConnection(backupPath, SqliteOpenMode.ReadOnly))
         {
             Assert.AreEqual(
@@ -1380,7 +1608,7 @@ public sealed class DatabaseMigratorTests
         using (SqliteConnection upgraded = OpenConnection(temporary.DatabasePath))
         {
             Assert.AreEqual(
-                7L,
+                8L,
                 ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
             Assert.AreEqual(
                 1L,
@@ -1402,7 +1630,7 @@ public sealed class DatabaseMigratorTests
     }
 
     [TestMethod]
-    public void Migrate_ExactVersionFiveApplies006And007WithBackupAndIdempotence()
+    public void Migrate_ExactVersionFiveApplies006Through008WithBackupAndIdempotence()
     {
         using TemporaryDatabase temporary = new();
         CreateExactVersionFiveDatabase(temporary);
@@ -1413,10 +1641,10 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(5)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(7, result.SchemaVersion);
+        Assert.AreEqual(8, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
         string backupPath = result.BackupPath
-            ?? throw new AssertFailedException("The 005 to 007 upgrade must create a backup.");
+            ?? throw new AssertFailedException("The 005 to 008 upgrade must create a backup.");
         using (SqliteConnection backup = OpenConnection(backupPath, SqliteOpenMode.ReadOnly))
         {
             Assert.AreEqual(
@@ -1433,7 +1661,7 @@ public sealed class DatabaseMigratorTests
         using (SqliteConnection upgraded = OpenConnection(temporary.DatabasePath))
         {
             Assert.AreEqual(
-                7L,
+                8L,
                 ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
             Assert.AreEqual(
                 1L,
@@ -1460,7 +1688,7 @@ public sealed class DatabaseMigratorTests
     }
 
     [TestMethod]
-    public void Migrate_ExactVersionSixAppliesOnly007WithBackupAndIdempotence()
+    public void Migrate_ExactVersionSixApplies007And008WithBackupAndIdempotence()
     {
         using TemporaryDatabase temporary = new();
         CreateExactVersionSixDatabase(temporary);
@@ -1471,10 +1699,10 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(6)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(7, result.SchemaVersion);
+        Assert.AreEqual(8, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
         string backupPath = result.BackupPath
-            ?? throw new AssertFailedException("The 006 to 007 upgrade must create a backup.");
+            ?? throw new AssertFailedException("The 006 to 008 upgrade must create a backup.");
         using (SqliteConnection backup = OpenConnection(backupPath, SqliteOpenMode.ReadOnly))
         {
             Assert.AreEqual(
@@ -1491,7 +1719,7 @@ public sealed class DatabaseMigratorTests
         using (SqliteConnection upgraded = OpenConnection(temporary.DatabasePath))
         {
             Assert.AreEqual(
-                7L,
+                8L,
                 ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
             Assert.AreEqual(
                 1L,
@@ -1510,6 +1738,139 @@ public sealed class DatabaseMigratorTests
         Assert.IsNull(noOp.BackupPath);
         Assert.AreEqual(result.SchemaDigest, noOp.SchemaDigest);
         CollectionAssert.AreEqual(backups, GetBackupFiles(temporary));
+    }
+
+    [TestMethod]
+    public void Migrate_ExactVersionSevenAppliesOnly008WithoutBackfillAndIsIdempotent()
+    {
+        using TemporaryDatabase temporary = new();
+        CreateExactVersionSevenDatabase(temporary);
+
+        DatabaseMigrationResult result = DatabaseMigrator.Migrate(
+            temporary.DatabasePath,
+            temporary.BackupDirectory,
+            new FixedTimeProvider(FixedUtcNow.AddMinutes(7)));
+
+        Assert.IsTrue(result.Applied);
+        Assert.AreEqual(8, result.SchemaVersion);
+        Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
+        string backupPath = result.BackupPath
+            ?? throw new AssertFailedException("The 007 to 008 upgrade must create a backup.");
+        using (SqliteConnection backup = OpenConnection(backupPath, SqliteOpenMode.ReadOnly))
+        {
+            Assert.AreEqual(18, GetUserTableNames(backup).Length);
+            Assert.AreEqual(
+                7L,
+                ExecuteScalarInt64(backup, "SELECT COUNT(*) FROM schema_migrations;"));
+            Assert.AreEqual(
+                1L,
+                ExecuteScalarInt64(backup, "SELECT COUNT(*) FROM projects;"));
+            Assert.AreEqual(
+                0L,
+                ExecuteScalarInt64(
+                    backup,
+                    "SELECT COUNT(*) FROM sqlite_schema WHERE name LIKE '%default_settings%';"));
+            AssertDatabaseChecksPass(backup);
+        }
+
+        using (SqliteConnection upgraded = OpenConnection(temporary.DatabasePath))
+        {
+            Assert.AreEqual(21, GetUserTableNames(upgraded).Length);
+            Assert.AreEqual(
+                8L,
+                ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
+            Assert.AreEqual(
+                "008_default_settings",
+                ExecuteScalarString(
+                    upgraded,
+                    "SELECT name FROM schema_migrations WHERE version = 8;"));
+            Assert.AreEqual(
+                ReadEmbeddedMigrationDigest("008_default_settings").Hex,
+                ExecuteScalarString(
+                    upgraded,
+                    "SELECT content_digest FROM schema_migrations WHERE version = 8;"));
+            Assert.AreEqual(
+                1L,
+                ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM projects;"));
+            Assert.AreEqual(
+                0L,
+                ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM default_settings_profiles;"));
+            Assert.AreEqual(
+                0L,
+                ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM default_settings_global;"));
+            Assert.AreEqual(
+                0L,
+                ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM project_default_settings;"));
+            AssertDatabaseChecksPass(upgraded);
+        }
+
+        string[] backups = GetBackupFiles(temporary);
+        DatabaseMigrationResult noOp = DatabaseMigrator.Migrate(
+            temporary.DatabasePath,
+            temporary.BackupDirectory,
+            new AlwaysThrowingTimeProvider());
+        Assert.IsFalse(noOp.Applied);
+        Assert.IsNull(noOp.BackupPath);
+        Assert.AreEqual(result.SchemaDigest, noOp.SchemaDigest);
+        CollectionAssert.AreEqual(backups, GetBackupFiles(temporary));
+    }
+
+    [TestMethod]
+    public void Migrate_ExactVersionSevenFailureAfter008SqlRollsBackSchemaAndMetadata()
+    {
+        using TemporaryDatabase temporary = new();
+        CreateExactVersionSevenDatabase(temporary);
+        var timeProvider = new ThrowOnSecondUtcNowTimeProvider(FixedUtcNow);
+
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => DatabaseMigrator.Migrate(
+                temporary.DatabasePath,
+                temporary.BackupDirectory,
+                timeProvider));
+
+        string[] backupsAfterFailure = GetBackupFiles(temporary);
+        Assert.AreEqual(1, backupsAfterFailure.Length);
+        using (SqliteConnection backup = OpenConnection(
+            backupsAfterFailure[0],
+            SqliteOpenMode.ReadOnly))
+        {
+            Assert.AreEqual(18, GetUserTableNames(backup).Length);
+            Assert.AreEqual(
+                7L,
+                ExecuteScalarInt64(backup, "SELECT COUNT(*) FROM schema_migrations;"));
+            AssertDatabaseChecksPass(backup);
+        }
+
+        using (SqliteConnection failedSource = OpenConnection(temporary.DatabasePath))
+        {
+            Assert.AreEqual(18, GetUserTableNames(failedSource).Length);
+            Assert.AreEqual(
+                7L,
+                ExecuteScalarInt64(failedSource, "SELECT COUNT(*) FROM schema_migrations;"));
+            Assert.AreEqual(
+                0L,
+                ExecuteScalarInt64(
+                    failedSource,
+                    "SELECT COUNT(*) FROM sqlite_schema WHERE name LIKE '%default_settings%';"));
+            Assert.AreEqual(
+                1L,
+                ExecuteScalarInt64(failedSource, "SELECT COUNT(*) FROM projects;"));
+            AssertDatabaseChecksPass(failedSource);
+        }
+
+        DatabaseMigrationResult retry = DatabaseMigrator.Migrate(
+            temporary.DatabasePath,
+            temporary.BackupDirectory,
+            new FixedTimeProvider(FixedUtcNow.AddMinutes(1)));
+        Assert.IsTrue(retry.Applied);
+        Assert.AreEqual(8, retry.SchemaVersion);
+        Assert.AreEqual(2, GetBackupFiles(temporary).Length);
+        using SqliteConnection migrated = OpenConnection(temporary.DatabasePath);
+        Assert.AreEqual(21, GetUserTableNames(migrated).Length);
+        Assert.AreEqual(
+            8L,
+            ExecuteScalarInt64(migrated, "SELECT COUNT(*) FROM schema_migrations;"));
+        AssertDatabaseChecksPass(migrated);
     }
 
     [TestMethod]
@@ -1964,7 +2325,7 @@ public sealed class DatabaseMigratorTests
 
         Assert.IsFalse(second.Applied);
         Assert.IsNull(second.BackupPath);
-        Assert.AreEqual(7, second.SchemaVersion);
+        Assert.AreEqual(8, second.SchemaVersion);
         Assert.AreEqual(first.SchemaDigest, second.SchemaDigest);
         CollectionAssert.AreEqual(originalBackups, GetBackupFiles(temporary));
 
@@ -2302,7 +2663,7 @@ public sealed class DatabaseMigratorTests
                                 content_digest,
                                 applied_at
                             )
-                            VALUES (8, '008_unknown', $digest, $applied_at);
+                            VALUES (9, '009_unknown', $digest, $applied_at);
                             """,
                         ("$digest", DigestA),
                         ("$applied_at", Timestamp));
@@ -2341,6 +2702,8 @@ public sealed class DatabaseMigratorTests
     [DataRow("term-index")]
     [DataRow("project-draft-table")]
     [DataRow("project-draft-index")]
+    [DataRow("project-settings-table")]
+    [DataRow("project-settings-index")]
     public void Migrate_CurrentMetadataWithAlteredSchemaCreatesBackupThenFailsClosed(
         string mutation)
     {
@@ -2362,6 +2725,9 @@ public sealed class DatabaseMigratorTests
                     "project-draft-table" => "DROP TABLE project_creation_drafts;",
                     "project-draft-index" =>
                         "DROP INDEX idx_project_creation_drafts_updated_at;",
+                    "project-settings-table" => "DROP TABLE project_default_settings;",
+                    "project-settings-index" =>
+                        "DROP INDEX idx_project_default_settings_profile;",
                     _ => throw new AssertFailedException("Unknown schema mutation."),
                 });
             AssertDatabaseChecksPass(connection);
@@ -2469,7 +2835,7 @@ public sealed class DatabaseMigratorTests
         Assert.IsTrue(retry.Applied);
         Assert.AreEqual(2, GetBackupFiles(temporary).Length);
         using SqliteConnection migrated = OpenConnection(temporary.DatabasePath);
-        Assert.AreEqual(18, GetUserTableNames(migrated).Length);
+        Assert.AreEqual(21, GetUserTableNames(migrated).Length);
         AssertDatabaseChecksPass(migrated);
     }
 
@@ -2490,9 +2856,9 @@ public sealed class DatabaseMigratorTests
             0L,
             ExecuteScalarInt64(connection, "SELECT COUNT(*) FROM projects;"));
         Assert.AreEqual(
-            7L,
+            8L,
             ExecuteScalarInt64(connection, "SELECT COUNT(*) FROM schema_migrations;"));
-        Assert.AreEqual(18, GetUserTableNames(connection).Length);
+        Assert.AreEqual(21, GetUserTableNames(connection).Length);
         AssertDatabaseChecksPass(connection);
     }
 
@@ -2675,6 +3041,27 @@ public sealed class DatabaseMigratorTests
                 VALUES (6, '006_ingest_workflows', $digest, $applied_at);
                 """,
             ("$digest", ReadEmbeddedMigrationDigest("006_ingest_workflows").Hex),
+            ("$applied_at", Timestamp));
+        AssertDatabaseChecksPass(connection);
+    }
+
+    private static void CreateExactVersionSevenDatabase(TemporaryDatabase temporary)
+    {
+        CreateExactVersionSixDatabase(temporary);
+        using SqliteConnection connection = OpenConnection(temporary.DatabasePath);
+        ExecuteNonQuery(connection, ReadEmbeddedMigrationSql("007_project_creation_drafts"));
+        ExecuteNonQuery(
+            connection,
+            """
+                INSERT INTO schema_migrations (
+                    version,
+                    name,
+                    content_digest,
+                    applied_at
+                )
+                VALUES (7, '007_project_creation_drafts', $digest, $applied_at);
+                """,
+            ("$digest", ReadEmbeddedMigrationDigest("007_project_creation_drafts").Hex),
             ("$applied_at", Timestamp));
         AssertDatabaseChecksPass(connection);
     }
@@ -2968,6 +3355,114 @@ public sealed class DatabaseMigratorTests
             ("$id", id),
             ("$publication_scope", "InternalOnly"),
             ("$payload", payload ?? new byte[] { 1 }),
+            ("$updated_at", Timestamp));
+    }
+
+    private static void InsertDefaultSettingsProfile(
+        SqliteConnection connection,
+        string profileId,
+        string profileVersion,
+        string profileDigest,
+        byte[] profilePayload)
+    {
+        ExecuteNonQuery(
+            connection,
+            """
+                INSERT INTO default_settings_profiles (
+                    profile_id,
+                    profile_version,
+                    profile_digest,
+                    profile_payload
+                )
+                VALUES ($profile_id, $profile_version, $profile_digest, $profile_payload);
+                """,
+            ("$profile_id", profileId),
+            ("$profile_version", profileVersion),
+            ("$profile_digest", profileDigest),
+            ("$profile_payload", profilePayload));
+    }
+
+    private static void InsertGlobalDefaultSettings(
+        SqliteConnection connection,
+        long singletonId,
+        string profileId,
+        string profileVersion,
+        string profileDigest)
+    {
+        ExecuteNonQuery(
+            connection,
+            """
+                INSERT INTO default_settings_global (
+                    singleton_id,
+                    profile_id,
+                    profile_version,
+                    profile_digest,
+                    snapshot_digest,
+                    snapshot_payload,
+                    revision,
+                    updated_at
+                )
+                VALUES (
+                    $singleton_id,
+                    $profile_id,
+                    $profile_version,
+                    $profile_digest,
+                    $snapshot_digest,
+                    $snapshot_payload,
+                    0,
+                    $updated_at
+                );
+                """,
+            ("$singleton_id", singletonId),
+            ("$profile_id", profileId),
+            ("$profile_version", profileVersion),
+            ("$profile_digest", profileDigest),
+            ("$snapshot_digest", DigestB),
+            ("$snapshot_payload", new byte[] { 2 }),
+            ("$updated_at", Timestamp));
+    }
+
+    private static void InsertProjectDefaultSettings(
+        SqliteConnection connection,
+        string projectId,
+        string profileId,
+        string profileVersion,
+        string profileDigest)
+    {
+        ExecuteNonQuery(
+            connection,
+            """
+                INSERT INTO project_default_settings (
+                    project_id,
+                    profile_id,
+                    profile_version,
+                    profile_digest,
+                    initial_snapshot_digest,
+                    initial_snapshot_payload,
+                    current_snapshot_digest,
+                    current_snapshot_payload,
+                    revision,
+                    updated_at
+                )
+                VALUES (
+                    $project_id,
+                    $profile_id,
+                    $profile_version,
+                    $profile_digest,
+                    $snapshot_digest,
+                    $snapshot_payload,
+                    $snapshot_digest,
+                    $snapshot_payload,
+                    0,
+                    $updated_at
+                );
+                """,
+            ("$project_id", projectId),
+            ("$profile_id", profileId),
+            ("$profile_version", profileVersion),
+            ("$profile_digest", profileDigest),
+            ("$snapshot_digest", DigestB),
+            ("$snapshot_payload", new byte[] { 2 }),
             ("$updated_at", Timestamp));
     }
 
@@ -3693,6 +4188,7 @@ public sealed class DatabaseMigratorTests
             (5, "005_term_entries", ReadEmbeddedMigrationDigest("005_term_entries")),
             (6, "006_ingest_workflows", ReadEmbeddedMigrationDigest("006_ingest_workflows")),
             (7, "007_project_creation_drafts", ReadEmbeddedMigrationDigest("007_project_creation_drafts")),
+            (8, "008_default_settings", ReadEmbeddedMigrationDigest("008_default_settings")),
         ];
 
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);

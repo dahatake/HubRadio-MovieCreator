@@ -455,7 +455,7 @@ public sealed class ProjectStoreTests
     }
 
     [TestMethod]
-    public void ConstructorsRequireExactlyNamedVersionsOneThroughSeven()
+    public void ConstructorsRequireExactlyNamedVersionsOneThroughEight()
     {
         using (StoreTestDatabase wrongNameDatabase = new())
         {
@@ -470,9 +470,9 @@ public sealed class ProjectStoreTests
         extraVersionDatabase.ExecuteNonQuery(
             """
             INSERT INTO schema_migrations (version, name, content_digest, applied_at)
-            VALUES (8, $name, $digest, $applied_at);
+            VALUES (9, $name, $digest, $applied_at);
             """,
-            ("$name", "008_unexpected"),
+            ("$name", "009_unexpected"),
             ("$digest", new string('a', 64)),
             ("$applied_at", "2030-01-02T03:04:05.0000000Z"));
         Assert.ThrowsExactly<InvalidOperationException>(
@@ -497,6 +497,7 @@ public sealed class ProjectStoreTests
             typeof(RoleAssignmentStore),
             typeof(TermStore),
             typeof(ProjectCreationDraftStore),
+            typeof(DefaultSettingsStore),
         })
         {
             Assert.IsTrue(storeType.IsPublic);
