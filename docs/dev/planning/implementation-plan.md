@@ -497,10 +497,12 @@ PK-006は、公式templateに沿うx64 Windows Application Packaging Projectと`
 
 ### 5.14 Q — 受入、回帰、リリース判定
 
+`Q-001`は決定的な合成自動契約と専用runnerを実装済みである。候補の明示decision、speaker/topic、長尺planからCompositionへの写像、修正字幕のWebVTT/RenderGraph結合、trace、合成QC/approval/delivery、broken provenance・stale approval・権利未確認の負例を検証する。証拠は実素材、実ASR、S-011 authorization、実FFmpeg/final render、実媒体QC、thumbnail、人手承認を明示的に未実行とし、8項目を`PENDING`、`q001Complete=false`としているため、`Q-001`と`G1-MUST`は未完了のままである。
+
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|
 | Q-000 | Mustの9:16手動縦切りを試験する | `TESTS/Acceptance/Must_VerticalManual.*`、visual evidence | R-007〜R-026,U-010,U-017,S-011 / 直列 | 人が選択した1区間を手動layout/keyframe、字幕、generic safe zone、承認付きで出力 | FR-010/012〜015/026/031 | ローカル処理 |
-| Q-001 | 長尺版の受入flowを自動+手動試験する | `TESTS/Acceptance/AC001_LongForm.*`、evidence | M-011,A-004/A-006〜A-009/A-011/A-014/A-016/A-018〜A-021,R-003〜R-026,U-005〜U-017,S-011 / 直列 | 削除候補→構成→speaker/topic→字幕/強調修正→thumbnail→追跡→承認→出力を通す | AC-001 | ローカル処理 |
+| Q-001 | **自動契約済み・人手受入待ち。** 長尺版の受入flowを自動+手動試験する | `TESTS/Acceptance/AC001_LongForm.*`、evidence | M-011,A-004/A-006〜A-009/A-011/A-014/A-016/A-018〜A-021,R-003〜R-026,U-005〜U-017,S-011 / 直列 | 合成自動契約は成功。実素材、実ASR、人手候補採否、強調/thumbnail目視、S-011、実render/QC、権限者承認は`PENDING`で、削除候補→構成→speaker/topic→字幕/強調修正→thumbnail→追跡→承認→出力を実素材で通すまで未完了 | AC-001 | ローカル処理 |
 | Q-002 | 完全版AC-002を手動fallback込みで試験する | `TESTS/Acceptance/AC002_Vertical.*`、visual evidence | Q-000,E-014,E-015,E-019,U-011 / 直列 | 複数候補、顔/資料指定、hook変更、配信先safe zone、意味確認を通す | AC-002 | ローカル処理 |
 | Q-003 | quiz版を根拠・曖昧性込みで試験する | `TESTS/Acceptance/AC003_Quiz.*`、review evidence | E-011,E-016,S-011 / 直列 | 根拠移動、待ち時間、複数解釈、根拠なし拒否を確認 | AC-003 | ローカル優先 |
 | Q-004 | Windows actor/role/公開区分/承認gateを試験する | `TESTS/Acceptance/AC004_Security.*` | S-001〜S-016 / 直列 | 権限外閲覧、外部誤出力、未承認final、audit閲覧を検査 | AC-004 | なし |

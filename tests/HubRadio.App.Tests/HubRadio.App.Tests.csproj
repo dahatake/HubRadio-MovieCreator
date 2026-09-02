@@ -14,6 +14,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\Acceptance\AC001_LongForm.cs"
+             Link="Acceptance\AC001_LongForm.cs" />
     <Compile Include="..\Acceptance\AC005_Traceability.cs"
              Link="Acceptance\AC005_Traceability.cs" />
     <Compile Include="..\Acceptance\Must_VerticalManual.cs"
