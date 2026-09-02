@@ -3,9 +3,11 @@
 HubRadio MovieCreator は、Windows 11 x64 の単一 PC で動作する、ローカル優先の動画編集支援アプリケーションとして設計しています。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation は完了済みです。[ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外しました。Stage 1ではSQLite業務store、永続job/worker protocol、編集操作、review/approval、durable request/checkpointとAsset/warning/PTS/artifact stateを復元する媒体取込、NVENC/Media Foundation proxy・preview素材、媒体およびbridge/process/path境界の専用敵対試験、ACL、audit、backup/restore、Windows x64 / CPython 3.12向けPython wheel hash lockまで実装済みです。業務UI、解析後段、Render IR以降、Python runtime/modelを含む配布は未完了です。
+> Stage 0 と Foundation、および既存の一部Stage 1基盤は実装済みです。一方、2026-09-02に[要求版0.2](../../requirement-definition.md)と[ADR-0009](../decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)でsource-only quick start、版付き既定値、単一利用者、社内限定、自動代理評価へ再baselineしました。新しいquick start、設定画面、自動編集の標準成果物、評価flowは**未実装**で、production実装は一時停止中です。旧review/approval型と試験は履歴・互換資産であり、新要求の完了証拠ではありません。
+>
+> [ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外す判断は維持します。SQLite業務store、永続job/worker protocol、編集操作、durable媒体取込、proxy・preview素材、境界試験、ACL、audit、backup/restore、Python wheel hash lock等の既存証拠も、要求版0.2と矛盾しない範囲で再利用します。
 
-![HubRadio MovieCreatorのローカル優先アーキテクチャ。緑は実装済み、青は一部実装または計画中、紫の破線は条件付きAzure経路](system-overview.svg)
+![HubRadio MovieCreatorの単一利用者向けローカル優先アーキテクチャ。緑は既存実装、青は一部実装または版0.2で計画中、紫の破線は既定無効の条件付きAzure経路](system-overview.svg)
 
 ## 図の読み方
 
@@ -15,7 +17,7 @@ HubRadio MovieCreator は、Windows 11 x64 の単一 PC で動作する、ロー
 
 Stage 0で評価しても採用しなかったmodelや再評価保留のdetectorは、製品構成要素として図示していません。対応する要求はtranscript規則、手動speaker割当、manual layout/keyframe、版付きsafe zoneで実装します。
 
-現在の完了タスクと次の作業は、[詳細実装計画](../planning/implementation-plan.md)を正本とします。
+旧taskの実装履歴と、新要求に対する分類・次の作業は、[詳細実装計画](../planning/implementation-plan.md)を正本とします。旧`124/203`、`139/203`、`160/203`等を現在の進捗値として使いません。
 
 ## 設計原則
 
@@ -23,8 +25,10 @@ Stage 0で評価しても採用しなかったmodelや再評価保留のdetector
 2. **元動画不変:** 取込後の元動画を編集処理で上書きしません。
 3. **非破壊編集:** カット、字幕、画角、音声、効果は元素材への参照として保持します。
 4. **根拠追跡:** 出力要素を元発言、承認済み素材、または編集者作成要素へ逆引きできるようにします。
-5. **人が最終判断:** 削除、公開区分、権利、機密性、承認を AI だけで確定しません。
-6. **最小構成:** 正式な要件がないサーバー、分散基盤、汎用拡張点は追加しません。
+5. **版付きsmart defaults:** 元動画以外を安全な既定値から補完し、全設定を確認・変更・resetできるようにします。
+6. **自動代理評価の正直な境界:** 機械判定できるclosed contractを自動評価し、人の知覚・理解・法的判断を実施したとは主張しません。
+7. **社内限定と可逆性:** 自動decisionは社内限定の子版へ記録し、任意に確認、取消、修正できます。
+8. **最小構成:** 正式な要件がないサーバー、分散基盤、汎用拡張点は追加しません。
 
 製品範囲の決定は [ADR-0002](../decisions/ADR-0002-product-scope.md) を参照してください。
 
@@ -45,7 +49,7 @@ ASP.NET Core、localhost HTTP サーバー、Windows Service、別の業務 API 
 ### WinUI 3 と React
 
 - **WinUI 3:** ウィンドウ、起動、障害表示、token化するネイティブファイル選択は実装済み
-- **WebView2 内の React:** secureなbundled shellは実装済み。案件一覧、解析、タイムライン、字幕、レイアウト、レビューは未実装
+- **WebView2 内の React:** secureなbundled shellと旧案件flowの一部は実装済み。版0.2のかんたん編集、進捗・成果物、全体設定、自動代理評価、詳細編集は未実装
 - **通信:** origin、UTF-8 byte size、closed schema、methodを検査する型付き WebMessage。現時点のallowlistは`bridge.ping`だけ
 
 React からファイルパス、SQL、FFmpeg 引数、任意コマンドは送信しません。
@@ -80,7 +84,8 @@ S-014では現在のclosed surfaceだけを対象に、React text interpolation�
 - 案件、権限、ジョブ
 - 復旧可能な作業コピー
 - 不変の編集版索引
-- レビュー、承認、権利、監査
+- 既定設定snapshot、自動decision、自動代理評価、任意確認
+- 既存のレビュー、承認、権利、監査record
 - 納品物の索引
 - 取込jobのversioned canonical request/checkpoint
 
@@ -112,29 +117,27 @@ S-014では現在のclosed surfaceだけを対象に、React text interpolation�
 
 ## 処理フロー
 
-1. 利用者が元動画と案件情報を登録します。
-2. ホストが staging へコピーし、形式、stream、PTS、全編 decode、容量を検査します。
-3. FFmpeg と Python が解析成果物を返します。自動出力は候補として隔離します。
-4. 利用者が候補を採否し、字幕、区間、レイアウト、音声を修正します。
-5. checkpoint で不変の編集版と出力から元素材への写像を作ります。
-6. 公開区分に必要なレビューを、人が対象版の digest に対して行います。
-7. 承認済み版から型付き Render IR を作り、FFmpeg 引数へ変換します。
-8. codec、duration、A/V 同期、字幕、画面、音量、全編 decode を検査します。
-9. QC 済み成果物だけを納品領域へ昇格し、hash と来歴を記録します。
+1. 利用者が元動画1本を選び、社内限定の既定設定要約に対して`編集を開始`または取消を選びます。
+2. ホストがstagingへコピーし、形式、stream、PTS、全編decode、容量を検査します。
+3. FFmpegとPythonが解析成果物を返し、根拠付きcandidateとwarningを保存します。
+4. closedな版付き規則だけを自動decisionとして子Compositionへ適用します。曖昧な意味判断は候補のまま残します。
+5. 同じCompositionから長尺、短尺、字幕、音声、BGM、サムネイル等の型付きRender IRを作ります。
+6. codec、duration、A/V同期、字幕、画面領域、音量、全編decode、来歴を自動代理評価します。
+7. 技術的破損または来歴欠落はblockし、知覚項目の判断不能はwarningと未評価範囲を残します。
+8. QC済みの社内限定成果物だけを納品領域へ昇格し、hash、設定版、元区間、評価結果を記録します。
+9. 利用者は任意にpreview、差分、根拠を確認し、修正した子版を再評価・再出力できます。
 
 この流れは [要求定義 §7](../../requirement-definition.md#7-基本処理フロー) を実装へ具体化した計画であり、完成済みの操作フローではありません。
 
-## レビュー境界
+## 評価と任意確認の境界
 
-社内限定の既定経路:
+社内限定quick startの既定経路:
 
-`Editing → EditorReview → ContentReview → Approved → FinalRendering → QualityControl → Exported`
+`Editing → AutomatedEvaluation → Ready | ReadyWithWarnings | Failed → Exported`
 
-外部公開候補の既定経路:
+`Failed`は技術破損、来歴欠落、素材利用範囲違反等のclosedな条件に限定します。自動代理評価を`human PASS`または人手承認と表記しません。利用者は任意に`SelfReviewed`または`ChangesRequested`を記録できます。字幕、カット、音声、レイアウト、テンプレートを変更した場合は子版を作り、自動代理評価を再実行します。
 
-`Editing → EditorReview → PerformerReview → ContentReview → BrandReview → Approved → FinalRendering → QualityControl → Exported`
-
-承認後に字幕、カット、音声、レイアウト、テンプレートを変更した場合は子版を作り、旧承認を引き継ぎません。詳細は [ADR-0003](../decisions/ADR-0003-local-identity-and-review.md) を参照してください。
+旧review/approval経路は既存データの読取と履歴監査のため残せますが、quick startの必須gateにはしません。詳細は[ADR-0009](../decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)を参照してください。
 
 ## 信頼境界
 
@@ -145,7 +148,7 @@ S-014では現在のclosed surfaceだけを対象に、React text interpolation�
 | .NET → Python | **実装済み:** closed NDJSON schema、message上限、timeout、SQLite直接接続禁止 |
 | ホスト → workspace | path 正規化、ID lookup、staging、hash、atomic move、Windows ACL |
 | ホスト → SQLite | parameterized query、transaction、foreign key、migration 前 backup |
-| ホスト → Azure | 既定無効。選択・マスク・確認済み文字起こし span だけ |
+| ホスト → Azure | 既定無効。利用者が明示有効化した選択・マスク・確認済み文字起こしspanだけ |
 
 データ分類と Azure 送信条件は [ADR-0004](../decisions/ADR-0004-data-classification.md)、配布と Azure の現状は [ADR-0006](../decisions/ADR-0006-distribution-and-azure.md) を参照してください。
 
@@ -155,6 +158,7 @@ S-014では現在のclosed surfaceだけを対象に、React text interpolation�
 - PostgreSQL、Cosmos DB、Service Bus、AKS、マイクロサービス
 - localhost Web API
 - 無人での外部公開や媒体への直接投稿
+- 多役割、人手承認、cross-account試験、社内法務承認を社内限定quick startの必須gateにすること
 - ディープフェイク、発言内容の改変
 - 汎用プラグイン基盤や、二つ目の実装がない Provider／Factory
 - 正式な必要性が未確定の OTIO、C2PA、WORM

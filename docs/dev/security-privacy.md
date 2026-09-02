@@ -1,42 +1,45 @@
 # セキュリティとプライバシー
 
-HubRadio MovieCreator は、企業向け動画、文字起こし、出演者情報、内部資料を扱うため、ローカル優先と人による承認を基本境界にします。
+HubRadio MovieCreator は、企業向け動画、文字起こし、出演者情報、内部資料を扱うため、ローカル優先、単一利用者、社内限定、非破壊処理を基本境界にします。
 
 > [!IMPORTANT]
-> Stage 0は完了し、製品基盤を段階実装中です。以下には実装済み境界と未完了の製品flowが混在するため、各節の状態と詳細実装計画を併せて確認してください。
+> Stage 0と既存製品基盤の一部は実装済みです。2026-09-02に[要求版0.2](../requirement-definition.md)と[ADR-0009](decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)でsource-only quick startへ再baselineしました。新しい設定、state、export policy、自動代理評価flowは未実装です。以下には既存境界と計画が混在するため、[詳細実装計画 §0](planning/implementation-plan.md#0-要求版02の現在baseline)も確認してください。
 
 ## 既定のデータ境界
 
 - 元動画、代理動画、音声、frame、画像を既定で端末外へ送りません。
 - 元動画を上書きしません。
-- AI や規則ベース処理は候補を返し、公開区分、権利、機密性、承認を自動確定しません。
-- 社内限定、特定グループ限定、外部公開候補、外部公開承認済み、公開不可、判定待ちを区別します。
+- quick startは社内限定から開始し、外部destinationと直接投稿を既定で無効にします。
+- closedな規則だけを可逆な自動decisionへ適用し、AIまたは自動代理評価で外部公開区分、権利、機密性、法的適合を確定しません。
+- 旧区分はデータ互換のため保持できますが、外部公開候補・承認済みは初期releaseの自動処理対象ではありません。
 - 下位の素材や成果物は、親より広い公開区分へ自動昇格できません。
 
-公開区分と送信条件の正本は [ADR-0004](decisions/ADR-0004-data-classification.md) です。
+公開区分と送信条件は[ADR-0004](decisions/ADR-0004-data-classification.md)、社内限定quick startに対する置換範囲は[ADR-0009](decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)を正本とします。
 
 ## ローカル保存
 
-製品基盤は、利用者が選択するローカル固定ディスク上の管理ワークスペースを前提に実装しています。初回選択UIは未完了で、ネットワーク共有、同期 folder、リムーバブル媒体を初期既定にしません。
+既存製品基盤は、利用者が選択するローカル固定ディスク上の管理ワークスペースを前提に実装しています。要求版0.2の初期値は現在の標準ユーザー用`%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace`とし、設定画面から変更可能にする計画です。新しい既定解決とUIは未実装で、ネットワーク共有、同期folder、リムーバブル媒体を初期既定にしません。
 
-- 元動画、文字起こし改訂、編集版、承認、監査、納品物を正本として扱います。
+- 元動画、文字起こし改訂、編集版、設定snapshot、自動decision、自動代理評価、監査、納品物を正本として扱います。既存のreview/approval recordも履歴として保持します。
 - 代理、波形、sprite、preview などの再生成可能物を正本と分けます。
 - 容量不足時に正本を自動削除しません。
 - 保持期間が未決のため、時間だけを理由とする自動削除を行いません。
 - backup は manifest、size、SHA-256、SQLite `integrity_check` を確認してから完成扱いにします。
 
-保存、削除、backup、ACL の決定は [ADR-0005](decisions/ADR-0005-storage-retention.md) を参照してください。ArtifactStore、WorkspaceRecovery、ACL、検証付きbackup/restoreは実装済みです。初回workspace選択UI、保持・削除UI、別account ACL受入、外部固定ディスクのBitLocker状態確認と保留UIは未完了です。
+保存、削除、backup、ACLの決定は[ADR-0005](decisions/ADR-0005-storage-retention.md)を参照してください。ArtifactStore、WorkspaceRecovery、ACL、検証付きbackup/restoreは実装済みです。workspace設定、保持・削除UI、外部固定ディスクのBitLocker状態確認と保留UIは未完了です。別account ACL受入は未実施の履歴事実として残りますが、単一利用者の初期release gateではありません。
+
+`S-003`のactive受入削除は、既存のworkspace ACL作成、path traversal防止、同一利用者のaccess checkを削除する指示ではありません。防御コードは保持し、cross-account隔離を保証済みとも表示しません。複数利用者scopeを追加するときに別account脅威分析と受入を再開します。
 
 ## Windows identity と権限
 
-製品基盤では Windows ユーザーの SID を監査主体の識別子として実装済みです。表示名だけを識別子にせず、独自 password や認証 server を追加しません。
+製品基盤ではWindowsユーザーのSIDを監査主体の識別子として実装済みです。表示名だけを識別子にせず、独自passwordや認証serverを追加しません。
 
-- 初回起動時の SID には Administrator と Editor を割り当てます。
-- 承認役割は明示割当まで付与しません。
-- AI、Python worker、FFmpeg に承認者権限を与えません。
-- 承認は `CompositionVersion` の内容 digest に固定します。
+- 要求版0.2の利用者は現在の標準ユーザー1人です。
+- AI、Python worker、FFmpeg、自動代理評価器はsystem actorであり、人のSIDと区別します。
+- 旧role assignmentとapproval recordは既存データ互換のため保持できますが、社内限定quick startの必須gateにしません。
+- 任意self-reviewは`CompositionVersion`の内容digestへ固定します。
 
-役割とレビュー経路は [ADR-0003](decisions/ADR-0003-local-identity-and-review.md) を参照してください。
+旧役割とreview経路は[ADR-0003](decisions/ADR-0003-local-identity-and-review.md)、現在の単一利用者stateは[ADR-0009](decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)を参照してください。
 
 ## Stage 0 のローカル証拠
 
@@ -63,7 +66,7 @@ Stage 0 の仕組みは、完成した製品 workspace の権限モデルや脅�
 - ArtifactStoreのtraversal、UNC、device namespace、ADS、reserved device、reparse pointと、LocalDiagnosticLogの本文・path・秘密非記録は既存の専用試験を正本証拠とする。
 - 現在のtransition境界は任意filter文字列を公開せず、proxy/preview用FFmpeg filterは固定値または検証済み数値から決定論的に生成する。
 
-これらは合成入力と現在の実装surfaceに対する証拠です。業務UI、Render IR/filter compiler、別account ACL、環境で作成不能だったreparse point、production resource閾値、統合security受入`Q-008`は別の実装・受入を必要とします。
+これらは合成入力と既存実装surfaceに対する証拠です。版0.2のquick start、設定、自動decision、自動代理評価、変更後のRender/export policy、環境で作成不能だったreparse point、production resource閾値、統合security受入は別の実装・受入を必要とします。別account ACLを未実施からPASSへ読み替えませんが、現在scopeの必須受入にはしません。
 
 ## Media metadata
 
@@ -76,13 +79,13 @@ media metadata には、位置情報、端末名、撮影時刻、comment など
 
 ## Azure の条件付き経路
 
-Azure は通常の処理経路ではありません。次の条件がすべて揃った場合だけ検討します。
+Azureは通常の処理経路ではなく既定OFFです。既存の限定評価resourceがあることをproduction必要性とみなしません。end-user機能として検討するには次の条件がすべて必要です。
 
 1. ローカルまたは手動経路で要求を満たせないことを実測した。
 2. 利用者が目的と対象の文字起こし span を選択した。
 3. PII、秘密、内部 URL、認証情報、不要な固有名詞を解消した。
 4. 送信 payload、送信先、region、model、保持条件を利用者が確認した。
-5. 利用者が Azure resource の作成を明示的に指示した。
+5. 利用者がcloud機能の有効化を明示した。新規resourceが必要な場合は作成も別に明示した。
 
 送信候補にできるのは、選択・マスク・確認済みの根拠付き文字起こし span だけです。動画、音声、画像、file path、Windows SID、内部案件 ID、全文文字起こしを送りません。
 
@@ -107,7 +110,10 @@ software license と、動画・画像・音楽・logo・font・model の利用�
 
 - fixture と生成動画は、リポジトリの MIT License によって外部公開可能にはなりません。
 - 権利未確認素材を外部公開用成果物へ自動採用しません。
+- `Music/`は利用者が社内利用を許可したread-only libraryとしてだけ使い、使用track digestと社内限定条件を記録します。外部公開権または第三者への再配布権を推測しません。
 - model／runtime は version、配布元、hash、license、利用条件を確認します。
+
+社内法務部門という特定担当の承認はquick startのrelease gateではありません。ただし、第三者license、notice、利用規約、再配布条件、SBOM、CVE、codec/patent条件を記録・検査する責務は削除しません。
 
 第三者依存の現在の受入記録は [第三者ソフトウェア・モデル受入方針](licenses/third-party-intake.md) を参照してください。
 
@@ -116,6 +122,8 @@ software license と、動画・画像・音楽・logo・font・model の利用�
 - 新しい入力、log、canonical result に内容、PII、秘密、絶対 path が入らないか
 - 新しい child process が shell、無制限出力、無期限待機を使わないか
 - 新しい file path が workspace 外や traversal を許さないか
-- 新しい AI 機能が人の採否と公開 gate を迂回しないか
+- 新しい自動decisionがclosed規則を越えて意味判断、外部公開区分、権利、機密性を確定しないか
+- 自動代理評価をhuman evaluationまたは法的適合と誤表示していないか
 - 新しい依存に version、hash、license、取得元があるか
-- 新しい cloud 経路がローカル不達と明示承認に結び付いているか
+- `Music/`を変更・外部用profileへ利用していないか
+- 新しいcloud経路がローカル不達と明示有効化に結び付いているか

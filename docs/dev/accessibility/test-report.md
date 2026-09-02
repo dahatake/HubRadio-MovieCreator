@@ -1,4 +1,4 @@
-# U-015 / Q-009 アクセシビリティ評価記録
+# U-015 / Q-009 アクセシビリティ評価記録（旧受入と版0.2への対応）
 
 - 評価日: 2026-09-02
 - 対象: `HubRadio.MovieCreator` の主要 Web UI flow
@@ -10,6 +10,11 @@
 > **U-015 acceptance: PENDING / NOT ACCEPTED**
 >
 > 本記録の自動試験とブラウザー自動操作だけでは U-015 / Q-009 を受入済みにしない。代表素材、実 WebView2 host、物理キーボード、実表示環境を使った人手確認が完了するまで release gate を開けない。
+
+> [!IMPORTANT]
+> 上記3行と人手17項目の`PENDING`は、要求版0.1に対する2026-09-02時点の歴史的事実であり、`PASS`へ変更しない。一方、要求版0.2と[ADR-0009](../decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)は、人手確認を社内限定quick startの必須release gateにせず、自動判定可能項目を`Automated proxy`として受け入れる。これは「人手評価が完了した」という意味ではない。版0.2の新UIは未実装のため、本書の既存自動PASSだけで`V2-010/V2-014`を完了扱いにしない。
+>
+> 本書の自動結果は旧要求版0.1に対する既存Web UIの証拠である。版0.2のquick start（`V2-005`）、設定画面（`V2-006`）、成果物・任意確認画面（`V2-012`）を対象にしていない。新UI実装後に別の版付き評価recordを作るまで、既存442 test等を新UIの合格証拠へ転用しない。
 
 ## 判定
 
@@ -24,6 +29,19 @@
 | mute control の自動操作 | PASS | visible label、accessible name、`aria-pressed`、`video.muted` の同期を確認 |
 | 人手による keyboard / focus / color / subtitle / SDH / mute 理解 | **PENDING** | 未実施 |
 | U-015 総合受入 | **PENDING / NOT ACCEPTED** | 人手評価が必須 |
+
+### 要求版0.2での読み方
+
+| 証拠 | 版0.2での状態 | 制限 |
+|---|---|---|
+| 既存keyboard component test | `Automated proxy evidence: reusable` | 新quick start・settings・results UIは未対象 |
+| authored `:focus-visible` contract | `Automated proxy evidence: reusable` | 実WebView2/DPIでの知覚的視認性は未評価 |
+| contrast token計算 | `Automated proxy evidence: reusable` | 新UIの全stateは未対象 |
+| 非色依存semantic contract | `Automated proxy evidence: reusable` | 人の状態理解は未評価 |
+| 字幕・mute controlの自動操作 | `Automated proxy evidence: reusable` | 新しい字幕profile、実動画の理解・可読性は未評価 |
+| 人手17項目 | `HUMAN EVALUATION: PENDING` | 任意評価として残し、自動PASSへ変換しない |
+
+版0.2の正式な自動代理評価は`V2-010`で規則版、実行環境、入力・出力digest、`PASS/WARNING/FAIL/NOT EVALUATED`を新しいevidenceへ記録する。本書の旧総合受入欄は変更しない。
 
 ## 自動試験結果
 
@@ -105,11 +123,11 @@
 | zoom / reflow / 320 px 幅 | **PENDING** | 主要操作と情報が欠落・重複・重なりなく利用できる |
 | screen reader の名称・状態・順序 | **PENDING** | 対象 reader で control 名、role、状態、status 更新、エラーが理解できる |
 
-## 残存 gate
+## 旧要求版0.1の残存gate
 
 1. 上記の全 `PENDING` 項目を、対象となる実 Windows / WebView2 / DPI と代表動画で人が実施する。
 2. failure があれば修正し、自動試験と該当人手 flow を再実行する。
 3. 評価者と証跡を記録し、`HUMAN EVALUATION` と `U-015 acceptance` を明示的な承認判断で更新する。
 4. Q-009 は本記録の人手確認が完了するまで未完了とする。
 
-現時点では **U-015 は受入未完了であり、Q-009 の人手 gate も未完了**である。
+要求版0.1に対しては **U-015 は受入未完了であり、Q-009 の人手gateも未完了**である。この未実施事実は維持する。要求版0.2では`U-015/Q-009`を変更taskとして扱い、人手gateを閉じたと偽らず、自動代理評価と任意human observationへ分離して再受入する。

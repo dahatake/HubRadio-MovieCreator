@@ -4,6 +4,9 @@
 - 決定日: 2026-08-27
 - タスク: P-005
 
+> [!IMPORTANT]
+> 2026-09-02以降、社内限定quick startの既定review経路、承認自動省略禁止、承認roleの初期割当は[ADR-0009](ADR-0009-source-only-defaults-and-automated-evaluation.md)が置き換える。actor SID、監査event、digest-boundな任意review、変更時の子版、公開範囲を自動拡大しない原則は維持する。以下は決定時点の履歴である。
+
 ## 決定
 
 単一PC版では、現在のWindowsユーザーのSIDを監査主体の不変識別子として使う。表示名だけを識別子にしない。

@@ -4,6 +4,9 @@
 - 決定日: 2026-08-27
 - タスク: P-002
 
+> [!IMPORTANT]
+> 2026-09-02以降、Stage 1の社内限定成果物に複数role/reviewを必須とする部分は[ADR-0009](ADR-0009-source-only-defaults-and-automated-evaluation.md)が置き換える。Windows単一PC、SQLite、local-first、非破壊、初期対象外の境界は維持する。以下は決定時点の履歴である。
+
 ## 決定
 
 初期製品は、**Windows 11 24H2以降・x64・単一PC・単一アクティブ編集者**向けのデスクトップアプリケーションとする。

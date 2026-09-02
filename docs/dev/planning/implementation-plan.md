@@ -1,10 +1,16 @@
 # Hubらじお マルチフォーマット動画編集ソフトウェア 詳細実装計画
 
 **対象:** Windows 11 専用デスクトップアプリケーション  
-**要求の正本（暫定既定）:** `docs/requirement-definition.md` 版 0.1 Draft  
-**設計根拠:** `docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
-**計画日:** 2026年8月26日  
-**計画状態:** Stage 0は2026年8月27日に人手承認済み。
+**要求の正本:** `docs/requirement-definition.md` 版 0.2 Draft
+**設計根拠:** `docs/dev/research/default-settings-research.md`、`docs/dev/decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md`、`docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
+**初版計画日:** 2026年8月26日
+**再baseline日:** 2026年9月2日
+**計画状態:** `V2-000`文書再baseline完了。利用者指示によりproduction実装を一時停止。
+
+### 旧203 task baselineの履歴snapshot
+
+> [!CAUTION]
+> 以下の冒頭記録と§1以降の旧task表は、要求版0.1に対する当時の証拠と計画を改ざんせず残す履歴snapshotである。`124/203`、`139/203`、`160/203`、残件数、人手gate、cross-account gateを現在値として使わない。現在の分類と次の実装順は§0だけを使う。
 
 2026年8月31日時点で139/203 taskを完了し、P-001〜P-010、ST-001〜ST-007、ST-009〜ST-016、F-001〜F-009、D-001〜D-016、J-001〜J-010、M-001〜M-012、A-001〜A-009/A-011/A-014/A-016〜A-021、R-001〜R-018/R-025/R-026、U-001〜U-004、S-001/S-002/S-004〜S-010/S-012〜S-015、Z-001〜Z-007、PK-001〜PK-005、Q-007を実装・検証した。`PK-006`はPackaging Project、unsigned manual fallback、unpack verifierまで実装済みだが、別のclean Windowsへのinstall証拠を待つため完了数へ含めない。
 
@@ -24,9 +30,151 @@ SQLite業務store、永続job、worker protocol、編集操作、review/approval
 
 実コンテンツのnetwork送信、response validation、fallback、end-user cloud feature、業務UI、R-019〜R-024のpreview・render・delivery、署名済み配布は未完了である。知覚品質、moving-video preview、cross-DPI/runtime/GPU再現性、production閾値、model/CUDA配布、release readinessは未承認。
 
-`PK-006`のclean Windows install gateは保留し、依存解放済みの`R-019`と`R-020`から実行可能なtaskを継続する。`Z-008`は2つ目の実在する生成系文章候補実装が現れるまで開始せず、A-009の削除候補をその条件へ読み替えない。held taskは成立証拠と別承認なしに解除しない。
+旧計画では`PK-006`のclean Windows install gateを保留し、`R-019`と`R-020`から継続する予定だった。この継続指示は要求版0.2で失効した。`Z-008`のYAGNI条件と、held/condition-falseを証拠なしに成功へ読み替えない制約は維持する。
 
 ---
+
+## 0. 要求版0.2の現在baseline
+
+### 0.1 変更の中心
+
+現在の製品経路は次のとおり。
+
+`元動画を選択 → 既定設定を要約 → 編集開始 → 非破壊自動編集 → 自動代理評価 → 社内限定ローカル出力 → 任意確認・修正`
+
+- 必須入力は元動画1本だけ。
+- 全設定は版付き初期値を持ち、専用設定画面で現在値、初期値、用途、根拠区分、resetを表示する。
+- 単一Windows利用者、社内限定、local-firstを初期scopeとする。
+- closedな決定論規則だけを自動適用し、意味判断は候補またはwarningに留める。
+- 自動代理評価は人手評価または承認と呼ばない。
+- `Music/`はread-onlyかつ社内限定で利用し、track digestを記録する。
+- 複数役割、人手承認、cross-account試験、社内法務部門の承認をquick startの必須gateにしない。
+- 外部公開、直接投稿、複数利用者は将来の別要求とする。
+
+### 0.2 旧203 taskの再分類
+
+機械抽出で旧表のtask IDが**203件・重複0件**であることを確認し、全件を重複なく分類した。分類は完了数ではない。`維持`は契約と既存証拠を再利用できること、`変更`は要求版0.2の契約で実装または再受入が必要なこと、`将来`は現在scope外、`削除`は旧task契約をactive baselineから除くことを表す。削除・将来分類でも、既存コードと履歴証拠を消さない。
+
+| 分類 | 件数 | task ID | 版0.2での扱い |
+|---|---:|---|---|
+| 維持 | 100 | `P-004`,`P-010`; `ST-001〜ST-007`,`ST-009〜ST-016`; `F-001〜F-009`; `D-001〜D-003`,`D-005`,`D-009`,`D-012`,`D-015`,`D-016`; `J-001〜J-010`; `M-001〜M-012`; `A-001〜A-006`,`A-011`,`A-017〜A-019`; `R-001`,`R-002`,`R-005`,`R-008`,`R-009`,`R-017`,`R-018`,`R-025`,`R-026`; `U-001〜U-004`; `S-001`,`S-005`,`S-007`,`S-009`,`S-012〜S-015`; `Z-001〜Z-007`; `PK-001〜PK-005`; `Q-007` | 現在要求と矛盾しない基盤・履歴証拠として保持する。最終統合時に回帰する |
+| 変更 | 84 | `P-001〜P-003`,`P-005〜P-009`; `D-004`,`D-006〜D-008`,`D-010`,`D-011`,`D-013`,`D-014`; `A-007〜A-009`,`A-014`,`A-016`,`A-020`,`A-021`; `R-003`,`R-004`,`R-006`,`R-007`,`R-010〜R-016`,`R-019〜R-024`; `U-005〜U-017`; `S-002`,`S-004`,`S-006`,`S-008`,`S-011`,`S-016`; `E-001`,`E-002`,`E-004〜E-006`,`E-008〜E-010`,`E-013`,`E-015`,`E-018`,`E-019`; `PK-006`,`PK-007`; `Q-001`,`Q-002`,`Q-004〜Q-006`,`Q-008〜Q-013` | 既存成果物を捨てず、新taskと変更契約に従って再実装・再受入する |
+| 将来 | 17 | `ST-008`; `A-010`,`A-012`,`A-013`,`A-015`; `S-010`; `E-003`,`E-007`,`E-011`,`E-012`,`E-014`,`E-016`,`E-017`; `Z-008〜Z-010`; `Q-003` | 現在critical pathから外す。対応要求、入力、採用証拠が成立した場合だけ再計画する |
+| 削除 | 2 | `S-003`,`Q-000` | cross-account受入と人手9:16必須受入をactive taskから除く。実装・試験履歴は保持し、`S-003`削除を既存ACL/path防御コードの削除へ拡大しない |
+
+分類件数は$100 + 84 + 17 + 2 = 203$である。これは「100件完了」等の進捗表明ではない。各維持taskの証拠scopeと変更taskの再受入が確定するまで、要求版0.2の現在完了件数を断定しない。
+
+### 0.3 主な変更taskの新契約
+
+| 旧task | 変更後の契約 |
+|---|---|
+| `P-001〜P-003` | 要求版0.2、ADR-0009、sample元動画、`Music/`社内限定条件を正本入力にする |
+| `P-005/P-006` | 単一actor、社内限定、自動代理評価、任意self-review、cloud既定OFFを決定する |
+| `P-007/P-008` | per-user workspace、既定保持期間なし、`Music/`read-only利用、第三者条件の記録を扱う |
+| 評価設計（`P-009`） | human-only評価ではなく、自動代理評価と任意human observationを分離する |
+| `D-004/D-006〜D-008/D-010/D-011` | source-only draft、`DefaultSettingsProfile`、自動decision、評価record、任意review stateを型へ追加する |
+| `A-007〜A-009/A-014/A-016` | closedな候補を版付き自動decisionへ昇格できる一方、曖昧候補を自動採用しない |
+| `A-020/A-021` | 匿名・なし・ニュートラル等の安全な初期値を作り、根拠なしmetadataを生成しない |
+| `R-003/R-004/R-006/R-007` | 設定snapshot、production default profile、neutral template、1920×1080/1080×1920を扱う |
+| `R-010〜R-016` | 日本語字幕profile、字幕領域、ハードカット0 ms、任意crossfade 250 ms等の版付き設定を扱う |
+| `R-019〜R-024` | approval digestではなくComposition/settings/evaluationを中心にpreview、final render、QC、delivery、thumbnail、付帯成果物を作る |
+| quick start（`U-005`） | 5段階・10項目wizardを、元動画選択・設定要約・開始/取消だけの画面へ置換する |
+| `U-006/U-013` | job進捗に成果物、自動代理評価、警告、根拠への移動を統合する |
+| 任意確認（`U-012`） | 必須review/approval画面を任意self-review・差分・コメント画面へ変更する |
+| `U-015/Q-009` | 既存human `PENDING`を改ざんせず、機械判定項目を自動代理評価として再baselineする |
+| `S-002/S-004/S-008/S-011` | 複数role/approval gateを単一利用者、社内限定、評価state、closedなexport block条件へ変更する |
+| `E-001/E-002/E-004/E-005/E-006/E-008/E-009` | short候補、thumbnail、音量、BGM、reframeのうちquick startに必要な決定論経路をMustへ移す |
+| `PK-006/PK-007` | 新機能を含むpackageでclean install、署名、upgrade等を再検証する。cross-account削除とは別論点 |
+| `Q-001/Q-002/Q-004〜Q-006/Q-008〜Q-013` | source-only、自動代理評価、単一actor、標準成果物setを対象に受入契約を作り直す |
+
+### 0.4 版0.2で追加するtask
+
+新task IDは旧203件と混同しないよう`V2-*`を使う。production実装の再開指示があるまで、`V2-001`以降を開始しない。各taskはfocused test、関連回帰、差分監査、独立した敵対的レビューを完了してから次へ進む。
+
+| ID | 目的 / 主成果物 | 依存 | 完了条件 | 主要求 |
+|---|---|---|---|---|
+| `V2-000` | **完了。** 要求版0.2、既定値調査、ADR-0009、task再baseline | なし | 出典scope、全203 ID分類、文書link、[敵対的レビュー](../reviews/v2-defaults-adversarial-review.md)がPASS。production code変更なし | 全要求 |
+| `V2-001` | `DefaultSettingsProfile`、設定値、根拠区分、snapshot、digestのdomain/schema | V2-000,D-002,D-008,D-012 | canonical round-trip、unknown/invalid value拒否、版・digest固定 | FR-033,NFR-003/006/008 |
+| `V2-002` | 設定store、既定解決、個別/全reset、案件snapshot migration | V2-001,D-013,D-014 | 新規案件だけへ即時適用、既存版不変、migration rollback | FR-033,AC-006 |
+| `V2-003` | 調査済みrender/subtitle/audio/transition/template profile | V2-001,R-004〜R-007,R-010〜R-016 | 台帳値・scopeと一致し、現行placeholderをproduction承認済みと誤表示しない | FR-008〜FR-016,FR-020/031 |
+| `V2-004` | 元動画だけから安全なProject draftと成果物setを作るapplication/bridge契約 | V2-002,M-001,D-004 | filename stem、安全fallback、1入力、path非開示。登壇者、URL、公開先、hashtag、期限等の架空metadataを作らない | §6,FR-001/025,AC-001 |
+| `V2-005` | かんたん編集UI | V2-004,U-001〜U-004 | 元動画、設定要約、社内限定、開始/取消だけで開始でき、10項目wizardを要求しない | NFR-001,§14.1,AC-001 |
+| `V2-006` | 全体設定UI | V2-002,U-004 | 5群、現在値、初期値、用途、根拠、個別/全reset、keyboard操作 | FR-033,NFR-001/005,AC-006 |
+| `V2-007` | closed候補を可逆な自動decisionへ適用するorchestrator | V2-002,A-007〜A-009,A-016,R-001〜R-003 | 明示cut/exact反復/版付き無音だけを自動適用し、曖昧候補を採用しない | FR-005,FR-030,NFR-008 |
+| `V2-008` | 長尺、最大3短尺、字幕variant、thumbnail候補の標準Composition計画 | V2-003,V2-007,E-001/E-002/E-004/E-005/E-009,R-015 | 根拠付き候補だけ、候補不足を捏造せず理由記録、safe fallback layout | FR-007〜FR-015,FR-021/031 |
+| `V2-009` | `Music/` read-only catalog、社内限定policy、決定的選択、ducking | V2-002,V2-003,S-006,E-006/E-008 | asset変更なし、technical probe、cue長以上、digest順、loopなし、外部profile拒否、本編既定OFF。不在・不適格ならBGMなし+warning、音楽的適合性は`NOT EVALUATED` | FR-019/020,BR-004 |
+| `V2-010` | 自動代理評価のdomain、engine、evidence | V2-003,V2-008,V2-009,R-021,S-012/S-013 | PASS/WARNING/FAIL/NOT EVALUATED、環境・規則版・digest、human claim禁止。字幕の網羅性、speech/BGM理解、metadataの事実性は根拠なしにPASSにしない | FR-025/034,NFR-005/006/008,AC-006 |
+| `V2-011` | 単一利用者state、export policy、旧review data compatibility | V2-010,S-001/S-002/S-004/S-008/S-011/S-016 | approvalなし社内出力、closed failure block、旧event読取、scope自動拡大なし | FR-029,NFR-004,AC-004 |
+| `V2-012` | 進捗・成果物・評価結果・任意self-review UI | V2-005,V2-010,V2-011,U-006/U-012/U-013 | warningから時刻/設定/根拠へ移動、任意修正・再評価、human/proxy表示分離 | §14.2/14.5,FR-026/029/034 |
+| `V2-013` | 実render、delivery、付帯成果物の統合 | V2-008〜V2-012,R-019〜R-024,R-026 | profileどおりの全編decode/A-V/subtitle/audio/provenance QC、atomic昇格。付帯metadataは元動画・設定値の根拠必須、根拠なし項目は未生成 | FR-020/025/031/032,NFR-003/008 |
+| `V2-014` | 許可済みsampleを使うsource-only受入、全回帰、package再検証 | V2-013,PK-006/PK-007,Q-001/Q-002/Q-004〜Q-013 | Git管理外assetが実在する元worktreeまたは明示設定pathで実行。標準成果物、不成立理由、設定snapshot、自動代理評価、供給網証拠を実測。未実施human/外部/legalをPASSにしない | §18,AC-001〜AC-006 |
+
+表中の旧task IDは、既存成果物・証拠を入力として再利用する範囲を示す。`変更`に分類した旧taskは未記載の前提taskではなく、次のV2 taskが変更契約と再受入を引き取る。V2 task完了時に対応する旧taskの状態も`要求版0.2で再受入済み`または未完了へ同期する。
+
+| V2責務 | 引き取る旧`変更`task | 件数 |
+|---|---|---:|
+| 文書baseline（`V2-000`） | `P-001〜P-003`,`P-005〜P-009` | 8 |
+| 設定domain（`V2-001`） | `D-008` | 1 |
+| 設定store（`V2-002`） | `D-013`,`D-014` | 2 |
+| profile（`V2-003`） | `R-004`,`R-006`,`R-007`,`R-010〜R-014`,`R-016` | 9 |
+| source-only契約（`V2-004`） | `D-004` | 1 |
+| quick start UI（`V2-005`） | `U-005` | 1 |
+| settings UI（`V2-006`） | 旧taskなし。要求版0.2の純新規責務 | 0 |
+| 自動decision（`V2-007`） | `D-006`,`D-007`,`A-007〜A-009`,`A-016`,`R-003` | 7 |
+| Composition計画（`V2-008`） | `A-014`,`A-020`,`A-021`,`R-015`,`E-001`,`E-002`,`E-004`,`E-005`,`E-009`,`E-010` | 10 |
+| BGM・音声（`V2-009`） | `S-006`,`E-006`,`E-008` | 3 |
+| 自動代理評価（`V2-010`） | `U-015` | 1 |
+| state・export（`V2-011`） | `D-011`,`S-002`,`S-004`,`S-008`,`S-011`,`S-016` | 6 |
+| 成果物・任意確認UI（`V2-012`） | `U-006〜U-014`,`U-016`,`U-017`,`E-015`,`E-018`,`E-019` | 14 |
+| render・delivery（`V2-013`） | `D-010`,`R-019〜R-024`,`E-013` | 8 |
+| 受入・package（`V2-014`） | `PK-006`,`PK-007`,`Q-001`,`Q-002`,`Q-004〜Q-006`,`Q-008〜Q-013` | 13 |
+| **合計** | **§0.2の`変更`集合を全件割当** | **84** |
+
+### 0.5 現在DAG
+
+```mermaid
+flowchart TD
+   V2000[V2-000 文書baseline] --> PAUSE{実装再開の利用者指示}
+   PAUSE --> V2001[V2-001 設定domain]
+   V2001 --> V2002[V2-002 設定store]
+   V2001 --> V2003[V2-003 profile]
+   V2002 --> V2004[V2-004 source-only契約]
+   V2004 --> V2005[V2-005 quick start UI]
+   V2002 --> V2006[V2-006 settings UI]
+   V2002 --> V2007[V2-007 auto decisions]
+   V2003 --> V2008[V2-008 composition plan]
+   V2007 --> V2008
+   V2002 --> V2009[V2-009 Music / audio]
+   V2003 --> V2009
+   V2008 --> V2010[V2-010 proxy evaluation]
+   V2009 --> V2010
+   V2010 --> V2011[V2-011 state / export policy]
+   V2005 --> V2012[V2-012 results / self-review UI]
+   V2006 --> V2012
+   V2011 --> V2012
+   V2012 --> V2013[V2-013 render / delivery]
+   V2013 --> V2014[V2-014 acceptance / package]
+```
+
+`V2-001`以降はproduction実装であり、現在は停止する。文書完了task`V2-000`の判定だけを先に行う。
+
+### 0.6 全task共通の実行契約
+
+1. task開始前に正本要求、ADR、依存、既存実装、該当外部資料の取得日とscopeを確認する。
+2. production fileを編集する前に該当箇所を読み、利用者所有の未commit変更と`Music/`を保護する。
+3. 1 taskを最小のcode/schema/test/document変更へ分割する。
+4. focused test、関連component回帰、全回帰、`git diff --check`を順に実行する。0件実行をPASSにしない。
+5. task完了直後に、実装者とは独立した敵対的レビューを行う。correctness、failure、security/privacy、citation/scope、過大主張、不要な抽象、要求traceを確認する。
+6. 指摘を修正し、同じ試験と再レビューが成功するまで次taskへ進まない。
+7. 実測していないhuman evaluation、外部公開、cross-account、legal approval、clean machine、performance、qualityをPASSと記録しない。
+8. 変更ごとにtask ID、証拠、commit、未評価範囲を記録する。
+
+---
+
+## 旧要求版0.1の詳細計画（履歴snapshot）
+
+> [!CAUTION]
+> ここから先は旧203 taskの元の説明、当時の状態、旧DAG、旧gateである。実装履歴の照合にだけ使用し、現在の実行順、完了数、必須gateは§0を使う。
 
 ## 1. この計画の読み方
 
@@ -689,4 +837,5 @@ flowchart TD
 6. 1タスク1成果物群・1試験という粒度と、並列レーン。
 7. トレーサビリティ表に要求の抜けがないこと。
 
-**`PK-006`は同一host実装・unpack検証済みだが、別のclean Windowsへのinstall証拠を待つため未完了のまま保持する。次は依存解放済みの`R-019`と`R-020`から実行可能なtaskを継続する。未完了は残り64 taskである。`S-003`の完了には別の非管理者Windows accountによるACL試験が必要である。Z-008は2つ目の実在する生成系文章候補実装が揃うまで抽象もsenderも作らず、A-009の削除候補をその条件へ読み替えない。**
+> [!WARNING]
+> これは旧要求版0.1の終了時点における実行指示だった。要求版0.2では`R-019/R-020`の直接継続、残り64件、`S-003` cross-account gateは失効している。現在の順序は§0.5を使い、利用者が実装再開を指示するまで`V2-001`以降を開始しない。`Z-008`の二つ目の実在実装というYAGNI条件と、A-009を生成系実装へ読み替えない制約は維持する。

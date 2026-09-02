@@ -6,6 +6,9 @@
 - 承認証拠: [`benchmarks/results/stage-0-report.md`](../../../benchmarks/results/stage-0-report.md)
 - 承認証拠SHA-256: `c450dd8413977f6790aed3e015edad8b27dbf215b14278e99989eb704ab5c093`
 
+> [!IMPORTANT]
+> 2026-09-02以降、保留taskの再開に記載した「別の人手判断」は、[ADR-0009](ADR-0009-source-only-defaults-and-automated-evaluation.md)により単一product ownerの明示判断へ置き換える。採用技術、condition-false/heldの事実、未測定値、manual fallback、release未承認境界は維持する。以下は決定時点の履歴である。
+
 ## 背景
 
 Stage 0では、Windows 11 x64単一PC上で媒体取込、VFR時刻、代理写像、encoder、ASR、alignment、shot、face、音声event、子process、package、local text model、manual render、WebView2 previewを実測した。承認証拠は14件のcanonical resultと、それぞれが参照するGit対象外のraw runに基づく。

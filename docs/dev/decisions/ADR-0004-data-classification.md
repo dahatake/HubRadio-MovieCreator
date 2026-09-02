@@ -4,6 +4,9 @@
 - 決定日: 2026-08-27
 - タスク: P-006
 
+> [!IMPORTANT]
+> 2026-09-02以降、社内限定成果物のfinal render前に人手review/approvalを必須にする部分は[ADR-0009](ADR-0009-source-only-defaults-and-automated-evaluation.md)が置き換える。社内限定既定、公開範囲の自動拡大禁止、Azure最小payload、AIだけで外部公開可にしない原則は維持する。以下は決定時点の履歴である。
+
 ## 決定
 
 案件、素材、span、編集版、成果物に公開区分を持たせ、下位要素は親より広い公開区分へ自動昇格できない。

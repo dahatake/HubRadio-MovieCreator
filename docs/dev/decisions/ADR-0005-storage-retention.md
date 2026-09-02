@@ -4,6 +4,9 @@
 - 決定日: 2026-08-27
 - タスク: P-007
 
+> [!IMPORTANT]
+> 2026-09-02以降、別Windows accountからの拒否証拠は初期release gateではない。[ADR-0009](ADR-0009-source-only-defaults-and-automated-evaluation.md)の単一利用者scopeを適用する。managed workspace、不変original、staging/atomic move、保持期間を捏造しない方針、backup/restoreは維持する。以下は決定時点の履歴である。
+
 ## 決定
 
 単一PC版は、利用者が初回起動時に選択したローカル固定ディスク上の管理ワークスペースへデータを保存する。ネットワーク共有、同期フォルダー、リムーバブル媒体は初期既定にしない。

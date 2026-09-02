@@ -1,9 +1,13 @@
 # Hubらじお マルチフォーマット動画自動編集ソフトウェア 実現方式調査
 
-**対象文書:** `docs/requirement-definition.md` 版 0.1 Draft  
+**初期対象文書:** `docs/requirement-definition.md` 版 0.1 Draft
+**現在の適用先:** `docs/requirement-definition.md` 版 0.2 Draft。既定値は[`default-settings-research.md`](default-settings-research.md)、scopeは[ADR-0009](../decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)を優先
 **調査日:** 2026年8月26日  
 **調査範囲:** 既成の動画編集アプリケーションを利用せず、ライブラリ、SDK、API、機械学習モデル、および必要な独自実装を組み合わせて要求を実現する方法  
 **費用条件:** 上限を置かず、技術的実現性を優先  
+
+> [!IMPORTANT]
+> 本書は版0.1を対象にした広域な実現方式調査であり、記載された汎用cloud構成、多役割、人中心の必須承認、4種類・計6本の初期検証は現在のproduct baselineではない。2026-09-02以降の正本は、source-only quick start、単一利用者、社内限定、版付き既定値、自動代理評価を定める要求版0.2とADR-0009である。技術候補、出典、制限は矛盾しない範囲で引き続き利用する。旧記述を削除または遡及改変しない。
 
 ---
 
@@ -15,6 +19,8 @@
 2. **交換可能な解析パイプライン** — 音声認識、話者分離、シーン検出、OCR、顔・対象物追跡、トピック分割、LLM提案を個別ワーカーとして実行する。
 3. **決定論的な合成計画とレンダリング層** — 承認された編集データから同じ処理グラフを再生成し、記録済みの実行条件でFFmpeg等を実行する。異なるハードウェアエンコーダー間のバイト同一性までは保証しない。
 4. **人中心の統制層** — AI出力を候補として扱い、元発言への根拠、差分、公開区分、権利、レビュー、承認を強制する。
+
+版0.2では、第4項を社内限定quick startについて「closedな自動decision、可逆性、自動代理評価、任意self-review」へ置き換える。外部公開不可、元発言の意味保全、`OriginRef`、公開範囲の自動拡大禁止は維持する。具体的な既定値と資料scopeは[既定設定調査](default-settings-research.md)を参照する。
 
 FFmpegはメディアの解析・変換・フィルタリングに必要な機能を持ち、`ffprobe` は機械可読なメタデータを返せる [S01][S02]。OpenTimelineIO（OTIO）はカット順、時間、トラック、トランジション、マーカー、外部メディア参照を表現できるが、メディア自体の格納・処理はしない [S03][S04]。したがって、Stage 0/1は**独自の正規編集マニフェスト + FFmpegレンダーコンパイラ**に限定し、OTIOは交換要件が確定した後の任意アダプターとする。
 
@@ -581,6 +587,9 @@ C2PA Manifestは埋め込みまたは外部保存され、Manifest Consumerが�
 
 ## 7. レビューと承認の状態機械
 
+> [!NOTE]
+> 以下は版0.1および将来の複数役割・外部公開scopeを検討するための履歴案である。社内限定quick startの現在状態はADR-0009の`Editing → AutomatedEvaluation → Ready | ReadyWithWarnings | Failed → Exported`であり、以下を必須gateにしない。
+
 ```mermaid
 stateDiagram-v2
     [*] --> Editing
@@ -844,6 +853,9 @@ Cosmos DBの階層パーティションは最大3段で、先頭から高カー�
 ---
 
 ## 12. 実装順序
+
+> [!NOTE]
+> 以下は版0.1の段階案である。現在の再baselineとtask分類は[`implementation-plan.md`](../planning/implementation-plan.md)を正本とし、旧件数や旧gateを現在値として使わない。
 
 ### Stage 0: 技術スパイク
 

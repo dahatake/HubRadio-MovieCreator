@@ -3,7 +3,9 @@
 HubRadio MovieCreator の開発、保守、技術検証、設計判断に関する入口です。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation `F-001〜F-009`は完了済みで、2026年8月31日時点で全203 task中124件を完了しました。`D-001〜D-016`、`J-001〜J-010`、durable restart checkpointと専用媒体敵対試験を含む`M-001〜M-012`、`A-001〜A-009/A-011/A-014/A-018〜A-021`、`R-001〜R-009/R-016`、`U-001〜U-004`、文字起こしsensitivity scannerとbridge/process/path横断敵対試験を含む主要なS系統制、`Z-001〜Z-007`、Python wheel lockとself-contained runtimeの`PK-001/PK-002`、FFmpeg manifestの`PK-003`、offline model境界の`PK-004`、closed React bundleの`PK-005`を実装済みです。PK-002は公式CPython 3.12.10 embeddable runtime、25 runtime wheel、worker sourceから決定的な2,695-file read-only treeを生成し、空PATHのnative imports・health・protocol・前後不変を実証しました。これはclean machine、installed MSIX、完全notice/CVE/SBOM/legal/releaseの証拠ではありません。Japan Eastの限定Azure評価resource、desktop Entra authentication、local-onlyのmasked payload previewとdigest-bound one-shot確認境界は存在しますが、network sender、response validation、fallback、ModelRun監査、end-user cloud featureは未提供です。`S-003`と`PK-006`のclean Windows受入は外部証拠待ちです。Suggestion統合以降の解析、業務UI、Render IR以降、署名済み配布は未完了です。最新状態は[詳細実装計画](planning/implementation-plan.md)を参照してください。
+> 2026-09-02に[要求版0.2](../requirement-definition.md)と[ADR-0009](decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)で、source-only quick start、版付き既定値、単一利用者、社内限定、自動代理評価へ再baselineしました。文書task`V2-000`は[敵対的レビュー](reviews/v2-defaults-adversarial-review.md)を経て完了しました。production実装は一時停止中で、新しいquick start、設定画面、標準成果物、自動代理評価flowは未実装です。
+>
+> Stage 0、Foundation、既存Stage 1の実装・試験証拠は履歴として有効ですが、旧203 taskの`124/203`、`139/203`、`160/203`等は新要求後の現在進捗ではありません。別account ACL、人手review、社内法務approval等の旧gateも、社内限定quick startの現在gateではありません。旧証拠を遡及変更せず、[詳細実装計画](planning/implementation-plan.md)の再分類表から利用可否を判断してください。
 
 ## 目的から探す
 
@@ -14,6 +16,8 @@ HubRadio MovieCreator の開発、保守、技術検証、設計判断に関す�
 | Stage 0 の実行方法と証拠を確認する | [Stage 0 ベンチマーク](benchmarks/README.md) |
 | task、依存、gate、要求対応を確認する | [詳細実装計画](planning/implementation-plan.md) |
 | 技術候補と調査根拠を確認する | [実現方式調査](research/implementation-research.md) |
+| quick startの初期値、数値、外部資料のscopeを確認する | [既定設定調査](research/default-settings-research.md) |
+| 要求版0.2の指摘、修正、検証、残余リスクを確認する | [要求版0.2・既定設定・再baseline敵対的レビュー](reviews/v2-defaults-adversarial-review.md) |
 | 採用済みの設計判断を確認する | [ADR](decisions/) |
 | 検証と敵対的レビューの方法を確認する | [品質管理](quality.md) |
 | データ、秘密、権利、Azure 境界を確認する | [セキュリティとプライバシー](security-privacy.md) |
@@ -47,7 +51,8 @@ HubRadio MovieCreator の開発、保守、技術検証、設計判断に関す�
 4. [Windows 配布と条件付き Azure](decisions/ADR-0006-distribution-and-azure.md)
 5. [Stage 0技術選択と手動fallback](decisions/ADR-0007-stage-0-technology-selection.md)
 6. [限定Azure評価経路の有効化](decisions/ADR-0008-bounded-azure-evaluation.md)
-7. [第三者依存の受入状態](licenses/third-party-intake.md)
+7. [source-only quick start、版付き既定値、自動代理評価](decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)
+8. [第三者依存の受入状態](licenses/third-party-intake.md)
 
 ## 正本の優先順位
 
@@ -82,7 +87,7 @@ docs/
    │  ├─ annotation-policy.md
    │  ├─ metric-definitions.md
    │  └─ result-schema-policy.md
-   ├─ decisions/                       # ADR-0001〜0008
+   ├─ decisions/                       # ADR-0001〜0009
    ├─ licenses/
    │  ├─ third-party-intake.md
    │  ├─ dependencies.csv
@@ -91,10 +96,12 @@ docs/
    ├─ planning/
    │  └─ implementation-plan.md
    ├─ research/
-   │  └─ implementation-research.md
+   │  ├─ implementation-research.md
+   │  └─ default-settings-research.md
    └─ reviews/
       ├─ adversarial-review.md
-      └─ implementation-adversarial-review.md
+      ├─ implementation-adversarial-review.md
+      └─ v2-defaults-adversarial-review.md
 ```
 
 `benchmarks/` の code、fixture manifest、schema、canonical result、`test/` の検証証拠、`work/` の日付付き作業成果物は、読者向けガイドではないため各成果物の近くに残します。
