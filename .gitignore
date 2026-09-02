@@ -4,6 +4,7 @@
 
 # Local opening/closing assets and generation prompts remain untracked until rights are approved
 /video/
+/music
 
 # Generated test media is local; manifests and problem reports remain visible
 /test/*.MOV
