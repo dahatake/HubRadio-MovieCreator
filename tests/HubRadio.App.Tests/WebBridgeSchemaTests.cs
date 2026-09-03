@@ -78,6 +78,10 @@ public sealed class WebBridgeSchemaTests
                 "delivery.read",
                 "layout.read",
                 "layout.apply",
+                "settings.read",
+                "settings.update",
+                "settings.reset",
+                "settings.resetAll",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -154,6 +158,14 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/layoutApplyRequest",
                 "#/$defs/layoutReadResponse",
                 "#/$defs/layoutApplyResponse",
+                "#/$defs/settingsReadRequest",
+                "#/$defs/settingsUpdateRequest",
+                "#/$defs/settingsResetRequest",
+                "#/$defs/settingsResetAllRequest",
+                "#/$defs/settingsReadResponse",
+                "#/$defs/settingsUpdateResponse",
+                "#/$defs/settingsResetResponse",
+                "#/$defs/settingsResetAllResponse",
             },
             root.GetProperty("oneOf")
                 .EnumerateArray()
@@ -385,6 +397,22 @@ public sealed class WebBridgeSchemaTests
             "layoutSnapshot",
             "layoutReadResponse",
             "layoutApplyResponse",
+            "settingsEvidence",
+            "settingsDefinition",
+            "settingsSelection",
+            "settingsSnapshot",
+            "settingsReadParams",
+            "settingsUpdateParams",
+            "settingsResetParams",
+            "settingsResetAllParams",
+            "settingsReadRequest",
+            "settingsUpdateRequest",
+            "settingsResetRequest",
+            "settingsResetAllRequest",
+            "settingsReadResponse",
+            "settingsUpdateResponse",
+            "settingsResetResponse",
+            "settingsResetAllResponse",
         })
         {
             Assert.AreEqual(
@@ -627,6 +655,34 @@ public sealed class WebBridgeSchemaTests
         Assert.IsFalse(definitions.GetProperty("deliverySnapshot")
             .GetProperty("properties")
             .TryGetProperty("download", out _));
+    }
+
+    [TestMethod]
+    public void SettingsSchemaIsClosedAndPinsFullMutationIdentity()
+    {
+        using JsonDocument document = JsonDocument.Parse(
+            File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
+        JsonElement definitions = document.RootElement.GetProperty("$defs");
+
+        CollectionAssert.AreEqual(
+            new[] { "projectAndOutput", "editing", "subtitlesAndGraphics", "audioAndAssets", "privacyAndStorage" },
+            GetStrings(definitions.GetProperty("settingsDefinition").GetProperty("properties").GetProperty("group").GetProperty("enum")));
+        Assert.AreEqual(5, definitions.GetProperty("settingsValue").GetProperty("oneOf").GetArrayLength());
+        Assert.AreEqual(14, definitions.GetProperty("settingsDefinition").GetProperty("properties").GetProperty("unit").GetProperty("enum").GetArrayLength());
+        Assert.AreEqual(7, definitions.GetProperty("settingsEvidence").GetProperty("properties").GetProperty("kind").GetProperty("enum").GetArrayLength());
+        Assert.AreEqual(4, definitions.GetProperty("settingsEvidence").GetProperty("oneOf").GetArrayLength());
+        CollectionAssert.AreEquivalent(
+            new[] { "projectId", "expectedRevision", "expectedProfileId", "expectedProfileVersion", "expectedProfileDigest", "expectedSnapshotDigest", "key", "value" },
+            GetStrings(definitions.GetProperty("settingsUpdateParams").GetProperty("required")));
+        CollectionAssert.Contains(
+            GetStrings(definitions.GetProperty("settingsResult").GetProperty("oneOf")[1].GetProperty("properties").GetProperty("status").GetProperty("enum")),
+            "conflict");
+        Assert.IsFalse(definitions.GetProperty("settingsSnapshot").GetProperty("properties").GetProperty("definitionCount").TryGetProperty("const", out _));
+
+        string schema = document.RootElement.GetRawText();
+        Assert.IsFalse(schema.Contains("actorSid", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("sourcePath", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(schema.Contains("downloadUrl", StringComparison.OrdinalIgnoreCase));
     }
 
     [TestMethod]
@@ -1242,9 +1298,10 @@ public sealed class WebBridgeSchemaTests
             File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
         JsonElement definitions = document.RootElement.GetProperty("$defs");
 
-        CollectionAssert.AreEqual(
-            new[] { "layout.read", "layout.apply" },
-            GetStrings(definitions.GetProperty("method").GetProperty("enum"))[^2..]);
+        string[] methods = GetStrings(
+            definitions.GetProperty("method").GetProperty("enum"));
+        CollectionAssert.Contains(methods, "layout.read");
+        CollectionAssert.Contains(methods, "layout.apply");
         StringAssert.Contains(
             definitions.GetProperty("layoutProtocolLimits")
                 .GetProperty("$comment").GetString()!,

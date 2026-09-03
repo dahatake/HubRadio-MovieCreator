@@ -36,6 +36,29 @@
   text-rendering: optimizeLegibility;
 }
 
+.settings-panel { display: grid; gap: 1rem; }
+.settings-project-form, .settings-toolbar, .setting-actions, .rational-input { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.settings-project-form input { min-width: min(28rem, 100%); }
+.settings-toolbar { justify-content: space-between; }
+.settings-profile { color: var(--color-text-muted); }
+.settings-group-tabs { display: flex; gap: .5rem; overflow-x: auto; }
+.settings-group-tabs [aria-selected='true'] { border-color: var(--cp-accent); box-shadow: inset 0 -.2rem 0 var(--cp-accent); }
+.settings-group { border: 1px solid var(--color-border); border-radius: .75rem; display: grid; gap: .75rem; padding: 1rem; }
+.settings-group legend { font-size: 1.1rem; font-weight: 700; padding: 0 .4rem; }
+.setting-card { background: var(--color-surface-subtle, rgba(255,255,255,.04)); border-radius: .5rem; display: grid; gap: .75rem; padding: 1rem; }
+.setting-copy label { display: block; font-weight: 700; }
+.setting-copy p { margin: .35rem 0; }
+.setting-copy code { color: var(--color-text-muted); font-size: .78rem; }
+.setting-value-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin: 0; }
+.setting-value-summary div { border: 1px solid var(--cp-border); border-radius: .4rem; min-width: 0; padding: .5rem; }
+.setting-value-summary dt { color: var(--cp-text-muted); font-size: .75rem; font-weight: 700; }
+.setting-value-summary dd { margin: .25rem 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.setting-badge { border: 1px solid currentColor; border-radius: 999px; font-size: .7rem; margin-inline-start: .5rem; padding: .1rem .4rem; }
+.setting-card input:not([type='checkbox']), .setting-card select, .setting-card textarea { box-sizing: border-box; max-width: 100%; min-height: 2.5rem; padding: .5rem; width: min(36rem, 100%); }
+.rational-input input { width: 10rem !important; }
+.setting-card details { color: var(--color-text-muted); }
+.inline-error { border-inline-start: .25rem solid var(--color-danger, #c64040); padding: .75rem; }
+
 html[data-theme="dark"] {
   color-scheme: dark;
   --cp-bg: #3d3b3a;
@@ -839,7 +862,8 @@ input[type="radio"] {
 
   .scope-grid,
   .checkbox-grid,
-  .review-list {
+  .review-list,
+  .setting-value-summary {
     grid-template-columns: 1fr;
   }
 }

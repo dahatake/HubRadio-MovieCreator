@@ -22,6 +22,9 @@ public sealed class BridgeProtocolSecurityTests
     [DataRow("layout.render")]
     [DataRow("layout.apply;calc")]
     [DataRow("layout.re\u0430d")]
+    [DataRow("settings.write")]
+    [DataRow("settings.reset;calc")]
+    [DataRow("settings.re\u0455etAll")]
     public void AdversarialUnknownMethodsAreRejectedWithoutReflection(string method)
     {
         string message =
@@ -107,6 +110,24 @@ public sealed class BridgeProtocolSecurityTests
     {
         string message =
             $"{{\"version\":1,\"requestId\":\"{RequestId}\",\"method\":\"layout.apply\",\"params\":{{\"projectId\":\"11112222-3333-4444-8555-666677778888\",\"expectedRevision\":0,\"operation\":{{\"kind\":\"setManualLayout\",\"mode\":\"singleSubjectCrop\",\"staticCropDecision\":\"singleStaticCropSufficient\",\"sources\":[],\"templateId\":null,\"actorSid\":\"S-1-5-21-1\"}}}}}}";
+
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint,
+            message,
+            out BridgeRequest? request,
+            out BridgeRequestRejection rejection));
+        Assert.IsNull(request);
+        Assert.AreEqual(BridgeRequestRejection.SchemaViolation, rejection);
+    }
+
+    [TestMethod]
+    [DataRow("{\"projectId\":\"11112222-3333-4444-8555-666677778888\",\"actorSid\":\"S-1-5-18\"}")]
+    [DataRow("{\"projectId\":\"11112222-3333-4444-8555-666677778888\",\"sourcePath\":\"C:\\\\private\\\\settings.json\"}")]
+    [DataRow("{\"projectId\":\"11112222-3333-4444-8555-666677778888\",\"__proto__\":{\"expectedRevision\":0}}")]
+    public void SettingsReadRejectsIdentityPathAndOpenParameters(string parameters)
+    {
+        string message =
+            $"{{\"version\":1,\"requestId\":\"{RequestId}\",\"method\":\"settings.read\",\"params\":{parameters}}}";
 
         Assert.IsFalse(BridgeProtocol.TryParseRequest(
             WebViewHost.EntryPoint,

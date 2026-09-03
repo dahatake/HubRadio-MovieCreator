@@ -103,7 +103,8 @@ public sealed partial class MainWindow : Window
                     bridgeHandlers.Comparison,
                     bridgeHandlers.Delivery,
                     bridgeHandlers.Analysis,
-                    bridgeHandlers.LayoutSubtitles);
+                    bridgeHandlers.LayoutSubtitles,
+                    bridgeHandlers.Settings);
                 try
                 {
                     WebApplicationView.Visibility = Visibility.Visible;

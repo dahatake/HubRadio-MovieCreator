@@ -25,7 +25,8 @@ internal sealed class ApplicationBridgeHandlers
         ComparisonBridgeRequestHandler comparison,
         DeliveryBridgeRequestHandler delivery,
         AnalysisBridgeRequestHandler analysis,
-        LayoutSubtitleBridgeRequestHandler layoutSubtitles)
+        LayoutSubtitleBridgeRequestHandler layoutSubtitles,
+        SettingsBridgeRequestHandler settings)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
@@ -36,6 +37,7 @@ internal sealed class ApplicationBridgeHandlers
         ArgumentNullException.ThrowIfNull(delivery);
         ArgumentNullException.ThrowIfNull(analysis);
         ArgumentNullException.ThrowIfNull(layoutSubtitles);
+        ArgumentNullException.ThrowIfNull(settings);
         Project = project;
         Jobs = jobs;
         Timeline = timeline;
@@ -45,6 +47,7 @@ internal sealed class ApplicationBridgeHandlers
         Delivery = delivery;
         Analysis = analysis;
         LayoutSubtitles = layoutSubtitles;
+        Settings = settings;
     }
 
     internal ProjectBridgeHandler Project { get; }
@@ -64,6 +67,8 @@ internal sealed class ApplicationBridgeHandlers
     internal AnalysisBridgeRequestHandler Analysis { get; }
 
     internal LayoutSubtitleBridgeRequestHandler LayoutSubtitles { get; }
+
+    internal SettingsBridgeRequestHandler Settings { get; }
 }
 
 internal static class ProjectApplicationRuntime
@@ -159,6 +164,9 @@ internal static class ProjectApplicationRuntime
             new LayoutSubtitleBridgeAuthorization(
                 authorization,
                 actorProvider));
+        var settingsHandler = new SettingsBridgeRequestHandler(
+            defaultSettingsStore,
+            new SettingsBridgeAuthorization(authorization, actorProvider));
         return new ApplicationBridgeHandlers(
             projectHandler,
             jobHandler,
@@ -168,6 +176,7 @@ internal static class ProjectApplicationRuntime
             comparisonHandler,
             deliveryHandler,
             analysisHandler,
-            layoutSubtitleHandler);
+            layoutSubtitleHandler,
+            settingsHandler);
     }
 }

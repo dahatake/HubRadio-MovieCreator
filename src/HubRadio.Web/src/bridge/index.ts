@@ -68,6 +68,11 @@ import {
   type LayoutBridgeResponse,
 } from '../features/layout/layoutProtocol'
 import {
+  parseSettingsResponse,
+  type SettingsRequest,
+  type SettingsResponse,
+} from '../features/settings/settingsProtocol'
+import {
   createThumbnailCancelRequest,
   createThumbnailGenerateRequest,
   createThumbnailReadRequest,
@@ -87,6 +92,7 @@ export * from '../features/review/reviewProtocol'
 export * from '../features/compare/compareProtocol'
 export * from '../features/delivery/deliveryProtocol'
 export * from '../features/layout/layoutProtocol'
+export * from '../features/settings/settingsProtocol'
 
 export interface BridgeMessageEvent {
   readonly data: unknown
@@ -106,6 +112,7 @@ export interface BridgeTransport {
       | ComparisonReadRequest
       | DeliveryReadRequest
       | LayoutBridgeRequest
+      | SettingsRequest
       | ThumbnailBridgeRequest,
   ): void
   addEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
@@ -172,6 +179,11 @@ export interface BridgeClient {
   onLayoutResponse(
     listener: (response: LayoutBridgeResponse) => void,
   ): () => void
+  sendSettings(request: SettingsRequest): void
+  abandonSettingsRequest(requestId: string): void
+  onSettingsResponse(
+    listener: (response: SettingsResponse) => void,
+  ): () => void
   sendThumbnailRead(requestId: string, jobId: string): void
   onThumbnailReadResponse(
     listener: (response: ThumbnailReadResponse) => void,
@@ -222,6 +234,11 @@ interface PendingLayoutRequest {
   readonly projectId: string
 }
 
+interface PendingSettingsRequest {
+  readonly method: SettingsRequest['method']
+  readonly projectId: string
+}
+
 export function createBridgeClient(transport: BridgeTransport): BridgeClient {
   const pingListeners = new Set<(response: BridgePingResponse) => void>()
   const projectListeners = new Set<(response: ProjectBridgeResponse) => void>()
@@ -265,6 +282,10 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
     (response: LayoutBridgeResponse) => void
   >()
   const pendingLayoutRequests = new Map<string, PendingLayoutRequest>()
+  const settingsListeners = new Set<
+    (response: SettingsResponse) => void
+  >()
+  const pendingSettingsRequests = new Map<string, PendingSettingsRequest>()
   const thumbnailReadListeners = new Set<
     (response: ThumbnailReadResponse) => void
   >()
@@ -387,6 +408,25 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       pendingLayoutRequests.delete(layoutResponse.requestId)
       for (const listener of layoutListeners) {
         listener(layoutResponse)
+      }
+      return
+    }
+
+    const settingsResponse = parseSettingsResponse(event.data)
+    if (settingsResponse !== null) {
+      const pending = pendingSettingsRequests.get(settingsResponse.requestId)
+      if (
+        pending === undefined ||
+        pending.method !== settingsResponse.method ||
+        (settingsResponse.result.status === 'available' &&
+          settingsResponse.result.snapshot.projectId !== pending.projectId)
+      ) {
+        return
+      }
+
+      pendingSettingsRequests.delete(settingsResponse.requestId)
+      for (const listener of settingsListeners) {
+        listener(settingsResponse)
       }
       return
     }
@@ -739,6 +779,35 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
         layoutListeners.delete(listener)
       }
     },
+    sendSettings(request: SettingsRequest): void {
+      throwIfDisposed(disposed)
+      if (pendingSettingsRequests.size !== 0) {
+        throw new Error('A settings bridge request is already pending.')
+      }
+      pendingSettingsRequests.set(request.requestId, {
+        method: request.method,
+        projectId: request.params.projectId,
+      })
+      try {
+        transport.postMessage(request)
+      } catch (error: unknown) {
+        pendingSettingsRequests.delete(request.requestId)
+        throw error
+      }
+    },
+    abandonSettingsRequest(requestId: string): void {
+      throwIfDisposed(disposed)
+      pendingSettingsRequests.delete(requestId)
+    },
+    onSettingsResponse(
+      listener: (response: SettingsResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      settingsListeners.add(listener)
+      return (): void => {
+        settingsListeners.delete(listener)
+      }
+    },
     sendThumbnailRead(requestId: string, jobId: string): void {
       throwIfDisposed(disposed)
       transport.postMessage(createThumbnailReadRequest(requestId, jobId))
@@ -808,6 +877,8 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       pendingDeliveryRequests.clear()
       layoutListeners.clear()
       pendingLayoutRequests.clear()
+      settingsListeners.clear()
+      pendingSettingsRequests.clear()
       thumbnailReadListeners.clear()
       thumbnailGenerateListeners.clear()
       thumbnailCancelListeners.clear()

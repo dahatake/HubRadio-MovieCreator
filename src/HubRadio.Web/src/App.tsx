@@ -20,6 +20,7 @@ import { selectSyncStatus, useAppState, type SyncStatus } from './state'
 import { ProjectWorkspace } from './features/projects/ProjectWorkspace'
 import { TranscriptPanel } from './features/transcript/TranscriptPanel'
 import { AnalysisPanel } from './features/analysis/AnalysisPanel'
+import { SettingsPanel } from './features/settings'
 
 const statusMessages: Readonly<Record<SyncStatus, string>> = {
   unsaved: 'ホスト接続は未確認です',
@@ -88,6 +89,7 @@ function App() {
         <ComparePanel />
         <ReviewPanel />
         <DeliveryPanel />
+        <SettingsPanel />
       </div>
     </main>
   )

@@ -69,7 +69,15 @@
     { "$ref": "#/$defs/layoutReadRequest" },
     { "$ref": "#/$defs/layoutApplyRequest" },
     { "$ref": "#/$defs/layoutReadResponse" },
-    { "$ref": "#/$defs/layoutApplyResponse" }
+    { "$ref": "#/$defs/layoutApplyResponse" },
+    { "$ref": "#/$defs/settingsReadRequest" },
+    { "$ref": "#/$defs/settingsUpdateRequest" },
+    { "$ref": "#/$defs/settingsResetRequest" },
+    { "$ref": "#/$defs/settingsResetAllRequest" },
+    { "$ref": "#/$defs/settingsReadResponse" },
+    { "$ref": "#/$defs/settingsUpdateResponse" },
+    { "$ref": "#/$defs/settingsResetResponse" },
+    { "$ref": "#/$defs/settingsResetAllResponse" }
   ],
   "$defs": {
     "protocolVersion": { "const": 1 },
@@ -141,7 +149,11 @@
         "compare.read",
         "delivery.read",
         "layout.read",
-        "layout.apply"
+        "layout.apply",
+        "settings.read",
+        "settings.update",
+        "settings.reset",
+        "settings.resetAll"
       ]
     },
     "projectMethod": {
@@ -6007,6 +6019,249 @@
         "method": { "const": "layout.apply" },
         "result": { "$ref": "#/$defs/layoutResult" }
       }
+    },
+    "settingsKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][A-Za-z0-9]*(\\.[a-z][A-Za-z0-9]*)*(?![\\s\\S])"
+    },
+    "settingsProfileVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])"
+    },
+    "settingsValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "booleanValue"],
+          "properties": {
+            "kind": { "const": "boolean" },
+            "booleanValue": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "integerValue"],
+          "properties": {
+            "kind": { "const": "integer" },
+            "integerValue": { "type": "string", "pattern": "^(0|-?[1-9][0-9]*)(?![\\s\\S])" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "numerator", "denominator"],
+          "properties": {
+            "kind": { "const": "rational" },
+            "numerator": { "type": "string", "pattern": "^(0|-?[1-9][0-9]*)(?![\\s\\S])" },
+            "denominator": { "type": "string", "pattern": "^[1-9][0-9]*(?![\\s\\S])" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "textValue"],
+          "properties": {
+            "kind": { "const": "text" },
+            "textValue": { "type": "string", "minLength": 1, "maxLength": 4096 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "textListValue"],
+          "properties": {
+            "kind": { "const": "textList" },
+            "textListValue": {
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 4096 }
+            }
+          }
+        }
+      ]
+    },
+    "nullableSettingsValue": {
+      "oneOf": [
+        { "$ref": "#/$defs/settingsValue" },
+        { "type": "null" }
+      ]
+    },
+    "settingsEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "sourceId"],
+      "properties": {
+        "kind": {
+          "enum": ["specification", "officialRecommendation", "peerReviewedFinding", "practicalGuidance", "currentImplementation", "productDecision", "userDecision"]
+        },
+        "sourceId": { "type": "string", "pattern": "^(productDecision|[UCR][0-9]{2})(?![\\s\\S])" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": { "const": "productDecision" },
+            "sourceId": { "const": "productDecision" }
+          }
+        },
+        {
+          "properties": {
+            "kind": { "const": "userDecision" },
+            "sourceId": { "type": "string", "pattern": "^U[0-9]{2}(?![\\s\\S])" }
+          }
+        },
+        {
+          "properties": {
+            "kind": { "const": "currentImplementation" },
+            "sourceId": { "type": "string", "pattern": "^C[0-9]{2}(?![\\s\\S])" }
+          }
+        },
+        {
+          "properties": {
+            "kind": { "enum": ["specification", "officialRecommendation", "peerReviewedFinding", "practicalGuidance"] },
+            "sourceId": { "type": "string", "pattern": "^R[0-9]{2}(?![\\s\\S])" }
+          }
+        }
+      ]
+    },
+    "settingsDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "group", "isAdvanced", "displayName", "description", "unit", "defaultValue", "minimum", "maximum", "allowedTextValues", "evidence"],
+      "properties": {
+        "key": { "$ref": "#/$defs/settingsKey" },
+        "group": { "enum": ["projectAndOutput", "editing", "subtitlesAndGraphics", "audioAndAssets", "privacyAndStorage"] },
+        "isAdvanced": { "type": "boolean" },
+        "displayName": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "unit": { "enum": ["none", "count", "milliseconds", "seconds", "frames", "pixels", "hertz", "bitsPerSecond", "percent", "charactersPerSecond", "fullWidthCharacters", "decibels", "decibelsFullScale", "loudnessUnitsFullScale"] },
+        "defaultValue": { "$ref": "#/$defs/settingsValue" },
+        "minimum": { "$ref": "#/$defs/nullableSettingsValue" },
+        "maximum": { "$ref": "#/$defs/nullableSettingsValue" },
+        "allowedTextValues": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/settingsEvidence" } }
+      }
+    },
+    "settingsSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "value"],
+      "properties": {
+        "key": { "$ref": "#/$defs/settingsKey" },
+        "value": { "$ref": "#/$defs/settingsValue" }
+      }
+    },
+    "settingsSnapshot": {
+      "type": "object",
+      "$comment": "definitionCount is derived from the native profile inventory and equals definitions.length; resets restore the immutable project-initial snapshot.",
+      "additionalProperties": false,
+      "required": ["projectId", "profileId", "profileName", "profileVersion", "profileDigest", "initialSnapshotDigest", "snapshotDigest", "revision", "updatedAt", "definitionCount", "definitions", "initialValues", "values"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "profileId": { "$ref": "#/$defs/entityId" },
+        "profileName": { "type": "string", "minLength": 1 },
+        "profileVersion": { "$ref": "#/$defs/settingsProfileVersion" },
+        "profileDigest": { "$ref": "#/$defs/contentDigest" },
+        "initialSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "snapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "revision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" },
+        "definitionCount": { "$ref": "#/$defs/nonnegativeInt32" },
+        "definitions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/settingsDefinition" } },
+        "initialValues": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/settingsSelection" } },
+        "values": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/settingsSelection" } }
+      }
+    },
+    "settingsReadParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId"],
+      "properties": { "projectId": { "$ref": "#/$defs/entityId" } }
+    },
+    "settingsUpdateParams": {
+      "type": "object",
+      "$comment": "All expected fields form the optimistic-concurrency identity.",
+      "additionalProperties": false,
+      "required": ["projectId", "expectedRevision", "expectedProfileId", "expectedProfileVersion", "expectedProfileDigest", "expectedSnapshotDigest", "key", "value"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "expectedRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "expectedProfileId": { "$ref": "#/$defs/entityId" },
+        "expectedProfileVersion": { "$ref": "#/$defs/settingsProfileVersion" },
+        "expectedProfileDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "key": { "$ref": "#/$defs/settingsKey" },
+        "value": { "$ref": "#/$defs/settingsValue" }
+      }
+    },
+    "settingsResetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "expectedRevision", "expectedProfileId", "expectedProfileVersion", "expectedProfileDigest", "expectedSnapshotDigest", "key"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "expectedRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "expectedProfileId": { "$ref": "#/$defs/entityId" },
+        "expectedProfileVersion": { "$ref": "#/$defs/settingsProfileVersion" },
+        "expectedProfileDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "key": { "$ref": "#/$defs/settingsKey" }
+      }
+    },
+    "settingsResetAllParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "expectedRevision", "expectedProfileId", "expectedProfileVersion", "expectedProfileDigest", "expectedSnapshotDigest"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "expectedRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "expectedProfileId": { "$ref": "#/$defs/entityId" },
+        "expectedProfileVersion": { "$ref": "#/$defs/settingsProfileVersion" },
+        "expectedProfileDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedSnapshotDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "settingsReadRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.read" }, "params": { "$ref": "#/$defs/settingsReadParams" } }
+    },
+    "settingsUpdateRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.update" }, "params": { "$ref": "#/$defs/settingsUpdateParams" } }
+    },
+    "settingsResetRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.reset" }, "params": { "$ref": "#/$defs/settingsResetParams" } }
+    },
+    "settingsResetAllRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.resetAll" }, "params": { "$ref": "#/$defs/settingsResetAllParams" } }
+    },
+    "settingsResult": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["status", "snapshot"], "properties": { "status": { "const": "available" }, "snapshot": { "$ref": "#/$defs/settingsSnapshot" } } },
+        { "type": "object", "additionalProperties": false, "required": ["status", "snapshot"], "properties": { "status": { "enum": ["forbidden", "notFound", "unbound", "conflict", "invalid", "unavailable"] }, "snapshot": { "type": "null" } } }
+      ]
+    },
+    "settingsReadResponse": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.read" }, "result": { "$ref": "#/$defs/settingsResult" } }
+    },
+    "settingsUpdateResponse": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.update" }, "result": { "$ref": "#/$defs/settingsResult" } }
+    },
+    "settingsResetResponse": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.reset" }, "result": { "$ref": "#/$defs/settingsResult" } }
+    },
+    "settingsResetAllResponse": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.resetAll" }, "result": { "$ref": "#/$defs/settingsResult" } }
     }
   }
 }

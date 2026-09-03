@@ -11,6 +11,7 @@ import { PreviewModeProvider } from './features/preview-modes'
 import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
 import { ReviewStateProvider } from './features/review'
 import { AppStateProvider } from './state'
+import { SettingsStateProvider } from './features/settings'
 import './styles.css'
 
 const rootElement = document.getElementById('root')
@@ -29,7 +30,9 @@ createRoot(rootElement).render(
               <ComparisonStateProvider>
                 <ReviewStateProvider>
                   <DeliveryStateProvider>
-                    <App />
+                    <SettingsStateProvider>
+                      <App />
+                    </SettingsStateProvider>
                   </DeliveryStateProvider>
                 </ReviewStateProvider>
               </ComparisonStateProvider>

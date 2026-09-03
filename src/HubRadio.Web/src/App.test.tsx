@@ -8,6 +8,7 @@ import { LayoutStateProvider } from './features/layout'
 import { PreviewModeProvider } from './features/preview-modes'
 import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
 import { ReviewStateProvider } from './features/review'
+import { SettingsStateProvider } from './features/settings'
 import { AppStateProvider } from './state'
 
 describe('App', () => {
@@ -20,7 +21,9 @@ describe('App', () => {
               <ReviewStateProvider>
                 <DeliveryStateProvider>
                   <LayoutStateProvider>
-                    <App />
+                    <SettingsStateProvider>
+                      <App />
+                    </SettingsStateProvider>
                   </LayoutStateProvider>
                 </DeliveryStateProvider>
               </ReviewStateProvider>
@@ -48,6 +51,7 @@ describe('App', () => {
     expect(markup).toContain('レビュー・コメント・承認')
     expect(markup).toContain('レビュー対象は未選択です')
     expect(markup).toContain('手動サムネイル生成')
+    expect(markup).toContain('案件設定')
     expect(markup).toContain('プレイヤーで正確なフレームを選択してください')
     expect(markup).toContain('<form')
     expect(markup).toContain('for="job-id"')
