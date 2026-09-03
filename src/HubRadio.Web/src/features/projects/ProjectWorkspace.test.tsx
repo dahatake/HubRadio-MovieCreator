@@ -23,6 +23,8 @@ const candidateId = '99990000-aaaa-4bbb-8ccc-ddddeeeeffff'
 const profileId = '14b4f6b6-1ebc-55c3-9682-2c7e9ad226fa'
 const templateId = 'bf08c776-0f97-5373-a091-c70b60acd569'
 const timestamp = '2026-09-01T12:00:00.0000000+00:00'
+const profileDigest = 'a'.repeat(64)
+const snapshotDigest = 'b'.repeat(64)
 const adversarialText =
   '<script>globalThis.compromised=true</script><img src=x onerror=alert(1)>&tail'
 
@@ -241,6 +243,42 @@ describe('ProjectWorkspace', () => {
     )
     expect(markup).not.toContain('必須項目がすべて入力されています。')
   })
+
+  it('renders private-safe source-only provenance and locks its fixed defaults', () => {
+    const input = completeInput()
+    const markup = renderState({
+      ...initialProjectState,
+      canCreate: true,
+      catalog: {
+        outputProfiles: [{ id: profileId, name: 'long-form-1280x720' }],
+        brandTemplates: [{ id: templateId, name: 'development-neutral-long-form' }],
+      },
+      draft: {
+        ...projectDraft(input),
+        sourceOnly: {
+          profileId,
+          profileVersion: '1.0.0',
+          profileDigest,
+          settingsSnapshotDigest: snapshotDigest,
+          artifactSet: ['landscapeLongForm', 'verticalShort'],
+        },
+      },
+      input,
+    })
+
+    expect(markup).toContain('元動画から適用する固定設定')
+    expect(markup).toContain('一回の確認')
+    expect(markup).toContain('1.0.0')
+    expect(markup).toContain(profileDigest)
+    expect(markup).toContain(snapshotDigest)
+    expect(markup).toContain('landscapeLongForm、verticalShort')
+    expect(markup.match(/<fieldset disabled=""/g)).toHaveLength(5)
+    expect(markup).toMatch(
+      /<button[^>]*class="primary-button"[^>]*>案件を作成<\/button>/,
+    )
+    expect(markup).not.toContain('C:\\private')
+    expect(markup).not.toContain('S-1-5-')
+  })
 })
 
 function renderState(state: ProjectState): string {
@@ -289,6 +327,7 @@ function projectDraft(input: ProjectDraftInput): ProjectDraft {
     ...input,
     missingFields: [],
     updatedAt: timestamp,
+    sourceOnly: null,
   }
 }
 

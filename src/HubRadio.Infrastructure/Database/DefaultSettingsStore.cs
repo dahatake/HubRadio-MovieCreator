@@ -367,12 +367,33 @@ public sealed class DefaultSettingsStore
     {
         ArgumentNullException.ThrowIfNull(projectId);
         ArgumentNullException.ThrowIfNull(initialSnapshot);
-        string storedUpdatedAt = SqliteStoreSupport.FormatTimestamp(
-            updatedAt,
-            nameof(updatedAt));
 
         using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        StoredProjectSettings stored = BindProjectSettings(
+            connection,
+            transaction,
+            projectId,
+            initialSnapshot,
+            updatedAt);
+        transaction.Commit();
+        return stored;
+    }
+
+    internal static StoredProjectSettings BindProjectSettings(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        EntityId<ProjectIdTag> projectId,
+        DefaultSettingsSnapshot initialSnapshot,
+        DateTimeOffset updatedAt)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(transaction);
+        ArgumentNullException.ThrowIfNull(projectId);
+        ArgumentNullException.ThrowIfNull(initialSnapshot);
+        string storedUpdatedAt = SqliteStoreSupport.FormatTimestamp(
+            updatedAt,
+            nameof(updatedAt));
         EnsureProjectExists(connection, transaction, projectId);
         DefaultSettingsProfile profile = ReadRequiredProfileForSnapshot(
             connection,
@@ -399,7 +420,6 @@ public sealed class DefaultSettingsStore
                     "The project is already bound to different initial default settings.");
             }
 
-            transaction.Commit();
             return existing;
         }
 
@@ -443,7 +463,6 @@ public sealed class DefaultSettingsStore
             transaction,
             projectId)
             ?? throw InvalidStoredProjectSettings();
-        transaction.Commit();
         return stored;
     }
 

@@ -176,6 +176,7 @@ export function ProjectWorkspaceView({
 
   const pending = state.pending !== null
   const finalized = state.draft?.isFinalized === true
+  const sourceOnly = state.draft?.sourceOnly ?? null
   const dirty = isProjectInputDirty(state.input, state.draft)
   const saveable = isProjectInputSaveable(state.input)
   const withinRequestLimit = isProjectDraftInputWithinRequestLimit(state.input)
@@ -374,6 +375,25 @@ export function ProjectWorkspaceView({
             </ol>
           </nav>
 
+          {sourceOnly !== null && (
+            <section className="completion-summary" aria-labelledby="source-only-summary-title">
+              <h3 id="source-only-summary-title">元動画から適用する固定設定</h3>
+              <p>
+                社内限定の既定設定と標準成果物を、次の一回の確認で案件へ固定します。
+              </p>
+              <dl className="review-list">
+                <ReviewItem term="設定プロファイル版" value={sourceOnly.profileVersion} />
+                <ReviewItem term="設定プロファイルID" value={sourceOnly.profileId} />
+                <ReviewItem term="設定プロファイルdigest" value={sourceOnly.profileDigest} />
+                <ReviewItem
+                  term="設定snapshot digest"
+                  value={sourceOnly.settingsSnapshotDigest}
+                />
+                <ReviewItem term="標準成果物" value={joinValues(sourceOnly.artifactSet)} />
+              </dl>
+            </section>
+          )}
+
           <form
             className="project-form"
             onSubmit={(event) => {
@@ -381,7 +401,7 @@ export function ProjectWorkspaceView({
               saveDraft()
             }}
           >
-            <fieldset disabled={pending || finalized} hidden={wizardStep !== 0}>
+            <fieldset disabled={pending || finalized || sourceOnly !== null} hidden={wizardStep !== 0}>
               <legend>元動画とコンテンツ名</legend>
               <p className="step-description">
                 元動画は Windows の選択画面で指定します。ファイルパスは Web 画面へ渡されません。
@@ -419,7 +439,7 @@ export function ProjectWorkspaceView({
               />
             </fieldset>
 
-            <fieldset disabled={pending || finalized} hidden={wizardStep !== 1}>
+            <fieldset disabled={pending || finalized || sourceOnly !== null} hidden={wizardStep !== 1}>
               <legend>目的・視聴者・公開範囲</legend>
               <p className="step-description">
                 自動編集の判断基準と、情報を扱える範囲を指定します。
@@ -464,7 +484,7 @@ export function ProjectWorkspaceView({
               </fieldset>
             </fieldset>
 
-            <fieldset disabled={pending || finalized} hidden={wizardStep !== 2}>
+            <fieldset disabled={pending || finalized || sourceOnly !== null} hidden={wizardStep !== 2}>
               <legend>出力形式・言語・ブランド</legend>
               <p className="step-description">
                 承認済みの出力プロファイルとブランドテンプレートから選択します。
@@ -527,7 +547,7 @@ export function ProjectWorkspaceView({
               </div>
             </fieldset>
 
-            <fieldset disabled={pending || finalized} hidden={wizardStep !== 3}>
+            <fieldset disabled={pending || finalized || sourceOnly !== null} hidden={wizardStep !== 3}>
               <legend>出演者と公開期限</legend>
               <p className="step-description">
                 出演者は複数登録できます。公開期限がない場合も明示してください。
@@ -602,7 +622,7 @@ export function ProjectWorkspaceView({
               </fieldset>
             </fieldset>
 
-            <fieldset disabled={pending || finalized} hidden={wizardStep !== 4}>
+            <fieldset disabled={pending || finalized || sourceOnly !== null} hidden={wizardStep !== 4}>
               <legend>入力内容の確認</legend>
               <p className="step-description">
                 下書きは未完成のまま保存できます。案件作成には10項目すべてが必要です。

@@ -520,7 +520,8 @@
         "deadlineSelection",
         "brandTemplateId",
         "missingFields",
-        "updatedAt"
+        "updatedAt",
+        "sourceOnly"
       ],
       "properties": {
         "draftId": { "$ref": "#/$defs/entityId" },
@@ -555,7 +556,39 @@
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/missingField" }
         },
-        "updatedAt": { "$ref": "#/$defs/timestamp" }
+        "updatedAt": { "$ref": "#/$defs/timestamp" },
+        "sourceOnly": {
+          "oneOf": [
+            { "$ref": "#/$defs/sourceOnlyProjectSummary" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "sourceOnlyProjectSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileId",
+        "profileVersion",
+        "profileDigest",
+        "settingsSnapshotDigest",
+        "artifactSet"
+      ],
+      "properties": {
+        "profileId": { "$ref": "#/$defs/entityId" },
+        "profileVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "profileDigest": { "$ref": "#/$defs/contentDigest" },
+        "settingsSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "artifactSet": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
       }
     },
     "pingResult": {
@@ -1749,13 +1782,18 @@
         "code": {
           "enum": [
             "project.already_finalized",
+            "project.catalog_unavailable",
             "project.incomplete",
             "project.invalid_request",
             "project.not_authorized",
             "project.not_found",
             "project.operation_failed",
             "project.revision_conflict",
-            "project.source_reselection_required"
+            "project.settings_mismatch",
+            "project.settings_unavailable",
+            "project.source_selection_canceled",
+            "project.source_reselection_required",
+            "project.unsafe_source_name"
           ]
         },
         "message": { "type": "string", "minLength": 1 }

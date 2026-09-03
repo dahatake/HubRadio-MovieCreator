@@ -331,6 +331,7 @@ function draft(): ProjectDraft {
     sourceStatus: 'available',
     missingFields: [],
     updatedAt: timestamp,
+    sourceOnly: null,
   }
 }
 
@@ -401,13 +402,18 @@ function errorResponse(
 ): ProjectBridgeErrorResponse {
   const messages: Record<ProjectBridgeErrorResponse['error']['code'], string> = {
     'project.already_finalized': 'この案件はすでに作成済みです。',
+    'project.catalog_unavailable': '必要なプロファイルを読み込めませんでした。',
     'project.incomplete': '必須入力をすべて完了してください。',
     'project.invalid_request': '入力内容を確認してください。',
     'project.not_authorized': 'この操作を実行する権限がありません。',
     'project.not_found': '指定された下書きが見つかりません。',
     'project.operation_failed': '案件操作を完了できませんでした。',
     'project.revision_conflict': '下書きが別の操作で更新されました。再読み込みしてください。',
+    'project.settings_mismatch': '既定設定の整合性を確認できませんでした。',
+    'project.settings_unavailable': '既定設定を読み込めませんでした。',
+    'project.source_selection_canceled': '元動画の選択をキャンセルしました。',
     'project.source_reselection_required': '元動画をもう一度選択してください。',
+    'project.unsafe_source_name': '元動画のファイル名を案件名として使用できません。',
   }
   return {
     version: 1,

@@ -31,7 +31,10 @@ internal sealed class ProjectBridgeHandler
                 BridgeMethod.ListProjects =>
                     WriteOverview(request, service.ListProjects()),
                 BridgeMethod.CreateDraft =>
-                    WriteDraft(request, service.CreateDraft()),
+                    WriteDraft(
+                        request,
+                        await service.CreateSourceOnlyDraftAsync(
+                            cancellationToken)),
                 BridgeMethod.LoadDraft =>
                     WriteDraft(request, service.LoadDraft(ReadDraftId(request))),
                 BridgeMethod.SaveDraft =>
@@ -87,6 +90,25 @@ internal sealed class ProjectBridgeHandler
                         StableErrorCodes.ProjectIncomplete,
                     ProjectCreationFailureReason.SourceReselectionRequired =>
                         StableErrorCodes.ProjectSourceReselectionRequired,
+                    _ => StableErrorCodes.ProjectOperationFailed,
+                });
+        }
+        catch (SourceOnlyProjectCreationException exception)
+        {
+            return BridgeProtocol.CreateErrorResponse(
+                request,
+                exception.Reason switch
+                {
+                    SourceOnlyProjectCreationFailureReason.SourceSelectionCanceled =>
+                        StableErrorCodes.ProjectSourceSelectionCanceled,
+                    SourceOnlyProjectCreationFailureReason.UnsafeSourceName =>
+                        StableErrorCodes.ProjectUnsafeSourceName,
+                    SourceOnlyProjectCreationFailureReason.SettingsUnavailable =>
+                        StableErrorCodes.ProjectSettingsUnavailable,
+                    SourceOnlyProjectCreationFailureReason.SettingsMismatch =>
+                        StableErrorCodes.ProjectSettingsMismatch,
+                    SourceOnlyProjectCreationFailureReason.CatalogUnavailable =>
+                        StableErrorCodes.ProjectCatalogUnavailable,
                     _ => StableErrorCodes.ProjectOperationFailed,
                 });
         }
@@ -228,6 +250,33 @@ internal sealed class ProjectBridgeHandler
 
                 writer.WriteEndArray();
                 writer.WriteString("updatedAt", draft.UpdatedAt);
+                if (draft.SourceOnly is null)
+                {
+                    writer.WriteNull("sourceOnly");
+                }
+                else
+                {
+                    writer.WriteStartObject("sourceOnly");
+                    writer.WriteString("profileId", draft.SourceOnly.ProfileId);
+                    writer.WriteString(
+                        "profileVersion",
+                        draft.SourceOnly.ProfileVersion);
+                    writer.WriteString(
+                        "profileDigest",
+                        draft.SourceOnly.ProfileDigest);
+                    writer.WriteString(
+                        "settingsSnapshotDigest",
+                        draft.SourceOnly.SettingsSnapshotDigest);
+                    writer.WriteStartArray("artifactSet");
+                    foreach (string artifact in draft.SourceOnly.ArtifactSet)
+                    {
+                        writer.WriteStringValue(artifact);
+                    }
+
+                    writer.WriteEndArray();
+                    writer.WriteEndObject();
+                }
+
                 writer.WriteEndObject();
                 writer.WriteEndObject();
             });

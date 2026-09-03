@@ -1,6 +1,7 @@
 using System.Text;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Projects;
+using HubRadio.Core.Settings;
 using Microsoft.Data.Sqlite;
 
 namespace HubRadio.Infrastructure.Database;
@@ -188,6 +189,41 @@ public sealed class ProjectCreationDraftStore
         int expectedRevision,
         DateTimeOffset finalizedAt)
     {
+        return FinalizeDraftCore(
+            draft,
+            project,
+            payloadJson,
+            expectedRevision,
+            finalizedAt,
+            initialSettingsSnapshot: null);
+    }
+
+    public StoredProjectCreationDraft FinalizeDraft(
+        ProjectCreationDraft draft,
+        Project project,
+        string payloadJson,
+        int expectedRevision,
+        DateTimeOffset finalizedAt,
+        DefaultSettingsSnapshot initialSettingsSnapshot)
+    {
+        ArgumentNullException.ThrowIfNull(initialSettingsSnapshot);
+        return FinalizeDraftCore(
+            draft,
+            project,
+            payloadJson,
+            expectedRevision,
+            finalizedAt,
+            initialSettingsSnapshot);
+    }
+
+    private StoredProjectCreationDraft FinalizeDraftCore(
+        ProjectCreationDraft draft,
+        Project project,
+        string payloadJson,
+        int expectedRevision,
+        DateTimeOffset finalizedAt,
+        DefaultSettingsSnapshot? initialSettingsSnapshot)
+    {
         ArgumentNullException.ThrowIfNull(draft);
         ArgumentNullException.ThrowIfNull(project);
         ValidateExpectedRevision(expectedRevision);
@@ -215,6 +251,15 @@ public sealed class ProjectCreationDraftStore
             project,
             payload,
             storedFinalizedAt);
+        if (initialSettingsSnapshot is not null)
+        {
+            _ = DefaultSettingsStore.BindProjectSettings(
+                connection,
+                transaction,
+                project.Id,
+                initialSettingsSnapshot,
+                finalizedAt);
+        }
 
         int newRevision = checked(current.Revision + 1);
         using SqliteCommand command = connection.CreateCommand();

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using HubRadio.App.DefaultSettings;
 using HubRadio.App.Profiles;
 using HubRadio.App.Projects;
 using HubRadio.App.Security;
@@ -11,6 +12,7 @@ using HubRadio.Core.Security;
 using HubRadio.Core.Serialization;
 using HubRadio.Infrastructure.Database;
 using HubRadio.Infrastructure.Media;
+using Microsoft.Data.Sqlite;
 
 namespace HubRadio.App.Tests;
 
@@ -141,6 +143,8 @@ public sealed class ProjectCreationServiceTests
 
         AssertAuthorizationDenied(() => fixture.Service.ListProjects());
         AssertAuthorizationDenied(() => fixture.Service.CreateDraft());
+        await Assert.ThrowsExactlyAsync<AuthorizationException>(() =>
+            fixture.Service.CreateSourceOnlyDraftAsync());
         AssertAuthorizationDenied(() => fixture.Service.LoadDraft(
             EntityId<ProjectCreationDraftIdTag>.New()));
         await Assert.ThrowsExactlyAsync<AuthorizationException>(() =>
@@ -171,6 +175,230 @@ public sealed class ProjectCreationServiceTests
             authorizedFixture.DraftStore.GetDraft(draftId)!;
         Assert.AreEqual(0, unchanged.Revision);
         Assert.IsNull(unchanged.FinalizedProjectId);
+    }
+
+    [TestMethod]
+    public async Task SourceOnlyCreationDerivesCompletePrivateSafeDraftAndCancelHasNoSideEffect()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+
+        ProjectCreationDraftView created =
+            await fixture.Service.CreateSourceOnlyDraftAsync();
+
+        Assert.AreEqual("picked-source", created.ContentName);
+        Assert.AreEqual("internalOnly", created.PublicationScope);
+        Assert.HasCount(0, created.MissingFields);
+        Assert.AreEqual("available", created.SourceStatus);
+        Assert.IsNotNull(created.SourceOnly);
+        Assert.AreEqual(
+            fixture.SettingsStore.GetGlobalSettings()!.Snapshot.ContentDigest.Hex,
+            created.SourceOnly.SettingsSnapshotDigest);
+        Assert.IsGreaterThan(0, created.SourceOnly.ArtifactSet.Count);
+        Assert.AreEqual(1, fixture.Registry.PendingCount);
+        Assert.IsFalse(JsonSerializer.Serialize(created).Contains(
+            fixture.PickerSourcePath,
+            StringComparison.Ordinal));
+
+        fixture.CancelNextPick = true;
+        SourceOnlyProjectCreationException canceled =
+            await Assert.ThrowsExactlyAsync<SourceOnlyProjectCreationException>(() =>
+                fixture.Service.CreateSourceOnlyDraftAsync());
+        Assert.AreEqual(
+            SourceOnlyProjectCreationFailureReason.SourceSelectionCanceled,
+            canceled.Reason);
+        Assert.HasCount(1, fixture.DraftStore.ListDrafts());
+        Assert.AreEqual(1, fixture.Registry.PendingCount);
+    }
+
+    [TestMethod]
+    public async Task SourceOnlyFinalizeUsesStoredSnapshotAfterGlobalDriftAndConsumesCandidateOnce()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        ProjectCreationDraftView created =
+            await fixture.Service.CreateSourceOnlyDraftAsync();
+        EntityId<ProjectCreationDraftIdTag> draftId =
+            EntityId<ProjectCreationDraftIdTag>.Parse(created.DraftId);
+        var beforeDrift = fixture.SettingsStore.GetGlobalSettings()!;
+        HubRadio.Core.Settings.DefaultSettingSelection toggle = beforeDrift.Snapshot.Values
+            .First(static selection =>
+                selection.Value.Kind == HubRadio.Core.Settings.DefaultSettingValueKind.Boolean);
+        HubRadio.Core.Settings.DefaultSettingsProfile profile = fixture.SettingsStore.GetProfile(
+            beforeDrift.Snapshot.ProfileId,
+            beforeDrift.Snapshot.ProfileVersion)!;
+        HubRadio.Core.Settings.DefaultSettingsSnapshot changed = profile.CreateSnapshot(
+            beforeDrift.Snapshot.Values.Select(selection =>
+                string.Equals(selection.Key, toggle.Key, StringComparison.Ordinal)
+                    ? new HubRadio.Core.Settings.DefaultSettingSelection(
+                        selection.Key,
+                        HubRadio.Core.Settings.DefaultSettingValue.FromBoolean(
+                            !selection.Value.BooleanValue!.Value))
+                    : selection).ToArray());
+        _ = fixture.SettingsStore.UpdateGlobalSettings(
+            changed,
+            beforeDrift.Revision,
+            beforeDrift.UpdatedAt.AddMinutes(1));
+
+        ProjectCreationDraftView finalized = fixture.Service.FinalizeDraft(
+            draftId,
+            created.Revision,
+            ParseElement(CreateInput(created)));
+
+        Assert.IsTrue(finalized.IsFinalized);
+        Assert.AreEqual(1, fixture.Registry.PendingCount);
+        Assert.IsFalse(fixture.Registry.IsAvailable(
+            EntityId<AssetIdTag>.Parse(finalized.SourceCandidateId!)));
+        Assert.IsTrue(fixture.Registry.IsClaimable(
+            EntityId<AssetIdTag>.Parse(finalized.SourceCandidateId!)));
+        var projectId = EntityId<ProjectIdTag>.Parse(finalized.ProjectId!);
+        ProjectSettingsResult settings = fixture.SettingsStore.GetProjectSettings(projectId);
+        Assert.IsTrue(settings.IsBound);
+        Assert.AreEqual(
+            created.SourceOnly!.SettingsSnapshotDigest,
+            settings.Settings!.InitialSnapshot.ContentDigest.Hex);
+        Assert.AreNotEqual(
+            changed.ContentDigest,
+            settings.Settings.InitialSnapshot.ContentDigest);
+
+        ProjectCreationException duplicate =
+            Assert.ThrowsExactly<ProjectCreationException>(() =>
+                fixture.Service.FinalizeDraft(
+                    draftId,
+                    finalized.Revision,
+                    ParseElement(CreateInput(finalized))));
+        Assert.AreEqual(
+            ProjectCreationFailureReason.DraftAlreadyFinalized,
+            duplicate.Reason);
+        Assert.IsTrue(fixture.Registry.TryClaim(
+            EntityId<AssetIdTag>.Parse(finalized.SourceCandidateId!),
+            out string? handedOffPath));
+        Assert.AreEqual(fixture.PickerSourcePath, handedOffPath);
+        Assert.AreEqual(0, fixture.Registry.PendingCount);
+    }
+
+    [TestMethod]
+    public async Task SourceOnlyFinalizeAcceptsOnlyAReselectedOpaqueCandidateAfterRegistryLoss()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        ProjectCreationDraftView created =
+            await fixture.Service.CreateSourceOnlyDraftAsync();
+        EntityId<ProjectCreationDraftIdTag> draftId =
+            EntityId<ProjectCreationDraftIdTag>.Parse(created.DraftId);
+        var replacementRegistry = new AssetCandidateRegistry();
+        ProjectCreationService restartedService = fixture.CreateService(
+            replacementRegistry);
+
+        ProjectCreationDraftView stale = restartedService.LoadDraft(draftId);
+        Assert.AreEqual("reselectionRequired", stale.SourceStatus);
+        EntityId<AssetIdTag> replacement =
+            await restartedService.PickSourceAsync()
+            ?? throw new AssertFailedException(
+                "A replacement source must produce an opaque candidate.");
+        JsonObject input = CreateInput(stale);
+        input["sourceCandidateId"] = replacement.ToString();
+        input["purpose"] = "changed purpose";
+
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            restartedService.FinalizeDraft(
+                draftId,
+                stale.Revision,
+                ParseElement(input)));
+        Assert.IsTrue(replacementRegistry.IsAvailable(replacement));
+        input["purpose"] = stale.Purpose;
+
+        ProjectCreationDraftView finalized = restartedService.FinalizeDraft(
+            draftId,
+            stale.Revision,
+            ParseElement(input));
+
+        Assert.IsTrue(finalized.IsFinalized);
+        Assert.AreEqual(replacement.ToString(), finalized.SourceCandidateId);
+        Assert.AreEqual("available", finalized.SourceStatus);
+        Assert.AreEqual(1, replacementRegistry.PendingCount);
+        Assert.IsFalse(replacementRegistry.IsAvailable(replacement));
+        Assert.IsTrue(replacementRegistry.IsClaimable(replacement));
+        Assert.IsNotNull(finalized.SourceOnly);
+        Assert.AreEqual(
+            created.SourceOnly!.SettingsSnapshotDigest,
+            finalized.SourceOnly.SettingsSnapshotDigest);
+        Assert.AreEqual(
+            replacement.ToString(),
+            fixture.DraftStore.GetDraft(draftId) is { CanonicalJson: var json }
+                ? JsonNode.Parse(json)!["sourceCandidateId"]!.GetValue<string>()
+                : null);
+        Assert.IsTrue(replacementRegistry.TryClaim(
+            replacement,
+            out string? handedOffPath));
+        Assert.AreEqual(fixture.PickerSourcePath, handedOffPath);
+    }
+
+    [TestMethod]
+    public async Task SourceOnlyCreationFailureDiscardsUnreachableCandidate()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        File.Delete(fixture.PickerSourcePath);
+
+        ProjectCreationException exception =
+            await Assert.ThrowsExactlyAsync<ProjectCreationException>(() =>
+                fixture.Service.CreateSourceOnlyDraftAsync());
+
+        Assert.AreEqual(
+            ProjectCreationFailureReason.SourceReselectionRequired,
+            exception.Reason);
+        Assert.IsNotNull(fixture.LastCandidateId);
+        Assert.IsFalse(fixture.Registry.IsAvailable(fixture.LastCandidateId));
+        Assert.IsFalse(fixture.Registry.IsClaimable(fixture.LastCandidateId));
+        Assert.AreEqual(0, fixture.Registry.PendingCount);
+        Assert.HasCount(0, fixture.DraftStore.ListDrafts());
+    }
+
+    [TestMethod]
+    public async Task SourceOnlyCancellationAfterSelectionDiscardsUnreachableCandidate()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        using var cancellation = new CancellationTokenSource();
+        fixture.CancelAfterSelection = cancellation;
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            fixture.Service.CreateSourceOnlyDraftAsync(cancellation.Token));
+
+        Assert.IsNotNull(fixture.LastCandidateId);
+        Assert.IsFalse(fixture.Registry.IsAvailable(fixture.LastCandidateId));
+        Assert.IsFalse(fixture.Registry.IsClaimable(fixture.LastCandidateId));
+        Assert.AreEqual(0, fixture.Registry.PendingCount);
+        Assert.HasCount(0, fixture.DraftStore.ListDrafts());
+    }
+
+    [TestMethod]
+    public async Task SourceOnlyDatabaseFailureDiscardsUnreachableCandidate()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        using (var connection = new SqliteConnection(
+            new SqliteConnectionStringBuilder
+            {
+                DataSource = fixture.DatabasePath,
+                Mode = SqliteOpenMode.ReadWrite,
+            }.ToString()))
+        {
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TRIGGER fail_source_only_draft_insert
+                BEFORE INSERT ON project_creation_drafts
+                BEGIN
+                    SELECT RAISE(ABORT, 'injected source-only draft failure');
+                END;
+                """;
+            _ = command.ExecuteNonQuery();
+        }
+
+        await Assert.ThrowsExactlyAsync<SqliteException>(() =>
+            fixture.Service.CreateSourceOnlyDraftAsync());
+
+        Assert.IsNotNull(fixture.LastCandidateId);
+        Assert.IsFalse(fixture.Registry.IsAvailable(fixture.LastCandidateId));
+        Assert.IsFalse(fixture.Registry.IsClaimable(fixture.LastCandidateId));
+        Assert.AreEqual(0, fixture.Registry.PendingCount);
+        Assert.HasCount(0, fixture.DraftStore.ListDrafts());
     }
 
     [TestMethod]
@@ -213,6 +441,35 @@ public sealed class ProjectCreationServiceTests
         Assert.IsNotNull(result.GetProperty("candidateId").GetString());
         Assert.IsFalse(pickedJson.Contains("picked-source.mov", StringComparison.Ordinal));
         Assert.IsFalse(pickedJson.Contains("C:\\", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task BridgeCreateDraftReturnsSourceOnlySummaryAndTypedCancellationWithoutPath()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        var handler = new ProjectBridgeHandler(fixture.Service);
+        BridgeRequest request = CreateBridgeRequest(
+            BridgeMethod.CreateDraft,
+            new JsonObject());
+
+        string createdJson = await handler.HandleAsync(request, CancellationToken.None);
+        using (JsonDocument created = JsonDocument.Parse(createdJson))
+        {
+            JsonElement draft = created.RootElement.GetProperty("result").GetProperty("draft");
+            Assert.AreEqual("picked-source", draft.GetProperty("contentName").GetString());
+            Assert.AreEqual("internalOnly", draft.GetProperty("publicationScope").GetString());
+            Assert.AreEqual("1.0.0", draft.GetProperty("sourceOnly")
+                .GetProperty("profileVersion").GetString());
+            Assert.IsGreaterThan(0, draft.GetProperty("sourceOnly")
+                .GetProperty("artifactSet").GetArrayLength());
+        }
+
+        Assert.IsFalse(createdJson.Contains(fixture.PickerSourcePath, StringComparison.Ordinal));
+        Assert.IsFalse(createdJson.Contains("C:\\", StringComparison.Ordinal));
+        fixture.CancelNextPick = true;
+        string canceledJson = await handler.HandleAsync(request, CancellationToken.None);
+        AssertBridgeError(canceledJson, "project.source_selection_canceled");
+        Assert.HasCount(1, fixture.DraftStore.ListDrafts());
     }
 
     [TestMethod]
@@ -321,6 +578,22 @@ public sealed class ProjectCreationServiceTests
     }
 
     [TestMethod]
+    public async Task PickerCancellationAfterSelectionDiscardsUnreturnedCandidate()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        using var cancellation = new CancellationTokenSource();
+        fixture.CancelAfterSelection = cancellation;
+
+        await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            fixture.Service.PickSourceAsync(cancellation.Token));
+
+        Assert.IsNotNull(fixture.LastCandidateId);
+        Assert.IsFalse(fixture.Registry.IsAvailable(fixture.LastCandidateId));
+        Assert.IsFalse(fixture.Registry.IsClaimable(fixture.LastCandidateId));
+        Assert.AreEqual(0, fixture.Registry.PendingCount);
+    }
+
+    [TestMethod]
     public void FinalizeRequiresCompleteInputAndLiveSourceThenBecomesTerminal()
     {
         using ProjectCreationFixture fixture = new(AuthorizedSid);
@@ -350,7 +623,7 @@ public sealed class ProjectCreationServiceTests
         Assert.IsNull(fixture.DraftStore.GetDraft(draftId)!.FinalizedProjectId);
 
         EntityId<AssetIdTag> available =
-            fixture.Registry.RegisterSelection(@"C:\private\final-source.mov")!;
+            fixture.Registry.RegisterSelection(fixture.PickerSourcePath)!;
         JsonObject completeInput = CreateCompleteInput(fixture.Catalog, available);
         ProjectCreationDraftView finalized = fixture.Service.FinalizeDraft(
             draftId,
@@ -362,7 +635,8 @@ public sealed class ProjectCreationServiceTests
         Assert.IsNotNull(finalized.ProjectId);
         Assert.AreEqual("available", finalized.SourceStatus);
         Assert.AreEqual(0, finalized.MissingFields.Count);
-        Assert.IsTrue(fixture.Registry.IsAvailable(available));
+        Assert.IsFalse(fixture.Registry.IsAvailable(available));
+        Assert.IsTrue(fixture.Registry.IsClaimable(available));
         Assert.IsNotNull(new ProjectStore(fixture.DatabasePath).GetProject(
             EntityId<ProjectIdTag>.Parse(finalized.ProjectId)));
 
@@ -376,6 +650,66 @@ public sealed class ProjectCreationServiceTests
             ProjectCreationFailureReason.DraftAlreadyFinalized,
             terminal.Reason);
         Assert.AreEqual("finalized", fixture.Service.ListProjects().Projects[0].State);
+    }
+
+    [TestMethod]
+    public void LegacyCandidateCanFinalizeOnlyOneProjectAndRemainsClaimableForIngest()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        ProjectCreationDraftView first = fixture.Service.CreateDraft();
+        ProjectCreationDraftView second = fixture.Service.CreateDraft();
+        EntityId<AssetIdTag> candidate =
+            fixture.Registry.RegisterSelection(fixture.PickerSourcePath)
+            ?? throw new AssertFailedException(
+                "A source selection must create an opaque candidate.");
+        JsonElement input = ParseElement(CreateCompleteInput(fixture.Catalog, candidate));
+
+        ProjectCreationDraftView finalized = fixture.Service.FinalizeDraft(
+            EntityId<ProjectCreationDraftIdTag>.Parse(first.DraftId),
+            first.Revision,
+            input);
+        ProjectCreationException reused =
+            Assert.ThrowsExactly<ProjectCreationException>(() =>
+                fixture.Service.FinalizeDraft(
+                    EntityId<ProjectCreationDraftIdTag>.Parse(second.DraftId),
+                    second.Revision,
+                    input));
+
+        Assert.IsTrue(finalized.IsFinalized);
+        Assert.AreEqual(
+            ProjectCreationFailureReason.SourceReselectionRequired,
+            reused.Reason);
+        Assert.IsFalse(fixture.Registry.IsAvailable(candidate));
+        Assert.IsTrue(fixture.Registry.IsClaimable(candidate));
+        Assert.IsTrue(fixture.Registry.TryClaim(candidate, out string? selectedPath));
+        Assert.AreEqual(fixture.PickerSourcePath, selectedPath);
+        Assert.IsFalse(fixture.Registry.TryClaim(candidate, out _));
+    }
+
+    [TestMethod]
+    public async Task FinalizedSourceRemainsAcceptedAfterIngestClaimsTheHandoff()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        ProjectCreationDraftView created =
+            await fixture.Service.CreateSourceOnlyDraftAsync();
+        EntityId<ProjectCreationDraftIdTag> draftId =
+            EntityId<ProjectCreationDraftIdTag>.Parse(created.DraftId);
+        ProjectCreationDraftView finalized = fixture.Service.FinalizeDraft(
+            draftId,
+            created.Revision,
+            ParseElement(CreateInput(created)));
+        EntityId<AssetIdTag> candidate =
+            EntityId<AssetIdTag>.Parse(finalized.SourceCandidateId!);
+
+        Assert.IsTrue(fixture.Registry.TryClaim(candidate, out string? selectedPath));
+        Assert.AreEqual(fixture.PickerSourcePath, selectedPath);
+
+        ProjectCreationDraftView reloaded = fixture.Service.LoadDraft(draftId);
+        ProjectListItem listed = fixture.Service.ListProjects().Projects.Single();
+        Assert.IsTrue(reloaded.IsFinalized);
+        Assert.AreEqual("available", reloaded.SourceStatus);
+        Assert.AreEqual("finalized", listed.State);
+        Assert.AreEqual("available", listed.SourceStatus);
     }
 
     [TestMethod]
@@ -452,6 +786,30 @@ public sealed class ProjectCreationServiceTests
         ["performerNames"] = new JsonArray(),
         ["deadlineSelection"] = null,
         ["brandTemplateId"] = null,
+    };
+
+    private static JsonObject CreateInput(ProjectCreationDraftView draft) => new()
+    {
+        ["sourceCandidateId"] = draft.SourceCandidateId,
+        ["contentName"] = draft.ContentName,
+        ["purpose"] = draft.Purpose,
+        ["audience"] = draft.Audience,
+        ["publicationScope"] = draft.PublicationScope,
+        ["outputProfileIds"] = new JsonArray(
+            draft.OutputProfileIds
+                .Select(static value => JsonValue.Create(value))
+                .ToArray()),
+        ["language"] = draft.Language,
+        ["performerNames"] = new JsonArray(
+            draft.PerformerNames
+                .Select(static value => JsonValue.Create(value))
+                .ToArray()),
+        ["deadlineSelection"] = new JsonObject
+        {
+            ["hasDeadline"] = draft.HasDeadline,
+            ["value"] = draft.Deadline,
+        },
+        ["brandTemplateId"] = draft.BrandTemplateId,
     };
 
     private static JsonElement ParseElement(JsonObject value)
@@ -571,8 +929,16 @@ public sealed class ProjectCreationServiceTests
                 DatabasePath,
                 Path.Combine(RootPath, "backups"));
             DraftStore = new ProjectCreationDraftStore(DatabasePath);
+            SettingsStore = new DefaultSettingsStore(DatabasePath);
+            _ = new BundledDefaultSettingsBootstrap(SettingsStore).Initialize(
+                ResolveRepositoryPath(
+                    "src/HubRadio.App/DefaultSettings/Profiles",
+                    expectDirectory: true),
+                clock.GetUtcNow());
             Registry = new AssetCandidateRegistry();
             Catalog = LoadCatalog();
+            PickerSourcePath = Path.Combine(RootPath, "picked-source.mov");
+            File.WriteAllBytes(PickerSourcePath, [0]);
 
             var authorization = new AuthorizationService(
                 new RoleAssignmentStore(DatabasePath));
@@ -587,9 +953,13 @@ public sealed class ProjectCreationServiceTests
 
         internal ProjectCreationDraftStore DraftStore { get; }
 
+        internal DefaultSettingsStore SettingsStore { get; }
+
         internal AssetCandidateRegistry Registry { get; }
 
         internal ProjectCreationCatalog Catalog { get; }
+
+        internal string PickerSourcePath { get; }
 
         internal AuthorizationService Authorization { get; }
 
@@ -599,6 +969,10 @@ public sealed class ProjectCreationServiceTests
 
         internal bool CancelNextPick { get; set; }
 
+        internal CancellationTokenSource? CancelAfterSelection { get; set; }
+
+        internal EntityId<AssetIdTag>? LastCandidateId { get; private set; }
+
         internal ProjectCreationService CreateService(
             AssetCandidateRegistry registry,
             string? currentActorSid = null) =>
@@ -607,6 +981,7 @@ public sealed class ProjectCreationServiceTests
                 Authorization,
                 registry,
                 Catalog,
+                SettingsStore,
                 () => currentActorSid ?? actorSid,
                 cancellationToken =>
                 {
@@ -618,13 +993,15 @@ public sealed class ProjectCreationServiceTests
                         return Task.FromResult<EntityId<AssetIdTag>?>(null);
                     }
 
-                    return Task.FromResult(
-                        registry.RegisterSelection(@"C:\private\picked-source.mov"));
+                    LastCandidateId = registry.RegisterSelection(PickerSourcePath);
+                    CancelAfterSelection?.Cancel();
+                    return Task.FromResult(LastCandidateId);
                 },
                 clock);
 
         public void Dispose()
         {
+            SqliteConnection.ClearAllPools();
             if (Directory.Exists(RootPath))
             {
                 Directory.Delete(RootPath, recursive: true);

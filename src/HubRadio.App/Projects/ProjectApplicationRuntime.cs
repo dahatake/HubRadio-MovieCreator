@@ -97,8 +97,9 @@ internal static class ProjectApplicationRuntime
         _ = DatabaseMigrator.Migrate(
             databasePath,
             Path.Combine(workspacePath, "backups"));
+        var defaultSettingsStore = new DefaultSettingsStore(databasePath);
         _ = new BundledDefaultSettingsBootstrap(
-            new DefaultSettingsStore(databasePath)).Initialize(
+            defaultSettingsStore).Initialize(
                 defaultSettingsProfilesDirectory,
                 DateTimeOffset.UtcNow);
         var authorization = new AuthorizationService(
@@ -113,14 +114,12 @@ internal static class ProjectApplicationRuntime
             authorization,
             registry,
             catalog,
+            defaultSettingsStore,
             actorProvider.GetCurrentSid,
             async cancellationToken =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                EntityId<AssetIdTag>? candidateId =
-                    await picker.PickAssetCandidateAsync();
-                cancellationToken.ThrowIfCancellationRequested();
-                return candidateId;
+                return await picker.PickAssetCandidateAsync();
             });
         var projectHandler = new ProjectBridgeHandler(service);
         var jobStore = new JobStore(databasePath);

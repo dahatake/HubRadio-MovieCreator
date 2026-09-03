@@ -85,6 +85,14 @@ export interface ProjectListItem {
   readonly updatedAt: string
 }
 
+export interface SourceOnlyProjectSummary {
+  readonly profileId: string
+  readonly profileVersion: string
+  readonly profileDigest: string
+  readonly settingsSnapshotDigest: string
+  readonly artifactSet: readonly string[]
+}
+
 export interface ProjectDraft {
   readonly draftId: string
   readonly revision: number
@@ -103,6 +111,7 @@ export interface ProjectDraft {
   readonly brandTemplateId: string | null
   readonly missingFields: readonly ProjectCreationMissingField[]
   readonly updatedAt: string
+  readonly sourceOnly: SourceOnlyProjectSummary | null
 }
 
 interface ProjectRequestBase<M extends ProjectBridgeMethod, P> {
@@ -178,13 +187,18 @@ export interface ProjectPickSourceResponse {
 
 export type ProjectBridgeErrorCode =
   | 'project.already_finalized'
+  | 'project.catalog_unavailable'
   | 'project.incomplete'
   | 'project.invalid_request'
   | 'project.not_authorized'
   | 'project.not_found'
   | 'project.operation_failed'
   | 'project.revision_conflict'
+  | 'project.settings_mismatch'
+  | 'project.settings_unavailable'
+  | 'project.source_selection_canceled'
   | 'project.source_reselection_required'
+  | 'project.unsafe_source_name'
 
 export interface ProjectBridgeErrorResponse {
   readonly version: typeof BRIDGE_PROTOCOL_VERSION
@@ -612,6 +626,7 @@ function parseProjectDraft(value: unknown): ProjectDraft | null {
       'brandTemplateId',
       'missingFields',
       'updatedAt',
+      'sourceOnly',
     ]) ||
     !isEntityId(value.draftId) ||
     !isNonnegativeInt32(value.revision) ||
@@ -630,6 +645,7 @@ function parseProjectDraft(value: unknown): ProjectDraft | null {
     !isNullOrEntityId(value.brandTemplateId) ||
     !isUniqueMissingFieldArray(value.missingFields) ||
     !isNativeTimestamp(value.updatedAt) ||
+    !isNullOrSourceOnlyProjectSummary(value.sourceOnly) ||
     (value.isFinalized && value.projectId === null) ||
     (!value.isFinalized && value.projectId !== null)
   ) {
@@ -654,7 +670,39 @@ function parseProjectDraft(value: unknown): ProjectDraft | null {
     brandTemplateId: value.brandTemplateId,
     missingFields: Object.freeze([...value.missingFields]),
     updatedAt: value.updatedAt,
+    sourceOnly: freezeSourceOnlyProjectSummary(value.sourceOnly),
   })
+}
+
+function isNullOrSourceOnlyProjectSummary(
+  value: unknown,
+): value is SourceOnlyProjectSummary | null {
+  return value === null || (
+    isRecordWithExactKeys(value, [
+      'profileId',
+      'profileVersion',
+      'profileDigest',
+      'settingsSnapshotDigest',
+      'artifactSet',
+    ]) &&
+    isEntityId(value.profileId) &&
+    typeof value.profileVersion === 'string' &&
+    settingsProfileVersionPattern.test(value.profileVersion) &&
+    isContentDigest(value.profileDigest) &&
+    isContentDigest(value.settingsSnapshotDigest) &&
+    isUniqueNonemptyStringArray(value.artifactSet)
+  )
+}
+
+function freezeSourceOnlyProjectSummary(
+  value: SourceOnlyProjectSummary | null,
+): SourceOnlyProjectSummary | null {
+  return value === null
+    ? null
+    : Object.freeze({
+        ...value,
+        artifactSet: Object.freeze([...value.artifactSet]),
+      })
 }
 
 function freezeDraftInput(input: ProjectDraftInput): ProjectDraftInput {
@@ -770,6 +818,18 @@ function isUniqueStringArray(value: unknown): value is string[] {
   return isStringArray(value) && new Set(value).size === value.length
 }
 
+function isUniqueNonemptyStringArray(value: unknown): value is string[] {
+  return (
+    isUniqueStringArray(value) &&
+    value.length > 0 &&
+    value.every((item) => item.length > 0)
+  )
+}
+
+function isContentDigest(value: unknown): value is string {
+  return typeof value === 'string' && contentDigestPattern.test(value)
+}
+
 function isUniqueEntityIdArray(value: unknown): value is string[] {
   return (
     Array.isArray(value) &&
@@ -819,6 +879,8 @@ const nativeTimestampPattern =
   /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{7}\+00:00$/
 const browserTimestampPattern =
   /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/
+const contentDigestPattern = /^[0-9a-f]{64}$/
+const settingsProfileVersionPattern = /^[0-9]+\.[0-9]+\.[0-9]+$/
 
 const projectBridgeMethods = new Set<ProjectBridgeMethod>([
   PROJECT_LIST_METHOD,
@@ -859,11 +921,16 @@ const missingFields = new Set<ProjectCreationMissingField>([
 
 const projectBridgeErrorCodes = new Set<ProjectBridgeErrorCode>([
   'project.already_finalized',
+  'project.catalog_unavailable',
   'project.incomplete',
   'project.invalid_request',
   'project.not_authorized',
   'project.not_found',
   'project.operation_failed',
   'project.revision_conflict',
+  'project.settings_mismatch',
+  'project.settings_unavailable',
+  'project.source_selection_canceled',
   'project.source_reselection_required',
+  'project.unsafe_source_name',
 ])

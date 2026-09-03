@@ -173,6 +173,7 @@ public sealed class WebBridgeSchemaTests
             "draftInput",
             "projectListItem",
             "draft",
+            "sourceOnlyProjectSummary",
             "pingResponse",
             "listResponse",
             "draftResponse",
@@ -1460,6 +1461,14 @@ public sealed class WebBridgeSchemaTests
                 .GetString());
         string schema = root.GetRawText();
         StringAssert.Contains(schema, "sourceCandidateId");
+        StringAssert.Contains(schema, "sourceOnly");
+        StringAssert.Contains(schema, "settingsSnapshotDigest");
+        Assert.IsFalse(root.GetProperty("required")
+            .EnumerateArray()
+            .Any(static item => string.Equals(
+                item.GetString(),
+                "sourceOnly",
+                StringComparison.Ordinal)));
         Assert.IsFalse(schema.Contains("sourcePath", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(schema.Contains("actorSid", StringComparison.OrdinalIgnoreCase));
     }

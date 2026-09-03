@@ -5,6 +5,7 @@ using HubRadio.Core.Projects;
 using HubRadio.Core.Provenance;
 using HubRadio.Core.Rendering;
 using HubRadio.Core.Serialization;
+using HubRadio.Core.Settings;
 using HubRadio.Infrastructure.Database;
 using Microsoft.Data.Sqlite;
 
@@ -252,6 +253,76 @@ public sealed class ProjectCreationDraftStoreTests
     }
 
     [TestMethod]
+    public void FinalizeWithSettingsAtomicallyBindsInitialAndCurrentSnapshots()
+    {
+        using StoreTestDatabase database = new();
+        var draftStore = new ProjectCreationDraftStore(database.DatabasePath);
+        var settingsStore = new DefaultSettingsStore(database.DatabasePath);
+        DefaultSettingsProfile profile = CreateSettingsProfile();
+        _ = settingsStore.RegisterProfile(Encoding.UTF8.GetBytes(profile.CanonicalJson));
+        DefaultSettingsSnapshot snapshot = profile.CreateSnapshot();
+        ProjectCreationDraft draft = CreateDraft();
+        Project project = CreateProjectFromDraft(draft);
+        draftStore.CreateDraft(draft, "{\"draft\":true}", InitialTime);
+
+        StoredProjectCreationDraft finalized = draftStore.FinalizeDraft(
+            draft,
+            project,
+            "{\"draft\":false}",
+            expectedRevision: 0,
+            InitialTime.AddMinutes(1),
+            snapshot);
+
+        Assert.IsTrue(finalized.IsFinalized);
+        ProjectSettingsResult settings = settingsStore.GetProjectSettings(project.Id);
+        Assert.IsTrue(settings.IsBound);
+        Assert.AreEqual(
+            snapshot.ContentDigest,
+            settings.Settings!.InitialSnapshot.ContentDigest);
+        Assert.AreEqual(
+            snapshot.ContentDigest,
+            settings.Settings.CurrentSnapshot.ContentDigest);
+        Assert.AreEqual(0, settings.Settings.Revision);
+    }
+
+    [TestMethod]
+    public void FinalizeSettingsOrDraftFailureRollsBackEveryRow()
+    {
+        using StoreTestDatabase database = new();
+        var draftStore = new ProjectCreationDraftStore(database.DatabasePath);
+        var settingsStore = new DefaultSettingsStore(database.DatabasePath);
+        DefaultSettingsProfile profile = CreateSettingsProfile();
+        _ = settingsStore.RegisterProfile(Encoding.UTF8.GetBytes(profile.CanonicalJson));
+        DefaultSettingsSnapshot snapshot = profile.CreateSnapshot();
+        ProjectCreationDraft draft = CreateDraft();
+        Project project = CreateProjectFromDraft(draft);
+        draftStore.CreateDraft(draft, "{\"draft\":true}", InitialTime);
+        database.ExecuteNonQuery(
+            """
+            CREATE TRIGGER fail_source_only_settings_bind
+            BEFORE INSERT ON project_default_settings
+            BEGIN
+                SELECT RAISE(ABORT, 'injected settings failure');
+            END;
+            """);
+
+        Assert.ThrowsExactly<SqliteException>(() => draftStore.FinalizeDraft(
+            draft,
+            project,
+            "{\"draft\":false}",
+            expectedRevision: 0,
+            InitialTime.AddMinutes(1),
+            snapshot));
+
+        Assert.AreEqual(0L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM projects;"));
+        Assert.AreEqual(0L, database.ExecuteScalarInt64(
+            "SELECT COUNT(*) FROM project_default_settings;"));
+        StoredProjectCreationDraft unchanged = draftStore.GetDraft(draft.Id)!;
+        Assert.AreEqual(0, unchanged.Revision);
+        Assert.IsFalse(unchanged.IsFinalized);
+    }
+
+    [TestMethod]
     public void PayloadValidationIsBoundedCanonicalAndPrivateSafe()
     {
         using StoreTestDatabase database = new();
@@ -382,6 +453,28 @@ public sealed class ProjectCreationDraftStoreTests
             draft.DeadlineSelection!.Deadline,
             [],
             []);
+    }
+
+    private static DefaultSettingsProfile CreateSettingsProfile()
+    {
+        return DefaultSettingsProfile.Create(
+            EntityId<DefaultSettingsProfileIdTag>.New(),
+            "source-only-test-profile",
+            new SettingsProfileVersion(1, 0, 0),
+            [new DefaultSettingDefinition(
+                "project.publicationScope",
+                DefaultSettingGroup.ProjectAndOutput,
+                isAdvanced: false,
+                "Publication scope",
+                "Test-only internal publication scope.",
+                DefaultSettingUnit.None,
+                DefaultSettingValue.FromText("internalOnly"),
+                minimum: null,
+                maximum: null,
+                allowedTextValues: ["internalOnly"],
+                evidence: [new DefaultSettingEvidence(
+                    DefaultSettingEvidenceKind.ProductDecision,
+                    "productDecision")])]);
     }
 
     private static void AssertParamName<TException>(string expected, Action action)

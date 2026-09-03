@@ -174,6 +174,52 @@ describe('project bridge responses', () => {
     ).toBeNull()
   })
 
+  it('accepts a closed source-only summary and rejects forged metadata', () => {
+    const response = draftResponse(PROJECT_CREATE_DRAFT_METHOD)
+    const sourceOnly = {
+      profileId,
+      profileVersion: '1.0.0',
+      profileDigest: 'a'.repeat(64),
+      settingsSnapshotDigest: 'b'.repeat(64),
+      artifactSet: ['landscapeVideo', 'verticalShorts'],
+    }
+
+    const parsed = parseProjectBridgeResponse({
+      ...response,
+      result: { draft: { ...response.result.draft, sourceOnly } },
+    })
+    expect(parsed).not.toBeNull()
+    if (parsed === null || !('result' in parsed) || parsed.method !== PROJECT_CREATE_DRAFT_METHOD) {
+      throw new Error('Expected a source-only draft response.')
+    }
+
+    expect(parsed.result.draft.sourceOnly).toEqual(sourceOnly)
+    expect(Object.isFrozen(parsed.result.draft.sourceOnly)).toBe(true)
+    expect(Object.isFrozen(parsed.result.draft.sourceOnly?.artifactSet)).toBe(true)
+    expect(
+      parseProjectBridgeResponse({
+        ...response,
+        result: {
+          draft: {
+            ...response.result.draft,
+            sourceOnly: { ...sourceOnly, sourcePath: 'C:\\private\\source.mov' },
+          },
+        },
+      }),
+    ).toBeNull()
+    expect(
+      parseProjectBridgeResponse({
+        ...response,
+        result: {
+          draft: {
+            ...response.result.draft,
+            sourceOnly: { ...sourceOnly, profileDigest: 'not-a-digest' },
+          },
+        },
+      }),
+    ).toBeNull()
+  })
+
   it('accepts opaque picker cancellation or token without any path field', () => {
     expect(
       parseProjectBridgeResponse({
@@ -351,6 +397,7 @@ function draftResponse(method: string, contentName = 'Hubらじお') {
         brandTemplateId: templateId,
         missingFields: [],
         updatedAt: timestamp,
+        sourceOnly: null,
       },
     },
   }

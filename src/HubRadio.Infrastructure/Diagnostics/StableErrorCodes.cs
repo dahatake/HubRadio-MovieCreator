@@ -9,14 +9,20 @@ public static class StableErrorCodes
     public const string DiagnosticLogWriteFailed = "diagnostic.log_write_failed";
     public const string ProcessStartFailed = ProcessStartException.StableErrorCode;
     public const string ProjectAlreadyFinalized = "project.already_finalized";
+    public const string ProjectCatalogUnavailable = "project.catalog_unavailable";
     public const string ProjectIncomplete = "project.incomplete";
     public const string ProjectInvalidRequest = "project.invalid_request";
     public const string ProjectNotAuthorized = "project.not_authorized";
     public const string ProjectNotFound = "project.not_found";
     public const string ProjectOperationFailed = "project.operation_failed";
     public const string ProjectRevisionConflict = "project.revision_conflict";
+    public const string ProjectSettingsMismatch = "project.settings_mismatch";
+    public const string ProjectSettingsUnavailable = "project.settings_unavailable";
+    public const string ProjectSourceSelectionCanceled =
+        "project.source_selection_canceled";
     public const string ProjectSourceReselectionRequired =
         "project.source_reselection_required";
+    public const string ProjectUnsafeSourceName = "project.unsafe_source_name";
     public const string ReviewConflict = "review.conflict";
     public const string ReviewInvalidRequest = "review.invalid_request";
     public const string ReviewNotAuthorized = "review.not_authorized";
@@ -35,13 +41,18 @@ public static class StableErrorCodes
         DiagnosticLogWriteFailed,
         ProcessStartFailed,
         ProjectAlreadyFinalized,
+        ProjectCatalogUnavailable,
         ProjectIncomplete,
         ProjectInvalidRequest,
         ProjectNotAuthorized,
         ProjectNotFound,
         ProjectOperationFailed,
         ProjectRevisionConflict,
+        ProjectSettingsMismatch,
+        ProjectSettingsUnavailable,
+        ProjectSourceSelectionCanceled,
         ProjectSourceReselectionRequired,
+        ProjectUnsafeSourceName,
         ReviewConflict,
         ReviewInvalidRequest,
         ReviewNotAuthorized,
@@ -62,16 +73,21 @@ public static class StableErrorCodes
         string.Equals(code, DiagnosticLogWriteFailed, StringComparison.Ordinal) ||
         string.Equals(code, ProcessStartFailed, StringComparison.Ordinal) ||
         string.Equals(code, ProjectAlreadyFinalized, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectCatalogUnavailable, StringComparison.Ordinal) ||
         string.Equals(code, ProjectIncomplete, StringComparison.Ordinal) ||
         string.Equals(code, ProjectInvalidRequest, StringComparison.Ordinal) ||
         string.Equals(code, ProjectNotAuthorized, StringComparison.Ordinal) ||
         string.Equals(code, ProjectNotFound, StringComparison.Ordinal) ||
         string.Equals(code, ProjectOperationFailed, StringComparison.Ordinal) ||
         string.Equals(code, ProjectRevisionConflict, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectSettingsMismatch, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectSettingsUnavailable, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectSourceSelectionCanceled, StringComparison.Ordinal) ||
         string.Equals(
             code,
             ProjectSourceReselectionRequired,
             StringComparison.Ordinal) ||
+        string.Equals(code, ProjectUnsafeSourceName, StringComparison.Ordinal) ||
         string.Equals(code, ReviewConflict, StringComparison.Ordinal) ||
         string.Equals(code, ReviewInvalidRequest, StringComparison.Ordinal) ||
         string.Equals(code, ReviewNotAuthorized, StringComparison.Ordinal) ||

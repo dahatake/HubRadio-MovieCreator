@@ -42,6 +42,7 @@ public sealed class AssetCandidateRegistryTests
             ?? throw new AssertFailedException("A selected path must create a candidate.");
 
         Assert.IsTrue(registry.IsAvailable(candidateId));
+        Assert.IsTrue(registry.IsClaimable(candidateId));
         Assert.IsTrue(registry.IsAvailable(candidateId));
         Assert.AreEqual(1, registry.PendingCount);
         Assert.IsTrue(registry.TryClaim(candidateId, out string? claimedPath));
@@ -168,6 +169,83 @@ public sealed class AssetCandidateRegistryTests
 
         Assert.IsFalse(claimed);
         Assert.IsNull(selectedPath);
+    }
+
+    [TestMethod]
+    public void Reservation_DisposeRestoresCandidateAndCommitCreatesOneTimeHandoff()
+    {
+        const string selectedPath = @"C:\private\reserved.mov";
+        AssetCandidateRegistry registry = new();
+        EntityId<AssetIdTag> candidateId = registry.RegisterSelection(selectedPath)
+            ?? throw new AssertFailedException("A selected path must create a candidate.");
+
+        Assert.IsTrue(registry.TryReserve(candidateId, out var released));
+        Assert.AreEqual(selectedPath, released.SelectedPath);
+        Assert.IsFalse(registry.IsAvailable(candidateId));
+        Assert.IsFalse(registry.TryReserve(candidateId, out _));
+        released.Dispose();
+
+        Assert.IsTrue(registry.IsAvailable(candidateId));
+        Assert.IsTrue(registry.TryReserve(candidateId, out var committed));
+        committed.Commit();
+        committed.Dispose();
+
+        Assert.IsFalse(registry.IsAvailable(candidateId));
+        Assert.IsTrue(registry.IsClaimable(candidateId));
+        Assert.IsFalse(registry.TryReserve(candidateId, out _));
+        Assert.IsTrue(registry.TryClaim(candidateId, out string? claimedPath));
+        Assert.AreEqual(selectedPath, claimedPath);
+        Assert.IsFalse(registry.IsClaimable(candidateId));
+        Assert.IsFalse(registry.TryClaim(candidateId, out _));
+        Assert.AreEqual(0, registry.PendingCount);
+    }
+
+    [TestMethod]
+    public void Reservation_DiscardRemovesUnreachableCandidate()
+    {
+        AssetCandidateRegistry registry = new();
+        EntityId<AssetIdTag> candidateId =
+            registry.RegisterSelection(@"C:\private\discarded.mov")
+            ?? throw new AssertFailedException(
+                "A selected path must create a candidate.");
+
+        Assert.IsTrue(registry.TryReserve(candidateId, out var reservation));
+        reservation.Discard();
+        reservation.Dispose();
+
+        Assert.IsFalse(registry.IsAvailable(candidateId));
+        Assert.IsFalse(registry.IsClaimable(candidateId));
+        Assert.IsFalse(registry.TryClaim(candidateId, out _));
+        Assert.AreEqual(0, registry.PendingCount);
+    }
+
+    [TestMethod]
+    public async Task Reservation_ConcurrentCalls_HasExactlyOneWinner()
+    {
+        AssetCandidateRegistry registry = new();
+        EntityId<AssetIdTag> candidateId = registry.RegisterSelection(@"C:\private\race.mov")
+            ?? throw new AssertFailedException("A selected path must create a candidate.");
+        using var release = new ManualResetEventSlim(initialState: false);
+
+        Task<AssetCandidateRegistry.AssetCandidateReservation?>[] attempts =
+            Enumerable.Range(0, 32).Select(_ => Task.Run(() =>
+            {
+                release.Wait();
+                return registry.TryReserve(candidateId, out var reservation)
+                    ? reservation
+                    : null;
+            })).ToArray();
+        release.Set();
+        AssetCandidateRegistry.AssetCandidateReservation?[] results =
+            await Task.WhenAll(attempts);
+
+        AssetCandidateRegistry.AssetCandidateReservation[] winners = results
+            .Where(static reservation => reservation is not null)
+            .Cast<AssetCandidateRegistry.AssetCandidateReservation>()
+            .ToArray();
+        Assert.HasCount(1, winners);
+        winners[0].Dispose();
+        Assert.IsTrue(registry.IsAvailable(candidateId));
     }
 
     private static ClaimResult Claim(
