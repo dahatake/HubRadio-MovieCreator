@@ -253,31 +253,152 @@ describe('ProjectWorkspace', () => {
         outputProfiles: [{ id: profileId, name: 'long-form-1280x720' }],
         brandTemplates: [{ id: templateId, name: 'development-neutral-long-form' }],
       },
+      draft: sourceOnlyDraft(input),
+      input,
+    })
+
+    expect(markup).toContain('かんたん編集')
+    expect(markup).toContain('適用する既定設定')
+    expect(markup).toContain('一回の確認')
+    expect(markup).toContain('社内限定')
+    expect(markup).toContain('1.0.0')
+    expect(markup).toContain(profileDigest)
+    expect(markup).toContain(snapshotDigest)
+    expect(markup).toContain('<li>landscapeLongForm</li>')
+    expect(markup).toContain('<li>verticalShort</li>')
+    expect(markup).toContain('開始前の警告</dt><dd>0 件')
+    expect(markup).toMatch(
+      /<button[^>]*class="primary-button"[^>]*type="submit"[^>]*>編集を開始<\/button>/,
+    )
+    expect(markup).toContain('>取消</button>')
+    expect(markup).not.toContain('wizard-progress')
+    expect(markup).not.toContain('<fieldset')
+    expect(markup).not.toContain('コンテンツ名')
+    expect(markup).not.toContain(profileId)
+    expect(markup).not.toContain(candidateId)
+    expect(markup).not.toContain(draftId)
+    expect(markup).not.toContain('C:\\private')
+    expect(markup).not.toContain('S-1-5-')
+  })
+
+  it('focuses quick start and activates only its start and cancel actions', async () => {
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
+      .IS_REACT_ACT_ENVIRONMENT = true
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    const finalizeDraft = vi.fn()
+    const closeDraft = vi.fn()
+    const input = completeInput()
+    const state: ProjectState = {
+      ...initialProjectState,
+      canCreate: true,
+      draft: sourceOnlyDraft(input),
+      input,
+    }
+
+    try {
+      act(() => {
+        root.render(
+          <ProjectWorkspaceView
+            {...contextFor(state)}
+            finalizeDraft={finalizeDraft}
+            closeDraft={closeDraft}
+          />,
+        )
+      })
+      expect(document.activeElement?.id).toBe('quick-start-title')
+      expect(container.querySelector('.wizard-progress')).toBeNull()
+
+      const user = userEvent.setup({ document })
+      const start = [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent?.trim() === '編集を開始')
+      const cancel = [...container.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent?.trim() === '取消')
+      if (start === undefined || cancel === undefined) {
+        throw new Error('Expected quick-start actions.')
+      }
+
+      act(() => start.focus())
+      await act(async () => user.keyboard('[Enter]'))
+      expect(finalizeDraft).toHaveBeenCalledOnce()
+      await act(async () => user.click(cancel))
+      expect(closeDraft).toHaveBeenCalledOnce()
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+      delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
+        .IS_REACT_ACT_ENVIRONMENT
+    }
+  })
+
+  it('blocks duplicate quick-start actions while a request is pending', () => {
+    const input = completeInput()
+    const markup = renderState({
+      ...initialProjectState,
+      canCreate: true,
+      draft: sourceOnlyDraft(input),
+      input,
+      pending: {
+        requestId: '00112233-4455-6677-8899-aabbccddeeff',
+        method: 'project.finalizeDraft',
+      },
+    })
+
+    expect(markup).toMatch(
+      /<button[^>]*class="quiet-button"[^>]*disabled=""[^>]*>取消<\/button>/,
+    )
+    expect(markup).toMatch(
+      /<button[^>]*class="primary-button"[^>]*type="submit"[^>]*disabled=""[^>]*>編集を開始<\/button>/,
+    )
+    expect(markup).toContain('操作を処理しています。')
+  })
+
+  it('requires reselection without exposing the unavailable source token', () => {
+    const input = completeInput()
+    const markup = renderState({
+      ...initialProjectState,
+      canCreate: true,
       draft: {
-        ...projectDraft(input),
-        sourceOnly: {
-          profileId,
-          profileVersion: '1.0.0',
-          profileDigest,
-          settingsSnapshotDigest: snapshotDigest,
-          artifactSet: ['landscapeLongForm', 'verticalShort'],
-        },
+        ...sourceOnlyDraft(input),
+        sourceStatus: 'reselectionRequired',
       },
       input,
     })
 
-    expect(markup).toContain('元動画から適用する固定設定')
-    expect(markup).toContain('一回の確認')
-    expect(markup).toContain('1.0.0')
-    expect(markup).toContain(profileDigest)
-    expect(markup).toContain(snapshotDigest)
-    expect(markup).toContain('landscapeLongForm、verticalShort')
-    expect(markup.match(/<fieldset disabled=""/g)).toHaveLength(5)
+    expect(markup).toContain('再選択が必要')
+    expect(markup).toContain('元動画を選び直す')
+    expect(markup).toContain('開始前の警告</dt><dd>1 件')
     expect(markup).toMatch(
-      /<button[^>]*class="primary-button"[^>]*>案件を作成<\/button>/,
+      /<button[^>]*class="primary-button"[^>]*disabled=""[^>]*>編集を開始<\/button>/,
     )
-    expect(markup).not.toContain('C:\\private')
-    expect(markup).not.toContain('S-1-5-')
+    expect(markup).not.toContain(candidateId)
+  })
+
+  it('escapes source-only artifact labels and preserves the legacy wizard', () => {
+    const input = completeInput()
+    const quickStartMarkup = renderState({
+      ...initialProjectState,
+      draft: {
+        ...sourceOnlyDraft(input),
+        sourceOnly: {
+          ...sourceOnlyDraft(input).sourceOnly!,
+          artifactSet: [adversarialText],
+        },
+      },
+      input,
+    })
+    const legacyMarkup = renderState({
+      ...initialProjectState,
+      draft: projectDraft(input),
+      input,
+    })
+
+    expect(quickStartMarkup).toContain('&lt;script&gt;')
+    expect(quickStartMarkup).not.toContain('<script')
+    expect(legacyMarkup).toContain('wizard-progress')
+    expect(legacyMarkup).toContain('案件作成ウィザード')
+    expect(legacyMarkup).not.toContain('かんたん編集')
   })
 })
 
@@ -345,5 +466,18 @@ function projectListItem(contentName: string): ProjectListItem {
     reviewState: null,
     outputFormats: [adversarialText],
     updatedAt: timestamp,
+  }
+}
+
+function sourceOnlyDraft(input: ProjectDraftInput): ProjectDraft {
+  return {
+    ...projectDraft(input),
+    sourceOnly: {
+      profileId,
+      profileVersion: '1.0.0',
+      profileDigest,
+      settingsSnapshotDigest: snapshotDigest,
+      artifactSet: ['landscapeLongForm', 'verticalShort'],
+    },
   }
 }
