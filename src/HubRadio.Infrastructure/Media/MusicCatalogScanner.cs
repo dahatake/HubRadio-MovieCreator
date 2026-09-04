@@ -134,7 +134,7 @@ public sealed class MusicCatalogScanner
         {
             return MusicCatalog.CreateUnavailable(
                 MusicLibraryState.Unsafe,
-                MusicCatalogWarning.UnsafeLibraryPath);
+                MusicCatalogWarning.UnsafeLibraryLocation);
         }
 
         string[] candidates;
@@ -157,7 +157,7 @@ public sealed class MusicCatalogScanner
         {
             return MusicCatalog.CreateUnavailable(
                 MusicLibraryState.Unsafe,
-                MusicCatalogWarning.UnsafeLibraryPath);
+                MusicCatalogWarning.UnsafeLibraryLocation);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException or WorkspacePathSafetyException)
         {
@@ -199,7 +199,7 @@ public sealed class MusicCatalogScanner
                     WorkspacePathSafetyFailure.NotRegularFile or
                     WorkspacePathSafetyFailure.UnsafePath)
             {
-                warnings.Add(MusicCatalogWarning.UnsafeLibraryPath);
+                warnings.Add(MusicCatalogWarning.UnsafeLibraryLocation);
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException or CryptographicException or WorkspacePathSafetyException or ArgumentException)
             {
@@ -418,7 +418,7 @@ public sealed class MusicCatalogScanner
                 WorkspacePathSafetyFailure.NotRegularFile or
                 WorkspacePathSafetyFailure.UnsafePath)
         {
-            return new TrackScanResult(null, MusicCatalogWarning.UnsafeLibraryPath);
+            return new TrackScanResult(null, MusicCatalogWarning.UnsafeLibraryLocation);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SecurityException or CryptographicException or WorkspacePathSafetyException or InvalidOperationException or ArgumentException)
         {

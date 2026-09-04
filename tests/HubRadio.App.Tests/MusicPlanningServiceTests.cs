@@ -146,6 +146,31 @@ public sealed class MusicPlanningServiceTests
             cancellation.Token));
     }
 
+    [TestMethod]
+    public void AssignmentRejectsImpossiblePublicResultStates()
+    {
+        ContentDigest cue = new(new string('1', 64));
+        ContentDigest track = new(new string('a', 64));
+
+        Assert.ThrowsExactly<ArgumentException>(() => new MusicCueAssignment(
+            cue,
+            null,
+            MusicAssignmentReason.Assigned,
+            null,
+            loop: false,
+            stretch: false));
+        Assert.ThrowsExactly<ArgumentException>(() => new MusicCueAssignment(
+            cue,
+            track,
+            MusicAssignmentReason.Assigned,
+            null,
+            loop: true,
+            stretch: false));
+        Assert.AreEqual(
+            0,
+            typeof(MusicCueAssignment).GetConstructors().Length);
+    }
+
     private static MusicTrack Track(char digest, decimal duration) =>
         new(new ContentDigest(new string(digest, 64)), 100, duration, "mp3", 48000, 2);
 

@@ -109,6 +109,42 @@ public sealed class MusicPolicyTests
     }
 
     [TestMethod]
+    public void CatalogFactoriesRejectStateWarningContradictions()
+    {
+        MusicTrack track = new(
+            new HubRadio.Core.Identity.ContentDigest(new string('a', 64)),
+            100,
+            1m,
+            "mp3",
+            48000,
+            2);
+
+        Assert.ThrowsExactly<ArgumentException>(() => MusicCatalog.CreateAvailable(
+            [track],
+            [MusicCatalogWarning.LibraryAbsent]));
+        Assert.ThrowsExactly<ArgumentException>(() => MusicCatalog.CreateUnavailable(
+            MusicLibraryState.Absent,
+            MusicCatalogWarning.LibraryEmpty));
+        Assert.ThrowsExactly<ArgumentException>(() => MusicCatalog.CreateUnavailable(
+            MusicLibraryState.Empty));
+        Assert.ThrowsExactly<ArgumentException>(() => MusicCatalog.CreateUnavailable(
+            MusicLibraryState.NoEligibleTracks,
+            MusicCatalogWarning.TrackUnreadable));
+    }
+
+    [TestMethod]
+    public void NumericallyEquivalentDurationsProduceTheSameCatalogDigest()
+    {
+        var digest = new HubRadio.Core.Identity.ContentDigest(new string('a', 64));
+        MusicCatalog first = MusicCatalog.CreateAvailable(
+            [new MusicTrack(digest, 100, 1m, "mp3", 48000, 2)]);
+        MusicCatalog second = MusicCatalog.CreateAvailable(
+            [new MusicTrack(digest, 100, 1.0m, "mp3", 48000, 2)]);
+
+        Assert.AreEqual(first.CatalogDigest, second.CatalogDigest);
+    }
+
+    [TestMethod]
     public void PerceptualFitAndRightsDomainsAreAlwaysNotEvaluated()
     {
         CollectionAssert.AreEqual(
@@ -136,5 +172,14 @@ public sealed class MusicPolicyTests
             name.Contains("Stretch", StringComparison.OrdinalIgnoreCase) ||
             name.Contains("Approve", StringComparison.OrdinalIgnoreCase) ||
             name.Contains("Threshold", StringComparison.OrdinalIgnoreCase)));
+        foreach (Type type in new[]
+        {
+            typeof(MusicCueEligibility),
+            typeof(MusicPolicyEvaluation),
+        })
+        {
+            Assert.IsTrue(type.GetProperties().All(static property =>
+                property.SetMethod is null));
+        }
     }
 }

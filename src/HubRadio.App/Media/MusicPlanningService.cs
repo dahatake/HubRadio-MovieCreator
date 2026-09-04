@@ -47,13 +47,60 @@ public enum MusicAssignmentReason
     NoTrackLongEnough,
 }
 
-public sealed record MusicCueAssignment(
-    ContentDigest CueDigest,
-    ContentDigest? TrackDigest,
-    MusicAssignmentReason Reason,
-    int? RelativeGainDecibels,
-    bool Loop,
-    bool Stretch);
+public sealed class MusicCueAssignment
+{
+    internal MusicCueAssignment(
+        ContentDigest cueDigest,
+        ContentDigest? trackDigest,
+        MusicAssignmentReason reason,
+        int? relativeGainDecibels,
+        bool loop,
+        bool stretch)
+    {
+        ArgumentNullException.ThrowIfNull(cueDigest);
+        if (!Enum.IsDefined(reason))
+        {
+            throw new ArgumentOutOfRangeException(nameof(reason));
+        }
+
+        if (loop || stretch)
+        {
+            throw new ArgumentException(
+                "Music assignments do not permit looping or stretching.",
+                loop ? nameof(loop) : nameof(stretch));
+        }
+
+        bool assigned = reason == MusicAssignmentReason.Assigned;
+        if (assigned != (trackDigest is not null) ||
+            (!assigned && relativeGainDecibels is not null) ||
+            (relativeGainDecibels is not null &&
+                relativeGainDecibels != -MusicPolicy.DialogueDuckAmountDecibels))
+        {
+            throw new ArgumentException(
+                "Music assignment evidence is inconsistent.",
+                nameof(reason));
+        }
+
+        CueDigest = cueDigest;
+        TrackDigest = trackDigest;
+        Reason = reason;
+        RelativeGainDecibels = relativeGainDecibels;
+        Loop = loop;
+        Stretch = stretch;
+    }
+
+    public ContentDigest CueDigest { get; }
+
+    public ContentDigest? TrackDigest { get; }
+
+    public MusicAssignmentReason Reason { get; }
+
+    public int? RelativeGainDecibels { get; }
+
+    public bool Loop { get; }
+
+    public bool Stretch { get; }
+}
 
 public sealed class MusicPlanningResult
 {
@@ -134,8 +181,8 @@ public sealed class MusicPlanningService
                     cue.Kind == MusicCueKind.Dialogue
                         ? options.AppliedDialogueRelativeGainDecibels
                         : null,
-                    Loop: false,
-                    Stretch: false);
+                    loop: false,
+                    stretch: false);
             }
 
             lastReason = eligibility.BlockReason;
@@ -176,7 +223,7 @@ public sealed class MusicPlanningService
     private static MusicCueAssignment Unassigned(
         MusicCue cue,
         MusicAssignmentReason reason) =>
-        new(cue.CueDigest, null, reason, null, Loop: false, Stretch: false);
+        new(cue.CueDigest, null, reason, null, loop: false, stretch: false);
 
     private static MusicAssignmentReason MapReason(MusicCueBlockReason reason) =>
         reason switch

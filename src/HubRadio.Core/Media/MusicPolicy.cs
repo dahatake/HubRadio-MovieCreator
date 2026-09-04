@@ -95,13 +95,57 @@ public sealed class MusicPlanningOptions
         dialogueDuckAmountDecibels: MusicPolicy.DialogueDuckAmountDecibels);
 }
 
-public sealed record MusicCueEligibility(
-    bool IsEligible,
-    MusicCueBlockReason BlockReason);
+public sealed class MusicCueEligibility
+{
+    public MusicCueEligibility(
+        bool isEligible,
+        MusicCueBlockReason blockReason)
+    {
+        if (!Enum.IsDefined(blockReason))
+        {
+            throw new ArgumentOutOfRangeException(nameof(blockReason));
+        }
 
-public sealed record MusicPolicyEvaluation(
-    MusicPolicyDomain Domain,
-    MusicPolicyEvaluationStatus Status);
+        if (isEligible != (blockReason == MusicCueBlockReason.None))
+        {
+            throw new ArgumentException(
+                "Music cue eligibility must agree with its block reason.",
+                nameof(blockReason));
+        }
+
+        IsEligible = isEligible;
+        BlockReason = blockReason;
+    }
+
+    public bool IsEligible { get; }
+
+    public MusicCueBlockReason BlockReason { get; }
+}
+
+public sealed class MusicPolicyEvaluation
+{
+    public MusicPolicyEvaluation(
+        MusicPolicyDomain domain,
+        MusicPolicyEvaluationStatus status)
+    {
+        if (!Enum.IsDefined(domain))
+        {
+            throw new ArgumentOutOfRangeException(nameof(domain));
+        }
+
+        if (!Enum.IsDefined(status))
+        {
+            throw new ArgumentOutOfRangeException(nameof(status));
+        }
+
+        Domain = domain;
+        Status = status;
+    }
+
+    public MusicPolicyDomain Domain { get; }
+
+    public MusicPolicyEvaluationStatus Status { get; }
+}
 
 public static class MusicPolicy
 {

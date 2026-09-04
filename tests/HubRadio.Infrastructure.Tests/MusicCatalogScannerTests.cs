@@ -57,6 +57,9 @@ public sealed class MusicCatalogScannerTests
         Assert.IsFalse(typeof(MusicTrack).GetProperties().Any(static property =>
             property.Name.Contains("Path", StringComparison.OrdinalIgnoreCase) ||
             property.Name.Contains("FileName", StringComparison.OrdinalIgnoreCase)));
+        Assert.IsFalse(Enum.GetNames<MusicCatalogWarning>().Any(static name =>
+            name.Contains("Path", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("FileName", StringComparison.OrdinalIgnoreCase)));
     }
 
     [TestMethod]
@@ -249,6 +252,118 @@ public sealed class MusicCatalogScannerTests
         Assert.IsTrue(File.Exists(path));
         Assert.AreEqual(before, File.GetAttributes(path));
         CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, File.ReadAllBytes(path));
+    }
+
+    [TestMethod]
+    public async Task ReparsePointLibraryIsRejectedWhenLinksAreAvailable()
+    {
+        using Fixture fixture = new();
+        string target = Directory.CreateDirectory(
+            Path.Combine(fixture.Root, "target")).FullName;
+        string link = Path.Combine(
+            Path.GetDirectoryName(fixture.Root)!,
+            string.Concat("music-link-", Guid.NewGuid().ToString("N")));
+        try
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(link, target);
+            }
+            catch (Exception exception)
+                when (exception is IOException or UnauthorizedAccessException or
+                    PlatformNotSupportedException)
+            {
+                Assert.Inconclusive(
+                    "Directory symbolic links are unavailable in this test environment.");
+            }
+
+            MusicCatalog catalog = await Scanner(link).ScanAsync();
+
+            Assert.AreEqual(MusicLibraryState.Unsafe, catalog.State);
+            CollectionAssert.AreEqual(
+                new[] { MusicCatalogWarning.UnsafeLibraryLocation },
+                catalog.Warnings.ToArray());
+        }
+        finally
+        {
+            if (Directory.Exists(link))
+            {
+                Directory.Delete(link);
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task ReparsePointTrackIsExcludedWhenLinksAreAvailable()
+    {
+        using Fixture fixture = new();
+        string target = fixture.Write("target.bin", [1, 2, 3]);
+        string link = Path.Combine(fixture.Root, "linked.mp3");
+        try
+        {
+            try
+            {
+                File.CreateSymbolicLink(link, target);
+            }
+            catch (Exception exception)
+                when (exception is IOException or UnauthorizedAccessException or
+                    PlatformNotSupportedException)
+            {
+                Assert.Inconclusive(
+                    "File symbolic links are unavailable in this test environment.");
+            }
+
+            MusicCatalog catalog = await Scanner(fixture.Root).ScanAsync();
+
+            Assert.AreEqual(MusicLibraryState.NoEligibleTracks, catalog.State);
+            CollectionAssert.Contains(
+                catalog.Warnings.ToArray(),
+                MusicCatalogWarning.UnsafeLibraryLocation);
+            CollectionAssert.Contains(
+                catalog.Warnings.ToArray(),
+                MusicCatalogWarning.NoEligibleTracks);
+        }
+        finally
+        {
+            if (File.Exists(link))
+            {
+                File.Delete(link);
+            }
+        }
+    }
+
+    [TestMethod]
+    public async Task InaccessibleLibraryReturnsTypedWarningWhenProtectedRootIsAvailable()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive(
+                "The protected-library acceptance path requires Windows.");
+        }
+
+        string? volumeRoot = Path.GetPathRoot(Path.GetTempPath());
+        if (string.IsNullOrWhiteSpace(volumeRoot))
+        {
+            Assert.Inconclusive("A local test volume is unavailable.");
+        }
+
+        string protectedRoot = Path.Combine(volumeRoot, "System Volume Information");
+        if (!Directory.Exists(protectedRoot))
+        {
+            Assert.Inconclusive(
+                "The protected test directory is unavailable in this environment.");
+        }
+
+        MusicCatalog catalog = await Scanner(protectedRoot).ScanAsync();
+        if (catalog.State != MusicLibraryState.Inaccessible)
+        {
+            Assert.Inconclusive(
+                "The protected test directory is readable by this test account.");
+        }
+
+        CollectionAssert.AreEqual(
+            new[] { MusicCatalogWarning.LibraryInaccessible },
+            catalog.Warnings.ToArray());
     }
 
     private static MusicCatalogScanner Scanner(string root) =>

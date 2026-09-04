@@ -19,7 +19,7 @@ public enum MusicCatalogWarning
     LibraryAbsent,
     LibraryEmpty,
     LibraryInaccessible,
-    UnsafeLibraryPath,
+    UnsafeLibraryLocation,
     TrackUnreadable,
     DuplicateContent,
     SourceChangedDuringScan,
@@ -126,10 +126,22 @@ public sealed class MusicCatalog
                 nameof(tracks));
         }
 
+        IReadOnlyList<MusicCatalogWarning> copiedWarnings = CopyWarnings(warnings);
+        if (copiedWarnings.Any(static warning => warning is
+                MusicCatalogWarning.LibraryAbsent or
+                MusicCatalogWarning.LibraryEmpty or
+                MusicCatalogWarning.LibraryInaccessible or
+                MusicCatalogWarning.NoEligibleTracks))
+        {
+            throw new ArgumentException(
+                "An available music catalog cannot carry an unavailable-state warning.",
+                nameof(warnings));
+        }
+
         return new MusicCatalog(
             MusicLibraryState.Available,
             Array.AsReadOnly(ordered),
-            CopyWarnings(warnings));
+            copiedWarnings);
     }
 
     public static MusicCatalog CreateUnavailable(
@@ -149,10 +161,12 @@ public sealed class MusicCatalog
                 nameof(state));
         }
 
+        IReadOnlyList<MusicCatalogWarning> copiedWarnings = CopyWarnings(warnings);
+        ValidateUnavailableWarnings(state, copiedWarnings, nameof(warnings));
         return new MusicCatalog(
             state,
             Array.AsReadOnly(Array.Empty<MusicTrack>()),
-            CopyWarnings(warnings));
+            copiedWarnings);
     }
 
     private static MusicTrack[] CopyTracks(IReadOnlyList<MusicTrack> tracks)
@@ -204,6 +218,35 @@ public sealed class MusicCatalog
         return Array.AsReadOnly(normalized.ToArray());
     }
 
+    private static void ValidateUnavailableWarnings(
+        MusicLibraryState state,
+        IReadOnlyList<MusicCatalogWarning> warnings,
+        string parameterName)
+    {
+        MusicCatalogWarning? exclusiveWarning = state switch
+        {
+            MusicLibraryState.Absent => MusicCatalogWarning.LibraryAbsent,
+            MusicLibraryState.Empty => MusicCatalogWarning.LibraryEmpty,
+            MusicLibraryState.Inaccessible => MusicCatalogWarning.LibraryInaccessible,
+            MusicLibraryState.Unsafe => MusicCatalogWarning.UnsafeLibraryLocation,
+            MusicLibraryState.NoEligibleTracks => null,
+            _ => throw new ArgumentOutOfRangeException(nameof(state)),
+        };
+        bool valid = exclusiveWarning is not null
+            ? warnings.Count == 1 && warnings[0] == exclusiveWarning.Value
+            : warnings.Contains(MusicCatalogWarning.NoEligibleTracks) &&
+                !warnings.Any(static warning => warning is
+                    MusicCatalogWarning.LibraryAbsent or
+                    MusicCatalogWarning.LibraryEmpty or
+                    MusicCatalogWarning.LibraryInaccessible);
+        if (!valid)
+        {
+            throw new ArgumentException(
+                "Music catalog warnings must agree with the unavailable state.",
+                parameterName);
+        }
+    }
+
     private static ContentDigest ComputeDigest(
         MusicLibraryState state,
         IReadOnlyList<MusicTrack> tracks,
@@ -225,7 +268,9 @@ public sealed class MusicCatalog
             payload.Append('\t');
             payload.Append(track.ByteSize.ToString(CultureInfo.InvariantCulture));
             payload.Append('\t');
-            payload.Append(track.DurationSeconds.ToString(CultureInfo.InvariantCulture));
+            payload.Append(track.DurationSeconds.ToString(
+                "G29",
+                CultureInfo.InvariantCulture));
             payload.Append('\t');
             payload.Append(track.CodecName);
             payload.Append('\t');
