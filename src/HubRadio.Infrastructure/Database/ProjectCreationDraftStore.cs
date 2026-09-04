@@ -193,10 +193,27 @@ public sealed class ProjectCreationDraftStore
             draft,
             project,
             payloadJson,
+            ProjectSnapshotJson.WriteProject(project),
             expectedRevision,
             finalizedAt,
             initialSettingsSnapshot: null);
     }
+
+    internal StoredProjectCreationDraft FinalizeDraft(
+        ProjectCreationDraft draft,
+        Project project,
+        string draftPayloadJson,
+        string projectPayloadJson,
+        int expectedRevision,
+        DateTimeOffset finalizedAt) =>
+        FinalizeDraftCore(
+            draft,
+            project,
+            draftPayloadJson,
+            projectPayloadJson,
+            expectedRevision,
+            finalizedAt,
+            initialSettingsSnapshot: null);
 
     public StoredProjectCreationDraft FinalizeDraft(
         ProjectCreationDraft draft,
@@ -211,6 +228,27 @@ public sealed class ProjectCreationDraftStore
             draft,
             project,
             payloadJson,
+            ProjectSnapshotJson.WriteProject(project),
+            expectedRevision,
+            finalizedAt,
+            initialSettingsSnapshot);
+    }
+
+    internal StoredProjectCreationDraft FinalizeDraft(
+        ProjectCreationDraft draft,
+        Project project,
+        string draftPayloadJson,
+        string projectPayloadJson,
+        int expectedRevision,
+        DateTimeOffset finalizedAt,
+        DefaultSettingsSnapshot initialSettingsSnapshot)
+    {
+        ArgumentNullException.ThrowIfNull(initialSettingsSnapshot);
+        return FinalizeDraftCore(
+            draft,
+            project,
+            draftPayloadJson,
+            projectPayloadJson,
             expectedRevision,
             finalizedAt,
             initialSettingsSnapshot);
@@ -219,7 +257,8 @@ public sealed class ProjectCreationDraftStore
     private StoredProjectCreationDraft FinalizeDraftCore(
         ProjectCreationDraft draft,
         Project project,
-        string payloadJson,
+        string draftPayloadJson,
+        string projectPayloadJson,
         int expectedRevision,
         DateTimeOffset finalizedAt,
         DefaultSettingsSnapshot? initialSettingsSnapshot)
@@ -228,7 +267,21 @@ public sealed class ProjectCreationDraftStore
         ArgumentNullException.ThrowIfNull(project);
         ValidateExpectedRevision(expectedRevision);
         ValidateFinalizedAggregate(draft, project);
-        byte[] payload = CanonicalizeBoundedPayload(payloadJson, nameof(payloadJson));
+        byte[] draftPayload = CanonicalizeBoundedPayload(
+            draftPayloadJson,
+            nameof(draftPayloadJson));
+        byte[] projectPayload = CanonicalizeBoundedPayload(
+            projectPayloadJson,
+            nameof(projectPayloadJson));
+        byte[] expectedProjectPayload = Encoding.UTF8.GetBytes(
+            ProjectSnapshotJson.WriteProject(project));
+        if (!projectPayload.AsSpan().SequenceEqual(expectedProjectPayload))
+        {
+            throw new ArgumentException(
+                "The Project payload must exactly match its canonical aggregate snapshot.",
+                nameof(projectPayloadJson));
+        }
+
         string storedFinalizedAt = SqliteStoreSupport.FormatTimestamp(
             finalizedAt,
             nameof(finalizedAt));
@@ -249,7 +302,7 @@ public sealed class ProjectCreationDraftStore
             connection,
             transaction,
             project,
-            payload,
+            projectPayload,
             storedFinalizedAt);
         if (initialSettingsSnapshot is not null)
         {
@@ -277,7 +330,7 @@ public sealed class ProjectCreationDraftStore
               AND finalized_at IS NULL;
             """;
         SqliteStoreSupport.AddInteger(command, "$new_revision", newRevision);
-        SqliteStoreSupport.AddBlob(command, "$payload", payload);
+        SqliteStoreSupport.AddBlob(command, "$payload", draftPayload);
         SqliteStoreSupport.AddText(command, "$finalized_at", storedFinalizedAt);
         SqliteStoreSupport.AddText(command, "$project_id", project.Id.ToString());
         SqliteStoreSupport.AddText(command, "$id", draft.Id.ToString());

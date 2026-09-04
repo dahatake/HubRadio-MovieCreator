@@ -1,3 +1,4 @@
+using System.Text;
 using HubRadio.Core.Compositions;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Projects;
@@ -348,7 +349,73 @@ public sealed class ProjectStore
         WorkingCopy updatedWorkingCopy,
         string workingCopyPayloadJson,
         int expectedWorkingCopyRevision,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        CheckpointWorkingCopyCore(
+            version,
+            versionPayloadJson,
+            expectedWorkingCopy,
+            expectedWorkingCopyPayloadJson: null,
+            expectedParent: null,
+            expectedParentPayloadJson: null,
+            expectedProject: null,
+            expectedProjectRevision: null,
+            expectedProjectPayloadDigest: null,
+            expectedProjectUpdatedAt: null,
+            expectedProjectCanonicalJson: null,
+            updatedWorkingCopy,
+            workingCopyPayloadJson,
+            expectedWorkingCopyRevision,
+            cancellationToken);
+
+    internal int CheckpointWorkingCopyExact(
+        CompositionVersion version,
+        string versionPayloadJson,
+        WorkingCopy expectedWorkingCopy,
+        string expectedWorkingCopyPayloadJson,
+        CompositionVersion? expectedParent,
+        string? expectedParentPayloadJson,
+        Project? expectedProject,
+        int? expectedProjectRevision,
+        ContentDigest? expectedProjectPayloadDigest,
+        DateTimeOffset? expectedProjectUpdatedAt,
+        string? expectedProjectCanonicalJson,
+        WorkingCopy updatedWorkingCopy,
+        string workingCopyPayloadJson,
+        int expectedWorkingCopyRevision,
+        CancellationToken cancellationToken = default) =>
+        CheckpointWorkingCopyCore(
+            version,
+            versionPayloadJson,
+            expectedWorkingCopy,
+            expectedWorkingCopyPayloadJson,
+            expectedParent,
+            expectedParentPayloadJson,
+            expectedProject,
+            expectedProjectRevision,
+            expectedProjectPayloadDigest,
+            expectedProjectUpdatedAt,
+            expectedProjectCanonicalJson,
+            updatedWorkingCopy,
+            workingCopyPayloadJson,
+            expectedWorkingCopyRevision,
+            cancellationToken);
+
+    private int CheckpointWorkingCopyCore(
+        CompositionVersion version,
+        string versionPayloadJson,
+        WorkingCopy expectedWorkingCopy,
+        string? expectedWorkingCopyPayloadJson,
+        CompositionVersion? expectedParent,
+        string? expectedParentPayloadJson,
+        Project? expectedProject,
+        int? expectedProjectRevision,
+        ContentDigest? expectedProjectPayloadDigest,
+        DateTimeOffset? expectedProjectUpdatedAt,
+        string? expectedProjectCanonicalJson,
+        WorkingCopy updatedWorkingCopy,
+        string workingCopyPayloadJson,
+        int expectedWorkingCopyRevision,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(version);
         ArgumentNullException.ThrowIfNull(expectedWorkingCopy);
@@ -361,6 +428,24 @@ public sealed class ProjectStore
         byte[] workingCopyPayload = SqliteStoreSupport.CanonicalizePayload(
             workingCopyPayloadJson,
             nameof(workingCopyPayloadJson));
+        string? expectedWorkingCopyPayload = expectedWorkingCopyPayloadJson is null
+            ? null
+            : Encoding.UTF8.GetString(
+                SqliteStoreSupport.CanonicalizePayload(
+                    expectedWorkingCopyPayloadJson,
+                    nameof(expectedWorkingCopyPayloadJson)));
+        string? expectedParentPayload = expectedParentPayloadJson is null
+            ? null
+            : Encoding.UTF8.GetString(
+                SqliteStoreSupport.CanonicalizePayload(
+                    expectedParentPayloadJson,
+                    nameof(expectedParentPayloadJson)));
+        string? expectedProjectPayload = expectedProjectCanonicalJson is null
+            ? null
+            : Encoding.UTF8.GetString(
+                SqliteStoreSupport.CanonicalizePayload(
+                    expectedProjectCanonicalJson,
+                    nameof(expectedProjectCanonicalJson)));
         string versionCreatedAt = SqliteStoreSupport.FormatTimestamp(
             version.CreatedAt,
             nameof(version));
@@ -378,9 +463,60 @@ public sealed class ProjectStore
                 nameof(expectedWorkingCopy));
         }
 
+        if ((expectedParent is null) != (expectedParentPayload is null)
+            || expectedParent is not null
+                && (expectedParent.Id != version.ParentVersionId
+                    || expectedParent.Id != expectedWorkingCopy.BaseVersionId
+                    || expectedParent.ProjectId != version.ProjectId))
+        {
+            throw new ArgumentException(
+                "The expected parent does not match the checkpoint lineage.",
+                nameof(expectedParent));
+        }
+
+        bool hasAnyProjectExpectation = expectedProject is not null
+            || expectedProjectRevision is not null
+            || expectedProjectPayloadDigest is not null
+            || expectedProjectUpdatedAt is not null
+            || expectedProjectPayload is not null;
+        bool hasCompleteProjectExpectation = expectedProject is not null
+            && expectedProjectRevision is >= 0
+            && expectedProjectPayloadDigest is not null
+            && expectedProjectUpdatedAt is not null
+            && expectedProjectPayload is not null;
+        if (hasAnyProjectExpectation != hasCompleteProjectExpectation
+            || expectedProject is not null
+                && expectedProject.Id != version.ProjectId)
+        {
+            throw new ArgumentException(
+                "The expected project state is incomplete or inconsistent.",
+                nameof(expectedProject));
+        }
+
         using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
         cancellationToken.ThrowIfCancellationRequested();
+        if (expectedParent is not null)
+        {
+            EnsureExactCompositionVersion(
+                connection,
+                transaction,
+                expectedParent,
+                expectedParentPayload!);
+        }
+
+        if (expectedProject is not null)
+        {
+            EnsureExactProject(
+                connection,
+                transaction,
+                expectedProject,
+                expectedProjectRevision!.Value,
+                expectedProjectPayloadDigest!,
+                expectedProjectUpdatedAt!.Value,
+                expectedProjectPayload!);
+        }
+
         StoredWorkingCopyIdentity current = ReadWorkingCopyIdentity(
             connection,
             transaction,
@@ -397,7 +533,14 @@ public sealed class ProjectStore
             expectedWorkingCopyRevision,
             current.Revision);
         if (current.ProjectId != expectedWorkingCopy.ProjectId
-            || current.BaseVersionId != expectedWorkingCopy.BaseVersionId)
+            || current.BaseVersionId != expectedWorkingCopy.BaseVersionId
+            || expectedWorkingCopyPayload is not null
+                && (current.UpdatedAt
+                        != expectedWorkingCopy.UpdatedAt.ToUniversalTime()
+                    || !string.Equals(
+                        current.CanonicalJson,
+                        expectedWorkingCopyPayload,
+                        StringComparison.Ordinal)))
         {
             throw new StoreConcurrencyException(
                 "working copy",
@@ -607,6 +750,104 @@ public sealed class ProjectStore
             canonicalJson);
     }
 
+    private static void EnsureExactCompositionVersion(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        CompositionVersion expected,
+        string expectedCanonicalJson)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT
+                id,
+                project_id,
+                parent_version_id,
+                content_digest,
+                created_at,
+                payload
+            FROM composition_versions
+            WHERE id = $id;
+            """;
+        SqliteStoreSupport.AddText(command, "$id", expected.Id.ToString());
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            throw new InvalidOperationException(
+                "The expected checkpoint parent does not exist.");
+        }
+
+        StoredCompositionVersion stored = ReadStoredCompositionVersion(reader);
+        if (reader.Read()
+            || stored.Id != expected.Id
+            || stored.ProjectId != expected.ProjectId
+            || stored.ParentVersionId != expected.ParentVersionId
+            || stored.ContentDigest != expected.ContentDigest
+            || stored.CreatedAt != expected.CreatedAt.ToUniversalTime()
+            || !string.Equals(
+                stored.CanonicalJson,
+                expectedCanonicalJson,
+                StringComparison.Ordinal))
+        {
+            throw new StoreConcurrencyException(
+                "composition parent",
+                expected.Id.ToString(),
+                expectedRevision: 0,
+                actualRevision: 0);
+        }
+    }
+
+    private static void EnsureExactProject(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Project expected,
+        int expectedRevision,
+        ContentDigest expectedPayloadDigest,
+        DateTimeOffset expectedUpdatedAt,
+        string expectedCanonicalJson)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT id, revision, publication_scope, deadline, updated_at, payload
+            FROM projects
+            WHERE id = $id;
+            """;
+        SqliteStoreSupport.AddText(command, "$id", expected.Id.ToString());
+        using SqliteDataReader reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            throw new InvalidOperationException(
+                "The expected checkpoint project does not exist.");
+        }
+
+        StoredProject stored = ReadStoredProject(reader);
+        ContentDigest actualPayloadDigest = ContentDigest.Compute(
+            Encoding.UTF8.GetBytes(stored.CanonicalJson));
+        ContentDigest expectedCanonicalDigest = ContentDigest.Compute(
+            Encoding.UTF8.GetBytes(expectedCanonicalJson));
+        DateTimeOffset? expectedDeadline = expected.Deadline?.ToUniversalTime();
+        if (reader.Read()
+            || stored.Id != expected.Id
+            || stored.Revision != expectedRevision
+            || stored.PublicationScope != expected.PublicationScope
+            || stored.Deadline != expectedDeadline
+            || stored.UpdatedAt != expectedUpdatedAt.ToUniversalTime()
+            || expectedCanonicalDigest != expectedPayloadDigest
+            || actualPayloadDigest != expectedPayloadDigest
+            || !string.Equals(
+                stored.CanonicalJson,
+                expectedCanonicalJson,
+                StringComparison.Ordinal))
+        {
+            throw new StoreConcurrencyException(
+                "project",
+                expected.Id.ToString(),
+                expectedRevision,
+                stored.Revision);
+        }
+    }
+
     private static (int Revision, DateTimeOffset UpdatedAt) ReadProjectRevision(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -645,7 +886,7 @@ public sealed class ProjectStore
         using SqliteCommand command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT project_id, base_version_id, revision, updated_at
+            SELECT project_id, base_version_id, revision, updated_at, payload
             FROM working_copies
             WHERE id = $id;
             """;
@@ -666,6 +907,8 @@ public sealed class ProjectStore
         int revision = SqliteStoreSupport.ReadInt32(reader, 2, "working copy");
         DateTimeOffset updatedAt =
             SqliteStoreSupport.ReadTimestamp(reader, 3, "working copy");
+        string canonicalJson =
+            SqliteStoreSupport.ReadCanonicalPayload(reader, 4, "working copy");
         if (revision < 0 || reader.Read())
         {
             throw SqliteStoreSupport.InvalidStoredData("working copy");
@@ -675,7 +918,8 @@ public sealed class ProjectStore
             projectId,
             baseVersionId,
             revision,
-            updatedAt);
+            updatedAt,
+            canonicalJson);
     }
 
     private static void ValidateCheckpointAggregates(
@@ -844,5 +1088,6 @@ public sealed class ProjectStore
         EntityId<ProjectIdTag> ProjectId,
         EntityId<CompositionVersionIdTag>? BaseVersionId,
         int Revision,
-        DateTimeOffset UpdatedAt);
+        DateTimeOffset UpdatedAt,
+        string CanonicalJson);
 }

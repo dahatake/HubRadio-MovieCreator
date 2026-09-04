@@ -135,7 +135,10 @@ public sealed class ProjectCreationDraftStoreTests
         Assert.AreEqual(0, storedProject.Revision);
         Assert.AreEqual(draft.PublicationScope, storedProject.PublicationScope);
         Assert.AreEqual(deadline, storedProject.Deadline);
-        Assert.AreEqual(finalized.CanonicalJson, storedProject.CanonicalJson);
+        Assert.AreEqual(
+            ProjectSnapshotJson.WriteProject(project),
+            storedProject.CanonicalJson);
+        Assert.AreNotEqual(finalized.CanonicalJson, storedProject.CanonicalJson);
 
         Assert.ThrowsExactly<InvalidOperationException>(
             () => draftStore.SaveDraft(
@@ -203,6 +206,30 @@ public sealed class ProjectCreationDraftStoreTests
         Assert.AreEqual(0L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM projects;"));
         Assert.AreEqual(0, store.GetDraft(incomplete.Id)!.Revision);
         Assert.AreEqual(0, store.GetDraft(complete.Id)!.Revision);
+    }
+
+    [TestMethod]
+    public void FinalizeRejectsProjectPayloadThatDoesNotMatchAggregate()
+    {
+        using StoreTestDatabase database = new();
+        var store = new ProjectCreationDraftStore(database.DatabasePath);
+        ProjectCreationDraft draft = CreateDraft();
+        Project project = CreateProjectFromDraft(draft);
+        store.CreateDraft(draft, "{\"state\":\"draft\"}", InitialTime);
+
+        ArgumentException exception = Assert.ThrowsExactly<ArgumentException>(
+            () => store.FinalizeDraft(
+                draft,
+                project,
+                "{\"state\":\"complete\"}",
+                "{\"forgedProject\":true}",
+                expectedRevision: 0,
+                InitialTime.AddMinutes(1)));
+
+        Assert.AreEqual("projectPayloadJson", exception.ParamName);
+        Assert.IsNull(new ProjectStore(database.DatabasePath).GetProject(project.Id));
+        Assert.AreEqual(0, store.GetDraft(draft.Id)!.Revision);
+        Assert.IsFalse(store.GetDraft(draft.Id)!.IsFinalized);
     }
 
     [TestMethod]

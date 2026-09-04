@@ -87,7 +87,7 @@ public sealed class BundledRenderProfileDefinition
 
 public static class BundledRenderProfileLoader
 {
-    private const int MaximumUtf8JsonBytes = 64 * 1024;
+    internal const int MaximumUtf8JsonBytes = 64 * 1024;
     private const string SchemaVersion = "1.0.0";
     private const string LandscapeEvidenceSource =
         "benchmarks/fixtures/manual-render-manifest.json#/renderProfiles/0";

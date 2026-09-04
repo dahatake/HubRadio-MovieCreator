@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using HubRadio.App.Compositions;
 using HubRadio.Core.Analysis;
 using HubRadio.Core.Compositions;
@@ -383,14 +384,114 @@ public sealed class VersionServiceTests
     }
 
     [TestMethod]
+    public void EvidenceEnvelopeAcceptsExactlyTheTwoClosedEvidenceKinds()
+    {
+        foreach (string kind in new[]
+        {
+            "autoDecision",
+            "standardCompositionPlan",
+        })
+        {
+            CompositionEvidenceEnvelope created = CompositionEvidenceEnvelope.Create(
+                kind,
+                "{\"schemaVersion\":\"v1\"}");
+            CompositionEvidenceEnvelope restored = CompositionEvidenceEnvelope.Restore(
+                kind,
+                created.ContentDigest,
+                created.CanonicalJson);
+
+            Assert.AreEqual(kind, created.Kind);
+            Assert.AreEqual(kind, restored.Kind);
+            Assert.AreEqual(created.ContentDigest, restored.ContentDigest);
+            Assert.AreEqual(created.CanonicalJson, restored.CanonicalJson);
+        }
+
+        ArgumentException unknown = Assert.ThrowsExactly<ArgumentException>(() =>
+            CompositionEvidenceEnvelope.Create(
+                "unknownEvidence",
+                "{\"schemaVersion\":\"v1\"}"));
+        Assert.AreEqual("kind", unknown.ParamName);
+    }
+
+    [TestMethod]
     public void EvidenceEnvelopeRejectsCanonicalJsonAboveUtf8ByteLimit()
     {
         string oversized = "{\"value\":\"" +
             new string('x', CompositionEvidenceEnvelope.MaximumCanonicalJsonUtf8Bytes) +
             "\"}";
 
-        Assert.ThrowsExactly<FormatException>(() =>
-            CompositionEvidenceEnvelope.Create("autoDecision", oversized));
+        foreach (string kind in new[]
+        {
+            CompositionEvidenceEnvelope.AutoDecisionKind,
+            CompositionEvidenceEnvelope.StandardCompositionPlanKind,
+        })
+        {
+            Assert.ThrowsExactly<FormatException>(() =>
+                CompositionEvidenceEnvelope.Create(kind, oversized));
+        }
+    }
+
+    [TestMethod]
+    public void GetVersionRejectsCyclicEvidenceLineageWithoutRecursion()
+    {
+        using ServiceTestDatabase database = new();
+        CompositionElement element = CreateAssetElement();
+        (ProjectStore store, Project project, _) =
+            CreateStoredDraft(database, [element]);
+        ContentDigest contentDigest = ContentDigest.Compute(
+            CompositionSnapshotJson.WriteElementsObjectToUtf8([element]));
+        CompositionEvidenceEnvelope evidence = CompositionEvidenceEnvelope.Create(
+            CompositionEvidenceEnvelope.AutoDecisionKind,
+            "{}");
+        EntityId<CompositionVersionIdTag> firstId =
+            EntityId<CompositionVersionIdTag>.New();
+        EntityId<CompositionVersionIdTag> secondId =
+            EntityId<CompositionVersionIdTag>.New();
+        CompositionVersion first = WithEvidence(new CompositionVersion(
+            firstId,
+            project.Id,
+            parentVersionId: null,
+            "actor",
+            InitialTime,
+            "Create the first corrupted-lineage fixture.",
+            contentDigest,
+            [element]),
+            evidence);
+        CompositionVersion second = WithEvidence(new CompositionVersion(
+            secondId,
+            project.Id,
+            firstId,
+            "actor",
+            InitialTime.AddMinutes(1),
+            "Create the second corrupted-lineage fixture.",
+            contentDigest,
+            [element]),
+            evidence);
+        store.AppendCompositionVersion(
+            first,
+            CompositionSnapshotJson.WriteVersion(first));
+        store.AppendCompositionVersion(
+            second,
+            CompositionSnapshotJson.WriteVersion(second));
+        CompositionVersion cyclicFirst = WithEvidence(new CompositionVersion(
+            first.Id,
+            first.ProjectId,
+            second.Id,
+            first.CreatedByActorId,
+            first.CreatedAt,
+            first.ChangeReason,
+            first.ContentDigest,
+            first.Elements),
+            evidence);
+        database.RewriteVersionParent(
+            cyclicFirst.Id,
+            second.Id,
+            CompositionSnapshotJson.WriteVersion(cyclicFirst));
+
+        FormatException exception = Assert.ThrowsExactly<FormatException>(() =>
+            new VersionService(store).GetVersion(first.Id));
+
+        StringAssert.Contains(exception.Message, "cycle");
     }
 
     [TestMethod]
@@ -1013,6 +1114,22 @@ public sealed class VersionServiceTests
 
     private static EntityId<TTag> Id<TTag>(string value) => EntityId<TTag>.Parse(value);
 
+    private static CompositionVersion WithEvidence(
+        CompositionVersion version,
+        CompositionEvidenceEnvelope evidence)
+    {
+        JsonObject root = JsonNode.Parse(
+            CompositionSnapshotJson.WriteVersion(version))!.AsObject();
+        root["evidence"] = new JsonObject
+        {
+            ["canonicalJson"] = evidence.CanonicalJson,
+            ["contentDigest"] = evidence.ContentDigest.Hex,
+            ["kind"] = evidence.Kind,
+        };
+        return CompositionSnapshotJson.ReadVersion(
+            CanonicalJson.Canonicalize(root.ToJsonString()));
+    }
+
     private static void AssertCanonicalAndSchemaShaped(string json, string schemaPath)
     {
         Assert.AreEqual(CanonicalJson.Canonicalize(json), json);
@@ -1124,6 +1241,39 @@ public sealed class VersionServiceTests
             command.CommandText = sql;
             return (long)(command.ExecuteScalar()
                 ?? throw new InvalidOperationException("The scalar query returned null."));
+        }
+
+        internal void RewriteVersionParent(
+            EntityId<CompositionVersionIdTag> versionId,
+            EntityId<CompositionVersionIdTag> parentId,
+            string canonicalJson)
+        {
+            var builder = new SqliteConnectionStringBuilder
+            {
+                DataSource = DatabasePath,
+                Mode = SqliteOpenMode.ReadWrite,
+                Cache = SqliteCacheMode.Private,
+                Pooling = false,
+                ForeignKeys = true,
+                DefaultTimeout = 5,
+            };
+            using var connection = new SqliteConnection(builder.ToString());
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE composition_versions
+                SET parent_version_id = $parent_version_id,
+                    payload = $payload
+                WHERE id = $id;
+                """;
+            command.Parameters.AddWithValue(
+                "$parent_version_id",
+                parentId.ToString());
+            command.Parameters.AddWithValue(
+                "$payload",
+                Encoding.UTF8.GetBytes(canonicalJson));
+            command.Parameters.AddWithValue("$id", versionId.ToString());
+            Assert.AreEqual(1, command.ExecuteNonQuery());
         }
 
         public void Dispose()

@@ -6,6 +6,7 @@ using HubRadio.Core.Provenance;
 using HubRadio.Core.Security;
 using HubRadio.Infrastructure.Database;
 using HubRadio.Infrastructure.Media;
+using CoreProjectSnapshotJson = HubRadio.Core.Projects.ProjectSnapshotJson;
 
 namespace HubRadio.App.Projects;
 
@@ -357,6 +358,7 @@ internal sealed class ProjectCreationService
                 draft,
                 project,
                 ProjectCreationPayloadCodec.Serialize(draft),
+                CoreProjectSnapshotJson.WriteProject(project),
                 expectedRevision,
                 GetUtcNow());
             reservation.Commit();
@@ -566,6 +568,7 @@ internal sealed class ProjectCreationService
                 draft,
                 project,
                 SourceOnlyProjectCreationContract.Serialize(finalizedSourceOnly),
+                CoreProjectSnapshotJson.WriteProject(project),
                 expectedRevision,
                 GetUtcNow(),
                 sourceOnly.SettingsSnapshot);

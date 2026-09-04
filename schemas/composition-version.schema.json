@@ -58,7 +58,7 @@
     },
     "evidenceEnvelope": {
       "type": "object",
-      "$comment": "V2-007 autoDecision evidence only. canonicalJson is runtime-validated as nonempty canonical UTF-8 JSON, contentDigest must equal its SHA-256 digest, and runtime applies a 4 MiB UTF-8 resource-safety envelope. The byte envelope is not a product or quality threshold.",
+      "$comment": "Closed evidence kinds are autoDecision and standardCompositionPlan. canonicalJson is runtime-validated as nonempty canonical UTF-8 JSON, contentDigest must equal its SHA-256 digest, and runtime applies a 4 MiB UTF-8 resource-safety envelope. The byte envelope is not a product or quality threshold.",
       "additionalProperties": false,
       "required": [
         "kind",
@@ -67,7 +67,10 @@
       ],
       "properties": {
         "kind": {
-          "const": "autoDecision"
+          "enum": [
+            "autoDecision",
+            "standardCompositionPlan"
+          ]
         },
         "contentDigest": {
           "$ref": "#/$defs/contentDigest"

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HubRadio.App.DefaultSettings;
+using HubRadio.App.Policy;
 using HubRadio.App.Profiles;
 using HubRadio.App.Projects;
 using HubRadio.App.Security;
@@ -250,6 +251,23 @@ public sealed class ProjectCreationServiceTests
         Assert.IsTrue(fixture.Registry.IsClaimable(
             EntityId<AssetIdTag>.Parse(finalized.SourceCandidateId!)));
         var projectId = EntityId<ProjectIdTag>.Parse(finalized.ProjectId!);
+        StoredProject storedProject = new ProjectStore(fixture.DatabasePath)
+            .GetProject(projectId)!;
+        var expectedProject = new Project(
+            projectId,
+            finalized.ContentName!,
+            finalized.Purpose!,
+            finalized.Audience!,
+            PublicationScope.InternalOnly,
+            deadline: null,
+            assets: [],
+            performers: []);
+        Assert.AreEqual(
+            ProjectSnapshotJson.WriteProject(expectedProject),
+            storedProject.CanonicalJson);
+        Assert.AreNotEqual(
+            fixture.DraftStore.GetDraft(draftId)!.CanonicalJson,
+            storedProject.CanonicalJson);
         ProjectSettingsResult settings = fixture.SettingsStore.GetProjectSettings(projectId);
         Assert.IsTrue(settings.IsBound);
         Assert.AreEqual(

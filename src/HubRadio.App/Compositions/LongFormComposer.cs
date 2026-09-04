@@ -1576,6 +1576,7 @@ public static class LongFormComposer
 
         LongFormAssetSlot[] assetSlots = ResolveElementAssets(
             input,
+            expectedKind,
             expectedRoles,
             projectAssets,
             template,
@@ -1782,6 +1783,7 @@ public static class LongFormComposer
 
     private static LongFormAssetSlot[] ResolveElementAssets(
         LongFormElementInput input,
+        LongFormElementKind elementKind,
         IReadOnlyList<LongFormAssetRole> expectedRoles,
         IReadOnlyDictionary<EntityId<AssetIdTag>, Asset> projectAssets,
         AppliedBrandTemplate template,
@@ -1831,8 +1833,10 @@ public static class LongFormComposer
         foreach (OriginRef origin in origins)
         {
             if (origin.Kind == OriginKind.Asset
-                && !references.Values.Any(reference =>
-                    reference.AssetId == origin.AssetId))
+                && (!projectAssets.ContainsKey(origin.AssetId!)
+                    || elementKind != LongFormElementKind.EpisodeTitle
+                        && !references.Values.Any(reference =>
+                            reference.AssetId == origin.AssetId)))
             {
                 throw Failure(LongFormComposerFailureReason.AssetBindingMismatch);
             }

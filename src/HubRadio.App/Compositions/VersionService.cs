@@ -10,6 +10,7 @@ using HubRadio.Core.Provenance;
 using HubRadio.Core.Serialization;
 using HubRadio.Core.Time;
 using HubRadio.Infrastructure.Database;
+using CoreProjectSnapshotJson = HubRadio.Core.Projects.ProjectSnapshotJson;
 
 namespace HubRadio.App.Compositions;
 
@@ -209,6 +210,9 @@ public sealed class VersionService
         return CreateAndStoreCheckpoint(
             draft,
             draft.Elements,
+            expectedParent: null,
+            expectedProject: null,
+            expectedProjectState: null,
             expectedRevision,
             newVersionId,
             actorId,
@@ -216,11 +220,13 @@ public sealed class VersionService
             changeReason,
             expectedContentDigest: null,
             evidence: null,
+            requireExactDraftSnapshot: false,
             CancellationToken.None);
     }
 
     internal CheckpointResult CheckpointAutoDecision(
         WorkingCopy draft,
+        CompositionVersion expectedParent,
         IReadOnlyList<CompositionElement> elements,
         int expectedRevision,
         EntityId<CompositionVersionIdTag> newVersionId,
@@ -232,6 +238,7 @@ public sealed class VersionService
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(draft);
+        ArgumentNullException.ThrowIfNull(expectedParent);
         ArgumentNullException.ThrowIfNull(elements);
         ArgumentNullException.ThrowIfNull(expectedContentDigest);
         ArgumentNullException.ThrowIfNull(evidence);
@@ -240,6 +247,9 @@ public sealed class VersionService
         return CreateAndStoreCheckpoint(
             draft,
             elements,
+            expectedParent,
+            expectedProject: null,
+            expectedProjectState: null,
             expectedRevision,
             newVersionId,
             actorId,
@@ -247,43 +257,166 @@ public sealed class VersionService
             changeReason,
             expectedContentDigest,
             evidence.Envelope,
+            requireExactDraftSnapshot: true,
+            cancellationToken);
+    }
+
+    internal CheckpointResult CheckpointStandardComposition(
+        WorkingCopy draft,
+        CompositionVersion expectedParent,
+        Project expectedProject,
+        StandardProjectStoreState expectedProjectState,
+        IReadOnlyList<CompositionElement> elements,
+        int expectedRevision,
+        EntityId<CompositionVersionIdTag> newVersionId,
+        string actorId,
+        DateTimeOffset createdAt,
+        string changeReason,
+        ContentDigest expectedContentDigest,
+        ValidatedStandardCompositionEvidence evidence,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        ArgumentNullException.ThrowIfNull(expectedParent);
+        ArgumentNullException.ThrowIfNull(expectedProject);
+        ArgumentNullException.ThrowIfNull(expectedProjectState);
+        ArgumentNullException.ThrowIfNull(elements);
+        ArgumentNullException.ThrowIfNull(expectedContentDigest);
+        ArgumentNullException.ThrowIfNull(evidence);
+        cancellationToken.ThrowIfCancellationRequested();
+        EnsureTimestampDoesNotMoveBackwards(draft, createdAt);
+        return CreateAndStoreCheckpoint(
+            draft,
+            elements,
+            expectedParent,
+            expectedProject,
+            expectedProjectState,
+            expectedRevision,
+            newVersionId,
+            actorId,
+            createdAt,
+            changeReason,
+            expectedContentDigest,
+            evidence.Envelope,
+            requireExactDraftSnapshot: true,
             cancellationToken);
     }
 
     public CompositionVersion? GetVersion(
+        EntityId<CompositionVersionIdTag> versionId) =>
+        LoadVersion(versionId)?.Version;
+
+    internal void ValidateStoredEvidenceParent(CompositionVersion parent)
+    {
+        ArgumentNullException.ThrowIfNull(parent);
+        if (parent.Evidence is null)
+        {
+            return;
+        }
+
+        CompositionVersion stored = GetVersion(parent.Id)
+            ?? throw new InvalidOperationException(
+                "The evidence-bearing parent version is unavailable.");
+        if (!string.Equals(
+                CompositionSnapshotJson.WriteVersion(stored),
+                CompositionSnapshotJson.WriteVersion(parent),
+                StringComparison.Ordinal))
+        {
+            throw new StoreConcurrencyException(
+                "composition parent",
+                parent.Id.ToString(),
+                expectedRevision: 0,
+                actualRevision: 0);
+        }
+    }
+
+    public StandardCompositionPreparation? GetStandardComposition(
         EntityId<CompositionVersionIdTag> versionId)
     {
         ArgumentNullException.ThrowIfNull(versionId);
-        StoredCompositionVersion? stored = _projectStore.GetCompositionVersion(versionId);
-        if (stored is null)
+        LoadedVersion? loaded = LoadVersion(versionId);
+        if (loaded is null)
         {
             return null;
         }
 
-        CompositionVersion version = CompositionSnapshotJson.ReadVersion(
-            stored.CanonicalJson);
-        if (version.Id != stored.Id
-            || version.ProjectId != stored.ProjectId
-            || version.ParentVersionId != stored.ParentVersionId
-            || version.ContentDigest != stored.ContentDigest
-            || version.CreatedAt != stored.CreatedAt)
+        if (!string.Equals(
+                loaded.Version.Evidence?.Kind,
+                CompositionEvidenceEnvelope.StandardCompositionPlanKind,
+                StringComparison.Ordinal)
+            || loaded.StandardComposition is null)
         {
             throw new InvalidOperationException(
-                "The stored composition-version columns do not match its canonical snapshot.");
+                "The requested composition version is not a validated standard composition.");
         }
 
-        if (version.Evidence is not null)
+        return loaded.StandardComposition.Preparation;
+    }
+
+    private LoadedVersion? LoadVersion(
+        EntityId<CompositionVersionIdTag> versionId)
+    {
+        ArgumentNullException.ThrowIfNull(versionId);
+        var lineage = new List<CompositionVersion>();
+        var visited = new HashSet<EntityId<CompositionVersionIdTag>>();
+        EntityId<CompositionVersionIdTag> currentId = versionId;
+        CompositionVersion? parent = null;
+        ValidatedStandardCompositionEvidence? standardComposition = null;
+        while (true)
         {
-            CompositionVersion parent = version.ParentVersionId is not null
-                ? GetVersion(version.ParentVersionId)
-                    ?? throw new InvalidOperationException(
-                        "The auto-decision parent version is unavailable.")
-                : throw new InvalidOperationException(
-                    "An auto-decision version must have a stored parent.");
-            AutoDecisionEvidenceCodec.ValidateLoaded(version, parent);
+            if (!visited.Add(currentId))
+            {
+                throw new FormatException(
+                    "The composition-version evidence lineage contains a cycle.");
+            }
+
+            StoredCompositionVersion? stored =
+                _projectStore.GetCompositionVersion(currentId);
+            if (stored is null)
+            {
+                if (lineage.Count == 0)
+                {
+                    return null;
+                }
+
+                throw new InvalidOperationException(
+                    "The evidence-bearing parent version is unavailable.");
+            }
+
+            CompositionVersion version = ReadVersionFromStored(stored);
+            if (version.Evidence is null)
+            {
+                parent = version;
+                break;
+            }
+
+            if (version.ParentVersionId is null)
+            {
+                throw new InvalidOperationException(
+                    "An evidence-bearing version must have a stored parent.");
+            }
+
+            lineage.Add(version);
+            currentId = version.ParentVersionId;
         }
 
-        return version;
+        for (int index = lineage.Count - 1; index >= 0; index--)
+        {
+            CompositionVersion child = lineage[index];
+            ValidatedStandardCompositionEvidence? validated =
+                ValidateEvidence(child, parent);
+            if (child.Id == versionId)
+            {
+                standardComposition = validated;
+            }
+
+            parent = child;
+        }
+
+        return new LoadedVersion(
+            parent ?? throw new InvalidOperationException(
+                "The requested composition version could not be reconstructed."),
+            standardComposition);
     }
 
     public WorkingCopyState? GetCurrentState(EntityId<ProjectIdTag> projectId)
@@ -333,8 +466,15 @@ public sealed class VersionService
         if (storedVersion is null
             || storedWorkingCopy is null
             || storedWorkingCopy.Revision != expectedCurrentRevision
+            || storedVersion.Id != expectedVersion.Id
+            || storedVersion.ProjectId != expectedVersion.ProjectId
+            || storedVersion.ParentVersionId != expectedVersion.ParentVersionId
+            || storedVersion.ContentDigest != expectedVersion.ContentDigest
+            || storedVersion.CreatedAt != expectedVersion.CreatedAt
             || storedWorkingCopy.Id != expectedWorkingCopy.Id
+            || storedWorkingCopy.ProjectId != expectedWorkingCopy.ProjectId
             || storedWorkingCopy.BaseVersionId != expectedVersion.Id
+            || storedWorkingCopy.UpdatedAt != expectedWorkingCopy.UpdatedAt
             || !string.Equals(
                 storedVersion.CanonicalJson,
                 expectedVersionJson,
@@ -461,6 +601,9 @@ public sealed class VersionService
         return CreateAndStoreCheckpoint(
             currentDraft,
             targetVersion.Elements,
+            expectedParent: null,
+            expectedProject: null,
+            expectedProjectState: null,
             expectedRevision,
             newVersionId,
             actorId,
@@ -468,6 +611,7 @@ public sealed class VersionService
             changeReason,
             targetVersion.ContentDigest,
             evidence: null,
+            requireExactDraftSnapshot: true,
             cancellationToken);
     }
 
@@ -557,6 +701,9 @@ public sealed class VersionService
     private CheckpointResult CreateAndStoreCheckpoint(
         WorkingCopy draft,
         IReadOnlyList<CompositionElement> elements,
+        CompositionVersion? expectedParent,
+        Project? expectedProject,
+        StandardProjectStoreState? expectedProjectState,
         int expectedRevision,
         EntityId<CompositionVersionIdTag> newVersionId,
         string actorId,
@@ -564,6 +711,7 @@ public sealed class VersionService
         string changeReason,
         ContentDigest? expectedContentDigest,
         CompositionEvidenceEnvelope? evidence,
+        bool requireExactDraftSnapshot,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -573,7 +721,7 @@ public sealed class VersionService
         if (expectedContentDigest is not null && contentDigest != expectedContentDigest)
         {
             throw new InvalidOperationException(
-                "The rollback target content digest does not match its canonical element snapshot.");
+                "The expected content digest does not match the canonical element snapshot.");
         }
 
         CompositionVersion version = evidence is null
@@ -606,14 +754,35 @@ public sealed class VersionService
         string canonicalVersionJson = CompositionSnapshotJson.WriteVersion(version);
         string canonicalWorkingCopyJson =
             CompositionSnapshotJson.WriteWorkingCopy(updatedWorkingCopy);
-        int workingCopyRevision = _projectStore.CheckpointWorkingCopy(
-            version,
-            canonicalVersionJson,
-            draft,
-            updatedWorkingCopy,
-            canonicalWorkingCopyJson,
-            expectedRevision,
-            cancellationToken);
+        int workingCopyRevision = requireExactDraftSnapshot
+            ? _projectStore.CheckpointWorkingCopyExact(
+                version,
+                canonicalVersionJson,
+                draft,
+                CompositionSnapshotJson.WriteWorkingCopy(draft),
+                expectedParent,
+                expectedParent is null
+                    ? null
+                    : CompositionSnapshotJson.WriteVersion(expectedParent),
+                expectedProject,
+                expectedProjectState?.Revision,
+                expectedProjectState?.PayloadDigest,
+                expectedProjectState?.UpdatedAt,
+                expectedProject is null
+                    ? null
+                    : CoreProjectSnapshotJson.WriteProject(expectedProject),
+                updatedWorkingCopy,
+                canonicalWorkingCopyJson,
+                expectedRevision,
+                cancellationToken)
+            : _projectStore.CheckpointWorkingCopy(
+                version,
+                canonicalVersionJson,
+                draft,
+                updatedWorkingCopy,
+                canonicalWorkingCopyJson,
+                expectedRevision,
+                cancellationToken);
 
         return new CheckpointResult(
             version,
@@ -622,6 +791,50 @@ public sealed class VersionService
             canonicalVersionJson,
             canonicalWorkingCopyJson);
     }
+
+    private static CompositionVersion ReadVersionFromStored(
+        StoredCompositionVersion stored)
+    {
+        CompositionVersion version = CompositionSnapshotJson.ReadVersion(
+            stored.CanonicalJson);
+        if (version.Id != stored.Id
+            || version.ProjectId != stored.ProjectId
+            || version.ParentVersionId != stored.ParentVersionId
+            || version.ContentDigest != stored.ContentDigest
+            || version.CreatedAt != stored.CreatedAt)
+        {
+            throw new InvalidOperationException(
+                "The stored composition-version columns do not match its canonical snapshot.");
+        }
+
+        return version;
+    }
+
+    private static ValidatedStandardCompositionEvidence? ValidateEvidence(
+        CompositionVersion child,
+        CompositionVersion parent)
+    {
+        CompositionEvidenceEnvelope evidence = child.Evidence
+            ?? throw new InvalidOperationException(
+                "The composition-version evidence is unavailable.");
+        switch (evidence.Kind)
+        {
+            case CompositionEvidenceEnvelope.AutoDecisionKind:
+                AutoDecisionEvidenceCodec.ValidateLoaded(child, parent);
+                return null;
+            case CompositionEvidenceEnvelope.StandardCompositionPlanKind:
+                return StandardCompositionEvidenceCodec.ValidateLoaded(
+                    child,
+                    parent);
+            default:
+                throw new InvalidOperationException(
+                    "The stored composition evidence kind is unsupported.");
+        }
+    }
+
+    private sealed record LoadedVersion(
+        CompositionVersion Version,
+        ValidatedStandardCompositionEvidence? StandardComposition);
 
     private bool IsStrictAncestor(
         EntityId<CompositionVersionIdTag>? currentHeadId,

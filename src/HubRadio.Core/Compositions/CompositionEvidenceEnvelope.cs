@@ -7,6 +7,7 @@ namespace HubRadio.Core.Compositions;
 public sealed class CompositionEvidenceEnvelope
 {
     public const string AutoDecisionKind = "autoDecision";
+    public const string StandardCompositionPlanKind = "standardCompositionPlan";
 
     /// <summary>
     /// Maximum canonical evidence size accepted for resource safety. This is not a
@@ -70,10 +71,14 @@ public sealed class CompositionEvidenceEnvelope
     private static string ValidateKind(string kind)
     {
         ArgumentNullException.ThrowIfNull(kind);
-        if (!string.Equals(kind, AutoDecisionKind, StringComparison.Ordinal))
+        if (!string.Equals(kind, AutoDecisionKind, StringComparison.Ordinal)
+            && !string.Equals(
+                kind,
+                StandardCompositionPlanKind,
+                StringComparison.Ordinal))
         {
             throw new ArgumentException(
-                "Only the V2-007 autoDecision composition evidence kind is supported.",
+                "The composition evidence kind is not supported.",
                 nameof(kind));
         }
 
@@ -85,13 +90,16 @@ public sealed class CompositionEvidenceEnvelope
         ArgumentNullException.ThrowIfNull(canonicalJson);
         try
         {
-            byte[] utf8 = StrictUtf8.GetBytes(canonicalJson);
-            if (utf8.Length == 0 || utf8.Length > MaximumCanonicalJsonUtf8Bytes)
+            if (canonicalJson.Length == 0
+                || canonicalJson.Length > MaximumCanonicalJsonUtf8Bytes
+                || StrictUtf8.GetByteCount(canonicalJson)
+                    > MaximumCanonicalJsonUtf8Bytes)
             {
                 throw new FormatException(
                     "Composition evidence exceeds its UTF-8 resource-safety envelope.");
             }
 
+            byte[] utf8 = StrictUtf8.GetBytes(canonicalJson);
             byte[] canonical = HubRadio.Core.Serialization.CanonicalJson
                 .CanonicalizeToUtf8(utf8);
             if (!utf8.AsSpan().SequenceEqual(canonical))

@@ -2,10 +2,13 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using HubRadio.App.DefaultSettings;
 using HubRadio.App.Profiles;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Layout;
+using HubRadio.Core.Rendering;
 using HubRadio.Core.Serialization;
+using HubRadio.Core.Settings;
 
 namespace HubRadio.App.Tests;
 
@@ -569,8 +572,186 @@ public sealed class BundledRenderProfileTests
         }
     }
 
+    [TestMethod]
+    public void StandardFactoryDerivesApprovedLandscapeAndVerticalOutputsWithoutMeasurementOverclaim()
+    {
+        DefaultSettingsProfile settingsProfile = LoadSettingsProfile();
+        DefaultSettingsSnapshot settings = settingsProfile.CreateSnapshot();
+        BundledRenderProfileDefinition measuredLandscape = LoadSource(
+            "16x9/long-form.json");
+        BundledRenderProfileDefinition measuredVertical = LoadSource(
+            "9x16/vertical-short.json");
+
+        BundledRenderProfileDefinition landscape =
+            StandardRenderProfileFactory.CreateLandscape(
+                settingsProfile,
+                settings,
+                measuredLandscape,
+                measuredLandscape.Profile.FrameRate);
+        BundledRenderProfileDefinition vertical =
+            StandardRenderProfileFactory.CreateVerticalShort(
+                settingsProfile,
+                settings,
+                measuredVertical,
+                measuredVertical.Profile.FrameRate);
+
+        Assert.AreEqual(1920, landscape.Profile.Width);
+        Assert.AreEqual(1080, landscape.Profile.Height);
+        Assert.IsTrue(landscape.Profile.SubtitleBurnIn);
+        Assert.AreEqual(1080, vertical.Profile.Width);
+        Assert.AreEqual(1920, vertical.Profile.Height);
+        Assert.IsTrue(vertical.Profile.SubtitleBurnIn);
+        Assert.IsFalse(landscape.PlatformSafeZonesMeasured);
+        Assert.IsFalse(vertical.PlatformSafeZonesMeasured);
+        Assert.AreEqual(
+            "development-neutral-placeholder",
+            landscape.TemplateStatus);
+        Assert.AreEqual(
+            "development-neutral-placeholder",
+            vertical.TemplateStatus);
+        CollectionAssert.AreEqual(
+            RequiredUnmeasured,
+            landscape.Unmeasured.ToArray());
+        CollectionAssert.AreEqual(
+            RequiredUnmeasured,
+            vertical.Unmeasured.ToArray());
+        StringAssert.StartsWith(
+            landscape.EvidenceSource,
+            "default-settings-policy:");
+        StringAssert.Contains(
+            landscape.EvidenceSource,
+            measuredLandscape.EvidenceSource);
+        StringAssert.StartsWith(
+            vertical.EvidenceSource,
+            "default-settings-policy:");
+        StringAssert.Contains(
+            vertical.EvidenceSource,
+            measuredVertical.EvidenceSource);
+        Assert.IsFalse(landscape.EvidenceSource.StartsWith(
+            "benchmarks/fixtures/",
+            StringComparison.Ordinal));
+        Assert.IsFalse(vertical.EvidenceSource.StartsWith(
+            "benchmarks/fixtures/",
+            StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void StandardFactoryIsDeterministicAndLeavesMeasuredReferencesUnchanged()
+    {
+        DefaultSettingsProfile settingsProfile = LoadSettingsProfile();
+        DefaultSettingsSnapshot settings = settingsProfile.CreateSnapshot();
+        BundledRenderProfileDefinition measured = LoadSource(
+            "9x16/vertical-short.json");
+        RenderProfile originalProfile = measured.Profile;
+        string originalEvidenceSource = measured.EvidenceSource;
+
+        BundledRenderProfileDefinition first =
+            StandardRenderProfileFactory.CreateVerticalShort(
+                settingsProfile,
+                settings,
+                measured,
+                measured.Profile.FrameRate);
+        BundledRenderProfileDefinition second =
+            StandardRenderProfileFactory.CreateVerticalShort(
+                settingsProfile,
+                settings,
+                measured,
+                measured.Profile.FrameRate);
+
+        Assert.AreEqual(first.Profile.Id, second.Profile.Id);
+        Assert.AreEqual(
+            first.Profile.ProfileDigest,
+            second.Profile.ProfileDigest);
+        Assert.AreEqual(first.EvidenceSource, second.EvidenceSource);
+        Assert.AreSame(originalProfile, measured.Profile);
+        Assert.AreEqual(1080, measured.Profile.Width);
+        Assert.AreEqual(1920, measured.Profile.Height);
+        Assert.IsFalse(measured.Profile.SubtitleBurnIn);
+        Assert.AreEqual(originalEvidenceSource, measured.EvidenceSource);
+        Assert.AreNotSame(measured.Profile, first.Profile);
+        Assert.AreSame(measured.Layout, first.Layout);
+    }
+
+    [TestMethod]
+    public void StandardFactoryPreservesExplicitSourceFrameRate()
+    {
+        DefaultSettingsProfile settingsProfile = LoadSettingsProfile();
+        DefaultSettingsSnapshot settings = settingsProfile.CreateSnapshot();
+        BundledRenderProfileDefinition measuredLandscape = LoadSource(
+            "16x9/long-form.json");
+        BundledRenderProfileDefinition measuredVertical = LoadSource(
+            "9x16/vertical-short.json");
+        var sourceFrameRate = new RationalNumber(25, 1);
+
+        BundledRenderProfileDefinition landscape =
+            StandardRenderProfileFactory.CreateLandscape(
+                settingsProfile,
+                settings,
+                measuredLandscape,
+                sourceFrameRate);
+        BundledRenderProfileDefinition vertical =
+            StandardRenderProfileFactory.CreateVerticalShort(
+                settingsProfile,
+                settings,
+                measuredVertical,
+                sourceFrameRate);
+
+        Assert.AreEqual(sourceFrameRate, landscape.Profile.FrameRate);
+        Assert.AreEqual(sourceFrameRate, vertical.Profile.FrameRate);
+        Assert.AreNotEqual(
+            measuredLandscape.Profile.ProfileDigest,
+            landscape.Profile.ProfileDigest);
+        Assert.AreNotEqual(
+            measuredVertical.Profile.ProfileDigest,
+            vertical.Profile.ProfileDigest);
+    }
+
+    [TestMethod]
+    public void StandardFactoryRejectsWrongReferenceKindAndAlteredClosedPolicy()
+    {
+        DefaultSettingsProfile settingsProfile = LoadSettingsProfile();
+        DefaultSettingsSnapshot settings = settingsProfile.CreateSnapshot();
+        BundledRenderProfileDefinition measuredLandscape = LoadSource(
+            "16x9/long-form.json");
+        BundledRenderProfileDefinition measuredVertical = LoadSource(
+            "9x16/vertical-short.json");
+        DefaultSettingsSnapshot altered = settingsProfile.CreateSnapshot(
+            settings.Values.Select(selection => string.Equals(
+                    selection.Key,
+                    "subtitles.verticalBurnInEnabled",
+                    StringComparison.Ordinal)
+                ? new DefaultSettingSelection(
+                    selection.Key,
+                    DefaultSettingValue.FromBoolean(false))
+                : selection).ToArray());
+
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            StandardRenderProfileFactory.CreateLandscape(
+                settingsProfile,
+                settings,
+                measuredVertical,
+                measuredVertical.Profile.FrameRate));
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            StandardRenderProfileFactory.CreateVerticalShort(
+                settingsProfile,
+                settings,
+                measuredLandscape,
+                measuredLandscape.Profile.FrameRate));
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            StandardRenderProfileFactory.CreateVerticalShort(
+                settingsProfile,
+                altered,
+                measuredVertical,
+                measuredVertical.Profile.FrameRate));
+    }
+
     private static BundledRenderProfileDefinition LoadSource(string relativePath) =>
         BundledRenderProfileLoader.Load(ReadSourceBytes(relativePath));
+
+    private static DefaultSettingsProfile LoadSettingsProfile() =>
+        BundledDefaultSettingsProfileLoader.Load(File.ReadAllBytes(
+            ResolveRepositoryPath(
+                "src/HubRadio.App/DefaultSettings/Profiles/1.0.0.json")));
 
     private static byte[] ReadSourceBytes(string relativePath) =>
         File.ReadAllBytes(ResolveRepositoryPath(

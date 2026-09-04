@@ -14,6 +14,9 @@ public sealed class CompositionSchemaTests
     [TestMethod]
     [DataRow("schemas/working-copy.schema.json", "WorkingCopy")]
     [DataRow("schemas/composition-version.schema.json", "CompositionVersion")]
+    [DataRow(
+        "schemas/standard-composition-evidence.schema.json",
+        "StandardCompositionEvidence")]
     public void SchemasParseAsClosedDraft202012Contracts(string relativePath, string title)
     {
         using JsonDocument document = LoadSchema(relativePath);
@@ -24,6 +27,153 @@ public sealed class CompositionSchemaTests
         Assert.AreEqual("object", root.GetProperty("type").GetString());
         AssertAdditionalPropertiesFalse(root);
         AssertCanonicalUuidPattern(root.GetProperty("$defs").GetProperty("entityId"));
+    }
+
+    [TestMethod]
+    public void StandardCompositionEvidenceSchemaClosesTheCompleteCanonicalDtoGraph()
+    {
+        using JsonDocument document = LoadSchema(
+            "schemas/standard-composition-evidence.schema.json");
+        JsonElement root = document.RootElement;
+        JsonElement definitions = root.GetProperty("$defs");
+
+        CollectionAssert.AreEquivalent(
+            new[] { "schemaVersion", "input", "expected" },
+            GetStringArray(root.GetProperty("required")));
+        Assert.AreEqual(
+            "hubradio.standard-composition-evidence.v1",
+            root.GetProperty("properties")
+                .GetProperty("schemaVersion")
+                .GetProperty("const")
+                .GetString());
+
+        string[] objectDefinitions =
+        [
+            "input",
+            "expected",
+            "sourceGeometry",
+            "projectStoreState",
+            "thumbnailEvidence",
+            "thumbnailFrame",
+            "musicPlanning",
+            "musicCueAssignment",
+            "musicPolicyEvaluation",
+            "workingCopy",
+            "project",
+            "asset",
+            "rights",
+            "performer",
+            "longFormRequest",
+            "provenance",
+            "appliedTemplate",
+            "templateParameter",
+            "templateValue",
+            "rational",
+            "longFormElement",
+            "longFormAssetReference",
+            "longFormTopic",
+            "longFormCallToAction",
+            "sourceSpan",
+            "time",
+            "positiveTime",
+            "positiveRational",
+            "range",
+            "origin",
+            "sourceSpanOrigin",
+            "topicRangeRevision",
+            "topicMetadataRevision",
+            "topicMetadata",
+            "topicMainSpeaker",
+            "speakerHistory",
+            "speakerRevision",
+            "speakerAssignment",
+            "speakerChange",
+            "emphasisCandidate",
+            "emphasisTerm",
+            "suggestion",
+            "highlightAdoption",
+            "suggestionDecision",
+            "suggestionReference",
+        ];
+        foreach (string definitionName in objectDefinitions)
+        {
+            JsonElement definition = definitions.GetProperty(definitionName);
+            Assert.AreEqual(
+                "object",
+                definition.GetProperty("type").GetString(),
+                definitionName);
+            AssertAdditionalPropertiesFalse(definition);
+            CollectionAssert.AreEquivalent(
+                definition.GetProperty("properties")
+                    .EnumerateObject()
+                    .Select(static property => property.Name)
+                    .ToArray(),
+                GetStringArray(definition.GetProperty("required")),
+                definitionName);
+        }
+
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "PreRollMargin",
+                "Opening",
+                "ProgramName",
+                "EpisodeNumber",
+                "EpisodeTitle",
+                "PerformerIntroduction",
+                "PublicationScopeIndicator",
+                "Body",
+                "Topic",
+                "Summary",
+                "CallToAction",
+                "Ending",
+                "PostRollMargin",
+            },
+            GetStringArray(definitions
+                .GetProperty("longFormElementKind")
+                .GetProperty("enum")));
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "ImportantStatement",
+                "Number",
+                "ProductName",
+                "PublicationCaution",
+                "Keyword",
+                "AnswerAfterExplicitQuestion",
+                "TopicTransitionSummary",
+            },
+            GetStringArray(definitions
+                .GetProperty("emphasisReasonKind")
+                .GetProperty("enum")));
+
+        JsonElement templateValue = definitions.GetProperty("templateValue");
+        Assert.AreEqual(
+            5,
+            templateValue.GetProperty("oneOf").GetArrayLength());
+        foreach (JsonElement variant in templateValue.GetProperty("oneOf")
+            .EnumerateArray())
+        {
+            Assert.IsTrue(
+                variant.GetProperty("properties")
+                    .GetProperty("kind")
+                    .TryGetProperty("const", out _));
+        }
+
+        Assert.AreEqual(
+            "#/$defs/positiveTime",
+            definitions.GetProperty("range")
+                .GetProperty("properties")
+                .GetProperty("duration")
+                .GetProperty("$ref")
+                .GetString());
+        Assert.AreEqual(
+            1L,
+            definitions.GetProperty("positiveTime")
+                .GetProperty("properties")
+                .GetProperty("value")
+                .GetProperty("minimum")
+                .GetInt64());
     }
 
     [TestMethod]
@@ -75,10 +225,16 @@ public sealed class CompositionSchemaTests
         CollectionAssert.AreEquivalent(
             new[] { "kind", "contentDigest", "canonicalJson" },
             GetStringArray(evidence.GetProperty("required")));
-        Assert.AreEqual(
-            "autoDecision",
-            evidence.GetProperty("properties").GetProperty("kind").GetProperty("const")
-                .GetString());
+        CollectionAssert.AreEqual(
+            new[] { "autoDecision", "standardCompositionPlan" },
+            GetStringArray(
+                evidence
+                    .GetProperty("properties")
+                    .GetProperty("kind")
+                    .GetProperty("enum")));
+        StringAssert.Contains(
+            GetRequiredString(evidence, "$comment"),
+            "standardCompositionPlan");
         StringAssert.Contains(GetRequiredString(evidence, "$comment"), "4 MiB UTF-8");
         Assert.IsFalse(properties.TryGetProperty("children", out _));
         Assert.IsFalse(properties.TryGetProperty("approvalStatus", out _));

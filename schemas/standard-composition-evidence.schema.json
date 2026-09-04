@@ -1,0 +1,2413 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Closed canonical semantic-replay evidence written by StandardCompositionEvidenceCodec. Runtime validation additionally requires canonical JSON byte equality, exact semantic replay, and the CompositionEvidenceEnvelope 4 MiB UTF-8 resource-safety limit.",
+  "title": "StandardCompositionEvidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "input",
+    "expected"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "hubradio.standard-composition-evidence.v1"
+    },
+    "input": {
+      "$ref": "#/$defs/input"
+    },
+    "expected": {
+      "$ref": "#/$defs/expected"
+    }
+  },
+  "$defs": {
+    "entityId": {
+      "type": "string",
+      "pattern": "^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "contentDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nonBlankText": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+    },
+    "canonicalTimestamp": {
+      "type": "string",
+      "$comment": "DateTimeOffset.ToUniversalTime().ToString(\"O\") with exactly seven fractional digits and the +00:00 offset. Runtime parsing also rejects calendar-invalid values.",
+      "format": "date-time",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d\\.\\d{7}\\+00:00$"
+    },
+    "int32": {
+      "type": "integer",
+      "minimum": -2147483648,
+      "maximum": 2147483647
+    },
+    "int64": {
+      "type": "integer",
+      "minimum": -9223372036854775808,
+      "maximum": 9223372036854775807
+    },
+    "publicationScope": {
+      "enum": [
+        "InternalOnly",
+        "SpecificGroupOnly",
+        "ExternalCandidate",
+        "ExternalPublicationApproved",
+        "PublicationForbidden",
+        "PendingDecision"
+      ]
+    },
+    "rightsStatus": {
+      "enum": [
+        "Unconfirmed",
+        "Approved",
+        "Rejected"
+      ]
+    },
+    "musicCatalogWarning": {
+      "enum": [
+        "LibraryAbsent",
+        "LibraryEmpty",
+        "LibraryInaccessible",
+        "UnsafeLibraryLocation",
+        "TrackUnreadable",
+        "DuplicateContent",
+        "SourceChangedDuringScan",
+        "NoEligibleTracks"
+      ]
+    },
+    "musicAssignmentReason": {
+      "enum": [
+        "Assigned",
+        "CatalogUnavailable",
+        "UnsupportedCueKind",
+        "SpeechOverlap",
+        "DialogueMusicDisabled",
+        "NoTrackLongEnough"
+      ]
+    },
+    "musicPolicyDomain": {
+      "enum": [
+        "MusicalFit",
+        "BrandFit",
+        "HumanListeningQuality",
+        "LegalCompliance",
+        "CopyrightClearance",
+        "SpeechUnderstanding",
+        "MixQuality"
+      ]
+    },
+    "musicPolicyEvaluationStatus": {
+      "const": "NotEvaluated"
+    },
+    "brandTemplateKind": {
+      "enum": [
+        "LongForm",
+        "YouTubeLandscape",
+        "YouTubeShorts",
+        "TikTok",
+        "Quiz",
+        "Announcement",
+        "Thumbnail",
+        "Opening",
+        "Ending",
+        "Telop",
+        "Subtitle",
+        "TopicCard",
+        "CallToAction",
+        "PublicationScopeIndicator"
+      ]
+    },
+    "templateParameterValueKind": {
+      "enum": [
+        "Text",
+        "Integer",
+        "Boolean",
+        "Rational",
+        "AssetReference"
+      ]
+    },
+    "longFormDestination": {
+      "enum": [
+        "InternalDistribution",
+        "YouTube",
+        "YouTubeShorts",
+        "TikTok",
+        "LinkedIn",
+        "VivaEngage"
+      ]
+    },
+    "longFormElementKind": {
+      "enum": [
+        "PreRollMargin",
+        "Opening",
+        "ProgramName",
+        "EpisodeNumber",
+        "EpisodeTitle",
+        "PerformerIntroduction",
+        "PublicationScopeIndicator",
+        "Body",
+        "Topic",
+        "Summary",
+        "CallToAction",
+        "Ending",
+        "PostRollMargin"
+      ]
+    },
+    "longFormAssetRole": {
+      "enum": [
+        "OpeningMedia",
+        "KeyVisual",
+        "Logo",
+        "Jingle",
+        "BodyMedia",
+        "EndingMedia"
+      ]
+    },
+    "topicMetadataValueOrigin": {
+      "enum": [
+        "Unset",
+        "DeterministicPlaceholder",
+        "ProjectSnapshot",
+        "DeterministicTranscriptOverlap",
+        "ManualEditorial"
+      ]
+    },
+    "topicMetadataField": {
+      "enum": [
+        "Initial",
+        "Title",
+        "Summary",
+        "MainSpeaker",
+        "Keywords",
+        "ImportantStatements",
+        "Audience",
+        "PublicationCautions"
+      ]
+    },
+    "speakerDisplayFormat": {
+      "enum": [
+        "FullName",
+        "Surname",
+        "Role",
+        "Hidden"
+      ]
+    },
+    "emphasisTextSourceKind": {
+      "enum": [
+        "OriginalTranscript",
+        "ManualSummary"
+      ]
+    },
+    "emphasisReasonKind": {
+      "enum": [
+        "ImportantStatement",
+        "Number",
+        "ProductName",
+        "PublicationCaution",
+        "Keyword",
+        "AnswerAfterExplicitQuestion",
+        "TopicTransitionSummary"
+      ]
+    },
+    "suggestionKind": {
+      "enum": [
+        "DeleteRange",
+        "TopicBoundary",
+        "Highlight",
+        "TermCorrection"
+      ]
+    },
+    "suggestionStatus": {
+      "enum": [
+        "Proposed",
+        "Reviewed",
+        "Rejected",
+        "Adopted"
+      ]
+    },
+    "suggestionProducerKind": {
+      "enum": [
+        "TermCorrection",
+        "Silence",
+        "EditorialPhrase",
+        "Repetition",
+        "TopicBoundary",
+        "AudioReview",
+        "ContextDeviation",
+        "Emphasis"
+      ]
+    },
+    "suggestionDecisionKind": {
+      "enum": [
+        "Rejected",
+        "Modified",
+        "Adopted"
+      ]
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parentVersionId",
+        "parentContentDigest",
+        "workingCopy",
+        "projectStoreState",
+        "settingsProfileJson",
+        "settingsSnapshotJson",
+        "measuredLandscapeProfileJson",
+        "measuredVerticalProfileJson",
+        "longFormRequest",
+        "parentTimelineMapId",
+        "sourceDisplayGeometry",
+        "sourceFrameRate",
+        "toolDigest",
+        "modelDigest",
+        "musicPlanning",
+        "topicMetadataRevisions",
+        "candidates",
+        "adoptedHighlights",
+        "thumbnailEvidence",
+        "actorSid",
+        "createdAt",
+        "changeReason"
+      ],
+      "properties": {
+        "parentVersionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "parentContentDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "workingCopy": {
+          "$ref": "#/$defs/workingCopy"
+        },
+        "projectStoreState": {
+          "$ref": "#/$defs/projectStoreState"
+        },
+        "settingsProfileJson": {
+          "type": "string",
+          "minLength": 2
+        },
+        "settingsSnapshotJson": {
+          "type": "string",
+          "minLength": 2
+        },
+        "measuredLandscapeProfileJson": {
+          "type": "string",
+          "minLength": 2
+        },
+        "measuredVerticalProfileJson": {
+          "type": "string",
+          "minLength": 2
+        },
+        "longFormRequest": {
+          "$ref": "#/$defs/longFormRequest"
+        },
+        "parentTimelineMapId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "sourceDisplayGeometry": {
+          "$ref": "#/$defs/sourceGeometry"
+        },
+        "sourceFrameRate": {
+          "$ref": "#/$defs/positiveRational"
+        },
+        "toolDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "modelDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "musicPlanning": {
+          "$ref": "#/$defs/musicPlanning"
+        },
+        "topicMetadataRevisions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/topicMetadataRevision"
+          }
+        },
+        "candidates": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/emphasisCandidate"
+          }
+        },
+        "adoptedHighlights": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/highlightAdoption"
+          }
+        },
+        "thumbnailEvidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/thumbnailEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actorSid": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/canonicalTimestamp"
+        },
+        "changeReason": {
+          "$ref": "#/$defs/nonBlankText"
+        }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "applicationDigest",
+        "standardPlanId",
+        "standardPlanDigest",
+        "autoDecisionDigest",
+        "parentTimelineMapId",
+        "parentTimelineMapDigest",
+        "childVersionId",
+        "childContentDigest",
+        "childTimelineMapId",
+        "childTimelineMapDigest"
+      ],
+      "properties": {
+        "applicationDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "standardPlanId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "standardPlanDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "autoDecisionDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "parentTimelineMapId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "parentTimelineMapDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "childVersionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "childContentDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "childTimelineMapId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "childTimelineMapDigest": {
+          "$ref": "#/$defs/contentDigest"
+        }
+      }
+    },
+    "sourceGeometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "musicPlanning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalogDigest",
+        "assignments",
+        "warnings",
+        "policyEvaluations"
+      ],
+      "properties": {
+        "catalogDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "assignments": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/musicCueAssignment"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/musicCatalogWarning"
+          }
+        },
+        "policyEvaluations": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/musicPolicyEvaluation"
+          }
+        }
+      }
+    },
+    "musicCueAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cueDigest",
+        "trackDigest",
+        "reason",
+        "relativeGainDecibels",
+        "loop",
+        "stretch"
+      ],
+      "properties": {
+        "cueDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "trackDigest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/contentDigest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/musicAssignmentReason"
+        },
+        "relativeGainDecibels": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/int32"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "loop": {
+          "const": false
+        },
+        "stretch": {
+          "const": false
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "reason": {
+              "const": "Assigned"
+            },
+            "trackDigest": {
+              "$ref": "#/$defs/contentDigest"
+            }
+          }
+        },
+        {
+          "properties": {
+            "reason": {
+              "enum": [
+                "CatalogUnavailable",
+                "UnsupportedCueKind",
+                "SpeechOverlap",
+                "DialogueMusicDisabled",
+                "NoTrackLongEnough"
+              ]
+            },
+            "trackDigest": {
+              "type": "null"
+            },
+            "relativeGainDecibels": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "musicPolicyEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "domain",
+        "status"
+      ],
+      "properties": {
+        "domain": {
+          "$ref": "#/$defs/musicPolicyDomain"
+        },
+        "status": {
+          "$ref": "#/$defs/musicPolicyEvaluationStatus"
+        }
+      }
+    },
+    "workingCopy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "projectId",
+        "baseVersionId",
+        "createdAt",
+        "updatedAt",
+        "revision"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "projectId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "baseVersionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/canonicalTimestamp"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/canonicalTimestamp"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "projectStoreState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "payloadDigest",
+        "updatedAt"
+      ],
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "payloadDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/canonicalTimestamp"
+        }
+      }
+    },
+    "thumbnailEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selectionRuleVersion",
+        "projectId",
+        "sourceAssetId",
+        "sourceArtifactId",
+        "sourceFileName",
+        "sourceContentDigest",
+        "sourceByteSize",
+        "sourceStreamIndex",
+        "sourcePtsIndexDigest",
+        "proxyFrameMapDigest",
+        "proxyArtifactId",
+        "proxyContentDigest",
+        "proxyByteSize",
+        "proxyPtsIndexDigest",
+        "spriteImageArtifactId",
+        "spriteImageDigest",
+        "spriteImageByteSize",
+        "spriteIndexArtifactId",
+        "spriteIndexDigest",
+        "spriteIndexByteSize",
+        "previewProfileVersion",
+        "frames"
+      ],
+      "properties": {
+        "selectionRuleVersion": {
+          "const": "preview-sprite-ordinal-first-unique-source-v1"
+        },
+        "projectId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "sourceAssetId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "sourceArtifactId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "sourceFileName": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "sourceContentDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "sourceByteSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "sourceStreamIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "sourcePtsIndexDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "proxyFrameMapDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "proxyArtifactId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "proxyContentDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "proxyByteSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "proxyPtsIndexDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "spriteImageArtifactId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "spriteImageDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "spriteImageByteSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "spriteIndexArtifactId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "spriteIndexDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "spriteIndexByteSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "previewProfileVersion": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "frames": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/thumbnailFrame"
+          }
+        }
+      }
+    },
+    "thumbnailFrame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "spriteOrdinal",
+        "proxyFrameSequence",
+        "proxyPresentationTime",
+        "sourceFrameSequence",
+        "sourcePresentationTime",
+        "sourceDuration",
+        "sourceKeyFrame"
+      ],
+      "properties": {
+        "spriteOrdinal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "proxyFrameSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "proxyPresentationTime": {
+          "$ref": "#/$defs/time"
+        },
+        "sourceFrameSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "sourcePresentationTime": {
+          "$ref": "#/$defs/time"
+        },
+        "sourceDuration": {
+          "$ref": "#/$defs/positiveTime"
+        },
+        "sourceKeyFrame": {
+          "type": "boolean"
+        }
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "contentName",
+        "purpose",
+        "audience",
+        "publicationScope",
+        "deadline",
+        "assets",
+        "performers"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "contentName": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "purpose": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "audience": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "publicationScope": {
+          "$ref": "#/$defs/publicationScope"
+        },
+        "deadline": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/canonicalTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/asset"
+          }
+        },
+        "performers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/performer"
+          }
+        }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "fileName",
+        "mediaType",
+        "contentDigest",
+        "byteSize",
+        "rights"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "fileName": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "mediaType": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "byteSize": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "rights": {
+          "$ref": "#/$defs/rights"
+        }
+      }
+    },
+    "rights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "evidenceReference",
+        "allowedUse",
+        "externalPublicationAllowed"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/rightsStatus"
+        },
+        "evidenceReference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/nonBlankText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "allowedUse": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "externalPublicationAllowed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "performer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "displayName",
+        "role",
+        "titleConfirmedAt"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "displayName": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "role": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "titleConfirmedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/canonicalTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "longFormRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planId",
+        "project",
+        "provenance",
+        "template",
+        "profileBindingDigest",
+        "destination",
+        "speakerAssignments",
+        "preRollMargin",
+        "opening",
+        "programName",
+        "episodeNumber",
+        "episodeTitle",
+        "performerIntroduction",
+        "publicationScopeIndicator",
+        "body",
+        "topics",
+        "summary",
+        "callToActions",
+        "ending",
+        "postRollMargin"
+      ],
+      "properties": {
+        "planId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "project": {
+          "$ref": "#/$defs/project"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "template": {
+          "$ref": "#/$defs/appliedTemplate"
+        },
+        "profileBindingDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "destination": {
+          "$ref": "#/$defs/longFormDestination"
+        },
+        "speakerAssignments": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/speakerHistory"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preRollMargin": {
+          "$ref": "#/$defs/longFormElement"
+        },
+        "opening": {
+          "$ref": "#/$defs/longFormElement"
+        },
+        "programName": {
+          "$ref": "#/$defs/longFormElement"
+        },
+        "episodeNumber": {
+          "$ref": "#/$defs/longFormElement"
+        },
+        "episodeTitle": {
+          "$ref": "#/$defs/longFormElement"
+        },
+        "performerIntroduction": {
+          "$ref": "#/$defs/longFormElement"
+        },
+        "publicationScopeIndicator": {
+          "$ref": "#/$defs/longFormElement"
+        },
+        "body": {
+          "$ref": "#/$defs/longFormElement"
+        },
+        "topics": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/longFormTopic"
+          }
+        },
+        "summary": {
+          "$ref": "#/$defs/longFormElement"
+        },
+        "callToActions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/longFormCallToAction"
+          }
+        },
+        "ending": {
+          "$ref": "#/$defs/longFormElement"
+        },
+        "postRollMargin": {
+          "$ref": "#/$defs/longFormElement"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "transcriptRevisionId",
+        "transcriptRevisionDigest",
+        "sourceSpans",
+        "trustedEditorialRecordIds"
+      ],
+      "properties": {
+        "projectId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "transcriptRevisionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "transcriptRevisionDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "sourceSpans": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/sourceSpan"
+          }
+        },
+        "trustedEditorialRecordIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/entityId"
+          }
+        }
+      }
+    },
+    "appliedTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seriesId",
+        "templateId",
+        "templateName",
+        "templateVersionDigest",
+        "kind",
+        "parameters"
+      ],
+      "properties": {
+        "seriesId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "templateId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "templateName": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "templateVersionDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "kind": {
+          "$ref": "#/$defs/brandTemplateKind"
+        },
+        "parameters": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/templateParameter"
+          }
+        }
+      }
+    },
+    "templateParameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "value": {
+          "$ref": "#/$defs/templateValue"
+        }
+      }
+    },
+    "templateValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "text",
+        "integer",
+        "boolean",
+        "rational",
+        "assetId",
+        "assetDigest"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/templateParameterValueKind"
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "integer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/int64"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "boolean": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "rational": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/rational"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assetId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/entityId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assetDigest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/contentDigest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "Text"
+            },
+            "text": {
+              "$ref": "#/$defs/nonBlankText"
+            },
+            "integer": {
+              "type": "null"
+            },
+            "boolean": {
+              "type": "null"
+            },
+            "rational": {
+              "type": "null"
+            },
+            "assetId": {
+              "type": "null"
+            },
+            "assetDigest": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "Integer"
+            },
+            "text": {
+              "type": "null"
+            },
+            "integer": {
+              "$ref": "#/$defs/int64"
+            },
+            "boolean": {
+              "type": "null"
+            },
+            "rational": {
+              "type": "null"
+            },
+            "assetId": {
+              "type": "null"
+            },
+            "assetDigest": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "Boolean"
+            },
+            "text": {
+              "type": "null"
+            },
+            "integer": {
+              "type": "null"
+            },
+            "boolean": {
+              "type": "boolean"
+            },
+            "rational": {
+              "type": "null"
+            },
+            "assetId": {
+              "type": "null"
+            },
+            "assetDigest": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "Rational"
+            },
+            "text": {
+              "type": "null"
+            },
+            "integer": {
+              "type": "null"
+            },
+            "boolean": {
+              "type": "null"
+            },
+            "rational": {
+              "$ref": "#/$defs/rational"
+            },
+            "assetId": {
+              "type": "null"
+            },
+            "assetDigest": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "AssetReference"
+            },
+            "text": {
+              "type": "null"
+            },
+            "integer": {
+              "type": "null"
+            },
+            "boolean": {
+              "type": "null"
+            },
+            "rational": {
+              "type": "null"
+            },
+            "assetId": {
+              "$ref": "#/$defs/entityId"
+            },
+            "assetDigest": {
+              "$ref": "#/$defs/contentDigest"
+            }
+          }
+        }
+      ]
+    },
+    "rational": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "properties": {
+        "numerator": {
+          "$ref": "#/$defs/int64"
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "longFormElement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "enabled",
+        "text",
+        "outputRange",
+        "origins",
+        "assets"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "kind": {
+          "$ref": "#/$defs/longFormElementKind"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outputRange": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/range"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "origins": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/origin"
+          }
+        },
+        "assets": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/longFormAssetReference"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "enabled": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "text": {
+                "type": "null"
+              },
+              "outputRange": {
+                "type": "null"
+              },
+              "origins": {
+                "maxItems": 0
+              },
+              "assets": {
+                "maxItems": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "origins": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "longFormAssetReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "assetId",
+        "assetDigest"
+      ],
+      "properties": {
+        "role": {
+          "$ref": "#/$defs/longFormAssetRole"
+        },
+        "assetId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "assetDigest": {
+          "$ref": "#/$defs/contentDigest"
+        }
+      }
+    },
+    "longFormTopic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "element",
+        "topicRange",
+        "topicMetadata"
+      ],
+      "properties": {
+        "element": {
+          "$ref": "#/$defs/longFormElement"
+        },
+        "topicRange": {
+          "$ref": "#/$defs/topicRangeRevision"
+        },
+        "topicMetadata": {
+          "$ref": "#/$defs/topicMetadataRevision"
+        }
+      }
+    },
+    "longFormCallToAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "destination",
+        "element"
+      ],
+      "properties": {
+        "destination": {
+          "$ref": "#/$defs/longFormDestination"
+        },
+        "element": {
+          "$ref": "#/$defs/longFormElement"
+        }
+      }
+    },
+    "sourceSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "assetId",
+        "streamId",
+        "range",
+        "sourceDigest",
+        "transcriptRevisionId",
+        "transcriptTokenIds"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "assetId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "streamId": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "range": {
+          "$ref": "#/$defs/range"
+        },
+        "sourceDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "transcriptRevisionId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/entityId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transcriptTokenIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/entityId"
+          }
+        }
+      }
+    },
+    "time": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/int64"
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "positiveTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "rate"
+      ],
+      "properties": {
+        "value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "positiveRational": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "properties": {
+        "numerator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        }
+      }
+    },
+    "range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "duration"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/time"
+        },
+        "duration": {
+          "$ref": "#/$defs/positiveTime"
+        }
+      }
+    },
+    "origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "sourceSpan",
+            "asset",
+            "editorialRecord"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "sourceSpanOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "const": "sourceSpan"
+        },
+        "id": {
+          "$ref": "#/$defs/entityId"
+        }
+      }
+    },
+    "topicRangeRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topicRangeId",
+        "id",
+        "parentRevisionId",
+        "sourceRevisionId",
+        "sourceRevisionDigest",
+        "startBoundarySuggestionId",
+        "endBoundarySuggestionId",
+        "range",
+        "previousRange",
+        "actorSid",
+        "createdAt",
+        "reason"
+      ],
+      "properties": {
+        "topicRangeId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "parentRevisionId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/entityId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceRevisionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "sourceRevisionDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "startBoundarySuggestionId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/entityId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endBoundarySuggestionId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/entityId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "range": {
+          "$ref": "#/$defs/range"
+        },
+        "previousRange": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/range"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actorSid": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/canonicalTimestamp"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonBlankText"
+        }
+      }
+    },
+    "topicMetadataRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "topicMetadataId",
+        "id",
+        "parentRevisionId",
+        "projectId",
+        "topicRangeId",
+        "topicRangeRevisionId",
+        "topicRange",
+        "sourceRevisionId",
+        "sourceRevisionDigest",
+        "metadata",
+        "changedField",
+        "actorSid",
+        "createdAt",
+        "reason"
+      ],
+      "properties": {
+        "topicMetadataId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "parentRevisionId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/entityId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "topicRangeId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "topicRangeRevisionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "topicRange": {
+          "$ref": "#/$defs/range"
+        },
+        "sourceRevisionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "sourceRevisionDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "metadata": {
+          "$ref": "#/$defs/topicMetadata"
+        },
+        "changedField": {
+          "$ref": "#/$defs/topicMetadataField"
+        },
+        "actorSid": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/canonicalTimestamp"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonBlankText"
+        }
+      }
+    },
+    "topicMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "titleOrigin",
+        "summary",
+        "summaryOrigin",
+        "mainSpeaker",
+        "mainSpeakerOrigin",
+        "mainSpeakerTieUnresolved",
+        "keywords",
+        "keywordsOrigin",
+        "importantStatementSourceSpanIds",
+        "importantStatementsOrigin",
+        "audience",
+        "audienceOrigin",
+        "publicationCautions",
+        "publicationCautionsOrigin"
+      ],
+      "properties": {
+        "title": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "titleOrigin": {
+          "$ref": "#/$defs/topicMetadataValueOrigin"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/nonBlankText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summaryOrigin": {
+          "$ref": "#/$defs/topicMetadataValueOrigin"
+        },
+        "mainSpeaker": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/topicMainSpeaker"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mainSpeakerOrigin": {
+          "$ref": "#/$defs/topicMetadataValueOrigin"
+        },
+        "mainSpeakerTieUnresolved": {
+          "type": "boolean"
+        },
+        "keywords": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonBlankText"
+          }
+        },
+        "keywordsOrigin": {
+          "$ref": "#/$defs/topicMetadataValueOrigin"
+        },
+        "importantStatementSourceSpanIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/entityId"
+          }
+        },
+        "importantStatementsOrigin": {
+          "$ref": "#/$defs/topicMetadataValueOrigin"
+        },
+        "audience": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "audienceOrigin": {
+          "$ref": "#/$defs/topicMetadataValueOrigin"
+        },
+        "publicationCautions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonBlankText"
+          }
+        },
+        "publicationCautionsOrigin": {
+          "$ref": "#/$defs/topicMetadataValueOrigin"
+        }
+      }
+    },
+    "topicMainSpeaker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "speakerId",
+        "performerId",
+        "displayVisible",
+        "displayText",
+        "titleOrAffiliationConfirmationRequired",
+        "overlapDuration"
+      ],
+      "properties": {
+        "speakerId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "performerId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/entityId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "displayVisible": {
+          "type": "boolean"
+        },
+        "displayText": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/nonBlankText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "titleOrAffiliationConfirmationRequired": {
+          "type": "boolean"
+        },
+        "overlapDuration": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "speakerHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revisions"
+      ],
+      "properties": {
+        "revisions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/speakerRevision"
+          }
+        }
+      }
+    },
+    "speakerRevision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "parentRevisionId",
+        "projectId",
+        "transcriptRevisionId",
+        "transcriptRevisionDigest",
+        "createdAt",
+        "actorSid",
+        "reason",
+        "assignments",
+        "change"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "parentRevisionId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/entityId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "transcriptRevisionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "transcriptRevisionDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/canonicalTimestamp"
+        },
+        "actorSid": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "assignments": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/speakerAssignment"
+          }
+        },
+        "change": {
+          "$ref": "#/$defs/speakerChange"
+        }
+      }
+    },
+    "speakerAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "speakerId",
+        "anonymousLabel",
+        "performerId",
+        "fullName",
+        "surname",
+        "role",
+        "titleConfirmedAt",
+        "displayFormat"
+      ],
+      "properties": {
+        "speakerId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "anonymousLabel": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "performerId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "fullName": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "surname": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "role": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "titleConfirmedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/canonicalTimestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "displayFormat": {
+          "$ref": "#/$defs/speakerDisplayFormat"
+        }
+      }
+    },
+    "speakerChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "previousAssignment",
+        "currentAssignment"
+      ],
+      "properties": {
+        "previousAssignment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/speakerAssignment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "currentAssignment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/speakerAssignment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "not": {
+        "properties": {
+          "previousAssignment": {
+            "type": "null"
+          },
+          "currentAssignment": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    "emphasisCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producerSuggestion",
+        "candidateSuggestion",
+        "parentSuggestionId",
+        "replacementSuggestionId",
+        "sourceSpan",
+        "sourceRevisionId",
+        "sourceRevisionDigest",
+        "topicMetadataRevisionId",
+        "ruleVersion",
+        "text",
+        "textSource",
+        "reasons",
+        "termEvidence"
+      ],
+      "properties": {
+        "producerSuggestion": {
+          "$ref": "#/$defs/suggestion"
+        },
+        "candidateSuggestion": {
+          "$ref": "#/$defs/suggestion"
+        },
+        "parentSuggestionId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/entityId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "replacementSuggestionId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/entityId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceSpan": {
+          "$ref": "#/$defs/sourceSpan"
+        },
+        "sourceRevisionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "sourceRevisionDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "topicMetadataRevisionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "ruleVersion": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "text": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "textSource": {
+          "$ref": "#/$defs/emphasisTextSourceKind"
+        },
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/emphasisReasonKind"
+          }
+        },
+        "termEvidence": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/emphasisTerm"
+          }
+        }
+      }
+    },
+    "emphasisTerm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "termEntryId",
+        "termEntryVersion",
+        "writtenForm"
+      ],
+      "properties": {
+        "termEntryId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "termEntryVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "writtenForm": {
+          "$ref": "#/$defs/nonBlankText"
+        }
+      }
+    },
+    "suggestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "modelRunId",
+        "kind",
+        "status",
+        "origin",
+        "reason",
+        "confidence",
+        "missingContext",
+        "warning"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "modelRunId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "kind": {
+          "$ref": "#/$defs/suggestionKind"
+        },
+        "status": {
+          "$ref": "#/$defs/suggestionStatus"
+        },
+        "origin": {
+          "$ref": "#/$defs/sourceSpanOrigin"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "missingContext": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "warning": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "highlightAdoption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateId",
+        "cueId",
+        "cueOutputRange",
+        "cueRegionName",
+        "priorDecisionHistory",
+        "decisionId",
+        "actorSid",
+        "decidedAt",
+        "reason"
+      ],
+      "properties": {
+        "candidateId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "cueId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "cueOutputRange": {
+          "$ref": "#/$defs/range"
+        },
+        "cueRegionName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "priorDecisionHistory": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/suggestionDecision"
+          }
+        },
+        "decisionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "actorSid": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "decidedAt": {
+          "$ref": "#/$defs/canonicalTimestamp"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonBlankText"
+        }
+      }
+    },
+    "suggestionDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "candidateId",
+        "modelRunId",
+        "producer",
+        "suggestionKind",
+        "decision",
+        "statusAfterDecision",
+        "origin",
+        "sourceDigest",
+        "actorSid",
+        "decidedAt",
+        "reason",
+        "replacementSuggestionId",
+        "adoptedReference",
+        "resultingTranscriptRevisionId"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/entityId"
+        },
+        "candidateId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "modelRunId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "producer": {
+          "$ref": "#/$defs/suggestionProducerKind"
+        },
+        "suggestionKind": {
+          "$ref": "#/$defs/suggestionKind"
+        },
+        "decision": {
+          "$ref": "#/$defs/suggestionDecisionKind"
+        },
+        "statusAfterDecision": {
+          "$ref": "#/$defs/suggestionStatus"
+        },
+        "origin": {
+          "$ref": "#/$defs/sourceSpanOrigin"
+        },
+        "sourceDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "actorSid": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "decidedAt": {
+          "$ref": "#/$defs/canonicalTimestamp"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonBlankText"
+        },
+        "replacementSuggestionId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/entityId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "adoptedReference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/suggestionReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resultingTranscriptRevisionId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/entityId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "suggestionReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "suggestionId",
+        "origin"
+      ],
+      "properties": {
+        "suggestionId": {
+          "$ref": "#/$defs/entityId"
+        },
+        "origin": {
+          "$ref": "#/$defs/sourceSpanOrigin"
+        }
+      }
+    }
+  }
+}

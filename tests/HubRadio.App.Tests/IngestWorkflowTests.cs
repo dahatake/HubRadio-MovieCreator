@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text;
 using System.Text.Json.Nodes;
+using HubRadio.App.Compositions;
 using HubRadio.App.Jobs;
 using HubRadio.App.Media;
 using HubRadio.App.Web;
@@ -87,6 +88,68 @@ public sealed class IngestWorkflowTests
             aggregate.Progress.Select(static progress => progress.Phase).ToArray());
         Assert.IsTrue(aggregate.Progress.All(static progress =>
             progress.TotalUnits == 9 && progress.Message is null));
+    }
+
+    [TestMethod]
+    public async Task CompletedIngestCreatesThumbnailEvidenceFromValidatedArtifacts()
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        IngestWorkflowRunResult result = await fixture.Workflow.RunAsync(
+            fixture.Request,
+            previousRun: null,
+            CancellationToken.None);
+
+        StandardThumbnailEvidence evidence =
+            await StandardThumbnailEvidence.FromCompletedIngestAsync(
+                result,
+                fixture.ArtifactStore,
+                CancellationToken.None);
+
+        Assert.AreEqual(fixture.ProjectId, evidence.ProjectId);
+        Assert.AreEqual(result.Asset!.Id, evidence.SourceAssetId);
+        Assert.AreEqual(result.Original!.Artifact.Id, evidence.SourceArtifactId);
+        Assert.AreEqual(result.Original.Artifact.ByteSize, evidence.SourceByteSize);
+        Assert.AreEqual(result.Proxy!.ProxyArtifact.Id, evidence.ProxyArtifactId);
+        Assert.AreEqual(result.Proxy.ProxyArtifact.ByteSize, evidence.ProxyByteSize);
+        Assert.AreEqual(
+            result.PreviewAssets!.SpriteImageArtifact.Id,
+            evidence.SpriteImageArtifactId);
+        Assert.AreEqual(
+            result.PreviewAssets.SpriteImageArtifact.ByteSize,
+            evidence.SpriteImageByteSize);
+        Assert.AreEqual(
+            result.PreviewAssets.SpriteIndexArtifact.Id,
+            evidence.SpriteIndexArtifactId);
+        Assert.AreEqual(
+            result.PreviewAssets.SpriteIndexArtifact.ByteSize,
+            evidence.SpriteIndexByteSize);
+        Assert.IsTrue(evidence.Frames.Count is >= 1 and <= 3);
+    }
+
+    [TestMethod]
+    public async Task CompletedIngestThumbnailEvidenceRejectsTamperedArtifactBytes()
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        IngestWorkflowRunResult result = await fixture.Workflow.RunAsync(
+            fixture.Request,
+            previousRun: null,
+            CancellationToken.None);
+        string spritePath = fixture.GetRegisteredArtifactPath(
+            result.PreviewAssets!.SpriteImageArtifact.Id);
+        byte[] changed = File.ReadAllBytes(spritePath);
+        changed[^1] ^= 0xff;
+        File.WriteAllBytes(spritePath, changed);
+
+        ArtifactStoreException exception =
+            await Assert.ThrowsExactlyAsync<ArtifactStoreException>(() =>
+                StandardThumbnailEvidence.FromCompletedIngestAsync(
+                    result,
+                    fixture.ArtifactStore,
+                    CancellationToken.None));
+
+        Assert.AreEqual(
+            ArtifactStoreFailureReason.DigestMismatch,
+            exception.Reason);
     }
 
     [TestMethod]

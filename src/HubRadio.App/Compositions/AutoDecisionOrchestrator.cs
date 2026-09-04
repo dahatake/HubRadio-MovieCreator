@@ -359,6 +359,7 @@ public static class AutoDecisionOrchestrator
                     request.Parent);
             checkpoint = versionService.CheckpointAutoDecision(
                 request.WorkingCopy,
+                request.Parent,
                 preparation.Child.Elements,
                 preparation.ExpectedWorkingCopyRevision,
                 preparation.Child.Id,
@@ -369,7 +370,11 @@ public static class AutoDecisionOrchestrator
                 validatedEvidence,
                 cancellationToken);
         }
-        catch (StoreConcurrencyException)
+        catch (StoreConcurrencyException exception)
+            when (string.Equals(
+                exception.EntityKind,
+                "working copy",
+                StringComparison.Ordinal))
         {
             WorkingCopy expectedWorkingCopy = CreateCheckpointWorkingCopy(
                 preparation,
