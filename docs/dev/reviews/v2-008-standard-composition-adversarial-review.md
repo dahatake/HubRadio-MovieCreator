@@ -5,8 +5,10 @@
 - task base: `9f80cd52f1c699b120d101da8ca8f9dc4ecbeabb`
 - base tree: `164d7e5d8798bf37e4a61a352ee635154463fd37`
 - task branch: `task/v2-008-20260904`
+- task commit: `84c330a9664eca1b71df75165752546219433572`
+- integrated local main: `84c330a9664eca1b71df75165752546219433572`
 - レビュー日: 2026-09-05
-- 状態: **REVIEW CLOSED — task commit可能**
+- 状態: **REVIEW CLOSED — V2-008 local main統合済み**
 - 未解決Critical / Major / Minor: **0 / 0 / 0**
 
 > [!IMPORTANT]
@@ -223,9 +225,10 @@ source MOVと`Music/`は本taskで変更・追跡していない。今回のV2-0
 
 ## 9. closure
 
-- **Closure status: REVIEW CLOSED — V2-008 task commit可能。**
+- **Closure status: REVIEW CLOSED — V2-008 local main統合済み。**
 - **未解決Critical: 0件。**
 - **未解決Major: 0件。**
 - **未解決Minor: 0件。**
-- task commitとWave B main統合は本review後に実施する。
+- task commit `84c330a…`はlocal mainへfast-forward済み。pushは実施していない。
+- Wave Bの共有treeでV2-005 Web focused 54/54、source-only contract 3/3、V2-008 StandardComposition 77/77を確認した。quick-start finalizeからplan jobを自動起動するUI接続はV2-012/V2-013の責務であり、本taskでend-to-end完了とは主張しない。
 - external、人手、法的、platform、package、release gateはPENDING / NOT EVALUATEDのまま維持する。
