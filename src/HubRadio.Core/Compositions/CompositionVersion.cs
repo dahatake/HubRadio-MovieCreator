@@ -14,6 +14,29 @@ public sealed class CompositionVersion
         string changeReason,
         ContentDigest contentDigest,
         IReadOnlyList<CompositionElement> elements)
+        : this(
+            id,
+            projectId,
+            parentVersionId,
+            createdByActorId,
+            createdAt,
+            changeReason,
+            contentDigest,
+            elements,
+            evidence: null)
+    {
+    }
+
+    internal CompositionVersion(
+        EntityId<CompositionVersionIdTag> id,
+        EntityId<ProjectIdTag> projectId,
+        EntityId<CompositionVersionIdTag>? parentVersionId,
+        string createdByActorId,
+        DateTimeOffset createdAt,
+        string changeReason,
+        ContentDigest contentDigest,
+        IReadOnlyList<CompositionElement> elements,
+        CompositionEvidenceEnvelope? evidence)
     {
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(projectId);
@@ -43,6 +66,7 @@ public sealed class CompositionVersion
             "A composition-version change reason");
         ContentDigest = contentDigest;
         Elements = Array.AsReadOnly(copiedElements);
+        Evidence = evidence;
     }
 
     public EntityId<CompositionVersionIdTag> Id { get; }
@@ -60,4 +84,6 @@ public sealed class CompositionVersion
     public ContentDigest ContentDigest { get; }
 
     public IReadOnlyList<CompositionElement> Elements { get; }
+
+    public CompositionEvidenceEnvelope? Evidence { get; }
 }

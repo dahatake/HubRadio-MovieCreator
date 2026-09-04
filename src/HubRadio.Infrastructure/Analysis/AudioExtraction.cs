@@ -237,6 +237,156 @@ public sealed class AnalysisAudioTimeline
         return ScaleToLong(relative, FixedSampleRate, roundingMode);
     }
 
+    internal static AnalysisAudioTimeline ParseCanonical(string canonicalJson)
+    {
+        ArgumentNullException.ThrowIfNull(canonicalJson);
+        try
+        {
+            if (!string.Equals(
+                    HubRadio.Core.Serialization.CanonicalJson.Canonicalize(canonicalJson),
+                    canonicalJson,
+                    StringComparison.Ordinal))
+            {
+                throw new FormatException(
+                    "The analysis-audio timeline must use canonical JSON.");
+            }
+
+            using JsonDocument document = JsonDocument.Parse(canonicalJson);
+            JsonElement root = document.RootElement;
+            var restored = new AnalysisAudioTimeline(
+                ReadId<ProjectIdTag>(root, "projectId"),
+                ReadId<JobIdTag>(root, "analysisJobId"),
+                ReadId<AssetIdTag>(root, "sourceAssetId"),
+                ReadDigest(root, "sourceContentDigest"),
+                ReadInt64(root, "sourceByteSize"),
+                ReadId<ArtifactIdTag>(root, "sourceOriginalArtifactId"),
+                ReadDigest(root, "sourceVideoPtsIndexDigest"),
+                ReadInt32(root, "sourceVideoStreamIndex"),
+                ReadInt32(root, "sourceAudioStreamIndex"),
+                ReadRationalTime(root, "sourceAudioTimeBase"),
+                ReadNullableRationalTime(root, "probeReportedAudioStart"),
+                ReadInt64(root, "firstDecodedAudioFrameTimestamp"),
+                ReadInt32(root, "firstDecodedAudioFrameSampleCount"),
+                ReadId<ArtifactIdTag>(root, "analysisAudioArtifactId"),
+                ReadDigest(root, "analysisAudioDigest"),
+                ReadInt64(root, "analysisAudioByteSize"),
+                ReadInt64(root, "analysisSampleCount"),
+                ReadId<ArtifactIdTag>(root, "timelineArtifactId"));
+            if (!string.Equals(
+                    restored.CanonicalJson,
+                    canonicalJson,
+                    StringComparison.Ordinal))
+            {
+                throw new FormatException(
+                    "The analysis-audio timeline is semantically inconsistent.");
+            }
+
+            return restored;
+        }
+        catch (FormatException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+            when (exception is JsonException
+                or KeyNotFoundException
+                or ArgumentException
+                or InvalidOperationException
+                or OverflowException)
+        {
+            throw new FormatException(
+                "The analysis-audio timeline is invalid.",
+                exception);
+        }
+    }
+
+    private static EntityId<TTag> ReadId<TTag>(JsonElement root, string propertyName)
+    {
+        string text = ReadString(root, propertyName);
+        if (!EntityId<TTag>.TryParse(text, out EntityId<TTag>? value)
+            || !string.Equals(text, value.ToString(), StringComparison.Ordinal))
+        {
+            throw new FormatException("The analysis-audio timeline ID is invalid.");
+        }
+
+        return value;
+    }
+
+    private static ContentDigest ReadDigest(JsonElement root, string propertyName)
+    {
+        string text = ReadString(root, propertyName);
+        if (!ContentDigest.TryParse(text, out ContentDigest? value)
+            || !string.Equals(text, value.Hex, StringComparison.Ordinal))
+        {
+            throw new FormatException("The analysis-audio timeline digest is invalid.");
+        }
+
+        return value;
+    }
+
+    private static string ReadString(JsonElement root, string propertyName)
+    {
+        JsonElement value = root.GetProperty(propertyName);
+        if (value.ValueKind != JsonValueKind.String || value.GetString() is not string text)
+        {
+            throw new FormatException("The analysis-audio timeline string is invalid.");
+        }
+
+        return text;
+    }
+
+    private static int ReadInt32(JsonElement root, string propertyName)
+    {
+        long value = ReadInt64(root, propertyName);
+        if (value is < int.MinValue or > int.MaxValue)
+        {
+            throw new FormatException("The analysis-audio timeline integer is invalid.");
+        }
+
+        return (int)value;
+    }
+
+    private static long ReadInt64(JsonElement root, string propertyName)
+    {
+        JsonElement value = root.GetProperty(propertyName);
+        if (value.ValueKind != JsonValueKind.Number
+            || !value.TryGetDecimal(out decimal number)
+            || number != decimal.Truncate(number)
+            || number is < long.MinValue or > long.MaxValue)
+        {
+            throw new FormatException("The analysis-audio timeline integer is invalid.");
+        }
+
+        return decimal.ToInt64(number);
+    }
+
+    private static RationalTime ReadRationalTime(
+        JsonElement root,
+        string propertyName)
+    {
+        JsonElement value = root.GetProperty(propertyName);
+        long numerator = ReadInt64(value, "value");
+        long rate = ReadInt64(value, "rate");
+        var result = new RationalTime(numerator, rate);
+        if (result.Value != numerator || result.Rate != rate)
+        {
+            throw new FormatException(
+                "The analysis-audio timeline rational time is not reduced.");
+        }
+
+        return result;
+    }
+
+    private static RationalTime? ReadNullableRationalTime(
+        JsonElement root,
+        string propertyName)
+    {
+        JsonElement value = root.GetProperty(propertyName);
+        return value.ValueKind == JsonValueKind.Null
+            ? null
+            : ReadRationalTime(root, propertyName);
+    }
+
     private string BuildCanonicalJson()
     {
         ArrayBufferWriter<byte> buffer = new();

@@ -67,6 +67,19 @@ public sealed class CompositionSchemaTests
         Assert.AreEqual(
             "#/$defs/contentDigest",
             properties.GetProperty("contentDigest").GetProperty("$ref").GetString());
+        Assert.AreEqual(
+            "#/$defs/evidenceEnvelope",
+            properties.GetProperty("evidence").GetProperty("$ref").GetString());
+        JsonElement evidence = root.GetProperty("$defs").GetProperty("evidenceEnvelope");
+        AssertAdditionalPropertiesFalse(evidence);
+        CollectionAssert.AreEquivalent(
+            new[] { "kind", "contentDigest", "canonicalJson" },
+            GetStringArray(evidence.GetProperty("required")));
+        Assert.AreEqual(
+            "autoDecision",
+            evidence.GetProperty("properties").GetProperty("kind").GetProperty("const")
+                .GetString());
+        StringAssert.Contains(GetRequiredString(evidence, "$comment"), "4 MiB UTF-8");
         Assert.IsFalse(properties.TryGetProperty("children", out _));
         Assert.IsFalse(properties.TryGetProperty("approvalStatus", out _));
         StringAssert.Contains(GetRequiredString(root, "$comment"), "Approval is a separate record");

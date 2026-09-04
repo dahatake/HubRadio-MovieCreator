@@ -172,6 +172,19 @@ public sealed class CheckpointResult
     public string CanonicalWorkingCopyJson { get; }
 }
 
+public sealed class WorkingCopyState
+{
+    internal WorkingCopyState(WorkingCopy workingCopy, int revision)
+    {
+        WorkingCopy = workingCopy;
+        Revision = revision;
+    }
+
+    public WorkingCopy WorkingCopy { get; }
+
+    public int Revision { get; }
+}
+
 public sealed class VersionService
 {
     private readonly ProjectStore _projectStore;
@@ -201,7 +214,151 @@ public sealed class VersionService
             actorId,
             createdAt,
             changeReason,
-            expectedContentDigest: null);
+            expectedContentDigest: null,
+            evidence: null,
+            CancellationToken.None);
+    }
+
+    internal CheckpointResult CheckpointAutoDecision(
+        WorkingCopy draft,
+        IReadOnlyList<CompositionElement> elements,
+        int expectedRevision,
+        EntityId<CompositionVersionIdTag> newVersionId,
+        string actorId,
+        DateTimeOffset createdAt,
+        string changeReason,
+        ContentDigest expectedContentDigest,
+        ValidatedAutoDecisionEvidence evidence,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        ArgumentNullException.ThrowIfNull(elements);
+        ArgumentNullException.ThrowIfNull(expectedContentDigest);
+        ArgumentNullException.ThrowIfNull(evidence);
+        cancellationToken.ThrowIfCancellationRequested();
+        EnsureTimestampDoesNotMoveBackwards(draft, createdAt);
+        return CreateAndStoreCheckpoint(
+            draft,
+            elements,
+            expectedRevision,
+            newVersionId,
+            actorId,
+            createdAt,
+            changeReason,
+            expectedContentDigest,
+            evidence.Envelope,
+            cancellationToken);
+    }
+
+    public CompositionVersion? GetVersion(
+        EntityId<CompositionVersionIdTag> versionId)
+    {
+        ArgumentNullException.ThrowIfNull(versionId);
+        StoredCompositionVersion? stored = _projectStore.GetCompositionVersion(versionId);
+        if (stored is null)
+        {
+            return null;
+        }
+
+        CompositionVersion version = CompositionSnapshotJson.ReadVersion(
+            stored.CanonicalJson);
+        if (version.Id != stored.Id
+            || version.ProjectId != stored.ProjectId
+            || version.ParentVersionId != stored.ParentVersionId
+            || version.ContentDigest != stored.ContentDigest
+            || version.CreatedAt != stored.CreatedAt)
+        {
+            throw new InvalidOperationException(
+                "The stored composition-version columns do not match its canonical snapshot.");
+        }
+
+        if (version.Evidence is not null)
+        {
+            CompositionVersion parent = version.ParentVersionId is not null
+                ? GetVersion(version.ParentVersionId)
+                    ?? throw new InvalidOperationException(
+                        "The auto-decision parent version is unavailable.")
+                : throw new InvalidOperationException(
+                    "An auto-decision version must have a stored parent.");
+            AutoDecisionEvidenceCodec.ValidateLoaded(version, parent);
+        }
+
+        return version;
+    }
+
+    public WorkingCopyState? GetCurrentState(EntityId<ProjectIdTag> projectId)
+    {
+        ArgumentNullException.ThrowIfNull(projectId);
+        StoredWorkingCopy? stored = _projectStore.GetWorkingCopy(projectId);
+        if (stored is null)
+        {
+            return null;
+        }
+
+        WorkingCopy workingCopy = CompositionSnapshotJson.ReadWorkingCopy(
+            stored.CanonicalJson);
+        if (workingCopy.Id != stored.Id
+            || workingCopy.ProjectId != stored.ProjectId
+            || workingCopy.BaseVersionId != stored.BaseVersionId
+            || workingCopy.UpdatedAt != stored.UpdatedAt)
+        {
+            throw new InvalidOperationException(
+                "The stored working-copy columns do not match its canonical snapshot.");
+        }
+
+        return new WorkingCopyState(workingCopy, stored.Revision);
+    }
+
+    public bool TryResolveExactCheckpoint(
+        CompositionVersion expectedVersion,
+        WorkingCopy expectedWorkingCopy,
+        int expectedPreviousRevision,
+        out CheckpointResult? checkpoint)
+    {
+        ArgumentNullException.ThrowIfNull(expectedVersion);
+        ArgumentNullException.ThrowIfNull(expectedWorkingCopy);
+        if (expectedPreviousRevision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedPreviousRevision));
+        }
+
+        StoredCompositionVersion? storedVersion =
+            _projectStore.GetCompositionVersion(expectedVersion.Id);
+        StoredWorkingCopy? storedWorkingCopy =
+            _projectStore.GetWorkingCopy(expectedVersion.ProjectId);
+        int expectedCurrentRevision = checked(expectedPreviousRevision + 1);
+        string expectedVersionJson = CompositionSnapshotJson.WriteVersion(expectedVersion);
+        string expectedWorkingCopyJson =
+            CompositionSnapshotJson.WriteWorkingCopy(expectedWorkingCopy);
+        if (storedVersion is null
+            || storedWorkingCopy is null
+            || storedWorkingCopy.Revision != expectedCurrentRevision
+            || storedWorkingCopy.Id != expectedWorkingCopy.Id
+            || storedWorkingCopy.BaseVersionId != expectedVersion.Id
+            || !string.Equals(
+                storedVersion.CanonicalJson,
+                expectedVersionJson,
+                StringComparison.Ordinal)
+            || !string.Equals(
+                storedWorkingCopy.CanonicalJson,
+                expectedWorkingCopyJson,
+                StringComparison.Ordinal))
+        {
+            checkpoint = null;
+            return false;
+        }
+
+        CompositionVersion version = CompositionSnapshotJson.ReadVersion(
+            storedVersion.CanonicalJson);
+        WorkingCopy workingCopy = CompositionSnapshotJson.ReadWorkingCopy(
+            storedWorkingCopy.CanonicalJson);
+        checkpoint = new CheckpointResult(
+            version,
+            workingCopy,
+            storedWorkingCopy.Revision,
+            storedVersion.CanonicalJson,
+            storedWorkingCopy.CanonicalJson);
+        return true;
     }
 
     public CheckpointResult RollbackAsChild(
@@ -212,14 +369,90 @@ public sealed class VersionService
         string actorId,
         DateTimeOffset createdAt,
         string changeReason)
+        => RollbackAsChildCore(
+            currentDraft,
+            targetVersion,
+            expectedRevision,
+            newVersionId,
+            actorId,
+            createdAt,
+            changeReason,
+            CancellationToken.None);
+
+    internal CheckpointResult RollbackAutoDecisionAsChild(
+        WorkingCopy currentDraft,
+        CompositionVersion targetVersion,
+        int expectedRevision,
+        EntityId<CompositionVersionIdTag> newVersionId,
+        string actorId,
+        DateTimeOffset createdAt,
+        string changeReason,
+        CancellationToken cancellationToken)
+        => RollbackAsChildCore(
+            currentDraft,
+            targetVersion,
+            expectedRevision,
+            newVersionId,
+            actorId,
+            createdAt,
+            changeReason,
+            cancellationToken);
+
+    private CheckpointResult RollbackAsChildCore(
+        WorkingCopy currentDraft,
+        CompositionVersion targetVersion,
+        int expectedRevision,
+        EntityId<CompositionVersionIdTag> newVersionId,
+        string actorId,
+        DateTimeOffset createdAt,
+        string changeReason,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(currentDraft);
         ArgumentNullException.ThrowIfNull(targetVersion);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (targetVersion.ProjectId != currentDraft.ProjectId)
         {
             throw new ArgumentException(
                 "The rollback target and current working copy must belong to the same project.",
+                nameof(targetVersion));
+        }
+
+        WorkingCopyState current = GetCurrentState(currentDraft.ProjectId)
+            ?? throw new InvalidOperationException("The working copy does not exist.");
+        if (current.Revision != expectedRevision
+            || !string.Equals(
+                CompositionSnapshotJson.WriteWorkingCopy(current.WorkingCopy),
+                CompositionSnapshotJson.WriteWorkingCopy(currentDraft),
+                StringComparison.Ordinal))
+        {
+            throw new StoreConcurrencyException(
+                "working copy",
+                currentDraft.Id.ToString(),
+                expectedRevision,
+                current.Revision);
+        }
+
+        CompositionVersion storedTarget = GetVersion(targetVersion.Id)
+            ?? throw new ArgumentException(
+                "The rollback target is not a stored composition version.",
+                nameof(targetVersion));
+        if (storedTarget.ProjectId != currentDraft.ProjectId
+            || !string.Equals(
+                CompositionSnapshotJson.WriteVersion(storedTarget),
+                CompositionSnapshotJson.WriteVersion(targetVersion),
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "The rollback target does not exactly match its stored same-project version.",
+                nameof(targetVersion));
+        }
+
+        if (!IsStrictAncestor(currentDraft.BaseVersionId, storedTarget.Id))
+        {
+            throw new ArgumentException(
+                "The rollback target must be a strict ancestor of the current working-copy head.",
                 nameof(targetVersion));
         }
 
@@ -233,7 +466,9 @@ public sealed class VersionService
             actorId,
             createdAt,
             changeReason,
-            targetVersion.ContentDigest);
+            targetVersion.ContentDigest,
+            evidence: null,
+            cancellationToken);
     }
 
     public static CompositionDiff Compare(CompositionVersion from, CompositionVersion to)
@@ -327,8 +562,11 @@ public sealed class VersionService
         string actorId,
         DateTimeOffset createdAt,
         string changeReason,
-        ContentDigest? expectedContentDigest)
+        ContentDigest? expectedContentDigest,
+        CompositionEvidenceEnvelope? evidence,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         byte[] canonicalElementsJson =
             CompositionSnapshotJson.WriteElementsObjectToUtf8(elements);
         ContentDigest contentDigest = ContentDigest.Compute(canonicalElementsJson);
@@ -338,15 +576,26 @@ public sealed class VersionService
                 "The rollback target content digest does not match its canonical element snapshot.");
         }
 
-        var version = new CompositionVersion(
-            newVersionId,
-            draft.ProjectId,
-            draft.BaseVersionId,
-            actorId,
-            createdAt,
-            changeReason,
-            contentDigest,
-            elements);
+        CompositionVersion version = evidence is null
+            ? new CompositionVersion(
+                newVersionId,
+                draft.ProjectId,
+                draft.BaseVersionId,
+                actorId,
+                createdAt,
+                changeReason,
+                contentDigest,
+                elements)
+            : new CompositionVersion(
+                newVersionId,
+                draft.ProjectId,
+                draft.BaseVersionId,
+                actorId,
+                createdAt,
+                changeReason,
+                contentDigest,
+                elements,
+                evidence);
         var updatedWorkingCopy = new WorkingCopy(
             draft.Id,
             draft.ProjectId,
@@ -360,9 +609,11 @@ public sealed class VersionService
         int workingCopyRevision = _projectStore.CheckpointWorkingCopy(
             version,
             canonicalVersionJson,
+            draft,
             updatedWorkingCopy,
             canonicalWorkingCopyJson,
-            expectedRevision);
+            expectedRevision,
+            cancellationToken);
 
         return new CheckpointResult(
             version,
@@ -370,6 +621,48 @@ public sealed class VersionService
             workingCopyRevision,
             canonicalVersionJson,
             canonicalWorkingCopyJson);
+    }
+
+    private bool IsStrictAncestor(
+        EntityId<CompositionVersionIdTag>? currentHeadId,
+        EntityId<CompositionVersionIdTag> targetId)
+    {
+        if (currentHeadId is null)
+        {
+            return false;
+        }
+
+        CompositionVersion current = GetVersion(currentHeadId)
+            ?? throw new InvalidOperationException(
+                "The current working-copy head is not a stored composition version.");
+        EntityId<CompositionVersionIdTag>? cursor = current.ParentVersionId;
+        var visited = new HashSet<EntityId<CompositionVersionIdTag>> { current.Id };
+        while (cursor is not null)
+        {
+            if (!visited.Add(cursor))
+            {
+                throw new InvalidOperationException(
+                    "The stored composition-version lineage contains a cycle.");
+            }
+
+            CompositionVersion ancestor = GetVersion(cursor)
+                ?? throw new InvalidOperationException(
+                    "The stored composition-version lineage is incomplete.");
+            if (ancestor.ProjectId != current.ProjectId)
+            {
+                throw new InvalidOperationException(
+                    "The stored composition-version lineage crosses projects.");
+            }
+
+            if (ancestor.Id == targetId)
+            {
+                return true;
+            }
+
+            cursor = ancestor.ParentVersionId;
+        }
+
+        return false;
     }
 
     private static Dictionary<
@@ -426,28 +719,29 @@ internal static class CompositionSnapshotJson
             JsonElement root = document.RootElement;
             bool hasParent = root.ValueKind == JsonValueKind.Object &&
                 root.TryGetProperty("parentVersionId", out _);
-            EnsureExactProperties(
-                root,
-                hasParent
-                    ? [
-                        "id",
-                        "projectId",
-                        "parentVersionId",
-                        "createdByActorId",
-                        "createdAt",
-                        "changeReason",
-                        "contentDigest",
-                        "elements",
-                    ]
-                    : [
-                        "id",
-                        "projectId",
-                        "createdByActorId",
-                        "createdAt",
-                        "changeReason",
-                        "contentDigest",
-                        "elements",
-                    ]);
+            bool hasEvidence = root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("evidence", out _);
+            var expectedProperties = new List<string>
+            {
+                "id",
+                "projectId",
+                "createdByActorId",
+                "createdAt",
+                "changeReason",
+                "contentDigest",
+                "elements",
+            };
+            if (hasParent)
+            {
+                expectedProperties.Add("parentVersionId");
+            }
+
+            if (hasEvidence)
+            {
+                expectedProperties.Add("evidence");
+            }
+
+            EnsureExactProperties(root, expectedProperties);
 
             EntityId<CompositionVersionIdTag> id =
                 ReadEntityId<CompositionVersionIdTag>(root, "id");
@@ -462,6 +756,9 @@ internal static class CompositionSnapshotJson
             ContentDigest contentDigest = ReadContentDigest(root, "contentDigest");
             IReadOnlyList<CompositionElement> elements = ReadElements(
                 root.GetProperty("elements"));
+            CompositionEvidenceEnvelope? evidence = hasEvidence
+                ? ReadEvidence(root.GetProperty("evidence"))
+                : null;
             ContentDigest computedDigest = ContentDigest.Compute(
                 WriteElementsObjectToUtf8(elements));
             if (computedDigest != contentDigest)
@@ -478,7 +775,8 @@ internal static class CompositionSnapshotJson
                 createdAt,
                 changeReason,
                 contentDigest,
-                elements);
+                elements,
+                evidence);
             if (!string.Equals(
                     canonicalJson,
                     WriteVersion(version),
@@ -504,6 +802,64 @@ internal static class CompositionSnapshotJson
             throw new FormatException(
                 "The stored composition version is invalid.",
                 exception);
+        }
+    }
+
+    internal static WorkingCopy ReadWorkingCopy(string canonicalJson)
+    {
+        ArgumentNullException.ThrowIfNull(canonicalJson);
+
+        try
+        {
+            byte[] utf8 = StrictUtf8.GetBytes(canonicalJson);
+            byte[] canonicalUtf8 = CanonicalJson.CanonicalizeToUtf8(utf8);
+            if (!utf8.AsSpan().SequenceEqual(canonicalUtf8))
+            {
+                throw new FormatException(
+                    "A stored working copy must use its canonical JSON representation.");
+            }
+
+            using JsonDocument document = JsonDocument.Parse(canonicalUtf8);
+            JsonElement root = document.RootElement;
+            bool hasBaseVersion = root.ValueKind == JsonValueKind.Object &&
+                root.TryGetProperty("baseVersionId", out _);
+            EnsureExactProperties(
+                root,
+                hasBaseVersion
+                    ? ["id", "projectId", "baseVersionId", "createdAt", "updatedAt", "elements"]
+                    : ["id", "projectId", "createdAt", "updatedAt", "elements"]);
+            var workingCopy = new WorkingCopy(
+                ReadEntityId<WorkingCopyIdTag>(root, "id"),
+                ReadEntityId<ProjectIdTag>(root, "projectId"),
+                hasBaseVersion
+                    ? ReadEntityId<CompositionVersionIdTag>(root, "baseVersionId")
+                    : null,
+                ReadTimestamp(root, "createdAt"),
+                ReadTimestamp(root, "updatedAt"),
+                ReadElements(root.GetProperty("elements")));
+            if (!string.Equals(
+                    canonicalJson,
+                    WriteWorkingCopy(workingCopy),
+                    StringComparison.Ordinal))
+            {
+                throw new FormatException(
+                    "The stored working copy does not match its canonical domain representation.");
+            }
+
+            return workingCopy;
+        }
+        catch (FormatException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+            when (exception is JsonException or
+                EncoderFallbackException or
+                ArgumentException or
+                InvalidOperationException or
+                OverflowException)
+        {
+            throw new FormatException("The stored working copy is invalid.", exception);
         }
     }
 
@@ -539,8 +895,34 @@ internal static class CompositionSnapshotJson
             WriteString(writer, "contentDigest", version.ContentDigest.Hex);
             writer.WritePropertyName("elements");
             WriteElements(writer, version.Elements);
+            if (version.Evidence is not null)
+            {
+                writer.WritePropertyName("evidence");
+                WriteEvidence(writer, version.Evidence);
+            }
+
             writer.WriteEndObject();
         }));
+    }
+
+    private static CompositionEvidenceEnvelope ReadEvidence(JsonElement value)
+    {
+        EnsureExactProperties(value, ["kind", "contentDigest", "canonicalJson"]);
+        return CompositionEvidenceEnvelope.Restore(
+            ReadString(value, "kind"),
+            ReadContentDigest(value, "contentDigest"),
+            ReadString(value, "canonicalJson"));
+    }
+
+    private static void WriteEvidence(
+        Utf8JsonWriter writer,
+        CompositionEvidenceEnvelope evidence)
+    {
+        writer.WriteStartObject();
+        WriteString(writer, "kind", evidence.Kind);
+        WriteString(writer, "contentDigest", evidence.ContentDigest.Hex);
+        WriteString(writer, "canonicalJson", evidence.CanonicalJson);
+        writer.WriteEndObject();
     }
 
     internal static string WriteWorkingCopy(WorkingCopy workingCopy)

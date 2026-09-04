@@ -9,7 +9,7 @@ namespace HubRadio.Infrastructure.Database;
 
 public sealed class StoreConcurrencyException : InvalidOperationException
 {
-    internal StoreConcurrencyException(
+    public StoreConcurrencyException(
         string entityKind,
         string entityId,
         int expectedRevision,

@@ -273,39 +273,124 @@ public sealed class VersionServiceTests
     }
 
     [TestMethod]
-    public void RollbackRejectsTargetDigestMismatchBeforeAnyStoreMutation()
+    public void RollbackRejectsForgedStoredTargetBeforeAnyStoreMutation()
     {
         using ServiceTestDatabase database = new();
         (ProjectStore store, Project project, WorkingCopy draft) =
             CreateStoredDraft(database, [CreateAssetElement()]);
         var service = new VersionService(store);
-        var mismatchedTarget = new CompositionVersion(
+        CheckpointResult stored = service.Checkpoint(
+            draft,
+            0,
             EntityId<CompositionVersionIdTag>.New(),
+            "editor",
+            InitialTime.AddMinutes(1),
+            "Create current head.");
+        var forgedTarget = new CompositionVersion(
+            stored.Version.Id,
             project.Id,
             null,
             "other-editor",
             InitialTime,
             "Untrusted imported target.",
-            new ContentDigest(new string('f', 64)),
-            draft.Elements);
+            stored.Version.ContentDigest,
+            stored.Version.Elements);
         EntityId<CompositionVersionIdTag> rejectedId = EntityId<CompositionVersionIdTag>.New();
 
-        Assert.ThrowsExactly<InvalidOperationException>(
+        Assert.ThrowsExactly<ArgumentException>(
             () => service.RollbackAsChild(
-                draft,
-                mismatchedTarget,
-                0,
+                stored.WorkingCopy,
+                forgedTarget,
+                1,
                 rejectedId,
                 "editor",
-                InitialTime.AddMinutes(1),
+                InitialTime.AddMinutes(2),
                 "Attempt rollback."));
 
-        Assert.AreEqual(0L, database.ExecuteScalarInt64(
+        Assert.AreEqual(1L, database.ExecuteScalarInt64(
             "SELECT COUNT(*) FROM composition_versions;"));
         Assert.IsNull(store.GetCompositionVersion(rejectedId));
-        StoredWorkingCopy stored = store.GetWorkingCopy(project.Id)!;
-        Assert.AreEqual(0, stored.Revision);
-        Assert.IsNull(stored.BaseVersionId);
+        StoredWorkingCopy persistedDraft = store.GetWorkingCopy(project.Id)!;
+        Assert.AreEqual(1, persistedDraft.Revision);
+        Assert.AreEqual(forgedTarget.Id, persistedDraft.BaseVersionId);
+    }
+
+    [TestMethod]
+    public void RollbackRejectsStoredNonancestorBeforeAnyStoreMutation()
+    {
+        using ServiceTestDatabase database = new();
+        (ProjectStore store, Project project, WorkingCopy draft) =
+            CreateStoredDraft(database, [CreateAssetElement()]);
+        var service = new VersionService(store);
+        CheckpointResult head = service.Checkpoint(
+            draft,
+            0,
+            EntityId<CompositionVersionIdTag>.New(),
+            "editor",
+            InitialTime.AddMinutes(1),
+            "Create current head.");
+        var unrelated = new CompositionVersion(
+            EntityId<CompositionVersionIdTag>.New(),
+            project.Id,
+            parentVersionId: null,
+            "other-editor",
+            InitialTime.AddMinutes(1),
+            "Create unrelated stored root.",
+            head.Version.ContentDigest,
+            head.Version.Elements);
+        store.AppendCompositionVersion(
+            unrelated,
+            CompositionSnapshotJson.WriteVersion(unrelated));
+        EntityId<CompositionVersionIdTag> rejectedId = EntityId<CompositionVersionIdTag>.New();
+
+        Assert.ThrowsExactly<ArgumentException>(() => service.RollbackAsChild(
+            head.WorkingCopy,
+            unrelated,
+            1,
+            rejectedId,
+            "editor",
+            InitialTime.AddMinutes(2),
+            "Attempt nonancestor rollback."));
+
+        Assert.AreEqual(2L, database.ExecuteScalarInt64(
+            "SELECT COUNT(*) FROM composition_versions;"));
+        Assert.IsNull(store.GetCompositionVersion(rejectedId));
+        Assert.AreEqual(1, store.GetWorkingCopy(project.Id)!.Revision);
+    }
+
+    [TestMethod]
+    public void EvidenceEnvelopeRejectsNoncanonicalUnicodeAndDigestMismatch()
+    {
+        CompositionEvidenceEnvelope valid = CompositionEvidenceEnvelope.Create(
+            "autoDecision",
+            "{\"schemaVersion\":\"v1\"}");
+        CompositionEvidenceEnvelope restored = CompositionEvidenceEnvelope.Restore(
+            valid.Kind,
+            valid.ContentDigest,
+            valid.CanonicalJson);
+        Assert.AreEqual(valid.Kind, restored.Kind);
+        Assert.AreEqual(valid.ContentDigest, restored.ContentDigest);
+        Assert.AreEqual(valid.CanonicalJson, restored.CanonicalJson);
+        Assert.ThrowsExactly<FormatException>(() =>
+            CompositionEvidenceEnvelope.Create("autoDecision", "{ \"a\": 1 }"));
+        Assert.ThrowsExactly<FormatException>(() =>
+            CompositionEvidenceEnvelope.Create("autoDecision", "{\"a\":\"\uD800\"}"));
+        Assert.ThrowsExactly<FormatException>(() =>
+            CompositionEvidenceEnvelope.Restore(
+                "autoDecision",
+                new ContentDigest(new string('f', 64)),
+                valid.CanonicalJson));
+    }
+
+    [TestMethod]
+    public void EvidenceEnvelopeRejectsCanonicalJsonAboveUtf8ByteLimit()
+    {
+        string oversized = "{\"value\":\"" +
+            new string('x', CompositionEvidenceEnvelope.MaximumCanonicalJsonUtf8Bytes) +
+            "\"}";
+
+        Assert.ThrowsExactly<FormatException>(() =>
+            CompositionEvidenceEnvelope.Create("autoDecision", oversized));
     }
 
     [TestMethod]

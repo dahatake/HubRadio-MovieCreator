@@ -94,6 +94,7 @@ public sealed class SilenceDetectionConfiguration
 public sealed class SilenceCandidate
 {
     internal SilenceCandidate(
+        AnalysisAudioTimeline analysisTimeline,
         SourceSpan sourceSpan,
         Detection detection,
         Suggestion suggestion,
@@ -101,6 +102,7 @@ public sealed class SilenceCandidate
         long analysisStartSample,
         long analysisEndSample)
     {
+        ArgumentNullException.ThrowIfNull(analysisTimeline);
         ArgumentNullException.ThrowIfNull(sourceSpan);
         ArgumentNullException.ThrowIfNull(detection);
         ArgumentNullException.ThrowIfNull(suggestion);
@@ -121,6 +123,41 @@ public sealed class SilenceCandidate
             throw new ArgumentOutOfRangeException(
                 nameof(analysisEndSample),
                 "A silence candidate requires an ordered positive sample range.");
+        }
+
+        RationalTime expectedStart;
+        RationalTime expectedEnd;
+        try
+        {
+            expectedStart = analysisTimeline.MapAnalysisSampleToSourceTime(
+                analysisStartSample);
+            expectedEnd = analysisTimeline.MapAnalysisSampleToSourceTime(
+                analysisEndSample);
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(analysisEndSample),
+                analysisEndSample,
+                exception.Message);
+        }
+
+        string expectedStreamId = string.Concat(
+            "audio:",
+            analysisTimeline.SourceAudioStreamIndex.ToString(
+                CultureInfo.InvariantCulture));
+        if (analysisTimeline.SourceAssetId != sourceSpan.AssetId
+            || analysisTimeline.SourceContentDigest != sourceSpan.SourceDigest
+            || !string.Equals(
+                expectedStreamId,
+                sourceSpan.StreamId,
+                StringComparison.Ordinal)
+            || sourceSpan.Range.Start != expectedStart
+            || sourceSpan.Range.End != expectedEnd)
+        {
+            throw new ArgumentException(
+                "A silence candidate must match its analysis-audio timeline.",
+                nameof(sourceSpan));
         }
 
         if (sourceSpan.TranscriptRevisionId is not null
@@ -146,6 +183,7 @@ public sealed class SilenceCandidate
                 nameof(suggestion));
         }
 
+        AnalysisTimeline = analysisTimeline;
         SourceSpan = sourceSpan;
         Detection = detection;
         Suggestion = suggestion;
@@ -153,6 +191,8 @@ public sealed class SilenceCandidate
         AnalysisStartSample = analysisStartSample;
         AnalysisEndSample = analysisEndSample;
     }
+
+    internal AnalysisAudioTimeline AnalysisTimeline { get; }
 
     public SourceSpan SourceSpan { get; }
 
@@ -216,6 +256,10 @@ public sealed class SilenceDetectionResult
                 expectedEnd - expectedStart);
             if (candidate.AnalysisStartSample < previousEndSample
                 || candidate.AnalysisEndSample > timeline.AnalysisSampleCount
+                || !string.Equals(
+                    candidate.AnalysisTimeline.CanonicalJson,
+                    timeline.CanonicalJson,
+                    StringComparison.Ordinal)
                 || candidate.AnalysisEndSample - candidate.AnalysisStartSample
                     < minimumSampleCount
                 || candidate.SourceSpan.AssetId != timeline.SourceAssetId
@@ -574,6 +618,7 @@ public sealed partial class SilenceDetector
                     MissingContext,
                     ReviewWarning);
                 candidates.Add(new SilenceCandidate(
+                    timeline,
                     sourceSpan,
                     detection,
                     suggestion,

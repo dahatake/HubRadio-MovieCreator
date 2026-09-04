@@ -258,6 +258,7 @@ public sealed class ProjectStoreTests
             () => store.CheckpointWorkingCopy(
                 existing,
                 "{\"attempt\":true}",
+                originalDraft,
                 updatedDraft,
                 "{\"draft\":1}",
                 expectedWorkingCopyRevision: 0));
@@ -302,6 +303,13 @@ public sealed class ProjectStoreTests
         }
 
         CompositionVersion version = CreateVersion(project.Id, missingParentId);
+        var expectedDraft = new WorkingCopy(
+            originalDraft.Id,
+            project.Id,
+            missingParentId,
+            originalDraft.CreatedAt,
+            originalDraft.UpdatedAt,
+            elements: []);
         var updatedDraft = new WorkingCopy(
             originalDraft.Id,
             project.Id,
@@ -314,6 +322,7 @@ public sealed class ProjectStoreTests
             () => store.CheckpointWorkingCopy(
                 version,
                 "{\"version\":true}",
+                expectedDraft,
                 updatedDraft,
                 "{\"draft\":1}",
                 expectedWorkingCopyRevision: 0));
@@ -358,6 +367,7 @@ public sealed class ProjectStoreTests
             () => store.CheckpointWorkingCopy(
                 version,
                 "{\"z\":2,\"a\":1}",
+                originalDraft,
                 updatedDraft,
                 "{\"draft\":1}",
                 expectedWorkingCopyRevision: 0));
@@ -516,8 +526,10 @@ public sealed class ProjectStoreTests
                 typeof(CompositionVersion),
                 typeof(string),
                 typeof(WorkingCopy),
+                typeof(WorkingCopy),
                 typeof(string),
                 typeof(int),
+                typeof(CancellationToken),
             ],
             modifiers: null)
             ?? throw new AssertFailedException("The specialized checkpoint method is missing.");

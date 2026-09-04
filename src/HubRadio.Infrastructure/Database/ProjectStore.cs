@@ -344,13 +344,17 @@ public sealed class ProjectStore
     public int CheckpointWorkingCopy(
         CompositionVersion version,
         string versionPayloadJson,
+        WorkingCopy expectedWorkingCopy,
         WorkingCopy updatedWorkingCopy,
         string workingCopyPayloadJson,
-        int expectedWorkingCopyRevision)
+        int expectedWorkingCopyRevision,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(version);
+        ArgumentNullException.ThrowIfNull(expectedWorkingCopy);
         ArgumentNullException.ThrowIfNull(updatedWorkingCopy);
         ValidateExpectedRevision(expectedWorkingCopyRevision);
+        cancellationToken.ThrowIfCancellationRequested();
         byte[] versionPayload = SqliteStoreSupport.CanonicalizePayload(
             versionPayloadJson,
             nameof(versionPayloadJson));
@@ -365,9 +369,18 @@ public sealed class ProjectStore
             nameof(updatedWorkingCopy));
 
         ValidateCheckpointAggregates(version, updatedWorkingCopy);
+        if (expectedWorkingCopy.Id != updatedWorkingCopy.Id
+            || expectedWorkingCopy.ProjectId != updatedWorkingCopy.ProjectId
+            || expectedWorkingCopy.BaseVersionId != version.ParentVersionId)
+        {
+            throw new ArgumentException(
+                "The expected current working copy does not match the checkpoint lineage.",
+                nameof(expectedWorkingCopy));
+        }
 
         using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        cancellationToken.ThrowIfCancellationRequested();
         StoredWorkingCopyIdentity current = ReadWorkingCopyIdentity(
             connection,
             transaction,
@@ -383,10 +396,14 @@ public sealed class ProjectStore
             updatedWorkingCopy.Id.ToString(),
             expectedWorkingCopyRevision,
             current.Revision);
-        if (current.BaseVersionId != version.ParentVersionId)
+        if (current.ProjectId != expectedWorkingCopy.ProjectId
+            || current.BaseVersionId != expectedWorkingCopy.BaseVersionId)
         {
-            throw new InvalidOperationException(
-                "The composition version parent does not match the stored working-copy base.");
+            throw new StoreConcurrencyException(
+                "working copy",
+                expectedWorkingCopy.Id.ToString(),
+                expectedWorkingCopyRevision,
+                current.Revision);
         }
 
         if (updatedWorkingCopy.UpdatedAt < current.UpdatedAt)
@@ -397,6 +414,7 @@ public sealed class ProjectStore
         }
 
         int newRevision = checked(current.Revision + 1);
+        cancellationToken.ThrowIfCancellationRequested();
         InsertCompositionVersion(
             connection,
             transaction,
@@ -653,7 +671,11 @@ public sealed class ProjectStore
             throw SqliteStoreSupport.InvalidStoredData("working copy");
         }
 
-        return new StoredWorkingCopyIdentity(projectId, baseVersionId, revision, updatedAt);
+        return new StoredWorkingCopyIdentity(
+            projectId,
+            baseVersionId,
+            revision,
+            updatedAt);
     }
 
     private static void ValidateCheckpointAggregates(

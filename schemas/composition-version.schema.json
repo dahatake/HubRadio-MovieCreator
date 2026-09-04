@@ -35,6 +35,9 @@
     "contentDigest": {
       "$ref": "#/$defs/contentDigest"
     },
+    "evidence": {
+      "$ref": "#/$defs/evidenceEnvelope"
+    },
     "elements": {
       "type": "array",
       "$comment": "Runtime validation also requires unique composition element IDs.",
@@ -52,6 +55,28 @@
     "contentDigest": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "evidenceEnvelope": {
+      "type": "object",
+      "$comment": "V2-007 autoDecision evidence only. canonicalJson is runtime-validated as nonempty canonical UTF-8 JSON, contentDigest must equal its SHA-256 digest, and runtime applies a 4 MiB UTF-8 resource-safety envelope. The byte envelope is not a product or quality threshold.",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "contentDigest",
+        "canonicalJson"
+      ],
+      "properties": {
+        "kind": {
+          "const": "autoDecision"
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/contentDigest"
+        },
+        "canonicalJson": {
+          "type": "string",
+          "minLength": 2
+        }
+      }
     },
     "nonBlankText": {
       "type": "string",

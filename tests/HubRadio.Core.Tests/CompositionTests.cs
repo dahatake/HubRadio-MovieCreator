@@ -40,11 +40,17 @@ public sealed class CompositionTests
             "CreatedAt",
             "ChangeReason",
             "ContentDigest",
-            "Elements");
+            "Elements",
+            "Evidence");
 
         Assert.AreEqual(
             typeof(EntityId<CompositionVersionIdTag>),
             typeof(CompositionVersion).GetProperty("Id")!.PropertyType);
+        Assert.AreEqual(
+            typeof(CompositionEvidenceEnvelope),
+            Nullable.GetUnderlyingType(
+                typeof(CompositionVersion).GetProperty("Evidence")!.PropertyType)
+            ?? typeof(CompositionVersion).GetProperty("Evidence")!.PropertyType);
         Assert.IsNull(typeof(CompositionVersion).GetProperty("IsApproved"));
         Assert.IsNull(typeof(CompositionVersion).GetProperty("ApprovalStatus"));
     }
