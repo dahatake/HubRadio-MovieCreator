@@ -3,7 +3,7 @@
 HubRadio MovieCreator の開発、保守、技術検証、設計判断に関する入口です。
 
 > [!IMPORTANT]
-> 2026-09-02に[要求版0.2](../requirement-definition.md)と[ADR-0009](decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)で、source-only quick start、版付き既定値、単一利用者、社内限定、自動代理評価へ再baselineしました。文書task`V2-000`は[敵対的レビュー](reviews/v2-defaults-adversarial-review.md)を経て完了し、production実装を再開しました。`V2-001`の版付き既定設定domain/schemaも[独立レビュー](reviews/v2-001-default-settings-profile-adversarial-review.md)後に完了しています。新しいquick start、設定store/UI、標準成果物、自動代理評価flowは未実装です。
+> 2026-09-02に[要求版0.2](../requirement-definition.md)と[ADR-0009](decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)で、source-only quick start、版付き既定値、単一利用者、社内限定、自動代理評価へ再baselineしました。`V2-000`〜`V2-009`は個別・統合の敵対的レビュー後に完了し、source-only quick start、設定store/UI、可逆な自動decision、標準Composition計画、社内限定BGM policyまで実装済みです。自動代理評価、単一利用者state、成果物画面、実render／delivery、最終受入は未実装です。
 >
 > Stage 0、Foundation、既存Stage 1の実装・試験証拠は履歴として有効ですが、旧203 taskの`124/203`、`139/203`、`160/203`等は新要求後の現在進捗ではありません。別account ACL、人手review、社内法務approval等の旧gateも、社内限定quick startの現在gateではありません。旧証拠を遡及変更せず、[詳細実装計画](planning/implementation-plan.md)の再分類表から利用可否を判断してください。
 
@@ -19,6 +19,7 @@ HubRadio MovieCreator の開発、保守、技術検証、設計判断に関す�
 | quick startの初期値、数値、外部資料のscopeを確認する | [既定設定調査](research/default-settings-research.md) |
 | 要求版0.2の指摘、修正、検証、残余リスクを確認する | [要求版0.2・既定設定・再baseline敵対的レビュー](reviews/v2-defaults-adversarial-review.md) |
 | 版付き既定設定domain/schemaの指摘、修正、検証を確認する | [V2-001敵対的レビュー](reviews/v2-001-default-settings-profile-adversarial-review.md) |
+| source-only quick startと標準Composition計画の検証を確認する | [V2-005レビュー](reviews/v2-005-quick-start-ui-adversarial-review.md)、[V2-008再レビュー](reviews/v2-008-standard-composition-adversarial-rereview.md) |
 | 採用済みの設計判断を確認する | [ADR](decisions/) |
 | 検証と敵対的レビューの方法を確認する | [品質管理](quality.md) |
 | データ、秘密、権利、Azure 境界を確認する | [セキュリティとプライバシー](security-privacy.md) |
@@ -103,7 +104,9 @@ docs/
       ├─ adversarial-review.md
       ├─ implementation-adversarial-review.md
       ├─ v2-defaults-adversarial-review.md
-      └─ v2-001-default-settings-profile-adversarial-review.md
+      ├─ v2-001-default-settings-profile-adversarial-review.md
+      ├─ v2-005-quick-start-ui-adversarial-review.md
+      └─ v2-008-standard-composition-adversarial-rereview.md
 ```
 
 `benchmarks/` の code、fixture manifest、schema、canonical result、`test/` の検証証拠、`work/` の日付付き作業成果物は、読者向けガイドではないため各成果物の近くに残します。

@@ -317,7 +317,7 @@ public sealed class StandardCompositionApplication
 public static class StandardCompositionOrchestrator
 {
     internal const string EvidenceSchemaVersion =
-        "hubradio.standard-composition-evidence.v1";
+        "hubradio.standard-composition-evidence.v2";
 
     public static StandardCompositionPreparation Prepare(
         StandardCompositionOrchestrationRequest request,

@@ -10,7 +10,7 @@
 
 **再baseline日:** 2026年9月2日
 
-**状態:** 要求再baseline済み。production実装を再開し、`V2-001`設定domain/schemaを実装済み
+**状態:** 要求再baseline済み。`V2-000`〜`V2-009`を実装・レビュー済み。`V2-010`以降の自動代理評価、state、実render／delivery、最終受入は未完了
 
 **既定値の根拠:** [既定設定調査](dev/research/default-settings-research.md)
 

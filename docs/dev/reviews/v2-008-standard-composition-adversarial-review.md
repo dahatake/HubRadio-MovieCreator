@@ -1,5 +1,8 @@
 # V2-008 標準Composition計画 敵対的レビュー
 
+> [!WARNING]
+> 本書はcommit `e60c4c7`時点の初回closure記録である。2026-09-05の再レビューで、source-only短尺候補化と実thumbnail連携を含む追加問題を検出・修正した。現在の判定と検証結果は[再レビュー](v2-008-standard-composition-adversarial-rereview.md)を正本とし、本書のv1 payload hash、test件数、実装説明を現在実装へ流用しない。
+
 - 対象task: `V2-008`
 - 対象要求: `docs/requirement-definition.md` 版0.2 Draft FR-007〜FR-015、FR-021、FR-024、FR-030〜FR-032、NFR-002、NFR-003、NFR-006〜NFR-008、AC-001、AC-002、AC-005
 - task base: `9f80cd52f1c699b120d101da8ca8f9dc4ecbeabb`
@@ -7,9 +10,10 @@
 - task branch: `task/v2-008-20260904`
 - task commit: `84c330a9664eca1b71df75165752546219433572`
 - integrated local main: `84c330a9664eca1b71df75165752546219433572`
+- closure commit: `e60c4c77435e13f44fdcd72a142192e26d69adec`
 - レビュー日: 2026-09-05
-- 状態: **REVIEW CLOSED — V2-008 local main統合済み**
-- 未解決Critical / Major / Minor: **0 / 0 / 0**
+- 状態: **HISTORICAL REVIEW CLOSED — 再レビューにより更新済み**
+- 初回closure時の未解決Critical / Major / Minor: **0 / 0 / 0**
 
 > [!IMPORTANT]
 > 本レビューのPASS範囲は、source-only案件から、社内限定16:9長尺1件、成立した0〜3件の9:16短尺、字幕variant参照、固定またはぼかし背景layout、BGM割当receipt、実frame根拠がある場合の0〜3件のthumbnail候補、不成立理由、warning、入力digest、child `CompositionVersion`とcanonical semantic-replay evidenceを決定的に計画・checkpointするcontractである。実render、自動代理評価、delivery、人による知覚品質、法的適合、platform UI適合、外部公開、signed package、clean-machine install、release readinessはPASSにしない。
@@ -52,6 +56,8 @@
 - `tests/HubRadio.Infrastructure.Tests/ProjectCreationDraftStoreTests.cs`
 
 各relative path、byte size、file SHA-256をordinal順、実TAB区切り、LF結合、UTF-8 BOMなし、末尾LFなしで計算した最終内容集約SHA-256は`ebafb201b83adac4e5e1378378fab1f349455ac05cadc0f66613c79f8f69c719`である。review前の完全patchは15,944行、621,774 bytes、SHA-256 `372bf80889575f2a01930cbba2d1001a4508b64cce1e575da95358d8800a6d97`だった。その後のproduction/schema変更はなく、既存公開surface testへ新しいimmutable型を追加し1/1成功した。
+
+この集約値のper-file manifestは本書へ保存しておらず、現在treeの受入証拠ではない。初回closure時点を示す履歴receiptとしてだけ保持する。
 
 ## 2. 実装結果
 
@@ -133,8 +139,8 @@ findingはexact file/symbol、違反contract、構築可能な再現入力また
 | `V2-008-R16` | Major | 同一SourceSpan IDをprovenance/candidate/candidate間で異なるrange/tokenへ再定義できた | authoritative IDはexact content必須、candidate間も一意。採否前に拒否する負例を追加 |
 | `V2-008-R17` | Major | production thumbnail経路が常時0件で、実frame evidenceを入力できなかった | completed-ingest PTS/frame-map/spriteとregistered bytesから0〜3候補を作る経路を追加 |
 | `V2-008-R18` | Major | compact thumbnail metadataだけでactual artifactを主張できた | 公開factoryをcompleted ingest＋4 registered artifact実hash検証へ限定し、receipt tamper test追加 |
-| `V2-008-R19` | Regression | exact working-copy timestamp検査をlegacy checkpointへ広げ、編集済みdraftの既存test 2件を壊した | exact pathだけに条件を限定。失敗2件と`VersionServiceTests` 18/18で再確認 |
-| `V2-008-R20` | Regression | Project creation draft payloadをProject正本としても保存する旧設計とexact Project照合が競合した | Core canonical Project serializerへ一本化し、draft/project payloadを分離。public overload互換を維持 |
+| `V2-008-R19` | Regression | exact working-copy timestamp検査をlegacy checkpointへ広げ、編集済みdraftの既存test 2件を壊した | exact pathだけに条件を限定。失敗2件と`VersionServiceTests` 18/18で再確認。当時の個別test名はreceiptへ保存されておらず、現在から推測しない |
+| `V2-008-R20` | Regression | Project creation draft payloadをProject正本としても保存する旧設計とexact Project照合が競合した | `HubRadio.Core.Projects.ProjectSnapshotJson`、`ProjectCreationDraftStore.FinalizeDraft`、`ProjectCreationService`でdraft/project payloadを分離し、public overload互換を維持 |
 
 ## 5. 不採用・再分類した候補
 
@@ -176,6 +182,8 @@ findingはexact file/symbol、違反contract、構築可能な再現入力また
 
 latest x64 App test assemblyのfixtureからdefault、adopted highlight、assigned music、thumbnail evidenceの4 payloadを実codecで生成し、PowerShell 7 `Test-Json`で`schemas/standard-composition-evidence.schema.json`へ照合した。
 
+payload生成用の一時helperとexact commandは追跡されていないため、以下のhashは初回v1 closureの履歴receiptであり単独再現可能な現在証拠ではない。再レビュー後のv2 contractは追跡済みschema testとsemantic replay testを正本にする。
+
 | Payload | UTF-8 bytes | SHA-256 | 結果 |
 |---:|---:|---|---|
 | 0 default | 119,988 | `0b0b0c880639dc46cb66b99cb518b8ab341155f1b3117c879b75ad9374d176de` | PASS |
@@ -186,6 +194,8 @@ latest x64 App test assemblyのfixtureからdefault、adopted highlight、assign
 ### 6.3 canonical Release全回帰
 
 `test.ps1 -Configuration Release`をtask worktreeで実行した。
+
+このlocal runのexact開始時刻、run ID、完全log artifactは保存されていない。表は初回closure時点の集計であり、現在treeの再実行結果として扱わない。
 
 | Runner | Success | Failure | environment-gated |
 |---|---:|---:|---:|

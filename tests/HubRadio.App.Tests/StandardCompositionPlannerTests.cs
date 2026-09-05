@@ -25,28 +25,38 @@ namespace HubRadio.App.Tests;
 public sealed class StandardCompositionPlannerTests
 {
     [TestMethod]
-    public void ProposedHighlightIsNotAdoptedAndProducesTypedOmissions()
+    public void GroundedProposedHighlightBecomesCandidateWithoutBeingAdopted()
     {
         Fixture fixture = new();
         EmphasisSuggestionCandidate proposed = fixture.CreateCandidate(
             ordinal: 1,
             start: 5,
-            duration: 2,
+            duration: 30,
             tokenOrdinal: 1);
 
         StandardCompositionPlan plan = StandardCompositionPlanner.Create(
             fixture.CreateRequest([proposed], adoptedHighlights: []));
 
-        Assert.IsEmpty(plan.ShortForms);
+        Assert.HasCount(1, plan.ShortForms);
         Assert.IsEmpty(plan.Thumbnails);
-        Assert.HasCount(1, plan.ShortCandidateExclusions);
+        Assert.IsEmpty(plan.ShortCandidateExclusions);
         Assert.AreEqual(
-            StandardShortCandidateExclusionCode.NotExplicitlyAdopted,
-            plan.ShortCandidateExclusions[0].Code);
+            StandardShortSelectionKind.GroundedCandidate,
+            plan.ShortForms[0].SelectionKind);
+        Assert.AreEqual(SuggestionStatus.Proposed, proposed.Status);
+        Assert.AreEqual(
+            proposed.Suggestion.Reason,
+            plan.ShortForms[0].SelectionReason);
+        Assert.AreEqual(
+            proposed.Suggestion.MissingContext,
+            plan.ShortForms[0].MissingContext);
+        Assert.AreEqual(
+            proposed.Suggestion.Warning,
+            plan.ShortForms[0].SelectionWarning);
         CollectionAssert.AreEqual(
             new[]
             {
-                StandardCompositionOmissionCode.NoGroundedCandidate,
+                StandardCompositionOmissionCode.NoAdditionalGroundedCandidate,
                 StandardCompositionOmissionCode.NoMeasuredSourceFrame,
             },
             plan.Omissions.Select(static omission => omission.Code).ToArray());
@@ -70,7 +80,10 @@ public sealed class StandardCompositionPlannerTests
 
         Assert.HasCount(1, plan.ShortForms);
         StandardShortFormPlan shortForm = plan.ShortForms[0];
-        Assert.AreEqual(candidate.Id, shortForm.AdoptedHighlight.SuggestionId);
+        Assert.AreEqual(
+            StandardShortSelectionKind.ExplicitAdoption,
+            shortForm.SelectionKind);
+        Assert.AreEqual(candidate.Id, shortForm.SelectedHighlight.SuggestionId);
         Assert.AreSame(candidate.Payload.SourceSpan, shortForm.SourceSpans[0]);
         Assert.AreEqual(
             StandardCallToActionKind.ViewLongForm,
@@ -83,7 +96,7 @@ public sealed class StandardCompositionPlannerTests
             StandardSubtitleVariantKind.BurnedIn,
             shortForm.SubtitleVariants[0].Kind);
         Assert.IsNotNull(shortForm.Hook);
-        Assert.AreEqual(candidate.Id, shortForm.Hook.AdoptedHighlight.SuggestionId);
+        Assert.AreEqual(candidate.Id, shortForm.Hook.SelectedHighlight.SuggestionId);
         Assert.AreEqual(1080, plan.ShortFormProfile.Profile.Width);
         Assert.AreEqual(1920, plan.ShortFormProfile.Profile.Height);
         Assert.IsTrue(plan.ShortFormProfile.Profile.SubtitleBurnIn);
@@ -96,6 +109,40 @@ public sealed class StandardCompositionPlannerTests
             StandardCompositionOmissionCode.NoMeasuredSourceFrame,
             plan.Omissions.Single(omission => omission.ArtifactKind
                 == StandardCompositionArtifactKind.Thumbnail).Code);
+    }
+
+    [TestMethod]
+    public void AdoptedAndProposedCandidatesRemainDistinctSelections()
+    {
+        Fixture fixture = new();
+        EmphasisSuggestionCandidate adopted = fixture.CreateCandidate(
+            ordinal: 1,
+            start: 0,
+            duration: 15,
+            tokenOrdinal: 1);
+        EmphasisSuggestionCandidate proposed = fixture.CreateCandidate(
+            ordinal: 2,
+            start: 20,
+            duration: 15,
+            tokenOrdinal: 2);
+
+        StandardCompositionPlan plan = StandardCompositionPlanner.Create(
+            fixture.CreateRequest(
+                [adopted, proposed],
+                [fixture.Adopt(adopted)]));
+
+        Assert.HasCount(2, plan.ShortForms);
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                StandardShortSelectionKind.ExplicitAdoption,
+                StandardShortSelectionKind.GroundedCandidate,
+            },
+            plan.ShortForms.Select(static item => item.SelectionKind).ToArray());
+        Assert.AreEqual(
+            StandardCompositionOmissionCode.NoAdditionalGroundedCandidate,
+            plan.Omissions.Single(static omission => omission.ArtifactKind
+                == StandardCompositionArtifactKind.ShortForm).Code);
     }
 
     [TestMethod]
@@ -139,7 +186,7 @@ public sealed class StandardCompositionPlannerTests
         CollectionAssert.AreEqual(
             new[] { minimum.Id, maximum.Id },
             plan.ShortForms.Select(static item =>
-                item.AdoptedHighlight.SuggestionId).ToArray());
+                item.SelectedHighlight.SuggestionId).ToArray());
         CollectionAssert.AreEquivalent(
             new[] { tooShort.Id, tooLong.Id },
             plan.ShortCandidateExclusions
@@ -189,7 +236,7 @@ public sealed class StandardCompositionPlannerTests
                 longForm: longForm));
 
         Assert.HasCount(1, plan.ShortForms);
-        Assert.AreEqual(candidate.Id, plan.ShortForms[0].AdoptedHighlight.SuggestionId);
+        Assert.AreEqual(candidate.Id, plan.ShortForms[0].SelectedHighlight.SuggestionId);
         Assert.AreSame(candidate.Payload.SourceSpan, plan.ShortForms[0].SourceSpans[0]);
         Assert.IsFalse(plan.ShortCandidateExclusions.Any(exclusion =>
             exclusion.CandidateId == candidate.Id));
@@ -334,7 +381,7 @@ public sealed class StandardCompositionPlannerTests
         CollectionAssert.AreEqual(
             new[] { first.Id, second.Id },
             forward.ShortForms.Select(static item =>
-                item.AdoptedHighlight.SuggestionId).ToArray());
+                item.SelectedHighlight.SuggestionId).ToArray());
         CollectionAssert.AreEqual(
             forward.InputDigests.Select(static item => item.ContentDigest).ToArray(),
             reverse.InputDigests.Select(static item => item.ContentDigest).ToArray());
@@ -512,7 +559,7 @@ public sealed class StandardCompositionPlannerTests
         CollectionAssert.AreEqual(
             new[] { first.Id, second.Id, third.Id },
             plan.ShortForms.Select(static item =>
-                item.AdoptedHighlight.SuggestionId).ToArray());
+                item.SelectedHighlight.SuggestionId).ToArray());
         Dictionary<EntityId<SuggestionIdTag>, StandardShortCandidateExclusionCode>
             exclusions = plan.ShortCandidateExclusions.ToDictionary(
                 static item => item.CandidateId,
@@ -591,7 +638,7 @@ public sealed class StandardCompositionPlannerTests
 
         Assert.HasCount(3, plan.Thumbnails);
         CollectionAssert.AreEqual(
-            new[] { 0, 1, 2 },
+            new[] { 0, 1, 3 },
             plan.Thumbnails.Select(static item =>
                 item.SourceFrameSequence).ToArray());
         CollectionAssert.AreEqual(
@@ -599,7 +646,7 @@ public sealed class StandardCompositionPlannerTests
             {
                 new RationalTime(0, 1),
                 new RationalTime(20, 1),
-                new RationalTime(40, 1),
+                new RationalTime(60, 1),
             },
             plan.Thumbnails.Select(static item =>
                 item.SourcePresentationTime).ToArray());
@@ -634,6 +681,53 @@ public sealed class StandardCompositionPlannerTests
             StandardCompositionOmissionCode.NoAdditionalMeasuredSourceFrame,
             plan.Omissions.Single(static omission => omission.ArtifactKind
                 == StandardCompositionArtifactKind.Thumbnail).Code);
+    }
+
+    [TestMethod]
+    public void PreviewEvidenceValidatesCellsAfterTheSelectedCandidateLimit()
+    {
+        Fixture fixture = new();
+
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            fixture.CreateThumbnailEvidence(
+                frameCount: 4,
+                corruptLastSpritePresentationTime: true));
+    }
+
+    [TestMethod]
+    public void TranscriptAudioEvidenceAllowsVideoFramesOutsideSpeechRanges()
+    {
+        Fixture fixture = new();
+        SourceSpan transcriptEvidence = fixture.CreateEvidenceSpan(
+            ordinal: 1,
+            start: 20,
+            duration: 80,
+            tokenStart: 0,
+            tokenCount: 10,
+            streamId: "audio:1");
+        CompositionVersion parent = fixture.CreateParent([transcriptEvidence]);
+        TimelineMap timelineMap = TimelineMapBuilder.Build(
+            Id<TimelineMapIdTag>(
+                "26000000-0000-0000-0000-000000000097"),
+            parent);
+        LongFormCompositionPlan longForm = fixture.CreateLongForm(
+            [transcriptEvidence]);
+
+        StandardCompositionPlan plan = StandardCompositionPlanner.Create(
+            fixture.CreateRequest(
+                [],
+                [],
+                parent: parent,
+                timelineMap: timelineMap,
+                longForm: longForm,
+                thumbnailEvidence: fixture.CreateThumbnailEvidence(
+                    frameCount: 3,
+                    sourceStart: -1)));
+
+        Assert.HasCount(3, plan.Thumbnails);
+        Assert.AreEqual(
+            new RationalTime(-1, 1),
+            plan.Thumbnails[0].SourcePresentationTime);
     }
 
     [TestMethod]
@@ -1010,12 +1104,14 @@ public sealed class StandardCompositionPlannerTests
                 thumbnailEvidence);
 
         internal StandardThumbnailEvidence CreateThumbnailEvidence(
-            int frameCount)
+            int frameCount,
+            bool corruptLastSpritePresentationTime = false,
+            long sourceStart = 0)
         {
             PtsIndexEntry[] entries = Enumerable.Range(0, frameCount)
                 .Select(index => new PtsIndexEntry(
                     index,
-                    new RationalTime(index * 20, 1),
+                    new RationalTime(sourceStart + (index * 20), 1),
                     new RationalTime(20, 1),
                     keyFrame: true))
                 .ToArray();
@@ -1051,7 +1147,10 @@ public sealed class StandardCompositionPlannerTests
                 new ThumbnailSpriteCell(
                     index,
                     index,
-                    entry.PresentationTime,
+                    corruptLastSpritePresentationTime
+                            && index == entries.Length - 1
+                        ? entry.PresentationTime + new RationalTime(1, 1)
+                        : entry.PresentationTime,
                     entry.Duration,
                     index,
                     row: 0)).ToArray();
@@ -1122,12 +1221,13 @@ public sealed class StandardCompositionPlannerTests
             long start,
             long duration,
             int tokenStart,
-            int tokenCount) =>
+            int tokenCount,
+            string? streamId = null) =>
             new(
                 Id<SourceSpanIdTag>(
                     $"25000000-0000-0000-0000-{ordinal:000000000000}"),
                 Asset.Id,
-                SourceSpan.StreamId,
+                streamId ?? SourceSpan.StreamId,
                 Range(start, duration),
                 Asset.ContentDigest,
                 TranscriptRevisionId,

@@ -1,6 +1,6 @@
 # 開発・Stage 0 トラブルシューティング
 
-この文書は、現在のFoundation、Stage 1基盤、benchmark、固定fixture動画生成ツールを対象にします。編集GUIは未実装のため、GUI操作手順ではなくtyped service境界を記載します。
+この文書は、現在のFoundation、Stage 1基盤、要求版0.2の一部UI、benchmark、固定fixture動画生成ツールを対象にします。source-only quick startと設定画面は実装済みですが、一般配布とend-to-end render／deliveryは未完了のため、主にtyped service境界を記載します。
 
 最初に [開発を始める](getting-started.md) の前提条件を確認してください。
 

@@ -1,6 +1,8 @@
+using System.Text;
 using HubRadio.App.Media;
 using HubRadio.App.Profiles;
 using HubRadio.Core.Analysis;
+using HubRadio.Core.Compositions;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Layout;
 using HubRadio.Core.Media;
@@ -81,6 +83,12 @@ public enum StandardCallToActionKind
     ViewLongForm,
 }
 
+public enum StandardShortSelectionKind
+{
+    GroundedCandidate,
+    ExplicitAdoption,
+}
+
 public enum StandardCompositionArtifactKind
 {
     ShortForm,
@@ -108,7 +116,6 @@ public enum StandardCompositionWarningCode
 
 public enum StandardShortCandidateExclusionCode
 {
-    NotExplicitlyAdopted,
     StaleEvidence,
     UnmappedSourceRange,
     DurationOutsidePolicy,
@@ -184,29 +191,33 @@ public sealed class StandardShortHookReference
 {
     internal StandardShortHookReference(
         SourceSpan sourceSpan,
-        SuggestionReference adoptedHighlight)
+        SuggestionReference selectedHighlight)
     {
         ArgumentNullException.ThrowIfNull(sourceSpan);
-        ArgumentNullException.ThrowIfNull(adoptedHighlight);
-        if (adoptedHighlight.Origin.Kind != OriginKind.SourceSpan
-            || adoptedHighlight.Origin.SourceSpanId != sourceSpan.Id)
+        ArgumentNullException.ThrowIfNull(selectedHighlight);
+        if (selectedHighlight.Origin.Kind != OriginKind.SourceSpan
+            || selectedHighlight.Origin.SourceSpanId != sourceSpan.Id)
         {
             throw new ArgumentException(
-                "A short hook must retain the adopted highlight source span.",
-                nameof(adoptedHighlight));
+                "A short hook must retain the selected highlight source span.",
+                nameof(selectedHighlight));
         }
 
         SourceSpan = sourceSpan;
-        AdoptedHighlight = adoptedHighlight;
+        SelectedHighlight = selectedHighlight;
     }
 
     public SourceSpan SourceSpan { get; }
 
-    public SuggestionReference AdoptedHighlight { get; }
+    public SuggestionReference SelectedHighlight { get; }
 }
 
 public sealed class StandardShortFormPlan
 {
+    private static readonly UTF8Encoding StrictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
+
     internal static readonly RationalTime MinimumDuration =
         new(15, 1);
     internal static readonly RationalTime MaximumDuration =
@@ -215,7 +226,11 @@ public sealed class StandardShortFormPlan
     internal StandardShortFormPlan(
         EntityId<StandardShortFormPlanIdTag> id,
         IReadOnlyList<SourceSpan> sourceSpans,
-        SuggestionReference adoptedHighlight,
+        StandardShortSelectionKind selectionKind,
+        SuggestionReference selectedHighlight,
+        string selectionReason,
+        string? missingContext,
+        string? selectionWarning,
         StandardShortHookReference? hook,
         ManualLayoutPlan layout,
         StandardCallToActionReference callToAction,
@@ -223,27 +238,44 @@ public sealed class StandardShortFormPlan
     {
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(sourceSpans);
-        ArgumentNullException.ThrowIfNull(adoptedHighlight);
+        ArgumentNullException.ThrowIfNull(selectedHighlight);
+        ArgumentNullException.ThrowIfNull(selectionReason);
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(callToAction);
         ArgumentNullException.ThrowIfNull(subtitleVariants);
 
         SourceSpan[] copiedSpans = CopySourceSpans(sourceSpans);
         ValidateTotalDuration(copiedSpans, nameof(sourceSpans));
-        if (adoptedHighlight.Origin.Kind != OriginKind.SourceSpan
-            || adoptedHighlight.Origin.SourceSpanId is null
+        if (!Enum.IsDefined(selectionKind))
+        {
+            throw new ArgumentOutOfRangeException(nameof(selectionKind));
+        }
+
+        ValidateSelectionText(selectionReason, nameof(selectionReason));
+        if (missingContext is not null)
+        {
+            ValidateSelectionText(missingContext, nameof(missingContext));
+        }
+
+        if (selectionWarning is not null)
+        {
+            ValidateSelectionText(selectionWarning, nameof(selectionWarning));
+        }
+
+        if (selectedHighlight.Origin.Kind != OriginKind.SourceSpan
+            || selectedHighlight.Origin.SourceSpanId is null
             || copiedSpans.All(span =>
-                span.Id != adoptedHighlight.Origin.SourceSpanId))
+                span.Id != selectedHighlight.Origin.SourceSpanId))
         {
             throw new ArgumentException(
-                "A standard short form must retain its adopted highlight source reference.",
-                nameof(adoptedHighlight));
+                "A standard short form must retain its selected highlight source reference.",
+                nameof(selectedHighlight));
         }
 
         if (hook is not null
-            && (hook.AdoptedHighlight.SuggestionId
-                    != adoptedHighlight.SuggestionId
-                || hook.AdoptedHighlight.Origin != adoptedHighlight.Origin
+            && (hook.SelectedHighlight.SuggestionId
+                    != selectedHighlight.SuggestionId
+                || hook.SelectedHighlight.Origin != selectedHighlight.Origin
                 || copiedSpans.All(span =>
                     !SourceSpanContentEquals(span, hook.SourceSpan))))
         {
@@ -273,7 +305,11 @@ public sealed class StandardShortFormPlan
 
         Id = id;
         SourceSpans = Array.AsReadOnly(copiedSpans);
-        AdoptedHighlight = adoptedHighlight;
+        SelectionKind = selectionKind;
+        SelectedHighlight = selectedHighlight;
+        SelectionReason = selectionReason;
+        MissingContext = missingContext;
+        SelectionWarning = selectionWarning;
         Hook = hook;
         Layout = layout;
         CallToAction = callToAction;
@@ -284,7 +320,15 @@ public sealed class StandardShortFormPlan
 
     public IReadOnlyList<SourceSpan> SourceSpans { get; }
 
-    public SuggestionReference AdoptedHighlight { get; }
+    public StandardShortSelectionKind SelectionKind { get; }
+
+    public SuggestionReference SelectedHighlight { get; }
+
+    public string SelectionReason { get; }
+
+    public string? MissingContext { get; }
+
+    public string? SelectionWarning { get; }
 
     public StandardShortHookReference? Hook { get; }
 
@@ -348,6 +392,35 @@ public sealed class StandardShortFormPlan
         }
 
         return copied;
+    }
+
+    private static void ValidateSelectionText(string value, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || !string.Equals(value, value.Trim(), StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "Short-form selection text must be trimmed and nonblank.",
+                parameterName);
+        }
+
+        try
+        {
+            if (StrictUtf8.GetByteCount(value)
+                > CompositionEvidenceEnvelope.MaximumCanonicalJsonUtf8Bytes)
+            {
+                throw new ArgumentException(
+                    "Short-form selection text exceeds its evidence envelope.",
+                    parameterName);
+            }
+        }
+        catch (EncoderFallbackException exception)
+        {
+            throw new ArgumentException(
+                "Short-form selection text must be valid Unicode.",
+                parameterName,
+                exception);
+        }
     }
 
     private static int CompareSourceSpans(SourceSpan left, SourceSpan right)
@@ -461,11 +534,6 @@ public sealed class StandardThumbnailPlan
         if (sourceFrameSequence < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(sourceFrameSequence));
-        }
-
-        if (sourcePresentationTime < default(RationalTime))
-        {
-            throw new ArgumentOutOfRangeException(nameof(sourcePresentationTime));
         }
 
         Id = id;

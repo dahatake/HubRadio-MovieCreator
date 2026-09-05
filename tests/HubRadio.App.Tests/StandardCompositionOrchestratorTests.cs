@@ -367,10 +367,45 @@ public sealed class StandardCompositionOrchestratorTests
         Assert.HasCount(1, preparation.Plan.ShortForms);
         Assert.AreEqual(
             candidate.Id,
-            preparation.Plan.ShortForms[0].AdoptedHighlight.SuggestionId);
+            preparation.Plan.ShortForms[0].SelectedHighlight.SuggestionId);
         Assert.AreEqual(
             candidate.Payload.SourceSpan.Id,
             preparation.Plan.ShortForms[0].SourceSpans[0].Id);
+    }
+
+    [TestMethod]
+    public void GroundedProposedHighlightRoundTripsWithoutInventingAdoption()
+    {
+        Fixture fixture = new();
+        (TopicMetadataRevision topic, EmphasisSuggestionCandidate candidate,
+            _) = fixture.CreateAdoptedHighlight();
+
+        StandardCompositionPreparation preparation =
+            StandardCompositionOrchestrator.Prepare(
+                fixture.Request([topic], [candidate], adoptions: []));
+        ValidatedStandardCompositionEvidence replayed =
+            StandardCompositionEvidenceCodec.ValidateLoaded(
+                preparation.Child,
+                fixture.Parent);
+
+        Assert.IsNotNull(replayed);
+        Assert.HasCount(1, preparation.Plan.ShortForms);
+        Assert.AreEqual(
+            StandardShortSelectionKind.GroundedCandidate,
+            preparation.Plan.ShortForms[0].SelectionKind);
+        Assert.AreEqual(
+            candidate.Id,
+            preparation.Plan.ShortForms[0].SelectedHighlight.SuggestionId);
+        Assert.AreEqual(
+            candidate.Suggestion.Reason,
+            replayed.Preparation.Plan.ShortForms[0].SelectionReason);
+        Assert.AreEqual(
+            candidate.Suggestion.MissingContext,
+            replayed.Preparation.Plan.ShortForms[0].MissingContext);
+        Assert.AreEqual(
+            candidate.Suggestion.Warning,
+            replayed.Preparation.Plan.ShortForms[0].SelectionWarning);
+        Assert.AreEqual(SuggestionStatus.Proposed, candidate.Status);
     }
 
     [TestMethod]
@@ -448,7 +483,7 @@ public sealed class StandardCompositionOrchestratorTests
         Assert.IsNotNull(replayed);
         Assert.HasCount(3, preparation.Plan.Thumbnails);
         CollectionAssert.AreEqual(
-            new[] { 0, 1, 2 },
+            new[] { 0, 1, 3 },
             preparation.Plan.Thumbnails.Select(static item =>
                 item.SourceFrameSequence).ToArray());
         Assert.IsFalse(preparation.Plan.Omissions.Any(static omission =>
@@ -644,7 +679,7 @@ public sealed class StandardCompositionOrchestratorTests
                         break;
                     case "wrongSchemaVersion":
                         root["schemaVersion"] =
-                            "hubradio.standard-composition-evidence.v2";
+                            "hubradio.standard-composition-evidence.v1";
                         break;
                     case "wrongPropertyType":
                         root["input"]!["sourceDisplayGeometry"]!["width"] =
@@ -671,7 +706,7 @@ public sealed class StandardCompositionOrchestratorTests
         string canonical = preparation.Child.Evidence!.CanonicalJson;
         string duplicate = string.Concat(
             canonical.AsSpan(0, canonical.Length - 1),
-            ",\"schemaVersion\":\"hubradio.standard-composition-evidence.v1\"}");
+            ",\"schemaVersion\":\"hubradio.standard-composition-evidence.v2\"}");
 
         Assert.ThrowsExactly<JsonException>(() =>
             CompositionEvidenceEnvelope.Create(

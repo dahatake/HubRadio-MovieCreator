@@ -5,7 +5,7 @@
 **設計根拠:** `docs/dev/research/default-settings-research.md`、`docs/dev/decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md`、`docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **初版計画日:** 2026年8月26日
 **再baseline日:** 2026年9月2日
-**計画状態:** `V2-000`〜`V2-003`とV2-002/V2-003 shared bootstrapを完了。利用者指示によりproduction実装を継続中。
+**計画状態:** `V2-000`〜`V2-009`とshared integrationを完了。次のcritical pathは`V2-010`自動代理評価である。
 
 ### 旧203 task baselineの履歴snapshot
 
@@ -97,15 +97,15 @@ SQLite業務store、永続job、worker protocol、編集操作、review/approval
 | `V2-001` | **完了。** `DefaultSettingsProfile`、設定値、根拠区分、snapshot、digestのdomain/schema。[敵対的レビュー](../reviews/v2-001-default-settings-profile-adversarial-review.md)はPASS | V2-000,D-002,D-008,D-012 | canonical round-trip、unknown/invalid value拒否、版・digest固定 | FR-033,NFR-003/006/008 |
 | `V2-002` | **完了。** schema 8、設定store、OCC、案件snapshot、個別/全reset。[敵対的レビュー](../reviews/v2-002-default-settings-store-adversarial-review.md)はPASS | V2-001,D-013,D-014 | 新規案件だけへ即時適用、既存版不変、migration rollback | FR-033,AC-006 |
 | `V2-003` | **完了。** 調査済み123設定のrender/subtitle/audio/transition/neutral profile。[敵対的レビュー](../reviews/v2-003-default-settings-profile-adversarial-review.md)はPASS | V2-001,R-004〜R-007,R-010〜R-016 | 台帳値・scopeと一致し、現行placeholderをproduction承認済みと誤表示しない | FR-008〜FR-016,FR-020/031 |
-| `V2-004` | 元動画だけから安全なProject draftと成果物setを作るapplication/bridge契約 | V2-002,M-001,D-004 | filename stem、安全fallback、1入力、path非開示。登壇者、URL、公開先、hashtag、期限等の架空metadataを作らない | §6,FR-001/025,AC-001 |
-| `V2-005` | かんたん編集UI | V2-004,U-001〜U-004 | 元動画、設定要約、社内限定、開始/取消だけで開始でき、10項目wizardを要求しない | NFR-001,§14.1,AC-001 |
-| `V2-006` | 全体設定UI | V2-002,U-004 | 5群、現在値、初期値、用途、根拠、個別/全reset、keyboard操作 | FR-033,NFR-001/005,AC-006 |
-| `V2-007` | closed候補を可逆な自動decisionへ適用するorchestrator | V2-002,A-007〜A-009,A-016,R-001〜R-003 | 明示cut/exact反復/版付き無音だけを自動適用し、曖昧候補を採用しない | FR-005,FR-030,NFR-008 |
-| `V2-008` | 長尺、最大3短尺、字幕variant、thumbnail候補の標準Composition計画 | V2-003,V2-007,E-001/E-002/E-004/E-005/E-009,R-015 | 根拠付き候補だけ、候補不足を捏造せず理由記録、safe fallback layout | FR-007〜FR-015,FR-021/031 |
-| `V2-009` | `Music/` read-only catalog、社内限定policy、決定的選択、ducking | V2-002,V2-003,S-006,E-006/E-008 | asset変更なし、technical probe、cue長以上、digest順、loopなし、外部profile拒否、本編既定OFF。不在・不適格ならBGMなし+warning、音楽的適合性は`NOT EVALUATED` | FR-019/020,BR-004 |
+| `V2-004` | **完了。** 元動画だけから安全なProject draftと成果物setを作るapplication/bridge契約。[敵対的レビュー](../reviews/v2-004-source-only-project-adversarial-review.md)はPASS | V2-002,M-001,D-004 | filename stem、安全fallback、1入力、path非開示。登壇者、URL、公開先、hashtag、期限等の架空metadataを作らない | §6,FR-001/025,AC-001 |
+| `V2-005` | **完了。** かんたん編集UI。[敵対的レビュー](../reviews/v2-005-quick-start-ui-adversarial-review.md)はPASS | V2-004,U-001〜U-004 | 元動画、設定要約、社内限定、開始/取消だけで開始でき、10項目wizardを要求しない | NFR-001,§14.1,AC-001 |
+| `V2-006` | **完了。** 全体設定UI。[敵対的レビュー](../reviews/v2-006-settings-ui-adversarial-review.md)はPASS | V2-002,U-004 | 5群、現在値、初期値、用途、根拠、個別/全reset、keyboard操作 | FR-033,NFR-001/005,AC-006 |
+| `V2-007` | **完了。** closed候補を可逆な自動decisionへ適用するorchestrator。[敵対的レビュー](../reviews/v2-007-auto-decision-adversarial-review.md)はPASS | V2-002,A-007〜A-009,A-016,R-001〜R-003 | 明示cut/exact反復/版付き無音だけを自動適用し、曖昧候補を採用しない | FR-005,FR-030,NFR-008 |
+| `V2-008` | **完了。** 長尺、最大3短尺、字幕variant、thumbnail候補の標準Composition計画。[敵対的再レビュー](../reviews/v2-008-standard-composition-adversarial-rereview.md)はPASS | V2-003,V2-007,E-001/E-002/E-004/E-005/E-009,R-015 | 根拠付き候補だけ、候補不足を捏造せず理由記録、safe fallback layout | FR-007〜FR-015,FR-021/031 |
+| `V2-009` | **完了。** `Music/` read-only catalog、社内限定policy、決定的選択、ducking。[敵対的レビュー](../reviews/v2-009-music-catalog-policy-adversarial-review.md)はPASS | V2-002,V2-003,S-006,E-006/E-008 | asset変更なし、technical probe、cue長以上、digest順、loopなし、外部profile拒否、本編既定OFF。不在・不適格ならBGMなし+warning、音楽的適合性は`NOT EVALUATED` | FR-019/020,BR-004 |
 | `V2-010` | 自動代理評価のdomain、engine、evidence | V2-003,V2-008,V2-009,R-021,S-012/S-013 | PASS/WARNING/FAIL/NOT EVALUATED、環境・規則版・digest、human claim禁止。字幕の網羅性、speech/BGM理解、metadataの事実性は根拠なしにPASSにしない | FR-025/034,NFR-005/006/008,AC-006 |
 | `V2-011` | 単一利用者state、export policy、旧review data compatibility | V2-010,S-001/S-002/S-004/S-008/S-011/S-016 | approvalなし社内出力、closed failure block、旧event読取、scope自動拡大なし | FR-029,NFR-004,AC-004 |
-| `V2-012` | 進捗・成果物・評価結果・任意self-review UI | V2-005,V2-010,V2-011,U-006/U-012/U-013 | warningから時刻/設定/根拠へ移動、任意修正・再評価、human/proxy表示分離 | §14.2/14.5,FR-026/029/034 |
+| `V2-012` | 進捗・成果物・評価結果・任意self-review UI | V2-005,V2-006,V2-010,V2-011,U-006/U-012/U-013 | warningから時刻/設定/根拠へ移動、任意修正・再評価、human/proxy表示分離 | §14.2/14.5,FR-026/029/034 |
 | `V2-013` | 実render、delivery、付帯成果物の統合 | V2-008〜V2-012,R-019〜R-024,R-026 | profileどおりの全編decode/A-V/subtitle/audio/provenance QC、atomic昇格。付帯metadataは元動画・設定値の根拠必須、根拠なし項目は未生成 | FR-020/025/031/032,NFR-003/008 |
 | `V2-014` | 許可済みsampleを使うsource-only受入、全回帰、package再検証 | V2-013,PK-006/PK-007,Q-001/Q-002/Q-004〜Q-013 | Git管理外assetが実在する元worktreeまたは明示設定pathで実行。標準成果物、不成立理由、設定snapshot、自動代理評価、供給網証拠を実測。未実施human/外部/legalをPASSにしない | §18,AC-001〜AC-006 |
 
@@ -155,7 +155,7 @@ flowchart TD
    V2013 --> V2014[V2-014 acceptance / package]
 ```
 
-`V2-002`と`V2-003`は個別の全回帰・敵対的レビューを完了し、[shared bootstrap統合レビュー](../reviews/v2-settings-bootstrap-integration-adversarial-review.md)もPASSした。次は依存が成立した`V2-004`、`V2-006`、`V2-007`、`V2-009`を変更範囲を分離して並列実行できる。
+`V2-000`〜`V2-009`は個別・shared integrationの全回帰と敵対的レビューを完了した。`V2-008`と`V2-009`への依存が成立したため、次は`V2-010`自動代理評価を実装する。
 
 ### 0.6 全task共通の実行契約
 

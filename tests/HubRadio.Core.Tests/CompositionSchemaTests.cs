@@ -41,7 +41,7 @@ public sealed class CompositionSchemaTests
             new[] { "schemaVersion", "input", "expected" },
             GetStringArray(root.GetProperty("required")));
         Assert.AreEqual(
-            "hubradio.standard-composition-evidence.v1",
+            "hubradio.standard-composition-evidence.v2",
             root.GetProperty("properties")
                 .GetProperty("schemaVersion")
                 .GetProperty("const")

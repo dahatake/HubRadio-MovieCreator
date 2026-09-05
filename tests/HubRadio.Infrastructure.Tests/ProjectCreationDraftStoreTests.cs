@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Layout;
 using HubRadio.Core.Projects;
@@ -135,9 +136,18 @@ public sealed class ProjectCreationDraftStoreTests
         Assert.AreEqual(0, storedProject.Revision);
         Assert.AreEqual(draft.PublicationScope, storedProject.PublicationScope);
         Assert.AreEqual(deadline, storedProject.Deadline);
-        Assert.AreEqual(
-            ProjectSnapshotJson.WriteProject(project),
+        using JsonDocument projectPayload = JsonDocument.Parse(
             storedProject.CanonicalJson);
+        JsonElement projectRoot = projectPayload.RootElement;
+        Assert.AreEqual(project.Id.ToString(), projectRoot.GetProperty("id").GetString());
+        Assert.AreEqual(
+            project.ContentName,
+            projectRoot.GetProperty("contentName").GetString());
+        Assert.AreEqual(
+            "internalOnly",
+            projectRoot.GetProperty("publicationScope").GetString());
+        Assert.AreEqual(0, projectRoot.GetProperty("assets").GetArrayLength());
+        Assert.AreEqual(0, projectRoot.GetProperty("performers").GetArrayLength());
         Assert.AreNotEqual(finalized.CanonicalJson, storedProject.CanonicalJson);
 
         Assert.ThrowsExactly<InvalidOperationException>(

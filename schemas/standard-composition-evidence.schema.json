@@ -11,7 +11,7 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "hubradio.standard-composition-evidence.v1"
+      "const": "hubradio.standard-composition-evidence.v2"
     },
     "input": {
       "$ref": "#/$defs/input"
@@ -651,7 +651,7 @@
       ],
       "properties": {
         "selectionRuleVersion": {
-          "const": "preview-sprite-ordinal-first-unique-source-v1"
+          "const": "preview-sprite-evenly-spaced-unique-source-v2"
         },
         "projectId": {
           "$ref": "#/$defs/entityId"

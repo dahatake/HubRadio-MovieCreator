@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、Windows 11 x64 の単一 PC で動作する、ローカル優先の動画編集支援アプリケーションとして設計しています。
 
 > [!IMPORTANT]
-> Stage 0 と Foundation、および既存の一部Stage 1基盤は実装済みです。2026-09-02に[要求版0.2](../../requirement-definition.md)と[ADR-0009](../decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)でsource-only quick start、版付き既定値、単一利用者、社内限定、自動代理評価へ再baselineし、production実装を再開しました。版付き既定設定のdomain/schemaは実装済みです。新しいquick start、設定store/UI、自動編集の標準成果物、評価flowは**未実装**です。旧review/approval型と試験は履歴・互換資産であり、新要求の完了証拠ではありません。
+> Stage 0 と Foundation、および既存のStage 1基盤に加え、要求版0.2の`V2-000`〜`V2-009`を実装・レビュー済みです。source-only quick start、版付き既定値と設定画面、可逆な自動decision、標準Composition計画、社内限定BGM policyまで実装済みです。自動代理評価、単一利用者state、成果物画面、実render／delivery、最終受入は**未実装**です。旧review/approval型と試験は履歴・互換資産であり、新要求の完了証拠ではありません。
 >
 > [ADR-0007](../decisions/ADR-0007-stage-0-technology-selection.md)に従い、condition-falseの話者分離・local text modelと、再評価保留のshot・face detectorを製品critical pathから外す判断は維持します。SQLite業務store、永続job/worker protocol、編集操作、durable媒体取込、proxy・preview素材、境界試験、ACL、audit、backup/restore、Python wheel hash lock等の既存証拠も、要求版0.2と矛盾しない範囲で再利用します。
 
@@ -49,8 +49,8 @@ ASP.NET Core、localhost HTTP サーバー、Windows Service、別の業務 API 
 ### WinUI 3 と React
 
 - **WinUI 3:** ウィンドウ、起動、障害表示、token化するネイティブファイル選択は実装済み
-- **WebView2 内の React:** secureなbundled shellと旧案件flowの一部は実装済み。版0.2のかんたん編集、進捗・成果物、全体設定、自動代理評価、詳細編集は未実装
-- **通信:** origin、UTF-8 byte size、closed schema、methodを検査する型付き WebMessage。現時点のallowlistは`bridge.ping`だけ
+- **WebView2 内の React:** secureなbundled shell、source-only quick start、全体設定、既存編集画面は実装済み。版0.2の進捗・成果物、自動代理評価、任意self-review統合は未実装
+- **通信:** origin、UTF-8 byte size、closed schema、methodを検査する型付き WebMessage。project、settings、jobs、player、analysis等のclosed allowlistだけを受理する
 
 React からファイルパス、SQL、FFmpeg 引数、任意コマンドは送信しません。
 
@@ -73,7 +73,7 @@ PK-001ではruntime 25件とtest固有4件をexact version・SHA-256・binary-on
 
 Stage 0のPowerShell／Python検証実装に加え、Foundationでは製品ホスト、Web UI、workerの最小buildable scaffoldを作成しました。ここでのscaffold成功は業務機能の完成を意味しません。
 
-S-014では現在のclosed surfaceだけを対象に、React text interpolationのescapeとraw-HTML/dynamic-code sink不在、bridge/workerのunknown RPC、workerのexact CLI、process argvのstrict UTF-16/NUL境界を合成入力で検証しました。path、秘密非log、typed transition、固定proxy/preview filterは既存試験を再実行しています。これは未実装の業務UI、任意Render IR/filter compiler、環境依存reparse point、別account ACL、統合security受入`Q-008`の代替ではありません。
+S-014では当時のclosed surfaceだけを対象に、React text interpolationのescapeとraw-HTML/dynamic-code sink不在、bridge/workerのunknown RPC、workerのexact CLI、process argvのstrict UTF-16/NUL境界を合成入力で検証しました。その後に追加したUI、typed Render IR／FFmpeg compiler、Composition計画は各taskの専用試験を持ちますが、環境依存reparse point、別account ACL、統合security受入`Q-008`の代替ではありません。
 
 ## 永続化
 
@@ -113,7 +113,7 @@ S-014では現在のclosed surfaceだけを対象に、React text interpolation�
 | `RenderManifest` | 1回のレンダー入力、実行条件、結果を記録する |
 | `DeliveryManifest` | 動画、字幕、画像、文書を同じ承認版へ束ねる |
 
-表の全概念は型として実装済みです。`WorkingCopy`のSQLite永続化、EditOperation、TimelineMap再構築、review/approval基盤は実装済みです。Render IR、render実行、export flowは未完了であり、個別型の存在を完成済み操作フローとは扱いません。
+表の全概念は型として実装済みです。`WorkingCopy`のSQLite永続化、EditOperation、TimelineMap再構築、review/approval基盤、typed Render IRとFFmpeg compileは実装済みです。最終render job、delivery、版0.2のexport flowは未完了であり、個別型の存在を完成済み操作フローとは扱いません。
 
 ## 処理フロー
 
@@ -144,7 +144,7 @@ S-014では現在のclosed surfaceだけを対象に、React text interpolation�
 | 境界 | 強制策と現在状態 |
 |---|---|
 | React → .NET | **実装済み:** origin、strict UTF-8 byte size、closed schema、methodの許可リスト検査。現在は`bridge.ping`だけ |
-| .NET → FFmpeg | **一部実装:** shell無効、引数配列、timeout、子孫終了、binary hash、proxyのNVENC→Media Foundation fallbackと実profile記録。型付きRender IRは未実装 |
+| .NET → FFmpeg | **一部実装:** shell無効、引数配列、timeout、子孫終了、binary hash、proxyのNVENC→Media Foundation fallback、typed Render IRとallowlist FFmpeg compileを実装。最終render／delivery jobは未実装 |
 | .NET → Python | **実装済み:** closed NDJSON schema、message上限、timeout、SQLite直接接続禁止 |
 | ホスト → workspace | path 正規化、ID lookup、staging、hash、atomic move、Windows ACL |
 | ホスト → SQLite | parameterized query、transaction、foreign key、migration 前 backup |

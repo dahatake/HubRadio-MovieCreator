@@ -572,6 +572,22 @@ public sealed class StandardCompositionPlanTests
     }
 
     [TestMethod]
+    public void ThumbnailRetainsNegativeSourcePresentationTimestamp()
+    {
+        Fixture fixture = new();
+        var thumbnail = new StandardThumbnailPlan(
+            Id<StandardThumbnailPlanIdTag>(
+                "c0000000-0000-0000-0000-000000000099"),
+            OriginRef.FromAsset(fixture.Asset.Id),
+            sourceFrameSequence: 0,
+            sourcePresentationTime: new RationalTime(-1, 20));
+
+        Assert.AreEqual(
+            new RationalTime(-1, 20),
+            thumbnail.SourcePresentationTime);
+    }
+
+    [TestMethod]
     public void StandardLongFormRequiresExactProductionResolution()
     {
         Fixture fixture = new();
@@ -980,10 +996,14 @@ public sealed class StandardCompositionPlanTests
                 Id<StandardShortFormPlanIdTag>(
                     $"b0000000-0000-0000-0000-{ordinal:000000000000}"),
                 [sourceSpan ?? SourceSpan],
+                StandardShortSelectionKind.GroundedCandidate,
                 SuggestionReference.FromPersistedReference(
                     Id<SuggestionIdTag>(
                         $"d0000000-0000-0000-0000-{ordinal:000000000000}"),
                     OriginRef.FromSourceSpan((sourceSpan ?? SourceSpan).Id)),
+                "Grounded test selection.",
+                "Test context may be incomplete.",
+                "Review the test candidate.",
                 hook: null,
                 layout ?? Layout,
                 callToAction ?? new StandardCallToActionReference(

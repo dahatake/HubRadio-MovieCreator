@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、企業向け動画、文字起こし、出演者情報、内部資料を扱うため、ローカル優先、単一利用者、社内限定、非破壊処理を基本境界にします。
 
 > [!IMPORTANT]
-> Stage 0と既存製品基盤の一部は実装済みです。2026-09-02に[要求版0.2](../requirement-definition.md)と[ADR-0009](decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)でsource-only quick startへ再baselineし、production実装を再開しました。版付き既定設定のdomain/schemaは実装済みですが、設定store/UI、単一利用者state、export policy、自動代理評価flowは未実装です。以下には既存境界と計画が混在するため、[詳細実装計画 §0](planning/implementation-plan.md#0-要求版02の現在baseline)も確認してください。
+> Stage 0と既存製品基盤に加え、要求版0.2のsource-only quick start、版付き設定store/UI、可逆な自動decision、標準Composition計画、社内限定BGM policyを実装・レビュー済みです。単一利用者state、自動代理評価、版0.2の最終export／delivery flowは未実装です。以下には既存境界と計画が混在するため、[詳細実装計画 §0](planning/implementation-plan.md#0-要求版02の現在baseline)も確認してください。
 
 ## 既定のデータ境界
 
@@ -66,7 +66,7 @@ Stage 0 の仕組みは、完成した製品 workspace の権限モデルや脅�
 - ArtifactStoreのtraversal、UNC、device namespace、ADS、reserved device、reparse pointと、LocalDiagnosticLogの本文・path・秘密非記録は既存の専用試験を正本証拠とする。
 - 現在のtransition境界は任意filter文字列を公開せず、proxy/preview用FFmpeg filterは固定値または検証済み数値から決定論的に生成する。
 
-これらは合成入力と既存実装surfaceに対する証拠です。版0.2のquick start、設定、自動decision、自動代理評価、変更後のRender/export policy、環境で作成不能だったreparse point、production resource閾値、統合security受入は別の実装・受入を必要とします。別account ACLを未実施からPASSへ読み替えませんが、現在scopeの必須受入にはしません。
+これらは合成入力と当時の実装surfaceに対する証拠です。その後に追加した版0.2のquick start、設定、自動decision、Composition計画は個別taskで敵対試験済みですが、自動代理評価、最終Render/export policy、環境で作成不能だったreparse point、production resource閾値、統合security受入は別の実装・受入を必要とします。別account ACLを未実施からPASSへ読み替えませんが、現在scopeの必須受入にはしません。
 
 ## Media metadata
 

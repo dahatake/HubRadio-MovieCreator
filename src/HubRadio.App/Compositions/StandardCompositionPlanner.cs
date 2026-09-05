@@ -225,7 +225,7 @@ public sealed class StandardThumbnailFrameEvidence
 public sealed class StandardThumbnailEvidence
 {
     public const string SelectionRuleVersion =
-        "preview-sprite-ordinal-first-unique-source-v1";
+        "preview-sprite-evenly-spaced-unique-source-v2";
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -521,8 +521,8 @@ public sealed class StandardThumbnailEvidence
                 nameof(spriteIndex));
         }
 
-        var selected = new List<StandardThumbnailFrameEvidence>(
-            StandardCompositionPlan.MaximumThumbnailCount);
+        var validated = new List<StandardThumbnailFrameEvidence>(
+            spriteIndex.Cells.Count);
         var sourceSequences = new HashSet<int>();
         foreach (ThumbnailSpriteCell cell in spriteIndex.Cells.OrderBy(
             static value => value.Ordinal))
@@ -564,7 +564,7 @@ public sealed class StandardThumbnailEvidence
                 continue;
             }
 
-            selected.Add(new StandardThumbnailFrameEvidence(
+            validated.Add(new StandardThumbnailFrameEvidence(
                 cell.Ordinal,
                 cell.ProxyFrameSequence,
                 cell.ProxyPresentationTime,
@@ -572,18 +572,16 @@ public sealed class StandardThumbnailEvidence
                 source.PresentationTime,
                 source.Duration,
                 source.KeyFrame));
-            if (selected.Count == StandardCompositionPlan.MaximumThumbnailCount)
-            {
-                break;
-            }
         }
 
-        if (selected.Count == 0)
+        if (validated.Count == 0)
         {
             throw new ArgumentException(
                 "Thumbnail preview evidence contains no mappable source frame.",
                 nameof(spriteIndex));
         }
+
+        StandardThumbnailFrameEvidence[] selected = SelectFrames(validated);
 
         return new StandardThumbnailEvidence(
             sourcePtsIndex.ProjectId,
@@ -607,6 +605,30 @@ public sealed class StandardThumbnailEvidence
             spriteIndexArtifact.ByteSize,
             spriteIndex.ProfileVersion,
             selected);
+    }
+
+    private static StandardThumbnailFrameEvidence[] SelectFrames(
+        IReadOnlyList<StandardThumbnailFrameEvidence> frames)
+    {
+        int count = Math.Min(
+            frames.Count,
+            StandardCompositionPlan.MaximumThumbnailCount);
+        if (count == frames.Count)
+        {
+            return frames.ToArray();
+        }
+
+        var selected = new StandardThumbnailFrameEvidence[count];
+        int lastSourceIndex = frames.Count - 1;
+        int lastSelectionIndex = count - 1;
+        for (int index = 0; index < selected.Length; index++)
+        {
+            int sourceIndex = checked((int)(
+                (long)index * lastSourceIndex / lastSelectionIndex));
+            selected[index] = frames[sourceIndex];
+        }
+
+        return selected;
     }
 
     private static void ValidateArtifactStream(
@@ -820,13 +842,9 @@ public static class StandardCompositionPlanner
         foreach (EmphasisSuggestionCandidate candidate in orderedCandidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!adoptions.TryGetValue(candidate.Id, out HighlightSuggestionAdoptionResult? adoption))
-            {
-                exclusions.Add(new StandardShortCandidateExclusion(
-                    candidate.Id,
-                    StandardShortCandidateExclusionCode.NotExplicitlyAdopted));
-                continue;
-            }
+            adoptions.TryGetValue(
+                candidate.Id,
+                out HighlightSuggestionAdoptionResult? adoption);
 
             if (!IsCurrentCandidate(request, candidate, topicMetadata))
             {
@@ -918,9 +936,12 @@ public static class StandardCompositionPlanner
                 ? StandardCompositionWarningCode.FixedLayoutFallback
                 : StandardCompositionWarningCode.BlurredBackgroundFallback);
 
-            SuggestionReference adoptedReference = item.Adoption.Reference;
+            SuggestionReference selectedReference = item.Adoption?.Reference
+                ?? SuggestionReference.FromPersistedReference(
+                    item.Candidate.Id,
+                    item.Candidate.Origin);
             StandardShortHookReference? hook = IsGroundedHook(item.Candidate)
-                ? new StandardShortHookReference(span, adoptedReference)
+                ? new StandardShortHookReference(span, selectedReference)
                 : null;
             StandardSubtitleVariantReference shortSubtitle =
                 CreateSubtitleReference(
@@ -934,7 +955,13 @@ public static class StandardCompositionPlanner
                     inputDigest,
                     string.Concat("short:", item.Candidate.Id)),
                 [span],
-                adoptedReference,
+                item.Adoption is null
+                    ? StandardShortSelectionKind.GroundedCandidate
+                    : StandardShortSelectionKind.ExplicitAdoption,
+                selectedReference,
+                item.Candidate.Suggestion.Reason,
+                item.Candidate.Suggestion.MissingContext,
+                item.Candidate.Suggestion.Warning,
                 hook,
                 layout,
                 new StandardCallToActionReference(
@@ -1253,9 +1280,6 @@ public static class StandardCompositionPlanner
         Asset[] sourceAssets = request.LongForm.Project.Assets
             .Where(asset => asset.Id == thumbnail.SourceAssetId)
             .ToArray();
-        string expectedStreamId = string.Concat(
-            "video:",
-            thumbnail.SourceStreamIndex.ToString(CultureInfo.InvariantCulture));
         if (thumbnail.ProjectId != request.LongForm.Project.Id
             || sourceAssets.Length != 1
             || !string.Equals(
@@ -1266,14 +1290,7 @@ public static class StandardCompositionPlanner
             || sourceAssets[0].ByteSize != thumbnail.SourceByteSize
             || sourceEvidence.Any(span =>
                 span.AssetId != thumbnail.SourceAssetId
-                || span.SourceDigest != thumbnail.SourceContentDigest
-                || !string.Equals(
-                    span.StreamId,
-                    expectedStreamId,
-                    StringComparison.Ordinal))
-            || thumbnail.Frames.Any(frame => !sourceEvidence.Any(span =>
-                frame.SourcePresentationTime >= span.Range.Start
-                && frame.SourcePresentationTime < span.Range.End)))
+                || span.SourceDigest != thumbnail.SourceContentDigest))
         {
             throw Failure(
                 StandardCompositionPlanningFailureReason.SourceEvidenceMismatch);
@@ -1816,7 +1833,7 @@ public static class StandardCompositionPlanner
 
     private sealed record SelectedCandidate(
         EmphasisSuggestionCandidate Candidate,
-        HighlightSuggestionAdoptionResult Adoption);
+        HighlightSuggestionAdoptionResult? Adoption);
 }
 
 internal static class StandardCompositionCanonical
@@ -1858,8 +1875,25 @@ internal static class StandardCompositionCanonical
         {
             fields.Add("short");
             fields.Add(shortForm.Id.ToString());
-            fields.Add(shortForm.AdoptedHighlight.SuggestionId.ToString());
-            fields.Add(OriginField(shortForm.AdoptedHighlight.Origin));
+            fields.Add(shortForm.SelectionKind.ToString());
+            fields.Add(shortForm.SelectedHighlight.SuggestionId.ToString());
+            fields.Add(OriginField(shortForm.SelectedHighlight.Origin));
+            fields.Add(shortForm.SelectionReason);
+            fields.Add(shortForm.MissingContext is null
+                ? "missing-context:null"
+                : "missing-context:value");
+            if (shortForm.MissingContext is not null)
+            {
+                fields.Add(shortForm.MissingContext);
+            }
+
+            fields.Add(shortForm.SelectionWarning is null
+                ? "selection-warning:null"
+                : "selection-warning:value");
+            if (shortForm.SelectionWarning is not null)
+            {
+                fields.Add(shortForm.SelectionWarning);
+            }
             foreach (SourceSpan span in shortForm.SourceSpans)
             {
                 AddSourceSpanFields(fields, span);
@@ -1870,7 +1904,7 @@ internal static class StandardCompositionCanonical
             {
                 AddSourceSpanFields(fields, shortForm.Hook.SourceSpan);
                 fields.Add(
-                    shortForm.Hook.AdoptedHighlight.SuggestionId.ToString());
+                    shortForm.Hook.SelectedHighlight.SuggestionId.ToString());
             }
 
             AddLayoutFields(fields, shortForm.Layout);
@@ -1928,7 +1962,7 @@ internal static class StandardCompositionCanonical
             fields.Add(warning.Code.ToString());
         }
 
-        return ComputeDigest("hubradio.standard-composition-plan.v1", fields);
+        return ComputeDigest("hubradio.standard-composition-plan.v2", fields);
     }
 
     internal static ContentDigest ComputeProfileBindingDigest(
