@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -215,6 +216,198 @@ public sealed class PythonRuntimePackageManifestTests
         Assert.IsTrue(workerClient.Contains(
             "[\"-I\", \"-B\", \"-m\", \"hubradio_worker\", \"--protocol\"]",
             StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    [DataRow("build-runtime.ps1")]
+    [DataRow("verify-runtime.ps1")]
+    public void RuntimeArtifactDigest_PreservesLegacyEnUsAcrossChildCultures(string scriptName)
+    {
+        string[] properties = scriptName == "build-runtime.ps1" ? ["path", "fileName"] : ["path"];
+        string pathArgument = scriptName == "build-runtime.ps1" ? "-PathProperty $property" : string.Empty;
+        // Both the fixed en-US oracle and the real function run in the same pwsh/.NET
+        // globalization implementation. Only the disposable child changes CurrentCulture.
+        using JsonDocument result = RunRuntimeProbe(scriptName, $$"""
+            $results = foreach ($property in @({{string.Join(", ", properties.Select(static value => "'" + value + "'"))}})) {
+                $names = if ($property -ceq 'fileName') {
+                    @('IMAGE-1.0-py3-none-any.whl', 'identity-1.0-py3-none-any.whl',
+                        'zeta-1.0-py3-none-any.whl', 'alpha_tools-1.0-py3-none-any.whl')
+                } else {
+                    @('LICENSE.txt', 'Lib/site-packages/pkg/__init__.py', 'Lib/site-packages/pkg/LICENSE',
+                        'python312._pth', 'python.exe', '_decimal.pyd')
+                }
+                $records = @(for ($index = 0; $index -lt $names.Count; $index++) {
+                    [pscustomobject]@{
+                        $property = $names[$index]
+                        byteSize = [long]2147483648 + $index
+                        sha256 = ([string]($index + 1)) * 64
+                    }
+                })
+                $ordered = @($records | Sort-Object -Property $property -CaseSensitive -Culture en-US)
+                $builder = [Text.StringBuilder]::new()
+                foreach ($record in $ordered) {
+                    [void]$builder.Append([string]$record.$property)
+                    [void]$builder.Append([char]0)
+                    [void]$builder.Append(([long]$record.byteSize).ToString([Globalization.CultureInfo]::InvariantCulture))
+                    [void]$builder.Append([char]0)
+                    [void]$builder.Append([string]$record.sha256)
+                    [void]$builder.Append("`n")
+                }
+                $expected = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(
+                    [Text.Encoding]::UTF8.GetBytes($builder.ToString()))).ToLowerInvariant()
+                $cultures = @(foreach ($cultureName in @('en-US', 'ja-JP', 'tr-TR', '')) {
+                    [Globalization.CultureInfo]::CurrentCulture = [Globalization.CultureInfo]::GetCultureInfo($cultureName)
+                    $actual = Get-ArtifactSetSha256 -Records $records {{pathArgument}}
+                    [pscustomobject]@{
+                        culture = $cultureName; cultureAfter = [Globalization.CultureInfo]::CurrentCulture.Name
+                        actual = $actual
+                    }
+                })
+                [pscustomobject]@{
+                    property = $property; expected = $expected
+                    legacyOrder = @($ordered | ForEach-Object { $_.$property }); cultures = $cultures
+                }
+            }
+            ConvertTo-Json -InputObject @($results) -Depth 6 -Compress
+            """);
+
+        JsonElement[] sets = result.RootElement.EnumerateArray().ToArray();
+        CollectionAssert.AreEqual(properties, sets.Select(static set => set.GetProperty("property").GetString()).ToArray());
+        foreach (JsonElement set in sets)
+        {
+            string expected = set.GetProperty("expected").GetString()!;
+            AssertCanonicalDigest(expected);
+            string[] order = set.GetProperty("legacyOrder").EnumerateArray().Select(static value => value.GetString()!).ToArray();
+            Assert.IsFalse(order.SequenceEqual(order.Order(StringComparer.Ordinal)),
+                "The fixture must distinguish LEGACY en-US order from an incompatible Ordinal migration.");
+            JsonElement[] cultures = set.GetProperty("cultures").EnumerateArray().ToArray();
+            CollectionAssert.AreEqual(new[] { "en-US", "ja-JP", "tr-TR", "" },
+                cultures.Select(static culture => culture.GetProperty("culture").GetString()).ToArray());
+            foreach (JsonElement culture in cultures)
+            {
+                string context = scriptName + "/" + set.GetProperty("property").GetString() + "/" + culture.GetProperty("culture").GetString();
+                Assert.AreEqual(expected, culture.GetProperty("actual").GetString(), context);
+                Assert.AreEqual(culture.GetProperty("culture").GetString(), culture.GetProperty("cultureAfter").GetString(),
+                    "The production function must not change its caller's culture: " + context);
+            }
+        }
+    }
+
+    [TestMethod]
+    [DataRow("build-runtime.ps1", 5)]
+    [DataRow("verify-runtime.ps1", 3)]
+    public void RuntimeScripts_AllLegacyManifestAndFileArraySortsPinEnUs(string scriptName, int expectedSortCount)
+    {
+        using JsonDocument result = RunRuntimeProbe(scriptName, """
+            $sorts = @($ast.FindAll({ param($node)
+                $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -ceq 'Sort-Object'
+            }, $true))
+            $results = @(foreach ($sort in $sorts) {
+                $elements = $sort.CommandElements
+                $cultures = @(for ($index = 1; $index -lt $elements.Count; $index++) {
+                    $element = $elements[$index]
+                    if ($element -is [Management.Automation.Language.CommandParameterAst] -and $element.ParameterName -ieq 'Culture') {
+                        if ($null -ne $element.Argument) { $element.Argument.SafeGetValue() }
+                        elseif ($index + 1 -lt $elements.Count) { $elements[$index + 1].SafeGetValue() }
+                    }
+                })
+                [pscustomobject]@{ line = $sort.Extent.StartLineNumber; cultures = $cultures }
+            })
+            ConvertTo-Json -InputObject $results -Depth 4 -Compress
+            """);
+
+        Assert.AreEqual(expectedSortCount, result.RootElement.GetArrayLength());
+        foreach (JsonElement sort in result.RootElement.EnumerateArray())
+        {
+            CollectionAssert.AreEqual(new[] { "en-US" },
+                sort.GetProperty("cultures").EnumerateArray().Select(static value => value.GetString()).ToArray(),
+                scriptName + ":" + sort.GetProperty("line").GetInt32().ToString(CultureInfo.InvariantCulture));
+        }
+    }
+
+    private static JsonDocument RunRuntimeProbe(string scriptName, string body)
+    {
+        // Parse the actual source; import ONLY this pure function, never either script body.
+        // No runtime, wheelhouse, ignored payload manifest, fixture files, or helper files are needed.
+        string path = Path.Combine(GetRepositoryRoot(), "packaging", "python", scriptName);
+        string code = $$"""
+            Set-StrictMode -Version Latest
+            $ErrorActionPreference = 'Stop'
+            if ($PSVersionTable.PSEdition -cne 'Core' -or $PSVersionTable.PSVersion.Major -lt 7) {
+                throw 'PowerShell 7+ Core is required.'
+            }
+            [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+            $OutputEncoding = [Console]::OutputEncoding
+            $tokens = $null; $errors = $null
+            $ast = [Management.Automation.Language.Parser]::ParseFile(
+                '{{path.Replace("'", "''", StringComparison.Ordinal)}}', [ref]$tokens, [ref]$errors)
+            if (@($errors).Count -ne 0) { throw 'Runtime script AST must parse without errors.' }
+            $definitions = @($ast.FindAll({ param($node)
+                $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Get-ArtifactSetSha256'
+            }, $true))
+            if ($definitions.Count -ne 1) { throw 'Expected exactly one artifact digest function.' }
+            . ([scriptblock]::Create($definitions[0].Extent.Text))
+            {{body}}
+            """;
+        var start = new ProcessStartInfo(FindLatestPowerShell())
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = GetRepositoryRoot(),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        foreach (string argument in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand" })
+        {
+            start.ArgumentList.Add(argument);
+        }
+        start.ArgumentList.Add(Convert.ToBase64String(Encoding.Unicode.GetBytes(code)));
+        start.Environment["NO_COLOR"] = "1";
+        start.Environment["TERM"] = "dumb";
+        start.Environment["POWERSHELL_TELEMETRY_OPTOUT"] = "1";
+        using var process = new Process { StartInfo = start };
+        Assert.IsTrue(process.Start());
+        Task<string> stdout = process.StandardOutput.ReadToEndAsync();
+        Task<string> stderr = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(30_000))
+        {
+            process.Kill(entireProcessTree: true);
+            Assert.IsTrue(process.WaitForExit(5000), "Runtime probe cleanup exceeded its safety bound.");
+            Assert.Fail("The metadata-only AST/culture probe exceeded 30 seconds; no runtime build or launch is allowed.");
+        }
+        Assert.IsTrue(Task.WaitAll([stdout, stderr], 5000), "Runtime probe output drain exceeded its safety bound.");
+        string output = stdout.GetAwaiter().GetResult();
+        string error = stderr.GetAwaiter().GetResult();
+        Assert.AreEqual(0, process.ExitCode, output + error);
+        Assert.IsTrue(string.IsNullOrWhiteSpace(error), error);
+        return JsonDocument.Parse(output);
+    }
+
+    private static string FindLatestPowerShell()
+    {
+        // Reuse PortableBuildTests' installed-directory/PATH version resolution, not a 5.1 fallback.
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Inconclusive("Runtime culture probes require Windows and PowerShell 7+.");
+        }
+        var candidates = new List<string>();
+        string installedRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PowerShell");
+        if (Directory.Exists(installedRoot))
+        {
+            candidates.AddRange(Directory.GetDirectories(installedRoot).Select(static path => Path.Combine(path, "pwsh.exe")));
+        }
+        candidates.AddRange((Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(static path => path.Trim('"')).Where(Path.IsPathFullyQualified).Select(static path => Path.Combine(path, "pwsh.exe")));
+        string? executable = candidates.Distinct(StringComparer.OrdinalIgnoreCase).Where(File.Exists)
+            .Select(static path => (Path: path, Info: FileVersionInfo.GetVersionInfo(path)))
+            .Where(static entry => entry.Info.FileMajorPart >= 7)
+            .OrderByDescending(static entry => new Version(entry.Info.FileMajorPart, entry.Info.FileMinorPart, entry.Info.FileBuildPart, entry.Info.FilePrivatePart))
+            .ThenBy(static entry => entry.Path, StringComparer.Ordinal).Select(static entry => entry.Path).FirstOrDefault();
+        if (executable is null) { Assert.Inconclusive("Install PowerShell 7+; never fall back to Windows PowerShell 5.1."); }
+        return executable!;
     }
 
     private static string ComputeSetDigest(IEnumerable<JsonElement> entries, string pathProperty)

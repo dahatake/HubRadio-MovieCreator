@@ -55,6 +55,17 @@ HubRadio MovieCreator は、企業向け動画、文字起こし、出演者情�
 
 Stage 0 の仕組みは、完成した製品 workspace の権限モデルや脅威対策の代替ではありません。
 
+## 1操作起動候補の境界
+
+`candidate-review-06`は、bounded local technical evaluationだけの候補です。公開候補には実行候補、内容・構成の検証証跡、SBOMを置き、BuildLogsとComponentInputsを含むprivate証跡は公開candidateの兄弟ディレクトリへ分離します。これは同一利用者のローカルfilesystem上の分離であり、ACLや一般配布向けのアクセス制御を意味しません。公開候補への混入はbuilderとOSL-013 verifierで拒否します。公開証跡は候補の構成・hash・判定を照合するための最小限の情報とし、private原本を共有用の証拠へ昇格しません。
+
+- SDKの自己展開cache、WebView2 user data、workspace／案件DB／設定はそれぞれの用途を分離する。候補payloadと実行依存のcacheを、案件データの保存先や証拠入力として使わない。
+- 配布候補のWebView2はFixed Version `152.0.4191.62`を一意に指定し、検出と初期化の両方で同じ同梱Runtimeを使用する。system runtimeへの黙ったfallbackは許可しない。Fixed Runtimeは自動更新されないため、更新時は版・内容・条件を再確認した別候補を作成する。自動更新機構は追加しない。
+- 実行観測は対象アプリとその子孫processに限定する。入力・展開・WebView2 user data・private証跡は既存workspaceを削除せず、runごとのbackup・hash照合・専用展開先で追跡する。portableのWebView2 user dataは実装上 `%LOCALAPPDATA%\HubRadio.MovieCreator\WebView2` 固定であり、run単位のuser-data分離を主張しない。無関係なprocess、利用者の既存workspace、既存証跡を停止・削除・上書きしない。
+- 本PCで確認した候補の正常系は、production-channel clean OS、別標準ユーザー、offline、欠落・破損・容量不足・アクセス拒否、署名・MOTW・実配布の受入を証明しない。これらは未評価またはBLOCKEDのまま扱う。
+
+候補の`releaseApproved=false`は維持する。license、notice、SBOM／Model BOM、CVE、再配布条件、法的判断、clean OS、署名、実配布、業務E2Eの各gateが未解決の間、候補を一般提供可能と表示しない。詳細なcomponent判断は[release-candidate review](licenses/release-review.md)、本PC正常系の観測範囲は[OSL-014記録](reviews/osl-014-local-host-verification.md)を正本とします。
+
 ## 製品境界の合成敵対試験
 
 現在実装済みのclosed surfaceに対して、次の自動試験を実装しています。

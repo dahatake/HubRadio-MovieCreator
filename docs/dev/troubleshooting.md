@@ -4,6 +4,32 @@
 
 最初に [開発を始める](getting-started.md) の前提条件を確認してください。
 
+## 限定ローカル技術評価候補を起動できない
+
+この節は一般提供用の手順ではありません。承認されたローカル技術評価では、`artifacts/portable/candidate-review-06/App/HubRadio.App.exe` を直接起動します。`Contents/` は監査専用の展開内容であり、起動用フォルダーではありません。公開の配布URLやダウンロード手順はありません。
+
+正常系は、Windows 11 Enterprise Insider Preview build 29648 x64 の本PC、非昇格利用者でのみ確認済みです。既存profileを保全し、専用の新しいSDK展開先を使ったcold相当起動でnative Readyまで44.023秒、同じ専用展開領域を再使用したwarm起動で5.525秒でした。coldはOS再起動後・空profile・offline・クリーンOSを意味せず、warm値も専用展開領域の再使用条件に限定されます。production-channelのクリーンWindows、別標準ユーザー、offline、異常系は未評価です。
+
+起動時にSDKが実行依存を再生成可能な展開cacheへ置きますが、案件データはそこに保存しません。WebView2 profileはportable実装上の固定per-user pathであり、run単位の分離を主張しません。利用者データの実際の保存先は次のとおりです。
+
+- `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\hubradio.db` — 案件のSQLite DB
+- `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\backups` — DB backup
+- `%LOCALAPPDATA%\HubRadio.MovieCreator\WebView2` — WebView2 profile
+
+起動失敗への対処として、この領域を削除・改名したり、別のWebView2 Runtimeを環境変数で指定したりしません。候補EXEやSDK展開物の改変も行いません。
+
+### `webview.runtime_unavailable`
+
+**意味:** 同梱Fixed WebView2 Runtimeを検出できなかったため、Web UIの初期化を開始していません。portable候補はsystem Evergreen Runtimeへ黙って切り替えません。
+
+**対処:** アプリの表示に従って候補を再取得し、承認済みの候補EXEと照合してから再起動します。評価担当者から候補を再取得できない場合は、診断コードだけを添えて報告します。path、例外詳細、案件内容、認証情報を共有しません。
+
+### `webview.initialization_failed`
+
+**意味:** Runtime検出後にWebView2の初期化に失敗しました。原因はこのコードだけでは特定しません。
+
+**対処:** 一度アプリを終了してから再起動します。継続する場合は、利用者データを保持したまま、診断コードと評価環境（OS版、x64、非昇格）を管理者へ伝えます。Runtimeの追加導入、system Runtimeへの切替、profileやworkspaceの削除を回避策にしません。
+
 ## `PowerShell 7+ (Core) is required.`
 
 **原因:** Windows PowerShell 5.1 で実行しています。

@@ -1,8 +1,14 @@
 #Requires -Version 7.0
 
+# Developer-only: run in a disposable VM/test account, never a real user profile.
+# The app uses its normal per-user DB and WebView2 paths; this script does not isolate them.
+# Distribution aligns diagnostics only; full OSL-014 validation remains separate.
 [CmdletBinding()]
 param(
-    [string]$AppPath = ''
+    [string]$AppPath = '',
+
+    [ValidateSet('Development', 'Portable')]
+    [string]$Distribution = 'Development'
 )
 
 Set-StrictMode -Version Latest
@@ -10,6 +16,10 @@ $ErrorActionPreference = 'Stop'
 
 if ($PSVersionTable.PSEdition -ne 'Core') {
     throw 'PowerShell 7+ (PSEdition Core) is required.'
+}
+
+if ($Distribution -eq 'Portable' -and [string]::IsNullOrWhiteSpace($AppPath)) {
+    throw 'Portable smoke requires an explicit, non-empty -AppPath.'
 }
 
 Add-Type -AssemblyName UIAutomationClient
@@ -142,6 +152,13 @@ function Invoke-ReadySmoke {
 }
 
 function Invoke-RuntimeUnavailableSmoke {
+    # SDK override failure, not physical bundle removal: bundled files remain intact.
+    $expectedTitle = if ($Distribution -eq 'Portable') {
+        'アプリの配布ファイルが不完全です'
+    }
+    else {
+        'WebView2 Runtime を利用できません'
+    }
     $missingRuntimePath = Join-Path $env:TEMP (
         'missing-webview2-' + [guid]::NewGuid().ToString('N'))
     $process = Start-HubRadioApp -MissingRuntimePath $missingRuntimePath
@@ -150,7 +167,7 @@ function Invoke-RuntimeUnavailableSmoke {
         $null = Wait-AutomationElement `
             -Root $root `
             -AutomationId 'WebViewStartupStatus' `
-            -ExpectedName 'WebView2 Runtime を利用できません'
+            -ExpectedName $expectedTitle
 
         $elements = $root.FindAll(
             [System.Windows.Automation.TreeScope]::Descendants,

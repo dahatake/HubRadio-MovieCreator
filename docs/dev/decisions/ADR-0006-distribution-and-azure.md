@@ -7,6 +7,9 @@
 > [!NOTE]
 > 本ADRは決定時点の記録である。2026-08-30に評価したlocal modelの不達証拠と利用者の限定評価指示が得られた後のSubscription、Region、resource、identityは[ADR-0008](ADR-0008-bounded-azure-evaluation.md)が限定的に置き換える。cloud necessity自体は未証明であり、local-first、最小payload、API key禁止、release未承認は継続する。
 
+> [!NOTE]
+> 2026-09-06の利用者指示により、初期Windows配布のMSIX/Evergreen既定は[ADR-0010](ADR-0010-one-action-portable-launch.md)のOS-only単一EXE/Fixed Runtime方式と成立性gateへ置き換える。以下のWindows配布記述とMSIX測定は履歴として保持し、インストーラー関連は将来事項とする。Azure部分はこの変更の対象外である。
+
 ## Windows配布
 
 初期配布はWindows 11 x64向けの署名済み社内MSIXを既定とする。

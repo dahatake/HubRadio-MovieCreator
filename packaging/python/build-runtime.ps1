@@ -131,6 +131,8 @@ function Assert-FileEvidence {
     }
 }
 
+# LEGACY fixed-culture compatibility: committed manifests use en-US linguistic order,
+# not Ordinal (which changes their digests). Keep all manifest/file-array sorts on en-US.
 function Get-ArtifactSetSha256 {
     [CmdletBinding()]
     param(
@@ -142,7 +144,7 @@ function Get-ArtifactSetSha256 {
     )
 
     $builder = [Text.StringBuilder]::new()
-    foreach ($record in @($Records | Sort-Object -Property $PathProperty -CaseSensitive)) {
+    foreach ($record in @($Records | Sort-Object -Property $PathProperty -CaseSensitive -Culture en-US)) {
         [void]$builder.Append([string]$record.$PathProperty)
         [void]$builder.Append([char]0)
         [void]$builder.Append(
@@ -337,7 +339,7 @@ if ((Get-LowerSha256 -Path $wheelMatrixPath) -cne [string]$manifest.wheelInput.m
 }
 
 $wheelMatrix = Get-Content -LiteralPath $wheelMatrixPath -Raw -Encoding utf8 | ConvertFrom-Json
-$runtimeWheels = @($wheelMatrix.packages | Where-Object lock -eq 'runtime' | Sort-Object fileName)
+$runtimeWheels = @($wheelMatrix.packages | Where-Object lock -eq 'runtime' | Sort-Object fileName -Culture en-US)
 if (
     $runtimeWheels.Count -ne [int]$manifest.wheelInput.runtimeWheelCount -or
     [long](($runtimeWheels | Measure-Object byteSize -Sum).Sum) -ne
@@ -348,7 +350,7 @@ if (
     throw 'The runtime wheel set does not match the runtime manifest.'
 }
 
-$wheelhouseFiles = @(Get-ChildItem -LiteralPath $WheelhousePath -File -Force | Sort-Object Name)
+$wheelhouseFiles = @(Get-ChildItem -LiteralPath $WheelhousePath -File -Force | Sort-Object Name -Culture en-US)
 $expectedWheelNames = @($runtimeWheels | ForEach-Object fileName)
 $actualWheelNames = @($wheelhouseFiles | ForEach-Object Name)
 if (
@@ -365,7 +367,7 @@ foreach ($wheel in $runtimeWheels) {
         -ExpectedSha256 ([string]$wheel.sha256)
 }
 
-$workerFiles = @($manifest.workerSource.files | Sort-Object path)
+$workerFiles = @($manifest.workerSource.files | Sort-Object path -Culture en-US)
 if (
     $workerFiles.Count -ne [int]$manifest.workerSource.fileCount -or
     [long](($workerFiles | Measure-Object byteSize -Sum).Sum) -ne
@@ -517,7 +519,7 @@ try {
                     sha256 = Get-LowerSha256 -Path $_.FullName
                 }
             } |
-            Sort-Object path -CaseSensitive
+            Sort-Object path -CaseSensitive -Culture en-US
     )
 
     $payloadBytes = [long](($payloadFiles | Measure-Object byteSize -Sum).Sum)

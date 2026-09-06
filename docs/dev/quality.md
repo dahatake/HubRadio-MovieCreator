@@ -25,6 +25,17 @@
 
 詳細は[Stage 0ベンチマーク](benchmarks/README.md)、[実装進行成果物の敵対的レビュー](reviews/implementation-adversarial-review.md)、[アクセシビリティ評価記録](accessibility/test-report.md)を参照してください。過去のPASSは、そのrunが対象にしたsurfaceだけの証拠である。
 
+## 1操作起動候補の品質gate
+
+`candidate-review-06`はbounded local technical evaluationの候補です。公開候補の構成・SBOM・検証サマリーと、BuildLogs／ComponentInputsを含むprivate原本は公開candidateの兄弟ディレクトリへ分離して保全します。これはfilesystem ACLによる保護境界ではありません。公開サマリーはprivate原本の代替でも、候補全体のrelease authorizationでもありません。
+
+- 本PCの正常系では、同梱Fixed WebView2 `152.0.4191.62`、cold/warmのnative Ready、通常終了、対象子孫processの終了、実行中の展開物と候補manifestの照合・不変性を確認した。この結果は当該PC・当該候補・正常系の観測に限定する。
+- 実行入力とSDK展開cacheはrunごとの専用領域で追跡し、WebView2 user dataはportable実装の固定per-user pathを使用するためrun単位の分離を主張しない。workspace／案件DBとprivate証跡は削除せず、backup・hash照合・対象process限定で既存データへ影響しないことをrunごとに確認する。入力やprivate原本を通常の共有品質証拠へ混在させない。
+- production-channel clean OSと標準ユーザーでの通常・異常系、offline、欠落・破損・容量不足・アクセス拒否、JavaScript受領ACKの独立確認、署名・MOTW・実配布はPASSではない。clean OS受入は現在BLOCKEDであり、保護を解除して結果を置き換えない。
+- Fixed Runtimeやapp-local native依存の更新は、更新対象の版・内容・供給網条件を再確認し、候補、SBOM、証拠、起動受入を再作成・再照合する。既存候補のPASSを更新後のbytesへ遡及しない。
+
+`releaseApproved=false`を維持する。license、notice、完全なSBOM／Model BOM、CVE、再配布条件、法的判断、clean OS、署名、実配布、業務E2Eがopen gateである間、一般提供の品質gateは成立しない。候補の供給網判断は[release-candidate review](licenses/release-review.md)、本PCでの観測値と未評価範囲は[OSL-014記録](reviews/osl-014-local-host-verification.md)を参照してください。
+
 ## 品質の判断原則
 
 ### 測定事実と判断を分ける

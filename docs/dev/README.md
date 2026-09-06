@@ -12,6 +12,8 @@ HubRadio MovieCreator の開発、保守、技術検証、設計判断に関す�
 | 目的 | 読む文書 |
 |---|---|
 | 開発環境を用意して小さい検証を実行する | [開発を始める](getting-started.md) |
+| OS-only起動候補を扱う際に、開発ビルド前提と利用者向け技術評価を区別する | [開発を始める](getting-started.md)、[portable distribution runbook](packaging/portable-distribution.md)、[ADR-0010](decisions/ADR-0010-one-action-portable-launch.md) |
+| 起動候補の技術受入と一般配布可否を確認する | [OSL-014 local-host verification](reviews/osl-014-local-host-verification.md)、[release-candidate review](licenses/release-review.md)、OSL-020 acceptance（未生成） |
 | 現在と計画中の構成を理解する | [アーキテクチャ概要](architecture/overview.md) |
 | Stage 0 の実行方法と証拠を確認する | [Stage 0 ベンチマーク](benchmarks/README.md) |
 | task、依存、gate、要求対応を確認する | [詳細実装計画](planning/implementation-plan.md) |
@@ -56,6 +58,17 @@ HubRadio MovieCreator の開発、保守、技術検証、設計判断に関す�
 7. [source-only quick start、版付き既定値、自動代理評価](decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)
 8. [第三者依存の受入状態](licenses/third-party-intake.md)
 
+### OS-only起動候補を技術評価する
+
+開発者の SDK・Git・PowerShell 7・Node.js・Python・FFmpeg・fixture は、ソースの build・test を行うための前提条件です。候補EXEの利用者向け前提条件ではありません。
+
+1. [portable distribution runbook](packaging/portable-distribution.md)
+2. [ADR-0010](decisions/ADR-0010-one-action-portable-launch.md)
+3. [OSL-014 local-host verification](reviews/osl-014-local-host-verification.md)
+4. [release-candidate review](licenses/release-review.md)
+
+`candidate-review-06` はローカル技術評価だけを目的とする候補であり、一般配布または一般利用者向け提供を許可しません。`release-candidate review` が `BLOCKED / REVIEW_PENDING` の間は、一般配布の判断を行わず、必要な受入・署名・再配布条件の確認を完了させます。
+
 ## 正本の優先順位
 
 実装判断が競合する場合は、[ADR-0001](decisions/ADR-0001-source-of-truth.md) に従います。
@@ -75,7 +88,7 @@ docs/
 ├─ requirement-definition.md          # 製品要求の正本
 └─ dev/
    ├─ README.md                        # 開発者向け入口
-   ├─ getting-started.md               # Stage 0 開発環境
+   ├─ getting-started.md               # 開発環境（候補利用者向け手順とは別）
    ├─ quality.md                       # 品質と敵対的レビュー
    ├─ security-privacy.md              # データ・秘密・権利・Azure 境界
    ├─ troubleshooting.md               # Stage 0 の問題解決
@@ -89,25 +102,35 @@ docs/
    │  ├─ annotation-policy.md
    │  ├─ metric-definitions.md
    │  └─ result-schema-policy.md
-   ├─ decisions/                       # ADR-0001〜0009
+   ├─ decisions/                       # ADR-0001〜0010
    ├─ licenses/
    │  ├─ third-party-intake.md
    │  ├─ dependencies.csv
    │  ├─ models.csv
-   │  └─ THIRD-PARTY-NOTICES.md
+   │  ├─ THIRD-PARTY-NOTICES.md
+   │  └─ release-review.md
+   ├─ packaging/
+   │  ├─ portable-distribution.md
+   │  └─ portable-signing.md
    ├─ planning/
    │  └─ implementation-plan.md
    ├─ research/
    │  ├─ implementation-research.md
    │  └─ default-settings-research.md
-   └─ reviews/
+   ├─ reviews/
       ├─ adversarial-review.md
       ├─ implementation-adversarial-review.md
+      ├─ osl-014-local-host-verification.md
+      ├─ one-action-launch-adversarial-review.md
       ├─ v2-defaults-adversarial-review.md
       ├─ v2-001-default-settings-profile-adversarial-review.md
       ├─ v2-005-quick-start-ui-adversarial-review.md
       └─ v2-008-standard-composition-adversarial-rereview.md
+   └─ accessibility/
+      └─ test-report.md
 ```
+
+   `packaging/`には上記のほか`python-dependency-lock.md`があり、`reviews/`にはV2各task、統合、OSL、設定store等の追加レビュー文書があります。上のツリーは入口となる代表文書であり、ディレクトリ内の全ファイル一覧ではありません。
 
 `benchmarks/` の code、fixture manifest、schema、canonical result、`test/` の検証証拠、`work/` の日付付き作業成果物は、読者向けガイドではないため各成果物の近くに残します。
 

@@ -1717,8 +1717,13 @@ internal sealed class Bridge : IDisposable
         layoutSubtitleHandler;
     private readonly SettingsBridgeRequestHandler? settingsHandler;
     private readonly CancellationTokenSource lifetimeCancellation = new();
+    private readonly TaskCompletionSource firstPingResponsePosted = new(
+        TaskCreationOptions.RunContinuationsAsynchronously);
     private bool isStarted;
     private bool isDisposed;
+
+    // A successful post is not an acknowledgement of receipt by JavaScript.
+    internal Task FirstPingResponsePosted => firstPingResponsePosted.Task;
 
     internal Bridge(CoreWebView2 coreWebView)
         : this(
@@ -1926,6 +1931,7 @@ internal sealed class Bridge : IDisposable
 
         isDisposed = true;
         lifetimeCancellation.Cancel();
+        firstPingResponsePosted.TrySetCanceled(lifetimeCancellation.Token);
         if (!isStarted)
         {
             lifetimeCancellation.Dispose();
@@ -1941,7 +1947,8 @@ internal sealed class Bridge : IDisposable
         object? sender,
         CoreWebView2WebMessageReceivedEventArgs args)
     {
-        if (sender is not CoreWebView2 coreWebView
+        if (isDisposed
+            || sender is not CoreWebView2 coreWebView
             || !BridgeProtocol.TryParseRequest(
                 args.Source,
                 args.WebMessageAsJson,
@@ -1949,6 +1956,15 @@ internal sealed class Bridge : IDisposable
                 out _)
             || request is null)
         {
+            return;
+        }
+
+        if (request.Method == BridgeMethod.Ping)
+        {
+            PostPingResponse(
+                request,
+                coreWebView.PostWebMessageAsJson,
+                firstPingResponsePosted);
             return;
         }
 
@@ -1974,15 +1990,26 @@ internal sealed class Bridge : IDisposable
         }
     }
 
+    internal static void PostPingResponse(
+        BridgeRequest request,
+        Action<string> postResponse,
+        TaskCompletionSource firstPingResponsePosted)
+    {
+        try
+        {
+            postResponse(BridgeProtocol.CreatePingResponse(request));
+            firstPingResponsePosted.TrySetResult();
+        }
+        catch (Exception exception)
+        {
+            firstPingResponsePosted.TrySetException(exception);
+        }
+    }
+
     private async Task<string> HandleRequestAsync(
         BridgeRequest request,
         CancellationToken cancellationToken)
     {
-        if (request.Method == BridgeMethod.Ping)
-        {
-            return BridgeProtocol.CreatePingResponse(request);
-        }
-
         if (BridgeProtocol.IsProjectMethod(request.Method))
         {
             return handleProjectRequestAsync is null

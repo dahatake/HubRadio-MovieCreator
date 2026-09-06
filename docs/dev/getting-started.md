@@ -5,6 +5,12 @@
 > [!IMPORTANT]
 > FoundationとStage 1基盤の一部は実装済みですが、一般利用者向け業務UIとend-to-end render/export flowは未完了です。repository testではSQLite、job、媒体取込・proxy・preview素材、編集model、review/approval、backup/restoreを検証できますが、任意動画向けの一般的な編集CLIではありません。
 
+## 開発者ビルドと候補の技術評価を分ける
+
+このページの SDK、Git、PowerShell 7、Node.js、Python、FFmpeg、および fixture の前提条件は、ソースから build・test・技術検証を行う**開発者**向けです。候補EXEの利用者に、これらの導入、環境変数設定、管理者昇格、または追加Runtimeの手動導入を求めるものではありません。
+
+OS-onlyの1操作起動候補は、[portable distribution runbook](packaging/portable-distribution.md) と [ADR-0010](decisions/ADR-0010-one-action-portable-launch.md) を正本の導線とします。`candidate-review-06` はローカル技術評価だけの候補であり、一般配布用ではありません。実施済みの本PC正常系記録は [OSL-014 local-host verification](reviews/osl-014-local-host-verification.md)、候補の第三者依存・再配布条件の状態は [release-candidate review](licenses/release-review.md) を確認してください。clean OS受入はOSL-020の成果物が作成されるまで未成立です。後者が `BLOCKED / REVIEW_PENDING` である間は、一般配布または一般利用者向けの提供を行いません。
+
 Foundation全体の依存復元、静的解析、build、testはrepository rootで次を実行します。
 
 ```powershell

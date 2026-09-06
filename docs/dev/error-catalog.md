@@ -15,7 +15,7 @@
 |---|---|---|---|
 | `process.start_failed` | `ProcessStartException` | shell を介さない子 process を開始できなかった | nullable な OS native error code |
 | `diagnostic.log_write_failed` | `DiagnosticLogException` | bounded local diagnostic log の作成、読取り、rotation、置換のいずれかに失敗した | なし。失敗 path や inner exception は公開しない |
-| `webview.runtime_unavailable` | `WebViewStartupResult`（起動画面表示） | Evergreen WebView2 Runtime の版を検出できず、Web UI 初期化を開始しなかった | なし。検出例外、path、環境変数は公開しない |
+| `webview.runtime_unavailable` | `WebViewStartupResult`（起動画面表示） | 構成された WebView2 Runtime 対象（開発時の Evergreen または portable 配布の Fixed）の版を検出できず、Web UI 初期化を開始しなかった | なし。検出例外、path、環境変数は公開しない |
 | `webview.initialization_failed` | `WebViewStartupResult`（起動画面表示） | Runtime 検出後に WebView2 control を初期化できなかった | なし。初期化例外、user data path、内容は公開しない |
 | `worker.invalid_message` | `WorkerProtocolException` | worker の NDJSON、順序、相関、終了状態のいずれかが閉じた v1 契約に適合しなかった | なし。標準入出力、request、path、例外内容は公開しない |
 | `worker.message_too_large` | `WorkerProtocolException` | worker protocol の単一 JSON record が 512 UTF-8 bytes を超えた | なし。超過 record は公開しない |
@@ -23,6 +23,8 @@
 | `worker.processing_failed` | `WorkerProtocolException` | worker が要求を処理できず、内容を伴わない固定 error envelope で終了した | なし。Python 例外や入力内容は公開しない |
 
 U-001 の WebView2 の 2 コードは起動・復旧画面へ表示するだけで、例外としては投げず、現時点では診断ログへ書かない。下記の enum 対応は catalog との一致を保つために定義してある。
+
+`webview.runtime_unavailable` は構成対象の Runtime 検出段階だけを表し、Fixed フォルダの不存在も含む。検出後の初期化失敗は `webview.initialization_failed` とする。明示 Fixed path の null・空白・相対 path は引数契約違反として拒否し、これらや他の構成・検証失敗に検出失敗コードを再利用しない。両コードの結果には例外やフォルダ path の詳細を含めない。
 
 ## 診断ログ契約
 

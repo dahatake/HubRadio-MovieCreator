@@ -5,7 +5,7 @@
 **設計根拠:** `docs/dev/research/default-settings-research.md`、`docs/dev/decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md`、`docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **初版計画日:** 2026年8月26日
 **再baseline日:** 2026年9月2日
-**計画状態:** `V2-000`〜`V2-009`とshared integrationを完了。次のcritical pathは`V2-010`自動代理評価である。
+**計画状態:** 業務系は`V2-000`〜`V2-009`とshared integrationを完了し、次は`V2-010`自動代理評価である。別系統として、2026-09-06に承認されたOSLの1操作起動・配布実装を進行中。現在の実施・検証状態は§0.7の参照先を正本とする。
 
 ### 旧203 task baselineの履歴snapshot
 
@@ -157,6 +157,8 @@ flowchart TD
 
 `V2-000`〜`V2-009`は個別・shared integrationの全回帰と敵対的レビューを完了した。`V2-008`と`V2-009`への依存が成立したため、次は`V2-010`自動代理評価を実装する。
 
+これは業務系のDAGであり、利用者が後日承認した起動・配布系OSLの順序を取り消す指示ではない。OSLは§0.7へ分離して管理する。
+
 ### 0.6 全task共通の実行契約
 
 1. task開始前に正本要求、ADR、依存、既存実装、該当外部資料の取得日とscopeを確認する。
@@ -167,6 +169,39 @@ flowchart TD
 6. 指摘を修正し、同じ試験と再レビューが成功するまで次taskへ進まない。
 7. 実測していないhuman evaluation、外部公開、cross-account、legal approval、clean machine、performance、qualityをPASSと記録しない。
 8. 変更ごとにtask ID、証拠、commit、未評価範囲を記録する。
+
+### 0.7 OS-onlyの1操作起動（2026-09-06追補）
+
+- 要求はNFR-009/AC-007、配布判断は[ADR-0010](../decisions/ADR-0010-one-action-portable-launch.md)。インストーラー等は将来事項であり、現在のOSL技術検証に旧MSIX install gateを持ち込まない。
+- ファイル所有権と依存順は[OSL実装計画](../../../work/20260906-OneActionLaunch-ImplementationPlan.md)、最新attempt・個別レビュー・未完了事項は[実行台帳](../../../work/20260906-OneActionLaunch-Execution.md)で管理する。
+- OSL-012はローカル候補生成・SBOM・検証サマリーの基盤を完了し、後続の修正と再固定を経て現在の技術評価候補は`candidate-review-06`である。OSL-012の成功を、clean production Windows、署名・一般提供、業務E2Eの完了へ読み替えない。
+
+#### 0.7.1 OSL状態とNFR-009/AC-007対応
+
+| 範囲 | 現在状態 | NFR-009/AC-007への扱い | 主な既存参照 |
+|---|---|---|---|
+| `OSL-012` | 完了。現行候補は`candidate-review-06` | 候補EXE、SPDX 2.2 SBOM、公開検証サマリー、内容hashを技術評価の入力にする。release approvalやclean OS受入ではない | [portable distribution runbook](../packaging/portable-distribution.md)、[実行台帳](../../../work/20260906-OneActionLaunch-Execution.md) |
+| `OSL-013` | 完了 | 候補EXE、Contents、payload manifest、SBOMの対応を確認済み。実行・信頼・一般提供の証拠ではない | [portable distribution runbook](../packaging/portable-distribution.md) |
+| `OSL-014` | 本PC正常系PASS | 現行ホストでnative Ready、cold/warm、同梱Runtime、展開tree不変、通常終了を確認。clean OS、JavaScript受領ACK独立確認、負例・異常系は`NOT EVALUATED` | [OSL-014記録](../reviews/osl-014-local-host-verification.md)、[残タスク状況](../reviews/remaining-task-status.md) |
+| `OSL-015` | 完了 | Worker/native imports、FFmpeg/ffprobe、CPU/int8 model load、候補hash不変を独立確認。ASR精度、clean OS、業務E2Eではない | [残タスク状況](../reviews/remaining-task-status.md) |
+| `OSL-016` | 手順作成済み・未実行 | 再展開、欠落・破損、容量不足、アクセス拒否、startup failure、正常再起動の手順はあるが、受入結果はまだない | [portable launch recovery手順](../../../tests/Reliability/portable-launch-recovery.md) |
+| `OSL-017` | `BLOCKED / REVIEW_PENDING` | 技術評価候補としての分類に留まり、一般再配布、完全notice、CVE、法的/release承認は未成立 | [release-candidate review](../licenses/release-review.md) |
+| `OSL-018` | 完了（一般提供は未実施） | 署名・実配布の運用方針を文書化。署名主体・配布先・MOTW実証は未成立 | [portable signing runbook](../packaging/portable-signing.md) |
+| `OSL-019` | 完了 | `candidate-review-06`をローカル技術評価候補として固定。署名済み一般提供候補ではない | [portable distribution runbook](../packaging/portable-distribution.md)、[残タスク状況](../reviews/remaining-task-status.md) |
+| `OSL-020` | `BLOCKED` | production-channel clean Windows標準ユーザーでのAC-007.1〜8受入は未成立。現行ホスト結果で代替しない | [残タスク状況](../reviews/remaining-task-status.md) |
+| `OSL-021` | 利用者指示により明示スキップ | 署名・実配布・MOTW/policy受入は未実施。一般提供gateとしては未成立 | [portable signing runbook](../packaging/portable-signing.md)、[残タスク状況](../reviews/remaining-task-status.md) |
+| `OSL-022`〜`OSL-026` | 文書同期済み | 技術評価候補、開発者前提、アーキテクチャ境界、品質/security gate、非技術者向け起動説明を同期。一般提供完了とは書かない | [portable distribution runbook](../packaging/portable-distribution.md)、[MSIX README](../../../packaging/HubRadio.Package/README.md)、[getting-started](../getting-started.md)、[dev README](../README.md)、[architecture overview](../architecture/overview.md)、[quality](../quality.md)、[security/privacy](../security-privacy.md)、[README](../../../README.md)、[troubleshooting](../troubleshooting.md) |
+| `OSL-027` | 完了 | 本節でOSL/NFR-009/AC-007、PK/Q/V2の依存境界を同期した。旧203 task snapshotや過去証拠は変更しない | 本書§0.7 |
+| `OSL-028` | 未着手 | 技術検証全体の独立レビュー・差分整合は未実施。一般提供時はOSL-021結果を入力に再レビューする | [OSL実装計画](../../../work/20260906-OneActionLaunch-ImplementationPlan.md) |
+
+#### 0.7.2 PK/Q/V2との依存境界
+
+- `PK-001`〜`PK-005`の固定依存、Web asset、Python、FFmpeg、modelの証拠はOSL候補の入力として再利用する。既存PKの完了を取り消さないが、`releaseApproved=false`、完全notice/CVE/legal、clean OS、署名、一般提供の未完了を成功へ変更しない。
+- `PK-006`/`PK-007`のMSIX install、upgrade、rollback、uninstallは将来区分のまま保持する。OSLの単一EXE技術候補は、MSIXの未実施gateを完了にせず、逆にMSIXの未完了だけを理由にOSL-022〜027の文書同期を止めない。
+- `Q-010`は候補bytesと実同梱物に対するnotice、SBOM/Model BOM、CVE、再配布条件、release承認を扱う。OSL-017が`BLOCKED / REVIEW_PENDING`である間、一般提供や全製品releaseは成立しない。
+- `Q-001`〜`Q-013`と`AC-001`〜`AC-006`は動画編集アプリケーション全体の受入であり、OSLの起動技術検証とは別である。NFR-009/AC-007の本PC正常系PASSを、動画1本から納品までのend-to-end成功へ読み替えない。
+- `V2-010`〜`V2-014`は業務系の別critical pathである。OSL-019/020の技術候補と証拠は`V2-014`のpackage再検証へ入力にできるが、一般提供判定にはOSL-021の署名後bytes受入とOSL-028のレビューが別途必要である。V2未完了機能を無視して「全製品完了」と表示しない。
+- 上記の現行判断を優先し、旧203 task snapshotと過去の未実施証拠は変更しない。
 
 ---
 

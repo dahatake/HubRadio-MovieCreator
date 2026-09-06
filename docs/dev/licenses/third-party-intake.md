@@ -150,6 +150,35 @@ BuildToolsはexact NuGet lock（content hash `ju02pHSp1LDEIvFgLIDbCbXGPpTTrXJrH9
 
 ST-013のNuGet restoreはSDK `10.0.400`を`global.json`で固定し、`packages.lock.json --locked-mode`で実行した。PK-005はReact production runtime 3 tarballとclosed Vite outputをhash固定したが、WebView2 Runtimeとfontはhost dependencyであり、NuGet package hashだけではそれらを固定しない。製品のWebView2 bootstrap/install、offline環境、runtime更新時の回帰、fontライセンス、installed package、SBOMはU-001/PK-006/PK-007/Q-010で完了する。
 
+## OSL-006 Fixed Version WebView2 Runtime受入記録
+
+証跡日: 2026年9月6日。対象は実際に取得済みの`Microsoft Edge WebView2 Runtime`、Fixed Version `152.0.4191.62`、Windows x64。以下の版、byte size、SHA-256、署名者、展開treeの唯一の正本は[`packaging/webview2/runtime-manifest.json`](../../../packaging/webview2/runtime-manifest.json)であり、本節はその転記である。OSL-006で再取得・再実測した値ではない。ST-013のSDK `Microsoft.Web.WebView2`とhost Evergreenの履歴は変更せず、今回のFixed Runtimeや製品bundleの証拠へ読み替えない。
+
+archiveはMicrosoft公式から直接取得したもの。取得URLはmanifestの`runtime.source`、公式ページは`runtime.sourcePage`を参照する。これらは開発者向け来歴（`sourceUsage=developer-provenance-only`）であり、利用者向けRuntime download先・shortcutとして公開しない（`publicDownloadShortcutAllowed=false`）。
+
+| 対象 | byte size | SHA-256 | 証跡の範囲 |
+|---|---:|---|---|
+| `Microsoft.WebView2.FixedVersionRuntime.152.0.4191.62.x64.cab` | 371,877,369 | `2dc7d817ddce4d036f33684425c218f1ca2d073911136e5d3f8ce9b2340569b5` | Microsoftから直接取得したarchiveの実測記録 |
+| `msedge.dll` | 343,780,680 | `e2c97da08a6a2ebd22e0ae645e720b76ce86f662289359bf73762259771e3564` | 選択binaryのAuthenticode `Valid` |
+| `msedgewebview2.exe` | 4,824,392 | `0f75ba7da899408d4c4474d58358bdbee732705fc090161cbf08e8783520572d` | 選択binaryのAuthenticode `Valid`、file version `152.0.4191.62` |
+| `WebView2Runtime/`（548 files） | 837,201,247 | `fddf4760e18cde307c62c0385024dda51c8a6f8719cf2fb091cdf44778c8c99a` | `output`の展開tree期待値。集約方法は`output.artifactSetDigestAlgorithm`を参照。最終アプリ同梱検証ではない |
+
+署名者は上記2 binaryとも`CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US`。確認範囲は`signatureEvidenceScope=selected-files-only`であり、CABや全548ファイルの署名検証済み・全ファイル署名済みとは主張しない。配置契約は`copyMode=entire-unmodified-tree`であり、vendor BAT、LICENSE、native resourceもbyte単位で保持する。それらの保持はshell実行や第三者binaryの再署名を意味しない。
+
+license根拠は`MICROSOFT EDGE WEBVIEW2 RUNTIME (FIXED VERSION)`の[公式license modal page-text snapshot](../../../artifacts/inputs/webview2/fixed-license-page-text.txt)。manifestの`runtime.license.evidence`に記録されたSHA-256は`15bc46c641bc439514b3f0fe5290e0a5ef906bd8106030b53e1e8a142d6fc9d8`。公式ページ本文の保存証跡であり、独立した配布license fileではない（`isStandaloneLicenseFile=false`）。
+
+- **ローカル利用:** §1(a)は、本license条件を遵守する場合に本人のdeviceへのインストール・利用を許す。一般再配布の審査とは区別する。
+- **条件付き再配布:** §2(a)はアプリに含めるobject codeのcopy・配布と、そのアプリの配布者による再配布を条件付きで許す。無条件の配布許可でも、再配布の全面禁止でもない。§2(b)の要件は次のとおり。
+	- (i) アプリに重要な主要機能（significant primary functionality）を追加する。
+	- (ii) コードとMicrosoftを本契約と同等以上に保護する条件への同意を、配布者および外部エンドユーザーに要求する。SmartScreenを無効化しない場合は§8に従い、その包含とMicrosoftへの利用者情報の収集・送信を、Privacy Statement / Microsoft Edge Privacy Whitepaperへの参照とともに全利用者へ通知する。
+	- (iii) Microsoft URLからのものを含め、配布する全コードをMicrosoftから直接取得し、その来歴証跡を保持する。
+	- (iv) アプリの配布・利用に関連する請求（弁護士費用を含む）についてMicrosoftを補償・防御・免責する。ただし、未変更の再配布可能コードのみに基づく請求は除く。
+- **制限とnotice:** §2(c)/§3(e)に従い、Runtime単独提供、第三者向けMicrosoft download先・shortcutの提供、Microsoftの推奨を誤認させる表示、禁止されたsource-license変更を行わない。§1(c)/§3(c)に従いMicrosoft・第三者のnoticeを保持し、同梱第三者componentの個別条件も確認する。
+
+一般再配布は`redistribution-review-pending`、`redistributionAccepted=false`、`releaseApproved=false`を維持する。本登録はlicenseへの自動同意・代理同意、法務承認、出荷承認ではない。OSL-017/Q-010の再配布条件・完全notice・SBOM・脆弱性・法務審査、および後続の組立・同梱Runtime明示選択、OSL-020/OSL-021のclean Windows/offline起動・署名・実配布受入は、この記録では完了扱いにしない。他依存のlicense状態や過去の検証結果も変更しない。
+
+Fixed Runtimeは自動更新されない。配布者がセキュリティ更新を追跡し、更新版の固定・内容検証・回帰試験・条件確認を行ってアプリとともに提供する責任を持つ（[公式配布資料](https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution)）。起動時downloadやsystem Runtimeへのfallback、利用者向けRuntime取得shortcutへ更新責任を転嫁しない。
+
 ## 追加確認済み一次資料
 
 - faster-whisper公式リポジトリ/README/License: https://github.com/SYSTRAN/faster-whisper （MIT、`v1.2.1`、Python 3.9+、現行GPU要件はCUDA 12 + cuDNN 9）

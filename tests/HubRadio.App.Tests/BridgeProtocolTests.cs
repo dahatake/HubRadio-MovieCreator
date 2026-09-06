@@ -855,6 +855,52 @@ public sealed class BridgeProtocolTests
         Assert.IsFalse(source.Contains("hostObjects", StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    public void PingPost_SignalsOnlyAfterSuccessfulResponsePost()
+    {
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint, CreateRequest(), out BridgeRequest? request, out _));
+        Assert.IsNotNull(request);
+        TaskCompletionSource posted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        int posts = 0;
+
+        Bridge.PostPingResponse(request, response =>
+        {
+            Assert.IsFalse(posted.Task.IsCompleted);
+            using JsonDocument document = JsonDocument.Parse(response);
+            Assert.AreEqual(RequestId,
+                document.RootElement.GetProperty("requestId").GetString());
+            Assert.AreEqual(BridgeProtocol.Version,
+                document.RootElement.GetProperty("result")
+                    .GetProperty("protocolVersion").GetInt32());
+            posts++;
+        }, posted);
+
+        Assert.AreEqual(1, posts);
+        Assert.IsTrue(posted.Task.IsCompletedSuccessfully);
+    }
+
+    [TestMethod]
+    public async Task PingPost_FailureFailsStartupWithoutSuccess()
+    {
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(
+            WebViewHost.EntryPoint, CreateRequest(), out BridgeRequest? request, out _));
+        Assert.IsNotNull(request);
+        TaskCompletionSource posted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        InvalidOperationException failure = new("Post failed.");
+
+        Bridge.PostPingResponse(request, _ => throw failure, posted);
+
+        Assert.IsFalse(posted.Task.IsCompletedSuccessfully);
+        Assert.AreSame(failure,
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+                WebViewHost.StartDocumentAsync(
+                    () => { }, () => { }, Task.CompletedTask, posted.Task,
+                    CancellationToken.None, timeoutMilliseconds: 0)));
+    }
+
     private static string CreateRequest()
     {
         return $"{{\"version\":1,\"requestId\":\"{RequestId}\",\"method\":\"bridge.ping\",\"params\":{{}}}}";

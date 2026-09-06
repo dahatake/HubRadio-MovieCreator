@@ -89,6 +89,22 @@ HubRadio MovieCreator は、企業向けのトーク、対談、インタビュ�
 
 利用可能になっていない画面や機能について、先行利用や動作保証は行っていません。
 
+## 限定ローカル技術評価候補の起動
+
+一般利用者向けの配布物や公開取得先はありません。承認されたローカル技術評価に限り、評価担当者から取得した候補 `artifacts/portable/candidate-review-06/App/HubRadio.App.exe` を起動します。`artifacts/` はGit管理外の生成物であり、cloneだけでは候補は存在しません。フォルダー版の `Contents/` は監査用であり、起動用・配布用ではありません。
+
+この候補は Windows 11 x64 の本PC・非昇格利用者で正常系を確認しました。既存profileを保全し、専用の新しいSDK展開先を使ったcold相当試行では、可視ウィンドウまで37.520秒、Web UIのnative Readyまで44.023秒を観測しました。同じ専用展開領域を再使用したwarm試行ではnative Readyまで5.525秒でした。OS再起動後の空profileや性能保証・待機時間の基準ではありません。
+
+production-channel のクリーンな Windows、別の標準ユーザー、offline、Runtime欠落などの異常系、業務操作・動画納品のend-to-endは未評価です。候補は限定技術評価以外へコピー・共有せず、実行ファイルを変更しません。
+
+起動により、実行依存はSDK管理の再生成可能な展開cacheへ展開されます。一方、案件・設定・WebView2 profileは次の利用者データ領域へ保存され、展開cacheとは別です。WebView2 profileはportable実装上の固定per-user pathを使い、run単位のprofile分離を主張しません。
+
+- `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\hubradio.db` — 案件のSQLite DB
+- `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\backups` — DB backup
+- `%LOCALAPPDATA%\HubRadio.MovieCreator\WebView2` — WebView2 profile
+
+起動できない場合は、[トラブルシューティング](docs/dev/troubleshooting.md#限定ローカル技術評価候補を起動できない)を参照してください。
+
 ## よくある質問
 
 ### 今すぐインストールできますか？

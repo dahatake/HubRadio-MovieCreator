@@ -46,17 +46,21 @@ startup shellとWebView境界まで実装済みの `HubRadio.App.exe` が、最�
 
 ASP.NET Core、localhost HTTP サーバー、Windows Service、別の業務 API プロセスは置きません。
 
+OSL-019では、この構成を SDK 標準の unpackaged/self-contained・自己展開型単一ファイル候補 `HubRadio.App.exe` として固定しました。これは利用者が保持する配布ファイルが1個であることを指し、展開不要・単一プロセス・一般提供済みを意味しません。候補には .NET／Windows App SDK、Web 静的asset、profile、既存のPython runtime、FFmpeg／ffprobe、採用CPU/int8 ASR model、および Fixed Version WebView2 Runtime を同梱します。独自extractor、installer、更新serviceは追加していません。
+
+自己展開された実行依存は SDK が管理する再生成可能な展開cacheに置かれ、候補payloadと同じく案件データではありません。元媒体、案件workspace／SQLite DB、利用者設定、WebView2 profileは展開cacheへ保存せず、既存の `%LOCALAPPDATA%\HubRadio.MovieCreator` 配下へ保持します。展開cacheの再生成や配布EXEの差替えを、これらの利用者データの削除・再作成と扱いません。
+
 ### WinUI 3 と React
 
 - **WinUI 3:** ウィンドウ、起動、障害表示、token化するネイティブファイル選択は実装済み
 - **WebView2 内の React:** secureなbundled shell、source-only quick start、全体設定、既存編集画面は実装済み。版0.2の進捗・成果物、自動代理評価、任意self-review統合は未実装
-- **通信:** origin、UTF-8 byte size、closed schema、methodを検査する型付き WebMessage。project、settings、jobs、player、analysis等のclosed allowlistだけを受理する
+- **通信:** origin、UTF-8 byte size、closed schema、methodを検査する型付き WebMessage。project、settings、jobs、player、analysis等のclosed allowlistだけを受理する。nativeの Ready は navigation成功だけではなく、React mount後の自動 `bridge.ping` に対するnative応答のpost成功までを待つ。JavaScript側の応答受領ACKはこの契約に含めない
 
 React からファイルパス、SQL、FFmpeg 引数、任意コマンドは送信しません。
 
-WebView2のprofileは`%LOCALAPPDATA%\HubRadio.MovieCreator\WebView2`へ置き、bundled entry pointは`https://appassets.example/index.html`だけを許可します。same-origin以外のresource、任意top-level navigation、popup、downloadを遮断し、raw host objectは公開しません。
+WebView2のprofileは`%LOCALAPPDATA%\HubRadio.MovieCreator\WebView2`へ置き、bundled entry pointは`https://appassets.example/index.html`だけを許可します。same-origin以外のresource、任意top-level navigation、popup、downloadを遮断し、raw host objectは公開しません。自己展開型候補では Fixed Version `152.0.4191.62` Runtime を同梱し、検出と環境初期化へ同じ `WebView2Runtime/` folderを渡します。portable経路でRuntimeが欠落・不正ならsystem Evergreenへの黙ったfallbackはせず、native recoveryを表示します。開発buildのEvergreen経路は維持します。
 
-unpackaged実プロセスsmokeでは、Web UI Ready、Runtime欠落時のnative recovery、起動前後のinstall tree不変、実行ファイル隣接profile不在を確認済みです。ただし実行場所は開発build出力であり、Program Filesまたはinstalled MSIXのread-only境界ではありません。package install後のread-only受入はPK-006/PK-007に残します。
+同梱Fixed Runtimeを使う自己展開型候補は、このPCでcold/warmのnative Ready、実Runtime、展開tree不変、通常終了を確認済みです。これは開発者PC上の正常系だけであり、production-channelのclean OS・別の標準ユーザー・offline、署名、MOTW／実配布経路、Runtime欠落等の異常系は未受入です。署名済み一般提供、第三者再配布条件、SmartScreen／組織policy、実WebViewでのJavaScript受領ACKも未検証です。
 
 製品projectはWindows App SDK `2.4.0`を維持します。隔離した最小`ProgressRing` probeでは`2.4.0`がmain windowを作れず`Compatible=false`、`2.4.1-experimental`が`Compatible=true`でした。単一controlの差だけでexperimental SDKへ更新せず、現行startup画面はtext表示を使います。
 
@@ -66,6 +70,8 @@ unpackaged実プロセスsmokeでは、Web UI Ready、Runtime欠落時のnative 
 - **Python ML worker:** ASRと、ADR-0007で採用したローカル解析
 
 製品版では両者を .NET ホストの子プロセスとして実行します。shell は使わず、timeout、取消、子孫終了、実行ファイル hash を検査します。Python は SQLite に直接接続せず、版付き NDJSON 契約とジョブ専用 staging を使います。
+
+自己展開型候補でも FFmpeg／ffprobe とPython workerは .NET ホストの子プロセスであり続けます。候補でWorker health/protocol、native import、FFmpeg／ffprobe、採用CPU/int8 modelのoffline loadを独立に確認していますが、これらはASR精度、動画1本から納品までの業務E2E、render／deliveryの完成を示しません。
 
 Stage 0のshot、face、local text model用probeは不採用・保留判断の証拠として残しますが、現在の製品workerや配布依存には含めません。
 

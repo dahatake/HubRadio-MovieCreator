@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "1.0.0",
+  "evidenceDate": "2026-09-06",
+  "runtime": {
+    "identity": "Microsoft Edge WebView2 Runtime",
+    "distributionMode": "FixedVersion",
+    "version": "152.0.4191.62",
+    "architecture": "x64",
+    "operatingSystem": "Windows",
+    "sourcePage": "https://developer.microsoft.com/en-us/microsoft-edge/webview2",
+    "source": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/0a4a34d9-ccaa-4cef-98b4-58cb313fbfeb/Microsoft.WebView2.FixedVersionRuntime.152.0.4191.62.x64.cab",
+    "sourceUsage": "developer-provenance-only",
+    "publicDownloadShortcutAllowed": false,
+    "distributionReference": "https://learn.microsoft.com/microsoft-edge/webview2/concepts/distribution",
+    "fileName": "Microsoft.WebView2.FixedVersionRuntime.152.0.4191.62.x64.cab",
+    "byteSize": 371877369,
+    "sha256": "2dc7d817ddce4d036f33684425c218f1ca2d073911136e5d3f8ce9b2340569b5",
+    "unpackDirectory": "Microsoft.WebView2.FixedVersionRuntime.152.0.4191.62.x64",
+    "signatureEvidenceScope": "selected-files-only",
+    "selectedSignedFiles": [
+      {
+        "path": "msedge.dll",
+        "byteSize": 343780680,
+        "sha256": "e2c97da08a6a2ebd22e0ae645e720b76ce86f662289359bf73762259771e3564",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+      },
+      {
+        "path": "msedgewebview2.exe",
+        "byteSize": 4824392,
+        "sha256": "0f75ba7da899408d4c4474d58358bdbee732705fc090161cbf08e8783520572d",
+        "fileVersion": "152.0.4191.62",
+        "signatureStatus": "Valid",
+        "signerSubject": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+      }
+    ],
+    "license": {
+      "name": "MICROSOFT EDGE WEBVIEW2 RUNTIME (FIXED VERSION)",
+      "status": "redistribution-review-pending",
+      "localUseBasis": "Section 1(a): Installation and use on the licensee's own devices, subject to compliance with the license terms.",
+      "objectCodeRedistributionBasis": "Section 2(a): Object-code redistribution with applications is conditional on the requirements and restrictions of the license.",
+      "redistributionAccepted": false,
+      "preserveThirdPartyNotices": true,
+      "evidence": {
+        "kind": "official-license-modal-page-text-snapshot",
+        "source": "https://developer.microsoft.com/en-us/microsoft-edge/webview2",
+        "path": "artifacts/inputs/webview2/fixed-license-page-text.txt",
+        "sha256": "15bc46c641bc439514b3f0fe5290e0a5ef906bd8106030b53e1e8a142d6fc9d8",
+        "isStandaloneLicenseFile": false
+      },
+      "pendingRedistributionConditions": [
+        "Section 2(b)(i): Add significant primary functionality in the application.",
+        "Section 2(b)(ii) and Section 8: Require distributors and external end users to accept terms protecting the code and Microsoft at least as much as this agreement, including the required SmartScreen notice when enabled.",
+        "Section 2(b)(iii): Retain evidence that all redistributed code was acquired directly from Microsoft.",
+        "Section 2(b)(iv): Indemnify, defend, and hold harmless Microsoft from claims, including attorneys' fees, related to application distribution or use, except claims based solely on unmodified distributable code.",
+        "Section 2(c) and Section 3(e): No misleading Microsoft endorsement, prohibited source-license changes, public Microsoft download shortcuts, or standalone runtime offering.",
+        "Section 1(c) and Section 3(c): Preserve Microsoft and third-party notices and satisfy applicable third-party terms."
+      ]
+    }
+  },
+  "output": {
+    "relativePath": "WebView2Runtime",
+    "entryPoint": "msedgewebview2.exe",
+    "expectedFileCount": 548,
+    "expectedTotalBytes": 837201247,
+    "expectedArtifactSetSha256": "fddf4760e18cde307c62c0385024dda51c8a6f8719cf2fb091cdf44778c8c99a",
+    "artifactSetDigestAlgorithm": {
+      "hash": "SHA256",
+      "encoding": "UTF8-no-BOM",
+      "pathBase": "unpackDirectory-contents",
+      "pathSeparator": "/",
+      "pathOrder": "Ordinal",
+      "input": "concatenated(path NUL byteSize-invariant NUL lowercase-sha256 LF)"
+    },
+    "copyMode": "entire-unmodified-tree",
+    "preservationNote": "Vendor BAT, LICENSE and native resource files are preserved byte-for-byte; their inclusion does not imply runtime shell invocation or signature validation of every file."
+  },
+  "isolation": {
+    "systemRuntimeFallbackAllowed": false,
+    "runtimeDownloadAllowed": false,
+    "networkRequiredAtStartup": false,
+    "automaticUpdatesAllowed": false,
+    "missingRuntimeBehavior": "fail-closed"
+  },
+  "releaseApproved": false,
+  "remainingGates": [
+    "OSL-006/OSL-007/OSL-009 must verify assembly and explicit bundled-runtime selection against this manifest.",
+    "OSL-017/Q-010 redistribution conditions, notices, SBOM, vulnerability and legal review remain pending; selected Authenticode evidence is not general release approval.",
+    "OSL-020/OSL-021 clean Windows launch, offline startup, signing and distribution acceptance remain uncompleted; this manifest and its architecture tests do not execute the runtime.",
+    "The application distributor must pin, verify and ship Fixed Runtime updates; there is no runtime auto-update or user download shortcut."
+  ]
+}

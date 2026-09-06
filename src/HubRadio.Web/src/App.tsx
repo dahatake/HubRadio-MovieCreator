@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { ComparePanel } from './features/compare'
 import { JobProgressPanel } from './features/jobs/JobProgressPanel'
@@ -37,6 +37,17 @@ function App() {
     useState<PlayerTimelinePosition | null>(null)
   const [playerSelection, setPlayerSelection] =
     useState<PlayerExactFrameSelection | null>(null)
+
+  useEffect(() => {
+    let mounted = true
+    // Child effects run before AppStateProvider installs its bridge listeners.
+    queueMicrotask(() => {
+      if (mounted) synchronize()
+    })
+    return () => {
+      mounted = false
+    }
+  }, [synchronize])
 
   return (
     <main className="app-shell" aria-labelledby="app-title">

@@ -35,6 +35,8 @@ function Get-LowerSha256 {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
+# LEGACY fixed-culture compatibility: committed manifests use en-US linguistic order,
+# not Ordinal (which changes their digests). Keep all manifest/file-array sorts on en-US.
 function Get-ArtifactSetSha256 {
     [CmdletBinding()]
     param(
@@ -43,7 +45,7 @@ function Get-ArtifactSetSha256 {
     )
 
     $builder = [Text.StringBuilder]::new()
-    foreach ($record in @($Records | Sort-Object path -CaseSensitive)) {
+    foreach ($record in @($Records | Sort-Object path -CaseSensitive -Culture en-US)) {
         [void]$builder.Append([string]$record.path)
         [void]$builder.Append([char]0)
         [void]$builder.Append(
@@ -101,7 +103,7 @@ function Get-VerifiedPayloadSnapshot {
         throw 'The built runtime file manifest metadata is invalid.'
     }
 
-    $expectedFiles = @($fileManifest.files | Sort-Object path -CaseSensitive)
+    $expectedFiles = @($fileManifest.files | Sort-Object path -CaseSensitive -Culture en-US)
     if (
         $expectedFiles.Count -ne [int]$fileManifest.fileCount -or
         [long](($expectedFiles | Measure-Object byteSize -Sum).Sum) -ne
@@ -123,7 +125,7 @@ function Get-VerifiedPayloadSnapshot {
                     readOnly = ($_.Attributes -band [IO.FileAttributes]::ReadOnly) -ne 0
                 }
             } |
-            Sort-Object path -CaseSensitive
+            Sort-Object path -CaseSensitive -Culture en-US
     )
 
     if ($actualFiles.Count -ne $expectedFiles.Count) {

@@ -12,6 +12,7 @@ public sealed partial class MainWindow : Window
     private readonly MainWindowStartupLifecycle startupLifecycle = new();
     private readonly JobBridgeRequestHandler? jobBridgeHandler;
     private WebViewHost? webViewHost;
+    private bool isWebViewClosed;
 
     public MainWindow()
         : this(jobBridgeHandler: null)
@@ -24,9 +25,10 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         Closed += (_, _) =>
         {
+            // Release the owned control on the UI thread, while lifecycle UI access is still allowed.
+            CloseWebApplicationView();
             startupLifecycle.Close();
             lifetimeCancellation.Cancel();
-            webViewHost?.Dispose();
         };
     }
 
@@ -56,7 +58,12 @@ public sealed partial class MainWindow : Window
 
     private async Task InitializeWebViewAsync()
     {
-        WebViewStartupResult result = await WebViewStartupCoordinator.StartAsync(
+#if HUBRADIO_PORTABLE
+        string browserExecutableFolder = Path.Combine(AppContext.BaseDirectory, "WebView2Runtime");
+#else
+        string browserExecutableFolder = string.Empty;
+#endif
+        Func<Task> initializeAsync =
             async () =>
             {
                 // The install directory can be read-only, so the profile stays under the user's local data.
@@ -68,10 +75,42 @@ public sealed partial class MainWindow : Window
                     "WebView2");
                 CoreWebView2Environment environment =
                     await CoreWebView2Environment.CreateWithOptionsAsync(
-                        string.Empty,
+                        browserExecutableFolder,
                         userDataFolder,
                         new CoreWebView2EnvironmentOptions());
+                if (!startupLifecycle.CanUpdateUi)
+                {
+                    return;
+                }
+
+#if HUBRADIO_PORTABLE
+                // SDK overrides can change the profile folder; reject them before creating a controller.
+                WebViewStartupCoordinator.VerifyPath(environment.UserDataFolder, userDataFolder);
+#endif
                 await WebApplicationView.EnsureCoreWebView2Async(environment);
+                if (!startupLifecycle.CanUpdateUi)
+                {
+                    return;
+                }
+
+#if HUBRADIO_PORTABLE
+                // SDK overrides can supersede the requested folder; verify before creating the bridge or DB.
+                try
+                {
+                    using System.Diagnostics.Process browserProcess =
+                        System.Diagnostics.Process.GetProcessById(
+                            checked((int)WebApplicationView.CoreWebView2.BrowserProcessId));
+                    string? browserExecutablePath = browserProcess.MainModule?.FileName;
+                    WebViewStartupCoordinator.VerifyPath(
+                        browserExecutablePath,
+                        Path.Combine(browserExecutableFolder, "msedgewebview2.exe"));
+                }
+                catch (Exception)
+                {
+                    // Do not expose process paths or access failure details, including inner exceptions.
+                    throw new InvalidOperationException("Bundled WebView2 Runtime could not be verified.");
+                }
+#endif
 
                 ApplicationBridgeHandlers bridgeHandlers =
                     ProjectApplicationRuntime.Create(
@@ -105,25 +144,19 @@ public sealed partial class MainWindow : Window
                     bridgeHandlers.Analysis,
                     bridgeHandlers.LayoutSubtitles,
                     bridgeHandlers.Settings);
-                try
-                {
-                    WebApplicationView.Visibility = Visibility.Visible;
-                    await host.StartAsync(lifetimeCancellation.Token);
-                    if (!startupLifecycle.CanUpdateUi)
-                    {
-                        host.Dispose();
-                    }
-                    else
-                    {
-                        webViewHost = host;
-                    }
-                }
-                catch
-                {
-                    host.Dispose();
-                    throw;
-                }
-            });
+                // Own the host before awaiting so Closed can detach it before closing the control.
+                webViewHost = host;
+                WebApplicationView.Visibility = Visibility.Visible;
+                await host.StartAsync(lifetimeCancellation.Token);
+            };
+
+#if HUBRADIO_PORTABLE
+        WebViewStartupResult result = await WebViewStartupCoordinator.StartAsync(
+            browserExecutableFolder,
+            initializeAsync);
+#else
+        WebViewStartupResult result = await WebViewStartupCoordinator.StartAsync(initializeAsync);
+#endif
 
         if (!startupLifecycle.CanUpdateUi)
         {
@@ -142,8 +175,13 @@ public sealed partial class MainWindow : Window
         (string title, string detail) = result.Status switch
         {
             WebViewStartupStatus.RuntimeUnavailable =>
+#if HUBRADIO_PORTABLE
+                ("アプリの配布ファイルが不完全です",
+                    "アプリを再取得してから、起動し直してください。"),
+#else
                 ("WebView2 Runtime を利用できません",
                     "Microsoft Edge WebView2 Runtime をインストールしてから、アプリを再起動してください。"),
+#endif
             WebViewStartupStatus.InitializationFailed =>
                 ("Web UI を開始できませんでした",
                     "アプリを再起動してください。問題が続く場合は管理者へ診断コードを伝えてください。"),
@@ -158,11 +196,54 @@ public sealed partial class MainWindow : Window
             result.DiagnosticCode ?? StableErrorCodes.WebViewInitializationFailed);
     }
 
+    private void CloseWebApplicationView()
+    {
+        if (!startupLifecycle.CanUpdateUi || isWebViewClosed)
+        {
+            return;
+        }
+
+        isWebViewClosed = true;
+        WebViewHost? host = webViewHost;
+        webViewHost = null;
+        try
+        {
+            host?.Dispose();
+        }
+        catch (Exception)
+        {
+            // A partially initialized host must not prevent closing the owned control.
+        }
+
+        try
+        {
+            try
+            {
+                WebApplicationView.Visibility = Visibility.Collapsed;
+            }
+            finally
+            {
+                WebApplicationView.Close();
+            }
+        }
+        catch (Exception)
+        {
+            // Cleanup errors must not replace the stable native startup failure with internal details.
+        }
+    }
+
     private void ShowStartupFailure(
         string title,
         string detail,
         string diagnosticCode)
     {
+        if (!startupLifecycle.CanUpdateUi)
+        {
+            return;
+        }
+
+        CloseWebApplicationView();
+        StartupPanel.Visibility = Visibility.Visible;
         StartupTitleText.Text = title;
         StartupDetailText.Text = detail;
         StartupDiagnosticCodeText.Text = $"診断コード: {diagnosticCode}";

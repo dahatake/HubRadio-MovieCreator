@@ -117,3 +117,11 @@ BGM, jingles, SFX, logos, images, and documents remain unavailable for product u
 8. Q-010 must generate and compare the release-candidate SBOM and Model BOM, review licenses and vulnerabilities, verify notice contents against actual package files, and fail closed on every unresolved item.
 
 Until all applicable blockers are closed by an authorized reviewer, `THIRD-PARTY-NOTICES.md` must remain a non-final inventory and must not be shipped as a claim of complete compliance.
+
+## OSL-017 candidate release review
+
+OSL-017 currently reviews the bounded OSL-012 candidate described by [`artifacts/portable/candidate-review-06/Evidence/portable-release.json`](../../../artifacts/portable/candidate-review-06/Evidence/portable-release.json). The current candidate EXE SHA-256 is `159161e3426c566cac6ea43bf6faa6587a2c1e192af81339341f83aa340a092e`; the recorded release-manifest SHA-256 is `1d44ef54dc805227f0438a76816a7de044dcd8ab3da29353ee4e95be369e52be`. These are candidate evidence values, not approval identifiers. The manifest records `releaseApproved=false`, `sourceTreeDirty=true`, `scope=bounded-local-candidate`, and an audit-only `Contents` tree. Candidate-review-03 was an earlier candidate attempt retained as historical evidence, not the current OSL-017 subject.
+
+The detailed OSL-017 result is [`release-review.md`](release-review.md). It classifies the candidate as `CONDITIONAL_CANDIDATE` for local technical evaluation only, not `GENERAL_REDISTRIBUTION`. It covers the Fixed Version WebView2 terms, CPython and Python wheels, FFmpeg/ffprobe, the offline ASR model, Web production assets, .NET/Windows App SDK, and native payload binaries. Unmapped or incompletely verified components remain `NOASSERTION` or `REVIEW_PENDING`; selected Authenticode evidence, SPDX format validation, package labels, and local execution do not establish legal approval, redistribution permission, or a CVE/vulnerability result.
+
+This section does not replace, narrow, or grant any existing notice. Foundry Local/CUDA cache, held and benchmark-only models, GPL-enabled FFmpeg, test/build tools, host WebView2/font components, and unapproved media remain excluded from general redistribution. The existing Q-010, PK-006, OSL-020, and OSL-021 closure gates remain open.

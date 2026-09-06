@@ -133,6 +133,128 @@ public sealed class WebViewHostTests
         }
     }
 
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task Startup_StartsBridgeBeforeNavigationAndRequiresBothSignals(
+        bool pingFirst)
+    {
+        TaskCompletionSource navigation = NewCompletion();
+        TaskCompletionSource ping = NewCompletion();
+        (pingFirst ? ping : navigation).SetResult();
+        List<string> calls = [];
+
+        Task startup = WebViewHost.StartDocumentAsync(
+            () => calls.Add("bridge"),
+            () => calls.Add("navigate"),
+            navigation.Task,
+            ping.Task,
+            CancellationToken.None);
+
+        CollectionAssert.AreEqual(new[] { "bridge", "navigate" }, calls);
+        Assert.IsFalse(startup.IsCompleted);
+        (pingFirst ? navigation : ping).SetResult();
+        await startup.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task Startup_TimesOutIfNavigationOrAutomaticPingIsMissing(
+        bool navigationMissing)
+    {
+        TaskCompletionSource missing = NewCompletion();
+        Task startup = WebViewHost.StartDocumentAsync(
+            () => { },
+            () => { },
+            navigationMissing ? missing.Task : Task.CompletedTask,
+            navigationMissing ? Task.CompletedTask : missing.Task,
+            CancellationToken.None,
+            timeoutMilliseconds: 0);
+
+        await Assert.ThrowsExactlyAsync<TimeoutException>(() => startup);
+        Assert.IsFalse(startup.IsCompletedSuccessfully);
+        missing.SetResult();
+    }
+
+    [TestMethod]
+    public async Task Startup_NavigationFailureDoesNotWaitForPing()
+    {
+        InvalidOperationException failure = new("Navigation failed.");
+        Task startup = WebViewHost.StartDocumentAsync(
+            () => { },
+            () => { },
+            Task.FromException(failure),
+            NewCompletion().Task,
+            CancellationToken.None,
+            timeoutMilliseconds: 0);
+
+        Assert.AreSame(failure,
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+                () => startup));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task Startup_CancellationStopsWaiting(bool navigationPending)
+    {
+        using CancellationTokenSource lifetime = new();
+        TaskCompletionSource pending = NewCompletion();
+        Task startup = WebViewHost.StartDocumentAsync(
+            () => { },
+            () => { },
+            navigationPending ? pending.Task : Task.CompletedTask,
+            navigationPending ? Task.CompletedTask : pending.Task,
+            lifetime.Token);
+
+        Assert.IsFalse(startup.IsCompleted);
+        lifetime.Cancel();
+        OperationCanceledException failure =
+            await Assert.ThrowsAsync<OperationCanceledException>(
+                () => startup.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.AreEqual(lifetime.Token, failure.CancellationToken);
+        pending.SetCanceled(lifetime.Token);
+    }
+
+    [TestMethod]
+    public async Task Startup_PreCanceledDoesNotInvokeDelegates()
+    {
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+        int calls = 0;
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            WebViewHost.StartDocumentAsync(
+                () => calls++,
+                () => calls++,
+                Task.CompletedTask,
+                Task.CompletedTask,
+                cancellation.Token));
+
+        Assert.AreEqual(0, calls);
+    }
+
+    [TestMethod]
+    public async Task Startup_BridgeSetupFailureDoesNotNavigate()
+    {
+        InvalidOperationException failure = new("Bridge setup failed.");
+        bool navigated = false;
+
+        Assert.AreSame(failure,
+            await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+                WebViewHost.StartDocumentAsync(
+                    () => throw failure,
+                    () => navigated = true,
+                    Task.CompletedTask,
+                    Task.CompletedTask,
+                    CancellationToken.None)));
+        Assert.IsFalse(navigated);
+    }
+
+    private static TaskCompletionSource NewCompletion() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     private static string ResolveRepositoryPath(string relativePath)
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);

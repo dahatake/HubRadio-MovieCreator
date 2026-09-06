@@ -8,6 +8,7 @@ internal sealed class WebViewHost : IDisposable
     internal const string VirtualHostName = "appassets.example";
     internal const string MediaHostName = "player-media.appassets.example";
     internal const string EntryPoint = "https://appassets.example/index.html";
+    internal const int StartupTimeoutMilliseconds = 30_000;
 
     private readonly CoreWebView2 coreWebView;
     private readonly string webAssetsDirectory;
@@ -238,32 +239,28 @@ internal sealed class WebViewHost : IDisposable
             TaskCreationOptions.RunContinuationsAsynchronously);
         initialNavigation = navigation;
 
-        coreWebView.SetVirtualHostNameToFolderMapping(
-            VirtualHostName,
-            webAssetsDirectory,
-            CoreWebView2HostResourceAccessKind.DenyCors);
-        coreWebView.Settings.AreDevToolsEnabled = false;
-        coreWebView.Settings.AreDefaultContextMenusEnabled = false;
-        coreWebView.Settings.IsWebMessageEnabled = false;
-
-        coreWebView.NavigationStarting += OnNavigationStarting;
-        coreWebView.NavigationCompleted += OnNavigationCompleted;
-        coreWebView.NewWindowRequested += OnNewWindowRequested;
-        coreWebView.DownloadStarting += OnDownloadStarting;
-        coreWebView.AddWebResourceRequestedFilter(
-            "*",
-            CoreWebView2WebResourceContext.All,
-            CoreWebView2WebResourceRequestSourceKinds.All);
-        coreWebView.WebResourceRequested += OnWebResourceRequested;
-
         try
         {
-            using CancellationTokenRegistration registration =
-                cancellationToken.Register(
-                    () => navigation.TrySetCanceled(cancellationToken));
-            coreWebView.Navigate(EntryPoint);
-            await navigation.Task;
-            cancellationToken.ThrowIfCancellationRequested();
+            using CancellationTokenSource startupCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    mediaCancellation.Token);
+            coreWebView.SetVirtualHostNameToFolderMapping(
+                VirtualHostName,
+                webAssetsDirectory,
+                CoreWebView2HostResourceAccessKind.DenyCors);
+            coreWebView.Settings.AreDevToolsEnabled = false;
+            coreWebView.Settings.AreDefaultContextMenusEnabled = false;
+
+            coreWebView.NavigationStarting += OnNavigationStarting;
+            coreWebView.NavigationCompleted += OnNavigationCompleted;
+            coreWebView.NewWindowRequested += OnNewWindowRequested;
+            coreWebView.DownloadStarting += OnDownloadStarting;
+            coreWebView.AddWebResourceRequestedFilter(
+                "*",
+                CoreWebView2WebResourceContext.All,
+                CoreWebView2WebResourceRequestSourceKinds.All);
+            coreWebView.WebResourceRequested += OnWebResourceRequested;
 
             Bridge startedBridge = new(
                 coreWebView,
@@ -280,13 +277,42 @@ internal sealed class WebViewHost : IDisposable
                 analysisHandler,
                 layoutSubtitleHandler,
                 settingsHandler);
-            startedBridge.Start();
             bridge = startedBridge;
+            await StartDocumentAsync(
+                startedBridge.Start,
+                () => coreWebView.Navigate(EntryPoint),
+                navigation.Task,
+                startedBridge.FirstPingResponsePosted,
+                startupCancellation.Token);
         }
         catch
         {
             Dispose();
             throw;
+        }
+    }
+
+    internal static async Task StartDocumentAsync(
+        Action startBridge,
+        Action navigate,
+        Task navigation,
+        Task firstPingResponsePosted,
+        CancellationToken cancellationToken,
+        int timeoutMilliseconds = StartupTimeoutMilliseconds)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        startBridge();
+        navigate();
+        await WaitForDocumentAsync().WaitAsync(
+            TimeSpan.FromMilliseconds(timeoutMilliseconds),
+            cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        async Task WaitForDocumentAsync()
+        {
+            // One deadline covers both signals; navigation failure is immediate.
+            await navigation;
+            await firstPingResponsePosted;
         }
     }
 
@@ -317,6 +343,7 @@ internal sealed class WebViewHost : IDisposable
 
         isDisposed = true;
         mediaCancellation.Cancel();
+        initialNavigation?.TrySetCanceled(mediaCancellation.Token);
         bridge?.Dispose();
         bridge = null;
         if (!isStarted)

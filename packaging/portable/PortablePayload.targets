@@ -1,0 +1,131 @@
+<Project>
+  <!-- OSL-010: imported by the dedicated profile, never by default builds.
+       Preparation and manifest/hash verification belong to OSL-009 / OSL-012. -->
+  <PropertyGroup Condition="'$(HubRadioPortablePublish)' == 'true'">
+    <_HubRadioPortableModelsDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', 'models'))</_HubRadioPortableModelsDirectory>
+    <_HubRadioPortablePropertiesDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', 'Properties'))</_HubRadioPortablePropertiesDirectory>
+  </PropertyGroup>
+
+  <Target Name="IncludeHubRadioPortablePayload" BeforeTargets="AssignTargetPaths"
+          Condition="'$(HubRadioPortablePublish)' == 'true'">
+    <Error Condition="'$(HubRadioPortablePayloadPath)' == ''" Code="OSL010_INPUT_PATH"
+           Text="HubRadioPortablePayloadPath is required: supply the absolute prepared payload directory." />
+    <Error Condition="!$([System.IO.Path]::IsPathFullyQualified('$(HubRadioPortablePayloadPath)'))" Code="OSL010_INPUT_PATH"
+           Text="HubRadioPortablePayloadPath must be absolute, not relative or drive-relative." />
+    <Error Condition="!$([System.IO.Directory]::Exists('$(HubRadioPortablePayloadPath)'))" Code="OSL010_PAYLOAD"
+           Text="HubRadioPortablePayloadPath must name an existing prepared payload directory." />
+    <PropertyGroup>
+      <_HubRadioPortableRootPath>$([MSBuild]::NormalizeDirectory('$(HubRadioPortablePayloadPath)'))</_HubRadioPortableRootPath>
+      <HubRadioPortableBundleManifestPath Condition="'$(HubRadioPortableBundleManifestPath)' == ''">$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'portable-files-to-bundle.tsv'))</HubRadioPortableBundleManifestPath>
+      <_HubRadioPortableReportPathForComparison>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(HubRadioPortableBundleManifestPath)'))</_HubRadioPortableReportPathForComparison>
+    </PropertyGroup>
+    <!-- Compare canonical paths with trailing separators: reject the root itself and
+         descendants before collection or writing, but allow sibling path prefixes. -->
+    <Error Condition="$(_HubRadioPortableReportPathForComparison.StartsWith('$(_HubRadioPortableRootPath)', System.StringComparison.OrdinalIgnoreCase))"
+           Code="OSL010_REPORT_PATH"
+           Text="The local build-only HubRadioPortableBundleManifestPath must be outside HubRadioPortablePayloadPath." />
+    <ItemGroup>
+      <_HubRadioPortableRoot Include="Worker;Tools;ModelCatalog;WebView2Runtime;Licenses;Evidence" />
+    </ItemGroup>
+    <Error Condition="!$([System.IO.Directory]::Exists('$(_HubRadioPortableRootPath)%(_HubRadioPortableRoot.Identity)'))" Code="OSL010_ROOT"
+           Text="Required prepared payload root is missing: %(_HubRadioPortableRoot.Identity)." />
+    <Error Condition="!$([System.IO.File]::Exists('$(_HubRadioPortableRootPath)Evidence\portable-payload.json'))" Code="OSL010_EVIDENCE"
+           Text="Prepared payload evidence is missing: Evidence/portable-payload.json. Run preparation and verification before publishing." />
+    <Error Condition="'$(SelfContained)' != 'true' or '$(WindowsAppSDKSelfContained)' != 'true' or
+                      '$(PublishSingleFile)' != 'true' or '$(IncludeAllContentForSelfExtract)' != 'true' or '$(EnableMsixTooling)' != 'true'"
+           Code="OSL010_PROFILE"
+           Text="Portable publishing requires SelfContained, WindowsAppSDKSelfContained, PublishSingleFile, IncludeAllContentForSelfExtract and EnableMsixTooling=true." />
+    <Error Condition="'$(RuntimeIdentifier)' != 'win-x64' or '$(WindowsPackageType)' != 'None'" Code="OSL010_PROFILE"
+           Text="Portable publishing requires RuntimeIdentifier=win-x64 and WindowsPackageType=None." />
+
+    <!-- Replace only App's repository model sources, not arbitrary ModelCatalog links.
+         OSL-012 must verify prepared catalog/bundle equivalence to those originals. -->
+    <ItemGroup>
+      <_HubRadioPortableLegacyModel Include="$(_HubRadioPortableModelsDirectory)catalog.json;$(_HubRadioPortableModelsDirectory)Bundles\**\*" />
+      <Content Remove="@(_HubRadioPortableLegacyModel)" MatchOnMetadata="FullPath" MatchOnMetadataOptions="PathLike" />
+      <!-- Project developer profiles are not payload. Strip the whole source directory,
+           including linked Content and default None, before AssignTargetPaths snapshots
+           either list for SDK AutoIncludeCopyToPublishDirectoryItems. Do not alter defaults or vendor files. -->
+      <Content Remove="@(Content)"
+            Condition="$([System.String]::Copy('%(Content.FullPath)').StartsWith('$(_HubRadioPortablePropertiesDirectory)PublishProfiles\', System.StringComparison.OrdinalIgnoreCase))" />
+      <None Remove="@(None)"
+            Condition="$([System.String]::Copy('%(None.FullPath)').StartsWith('$(_HubRadioPortablePropertiesDirectory)PublishProfiles\', System.StringComparison.OrdinalIgnoreCase))" />
+      <!-- Raw App XAML can also appear in SDK default None or linked Content.
+           Remove only copies of the actual XAML compiler inputs before path assignment;
+           keep ApplicationDefinition/Page, compiled XBF/PRI and unrelated vendor XAML. -->
+      <_HubRadioPortableRawAppXaml Include="@(ApplicationDefinition);@(Page)" />
+      <Content Remove="@(_HubRadioPortableRawAppXaml)" MatchOnMetadata="FullPath" MatchOnMetadataOptions="PathLike" />
+      <None Remove="@(_HubRadioPortableRawAppXaml)" MatchOnMetadata="FullPath" MatchOnMetadataOptions="PathLike" />
+      <!-- MSIX AutoIncludeCopyToPublishDirectoryItems publishes SDK default None too.
+         Before AssignTargetPaths, remove only unlinked/unretargeted None already in Content.
+         Test empty metadata explicitly: MatchOnMetadata does not match missing values.
+         Keep any deliberate Link/TargetPath destinations for the same source. -->
+       <_HubRadioPortableUnlinkedContent Include="@(Content)"
+                      Condition="'%(Content.Link)' == '' and '%(Content.TargetPath)' == ''" />
+       <None Remove="@(_HubRadioPortableUnlinkedContent)" MatchOnMetadata="FullPath" MatchOnMetadataOptions="PathLike"
+          Condition="'%(None.Link)' == '' and '%(None.TargetPath)' == ''" />
+      <_HubRadioPortableFile Include="$(_HubRadioPortableRootPath)Worker\**\*;$(_HubRadioPortableRootPath)Tools\**\*;
+                                     $(_HubRadioPortableRootPath)ModelCatalog\**\*;$(_HubRadioPortableRootPath)WebView2Runtime\**\*;
+                                     $(_HubRadioPortableRootPath)Licenses\**\*;$(_HubRadioPortableRootPath)Evidence\**\*" />
+    </ItemGroup>
+    <ItemGroup>
+      <_HubRadioPortableFile>
+        <RelativePath>$([MSBuild]::MakeRelative('$(_HubRadioPortableRootPath)', '%(_HubRadioPortableFile.FullPath)'))</RelativePath>
+      </_HubRadioPortableFile>
+    </ItemGroup>
+    <ItemGroup>
+      <Content Include="@(_HubRadioPortableFile)">
+        <Link>%(_HubRadioPortableFile.RelativePath)</Link>
+        <TargetPath>%(_HubRadioPortableFile.RelativePath)</TargetPath>
+        <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>false</ExcludeFromSingleFile>
+      </Content>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="ExcludeHubRadioPortablePayloadFromPri" AfterTargets="GetPriOutputs"
+          DependsOnTargets="IncludeHubRadioPortablePayload" Condition="'$(HubRadioPortablePublish)' == 'true'">
+    <!-- MSIX PRI tooling reads PriOutputs for both PRI merges and layout/filename qualifier scans.
+         Keep every prepared file in Content / FilesToBundle; exclude only its source path
+         from App PRI inputs, retaining unrelated SDK and App resources. -->
+    <ItemGroup>
+      <PriOutputs Remove="@(_HubRadioPortableFile)" MatchOnMetadata="FullPath" MatchOnMetadataOptions="PathLike" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="RecordHubRadioPortableBundle" AfterTargets="PrepareForBundle"
+          DependsOnTargets="IncludeHubRadioPortablePayload" Condition="'$(HubRadioPortablePublish)' == 'true'">
+    <!-- Check the SDK's actual bundle inputs, including child EXEs and extensionless assets.
+         XAML may be PRI-embedded: loose App.xbf / MainWindow.xbf are not prerequisites. -->
+    <ItemGroup>
+      <_HubRadioPortableMissing Include="@(_HubRadioPortableFile)" />
+      <_HubRadioPortableMissing Remove="@(FilesToBundle)" MatchOnMetadata="FullPath;RelativePath" MatchOnMetadataOptions="PathLike" />
+      <_HubRadioPortableBundleDestination Include="@(FilesToBundle->'%(RelativePath)')" />
+    </ItemGroup>
+    <Error Condition="'@(_HubRadioPortableMissing)' != ''" Code="OSL010_BUNDLE_MISSING"
+           Text="Prepared files are missing or retargeted in FilesToBundle: @(_HubRadioPortableMissing->'%(RelativePath)', ', ')." />
+    <!-- Normalize destination paths, then detect case-insensitive collisions; do not deduplicate the bundle. -->
+    <RemoveDuplicates Inputs="@(_HubRadioPortableBundleDestination->'%(FullPath)')">
+      <Output TaskParameter="HadAnyDuplicates" PropertyName="_HubRadioPortableBundleCollision" />
+    </RemoveDuplicates>
+    <Error Condition="'$(_HubRadioPortableBundleCollision)' == 'true'" Code="OSL010_COLLISION"
+           Text="Duplicate FilesToBundle destination paths are not permitted in a portable publish (case-insensitive, normalized paths)." />
+
+        <!-- Reject late additions using normalized RelativePath destinations, not source names.
+          Only leading Properties is forbidden; vendor Properties subtrees remain payload. -->
+        <Error Condition="'%(_HubRadioPortableBundleDestination.Extension)' == '.pubxml' and
+              $([System.String]::Copy('%(_HubRadioPortableBundleDestination.FullPath)').StartsWith('$(_HubRadioPortablePropertiesDirectory)', System.StringComparison.OrdinalIgnoreCase))"
+         Code="OSL010_BUNDLE_PROFILE"
+         Text="Developer publish profiles under Properties are not permitted in portable FilesToBundle: %(_HubRadioPortableBundleDestination.Identity)." />
+
+    <!-- Local build-only TSV: absolute source TAB bundle-relative path, no header.
+         Never include this report in the payload; OSL-012 sanitizes final evidence. -->
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(HubRadioPortableBundleManifestPath)'))" />
+    <WriteLinesToFile File="$(HubRadioPortableBundleManifestPath)" Lines="@(FilesToBundle->'%(FullPath)&#x9;%(RelativePath)')"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" Encoding="UTF-8" />
+    <ItemGroup>
+      <FileWrites Include="$(HubRadioPortableBundleManifestPath)" />
+    </ItemGroup>
+  </Target>
+</Project>
