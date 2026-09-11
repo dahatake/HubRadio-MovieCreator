@@ -262,7 +262,7 @@ public sealed class BundledDefaultSettingsBootstrapTests
             InitialTime);
 
         Assert.IsTrue(migration.Applied);
-        Assert.AreEqual(8, migration.SchemaVersion);
+        Assert.AreEqual(12, migration.SchemaVersion);
         Assert.AreEqual(DefaultSettingsBootstrapState.Initialized, result.State);
         ProjectSettingsResult projectSettings = upgradedStore.GetProjectSettings(projectId);
         Assert.AreEqual(ProjectSettingsBindingState.Unbound, projectSettings.BindingState);
@@ -462,10 +462,28 @@ public sealed class BundledDefaultSettingsBootstrapTests
         {
             ExecuteNonQuery(
                 """
+                DROP TRIGGER trg_subtitle_edits_version_insert;
+                DROP TRIGGER trg_subtitle_edits_version_update;
+                DROP TRIGGER trg_subtitle_edits_version_delete;
+                DROP TABLE subtitle_edits;
+                DROP TABLE source_only_executions;
+                DROP TRIGGER trg_quick_start_evaluation_immutable_update;
+                DROP TRIGGER trg_quick_start_evaluation_rule_immutable_insert;
+                DROP TRIGGER trg_quick_start_evaluation_rule_immutable_update;
+                DROP TRIGGER trg_quick_start_evaluation_rule_immutable_delete;
+                DROP TRIGGER trg_quick_start_render_artifact_immutable_update;
+                DROP TRIGGER trg_quick_start_render_artifact_immutable_delete;
+                DROP TABLE quick_start_state_events;
+                DROP TABLE quick_start_workflows;
+                DROP INDEX idx_automated_evaluations_quick_start_binding;
+                DROP TRIGGER trg_artifact_automated_evaluation_kind_update;
+                DROP TABLE automated_evaluation_rules;
+                DROP TABLE automated_evaluations;
+                DROP INDEX idx_artifacts_evaluation_binding;
                 DROP TABLE project_default_settings;
                 DROP TABLE default_settings_global;
                 DROP TABLE default_settings_profiles;
-                DELETE FROM schema_migrations WHERE version = 8;
+                DELETE FROM schema_migrations WHERE version >= 8;
                 """);
         }
 

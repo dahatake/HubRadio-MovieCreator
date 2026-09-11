@@ -3,7 +3,7 @@
 HubRadio MovieCreator は、企業向け動画、文字起こし、出演者情報、内部資料を扱うため、ローカル優先、単一利用者、社内限定、非破壊処理を基本境界にします。
 
 > [!IMPORTANT]
-> Stage 0と既存製品基盤に加え、要求版0.2のsource-only quick start、版付き設定store/UI、可逆な自動decision、標準Composition計画、社内限定BGM policyを実装・レビュー済みです。単一利用者state、自動代理評価、版0.2の最終export／delivery flowは未実装です。以下には既存境界と計画が混在するため、[詳細実装計画 §0](planning/implementation-plan.md#0-要求版02の現在baseline)も確認してください。
+> **2026-09-10 JST現在:** Stage 0と既存基盤、要求版0.2の設定・自動decision・Composition・社内限定BGM、4タブと`setting.txt`に加え、必要なbackendと実開始・offline ASR・生成・QC・自動代理評価／出力policy・set納品・再生成・再試行を接続済みです。SQLite schema 12の字幕編集永続化と受付時snapshot captureも実装済みです。UX-041／UX-043を除く**対象52単位は達成済み**で、全回帰・静的検査・資源結合・最終独立レビューを完了しました。[詳細実装計画](planning/implementation-plan.md)、[品質記録](quality.md)、[ADR-0011](decisions/ADR-0011-compact-workflow-and-settings-file.md)を参照し、原本sample・人手・clean OS・署名・legal／release承認や製品全体の受入とは区別してください。
 
 ## 既定のデータ境界
 
@@ -18,7 +18,9 @@ HubRadio MovieCreator は、企業向け動画、文字起こし、出演者情�
 
 ## ローカル保存
 
-既存製品基盤は、利用者が選択するローカル固定ディスク上の管理ワークスペースを前提に実装しています。要求版0.2の初期値は現在の標準ユーザー用`%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace`とし、設定画面から変更可能にする計画です。新しい既定解決とUIは未実装で、ネットワーク共有、同期folder、リムーバブル媒体を初期既定にしません。
+既存製品基盤はローカル固定ディスク上の管理ワークスペースを前提に実装しています。現行の`ProjectApplicationRuntime`は現在の標準ユーザー用`%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace`とその`hubradio.db`を使用し、WorkspaceのACLを作成・検証します。設定UIは存在しますが、設定からの実保存先切替は未完了です。ネットワーク共有、同期folder、リムーバブル媒体を初期既定にしません。
+
+今回の限定技術検証は隔離workspace／DBを使い、nativeアプリの起動や実ユーザーprofile・既存DBの変更はしていません。現在の必須範囲は当初54単位からUX-041／UX-043を除く52単位で、必要なbackendも承認済みです。旧A17のbackend待機条件は失効し、明示除外されたnative受入を52単位の環境ブロッカーとして再追加しません。これはnative隔離・clean OS受入のPASSを意味しません。
 
 - 元動画、文字起こし改訂、編集版、設定snapshot、自動decision、自動代理評価、監査、納品物を正本として扱います。既存のreview/approval recordも履歴として保持します。
 - 代理、波形、sprite、preview などの再生成可能物を正本と分けます。
@@ -26,9 +28,67 @@ HubRadio MovieCreator は、企業向け動画、文字起こし、出演者情�
 - 保持期間が未決のため、時間だけを理由とする自動削除を行いません。
 - backup は manifest、size、SHA-256、SQLite `integrity_check` を確認してから完成扱いにします。
 
-保存、削除、backup、ACLの決定は[ADR-0005](decisions/ADR-0005-storage-retention.md)を参照してください。ArtifactStore、WorkspaceRecovery、ACL、検証付きbackup/restoreは実装済みです。workspace設定、保持・削除UI、外部固定ディスクのBitLocker状態確認と保留UIは未完了です。別account ACL受入は未実施の履歴事実として残りますが、単一利用者の初期release gateではありません。
+保存、削除、backup、ACLの決定は[ADR-0005](decisions/ADR-0005-storage-retention.md)を参照してください。ArtifactStore、WorkspaceRecovery、ACL、検証付きbackup/restoreは実装済みです。workspaceの実保存先切替、保持・削除操作UI、外部固定ディスクのBitLocker状態確認と保留UIは未完了です。別account ACL受入は未実施の履歴事実として残りますが、単一利用者の初期release gateではありません。
 
 `S-003`のactive受入削除は、既存のworkspace ACL作成、path traversal防止、同一利用者のaccess checkを削除する指示ではありません。防御コードは保持し、cross-account隔離を保証済みとも表示しません。複数利用者scopeを追加するときに別account脅威分析と受入を再開します。
+
+## 設定UIと設定fileの境界（UX-045）
+
+### scope・表示と実処理
+
+SQLiteを設定の正本とし、globalと案件initial/currentを分離します。`SettingsWorkspaceStateProvider`はタブの外でsessionと項目別draftを保持し、通常は1項目ずつ保存します。別項目のdraftを保存成功で消さず、破棄を伴うscope切替・reset・file適用はUIで確認します。globalは架空projectIdで表現せず、案件設定は実projectIdに結び付けます。UIの`hidden`／`inert`や確認表示はnativeの認可の代替ではありません。
+
+`CreateSourceOnlyDraftAsync`は元動画選択後の下書き作成時にglobal snapshotを固定し、finalizeはそのsnapshotを案件へ結び付けます。以後のglobal更新・file適用は既存下書き、案件initial、Compositionへ遡及しません。「新しい動画の既定値」「案件開始時の初期値」「次回生成向け」は適用対象・予定の説明であり、開始ボタンで最新globalを再取得したり、保存だけで実動画へ適用したりする意味ではありません。source-onlyの閉じたconsumer制約も維持します。
+
+元動画／自動編集／仕上がり／保存の4タブは表示先であり、追加の承認gateではありません。`E-START`／`E-EVALUATION`／`E-RESULT`／`E-REGENERATE`は接続済みで、finalize受付の実job、`pipeline.read`の実版・結果、実QC・納品receiptを照合して表示します。旧`noJob`／`noVersion`を通常経路の説明に使わず、未取得・不正なbindingでは理由付きで操作を止めます。予定set、DB設定保存、実生成、delivery昇格は別であり、未測定項目は`NOT EVALUATED`を保持します。接続仕様は[UI実装契約](architecture/ui-workflow-contract.md)、現在の観測結果は[詳細実装計画](planning/implementation-plan.md)と[品質記録](quality.md)を参照してください。修正前のQC失敗は履歴として残し、旧QC・review、fixture、設定試験を実render・人の確認のPASSへ流用しません。
+
+### 固定pathとfile ACL
+
+- nativeがper-user app root直下の`%LOCALAPPDATA%\HubRadio.MovieCreator\setting.txt`だけを指定する。Workspace、EXE隣、WebAssets、自己展開cacheへ保存せず、Webからraw pathや任意file名を受け取らない。
+- [`SettingsTextFile`](../../src/HubRadio.Infrastructure/Settings/SettingsTextFile.cs)は既存path検査を再利用し、不正root、reparse point、非通常fileを拒否する。file固有のroot/SID検証は明示操作まで遅延し、起動時のfile読込・自動適用・変更監視はしない。file不在・不正・アクセス失敗をDB設定の利用停止や初期化の理由にしない。
+- 一時fileは作成時から継承を遮断したprotected ACLと現在actorのownerを持ち、現在actor／SYSTEM／Administratorsだけに明示の`FullControl`を設定する。完成fileもowner・ACL・通常file属性を検証し、許可外のACLを黙って修復しない。
+- app root全体や既存directoryのACLは変更しない。Workspaceのdirectory ACLが兄弟のexport fileへ継承されるとも主張しない。file操作前後の検証と同一利用者試験は、別accountでのアクセス拒否の実証とは区別する。
+
+### strictな形式と整合性
+
+- 出力は既存`DefaultSettingsSnapshot`形状の整形JSON、UTF-8・BOMなし・LF。raw **4 MiB以下**とcanonical **1 MiB以下**を別々に検査する。読込前のfile長と読取量・読込後の長さを確認し、canonical化後だけの制限にしない。
+- 読込はstrict UTF-8を要求する。先頭BOM1個、JSON上の空白・CRLF/LF・object property順等の表現差だけをfile境界でcanonical化し、文字列値やdomain配列順を変更しない。Int64・有理数はdoubleやJavaScript number経由で丸めない。
+- 既存`CanonicalJson`と`DefaultSettingsSnapshot.ParseCanonical`を使い、未知・欠落・重複property/key、深層JSON、型・範囲・順序違反を拒否する。対象DBに結び付いたprofileのID・version・digestとの一致を要求し、最新profileへの自動migrationや欠落値の補完をしない。
+- profile不一致とsnapshotの`contentDigest`不一致を区別して拒否する。digestを補正して不一致入力を受理せず、Core/DB parserへ`ignoreDigest`を追加しない。`fileSha256`はBOM・改行を含む元bytesそのもののhashであり、profile/snapshot digestと別物。整形だけの変更でも確認済みfile hashは失効する。hashは出所の認証や共有の安全性を保証しない。
+
+### 明示操作・競合・失敗
+
+[`SettingsFileBridgeRequestHandler`](../../src/HubRadio.App/Web/SettingsFileBridge.cs)はfileや対象DBの参照より先に認可を行います。export／previewにはread、applyにはno-opでもedit権限を要求します。既存案件RPC、`settings.global.*`、fileの有限methodをclosed schemaで扱い、settings要求64 KiB／応答4 MiBを維持します。file全文やpath・SQL・任意commandをWebへ渡さず、検証済み値・identity・固定statusだけを返します。
+
+| 操作 | 更新と確認の境界 |
+|---|---|
+| `settings.file.export` | nativeが対象scopeのDB保存済みsnapshotを読む。未保存draftは出力せず、UIで「未保存項目へ戻る／保存済み値だけを出力／取消」を確認する。`expectedFileSha256 = null`は新規作成だけ。既存fileは`overwriteRequired`と元bytesのhashを返し、確認後はそのhashを要求する |
+| `settings.file.preview` | 検証済みfileを候補として返すだけでDB・file・案件を更新しない。応答の候補値はUIの保存済みsnapshotや未保存draftを置換しない |
+| `settings.file.apply` | 元fileを再読込して期待hashを照合し、対象scope・`expectedRevision`・`expectedProfileId`・`expectedProfileVersion`・`expectedProfileDigest`・`expectedSnapshotDigest`を再検査する。差分がある場合だけ既存storeの1回のOCC更新。同値でもidentityと認可を検査し、案件initial・別scope・既存Compositionは不変 |
+
+同一scopeのDB変更、file変更、古い対象identityは競合として拒否し、部分適用やsilent mergeをしません。preview候補のdigestを保存済み対象の`expectedSnapshotDigest`として流用せず、対象scope切替や競合後はpreviewをやり直します。全体・案件・fileの非同期応答はrequestId／method／scope／identityで照合します。
+
+exportは同directoryの一意なprivate一時fileをflush・hash検証してから、新規なら非上書きmove、確認済み既存fileなら置換します。commit前の失敗・取消では旧fileとDBを保全し、cleanupは自身の一時fileだけです。置換後の不確実な失敗で復旧を確認できなければrollback copyを残してreconciliationを要求します。置換・DB commit後の応答断も「未更新」と推測せず、保存済み状態とfileの再読込で確認し、盲目的に再実行しません。内容、個人path、SID、秘密、例外本文を通常logや失敗応答へ転載しません。
+
+最終照合から置換まで対象の読み取りハンドルを保持し、通常のin-place書込みを共有違反で抑止します。Windowsの置換に必要なdelete共有は許可するため、**これは原子的なcompare-and-swapではありません**。協調mutexを使わない外部のatomic renameが競合した場合は、置換成功後の実退避bytesを期待値と区別し、検証できる単発競合では実退避fileを固定名へ戻してConflictにします。原本が空でも、初回置換失敗後の未使用の空予約を復旧元と推定しません。
+
+復旧中に別の変更が割り込む、backupのACL/サイズを確認できない、復旧が失敗する場合は、未知の退避bytesを削除せず`ReconciliationRequired=true`で停止します。残る`.setting-*.tmp`は無条件に削除・自動採用しません。通常の競合保全試験を、継続的な悪意あるrename/ACL変更・crashを含む完全なfilesystem transaction保証へ拡張しないでください。必要な再照合が終わるまで、設定fileを別ツールから同時更新しないでください。
+
+### backup/restoreと検証範囲
+
+既存[`BackupService`](../../src/HubRadio.Infrastructure/Backup/BackupService.cs)はDB snapshotと対象の登録artifactをbackupするため、DB内のglobal・案件initial/currentも含まれます。Workspace外のexport fileはbackup対象外で、必要な保全は利用者の明示コピーです。restoreは旧workspaceを`.hubradio.previous-*`に保持して切り替え、`setting.txt`は独立して残ります。「restoreでexportを破壊する」「fileからDBを自動復元する」とは扱いません。復元後はDB側のprofile・revisionを基準に、明示preview/applyで再検証します。
+
+対応する検証は[`SettingsTextFileTests`](../../tests/HubRadio.Infrastructure.Tests/SettingsTextFileTests.cs)、[`SettingsFileBridgeTests`](../../tests/HubRadio.App.Tests/SettingsFileBridgeTests.cs)、[`SettingsFileIntegrationTests`](../../tests/HubRadio.App.Tests/SettingsFileIntegrationTests.cs)にあります。統合試験は一時app root・実SQLite/file/ACL・productionのsettings配線を用い、handler/store再作成、別scope不変、restore後のDB復元・export不変・明示適用を扱います。handler再作成を実アプリのprocess再起動や実WebView操作と呼ばず、この証拠をG-LIVE、別account、実動画、clean OS、署名・一般提供の受入へ拡張しません。
+
+## 字幕編集と実納品の来歴境界（2026-09-10追補）
+
+- `SubtitleEditStore`／`DurableSubtitleEditService`はSQLite schema 12へ字幕編集の子版・journalを保存し、commit後にACKする。root・digest・順序・来歴を再照合してreplayし、最新headと過去版のexact読込を混同しない。字幕保存済みでも動画は変更後未生成であり、元動画・旧成果物を書き換えない。
+- 明示再生成の受付で保存済み設定snapshotと字幕head／journal prefixを固定し、子版へ投影する。後続編集を進行中の生成へ混入させず、設定保存だけを実出力成功としない。再試行は実失敗とその履歴を保持し、架空の成功・版・納品receiptを作らない。
+- UX-035のmanual reframe／layout・keyframe等はlegacyのセッション内機能／理由付き利用不可に留める。source-onlyの字幕専用workspaceや字幕journalを汎用手動編集の永続化と呼ばない。UX-050の旧承認テンプレートによる手動thumbnailの`Unavailable`も当初の許容範囲で、両タスクは52必須単位に残る。標準自動thumbnailは実元フレームを使う社内限定・ニュートラル経路で接続し、架空の`BrandApprover`や人の承認を生成しない。
+
+初回の全7成果物set納品／再読込、再生成、model不在の実失敗からの再試行は、2026-09-09の実offline ASR・生成・QCを使った**4秒合成動画**の限定検証で成功しました。原本`sample/20260615_024326000_iOS.MOV`は使用していません。保存字幕の実描画成功は別の4秒合成動画に既知の合成`Machine`字幕を与えた試験で、**実認識・納品E2E・人手確認の証拠ではありません**。再読込もstore／pipeline／service再作成の検証であり、native GUI再起動ではありません。ログと範囲は[詳細実装計画 §0.8.2](planning/implementation-plan.md)に記載します。
+
+対象52単位の全回帰・静的検査・資源結合は完了し、最終独立レビューは重大指摘なしで閉鎖済みです。[詳細実装計画](planning/implementation-plan.md)と[品質記録](quality.md)に6,926成功・35 skip・失敗0と別実行の限定実統合4件成功を記録しています。App packageは`0.1.1.0`へ更新され、[CHANGELOGのUnreleased](../../CHANGELOG.md#unreleased)へ反映済みです。版更新後の検査・最終機械監査は主作業の確認予定で、本同期では未実行です。`V2-014`全体、実素材品質、clean OS、署名・legal／release承認や旧OSL状態は変更せず、`releaseApproved=false`を維持します。
 
 ## Windows identity と権限
 
@@ -39,7 +99,7 @@ HubRadio MovieCreator は、企業向け動画、文字起こし、出演者情�
 - 旧role assignmentとapproval recordは既存データ互換のため保持できますが、社内限定quick startの必須gateにしません。
 - 任意self-reviewは`CompositionVersion`の内容digestへ固定します。
 
-旧役割とreview経路は[ADR-0003](decisions/ADR-0003-local-identity-and-review.md)、現在の単一利用者stateは[ADR-0009](decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)を参照してください。
+旧役割とreview経路は[ADR-0003](decisions/ADR-0003-local-identity-and-review.md)、単一利用者stateの設計は[ADR-0009](decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)を参照してください。UIのnavigation stateや旧review表示の存在を、V2の評価・出力policyの結合完了とは扱いません。
 
 ## Stage 0 のローカル証拠
 
@@ -77,7 +137,7 @@ Stage 0 の仕組みは、完成した製品 workspace の権限モデルや脅�
 - ArtifactStoreのtraversal、UNC、device namespace、ADS、reserved device、reparse pointと、LocalDiagnosticLogの本文・path・秘密非記録は既存の専用試験を正本証拠とする。
 - 現在のtransition境界は任意filter文字列を公開せず、proxy/preview用FFmpeg filterは固定値または検証済み数値から決定論的に生成する。
 
-これらは合成入力と当時の実装surfaceに対する証拠です。その後に追加した版0.2のquick start、設定、自動decision、Composition計画は個別taskで敵対試験済みですが、自動代理評価、最終Render/export policy、環境で作成不能だったreparse point、production resource閾値、統合security受入は別の実装・受入を必要とします。別account ACLを未実施からPASSへ読み替えませんが、現在scopeの必須受入にはしません。
+これらは合成入力と当時の実装surfaceに対する証拠です。その後に追加した版0.2のquick start、設定、自動decision、Composition計画は個別taskで敵対試験済みです。自動代理評価と最終render／export policyも現在は実装・接続済みですが、この旧試験だけで新接続の安全性を証明したとはしません。今回52単位の最終独立レビューは完了しましたが、環境で作成不能だったreparse point、production resource閾値、製品全体の統合security受入を代替しません。別account ACLを未実施からPASSへ読み替えませんが、現在scopeの必須受入にはしません。
 
 ## Media metadata
 
@@ -111,6 +171,7 @@ Z-007にはnetwork sender、credential取得、payload永続化、通常log、Mo
 ## 秘密情報
 
 - API key を source、設定、SQLite、log、backup へ保存しません。
+- `setting.txt`はsecret・認証情報用の設定ではなく、専用の認証設定欄も追加しません。自由入力を含むprivateな利用者データとして扱い、export成功を「共有して安全」の判定にしません。
 - Azure 経路は desktop 向けEntra user認証とresource-scope RBACを使用し、process終了を越えるtoken cacheを有効化しません。
 - token、認証情報、文字起こし本文を通常 log へ出しません。
 - 問題調査では、必要な値をそのまま転載せず、存在、分類、hash、秘匿済み error code を優先します。
@@ -132,7 +193,7 @@ software license と、動画・画像・音楽・logo・font・model の利用�
 
 - 新しい入力、log、canonical result に内容、PII、秘密、絶対 path が入らないか
 - 新しい child process が shell、無制限出力、無期限待機を使わないか
-- 新しい file path が workspace 外や traversal を許さないか
+- 新しい file path が担当保存境界を逸脱しないか（媒体はworkspace、設定exportはnative固定app root）。traversalや任意pathを許さないか
 - 新しい自動decisionがclosed規則を越えて意味判断、外部公開区分、権利、機密性を確定しないか
 - 自動代理評価をhuman evaluationまたは法的適合と誤表示していないか
 - 新しい依存に version、hash、license、取得元があるか

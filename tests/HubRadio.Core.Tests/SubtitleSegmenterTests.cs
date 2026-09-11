@@ -508,6 +508,102 @@ public sealed class SubtitleSegmenterTests
     }
 
     [TestMethod]
+    public void MachineRootUsesDistinctRuleAndPreservesRealTextTimingAndProvenance()
+    {
+        UtteranceInput[] inputs =
+        [
+            new(1, Range(0, 4),
+                [new TokenInput("前", Range(0, 1)), new TokenInput("後", Range(3, 1))],
+                TranscriptText: "前、後。"),
+        ];
+        Fixture machine = Fixture.Create(inputs, TranscriptChangeSource.Machine);
+        Fixture human = Fixture.Create(inputs);
+
+        SubtitleSegmentationResult result = machine.SegmentMachine();
+        SubtitleSegmentationResult compatible = human.Segment();
+
+        Assert.IsNull(machine.Revision.ParentRevisionId);
+        Assert.AreEqual(TranscriptChangeSource.Machine, machine.Revision.ChangeSource);
+        Assert.AreEqual(SubtitleSegmenter.MachineRuleVersion, result.RuleVersion);
+        Assert.AreNotEqual(SubtitleSegmenter.RuleVersion, result.RuleVersion);
+        Assert.AreEqual(machine.RevisionDigest, result.SourceRevisionDigest);
+        CollectionAssert.AreEqual(compatible.Candidates.Select(static cue => cue.Text).ToArray(),
+            result.Candidates.Select(static cue => cue.Text).ToArray());
+        CollectionAssert.AreEqual(compatible.Candidates.Select(static cue => cue.SourceRange).ToArray(),
+            result.Candidates.Select(static cue => cue.SourceRange).ToArray());
+        CollectionAssert.AreEqual(machine.Revision.Utterances[0].Tokens.Select(static token => token.Id).ToArray(),
+            result.Candidates.SelectMany(static cue => cue.EvidenceTokenIds).ToArray());
+        Assert.IsTrue(result.Candidates.All(cue => cue.SourceRevisionId == machine.Revision.Id
+            && cue.SourceRevisionDigest == machine.RevisionDigest
+            && cue.Origin == OriginRef.FromSourceSpan(cue.SourceSpan.Id)
+            && cue.SourceSpan.AssetId == machine.SourceSpans[0].AssetId
+            && cue.SourceSpan.SourceDigest == machine.SourceSpans[0].SourceDigest));
+        AssertFailure(() => machine.Segment(), SubtitleSegmentationFailureReason.SourceRevisionNotHumanChild);
+        AssertFailure(() => human.SegmentMachine(), SubtitleSegmentationFailureReason.SourceRevisionNotMachine);
+    }
+
+    [TestMethod]
+    public void EmptyMachineRootDoesNotInventCuesOrHumanRevision()
+    {
+        Fixture fixture = Fixture.Create([], TranscriptChangeSource.Machine);
+
+        SubtitleSegmentationResult result = fixture.SegmentMachine();
+
+        Assert.HasCount(0, result.Candidates);
+        Assert.HasCount(0, result.TimingOverlaps);
+        Assert.AreEqual(0, result.InspectedTokenCount);
+        Assert.IsNull(fixture.Revision.ParentRevisionId);
+    }
+
+    [TestMethod]
+    public void MachineDigestAndTokenEvidenceAreValidatedBeforeSegmentation()
+    {
+        Fixture fixture = Fixture.Create(
+            [Utterance(1, Range(0, 2), new TokenInput("一", Range(0, 1)),
+                new TokenInput("二", Range(1, 1)))], TranscriptChangeSource.Machine);
+        SourceSpan original = fixture.SourceSpans.Single();
+        var reversed = new SourceSpan(original.Id, original.AssetId, original.StreamId,
+            original.Range, original.SourceDigest, fixture.Revision.Id,
+            original.TranscriptTokenIds.Reverse().ToArray());
+
+        AssertFailure(() => SubtitleSegmenter.SegmentMachine(fixture.Revision,
+            new ContentDigest(new string('f', 64)), fixture.SourceSpans),
+            SubtitleSegmentationFailureReason.RevisionDigestMismatch);
+        AssertFailure(() => SubtitleSegmenter.SegmentMachine(fixture.Revision,
+            fixture.RevisionDigest, [reversed]), SubtitleSegmentationFailureReason.SourceSpanBindingMismatch);
+        AssertFailure(() => SubtitleSegmenter.SegmentMachine(fixture.Revision,
+            fixture.RevisionDigest, []), SubtitleSegmentationFailureReason.SourceSpanBindingMismatch);
+    }
+
+    [TestMethod]
+    public void MachineUntimedTokensAndOverlapsRemainExplicitUnresolvedEvidence()
+    {
+        Fixture fixture = Fixture.Create(
+            [Utterance(1, Range(0, 3), new TokenInput("先。", Range(0, 3))),
+             Utterance(2, Range(2, 2), new TokenInput("後。", Range(2, 2))),
+             Utterance(2, Range(5, 2), new TokenInput("不明", null))],
+            TranscriptChangeSource.Machine);
+
+        SubtitleSegmentationResult result = fixture.SegmentMachine();
+
+        Assert.HasCount(1, result.TimingOverlaps);
+        Assert.AreEqual(Range(2, 1), result.TimingOverlaps[0].SourceRange);
+        Assert.IsTrue(result.Candidates[^1].ManualTimingAdjustmentRequired);
+        Assert.IsNull(fixture.Revision.Utterances[^1].Tokens[0].Range);
+    }
+
+    [TestMethod]
+    public void MachinePreCancellationDoesNotReturnPartialCandidates()
+    {
+        Fixture fixture = Fixture.Create([], TranscriptChangeSource.Machine);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        Assert.ThrowsExactly<OperationCanceledException>(() => SubtitleSegmenter.SegmentMachine(
+            fixture.Revision, fixture.RevisionDigest, fixture.SourceSpans, cancellation.Token));
+    }
+
+    [TestMethod]
     public void PreCancellationWinsWithoutReturningPartialCandidates()
     {
         Fixture fixture = Fixture.Create(
@@ -565,6 +661,7 @@ public sealed class SubtitleSegmenterTests
                 "SpeakerChange",
                 "PositiveSourceGap",
                 "EndOfTranscript",
+                "ExactTokenBoundary",
             },
             Enum.GetNames<SubtitleBoundaryReason>());
 
@@ -592,19 +689,21 @@ public sealed class SubtitleSegmenterTests
         Assert.IsTrue(typeof(SubtitleSegmenter).IsSealed);
         MethodInfo[] methods = typeof(SubtitleSegmenter).GetMethods(
             BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly);
-        Assert.HasCount(1, methods);
-        Assert.AreEqual(nameof(SubtitleSegmenter.Segment), methods[0].Name);
-        CollectionAssert.AreEqual(
-            new[]
-            {
-                typeof(TranscriptRevision),
-                typeof(ContentDigest),
-                typeof(IReadOnlyList<SourceSpan>),
-                typeof(CancellationToken),
-            },
-            methods[0].GetParameters()
-                .Select(static parameter => parameter.ParameterType)
-                .ToArray());
+        CollectionAssert.AreEquivalent(
+            new[] { nameof(SubtitleSegmenter.Segment), nameof(SubtitleSegmenter.SegmentMachine) },
+            methods.Select(static method => method.Name).ToArray());
+        foreach (MethodInfo method in methods)
+        {
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    typeof(TranscriptRevision),
+                    typeof(ContentDigest),
+                    typeof(IReadOnlyList<SourceSpan>),
+                    typeof(CancellationToken),
+                },
+                method.GetParameters().Select(static parameter => parameter.ParameterType).ToArray());
+        }
 
         MemberInfo[] publicMembers = typeof(SubtitleSegmenter).Assembly
             .GetExportedTypes()
@@ -761,7 +860,11 @@ public sealed class SubtitleSegmenterTests
         internal SubtitleSegmentationResult Segment() =>
             SubtitleSegmenter.Segment(Revision, RevisionDigest, SourceSpans);
 
-        internal static Fixture Create(IReadOnlyList<UtteranceInput> inputs)
+        internal SubtitleSegmentationResult SegmentMachine() =>
+            SubtitleSegmenter.SegmentMachine(Revision, RevisionDigest, SourceSpans);
+
+        internal static Fixture Create(IReadOnlyList<UtteranceInput> inputs,
+            TranscriptChangeSource changeSource = TranscriptChangeSource.Human)
         {
             EntityId<TranscriptRevisionIdTag> revisionId =
                 Id<TranscriptRevisionIdTag>(0x71000001, 1);
@@ -813,8 +916,9 @@ public sealed class SubtitleSegmenterTests
             return new Fixture(
                 new TranscriptRevision(
                     revisionId,
-                    Id<TranscriptRevisionIdTag>(0x71000001, 2),
-                    TranscriptChangeSource.Human,
+                    changeSource == TranscriptChangeSource.Human
+                        ? Id<TranscriptRevisionIdTag>(0x71000001, 2) : null,
+                    changeSource,
                     CreatedAt,
                     utterances),
                 Array.AsReadOnly(sourceSpans.ToArray()));

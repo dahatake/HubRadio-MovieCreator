@@ -17,7 +17,7 @@ import wave
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 
 MODEL_REPOSITORY = "Systran/faster-whisper-small"
 MODEL_REVISION = "536b0662742c02347bc0e980a01041f333bce120"
@@ -89,6 +89,31 @@ class AsrConfiguration:
 
 
 PINNED_CONFIGURATION = AsrConfiguration()
+AUTO_LANGUAGE_POLICY = "autoDetectWithJaJpFallback"
+AUTO_CONFIGURATION = AsrConfiguration(language=AUTO_LANGUAGE_POLICY)
+# Language tokens supported by the pinned faster-whisper 1.2.1 tokenizer.
+SUPPORTED_LANGUAGES = frozenset(
+    "af am ar as az ba be bg bn bo br bs ca cs cy da de el en es et eu fa fi fo fr "
+    "gl gu ha haw he hi hr ht hu hy id is it ja jw ka kk km kn ko la lb ln lo lt lv "
+    "mg mi mk ml mn mr ms mt my ne nl nn no oc pa pl ps pt ro ru sa sd si sk sl sn "
+    "so sq sr su sv sw ta te tg th tk tl tr tt uk ur uz vi yi yo zh yue".split()
+)
+
+
+@dataclass(frozen=True, slots=True)
+class LanguageDetectionEvidence:
+    requested_policy: str
+    detected_language: str | None
+    detected_language_confidence: float | None
+    fallback_reason: str | None
+
+
+class _LanguageDetectionUnavailable(RuntimeError):
+    """Raised only at the actual detector boundary, never by general inference."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__("Language detection was unavailable.")
+        self.reason = reason
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +152,7 @@ class AsrTranscriptionResult:
     language_confidence: float
     engine_duration_seconds: float
     segments: tuple[AsrSegment, ...]
+    language_detection: LanguageDetectionEvidence = LanguageDetectionEvidence("ja", None, None, None)
 
 
 class AsrTranscriptionError(RuntimeError):
@@ -165,6 +191,7 @@ def transcribe(
     audio_path: Path,
     model_directory: Path,
     *,
+    language_policy: str = "ja",
     _model_factory: _ModelFactory | None = None,
 ) -> AsrTranscriptionResult:
     """Run the single adopted CPU ASR configuration against normalized PCM WAV.
@@ -174,6 +201,9 @@ def transcribe(
     are checked before and after inference; PK-004 owns the read-only model installation and ACL.
     """
 
+    if type(language_policy) is not str or language_policy not in {"ja", AUTO_LANGUAGE_POLICY}:
+        raise AsrTranscriptionError(PROCESSING_FAILED)
+    configuration = AUTO_CONFIGURATION if language_policy == AUTO_LANGUAGE_POLICY else PINNED_CONFIGURATION
     audio = _require_canonical_path(audio_path, expect_directory=False, error_code=INVALID_AUDIO)
     model_path = _require_canonical_path(
         model_directory,
@@ -185,21 +215,42 @@ def transcribe(
 
     try:
         model = _create_model(model_path, _model_factory)
-        raw_segments, information = model.transcribe(
-            str(audio),
-            language=PINNED_CONFIGURATION.language,
-            task=PINNED_CONFIGURATION.task,
-            beam_size=PINNED_CONFIGURATION.beam_size,
-            word_timestamps=PINNED_CONFIGURATION.word_timestamps,
-            vad_filter=PINNED_CONFIGURATION.vad_filter,
-            condition_on_previous_text=PINNED_CONFIGURATION.condition_on_previous_text,
+        options = dict(
+            task=configuration.task,
+            beam_size=configuration.beam_size,
+            word_timestamps=configuration.word_timestamps,
+            vad_filter=configuration.vad_filter,
+            condition_on_previous_text=configuration.condition_on_previous_text,
         )
-        segments = _convert_segments(raw_segments)
+        fallback_reason = None
+        try:
+            raw_segments, information = model.transcribe(
+                str(audio), language=None if configuration == AUTO_CONFIGURATION else "ja", **options
+            )
+            if configuration == AUTO_CONFIGURATION and getattr(information, "language", None) in (None, ""):
+                raise _LanguageDetectionUnavailable("absent")
+        except _LanguageDetectionUnavailable as detection_error:
+            if configuration != AUTO_CONFIGURATION or detection_error.reason not in {"absent", "error"}:
+                raise ValueError() from None
+            fallback_reason = detection_error.reason
+            # A real second inference, not a relabelled result. Other inference failures
+            # (including errors from the lazy segment iterator) never trigger fallback.
+            raw_segments, information = model.transcribe(str(audio), language="ja", **options)
         language = _required_string(information, "language")
-        if language != PINNED_CONFIGURATION.language:
+        if language not in SUPPORTED_LANGUAGES or (
+            (configuration == PINNED_CONFIGURATION or fallback_reason is not None) and language != "ja"
+        ):
             raise ValueError()
         language_confidence = _closed_unit_float(information, "language_probability")
         engine_duration = _nonnegative_float(information, "duration")
+        segments = _convert_segments(raw_segments)
+        detected = configuration == AUTO_CONFIGURATION and fallback_reason is None
+        language_detection = LanguageDetectionEvidence(
+            language_policy,
+            language if detected else None,
+            language_confidence if detected else None,
+            fallback_reason,
+        )
     except AsrTranscriptionError:
         raise
     except (ImportError, ModuleNotFoundError):
@@ -224,7 +275,7 @@ def transcribe(
         model_repository=MODEL_REPOSITORY,
         model_revision=MODEL_REVISION,
         model_manifest_sha256=MODEL_MANIFEST_SHA256,
-        configuration=PINNED_CONFIGURATION,
+        configuration=configuration,
         input_audio_sha256=audio_before.sha256,
         input_audio_byte_size=audio_before.byte_size,
         input_audio_duration_seconds=audio_before.duration_seconds,
@@ -232,6 +283,7 @@ def transcribe(
         language_confidence=language_confidence,
         engine_duration_seconds=engine_duration,
         segments=segments,
+        language_detection=language_detection,
     )
 
 
@@ -242,7 +294,24 @@ def _create_model(
     factory = model_factory
     if factory is None:
         module = importlib.import_module("faster_whisper")
-        factory = getattr(module, "WhisperModel")
+        base_model = getattr(module, "WhisperModel")
+
+        def detect_language(self: object, *args: object, **kwargs: object) -> object:
+            # Scope fallback to this API, not decoding, initialization, generation,
+            # invalid numeric evidence, or arbitrary model exceptions.
+            try:
+                detection = base_model.detect_language(self, *args, **kwargs)
+            except (RuntimeError, ValueError, IndexError):
+                raise _LanguageDetectionUnavailable("error") from None
+            if detection is None or detection[0] in (None, ""):
+                raise _LanguageDetectionUnavailable("absent")
+            return detection
+
+        # Keep optional dependency loading lazy; this dynamically derived class has
+        # the same transcribe surface as the pinned base model.
+        factory = cast(_ModelFactory, type(
+            "DetectionAwareModel", (base_model,), {"detect_language": detect_language}
+        ))
     return factory(
         str(model_directory),
         device=PINNED_CONFIGURATION.device,

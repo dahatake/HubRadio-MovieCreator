@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useRef,
   useState,
   type FormEvent,
@@ -105,8 +106,13 @@ const failureMessages: Readonly<
   qualityControlFailed: '品質確認が失敗したため、配信証跡を利用可能として表示しません。',
 }
 
-export function DeliveryPanel() {
-  return <DeliveryPanelView {...useDeliveryState()} />
+export interface DeliveryPanelProps {
+  readonly context?: Readonly<{ versionId: string | null }>
+  readonly active?: boolean
+}
+
+export function DeliveryPanel(props: DeliveryPanelProps = {}) {
+  return <DeliveryPanelView {...useDeliveryState()} {...props} />
 }
 
 export function DeliveryPanelView({
@@ -118,78 +124,194 @@ export function DeliveryPanelView({
   refreshSnapshot,
   lookupTrace,
   clearError,
-}: DeliveryStateContextValue) {
+  context,
+  active = true,
+}: DeliveryStateContextValue & DeliveryPanelProps) {
+  const panelRef = useRef<HTMLElement>(null)
+  const requestedVersionId = useRef<string | null>(null)
+  const workflow = context !== undefined
+  const contextVersionId =
+    typeof context?.versionId === 'string' &&
+    isCanonicalDeliveryEntityId(context.versionId)
+      ? context.versionId
+      : null
   const pending = state.pending !== null
-  const canLoad = !pending && isCanonicalDeliveryEntityId(state.versionIdInput)
+  const canLoad = active && !pending && isCanonicalDeliveryEntityId(state.versionIdInput)
+  // Both identities must match before even an old available snapshot is shown.
+  const snapshot = workflow && (
+    contextVersionId === null ||
+    state.versionIdInput !== contextVersionId ||
+    state.snapshot?.versionId !== contextVersionId ||
+    state.status !== 'available' ||
+    state.error !== null
+  ) ? null : state.snapshot
+
+  useEffect(() => {
+    if (!active || contextVersionId === null || pending) {
+      return
+    }
+    if (state.versionIdInput !== contextVersionId) {
+      // Switching the provider input can discard its only cached snapshot, even
+      // if this selection is superseded before its deferred read is sent.
+      requestedVersionId.current = null
+      changeVersionId(contextVersionId)
+      // loadSnapshot closes over the provider's input. Wait for its next render.
+      return
+    }
+    if (requestedVersionId.current === contextVersionId) {
+      return
+    }
+
+    let superseded = false
+    // The provider initializes its bridge after child effects on first mount.
+    // Defer the read, and cancel it on a context/visibility change or StrictMode replay.
+    void Promise.resolve().then(() => {
+      if (superseded) {
+        return
+      }
+      requestedVersionId.current = contextVersionId
+      loadSnapshot()
+    })
+    return () => {
+      superseded = true
+    }
+  }, [active, changeVersionId, contextVersionId, loadSnapshot, pending, state.versionIdInput])
+
+  useEffect(() => {
+    if (active) {
+      return
+    }
+    const focused = panelRef.current?.ownerDocument.activeElement
+    if (focused instanceof HTMLElement && panelRef.current?.contains(focused)) {
+      focused.blur()
+    }
+  }, [active])
+
+  const refresh = (): void => {
+    if (!active || pending || (workflow && (
+      contextVersionId === null || state.versionIdInput !== contextVersionId
+    ))) {
+      return
+    }
+    if (workflow && snapshot === null) {
+      loadSnapshot()
+    } else {
+      refreshSnapshot()
+    }
+  }
+  const workspace = snapshot === null ? null : (
+    <DeliveryWorkspace
+      key={snapshot.versionId}
+      snapshot={snapshot}
+      trace={state.trace}
+      traceValueInput={state.traceValueInput}
+      traceRateInput={state.traceRateInput}
+      pending={pending}
+      active={active}
+      changeTraceValue={changeTraceValue}
+      changeTraceRate={changeTraceRate}
+      lookupTrace={lookupTrace}
+    />
+  )
 
   return (
-    <section className="delivery-panel" aria-labelledby="delivery-title">
+    <section
+      ref={panelRef}
+      className="delivery-panel"
+      aria-labelledby="delivery-title"
+      hidden={!active}
+      inert={!active}
+      onFocusCapture={(event) => {
+        if (!active) {
+          event.target.blur()
+        }
+      }}
+    >
       <div className="delivery-heading">
         <div>
-          <p className="eyebrow">Validated delivery evidence</p>
-          <h2 id="delivery-title">配信成果物と証跡</h2>
-          <p>
-            構成版に固定された manifest、完全 digest、承認、権利、QC、時刻由来を読み取り専用で確認します。
-          </p>
+          <p className="eyebrow">{workflow ? '保存結果' : 'Validated delivery evidence'}</p>
+          <h2 id="delivery-title">{workflow ? '成果物の保存' : '配信成果物と証跡'}</h2>
+          {!workflow && (
+            <p>
+              構成版に固定された manifest、完全 digest、承認、権利、QC、時刻由来を読み取り専用で確認します。
+            </p>
+          )}
         </div>
-        {state.snapshot !== null && (
+        {snapshot !== null && (
           <span
-            className={`delivery-scope-badge scope-${state.snapshot.publicationScope}`}
+            className={`delivery-scope-badge scope-${snapshot.publicationScope}`}
           >
-            {publicationScopeLabels[state.snapshot.publicationScope]}
+            {publicationScopeLabels[snapshot.publicationScope]}
           </span>
         )}
       </div>
 
-      <form
-        className="delivery-load-form"
-        onSubmit={(event) => {
-          event.preventDefault()
-          loadSnapshot()
-        }}
-      >
-        <label htmlFor="delivery-version-id">構成版 ID</label>
-        <div className="delivery-load-row">
-          <input
-            id="delivery-version-id"
-            name="deliveryVersionId"
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            minLength={36}
-            maxLength={36}
-            pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-            value={state.versionIdInput}
-            disabled={pending}
-            aria-describedby="delivery-version-help"
-            onChange={(event) => changeVersionId(event.currentTarget.value)}
-          />
-          <button type="submit" disabled={!canLoad}>
-            証跡を開く
-          </button>
-          {state.snapshot !== null && (
-            <button
-              className="secondary-button"
-              type="button"
-              disabled={pending}
-              onClick={refreshSnapshot}
-            >
-              再読み込み
+      {!workflow && (
+        <form
+          className="delivery-load-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (canLoad) {
+              loadSnapshot()
+            }
+          }}
+        >
+          <label htmlFor="delivery-version-id">構成版 ID</label>
+          <div className="delivery-load-row">
+            <input
+              id="delivery-version-id"
+              name="deliveryVersionId"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              minLength={36}
+              maxLength={36}
+              pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+              value={state.versionIdInput}
+              disabled={pending || !active}
+              aria-describedby="delivery-version-help"
+              onChange={(event) => {
+                if (active && !pending) {
+                  changeVersionId(event.currentTarget.value)
+                }
+              }}
+            />
+            <button type="submit" disabled={!canLoad}>
+              証跡を開く
             </button>
-          )}
-        </div>
-        <p id="delivery-version-help" className="field-help">
-          小文字 UUID の構成版 ID を指定します。アクセス権と全 evidence binding はネイティブ側で再検証されます。
-        </p>
-      </form>
+            {snapshot !== null && (
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={pending || !active}
+                onClick={refresh}
+              >
+                再読み込み
+              </button>
+            )}
+          </div>
+          <p id="delivery-version-help" className="field-help">
+            小文字 UUID の構成版 ID を指定します。アクセス権と全 evidence binding はネイティブ側で再検証されます。
+          </p>
+        </form>
+      )}
 
-      {state.error !== null && (
+      {!workflow && state.error !== null && (
         <div className="delivery-error" role="alert">
           <div>
             <strong>配信証跡を確認できませんでした</strong>
             <p>{state.error.message}</p>
           </div>
-          <button className="quiet-button" type="button" onClick={clearError}>
+          <button
+            className="quiet-button"
+            type="button"
+            disabled={!active}
+            onClick={() => {
+              if (active) {
+                clearError()
+              }
+            }}
+          >
             閉じる
           </button>
         </div>
@@ -199,36 +321,125 @@ export function DeliveryPanelView({
         className="delivery-operation-status"
         role="status"
         aria-live="polite"
-        data-delivery-pending={pending ? 'true' : 'false'}
+        data-delivery-pending={pending && (!workflow || state.versionIdInput === contextVersionId) ? 'true' : 'false'}
       >
-        {pending
-          ? state.pending?.outputTime === null
-            ? 'ネイティブ側で配信証跡を検証しています。'
-            : '指定した出力時刻の由来を照合しています。'
-          : statusMessage(state.status, state.lastCompletedOperation)}
+        {workflow
+          ? workflowStatusMessage(contextVersionId, state, snapshot)
+          : pending
+            ? state.pending?.outputTime === null
+              ? 'ネイティブ側で配信証跡を検証しています。'
+              : '指定した出力時刻の由来を照合しています。'
+            : statusMessage(state.status, state.lastCompletedOperation)}
       </p>
 
-      {state.status !== null && state.status !== 'available' ? (
+      {workflow && contextVersionId !== null && (
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={pending || !active || state.versionIdInput !== contextVersionId}
+          onClick={refresh}
+        >
+          再読み込み
+        </button>
+      )}
+
+      {workflow ? snapshot !== null && (
+        <>
+          <ArtifactOverview snapshot={snapshot} />
+          <p className="delivery-evidence-note" role="note">
+            旧レビュー・承認・機械 QC は、新しい自動評価や人の確認の合格を示しません。V2 の自動昇格の完了とも別です。
+          </p>
+          <details
+            key={`${snapshot.versionId}:${snapshot.deliveryManifestId}`}
+            className="delivery-details"
+          >
+            <summary
+              tabIndex={active ? undefined : -1}
+              onClick={(event) => {
+                if (!active) {
+                  event.preventDefault()
+                }
+              }}
+            >
+              保存証跡の詳細（完全 hash・旧承認・QC・時刻由来）
+            </summary>
+            {workspace}
+          </details>
+        </>
+      ) : state.status !== null && state.status !== 'available' ? (
         <div className="delivery-failure" role="alert" data-delivery-status={state.status}>
           <strong>証跡を利用可能として確認できません</strong>
           <p>{failureMessages[state.status]}</p>
         </div>
-      ) : state.snapshot === null ? (
+      ) : snapshot === null ? (
         <div className="delivery-empty">
           <strong>配信証跡は未選択です</strong>
           <p>構成版 ID を読み込むまで、成果物や evidence は表示されません。</p>
         </div>
       ) : (
-        <DeliveryWorkspace
-          snapshot={state.snapshot}
-          trace={state.trace}
-          traceValueInput={state.traceValueInput}
-          traceRateInput={state.traceRateInput}
-          pending={pending}
-          changeTraceValue={changeTraceValue}
-          changeTraceRate={changeTraceRate}
-          lookupTrace={lookupTrace}
-        />
+        workspace
+      )}
+    </section>
+  )
+}
+
+function workflowStatusMessage(
+  versionId: string | null,
+  state: DeliveryStateContextValue['state'],
+  snapshot: DeliverySnapshot | null,
+): string {
+  if (versionId === null) {
+    return '保存対象の版が選択されていません。'
+  }
+  if (state.versionIdInput !== versionId) {
+    return state.snapshot === null
+      ? '成果物の保存処理は未接続です'
+      : '選択した版の保存状態は未取得です。'
+  }
+  if (state.pending !== null) {
+    return state.pending.outputTime === null
+      ? '保存証跡を確認しています。'
+      : '指定した出力時刻の由来を照合しています。'
+  }
+  if (state.error !== null || state.status === null || state.status === 'unavailable') {
+    return '成果物の保存処理は未接続です'
+  }
+  if (state.status !== 'available') {
+    return failureMessages[state.status]
+  }
+  if (snapshot === null) {
+    return state.snapshot === null
+      ? '成果物の保存処理は未接続です'
+      : '選択した版の保存証跡は確認できません。'
+  }
+  return '登録済みの保存証跡を確認しました。'
+}
+
+function ArtifactOverview({ snapshot }: Readonly<{ snapshot: DeliverySnapshot }>) {
+  const counts = new Map<string, number>()
+  for (const artifact of snapshot.artifacts) {
+    counts.set(artifact.artifactType, (counts.get(artifact.artifactType) ?? 0) + 1)
+  }
+  return (
+    <section className="delivery-card" aria-labelledby="delivery-overview-title">
+      <h3 id="delivery-overview-title">登録された成果物（{snapshot.artifacts.length} 件）</h3>
+      {snapshot.artifacts.length === 0 ? (
+        <p>登録された成果物はありません。</p>
+      ) : (
+        <>
+          <dl className="delivery-metadata">
+            <PlainField label="生成状態" value="生成済み（登録成果物）" />
+            <PlainField label="保存状態" value="ローカル保存済み（delivery 登録）" />
+          </dl>
+          <ul aria-label="保存済み成果物の種類と件数">
+            {[...counts].map(([type, count]) => (
+              <li key={type}>{type}: {count} 件</li>
+            ))}
+          </ul>
+          <p className="delivery-evidence-note">
+            レンダー成功の表示ではなく、delivery に登録されたローカル成果物の保存証跡です。
+          </p>
+        </>
       )}
     </section>
   )
@@ -271,6 +482,7 @@ function DeliveryWorkspace({
   traceValueInput,
   traceRateInput,
   pending,
+  active,
   changeTraceValue,
   changeTraceRate,
   lookupTrace,
@@ -280,6 +492,7 @@ function DeliveryWorkspace({
   traceValueInput: string
   traceRateInput: string
   pending: boolean
+  active: boolean
   changeTraceValue: DeliveryStateContextValue['changeTraceValue']
   changeTraceRate: DeliveryStateContextValue['changeTraceRate']
   lookupTrace: DeliveryStateContextValue['lookupTrace']
@@ -290,6 +503,9 @@ function DeliveryWorkspace({
     event: KeyboardEvent<HTMLButtonElement>,
     index: number,
   ): void => {
+    if (!active) {
+      return
+    }
     const nextIndex = getDeliveryEvidenceSectionAfterKey(index, event.key)
     if (nextIndex === null) {
       return
@@ -318,8 +534,13 @@ function DeliveryWorkspace({
             }}
             aria-selected={selectedIndex === index}
             aria-controls={`delivery-evidence-panel-${kind}`}
-            tabIndex={selectedIndex === index ? 0 : -1}
-            onClick={() => setSelectedIndex(index)}
+            disabled={!active}
+            tabIndex={active && selectedIndex === index ? 0 : -1}
+            onClick={() => {
+              if (active) {
+                setSelectedIndex(index)
+              }
+            }}
             onKeyDown={(event) => onTabKeyDown(event, index)}
           >
             {evidenceSectionLabels[kind]}
@@ -339,11 +560,11 @@ function DeliveryWorkspace({
           {kind === 'identity' ? (
             <IdentityEvidence snapshot={snapshot} />
           ) : kind === 'artifacts' ? (
-            <ArtifactEvidence snapshot={snapshot} />
+            <ArtifactEvidence snapshot={snapshot} active={active} />
           ) : kind === 'review' ? (
             <ReviewEvidence snapshot={snapshot} />
           ) : kind === 'rights' ? (
-            <RightsEvidence snapshot={snapshot} />
+            <RightsEvidence snapshot={snapshot} active={active} />
           ) : kind === 'qualityControl' ? (
             <QualityControlEvidence qualityControl={snapshot.qualityControl} />
           ) : (
@@ -352,6 +573,7 @@ function DeliveryWorkspace({
               value={traceValueInput}
               rate={traceRateInput}
               pending={pending}
+              active={active}
               changeValue={changeTraceValue}
               changeRate={changeTraceRate}
               lookup={lookupTrace}
@@ -407,7 +629,7 @@ function IdentityEvidence({ snapshot }: Readonly<{ snapshot: DeliverySnapshot }>
   )
 }
 
-function ArtifactEvidence({ snapshot }: Readonly<{ snapshot: DeliverySnapshot }>) {
+function ArtifactEvidence({ snapshot, active }: Readonly<{ snapshot: DeliverySnapshot; active: boolean }>) {
   return (
     <section className="delivery-card" aria-labelledby="delivery-artifacts-title">
       <div className="delivery-card-heading">
@@ -417,7 +639,7 @@ function ArtifactEvidence({ snapshot }: Readonly<{ snapshot: DeliverySnapshot }>
         </div>
         <span>{snapshot.artifacts.length} 件</span>
       </div>
-      <div className="delivery-table-scroll" tabIndex={0} aria-label="成果物証跡（横スクロール可能）">
+      <div className="delivery-table-scroll" tabIndex={active ? 0 : -1} aria-label="成果物証跡（横スクロール可能）">
         <table className="delivery-table">
           <caption className="visually-hidden">配信 manifest の成果物と完全 SHA-256</caption>
           <thead>
@@ -497,7 +719,7 @@ function ApprovalRecord({ approval }: Readonly<{ approval: DeliveryApproval }>) 
   )
 }
 
-function RightsEvidence({ snapshot }: Readonly<{ snapshot: DeliverySnapshot }>) {
+function RightsEvidence({ snapshot, active }: Readonly<{ snapshot: DeliverySnapshot; active: boolean }>) {
   return (
     <section className="delivery-card" aria-labelledby="delivery-rights-title">
       <p className="section-kicker">Per-asset evidence</p>
@@ -508,7 +730,7 @@ function RightsEvidence({ snapshot }: Readonly<{ snapshot: DeliverySnapshot }>) 
       {snapshot.rights.length === 0 ? (
         <p className="delivery-card-empty">使用素材の権利証跡はありません。</p>
       ) : (
-        <div className="delivery-table-scroll" tabIndex={0} aria-label="素材権利証跡（横スクロール可能）">
+        <div className="delivery-table-scroll" tabIndex={active ? 0 : -1} aria-label="素材権利証跡（横スクロール可能）">
           <table className="delivery-table">
             <caption className="visually-hidden">使用素材ごとの権利証跡</caption>
             <thead>
@@ -664,6 +886,7 @@ function TraceEvidence({
   value,
   rate,
   pending,
+  active,
   changeValue,
   changeRate,
   lookup,
@@ -672,6 +895,7 @@ function TraceEvidence({
   value: string
   rate: string
   pending: boolean
+  active: boolean
   changeValue: (value: string) => void
   changeRate: (value: string) => void
   lookup: () => void
@@ -680,7 +904,7 @@ function TraceEvidence({
   const valid = isDeliveryOutputTime(outputTime)
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
-    if (!pending && valid) {
+    if (active && !pending && valid) {
       lookup()
     }
   }
@@ -689,7 +913,7 @@ function TraceEvidence({
       <p className="section-kicker">Exact reverse lookup</p>
       <h3 id="delivery-trace-title">任意の出力時刻から由来を照合</h3>
       <form className="delivery-trace-form" onSubmit={submit}>
-        <fieldset disabled={pending}>
+        <fieldset disabled={pending || !active}>
           <legend>約分済み rational time</legend>
           <div className="rational-time-fields">
             <div className="field-group">
@@ -701,7 +925,11 @@ function TraceEvidence({
                 pattern="(?:0|[1-9][0-9]{0,18})"
                 value={value}
                 aria-describedby="delivery-trace-help"
-                onChange={(event) => changeValue(event.currentTarget.value)}
+                onChange={(event) => {
+                  if (active && !pending) {
+                    changeValue(event.currentTarget.value)
+                  }
+                }}
               />
             </div>
             <div className="field-group">
@@ -713,14 +941,18 @@ function TraceEvidence({
                 pattern="[1-9][0-9]{0,18}"
                 value={rate}
                 aria-describedby="delivery-trace-help"
-                onChange={(event) => changeRate(event.currentTarget.value)}
+                onChange={(event) => {
+                  if (active && !pending) {
+                    changeRate(event.currentTarget.value)
+                  }
+                }}
               />
             </div>
           </div>
           <p id="delivery-trace-help" className="field-help">
             0 以上の value と正の rate を、約分済み signed 64-bit 整数で指定します。小数へ丸めません。
           </p>
-          <button className="primary-button" type="submit" disabled={!valid || pending}>
+          <button className="primary-button" type="submit" disabled={!valid || pending || !active}>
             出力時刻を照合
           </button>
         </fieldset>

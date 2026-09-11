@@ -102,6 +102,32 @@ function Assert-ManifestRecord([object]$Record) {
     if ((Get-Relative $Record.path) -cne $Record.path) { throw 'OSL013:MANIFEST Noncanonical file record.' }
 }
 
+function Assert-ApplicationResources([string]$ContentsRoot) {
+    $identity = Read-Json (Join-Path $ContentsRoot 'Evidence/application-build.json')
+    $dll = Join-Path $ContentsRoot 'HubRadio.App.dll'
+    $actual = Get-FileEvidence $dll
+    if ($identity -isnot [Collections.IDictionary] -or @($identity.GetEnumerator()).Count -ne 5 -or
+        $identity['schemaVersion'] -ne 1 -or $identity['relativePath'] -cne 'HubRadio.App.dll' -or
+        ($identity['size'] -isnot [int] -and $identity['size'] -isnot [long]) -or $identity['size'] -ne $actual.byteSize -or
+        $identity['sha256'] -cne $actual.sha256 -or
+        $identity['version'] -cne [Reflection.AssemblyName]::GetAssemblyName($dll).Version.ToString()) {
+        throw 'OSL013:APPLICATION_BUILD Build identity must match the compiled DLL, not the bundled EXE.'
+    }
+    $sourcePath = Join-Path $PSScriptRoot '../fonts/font-manifest.json'
+    $font = Read-Json $sourcePath
+    Assert-Evidence (Get-FileEvidence (Join-Path $ContentsRoot 'Fonts/font-manifest.json')) (Get-FileEvidence $sourcePath) 'FONT_MANIFEST'
+    if ($font['schemaVersion'] -ne 1 -or $font['family'] -cne 'Noto Sans JP' -or $font['style'] -cne 'Regular' -or
+        $font['version'] -cne '2.004' -or $font['sourceCommit'] -cne '523d033d6cb47f4a80c58a35753646f5c3608a78' -or
+        $font['sha256'] -cnotmatch '\A[0-9a-f]{64}\z' -or $font['byteSize'] -le 0 -or
+        $font['license']['sha256'] -cnotmatch '\A[0-9a-f]{64}\z' -or $font['license']['byteSize'] -le 0) {
+        throw 'OSL013:FONT_PIN Measured fixed font and license evidence is required.'
+    }
+    Assert-Evidence (Get-FileEvidence (Join-Path $ContentsRoot 'Fonts/NotoSansJP-Regular.otf')) $font 'FONT'
+    Assert-Evidence (Get-FileEvidence (Join-Path $ContentsRoot 'Fonts/LICENSE')) $font['license'] 'FONT_LICENSE'
+    Assert-Evidence (Get-FileEvidence (Join-Path $ContentsRoot 'Licenses/NotoSansJP-OFL.txt')) $font['license'] 'FONT_LICENSE'
+    if (@(Get-ChildItem -LiteralPath (Join-Path $ContentsRoot 'Fonts') -Force).Count -ne 3) { throw 'OSL013:FONT_SET Extra font search-directory content is forbidden.' }
+}
+
 $root = Get-AbsolutePath $CandidatePath
 Assert-Directory $root
 $top = @(Get-ChildItem -LiteralPath $root -Force)
@@ -139,17 +165,25 @@ if ($release.contents.fileCount -ne $actualContents.Count -or $release.contents.
 if ($payload.schemaVersion -cne '1.0.0' -or $payload.taskId -cne 'OSL-009' -or $payload.releaseApproved -isnot [bool] -or $payload.releaseApproved -ne $false -or
     $payload.files -isnot [array]) { throw 'OSL013:PAYLOAD Payload manifest is invalid or approved.' }
 $actualPayload = [Collections.Generic.SortedDictionary[string, object]]::new([StringComparer]::Ordinal)
-foreach ($record in $payload.files) { Assert-ManifestRecord $record; $actualPayload.Add($record.path, $record) }
+foreach ($record in $payload.files) {
+    Assert-ManifestRecord $record
+    if ($record.path -ieq 'Evidence/application-build.json') { throw 'OSL013:PAYLOAD Build-generated App evidence cannot be a prepared component input.' }
+    $actualPayload.Add($record.path, $record)
+}
 $payloadContents = [Collections.Generic.SortedDictionary[string, object]]::new([StringComparer]::Ordinal)
 foreach ($name in $actualContents.Keys) {
-    if ($name -in @('Worker', 'Tools', 'ModelCatalog', 'WebView2Runtime', 'Licenses', 'Evidence') -or
+    if ($name -in @('Worker', 'Tools', 'ModelCatalog', 'Fonts', 'WebView2Runtime', 'Licenses', 'Evidence') -or
         $name.StartsWith('Worker/', [StringComparison]::Ordinal) -or
         $name.StartsWith('Tools/', [StringComparison]::Ordinal) -or
         $name.StartsWith('ModelCatalog/', [StringComparison]::Ordinal) -or
+        $name.StartsWith('Fonts/', [StringComparison]::Ordinal) -or
         $name.StartsWith('WebView2Runtime/', [StringComparison]::Ordinal) -or
         $name.StartsWith('Licenses/', [StringComparison]::Ordinal) -or
         $name.StartsWith('Evidence/', [StringComparison]::Ordinal)) {
-        if ($name -cne 'Evidence/portable-payload.json') {
+        # Exactly two exclusions from prepared component identity: the inventory
+        # itself and the post-compile App build identity. BOTH remain in Contents
+        # and the final SBOM; never exclude the whole Evidence subtree.
+        if ($name -cne 'Evidence/portable-payload.json' -and $name -cne 'Evidence/application-build.json') {
             $payloadContents.Add($name, $actualContents[$name])
         }
     }
@@ -199,4 +233,10 @@ try {
     if ($reader.ReadUInt32() -ne 6 -or $reader.ReadUInt32() -ne 0 -or $reader.ReadInt32() -le 0) { throw 'OSL013:APP_BUNDLE Candidate must contain a nonempty v6 bundle header.' }
 }
 finally { $reader.Dispose() }
+Assert-ApplicationResources (Join-Path $root 'Contents')
+if ($release.applicationBuild.path -cne 'Contents/Evidence/application-build.json' -or
+    $release.applicationBuild.purpose -cne 'build-identity-not-authenticity-or-release-approval' -or
+    $release.applicationBuild.sha256 -cne (Get-FileEvidence (Join-Path $root 'Contents/Evidence/application-build.json')).sha256) {
+    throw 'OSL013:APPLICATION_BUILD Release/build identity relation is invalid.'
+}
 Write-Output ([ordered]@{ candidatePath = 'App/HubRadio.App.exe'; releaseApproved = $false; contentsFileCount = $actualContents.Count; sbomPath = $release.sbom.path } | ConvertTo-Json -Compress)

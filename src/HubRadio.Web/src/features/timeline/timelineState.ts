@@ -252,11 +252,21 @@ export function selectPendingTimelineOperations(
 }
 
 export function canUndoTimeline(state: TimelineState): boolean {
-  return state.pendingRequest === null && state.pendingGroups.length > 0
+  return (
+    state.pendingRequest === null &&
+    state.phase !== 'conflict' &&
+    state.intentValid &&
+    state.pendingGroups.length > 0
+  )
 }
 
 export function canRedoTimeline(state: TimelineState): boolean {
-  return state.pendingRequest === null && state.redoGroups.length > 0
+  return (
+    state.pendingRequest === null &&
+    state.phase !== 'conflict' &&
+    state.intentValid &&
+    state.redoGroups.length > 0
+  )
 }
 
 function receiveRead(

@@ -17,6 +17,7 @@ import {
 import {
   createTimelineApplyResponseValue,
   createTimelineReadResponseValue,
+  timelineAssetElementId,
   timelineProjectId,
   timelineRequestId,
   timelineSourceElementId,
@@ -77,6 +78,42 @@ describe('timeline pending edit state', () => {
     expect(canUndoTimeline(state)).toBe(false)
   })
 
+  it('blocks undo and redo until an OCC conflict is reloaded', () => {
+    let state = stateWithPendingDelete()
+    state = timelineStateReducer(state, {
+      type: 'operationsQueued',
+      operations: [{ kind: 'delete', elementId: timelineAssetElementId }],
+    })
+    state = timelineStateReducer(state, { type: 'undo' })
+    expect(state.pendingGroups).toHaveLength(1)
+    expect(state.redoGroups).toHaveLength(1)
+    expect(canUndoTimeline(state)).toBe(true)
+    expect(canRedoTimeline(state)).toBe(true)
+    const localState = state
+
+    state = timelineStateReducer(state, {
+      type: 'applyRequested',
+      requestId: secondRequestId,
+    })
+    state = timelineStateReducer(state, {
+      type: 'applyReceived',
+      response: conflictResponse(secondRequestId),
+    })
+
+    expect(state.phase).toBe('conflict')
+    expect(state.issue).toBe('conflict')
+    expect(state.intentValid).toBe(true)
+    expect(state.pendingRequest).toBeNull()
+    expect(state.baseline).toBe(localState.baseline)
+    expect(state.previewElements).toBe(localState.previewElements)
+    expect(state.pendingGroups).toBe(localState.pendingGroups)
+    expect(state.redoGroups).toBe(localState.redoGroups)
+    expect(canUndoTimeline(state)).toBe(false)
+    expect(canRedoTimeline(state)).toBe(false)
+    expect(timelineStateReducer(state, { type: 'undo' })).toBe(state)
+    expect(timelineStateReducer(state, { type: 'redo' })).toBe(state)
+  })
+
   it('preserves pending intent on OCC conflict and replays it after reload', () => {
     let state = stateWithPendingDelete()
     state = timelineStateReducer(state, {
@@ -115,6 +152,19 @@ describe('timeline pending edit state', () => {
     expect(state.pendingGroups).toHaveLength(1)
     expect(state.previewElements).toHaveLength(1)
     expect(state.intentValid).toBe(true)
+    expect(canUndoTimeline(state)).toBe(true)
+    const reloadedPreview = state.previewElements
+
+    state = timelineStateReducer(state, { type: 'undo' })
+    expect(state.phase).toBe('ready')
+    expect(state.previewElements).toEqual(state.baseline?.elements)
+    expect(state.pendingGroups).toHaveLength(0)
+    expect(canRedoTimeline(state)).toBe(true)
+
+    state = timelineStateReducer(state, { type: 'redo' })
+    expect(state.phase).toBe('editing')
+    expect(state.previewElements).toEqual(reloadedPreview)
+    expect(state.pendingGroups).toHaveLength(1)
   })
 
   it('keeps but disables intent that no longer applies after conflict reload', () => {
@@ -161,6 +211,80 @@ describe('timeline pending edit state', () => {
     expect(state.phase).toBe('ready')
     expect(state.pendingGroups).toHaveLength(0)
     expect(state.intentValid).toBe(true)
+  })
+
+  it('preserves two invalid pending groups until explicit discard after reload', () => {
+    let state = stateWithPendingDelete()
+    state = timelineStateReducer(state, {
+      type: 'operationsQueued',
+      operations: [{ kind: 'delete', elementId: timelineAssetElementId }],
+    })
+    const pendingGroups = state.pendingGroups
+    expect(pendingGroups).toHaveLength(2)
+    state = timelineStateReducer(state, {
+      type: 'applyRequested',
+      requestId: secondRequestId,
+    })
+    state = timelineStateReducer(state, {
+      type: 'applyReceived',
+      response: conflictResponse(secondRequestId),
+    })
+    state = timelineStateReducer(state, {
+      type: 'readRequested',
+      requestId: timelineRequestId,
+      projectId: timelineProjectId,
+      preservePending: true,
+    })
+    const reloadedValue = createTimelineReadResponseValue()
+    reloadedValue.result.snapshot.revision = 4
+    reloadedValue.result.snapshot.baseVersionId = timelineVersionId
+    reloadedValue.result.snapshot.elements = [
+      reloadedValue.result.snapshot.elements[1]!,
+    ]
+    reloadedValue.result.snapshot.elements[0]!.outputRange.start = {
+      value: '0',
+      rate: '1',
+    }
+    const reloaded = parseTimelineReadResponse(reloadedValue)
+    if (reloaded === null) {
+      throw new Error('Expected a valid reload fixture without the first queued target.')
+    }
+    state = timelineStateReducer(state, {
+      type: 'readReceived',
+      response: reloaded,
+    })
+
+    expect(state.phase).toBe('conflict')
+    expect(state.issue).toBe('intentInvalidAfterReload')
+    expect(state.baseline).toBe(reloaded.result.snapshot)
+    expect(state.baseline?.elements.map((element) => element.id)).toEqual([
+      timelineAssetElementId,
+    ])
+
+    // Invalid intent must stay blocked even if a bridge failure changes the phase.
+    for (const invalidState of [
+      state,
+      timelineStateReducer(state, { type: 'bridgeUnavailable' }),
+    ]) {
+      expect(invalidState.intentValid).toBe(false)
+      expect(invalidState.pendingRequest).toBeNull()
+      expect(invalidState.pendingGroups).toBe(pendingGroups)
+      expect(invalidState.previewElements).toBe(state.baseline?.elements)
+      expect(invalidState.redoGroups).toHaveLength(0)
+      expect(canUndoTimeline(invalidState)).toBe(false)
+      expect(canRedoTimeline(invalidState)).toBe(false)
+      expect(timelineStateReducer(invalidState, { type: 'undo' })).toBe(invalidState)
+      expect(timelineStateReducer(invalidState, { type: 'redo' })).toBe(invalidState)
+
+      const discarded = timelineStateReducer(invalidState, { type: 'pendingDiscarded' })
+      expect(discarded.phase).toBe('ready')
+      expect(discarded.issue).toBeNull()
+      expect(discarded.baseline).toBe(state.baseline)
+      expect(discarded.previewElements).toBe(state.baseline?.elements)
+      expect(discarded.pendingGroups).toHaveLength(0)
+      expect(discarded.redoGroups).toHaveLength(0)
+      expect(discarded.intentValid).toBe(true)
+    }
   })
 
   it('rejects apply success that is not the exact OCC result for the pending preview', () => {

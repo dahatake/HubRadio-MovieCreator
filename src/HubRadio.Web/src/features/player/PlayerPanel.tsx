@@ -32,6 +32,7 @@ import {
   playerStateReducer,
   selectCurrentFrame,
   selectKeyboardSeekSequence,
+  type PlayerAction,
   type PlayerState,
   type PlayerStatus,
 } from './playerState'
@@ -39,6 +40,7 @@ import {
   usePlayerSourceSeekRegistration,
   type PlayerSourceSeekHandler,
 } from './PlayerNavigationProvider'
+import { createPlayerBridgeSession, type PlayerBridgeSession } from './playerBridgeSession'
 
 const statusMessages: Readonly<Record<PlayerStatus, string>> = {
   idle: '取込ジョブを指定してください',
@@ -61,7 +63,7 @@ export type PlayerBridgeClient = Pick<
   | 'sendPlayerSeek'
   | 'onPlayerSeekResponse'
   | 'dispose'
->
+> & Readonly<{ abandonPlayerRequest?: (requestId: string) => void }>
 
 export interface PlayerExactFrameSelection {
   readonly jobId: string
@@ -74,6 +76,8 @@ export interface PlayerExactFrameSelection {
 export interface PlayerPanelProps {
   readonly createClient?: () => PlayerBridgeClient
   readonly initialJobId?: string
+  readonly context?: Readonly<{ jobId: string | null }>
+  readonly active?: boolean
   readonly previewModes?: PreviewModeState
   readonly onPositionChange?: (position: PlayerTimelinePosition | null) => void
   readonly onSelectionChange?: (
@@ -81,30 +85,70 @@ export interface PlayerPanelProps {
   ) => void
 }
 
-export function PlayerPanel({
+export function PlayerPanel(props: PlayerPanelProps) {
+  // Only a job/context change replaces the evidence session, never visibility,
+  // display modes, or callback identities. Old media cannot cross this boundary.
+  return (
+    <PlayerSession
+      key={props.context === undefined
+        ? 'standalone'
+        : props.context.jobId === null ? 'no-job' : `job:${props.context.jobId}`}
+      {...props}
+    />
+  )
+}
+
+function PlayerSession({
   createClient = createHostBridgeClient,
   initialJobId = '',
+  context,
+  active = true,
   previewModes = initialPreviewModeState,
   onPositionChange,
   onSelectionChange,
 }: PlayerPanelProps) {
-  const [state, dispatch] = useReducer(playerStateReducer, {
+  const contextJobId = context?.jobId
+  const [state, reduce] = useReducer(playerStateReducer, {
     ...initialPlayerState,
-    jobIdInput: initialJobId,
+    jobIdInput: context === undefined ? initialJobId : context.jobId ?? '',
   })
   const [isPlaying, setIsPlaying] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
+  const [seekNotice, setSeekNotice] = useState<string | null>(null)
   const stateRef = useRef<PlayerState>(state)
+  const seekSessionRef = useRef<PlayerBridgeSession | null>(null)
+  const dispatch = useCallback((action: PlayerAction): void => {
+    const previousSeek = stateRef.current.pendingSeek
+    stateRef.current = playerStateReducer(stateRef.current, action)
+    if (previousSeek !== null && stateRef.current.pendingSeek?.requestId !== previousSeek.requestId) {
+      seekSessionRef.current?.abandonSeek(previousSeek.requestId)
+    }
+    reduce(action)
+  }, [])
+  const createClientRef = useRef(createClient)
+  const positionChangeRef = useRef(onPositionChange)
   const selectionChangeRef = useRef(onSelectionChange)
+  const activeRef = useRef(active)
   const clientRef = useRef<PlayerBridgeClient | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const playbackRequestRef = useRef<Readonly<{ video: HTMLVideoElement }> | null>(null)
   stateRef.current = state
+  createClientRef.current = createClient
+  positionChangeRef.current = onPositionChange
   selectionChangeRef.current = onSelectionChange
+  activeRef.current = active
 
   useEffect(() => {
+    if (
+      contextJobId !== undefined &&
+      (contextJobId === null || !isCanonicalEntityId(contextJobId))
+    ) {
+      return
+    }
+
     let client: PlayerBridgeClient
     try {
-      client = createClient()
+      client = createClientRef.current()
     } catch {
       dispatch({ type: 'bridgeUnavailable' })
       return
@@ -112,6 +156,11 @@ export function PlayerPanel({
 
     let unsubscribeRead: (() => void) | null = null
     let unsubscribeSeek: (() => void) | null = null
+    const seekSession = createPlayerBridgeSession(client, requestId => {
+      if (stateRef.current.pendingSeek?.requestId !== requestId) return
+      dispatch({ type: 'seekAbandoned', requestId })
+      setSeekNotice('元動画の移動確認が時間切れになりました。時刻は確定していません。もう一度手動で移動できます。')
+    })
     try {
       unsubscribeRead = client.onPlayerReadResponse((response) => {
         dispatch({ type: 'readReceived', response })
@@ -124,6 +173,7 @@ export function PlayerPanel({
           pending !== null &&
           snapshot !== null &&
           pending.requestId === response.requestId &&
+          pending.evidenceDigest === snapshot.evidenceDigest &&
           response.result.status === 'available'
         ) {
           const expected = snapshot.frames[pending.proxyFrameSequence]
@@ -132,15 +182,23 @@ export function PlayerPanel({
             positionMatchesFrame(response.result.position, expected) &&
             videoRef.current !== null
           ) {
-            videoRef.current.currentTime = proxyTimeToDerivedMediaSeconds(
-              snapshot,
-              response.result.position.proxyPresentationTime,
-            )
+            try {
+              videoRef.current.currentTime = proxyTimeToDerivedMediaSeconds(
+                snapshot,
+                response.result.position.proxyPresentationTime,
+              )
+            } catch {
+              dispatch({ type: 'mediaUnavailable' })
+              setSeekNotice('元動画の指定時刻へ移動できませんでした。移動要求を解除しました。')
+              return
+            }
           }
         }
+        if (pending?.requestId === response.requestId) seekSession.releaseSeek(response.requestId)
         dispatch({ type: 'seekReceived', response })
       })
     } catch {
+      seekSession.dispose()
       unsubscribeRead?.()
       unsubscribeSeek?.()
       client.dispose()
@@ -149,10 +207,13 @@ export function PlayerPanel({
     }
 
     clientRef.current = client
+    seekSessionRef.current = seekSession
     return () => {
       if (clientRef.current === client) {
         clientRef.current = null
       }
+      if (seekSessionRef.current === seekSession) seekSessionRef.current = null
+      seekSession.dispose()
       try {
         unsubscribeRead?.()
         unsubscribeSeek?.()
@@ -160,11 +221,65 @@ export function PlayerPanel({
         client.dispose()
       }
     }
-  }, [createClient])
+  }, [contextJobId, dispatch])
+
+  const pausePlayback = useCallback((video: HTMLVideoElement | null): void => {
+    const hadPlaybackRequest = playbackRequestRef.current !== null
+    playbackRequestRef.current = null
+    if (video !== null && (!video.paused || hadPlaybackRequest)) video.pause()
+  }, [])
 
   useEffect(() => {
     setIsPlaying(false)
-  }, [state.snapshot?.evidenceDigest])
+    const video = videoRef.current
+    return () => pausePlayback(video)
+  }, [pausePlayback, state.snapshot?.evidenceDigest])
+
+  useEffect(() => {
+    if (active) return
+    pausePlayback(videoRef.current)
+    setIsPlaying(false)
+  }, [active, pausePlayback])
+
+  const requestRead = useCallback((jobId: string): void => {
+    if (!isCanonicalEntityId(jobId)) return
+
+    const pendingSeek = stateRef.current.pendingSeek
+    if (pendingSeek !== null) seekSessionRef.current?.abandonSeek(pendingSeek.requestId)
+    setSeekNotice(null)
+    const requestId = createRequestId()
+    dispatch({ type: 'readRequested', requestId, jobId })
+    const client = clientRef.current
+    if (client === null) {
+      dispatch({ type: 'bridgeUnavailable' })
+      return
+    }
+    try {
+      client.sendPlayerRead(requestId, jobId)
+    } catch {
+      dispatch({ type: 'bridgeSendFailed', requestId })
+    }
+  }, [dispatch])
+
+  useEffect(() => {
+    if (
+      contextJobId === undefined ||
+      contextJobId === null ||
+      !isCanonicalEntityId(contextJobId)
+    ) {
+      return
+    }
+
+    // Defer past effect setup so StrictMode replay cancels, rather than sends,
+    // the first read. A new context object for the same job does not reload.
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled) requestRead(contextJobId)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [contextJobId, requestRead])
 
   const requestSeek = useCallback((proxyFrameSequence: number): boolean => {
     const current = stateRef.current
@@ -182,12 +297,15 @@ export function PlayerPanel({
     }
 
     const requestId = createRequestId()
-    dispatch({ type: 'seekRequested', requestId, proxyFrameSequence })
     const client = clientRef.current
-    if (client === null) {
+    const session = seekSessionRef.current
+    if (client === null || session === null) {
       dispatch({ type: 'bridgeUnavailable' })
       return false
     }
+    if (!session.trackSeek(requestId)) return false
+    dispatch({ type: 'seekRequested', requestId, proxyFrameSequence })
+    setSeekNotice(null)
     try {
       client.sendPlayerSeek(
         requestId,
@@ -197,10 +315,11 @@ export function PlayerPanel({
       )
       return true
     } catch {
+      session.abandonSeek(requestId)
       dispatch({ type: 'bridgeSendFailed', requestId })
       return false
     }
-  }, [])
+  }, [dispatch])
 
   const requestSourceSeek = useCallback<PlayerSourceSeekHandler>(
     (target) => {
@@ -228,7 +347,7 @@ export function PlayerPanel({
   const currentFrame = selectCurrentFrame(state)
   useEffect(() => {
     const snapshot = state.snapshot
-    onPositionChange?.(
+    positionChangeRef.current?.(
       snapshot === null || currentFrame === null
         ? null
         : Object.freeze({
@@ -237,12 +356,12 @@ export function PlayerPanel({
             outputPresentationTime: currentFrame.outputPresentationTime,
           }),
     )
-  }, [currentFrame, onPositionChange, state.snapshot])
+  }, [currentFrame, state.snapshot])
 
   useEffect(() => {
     const snapshot = state.snapshot
     const jobId = state.jobId
-    onSelectionChange?.(
+    selectionChangeRef.current?.(
       snapshot === null || jobId === null || currentFrame === null
         ? null
         : Object.freeze({
@@ -253,36 +372,25 @@ export function PlayerPanel({
             frame: currentFrame,
           }),
     )
-  }, [currentFrame, onSelectionChange, state.jobId, state.snapshot])
+  }, [currentFrame, state.jobId, state.snapshot])
 
-  useEffect(() => () => selectionChangeRef.current?.(null), [])
+  useEffect(() => () => {
+    positionChangeRef.current?.(null)
+    selectionChangeRef.current?.(null)
+  }, [])
   const canLoad =
     isCanonicalEntityId(state.jobIdInput) && state.status !== 'loading'
   const seekDisabled =
     state.snapshot === null || state.pendingSeek !== null || state.jobId === null
+  const contextMessage = contextJobId === null
+    ? 'プレビューする取込ジョブが選択されていません'
+    : contextJobId !== undefined && !isCanonicalEntityId(contextJobId)
+      ? '選択した取込ジョブを確認できません'
+      : null
 
   const submitRead = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
-    if (!isCanonicalEntityId(state.jobIdInput)) {
-      return
-    }
-
-    const requestId = createRequestId()
-    dispatch({
-      type: 'readRequested',
-      requestId,
-      jobId: state.jobIdInput,
-    })
-    const client = clientRef.current
-    if (client === null) {
-      dispatch({ type: 'bridgeUnavailable' })
-      return
-    }
-    try {
-      client.sendPlayerRead(requestId, state.jobIdInput)
-    } catch {
-      dispatch({ type: 'bridgeSendFailed', requestId })
-    }
+    if (activeRef.current && canLoad) requestRead(state.jobIdInput)
   }
 
   const onTimelineChange = (event: ChangeEvent<HTMLInputElement>): void => {
@@ -292,20 +400,40 @@ export function PlayerPanel({
 
   const togglePlayback = (): void => {
     const video = videoRef.current
-    if (video === null) {
+    if (video === null || !activeRef.current) {
       return
     }
-    if (video.paused) {
-      void video.play().catch(() => {
-        setIsPlaying(false)
-        dispatch({ type: 'mediaUnavailable' })
-      })
+    if (video.paused && playbackRequestRef.current === null) {
+      const playbackRequest = { video }
+      playbackRequestRef.current = playbackRequest
+      void video.play()
+        .then(() => {
+          if (
+            videoRef.current !== video ||
+            !activeRef.current ||
+            playbackRequestRef.current === null
+          ) {
+            if (!video.paused) video.pause()
+          }
+        })
+        .catch(() => {
+          if (
+            videoRef.current !== video ||
+            !activeRef.current ||
+            playbackRequestRef.current !== playbackRequest
+          ) return
+          playbackRequestRef.current = null
+          setIsPlaying(false)
+          dispatch({ type: 'mediaUnavailable' })
+        })
     } else {
-      video.pause()
+      pausePlayback(video)
+      setIsPlaying(false)
     }
   }
 
   const onPlayerKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (!activeRef.current) return
     if (event.key === ' ') {
       event.preventDefault()
       togglePlayback()
@@ -335,44 +463,59 @@ export function PlayerPanel({
   }
 
   return (
-    <section className="player-card" aria-labelledby="player-title">
+    <section
+      className={context === undefined ? 'player-card' : 'player-card player-workflow'}
+      aria-labelledby="player-title"
+      hidden={!active}
+      inert={!active}
+      data-preview-kind="proxy"
+      data-output-verification="not-verified"
+    >
       <div className="player-heading">
         <div>
-          <p className="eyebrow">Canonical preview</p>
-          <h2 id="player-title">代理動画プレイヤー</h2>
+          {context === undefined ? <p className="eyebrow">Canonical preview</p> : null}
+          <h2 id="player-title">{context === undefined ? '代理動画プレイヤー' : 'プレビュー'}</h2>
         </div>
         <p className="player-status" role="status" data-player-status={state.status}>
-          {statusMessages[state.status]}
+          {contextMessage ?? statusMessages[state.status]}
         </p>
       </div>
 
-      <form className="player-load-form" onSubmit={submitRead}>
-        <label htmlFor="player-job-id">取込ジョブ ID</label>
-        <div className="player-load-row">
-          <input
-            id="player-job-id"
-            name="playerJobId"
-            type="text"
-            inputMode="text"
-            autoComplete="off"
-            spellCheck={false}
-            minLength={36}
-            maxLength={36}
-            pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-            value={state.jobIdInput}
-            aria-describedby="player-job-help"
-            onChange={(event) => {
-              dispatch({ type: 'jobIdChanged', value: event.currentTarget.value })
-            }}
-          />
-          <button type="submit" disabled={!canLoad}>
-            プレビューを開く
-          </button>
-        </div>
-        <p id="player-job-help" className="field-help">
-          完了した媒体取込ジョブの小文字 UUID を指定します。
+      {seekNotice !== null && <p className="player-seek-notice" role={active ? 'status' : undefined}>{seekNotice}</p>}
+
+      {context === undefined ? (
+        <form className="player-load-form" onSubmit={submitRead}>
+          <label htmlFor="player-job-id">取込ジョブ ID</label>
+          <div className="player-load-row">
+            <input
+              id="player-job-id"
+              name="playerJobId"
+              type="text"
+              inputMode="text"
+              autoComplete="off"
+              spellCheck={false}
+              minLength={36}
+              maxLength={36}
+              pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+              value={state.jobIdInput}
+              aria-describedby="player-job-help"
+              onChange={(event) => {
+                dispatch({ type: 'jobIdChanged', value: event.currentTarget.value })
+              }}
+            />
+            <button type="submit" disabled={!canLoad}>
+              プレビューを開く
+            </button>
+          </div>
+          <p id="player-job-help" className="field-help">
+            完了した媒体取込ジョブの小文字 UUID を指定します。
+          </p>
+        </form>
+      ) : (
+        <p className="player-preview-kind">
+          代理動画プレビューです。最終出力の画質・コーデックを検証するものではありません。
         </p>
-      </form>
+      )}
 
       {state.snapshot === null ? (
         <div className="player-empty" aria-hidden={state.status === 'loading'}>
@@ -406,11 +549,30 @@ export function PlayerPanel({
               aria-hidden={previewModes.audioOnly ? 'true' : undefined}
               preload="metadata"
               onCanPlay={() => dispatch({ type: 'mediaAvailable' })}
-              onPlay={() => setIsPlaying(true)}
-              onPause={() => setIsPlaying(false)}
-              onEnded={() => setIsPlaying(false)}
-              onError={() => {
+              onPlay={(event) => {
+                if (
+                  !activeRef.current ||
+                  playbackRequestRef.current?.video !== event.currentTarget
+                ) {
+                  pausePlayback(event.currentTarget)
+                  setIsPlaying(false)
+                  return
+                }
+                setIsPlaying(true)
+              }}
+              onPause={() => {
+                playbackRequestRef.current = null
                 setIsPlaying(false)
+              }}
+              onEnded={() => {
+                playbackRequestRef.current = null
+                setIsPlaying(false)
+              }}
+              onError={() => {
+                playbackRequestRef.current = null
+                setIsPlaying(false)
+                const pendingSeek = stateRef.current.pendingSeek
+                if (pendingSeek !== null) seekSessionRef.current?.abandonSeek(pendingSeek.requestId)
                 dispatch({ type: 'mediaUnavailable' })
               }}
               onTimeUpdate={onTimeUpdate}

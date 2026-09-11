@@ -132,7 +132,7 @@ docs/
 
    `packaging/`には上記のほか`python-dependency-lock.md`があり、`reviews/`にはV2各task、統合、OSL、設定store等の追加レビュー文書があります。上のツリーは入口となる代表文書であり、ディレクトリ内の全ファイル一覧ではありません。
 
-`benchmarks/` の code、fixture manifest、schema、canonical result、`test/` の検証証拠、`work/` の日付付き作業成果物は、読者向けガイドではないため各成果物の近くに残します。
+`benchmarks/` の code、fixture manifest、schema、canonical result、`test/` の検証証拠は、読者向けガイドではないため各成果物の近くに残します。一時作業記録はルートの作業領域に恒久参照せず、必要な内容だけを `docs/dev/` や `artifacts/validation/` の恒久記録へ昇格します。
 
 ## 文書の更新規則
 

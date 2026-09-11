@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { within } from '@testing-library/dom'
 import { act, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -10,46 +11,41 @@ import type { BridgeMessageEvent, BridgeTransport } from './bridge'
 import { ComparisonStateProvider } from './features/compare'
 import { DeliveryStateProvider } from './features/delivery'
 import { LayoutStateProvider } from './features/layout'
+import { PlayerNavigationProvider } from './features/player'
 import { PreviewModeProvider } from './features/preview-modes'
 import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
 import { ReviewStateProvider } from './features/review'
-import { SettingsStateProvider } from './features/settings'
+import { SettingsWorkspaceStateProvider } from './features/settings'
 import { AppStateProvider } from './state'
 
 describe('App', () => {
-  it('renders the initial host synchronization status and action', () => {
+  it('renders a compact host status and one of four workflow screens without raw ID forms', () => {
     const markup = renderToStaticMarkup(appTree())
-
-    expect(markup).toContain('Movie Creator')
-    expect(markup).toContain('ホスト接続は未確認です')
-    expect(markup).toContain('ホスト接続を確認')
-    expect(markup).toContain('案件一覧')
-    expect(markup).toContain('新しい案件')
-    expect(markup).toContain('ジョブの進行状況')
-    expect(markup).toContain('プレビューモード')
-    expect(markup).toContain('動画・媒体のプレビュー根拠がありません')
-    expect(markup).toContain('文字起こし編集')
-    expect(markup).toContain('編集タイムライン')
-    expect(markup).toContain('Canvas は表示専用')
-    expect(markup).toContain('縦型レイアウト・字幕・テロップ')
-    expect(markup).toContain('レイアウトは未選択です')
-    expect(markup).toContain('構成版の比較')
-    expect(markup).toContain('比較結果はまだありません')
-    expect(markup).toContain('レビュー・コメント・承認')
-    expect(markup).toContain('レビュー対象は未選択です')
-    expect(markup).toContain('手動サムネイル生成')
-    expect(markup).toContain('案件設定')
-    expect(markup).toContain('プレイヤーで正確なフレームを選択してください')
-    expect(markup).toContain('<form')
-    expect(markup).toContain('for="job-id"')
-    expect(markup).toContain('id="job-id"')
-    expect(markup).toContain('type="submit"')
-    expect(markup).toContain(
-      '<a class="skip-link" href="#project-content">メインコンテンツへ移動</a>',
-    )
-    expect(markup).toContain(
-      '<div id="project-content" tabindex="-1">',
-    )
+    const container = document.createElement('div')
+    container.innerHTML = markup
+    document.body.append(container)
+    try {
+      expect(markup).toContain('Movie Creator')
+      expect(markup).toContain('ホスト接続は未確認です')
+      expect(within(container).getAllByRole('tab').map(tab => tab.textContent))
+        .toEqual(['元動画', '自動編集', '仕上がり', '保存'])
+      expect(within(container).getAllByRole('tabpanel')).toHaveLength(1)
+      expect(within(container).getByRole('tabpanel', { name: '元動画' }).id)
+        .toBe('workflow-panel-source')
+      expect(within(container).getByRole('heading', { name: '案件一覧' })).toBeTruthy()
+      expect(within(container).getByRole('button', { name: '元動画を選ぶ' })).toBeTruthy()
+      expect(within(container).getByRole('button', { name: '設定' })).toBeTruthy()
+      expect(within(container).queryByRole('heading', { name: 'ジョブの進行状況' })).toBeNull()
+      expect(within(container).queryByRole('heading', { name: '文字起こし編集' })).toBeNull()
+      expect(container.querySelector('.workflow-connection button')).toBeNull()
+      expect(container.querySelector('form, #job-id, #player-job-id, #timeline-project-id, #review-version-id, #delivery-version-id')).toBeNull()
+      expect(markup).toContain(
+        '<a class="skip-link" href="#project-content">メインコンテンツへ移動</a>',
+      )
+      expect(container.querySelector<HTMLElement>('#project-content')?.tabIndex).toBe(-1)
+    } finally {
+      container.remove()
+    }
   })
 
   it('requires the application state provider', () => {
@@ -164,6 +160,26 @@ describe('App', () => {
     )
   })
 
+  it('requires the workspace settings provider, not the legacy settings provider', () => {
+    expect(() => renderToStaticMarkup(
+      <AppStateProvider>
+        <ProjectStateProvider>
+          <PreviewModeProvider>
+            <PlayerNavigationProvider>
+              <ComparisonStateProvider>
+                <ReviewStateProvider>
+                  <DeliveryStateProvider>
+                    <LayoutStateProvider><App /></LayoutStateProvider>
+                  </DeliveryStateProvider>
+                </ReviewStateProvider>
+              </ComparisonStateProvider>
+            </PlayerNavigationProvider>
+          </PreviewModeProvider>
+        </ProjectStateProvider>
+      </AppStateProvider>,
+    )).toThrow('useSettingsWorkspace must be used within SettingsWorkspaceStateProvider.')
+  })
+
   describe('startup handshake', () => {
     let container: HTMLDivElement
     let root: Root
@@ -265,6 +281,28 @@ describe('App', () => {
       expect(container.querySelector('[data-sync-status]')
         ?.getAttribute('data-sync-status')).toBe('error')
     })
+
+    it('offers retry only after failure and still requires a correlated acknowledgement', async () => {
+      const send = vi.spyOn(transport, 'postMessage').mockImplementation(() => {
+        throw new Error('Web messages unavailable.')
+      })
+      await act(async () => root.render(appTree()))
+      const retry = within(container).getByRole('button', { name: '接続を再試行' })
+      expect(retry.closest('.workflow-header')).not.toBeNull()
+
+      send.mockImplementation(message => { requests.push(message) })
+      await act(async () => { retry.click() })
+      expect(container.querySelector('[data-sync-status]')?.getAttribute('data-sync-status')).toBe('pending')
+      expect(within(container).queryByRole('button', { name: '接続を再試行' })).toBeNull()
+      const ping = requests.filter(request => request.method === 'bridge.ping').at(-1)!
+      act(() => {
+        for (const listener of listeners) listener({ data: {
+          version: 1, method: 'bridge.ping', requestId: ping.requestId, result: { protocolVersion: 1 },
+        } })
+      })
+      expect(container.querySelector('[data-sync-status]')?.getAttribute('data-sync-status')).toBe('acknowledged')
+      expect(container.querySelector('.workflow-connection button')).toBeNull()
+    })
   })
 })
 
@@ -277,9 +315,11 @@ function appTree() {
             <ReviewStateProvider>
               <DeliveryStateProvider>
                 <LayoutStateProvider>
-                  <SettingsStateProvider>
-                    <App />
-                  </SettingsStateProvider>
+                  <PlayerNavigationProvider>
+                    <SettingsWorkspaceStateProvider>
+                      <App />
+                    </SettingsWorkspaceStateProvider>
+                  </PlayerNavigationProvider>
                 </LayoutStateProvider>
               </DeliveryStateProvider>
             </ReviewStateProvider>

@@ -6,9 +6,14 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using HubRadio.Core.Compositions;
+using HubRadio.Core.Evaluation;
 using HubRadio.Core.Identity;
+using HubRadio.Core.Jobs;
 using HubRadio.Core.Projects;
 using HubRadio.Core.Serialization;
+using HubRadio.Core.Settings;
+using HubRadio.Core.Workflow;
 using HubRadio.Infrastructure.Audit;
 using HubRadio.Infrastructure.Backup;
 using HubRadio.Infrastructure.Database;
@@ -25,6 +30,274 @@ namespace HubRadio.Infrastructure.Tests;
 public sealed class BackupServiceTests
 {
     private const string SchemaRelativePath = "schemas/backup-manifest.schema.json";
+
+    [TestMethod]
+    public async Task BackupAndRestoreRoundTripSubtitleJournalAndExactReplay()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        CompositionVersion root = CreateBackupSubtitleRoot(fixture);
+        var store = new SubtitleEditStore(fixture.DatabasePath);
+        SubtitleEditCommit firstCommit = CreateBackupSubtitleEdit(root);
+        StoredSubtitleEdit first = store.Commit(firstCommit);
+        SubtitleEditCommit secondCommit = CreateBackupSubtitleEdit(root, firstCommit.ChildVersion, 1, first.ResultSnapshotDigest);
+        StoredSubtitleEdit second = store.Commit(secondCommit);
+        BackupResult backup = await fixture.Service.CreateBackupAsync();
+        string snapshotPath = Path.Combine(fixture.GetBackupDirectory(backup), "payload", "hubradio.db");
+        IReadOnlyList<StoredSubtitleEdit> snapshot = new SubtitleEditStore(snapshotPath).ReadBranch(root.ProjectId, root.Id);
+        CollectionAssert.AreEqual(new[] { first.CommitCanonicalJson, second.CommitCanonicalJson },
+            snapshot.Select(row => row.CommitCanonicalJson).ToArray());
+        Assert.AreEqual(first.RecordDigest, snapshot[1].PreviousRecordDigest);
+        SubtitleEditStore.ValidateAll(snapshotPath);
+
+        SubtitleEditCommit laterCommit = CreateBackupSubtitleEdit(root, secondCommit.ChildVersion, 2, second.ResultSnapshotDigest);
+        _ = store.Commit(laterCommit);
+        Assert.AreEqual(3, store.ReadBranch(root.ProjectId, root.Id).Count);
+        _ = await fixture.Service.RestoreBackupAsync(backup.BackupId);
+
+        var restored = new SubtitleEditStore(fixture.DatabasePath);
+        IReadOnlyList<StoredSubtitleEdit> branch = restored.ReadBranch(root.ProjectId, root.Id);
+        CollectionAssert.AreEqual(new[] { first.RecordDigest, second.RecordDigest },
+            branch.Select(row => row.RecordDigest).ToArray());
+        Assert.AreEqual(first.RecordDigest, restored.Commit(firstCommit).RecordDigest);
+        Assert.AreEqual(second.RecordDigest, restored.Commit(secondCommit).RecordDigest);
+        Assert.AreEqual(2L, ExecuteScalarInt64(fixture.DatabasePath, "SELECT COUNT(*) FROM subtitle_edits;"));
+        var versions = new ProjectStore(fixture.DatabasePath);
+        Assert.AreEqual(firstCommit.ChildCanonicalJson, versions.GetCompositionVersion(first.ChildVersionId)!.CanonicalJson);
+        Assert.AreEqual(secondCommit.ChildCanonicalJson, versions.GetCompositionVersion(second.ChildVersionId)!.CanonicalJson);
+        Assert.IsNull(versions.GetCompositionVersion(laterCommit.ChildVersion.Id));
+        SubtitleEditStore.ValidateAll(fixture.DatabasePath);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task BackupOrRestoreRejectsSubtitleJournalCorruptionDespiteExactSchemaAndResignedHash(bool restore)
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        CompositionVersion root = CreateBackupSubtitleRoot(fixture);
+        _ = new SubtitleEditStore(fixture.DatabasePath).Commit(CreateBackupSubtitleEdit(root));
+        BackupResult? backup = restore ? await fixture.Service.CreateBackupAsync() : null;
+        string path = backup is null ? fixture.DatabasePath :
+            Path.Combine(fixture.GetBackupDirectory(backup), "payload", "hubradio.db");
+        using (SqliteConnection connection = OpenConnection(path))
+        using (SqliteCommand command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT sql FROM sqlite_schema WHERE name = 'trg_subtitle_edits_update';";
+            string trigger = (string)command.ExecuteScalar()!;
+            command.CommandText = "DROP TRIGGER trg_subtitle_edits_update;";
+            command.ExecuteNonQuery();
+            try
+            {
+                command.CommandText = "UPDATE subtitle_edits SET commit_digest = $digest;";
+                command.Parameters.AddWithValue("$digest", new string('f', 64));
+                Assert.AreEqual(1, command.ExecuteNonQuery());
+            }
+            finally
+            {
+                command.Parameters.Clear();
+                command.CommandText = trigger;
+                command.ExecuteNonQuery();
+            }
+        }
+        DatabaseMigrator.ValidateCurrentDatabase(path);
+        Assert.ThrowsExactly<InvalidOperationException>(() => SubtitleEditStore.ValidateAll(path));
+        if (backup is not null)
+        {
+            ResignDatabaseRecord(fixture.GetManifestPath(backup), path);
+            IReadOnlyDictionary<string, ContentDigest> before = SnapshotFileTree(fixture.WorkspacePath);
+            BackupServiceException failure = await Assert.ThrowsExactlyAsync<BackupServiceException>(
+                () => fixture.Service.RestoreBackupAsync(backup.BackupId));
+            Assert.AreEqual(BackupServiceFailureReason.BackupContentInvalid, failure.Reason);
+            AssertFileTreesEqual(before, SnapshotFileTree(fixture.WorkspacePath));
+            AssertNoPreviousWorkspace(fixture);
+            AssertNoRestoreStaging(fixture);
+        }
+        else
+        {
+            BackupServiceException failure = await Assert.ThrowsExactlyAsync<BackupServiceException>(
+                () => fixture.Service.CreateBackupAsync());
+            Assert.AreEqual(BackupServiceFailureReason.SourceWorkspaceInvalid, failure.Reason);
+            Assert.IsFalse(Directory.EnumerateDirectories(fixture.BackupRootPath, "backup-*").Any());
+        }
+    }
+
+    private static CompositionVersion CreateBackupSubtitleRoot(BackupServiceTestFixture fixture)
+    {
+        var seed = new SourceOnlyExecutionTestSeed(fixture.DatabasePath, fixture.CurrentSid);
+        _ = seed.Finalize();
+        CompositionVersion root = seed.AppendStandardVersion();
+        var jobs = new JobStore(fixture.DatabasePath);
+        _ = jobs.CancelQueued(seed.Request.RootJobId, 0, root.CreatedAt);
+        _ = jobs.CancelQueued(seed.Request.IngestJobId, 0, root.CreatedAt);
+        return root;
+    }
+
+    private static SubtitleEditCommit CreateBackupSubtitleEdit(CompositionVersion root,
+        CompositionVersion? parent = null, int sequence = 0, ContentDigest? parentSnapshot = null)
+    {
+        static ContentDigest Hash(string value) => ContentDigest.Compute(Encoding.UTF8.GetBytes(value));
+        parent ??= root;
+        DateTimeOffset at = parent.CreatedAt.AddSeconds(1);
+        const string reason = "Subtitle correction";
+        var child = new CompositionVersion(EntityId<CompositionVersionIdTag>.New(), root.ProjectId,
+            parent.Id, root.CreatedByActorId, at, reason, parent.ContentDigest, parent.Elements);
+        string operation = CanonicalJson.Canonicalize(JsonSerializer.Serialize(new
+        {
+            kind = "editSubtitle",
+            cueId = Guid.NewGuid().ToString("D"),
+            expectedRevisionId = Guid.NewGuid().ToString("D"),
+            expectedRevisionDigest = Hash("previous cue revision").Hex,
+            reason,
+            edit = new { kind = "text", text = $"字幕 {sequence + 1}" },
+        }));
+        return new(Guid.NewGuid(), root.ProjectId, root.Id, parent.Id, child,
+            SourceOnlyExecutionTestSeed.VersionPayload(child), sequence, Hash("generated subtitle input"),
+            parentSnapshot ?? Hash("initial subtitle snapshot"), Hash($"subtitle result:{child.Id}"), operation,
+            new[] { child.Id.Value, Guid.NewGuid(), Guid.NewGuid() }, root.CreatedByActorId, at,
+            ExpectedRootPayloadDigest: Hash(SourceOnlyExecutionTestSeed.VersionPayload(root)));
+    }
+
+    [TestMethod]
+    public async Task BackupAndRestoreRetainSourceOnlyAcceptanceSnapshotAndProtectedLocator()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        var seed = new SourceOnlyExecutionTestSeed(fixture.DatabasePath, fixture.CurrentSid);
+        StoredSourceOnlyExecution accepted = seed.Finalize([1, 2, 3]);
+        // No worker is running in this backup fixture. Cancel the actual queued Jobs.
+        var jobs = new JobStore(fixture.DatabasePath);
+        _ = jobs.CancelQueued(seed.Request.RootJobId, 0, seed.Request.CreatedAt);
+        _ = jobs.CancelQueued(seed.Request.IngestJobId, 0, seed.Request.CreatedAt);
+        BackupResult backup = await fixture.Service.CreateBackupAsync();
+        string snapshotPath = Path.Combine(fixture.GetBackupDirectory(backup), "payload", "hubradio.db");
+        var snapshotStore = new SourceOnlyExecutionStore(snapshotPath);
+        Assert.AreEqual(accepted.RequestDigest, snapshotStore.GetByDraft(seed.Draft.Id)!.RequestDigest);
+        CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, snapshotStore.GetProtectedSourceLocator(seed.Request.ExecutionId)!);
+        Assert.AreEqual(1L, ExecuteScalarInt64(snapshotPath, "SELECT COUNT(*) FROM source_only_executions;"));
+        SourceOnlyExecutionStore.ValidateAll(snapshotPath);
+
+        _ = seed.Store.UpdateState(seed.Request.ExecutionId, 0, SourceOnlyExecutionPhase.Canceled);
+        _ = await fixture.Service.RestoreBackupAsync(backup.BackupId);
+
+        var restored = new SourceOnlyExecutionStore(fixture.DatabasePath);
+        Assert.AreEqual(accepted.StateDigest, restored.Get(seed.Request.ExecutionId)!.StateDigest);
+        Assert.AreEqual(accepted.Request.SettingsSnapshot.CanonicalJson,
+            restored.Get(seed.Request.ExecutionId)!.Request.SettingsSnapshot.CanonicalJson);
+        CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, restored.GetProtectedSourceLocator(seed.Request.ExecutionId)!);
+        SourceOnlyExecutionStore.ValidateAll(fixture.DatabasePath);
+    }
+
+    [TestMethod]
+    public async Task CreateBackupRejectsSourceOnlyStateCorruptionWithOtherwiseExactSchema()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        var seed = new SourceOnlyExecutionTestSeed(fixture.DatabasePath, fixture.CurrentSid);
+        _ = seed.Finalize();
+        SourceOnlyExecutionTestSeed.Corrupt(fixture.DatabasePath, "state-hash");
+        DatabaseMigrator.ValidateCurrentDatabase(fixture.DatabasePath);
+        Assert.ThrowsExactly<InvalidOperationException>(() => SourceOnlyExecutionStore.ValidateAll(fixture.DatabasePath));
+        BackupServiceException failure = await Assert.ThrowsExactlyAsync<BackupServiceException>(
+            () => fixture.Service.CreateBackupAsync());
+        Assert.AreEqual(BackupServiceFailureReason.SourceWorkspaceInvalid, failure.Reason);
+        Assert.IsFalse(Directory.EnumerateDirectories(fixture.BackupRootPath, "backup-*").Any());
+    }
+
+    [TestMethod]
+    public async Task RestoreRejectsSourceOnlyCorruptionEvenWithResignedDatabaseHash()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        var seed = new SourceOnlyExecutionTestSeed(fixture.DatabasePath, fixture.CurrentSid);
+        _ = seed.Finalize();
+        BackupResult backup = await fixture.Service.CreateBackupAsync();
+        string snapshotPath = Path.Combine(fixture.GetBackupDirectory(backup), "payload", "hubradio.db");
+        SourceOnlyExecutionTestSeed.Corrupt(snapshotPath, "request-hash");
+        DatabaseMigrator.ValidateCurrentDatabase(snapshotPath);
+        ResignDatabaseRecord(fixture.GetManifestPath(backup), snapshotPath);
+        IReadOnlyDictionary<string, ContentDigest> before = SnapshotFileTree(fixture.WorkspacePath);
+        BackupServiceException failure = await Assert.ThrowsExactlyAsync<BackupServiceException>(
+            () => fixture.Service.RestoreBackupAsync(backup.BackupId));
+        Assert.AreEqual(BackupServiceFailureReason.BackupContentInvalid, failure.Reason);
+        AssertFileTreesEqual(before, SnapshotFileTree(fixture.WorkspacePath));
+        AssertNoPreviousWorkspace(fixture);
+    }
+
+    [TestMethod]
+    public async Task BackupAndRestoreRetainCompletedSourceOnlyDomainResult()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        var seed = new SourceOnlyExecutionTestSeed(fixture.DatabasePath, fixture.CurrentSid);
+        _ = seed.Finalize();
+        seed.CompleteIngest();
+        CompositionVersion version = seed.AppendVersion();
+        _ = seed.Store.UpdateState(seed.Request.ExecutionId, 0, SourceOnlyExecutionPhase.Delivering);
+        StoredSourceOnlyExecution completed = seed.Store.UpdateState(seed.Request.ExecutionId, 1,
+            SourceOnlyExecutionPhase.Completed, seed.ResultJson(seed.Request, version), version.Id, version.ContentDigest);
+        _ = new JobStore(fixture.DatabasePath).CancelQueued(seed.Request.RootJobId, 0, version.CreatedAt);
+        BackupResult backup = await fixture.Service.CreateBackupAsync();
+        string snapshotPath = Path.Combine(fixture.GetBackupDirectory(backup), "payload", "hubradio.db");
+        StoredSourceOnlyExecution copied = new SourceOnlyExecutionStore(snapshotPath).Get(seed.Request.ExecutionId)!;
+        Assert.AreEqual(completed.StateDigest, copied.StateDigest);
+        Assert.AreEqual(completed.ResultJson, copied.ResultJson);
+        Assert.AreEqual(version.ContentDigest, copied.VersionDigest);
+        Assert.AreEqual(SourceOnlyExecutionTestSeed.VersionPayload(version),
+            new ProjectStore(snapshotPath).GetCompositionVersion(version.Id)!.CanonicalJson);
+        _ = await fixture.Service.RestoreBackupAsync(backup.BackupId);
+        Assert.AreEqual(completed.StateDigest,
+            new SourceOnlyExecutionStore(fixture.DatabasePath).Get(seed.Request.ExecutionId)!.StateDigest);
+        SourceOnlyExecutionStore.ValidateAll(fixture.DatabasePath);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task BackupOrRestoreRejectsInvalidSourceOnlyVersionDomainDespiteValidSchemaAndDatabaseHash(bool restore)
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        var seed = new SourceOnlyExecutionTestSeed(fixture.DatabasePath, fixture.CurrentSid);
+        _ = seed.Finalize();
+        CompositionVersion version = seed.AppendVersion();
+        _ = seed.Store.UpdateState(seed.Request.ExecutionId, 0, SourceOnlyExecutionPhase.Composing,
+            versionId: version.Id, digest: version.ContentDigest);
+        var jobs = new JobStore(fixture.DatabasePath);
+        _ = jobs.CancelQueued(seed.Request.RootJobId, 0, version.CreatedAt);
+        _ = jobs.CancelQueued(seed.Request.IngestJobId, 0, version.CreatedAt);
+        BackupResult? backup = restore ? await fixture.Service.CreateBackupAsync() : null;
+        string path = backup is null ? fixture.DatabasePath :
+            Path.Combine(fixture.GetBackupDirectory(backup), "payload", "hubradio.db");
+        using (SqliteConnection connection = OpenConnection(path))
+        using (SqliteCommand command = connection.CreateCommand())
+        {
+            command.CommandText = "UPDATE composition_versions SET payload = $payload WHERE id = $id;";
+            command.Parameters.AddWithValue("$payload", Encoding.UTF8.GetBytes("{}"));
+            command.Parameters.AddWithValue("$id", version.Id.ToString());
+            Assert.AreEqual(1, command.ExecuteNonQuery());
+        }
+        DatabaseMigrator.ValidateCurrentDatabase(path);
+        Assert.ThrowsExactly<InvalidOperationException>(() => SourceOnlyExecutionStore.ValidateAll(path));
+        if (backup is not null)
+        {
+            ResignDatabaseRecord(fixture.GetManifestPath(backup), path);
+            IReadOnlyDictionary<string, ContentDigest> before = SnapshotFileTree(fixture.WorkspacePath);
+            BackupServiceException failure = await Assert.ThrowsExactlyAsync<BackupServiceException>(
+                () => fixture.Service.RestoreBackupAsync(backup.BackupId));
+            Assert.AreEqual(BackupServiceFailureReason.BackupContentInvalid, failure.Reason);
+            AssertFileTreesEqual(before, SnapshotFileTree(fixture.WorkspacePath));
+            AssertNoPreviousWorkspace(fixture);
+        }
+        else
+        {
+            BackupServiceException failure = await Assert.ThrowsExactlyAsync<BackupServiceException>(
+                () => fixture.Service.CreateBackupAsync());
+            Assert.AreEqual(BackupServiceFailureReason.SourceWorkspaceInvalid, failure.Reason);
+            Assert.IsFalse(Directory.EnumerateDirectories(fixture.BackupRootPath, "backup-*").Any());
+        }
+    }
 
     [TestMethod]
     public async Task CreateBackupAsync_UsesFilteredSnapshotCanonicalManifestAndLeavesSourceUnchanged()
@@ -212,6 +485,193 @@ public sealed class BackupServiceTests
         Assert.AreEqual(
             0,
             (await fixture.Service.ListIncompleteCutoversAsync()).Count);
+    }
+
+    [TestMethod]
+    public async Task BackupAndRestoreRoundTripAutomatedEvaluationCanonicalEvidence()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        EntityId<ProjectIdTag> projectId = fixture.CreateProjectWithBusinessRows();
+        StoredArtifact artifact = (await fixture.CreateArtifactsAsync(
+            projectId,
+            [ArtifactKind.Render])).Single();
+        InsertAutomatedEvaluationSettingsProfile(fixture.DatabasePath);
+        (EntityId<CompositionVersionIdTag> versionId, ContentDigest versionDigest) =
+            ReadOnlyCompositionVersionBinding(fixture.DatabasePath, projectId);
+        var sourceStore = new AutomatedEvaluationStore(fixture.DatabasePath);
+        AutomatedEvaluationRun backedUp = CreateAutomatedEvaluationRun(
+            EntityId<AutomatedEvaluationIdTag>.New(),
+            projectId,
+            versionId,
+            versionDigest,
+            artifact,
+            BackupServiceTestFixture.CreatedAt.AddMinutes(-1));
+        _ = sourceStore.Append(backedUp);
+
+        BackupResult backup = await fixture.Service.CreateBackupAsync();
+        string snapshotDatabasePath = Path.Combine(
+            fixture.GetBackupDirectory(backup),
+            "payload",
+            "hubradio.db");
+        AutomatedEvaluationRun snapshotRun =
+            new AutomatedEvaluationStore(snapshotDatabasePath).Get(backedUp.EvaluationId)
+            ?? throw new AssertFailedException(
+                "The evaluation was not retained in the backup snapshot.");
+        Assert.AreEqual(backedUp.CanonicalJson, snapshotRun.CanonicalJson);
+        Assert.AreEqual(backedUp.CanonicalDigest, snapshotRun.CanonicalDigest);
+
+        AutomatedEvaluationRun afterBackup = CreateAutomatedEvaluationRun(
+            EntityId<AutomatedEvaluationIdTag>.New(),
+            projectId,
+            versionId,
+            versionDigest,
+            artifact,
+            BackupServiceTestFixture.CreatedAt.AddMinutes(1));
+        _ = sourceStore.Append(afterBackup);
+        Assert.IsNotNull(sourceStore.Get(afterBackup.EvaluationId));
+
+        _ = await fixture.Service.RestoreBackupAsync(backup.BackupId);
+
+        var restoredStore = new AutomatedEvaluationStore(fixture.DatabasePath);
+        AutomatedEvaluationRun restored = restoredStore.Get(backedUp.EvaluationId)
+            ?? throw new AssertFailedException(
+                "The evaluation was not restored from the backup snapshot.");
+        Assert.AreEqual(backedUp.CanonicalJson, restored.CanonicalJson);
+        Assert.AreEqual(backedUp.CanonicalDigest, restored.CanonicalDigest);
+        Assert.IsNull(restoredStore.Get(afterBackup.EvaluationId));
+    }
+
+    [TestMethod]
+    public async Task BackupAndRestoreRoundTripQuickStartWorkflowStateAndEvents()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        EntityId<ProjectIdTag> projectId = fixture.CreateProjectWithBusinessRows();
+        var project = new Project(
+            projectId,
+            "Backup test project",
+            "Exercise verified backup and restore.",
+            "Test suite",
+            PublicationScope.InternalOnly,
+            deadline: null,
+            assets: [],
+            performers: []);
+        _ = new ProjectStore(fixture.DatabasePath).UpdateProject(
+            project,
+            JsonSerializer.Serialize(new
+            {
+                id = project.Id.ToString(),
+                contentName = project.ContentName,
+                purpose = project.Purpose,
+                audience = project.Audience,
+                publicationScope = "internalOnly",
+                assets = Array.Empty<object>(),
+                performers = Array.Empty<object>(),
+            }),
+            expectedRevision: 0,
+            BackupServiceTestFixture.CreatedAt.AddMinutes(-3));
+        StoredArtifact artifact = (await fixture.CreateArtifactsAsync(
+            projectId,
+            [ArtifactKind.Render])).Single();
+        InsertAutomatedEvaluationSettingsProfile(fixture.DatabasePath);
+        (EntityId<CompositionVersionIdTag> versionId, ContentDigest versionDigest) =
+            ReadOnlyCompositionVersionBinding(fixture.DatabasePath, projectId);
+
+        var binding = new QuickStartWorkflowBinding(
+            projectId,
+            versionId,
+            versionDigest);
+        QuickStartActor userActor = QuickStartActor.User(fixture.CurrentSid);
+        QuickStartActor systemActor = QuickStartActor.System(
+            QuickStartSystemActor.AutomatedEvaluation);
+        var sourceStore = new QuickStartWorkflowStore(fixture.DatabasePath);
+        QuickStartWorkflow backedUp = sourceStore.Append(
+            QuickStartWorkflowEvent.StartedEditing(
+                EntityId<QuickStartWorkflowEventIdTag>.New(),
+                binding,
+                userActor,
+                BackupServiceTestFixture.CreatedAt.AddMinutes(-2)),
+            expectedRevision: 0);
+        backedUp = sourceStore.Append(
+            QuickStartWorkflowEvent.EvaluationStarted(
+                EntityId<QuickStartWorkflowEventIdTag>.New(),
+                binding,
+                systemActor,
+                BackupServiceTestFixture.CreatedAt.AddSeconds(-90),
+                new ContentDigest(new string('d', 64)),
+                sourceStore.GetCurrentProjectSnapshot(projectId)),
+            backedUp.Revision);
+        AutomatedEvaluationRun evaluation = CreateAutomatedEvaluationRun(
+            EntityId<AutomatedEvaluationIdTag>.New(),
+            projectId,
+            versionId,
+            versionDigest,
+            artifact,
+            BackupServiceTestFixture.CreatedAt.AddMinutes(-1),
+            inputDigest: backedUp.GetEvaluationInputDigest());
+        Assert.AreEqual(backedUp.Events[^1].CanonicalDigest, evaluation.InputDigest);
+        Assert.IsTrue(evaluation.StartedAt >= backedUp.Events[^1].OccurredAt);
+        _ = new AutomatedEvaluationStore(fixture.DatabasePath).Append(evaluation);
+        backedUp = sourceStore.Append(
+            QuickStartWorkflowEvent.EvaluationCompleted(
+                EntityId<QuickStartWorkflowEventIdTag>.New(),
+                backedUp,
+                evaluation,
+                systemActor,
+                BackupServiceTestFixture.CreatedAt.AddSeconds(-30)),
+            backedUp.Revision);
+        Assert.AreEqual(QuickStartWorkflowState.Ready, backedUp.State);
+        Assert.AreEqual(3, backedUp.Revision);
+
+        BackupResult backup = await fixture.Service.CreateBackupAsync();
+        string snapshotDatabasePath = Path.Combine(
+            fixture.GetBackupDirectory(backup),
+            "payload",
+            "hubradio.db");
+        QuickStartWorkflow snapshot =
+            new QuickStartWorkflowStore(snapshotDatabasePath).Get(binding)
+            ?? throw new AssertFailedException(
+                "The quick-start workflow was not retained in the backup snapshot.");
+        Assert.AreEqual(backedUp.CanonicalJson, snapshot.CanonicalJson);
+        Assert.AreEqual(backedUp.CanonicalDigest, snapshot.CanonicalDigest);
+        Assert.AreEqual(3L, ExecuteScalarInt64(
+            snapshotDatabasePath,
+            "SELECT COUNT(*) FROM quick_start_state_events;"));
+        AutomatedEvaluationRun snapshotEvaluation =
+            new AutomatedEvaluationStore(snapshotDatabasePath).Get(
+                evaluation.EvaluationId)
+            ?? throw new AssertFailedException(
+                "The bound evaluation was not retained with quick-start state.");
+        Assert.AreEqual(evaluation.CanonicalDigest, snapshotEvaluation.CanonicalDigest);
+
+        QuickStartWorkflow afterBackup = sourceStore.Append(
+            QuickStartWorkflowEvent.SelfReviewed(
+                EntityId<QuickStartWorkflowEventIdTag>.New(),
+                binding,
+                userActor,
+                BackupServiceTestFixture.CreatedAt.AddMinutes(1)),
+            backedUp.Revision);
+        Assert.AreEqual(4, afterBackup.Revision);
+        Assert.AreEqual(1, afterBackup.SelfReviewCount);
+
+        _ = await fixture.Service.RestoreBackupAsync(backup.BackupId);
+
+        QuickStartWorkflow restored =
+            new QuickStartWorkflowStore(fixture.DatabasePath).Get(binding)
+            ?? throw new AssertFailedException(
+                "The quick-start workflow was not restored from the backup snapshot.");
+        Assert.AreEqual(backedUp.CanonicalJson, restored.CanonicalJson);
+        Assert.AreEqual(backedUp.CanonicalDigest, restored.CanonicalDigest);
+        Assert.AreEqual(3, restored.Revision);
+        Assert.AreEqual(0, restored.SelfReviewCount);
+        Assert.AreEqual(3L, ExecuteScalarInt64(
+            fixture.DatabasePath,
+            "SELECT COUNT(*) FROM quick_start_state_events;"));
+        Assert.AreEqual(
+            evaluation.CanonicalDigest,
+            new AutomatedEvaluationStore(fixture.DatabasePath)
+                .Get(evaluation.EvaluationId)!.CanonicalDigest);
     }
 
     [TestMethod]
@@ -589,6 +1049,66 @@ public sealed class BackupServiceTests
         AssertSafeException(
             exception,
             expected,
+            reconciliationRequired: false,
+            fixture);
+        Assert.IsFalse(Directory.EnumerateDirectories(
+            fixture.BackupRootPath,
+            "backup-*").Any());
+        Assert.IsFalse(Directory.EnumerateDirectories(
+            fixture.BackupRootPath,
+            ".backup-*.staging").Any());
+    }
+
+    [TestMethod]
+    public async Task CreateBackupAsync_RejectsDomainInvalidQuickStartEventHistory()
+    {
+        RequireWindowsFixedTempDrive();
+        using BackupServiceTestFixture fixture = new();
+        EntityId<ProjectIdTag> projectId = fixture.CreateProjectWithBusinessRows();
+        (EntityId<CompositionVersionIdTag> versionId, ContentDigest versionDigest) =
+            ReadOnlyCompositionVersionBinding(fixture.DatabasePath, projectId);
+        var binding = new QuickStartWorkflowBinding(
+            projectId,
+            versionId,
+            versionDigest);
+        var workflowStore = new QuickStartWorkflowStore(fixture.DatabasePath);
+        _ = workflowStore.Append(
+            QuickStartWorkflowEvent.StartedEditing(
+                EntityId<QuickStartWorkflowEventIdTag>.New(),
+                binding,
+                QuickStartActor.User(fixture.CurrentSid),
+                BackupServiceTestFixture.CreatedAt),
+            expectedRevision: 0);
+
+        ExecuteNonQuery(
+            fixture.DatabasePath,
+            """
+            DROP TRIGGER trg_quick_start_event_immutable_delete;
+            DELETE FROM quick_start_state_events;
+            CREATE TRIGGER trg_quick_start_event_immutable_delete
+            BEFORE DELETE ON quick_start_state_events
+            BEGIN
+                SELECT RAISE(ABORT, 'quick-start workflow events are append-only');
+            END;
+            """);
+
+        Assert.AreEqual(1L, ExecuteScalarInt64(
+            fixture.DatabasePath,
+            "SELECT COUNT(*) FROM quick_start_workflows;"));
+        Assert.AreEqual(0L, ExecuteScalarInt64(
+            fixture.DatabasePath,
+            "SELECT COUNT(*) FROM quick_start_state_events;"));
+        DatabaseMigrator.ValidateCurrentDatabase(fixture.DatabasePath);
+        _ = Assert.ThrowsExactly<InvalidOperationException>(
+            () => QuickStartWorkflowStore.ValidateAll(fixture.DatabasePath));
+
+        BackupServiceException exception =
+            await Assert.ThrowsExactlyAsync<BackupServiceException>(
+                () => fixture.Service.CreateBackupAsync());
+
+        AssertSafeException(
+            exception,
+            BackupServiceFailureReason.SourceWorkspaceInvalid,
             reconciliationRequired: false,
             fixture);
         Assert.IsFalse(Directory.EnumerateDirectories(
@@ -1583,6 +2103,99 @@ public sealed class BackupServiceTests
                 ContentDigest.Compute(database)),
             manifest.Artifacts);
         File.WriteAllBytes(manifestPath, resigned.Serialize());
+    }
+
+    private static (
+        EntityId<CompositionVersionIdTag> VersionId,
+        ContentDigest VersionDigest) ReadOnlyCompositionVersionBinding(
+            string databasePath,
+            EntityId<ProjectIdTag> projectId)
+    {
+        using SqliteConnection connection = OpenConnection(
+            databasePath,
+            SqliteOpenMode.ReadOnly);
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT id, content_digest
+            FROM composition_versions
+            WHERE project_id = $project_id;
+            """;
+        command.Parameters.AddWithValue("$project_id", projectId.ToString());
+        using SqliteDataReader reader = command.ExecuteReader();
+        Assert.IsTrue(reader.Read());
+        EntityId<CompositionVersionIdTag> versionId =
+            EntityId<CompositionVersionIdTag>.Parse(reader.GetString(0));
+        ContentDigest versionDigest = new(reader.GetString(1));
+        Assert.IsFalse(reader.Read());
+        return (versionId, versionDigest);
+    }
+
+    private static AutomatedEvaluationRun CreateAutomatedEvaluationRun(
+        EntityId<AutomatedEvaluationIdTag> evaluationId,
+        EntityId<ProjectIdTag> projectId,
+        EntityId<CompositionVersionIdTag> versionId,
+        ContentDigest versionDigest,
+        StoredArtifact artifact,
+        DateTimeOffset evaluatedAt,
+        ContentDigest? inputDigest = null)
+    {
+        ContentDigest evidenceDigest = new(new string('e', 64));
+        AutomatedEvaluationRuleObservation[] observations =
+            AutomatedEvaluationRules.Machine.Select(ruleId =>
+                AutomatedEvaluationRuleObservation.ObjectivePass(
+                    ruleId,
+                    "evaluation.rule_passed",
+                    evidenceDigest)).ToArray();
+        EntityId<AutomatedEvaluationArtifactIdTag> evaluationArtifactId =
+            EntityId<AutomatedEvaluationArtifactIdTag>.Parse(artifact.Id.ToString());
+        var request = new AutomatedEvaluationRequest(
+            evaluationId,
+            jobId: null,
+            projectId,
+            versionId,
+            versionDigest,
+            evaluationArtifactId,
+            artifact.ContentDigest,
+            EntityId<DefaultSettingsProfileIdTag>.Parse(
+                "a5a5a5a5-a5a5-45a5-85a5-a5a5a5a5a5a5"),
+            new SettingsProfileVersion(1, 0, 0),
+            new ContentDigest(new string('a', 64)),
+            settingsSnapshotDigest: new ContentDigest(new string('d', 64)),
+            new SettingsProfileVersion(1, 0, 0),
+            "backup-roundtrip-environment",
+            new ContentDigest(new string('b', 64)),
+            new ContentDigest(new string('c', 64)),
+            modelVersionsDigest: null,
+            templateDigest: null,
+            musicDigest: null,
+            evaluatedAt.AddSeconds(-2),
+            evaluatedAt.AddSeconds(-1),
+            evaluatedAt,
+            inputDigest: inputDigest ?? new ContentDigest(new string('f', 64)),
+            outputDigest: artifact.ContentDigest,
+            observations);
+        return new AutomatedEvaluationEngine().Evaluate(request);
+    }
+
+    private static void InsertAutomatedEvaluationSettingsProfile(string databasePath)
+    {
+        using SqliteConnection connection = OpenConnection(databasePath);
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO default_settings_profiles (
+                profile_id,
+                profile_version,
+                profile_digest,
+                profile_payload
+            ) VALUES (
+                'a5a5a5a5-a5a5-45a5-85a5-a5a5a5a5a5a5',
+                '1.0.0',
+                $profile_digest,
+                X'01'
+            );
+            """;
+        command.Parameters.AddWithValue("$profile_digest", new string('a', 64));
+        Assert.AreEqual(1, command.ExecuteNonQuery());
     }
 
     private static void RewriteManifest(

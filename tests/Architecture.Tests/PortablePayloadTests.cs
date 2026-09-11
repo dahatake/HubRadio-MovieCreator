@@ -16,11 +16,11 @@ public sealed class PortablePayloadTests
     private static readonly string[] ParameterNames =
     [
         "PythonRuntimePath", "FfmpegPath", "FfprobePath", "FfmpegLicensePath",
-        "ModelBundlePath", "WebView2RuntimePath", "WebView2LicensePath", "OutputPath",
+        "ModelBundlePath", "WebView2RuntimePath", "WebView2LicensePath", "FontPath", "FontLicensePath", "OutputPath",
     ];
 
     [TestMethod]
-    public void BuilderDeclaresOnlyEightMandatoryInputPaths()
+    public void BuilderDeclaresOnlyTenMandatoryInputPaths()
     {
         string script = ReadScript();
         StringAssert.StartsWith(script, "#Requires -Version 7.0\n\n<#\n");
@@ -30,7 +30,7 @@ public sealed class PortablePayloadTests
             .Select(static match => match.Groups[1].Value)
             .ToArray();
         CollectionAssert.AreEqual(ParameterNames, names);
-        Assert.HasCount(8, Matches(parameters, @"\[Parameter\("));
+        Assert.HasCount(10, Matches(parameters, @"\[Parameter\("));
         Assert.IsFalse(parameters.Contains('=') || parameters.Contains("[switch]", StringComparison.Ordinal));
         StringAssert.Contains(script, "$PSVersionTable.PSEdition -ne 'Core'");
         StringAssert.Contains(script, "-not $IsWindows");
@@ -44,7 +44,7 @@ public sealed class PortablePayloadTests
         string script = ReadScript();
         string roots = Match(script, @"(?m)^\$payloadRoots = @\((?<value>[^\n]+)\)$").Groups["value"].Value;
         CollectionAssert.AreEqual(
-            new[] { "Worker", "Tools", "ModelCatalog", "WebView2Runtime", "Licenses", "Evidence" },
+            new[] { "Worker", "Tools", "ModelCatalog", "Fonts", "WebView2Runtime", "Licenses", "Evidence" },
             Matches(roots, "'([^']+)'").Select(static match => match.Groups[1].Value).ToArray());
         string metadata = Match(
             script,
@@ -84,7 +84,7 @@ public sealed class PortablePayloadTests
             new[]
             {
                 "python-runtime-manifest.json", "ffmpeg-manifest.json", "model-catalog.json",
-                "webview2-runtime-manifest.json", "web-dependency-manifest.json",
+                "webview2-runtime-manifest.json", "web-dependency-manifest.json", "font-manifest.json",
             },
             Matches(evidence, @"(?m)^    '([^']+)' =").Select(static match => match.Groups[1].Value).ToArray());
         foreach (string required in new[]
@@ -93,6 +93,7 @@ public sealed class PortablePayloadTests
             "'ModelCatalog/' + $runtimeModel.bundle.relativePath + '/' + $file.name",
             "'Licenses/FFmpeg-LICENSE.txt'", "'Licenses/CPython-LICENSE.txt'",
             "'Licenses/WebView2-FIXED-LICENSE-PAGE.txt'", "'Licenses/THIRD-PARTY-NOTICES-NONFINAL.md'",
+            "'Fonts/NotoSansJP-Regular.otf'", "'Fonts/LICENSE'", "'Fonts/font-manifest.json'", "'Licenses/NotoSansJP-OFL.txt'",
             "$entry.Name -cne '.cache'", "$licenseEvidence.sha256 -cne $licenseSnapshot.sha256",
             "$modelRelativePath = [string]$runtimeModel.bundle.relativePath",
             "[string]::IsNullOrWhiteSpace($modelRelativePath)", "[IO.Path]::IsPathRooted($modelRelativePath)",
@@ -164,6 +165,8 @@ public sealed class PortablePayloadTests
     [DataRow("ModelBundlePath")]
     [DataRow("WebView2RuntimePath")]
     [DataRow("WebView2LicensePath")]
+    [DataRow("FontPath")]
+    [DataRow("FontLicensePath")]
     [DataRow("OutputPath")]
     public void RelativeInputsAreRejectedBeforeCreatingOutput(string parameter)
     {

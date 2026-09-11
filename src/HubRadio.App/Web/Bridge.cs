@@ -66,6 +66,17 @@ internal enum BridgeMethod
     SettingsUpdate,
     SettingsReset,
     SettingsResetAll,
+    SettingsGlobalRead,
+    SettingsGlobalUpdate,
+    SettingsGlobalReset,
+    SettingsGlobalResetAll,
+    SettingsFileExport,
+    SettingsFilePreview,
+    SettingsFileApply,
+    PipelineRead,
+    PipelineRegenerate,
+    PipelineRetry,
+    PipelineCancel,
 }
 
 internal sealed class BridgeRequest
@@ -180,6 +191,8 @@ internal static class BridgeProtocol
     internal const int MaxAnalysisResponseUtf8Bytes = 4 * 1024 * 1024;
     internal const int MaxLayoutRequestUtf8Bytes = 64 * 1024;
     internal const int MaxLayoutResponseUtf8Bytes = 4 * 1024 * 1024;
+    internal const int MaxSourceOnlyRequestUtf8Bytes = 1024;
+    internal const int MaxSourceOnlyResponseUtf8Bytes = 8 * 1024 * 1024;
     internal const int MaxThumbnailRequestUtf8Bytes =
         MaxProjectRequestUtf8Bytes;
     internal const int MaxThumbnailResponseUtf8Bytes =
@@ -238,6 +251,17 @@ internal static class BridgeProtocol
     internal const string SettingsUpdateMethod = "settings.update";
     internal const string SettingsResetMethod = "settings.reset";
     internal const string SettingsResetAllMethod = "settings.resetAll";
+    internal const string SettingsGlobalReadMethod = "settings.global.read";
+    internal const string SettingsGlobalUpdateMethod = "settings.global.update";
+    internal const string SettingsGlobalResetMethod = "settings.global.reset";
+    internal const string SettingsGlobalResetAllMethod = "settings.global.resetAll";
+    internal const string SettingsFileExportMethod = "settings.file.export";
+    internal const string SettingsFilePreviewMethod = "settings.file.preview";
+    internal const string SettingsFileApplyMethod = "settings.file.apply";
+    internal const string PipelineReadMethod = "pipeline.read";
+    internal const string PipelineRegenerateMethod = "pipeline.regenerate";
+    internal const string PipelineRetryMethod = "pipeline.retry";
+    internal const string PipelineCancelMethod = "pipeline.cancel";
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -484,6 +508,17 @@ internal static class BridgeProtocol
             BridgeMethod.SettingsUpdate => SettingsUpdateMethod,
             BridgeMethod.SettingsReset => SettingsResetMethod,
             BridgeMethod.SettingsResetAll => SettingsResetAllMethod,
+            BridgeMethod.SettingsGlobalRead => SettingsGlobalReadMethod,
+            BridgeMethod.SettingsGlobalUpdate => SettingsGlobalUpdateMethod,
+            BridgeMethod.SettingsGlobalReset => SettingsGlobalResetMethod,
+            BridgeMethod.SettingsGlobalResetAll => SettingsGlobalResetAllMethod,
+            BridgeMethod.SettingsFileExport => SettingsFileExportMethod,
+            BridgeMethod.SettingsFilePreview => SettingsFilePreviewMethod,
+            BridgeMethod.SettingsFileApply => SettingsFileApplyMethod,
+            BridgeMethod.PipelineRead => PipelineReadMethod,
+            BridgeMethod.PipelineRegenerate => PipelineRegenerateMethod,
+            BridgeMethod.PipelineRetry => PipelineRetryMethod,
+            BridgeMethod.PipelineCancel => PipelineCancelMethod,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(method),
                 method,
@@ -502,6 +537,7 @@ internal static class BridgeProtocol
             _ when IsAnalysisMethod(method) => MaxAnalysisResponseUtf8Bytes,
             _ when IsLayoutMethod(method) => MaxLayoutResponseUtf8Bytes,
             _ when IsSettingsMethod(method) => MaxLayoutResponseUtf8Bytes,
+            _ when IsSourceOnlyMethod(method) => MaxSourceOnlyResponseUtf8Bytes,
             _ when IsLargePayloadMethod(method) => MaxProjectResponseUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewResponseUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonResponseUtf8Bytes,
@@ -556,12 +592,23 @@ internal static class BridgeProtocol
     internal static bool IsLayoutMethod(BridgeMethod method) =>
         method is BridgeMethod.LayoutRead or BridgeMethod.LayoutApply;
 
+    internal static bool IsSourceOnlyMethod(BridgeMethod method) =>
+        method is BridgeMethod.PipelineRead or BridgeMethod.PipelineRegenerate or
+            BridgeMethod.PipelineRetry or BridgeMethod.PipelineCancel;
+
     internal static bool IsSettingsMethod(BridgeMethod method) =>
         method is
             BridgeMethod.SettingsRead or
             BridgeMethod.SettingsUpdate or
             BridgeMethod.SettingsReset or
-            BridgeMethod.SettingsResetAll;
+            BridgeMethod.SettingsResetAll or
+            BridgeMethod.SettingsGlobalRead or
+            BridgeMethod.SettingsGlobalUpdate or
+            BridgeMethod.SettingsGlobalReset or
+            BridgeMethod.SettingsGlobalResetAll or
+            BridgeMethod.SettingsFileExport or
+            BridgeMethod.SettingsFilePreview or
+            BridgeMethod.SettingsFileApply;
 
     private static int GetMaximumRequestUtf8Bytes(BridgeMethod method) =>
         method switch
@@ -574,6 +621,7 @@ internal static class BridgeProtocol
             _ when IsAnalysisMethod(method) => MaxAnalysisRequestUtf8Bytes,
             _ when IsLayoutMethod(method) => MaxLayoutRequestUtf8Bytes,
             _ when IsSettingsMethod(method) => MaxAnalysisRequestUtf8Bytes,
+            _ when IsSourceOnlyMethod(method) => MaxSourceOnlyRequestUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewRequestUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonRequestUtf8Bytes,
             BridgeMethod.DeliveryRead => MaxDeliveryRequestUtf8Bytes,
@@ -625,6 +673,17 @@ internal static class BridgeProtocol
             SettingsUpdateMethod => BridgeMethod.SettingsUpdate,
             SettingsResetMethod => BridgeMethod.SettingsReset,
             SettingsResetAllMethod => BridgeMethod.SettingsResetAll,
+            SettingsGlobalReadMethod => BridgeMethod.SettingsGlobalRead,
+            SettingsGlobalUpdateMethod => BridgeMethod.SettingsGlobalUpdate,
+            SettingsGlobalResetMethod => BridgeMethod.SettingsGlobalReset,
+            SettingsGlobalResetAllMethod => BridgeMethod.SettingsGlobalResetAll,
+            SettingsFileExportMethod => BridgeMethod.SettingsFileExport,
+            SettingsFilePreviewMethod => BridgeMethod.SettingsFilePreview,
+            SettingsFileApplyMethod => BridgeMethod.SettingsFileApply,
+            PipelineReadMethod => BridgeMethod.PipelineRead,
+            PipelineRegenerateMethod => BridgeMethod.PipelineRegenerate,
+            PipelineRetryMethod => BridgeMethod.PipelineRetry,
+            PipelineCancelMethod => BridgeMethod.PipelineCancel,
             _ => (BridgeMethod)(-1),
         };
         return Enum.IsDefined(parsedMethod);
@@ -766,6 +825,11 @@ internal static class BridgeProtocol
         if (IsSettingsMethod(method))
         {
             return SettingsBridgeProtocol.HasValidParameters(method, parameters);
+        }
+
+        if (IsSourceOnlyMethod(method))
+        {
+            return SourceOnlyBridgeProtocol.HasValidParameters(method, parameters);
         }
 
         return false;
@@ -1368,7 +1432,8 @@ internal static class BridgeProtocol
             IsComparisonMethod(method) ||
             IsDeliveryMethod(method) ||
             IsLayoutMethod(method) ||
-            IsSettingsMethod(method))
+            IsSettingsMethod(method) ||
+            IsSourceOnlyMethod(method))
         {
             if (!HasValidParameters(method, parameters))
             {
@@ -1378,7 +1443,9 @@ internal static class BridgeProtocol
             request = BridgeRequest.Create(
                 requestId,
                 method,
-                parameters.Clone());
+                parameters.Clone(),
+                expectedRevision: method is BridgeMethod.PipelineRetry or BridgeMethod.PipelineCancel
+                    ? SourceOnlyBridgeProtocol.ReadRevision(parameters, "expectedRevision") : null);
             return true;
         }
 
@@ -1716,6 +1783,9 @@ internal sealed class Bridge : IDisposable
     private readonly LayoutSubtitleBridgeRequestHandler?
         layoutSubtitleHandler;
     private readonly SettingsBridgeRequestHandler? settingsHandler;
+    private readonly GlobalSettingsBridgeRequestHandler? globalSettingsHandler;
+    private readonly SettingsFileBridgeRequestHandler? fileSettingsHandler;
+    private readonly SourceOnlyBridgeHandler? sourceOnlyHandler;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private readonly TaskCompletionSource firstPingResponsePosted = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1879,7 +1949,10 @@ internal sealed class Bridge : IDisposable
         DeliveryBridgeRequestHandler? deliveryHandler = null,
         AnalysisBridgeRequestHandler? analysisHandler = null,
         LayoutSubtitleBridgeRequestHandler? layoutSubtitleHandler = null,
-        SettingsBridgeRequestHandler? settingsHandler = null)
+        SettingsBridgeRequestHandler? settingsHandler = null,
+        GlobalSettingsBridgeRequestHandler? globalSettingsHandler = null,
+        SettingsFileBridgeRequestHandler? fileSettingsHandler = null,
+        SourceOnlyBridgeHandler? sourceOnlyHandler = null)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentNullException.ThrowIfNull(playerReader);
@@ -1896,6 +1969,9 @@ internal sealed class Bridge : IDisposable
         this.analysisHandler = analysisHandler;
         this.layoutSubtitleHandler = layoutSubtitleHandler;
         this.settingsHandler = settingsHandler;
+        this.globalSettingsHandler = globalSettingsHandler;
+        this.fileSettingsHandler = fileSettingsHandler;
+        this.sourceOnlyHandler = sourceOnlyHandler;
         playerHandler = new PlayerBridgeRequestHandler(
             playerReader,
             playerAuthorization);
@@ -2010,6 +2086,11 @@ internal sealed class Bridge : IDisposable
         BridgeRequest request,
         CancellationToken cancellationToken)
     {
+        if (BridgeProtocol.IsSourceOnlyMethod(request.Method))
+        {
+            return await WebViewHost.HandleSourceOnlyRequestAsync(request, sourceOnlyHandler, cancellationToken);
+        }
+
         if (BridgeProtocol.IsProjectMethod(request.Method))
         {
             return handleProjectRequestAsync is null
@@ -2113,13 +2194,12 @@ internal sealed class Bridge : IDisposable
 
         if (BridgeProtocol.IsSettingsMethod(request.Method))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            return settingsHandler?.Handle(request) ??
-                SettingsBridgeJson.WriteResponse(
-                    request,
-                    SettingsBridgeStatus.Unavailable,
-                    null,
-                    null);
+            return WebViewHost.HandleSettingsRequest(
+                request,
+                settingsHandler,
+                globalSettingsHandler,
+                fileSettingsHandler,
+                cancellationToken);
         }
 
         return jobHandler?.Handle(request) ??
@@ -2130,6 +2210,11 @@ internal sealed class Bridge : IDisposable
 
     private static string CreateUnavailableResponse(BridgeRequest request)
     {
+        if (BridgeProtocol.IsSourceOnlyMethod(request.Method))
+        {
+            return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Unavailable);
+        }
+
         if (request.Method == BridgeMethod.PlayerRead)
         {
             return PlayerBridgeJson.WriteReadResponse(
@@ -2200,11 +2285,12 @@ internal sealed class Bridge : IDisposable
 
         if (BridgeProtocol.IsSettingsMethod(request.Method))
         {
-            return SettingsBridgeJson.WriteResponse(
+            return WebViewHost.HandleSettingsRequest(
                 request,
-                SettingsBridgeStatus.Unavailable,
-                null,
-                null);
+                settingsHandler: null,
+                globalSettingsHandler: null,
+                fileSettingsHandler: null,
+                CancellationToken.None);
         }
 
         if (request.Method == BridgeMethod.ThumbnailRead)

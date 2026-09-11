@@ -1,4 +1,7 @@
 using System.Text.Json;
+using HubRadio.App.Projects;
+using HubRadio.App.Web;
+using HubRadio.Infrastructure.Database;
 
 namespace HubRadio.App.Tests;
 
@@ -82,6 +85,17 @@ public sealed class WebBridgeSchemaTests
                 "settings.update",
                 "settings.reset",
                 "settings.resetAll",
+                "settings.global.read",
+                "settings.global.update",
+                "settings.global.reset",
+                "settings.global.resetAll",
+                "settings.file.export",
+                "settings.file.preview",
+                "settings.file.apply",
+                "pipeline.read",
+                "pipeline.regenerate",
+                "pipeline.retry",
+                "pipeline.cancel",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -166,6 +180,28 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/settingsUpdateResponse",
                 "#/$defs/settingsResetResponse",
                 "#/$defs/settingsResetAllResponse",
+                "#/$defs/settingsGlobalReadRequest",
+                "#/$defs/settingsGlobalUpdateRequest",
+                "#/$defs/settingsGlobalResetRequest",
+                "#/$defs/settingsGlobalResetAllRequest",
+                "#/$defs/settingsFileExportRequest",
+                "#/$defs/settingsFilePreviewRequest",
+                "#/$defs/settingsFileApplyRequest",
+                "#/$defs/settingsGlobalReadResponse",
+                "#/$defs/settingsGlobalUpdateResponse",
+                "#/$defs/settingsGlobalResetResponse",
+                "#/$defs/settingsGlobalResetAllResponse",
+                "#/$defs/settingsFileExportResponse",
+                "#/$defs/settingsFilePreviewResponse",
+                "#/$defs/settingsFileApplyResponse",
+                "#/$defs/pipelineReadRequest",
+                "#/$defs/pipelineRegenerateRequest",
+                "#/$defs/pipelineRetryRequest",
+                "#/$defs/pipelineCancelRequest",
+                "#/$defs/pipelineReadResponse",
+                "#/$defs/pipelineRegenerateResponse",
+                "#/$defs/pipelineRetryResponse",
+                "#/$defs/pipelineCancelResponse",
             },
             root.GetProperty("oneOf")
                 .EnumerateArray()
@@ -413,6 +449,27 @@ public sealed class WebBridgeSchemaTests
             "settingsUpdateResponse",
             "settingsResetResponse",
             "settingsResetAllResponse",
+            "settingsGlobalSnapshot",
+            "settingsGlobalUpdateParams",
+            "settingsGlobalResetParams",
+            "settingsGlobalResetAllParams",
+            "settingsFileExportParams",
+            "settingsFilePreviewParams",
+            "settingsFileApplyParams",
+            "settingsGlobalReadRequest",
+            "settingsGlobalUpdateRequest",
+            "settingsGlobalResetRequest",
+            "settingsGlobalResetAllRequest",
+            "settingsFileExportRequest",
+            "settingsFilePreviewRequest",
+            "settingsFileApplyRequest",
+            "settingsGlobalReadResponse",
+            "settingsGlobalUpdateResponse",
+            "settingsGlobalResetResponse",
+            "settingsGlobalResetAllResponse",
+            "settingsFileExportResponse",
+            "settingsFilePreviewResponse",
+            "settingsFileApplyResponse",
         })
         {
             Assert.AreEqual(
@@ -683,6 +740,200 @@ public sealed class WebBridgeSchemaTests
         Assert.IsFalse(schema.Contains("actorSid", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(schema.Contains("sourcePath", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(schema.Contains("downloadUrl", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public void SettingsGlobalAndFileSchemaPinsClosedRequestResponsePairs()
+    {
+        using JsonDocument document = JsonDocument.Parse(
+            File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
+        JsonElement definitions = document.RootElement.GetProperty("$defs");
+        (string Stem, string Method, string Parameters, string Result)[] methods =
+        [
+            ("settingsGlobalRead", "settings.global.read", "emptyObject", "settingsGlobalResult"),
+            ("settingsGlobalUpdate", "settings.global.update", "settingsGlobalUpdateParams", "settingsGlobalResult"),
+            ("settingsGlobalReset", "settings.global.reset", "settingsGlobalResetParams", "settingsGlobalResult"),
+            ("settingsGlobalResetAll", "settings.global.resetAll", "settingsGlobalResetAllParams", "settingsGlobalResult"),
+            ("settingsFileExport", "settings.file.export", "settingsFileExportParams", "settingsFileResult"),
+            ("settingsFilePreview", "settings.file.preview", "settingsFilePreviewParams", "settingsFileResult"),
+            ("settingsFileApply", "settings.file.apply", "settingsFileApplyParams", "settingsFileResult"),
+        ];
+
+        foreach ((string stem, string method, string parameters, string result) in methods)
+        {
+            foreach ((string suffix, string payload, string reference) in new[]
+            {
+                ("Request", "params", parameters),
+                ("Response", "result", result),
+            })
+            {
+                JsonElement envelope = definitions.GetProperty(stem + suffix);
+                AssertClosedProperties(envelope, "version", "requestId", "method", payload);
+                JsonElement properties = envelope.GetProperty("properties");
+                Assert.AreEqual(method, properties.GetProperty("method").GetProperty("const").GetString());
+                Assert.AreEqual("#/$defs/protocolVersion", properties.GetProperty("version").GetProperty("$ref").GetString());
+                Assert.AreEqual("#/$defs/requestId", properties.GetProperty("requestId").GetProperty("$ref").GetString());
+                Assert.AreEqual("#/$defs/" + reference, properties.GetProperty(payload).GetProperty("$ref").GetString());
+            }
+        }
+
+        JsonElement emptyParameters = definitions.GetProperty("emptyObject");
+        Assert.IsFalse(emptyParameters.GetProperty("additionalProperties").GetBoolean());
+        Assert.AreEqual(0, emptyParameters.GetProperty("maxProperties").GetInt32());
+        string limits = definitions.GetProperty("settingsProtocolLimits").GetProperty("$comment").GetString()!;
+        StringAssert.Contains(limits, "64 KiB");
+        StringAssert.Contains(limits, "4 MiB");
+    }
+
+    [TestMethod]
+    public void SettingsGlobalAndFileSchemaPinsMutationIdentityScopeAndHashes()
+    {
+        using JsonDocument document = JsonDocument.Parse(
+            File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
+        JsonElement definitions = document.RootElement.GetProperty("$defs");
+        string[] identityFields =
+        [
+            "expectedRevision", "expectedProfileId", "expectedProfileVersion",
+            "expectedProfileDigest", "expectedSnapshotDigest",
+        ];
+        (string Definition, string[] Additional)[] mutations =
+        [
+            ("settingsGlobalUpdateParams", ["key", "value"]),
+            ("settingsGlobalResetParams", ["key"]),
+            ("settingsGlobalResetAllParams", []),
+            ("settingsFileExportParams", ["projectId", "expectedFileSha256"]),
+            ("settingsFilePreviewParams", ["projectId"]),
+            ("settingsFileApplyParams", ["projectId", "expectedFileSha256"]),
+        ];
+        JsonElement oldIdentity = definitions.GetProperty("settingsResetAllParams").GetProperty("properties");
+        foreach ((string definitionName, string[] additional) in mutations)
+        {
+            JsonElement definition = definitions.GetProperty(definitionName);
+            AssertClosedProperties(definition, [.. identityFields, .. additional]);
+            JsonElement properties = definition.GetProperty("properties");
+            foreach (string field in identityFields)
+            {
+                Assert.IsTrue(JsonElement.DeepEquals(oldIdentity.GetProperty(field), properties.GetProperty(field)), field);
+            }
+
+            if (additional.Contains("projectId", StringComparer.Ordinal))
+            {
+                Assert.AreEqual("#/$defs/nullableId", properties.GetProperty("projectId").GetProperty("$ref").GetString());
+            }
+            else
+            {
+                Assert.IsFalse(properties.TryGetProperty("projectId", out _));
+            }
+        }
+
+        JsonElement exportHash = definitions.GetProperty("settingsFileExportParams")
+            .GetProperty("properties").GetProperty("expectedFileSha256").GetProperty("oneOf");
+        Assert.AreEqual(2, exportHash.GetArrayLength());
+        Assert.AreEqual("#/$defs/contentDigest", exportHash[0].GetProperty("$ref").GetString());
+        Assert.AreEqual("null", exportHash[1].GetProperty("type").GetString());
+        Assert.AreEqual("#/$defs/contentDigest", definitions.GetProperty("settingsFileApplyParams")
+            .GetProperty("properties").GetProperty("expectedFileSha256").GetProperty("$ref").GetString());
+        Assert.IsFalse(definitions.GetProperty("settingsFilePreviewParams")
+            .GetProperty("properties").TryGetProperty("expectedFileSha256", out _));
+
+        foreach (string oldDefinition in new[]
+        {
+            "settingsReadParams", "settingsUpdateParams", "settingsResetParams", "settingsResetAllParams",
+        })
+        {
+            Assert.AreEqual("#/$defs/entityId", definitions.GetProperty(oldDefinition)
+                .GetProperty("properties").GetProperty("projectId").GetProperty("$ref").GetString());
+        }
+    }
+
+    [TestMethod]
+    public void SettingsGlobalSnapshotPreservesProjectFieldsWithNullScope()
+    {
+        using JsonDocument document = JsonDocument.Parse(
+            File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
+        JsonElement definitions = document.RootElement.GetProperty("$defs");
+        JsonElement project = definitions.GetProperty("settingsSnapshot");
+        JsonElement global = definitions.GetProperty("settingsGlobalSnapshot");
+        string[] fields =
+        [
+            "projectId", "profileId", "profileName", "profileVersion", "profileDigest",
+            "initialSnapshotDigest", "snapshotDigest", "revision", "updatedAt",
+            "definitionCount", "definitions", "initialValues", "values",
+        ];
+        AssertClosedProperties(project, fields);
+        AssertClosedProperties(global, fields);
+        foreach (string field in fields.Where(static field => field != "projectId"))
+        {
+            Assert.IsTrue(JsonElement.DeepEquals(
+                project.GetProperty("properties").GetProperty(field),
+                global.GetProperty("properties").GetProperty(field)), field);
+        }
+
+        Assert.AreEqual("#/$defs/entityId", project.GetProperty("properties")
+            .GetProperty("projectId").GetProperty("$ref").GetString());
+        Assert.AreEqual("null", global.GetProperty("properties")
+            .GetProperty("projectId").GetProperty("type").GetString());
+        StringAssert.Contains(global.GetProperty("$comment").GetString()!, "profile's initial defaults");
+        CollectionAssert.AreEqual(
+            new[] { "#/$defs/settingsSnapshot", "#/$defs/settingsGlobalSnapshot" },
+            definitions.GetProperty("settingsFileSnapshot").GetProperty("oneOf")
+                .EnumerateArray().Select(static item => item.GetProperty("$ref").GetString()).ToArray());
+    }
+
+    [TestMethod]
+    public void SettingsResultsSeparateGlobalFilePreviewOverwriteAndFailureShapes()
+    {
+        using JsonDocument document = JsonDocument.Parse(
+            File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
+        JsonElement definitions = document.RootElement.GetProperty("$defs");
+        string[] failures = ["forbidden", "notFound", "unbound", "conflict", "invalid", "unavailable"];
+        foreach ((string resultName, string snapshotName) in new[]
+        {
+            ("settingsResult", "settingsSnapshot"),
+            ("settingsGlobalResult", "settingsGlobalSnapshot"),
+        })
+        {
+            JsonElement alternatives = definitions.GetProperty(resultName).GetProperty("oneOf");
+            Assert.AreEqual(2, alternatives.GetArrayLength());
+            foreach (JsonElement alternative in alternatives.EnumerateArray())
+            {
+                AssertClosedProperties(alternative, "status", "snapshot");
+            }
+
+            JsonElement available = alternatives[0].GetProperty("properties");
+            Assert.AreEqual("available", available.GetProperty("status").GetProperty("const").GetString());
+            Assert.AreEqual("#/$defs/" + snapshotName, available.GetProperty("snapshot").GetProperty("$ref").GetString());
+            JsonElement failure = alternatives[1].GetProperty("properties");
+            CollectionAssert.AreEqual(failures, GetStrings(failure.GetProperty("status").GetProperty("enum")));
+            Assert.AreEqual("null", failure.GetProperty("snapshot").GetProperty("type").GetString());
+        }
+
+        JsonElement fileAlternatives = definitions.GetProperty("settingsFileResult").GetProperty("oneOf");
+        Assert.AreEqual(3, fileAlternatives.GetArrayLength());
+        foreach (JsonElement alternative in fileAlternatives.EnumerateArray())
+        {
+            AssertClosedProperties(alternative, "status", "snapshot", "fileSha256");
+        }
+
+        JsonElement fileAvailable = fileAlternatives[0].GetProperty("properties");
+        Assert.AreEqual("available", fileAvailable.GetProperty("status").GetProperty("const").GetString());
+        Assert.AreEqual("#/$defs/settingsFileSnapshot", fileAvailable.GetProperty("snapshot").GetProperty("$ref").GetString());
+        Assert.AreEqual("#/$defs/contentDigest", fileAvailable.GetProperty("fileSha256").GetProperty("$ref").GetString());
+        JsonElement fileFailure = fileAlternatives[1].GetProperty("properties");
+        CollectionAssert.AreEqual(
+            new[] { "forbidden", "notFound", "unbound", "conflict", "invalid", "unavailable", "fileNotFound", "profileMismatch", "snapshotMismatch" },
+            GetStrings(fileFailure.GetProperty("status").GetProperty("enum")));
+        Assert.AreEqual("null", fileFailure.GetProperty("snapshot").GetProperty("type").GetString());
+        Assert.AreEqual("null", fileFailure.GetProperty("fileSha256").GetProperty("type").GetString());
+        JsonElement overwrite = fileAlternatives[2].GetProperty("properties");
+        Assert.AreEqual("overwriteRequired", overwrite.GetProperty("status").GetProperty("const").GetString());
+        Assert.AreEqual("null", overwrite.GetProperty("snapshot").GetProperty("type").GetString());
+        Assert.AreEqual("#/$defs/contentDigest", overwrite.GetProperty("fileSha256").GetProperty("$ref").GetString());
+
+        string preview = definitions.GetProperty("settingsFilePreviewResponse").GetProperty("$comment").GetString()!;
+        StringAssert.Contains(preview, "never replaces saved state");
+        StringAssert.Contains(preview, "revision and initialValues");
+        StringAssert.Contains(preview, "only values and snapshotDigest describe the candidate");
     }
 
     [TestMethod]
@@ -1386,13 +1637,76 @@ public sealed class WebBridgeSchemaTests
                 .GetProperty("numerator")
                 .GetProperty("const")
                 .GetString());
-        Assert.AreEqual(
-            "notPersisted",
+        CollectionAssert.AreEqual(
+            new[] { "notPersisted", "persisted" },
+            GetStrings(
             definitions.GetProperty("layoutSnapshot")
                 .GetProperty("properties")
                 .GetProperty("persistence")
-                .GetProperty("const")
-                .GetString());
+                .GetProperty("enum")));
+        JsonElement readParams = definitions.GetProperty("layoutReadParams");
+        JsonElement applyParams = definitions.GetProperty("layoutApplyParams");
+        foreach (JsonElement parameters in new[] { readParams, applyParams })
+        {
+            Assert.AreEqual("object", parameters.GetProperty("type").GetString());
+            Assert.IsFalse(parameters.GetProperty("additionalProperties").GetBoolean());
+            JsonElement properties = parameters.GetProperty("properties");
+            Assert.AreEqual("#/$defs/entityId", properties.GetProperty("expectedVersionId").GetProperty("$ref").GetString());
+            Assert.AreEqual("#/$defs/contentDigest", properties.GetProperty("expectedVersionDigest").GetProperty("$ref").GetString());
+            CollectionAssert.AreEqual(new[] { "expectedVersionDigest" },
+                GetStrings(parameters.GetProperty("dependentRequired").GetProperty("expectedVersionId")));
+            CollectionAssert.AreEqual(new[] { "expectedVersionId" },
+                GetStrings(parameters.GetProperty("dependentRequired").GetProperty("expectedVersionDigest")));
+        }
+        CollectionAssert.AreEquivalent(new[] { "projectId", "evaluationTime" }, GetStrings(readParams.GetProperty("required")));
+        CollectionAssert.AreEquivalent(new[] { "projectId", "expectedVersionId", "expectedVersionDigest", "latestInBranch", "evaluationTime" },
+            readParams.GetProperty("properties").EnumerateObject().Select(static property => property.Name).ToArray());
+        Assert.IsTrue(readParams.GetProperty("properties").GetProperty("latestInBranch").GetProperty("const").GetBoolean());
+        CollectionAssert.AreEquivalent(new[] { "expectedVersionId", "expectedVersionDigest" },
+            GetStrings(readParams.GetProperty("dependentRequired").GetProperty("latestInBranch")));
+        CollectionAssert.AreEquivalent(new[] { "projectId", "expectedRevision", "operation" }, GetStrings(applyParams.GetProperty("required")));
+        CollectionAssert.AreEquivalent(new[] { "projectId", "expectedVersionId", "expectedVersionDigest", "expectedRevision", "operation" },
+            applyParams.GetProperty("properties").EnumerateObject().Select(static property => property.Name).ToArray());
+
+        JsonElement alternatives = definitions.GetProperty("layoutResult").GetProperty("oneOf");
+        Assert.AreEqual(2, alternatives.GetArrayLength());
+        foreach (JsonElement alternative in alternatives.EnumerateArray())
+        {
+            Assert.AreEqual("object", alternative.GetProperty("type").GetString());
+            Assert.IsFalse(alternative.GetProperty("additionalProperties").GetBoolean());
+            CollectionAssert.AreEquivalent(new[] { "status", "snapshot" }, GetStrings(alternative.GetProperty("required")));
+        }
+        JsonElement available = alternatives[0];
+        CollectionAssert.AreEquivalent(new[] { "status", "snapshot", "durableSubtitles" },
+            available.GetProperty("properties").EnumerateObject().Select(static property => property.Name).ToArray());
+        Assert.AreEqual("available", available.GetProperty("properties").GetProperty("status").GetProperty("const").GetString());
+        Assert.AreEqual("#/$defs/layoutSnapshot", available.GetProperty("properties").GetProperty("snapshot").GetProperty("$ref").GetString());
+        Assert.AreEqual("#/$defs/layoutDurableSubtitles", available.GetProperty("properties").GetProperty("durableSubtitles").GetProperty("$ref").GetString());
+        AssertClosedProperties(alternatives[1], "status", "snapshot");
+        Assert.AreEqual("null", alternatives[1].GetProperty("properties").GetProperty("snapshot").GetProperty("type").GetString());
+        JsonElement persistenceRules = available.GetProperty("allOf");
+        Assert.AreEqual(2, persistenceRules.GetArrayLength());
+        CollectionAssert.AreEqual(new[] { "durableSubtitles" },
+            GetStrings(persistenceRules[0].GetProperty("if").GetProperty("not").GetProperty("required")));
+        Assert.AreEqual("notPersisted", persistenceRules[0].GetProperty("then").GetProperty("properties")
+            .GetProperty("snapshot").GetProperty("properties").GetProperty("persistence").GetProperty("const").GetString());
+        Assert.AreEqual("persisted", persistenceRules[1].GetProperty("if").GetProperty("properties")
+            .GetProperty("snapshot").GetProperty("properties").GetProperty("persistence").GetProperty("const").GetString());
+        CollectionAssert.AreEqual(new[] { "durableSubtitles" }, GetStrings(persistenceRules[1].GetProperty("then").GetProperty("required")));
+        Assert.AreEqual(1, persistenceRules[1].GetProperty("then").GetProperty("properties")
+            .GetProperty("durableSubtitles").GetProperty("properties").GetProperty("sequence").GetProperty("minimum").GetInt32());
+        JsonElement durable = definitions.GetProperty("layoutDurableSubtitles");
+        AssertClosedProperties(durable, "rootVersionId", "headVersionId", "headVersionDigest", "sequence", "journalDigest");
+        foreach ((string field, string reference) in new[]
+        {
+            ("rootVersionId", "entityId"), ("headVersionId", "entityId"),
+            ("headVersionDigest", "contentDigest"), ("sequence", "nonnegativeInt32"),
+        })
+            Assert.AreEqual("#/$defs/" + reference, durable.GetProperty("properties").GetProperty(field).GetProperty("$ref").GetString());
+        Assert.AreEqual(0, durable.GetProperty("if").GetProperty("properties").GetProperty("sequence").GetProperty("const").GetInt32());
+        CollectionAssert.AreEqual(new[] { "sequence" }, GetStrings(durable.GetProperty("if").GetProperty("required")));
+        Assert.AreEqual("null", durable.GetProperty("then").GetProperty("properties").GetProperty("journalDigest").GetProperty("type").GetString());
+        Assert.AreEqual("#/$defs/contentDigest", durable.GetProperty("else").GetProperty("properties").GetProperty("journalDigest").GetProperty("$ref").GetString());
         CollectionAssert.AreEqual(
             new[] { "full", "selected" },
             GetStrings(definitions.GetProperty("layoutSubtitleDisplay")
@@ -1528,6 +1842,117 @@ public sealed class WebBridgeSchemaTests
                 StringComparison.Ordinal)));
         Assert.IsFalse(schema.Contains("sourcePath", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(schema.Contains("actorSid", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public void PipelineSchemaPinsExactMethodsScopesStatusesPhasesAndTransportLimits()
+    {
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
+        JsonElement definitions = document.RootElement.GetProperty("$defs");
+        JsonElement limits = definitions.GetProperty("sourceOnlyProtocolLimits");
+        Assert.AreEqual(BridgeProtocol.MaxSourceOnlyRequestUtf8Bytes, limits.GetProperty("x-maxRequestUtf8Bytes").GetInt32());
+        Assert.AreEqual(BridgeProtocol.MaxSourceOnlyResponseUtf8Bytes, limits.GetProperty("x-maxResponseUtf8Bytes").GetInt32());
+        Assert.AreEqual(SourceOnlyMediaAssetReference.CanonicalUriLength, limits.GetProperty("x-maxMediaUriCharacters").GetInt32());
+        Assert.AreEqual(SourceOnlyMediaResponseFactory.MaximumRangeHeaderCharacters, limits.GetProperty("x-maxMediaRangeHeaderCharacters").GetInt32());
+        StringAssert.Contains(limits.GetProperty("$comment").GetString()!, "8 MiB");
+        StringAssert.Contains(limits.GetProperty("$comment").GetString()!, "explicitly earlier stored same-project result");
+        foreach ((string stem, string method, string parameters) in new[]
+        {
+            ("pipelineRead", "pipeline.read", "pipelineReadParams"),
+            ("pipelineRegenerate", "pipeline.regenerate", "pipelineRegenerateParams"),
+            ("pipelineRetry", "pipeline.retry", "pipelineCommandParams"),
+            ("pipelineCancel", "pipeline.cancel", "pipelineCommandParams"),
+        })
+        {
+            foreach ((string suffix, string payload, string reference) in new[] { ("Request", "params", parameters), ("Response", "result", "sourceOnlyBridgeResult") })
+            {
+                JsonElement envelope = definitions.GetProperty(stem + suffix);
+                AssertClosedProperties(envelope, "version", "requestId", "method", payload);
+                JsonElement properties = envelope.GetProperty("properties");
+                Assert.AreEqual(method, properties.GetProperty("method").GetProperty("const").GetString());
+                Assert.AreEqual("#/$defs/protocolVersion", properties.GetProperty("version").GetProperty("$ref").GetString());
+                Assert.AreEqual("#/$defs/requestId", properties.GetProperty("requestId").GetProperty("$ref").GetString());
+                Assert.AreEqual("#/$defs/" + reference, properties.GetProperty(payload).GetProperty("$ref").GetString());
+            }
+        }
+        AssertClosedProperties(definitions.GetProperty("pipelineReadParams"), "projectId");
+        AssertClosedProperties(definitions.GetProperty("pipelineRegenerateParams"), "projectId", "expectedVersionId", "expectedVersionDigest", "expectedSettingsRevision", "expectedSettingsSnapshotDigest");
+        AssertClosedProperties(definitions.GetProperty("pipelineCommandParams"), "projectId", "executionId", "expectedRevision");
+        JsonElement result = definitions.GetProperty("sourceOnlyBridgeResult");
+        AssertClosedProperties(result, "status", "snapshot");
+        CollectionAssert.AreEqual(new[] { "available", "notFound", "conflict", "forbidden", "unavailable", "invalid" }, GetStrings(result.GetProperty("properties").GetProperty("status").GetProperty("enum")));
+        JsonElement snapshot = definitions.GetProperty("sourceOnlySnapshot");
+        CollectionAssert.AreEqual(Enum.GetNames<SourceOnlyExecutionPhase>(), GetStrings(snapshot.GetProperty("properties").GetProperty("phase").GetProperty("enum")));
+        CollectionAssert.AreEqual(new[] { "none", "valid", "invalid" }, GetStrings(snapshot.GetProperty("properties").GetProperty("resultStatus").GetProperty("enum")));
+        Assert.AreEqual(3, result.GetProperty("oneOf").GetArrayLength());
+        Assert.AreEqual(3, snapshot.GetProperty("oneOf").GetArrayLength());
+    }
+
+    [TestMethod]
+    public void PipelineResultSchemaClosesEveryDtoIncludingNestedEvaluationInsteadOfOpaqueJson()
+    {
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(ResolveRepositoryPath("schemas/web-bridge.schema.json")));
+        JsonElement definitions = document.RootElement.GetProperty("$defs");
+        (string Name, Type Type)[] contracts =
+        [
+            ("sourceOnlySnapshot", typeof(SourceOnlyBridgeSnapshot)), ("sourceOnlyResult", typeof(SourceOnlyResultDto)),
+            ("sourceOnlyBinding", typeof(SourceOnlyResultBindingDto)), ("sourceOnlyReference", typeof(SourceOnlyResultReferenceDto)),
+            ("sourceOnlyEvidence", typeof(SourceOnlyResultEvidenceDto)), ("sourceOnlyTime", typeof(SourceOnlyResultTimeDto)),
+            ("sourceOnlyFrame", typeof(SourceOnlyResultFrameDto)), ("sourceOnlyMeasuredValue", typeof(SourceOnlyResultValueDto)),
+            ("sourceOnlyCue", typeof(SourceOnlyResultCueDto)), ("sourceOnlyMeasurements", typeof(SourceOnlyResultMeasurementsDto)),
+            ("sourceOnlyTarget", typeof(SourceOnlyResultTargetDto)), ("sourceOnlyWarning", typeof(SourceOnlyResultWarningDto)),
+            ("sourceOnlyDelivery", typeof(SourceOnlyResultDeliveryDto)), ("sourceOnlyArtifact", typeof(SourceOnlyResultArtifactDto)),
+            ("sourceOnlyOmission", typeof(SourceOnlyResultOmissionDto)), ("sourceOnlyFailure", typeof(SourceOnlyResultFailureDto)),
+            ("sourceOnlyTranscript", typeof(SourceOnlyResultTranscriptDto)), ("sourceOnlyWorkflow", typeof(SourceOnlyResultWorkflowDto)),
+            ("sourceOnlyGenerationWarning", typeof(SourceOnlyResultGenerationWarningDto)),
+        ];
+        foreach ((string name, Type type) in contracts)
+        {
+            AssertClosedProperties(definitions.GetProperty(name), type.GetProperties().Select(p => JsonNamingPolicy.CamelCase.ConvertName(p.Name)).ToArray());
+        }
+        AssertClosedProperties(definitions.GetProperty("sourceOnlyEvaluation"),
+            "schemaVersion", "evaluationId", "jobId", "projectId", "compositionVersionId", "compositionVersionDigest", "artifactId", "artifactDigest",
+            "settingsProfileId", "settingsProfileVersion", "settingsProfileDigest", "settingsSnapshotDigest", "ruleSetVersion", "environmentVersion",
+            "environmentDigest", "toolVersionsDigest", "modelVersionsDigest", "templateDigest", "musicDigest", "startedAt", "completedAt", "evaluatedAt",
+            "inputDigest", "outputDigest", "aggregateStatus", "statusCounts", "rules", "limitations");
+        AssertClosedProperties(definitions.GetProperty("sourceOnlyEvaluationRule"), "ruleId", "category", "scope", "status", "reasonCode", "evidenceDigest", "target");
+        AssertClosedProperties(definitions.GetProperty("sourceOnlyEvaluationCounts"), "pass", "warning", "fail", "notEvaluated");
+        AssertClosedProperties(definitions.GetProperty("sourceOnlyEvaluationTarget"), "kind", "projectId", "compositionVersionId", "compositionVersionDigest", "artifactId", "artifactDigest", "timeBasis", "time", "settingKey", "editorKind");
+        JsonElement evaluation = definitions.GetProperty("sourceOnlyArtifact").GetProperty("properties").GetProperty("evaluation").GetProperty("oneOf");
+        Assert.AreEqual("null", evaluation[0].GetProperty("type").GetString());
+        Assert.AreEqual("#/$defs/sourceOnlyEvaluation", evaluation[1].GetProperty("$ref").GetString());
+        Assert.AreEqual(SourceOnlyResultCodec.SchemaVersion, definitions.GetProperty("sourceOnlyResult").GetProperty("properties").GetProperty("schemaVersion").GetProperty("const").GetString());
+        Assert.AreEqual(SourceOnlyResult.MaximumArtifactCount, definitions.GetProperty("sourceOnlyResult").GetProperty("properties").GetProperty("artifacts").GetProperty("maxItems").GetInt32());
+        foreach (JsonProperty definition in definitions.EnumerateObject().Where(p => p.Name.StartsWith("sourceOnly", StringComparison.Ordinal) || p.Name.StartsWith("pipeline", StringComparison.Ordinal)))
+        {
+            AssertLocalReferences(definition.Value);
+            Assert.IsFalse(definition.Value.GetRawText().Contains("nativeReconciliationAttempts", StringComparison.Ordinal));
+        }
+        void AssertLocalReferences(JsonElement node)
+        {
+            if (node.ValueKind == JsonValueKind.Object)
+            {
+                if (node.TryGetProperty("$ref", out JsonElement reference))
+                {
+                    Assert.IsTrue(reference.GetString()!.StartsWith("#/$defs/", StringComparison.Ordinal));
+                    Assert.IsTrue(definitions.TryGetProperty(reference.GetString()!["#/$defs/".Length..], out _), reference.GetString());
+                }
+                foreach (JsonProperty property in node.EnumerateObject()) { AssertLocalReferences(property.Value); }
+            }
+            else if (node.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement item in node.EnumerateArray()) { AssertLocalReferences(item); }
+            }
+        }
+    }
+
+    private static void AssertClosedProperties(JsonElement definition, params string[] fields)
+    {
+        Assert.AreEqual("object", definition.GetProperty("type").GetString());
+        Assert.IsFalse(definition.GetProperty("additionalProperties").GetBoolean());
+        CollectionAssert.AreEquivalent(fields, GetStrings(definition.GetProperty("required")));
+        CollectionAssert.AreEquivalent(fields, definition.GetProperty("properties")
+            .EnumerateObject().Select(static property => property.Name).ToArray());
     }
 
     private static string[] GetStrings(JsonElement array)

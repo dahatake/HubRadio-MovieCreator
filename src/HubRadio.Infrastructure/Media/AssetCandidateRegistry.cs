@@ -47,6 +47,35 @@ public sealed class AssetCandidateRegistry
             entry.IsClaimable;
     }
 
+    /// <summary>
+    /// Native unfinalized-draft recovery only. The caller must verify the persisted
+    /// draft/candidate binding and hold the exact DPAPI-located file after verifying
+    /// its file identity, digest and size. Does not mint a token, commit a handoff,
+    /// or overwrite a different path, active reservation or committed entry.
+    /// </summary>
+    internal bool RestoreVerifiedSelectionForDraft(EntityId<AssetIdTag> candidateId, string selectedPath)
+    {
+        ArgumentNullException.ThrowIfNull(candidateId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(selectedPath);
+        CandidateEntry entry = pendingCandidates.GetOrAdd(candidateId, _ => new CandidateEntry(selectedPath));
+        return entry.MatchesPendingSelection(selectedPath);
+    }
+
+    /// <summary>
+    /// Native recovery only. The caller must first decrypt its CurrentUser locator and
+    /// verify the exact path, file identity, digest and size while holding the source.
+    /// Restores only a committed ingest handoff, never a selectable/finalizable token.
+    /// Existing reservations, different paths and already claimed entries are not replaced.
+    /// </summary>
+    internal bool RestoreVerifiedSelectionForIngest(EntityId<AssetIdTag> candidateId, string selectedPath)
+    {
+        ArgumentNullException.ThrowIfNull(candidateId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(selectedPath);
+        CandidateEntry entry = pendingCandidates.GetOrAdd(candidateId,
+            _ => new CandidateEntry(selectedPath, committedForNativeClaim: true));
+        return entry.MatchesNativeHandoff(selectedPath);
+    }
+
     public bool TryReserve(
         EntityId<AssetIdTag> candidateId,
         [NotNullWhen(true)] out AssetCandidateReservation? reservation)
@@ -180,12 +209,30 @@ public sealed class AssetCandidateRegistry
         }
     }
 
-    private sealed class CandidateEntry(string selectedPath)
+    private sealed class CandidateEntry(string selectedPath, bool committedForNativeClaim = false)
     {
         private readonly object gate = new();
         private Guid? reservationId;
-        private bool committedForClaim;
+        private bool committedForClaim = committedForNativeClaim;
         private bool claimed;
+
+        internal bool MatchesPendingSelection(string path)
+        {
+            lock (gate)
+            {
+                return !claimed && !committedForClaim && reservationId is null &&
+                    string.Equals(selectedPath, path, StringComparison.Ordinal);
+            }
+        }
+
+        internal bool MatchesNativeHandoff(string path)
+        {
+            lock (gate)
+            {
+                return !claimed && committedForClaim && reservationId is null &&
+                    string.Equals(selectedPath, path, StringComparison.Ordinal);
+            }
+        }
 
         internal bool IsAvailable
         {

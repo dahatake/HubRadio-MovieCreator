@@ -1,9 +1,11 @@
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using HubRadio.App.Compositions;
 using HubRadio.App.Jobs;
 using HubRadio.App.Media;
+using HubRadio.App.Projects;
 using HubRadio.App.Web;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Jobs;
@@ -300,6 +302,48 @@ public sealed class IngestWorkflowTests
     }
 
     [TestMethod]
+    public async Task ResumeAsync_RejectsRehashedFractionalSequenceBeforeRunningRemainingStages()
+    {
+        using WorkflowFixture fixture = new();
+        fixture.TimeoutOnceAt = "decode";
+        IngestWorkflowRunResult first = await fixture.Workflow.RunAsync(fixture.Request);
+        Assert.AreEqual(JobState.Failed, first.Job.Snapshot.State);
+        Assert.AreEqual(IngestWorkflowStage.WarningsNormalized, first.LastCompletedStage);
+        StoredIngestWorkflow checkpoint = fixture.WorkflowStore.Get(fixture.Request.JobId)!;
+        string changed = MutateCanonicalJson(
+            checkpoint.CheckpointPayloadJson,
+            static root => root["sourcePtsIndex"]!["entries"]![1]!["sequence"] =
+                JsonNode.Parse("1.000000000000000000000000000001"));
+        fixture.ReplaceCheckpointPayload(changed);
+        (JobCoordinator coordinator, IngestWorkflow workflow) =
+            fixture.CreateFreshRuntime(hourOffset: 1);
+        Assert.AreEqual(
+            JobRetryOutcome.Queued,
+            coordinator.QueueRetry(fixture.Request.JobId).Outcome);
+        fixture.Calls.Clear();
+        StoredJobAggregate before = fixture.RequireAggregate();
+
+        IngestWorkflowRunResult resumed = await workflow.ResumeAsync(fixture.Request.JobId);
+
+        Assert.AreEqual(JobState.Failed, resumed.Job.Snapshot.State);
+        Assert.AreEqual(
+            IngestWorkflowFailureReason.CheckpointValidationFailed,
+            resumed.FailureReason);
+        Assert.AreEqual(IngestWorkflowStage.NotStarted, resumed.LastCompletedStage);
+        Assert.IsTrue(resumed.ReconciliationRequired);
+        Assert.IsFalse(resumed.CanResumeWithThisResult);
+        Assert.IsEmpty(fixture.Calls);
+        StoredIngestWorkflow persisted = fixture.WorkflowStore.Get(fixture.Request.JobId)!;
+        Assert.AreEqual(changed, persisted.CheckpointPayloadJson);
+        Assert.AreEqual(checkpoint.Revision, persisted.Revision);
+        Assert.AreEqual(checkpoint.CheckpointAttemptNumber, persisted.CheckpointAttemptNumber);
+        StoredJobAggregate after = fixture.RequireAggregate();
+        Assert.AreEqual(before.Attempts.Count + 1, after.Attempts.Count);
+        Assert.AreEqual(before.Progress.Count, after.Progress.Count);
+        Assert.AreEqual(before.Heartbeats.Count, after.Heartbeats.Count);
+    }
+
+    [TestMethod]
     public async Task JobRecovery_FreshRuntimeResumesDurableWarningCheckpoint()
     {
         using WorkflowFixture fixture = new();
@@ -467,10 +511,110 @@ public sealed class IngestWorkflowTests
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ReadWarningCodes_PreservesCanonicalWarningsWhenPhysicalFilesAreMissing(
+        bool completed)
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        fixture.TimeoutOnceAt = completed ? null : "decode";
+        IngestWorkflowRunResult result = await fixture.Workflow.RunAsync(fixture.Request);
+        Assert.AreEqual(completed, result.IsComplete);
+        Assert.AreEqual(
+            completed
+                ? IngestWorkflowStage.PreviewAssetsCommitted
+                : IngestWorkflowStage.WarningsNormalized,
+            result.LastCompletedStage);
+        StoredIngestWorkflow stored = fixture.WorkflowStore.Get(fixture.Request.JobId)!;
+        Assert.AreEqual(
+            stored.CheckpointPayloadJson,
+            fixture.Codec.Serialize(result.CopyResumeState()));
+        MediaInfoWarningCode[] expected =
+        [
+            MediaInfoWarningCode.AudioTrackAbsent,
+            MediaInfoWarningCode.LowResolution,
+        ];
+        CollectionAssert.AreEqual(
+            expected,
+            IngestWorkflowCheckpointCodec.ReadWarningCodes(
+                stored.CheckpointPayloadJson,
+                stored.JobId,
+                stored.ProjectId,
+                stored.RequestDigest,
+                stored.CheckpointStage).ToArray());
+
+        string[] physicalPaths = completed
+            ? new[]
+            {
+                fixture.Request.OriginalArtifactId,
+                fixture.Request.ProxyArtifactId,
+                fixture.Request.WaveformIndexArtifactId,
+                fixture.Request.SpriteImageArtifactId,
+                fixture.Request.SpriteIndexArtifactId,
+            }.Select(fixture.GetRegisteredArtifactPath).ToArray()
+            : [fixture.Staged.StagingPath];
+        foreach (string path in physicalPaths)
+        {
+            Assert.IsTrue(File.Exists(path));
+            File.Delete(path);
+            Assert.IsFalse(File.Exists(path));
+        }
+
+        fixture.Calls.Clear();
+        fixture.RejectIngestWrites();
+        string[] filesBefore = fixture.CaptureWorkspaceFiles();
+
+        IReadOnlyList<MediaInfoWarningCode> warnings =
+            IngestWorkflowCheckpointCodec.ReadWarningCodes(
+                stored.CheckpointPayloadJson,
+                stored.JobId,
+                stored.ProjectId,
+                stored.RequestDigest,
+                stored.CheckpointStage);
+
+        CollectionAssert.AreEqual(expected, warnings.ToArray());
+        Assert.AreEqual(
+            JsonSerializer.Serialize(stored),
+            JsonSerializer.Serialize(fixture.WorkflowStore.Get(fixture.Request.JobId)));
+        Assert.IsEmpty(fixture.Calls);
+        CollectionAssert.AreEqual(filesBefore, fixture.CaptureWorkspaceFiles());
+    }
+
+    [TestMethod]
+    public void ReadWarningCodes_ValidatesCanonicalPayloadBeforeReturningNoWarnings()
+    {
+        using WorkflowFixture fixture = new();
+        string canonical = fixture.Codec.Serialize(
+            WorkflowResumeState.Create(fixture.Request));
+        Assert.IsEmpty(IngestWorkflowCheckpointCodec.ReadWarningCodes(
+            canonical,
+            fixture.Request.JobId,
+            fixture.Request.ProjectId,
+            fixture.Request.RequestDigest,
+            (int)IngestWorkflowStage.NotStarted));
+        string changed = MutateCanonicalJson(
+            canonical,
+            static root => root["stage"] = JsonNode.Parse("1e-30"));
+
+        InvalidOperationException exception = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            IngestWorkflowCheckpointCodec.ReadWarningCodes(
+                changed,
+                fixture.Request.JobId,
+                fixture.Request.ProjectId,
+                fixture.Request.RequestDigest,
+                (int)IngestWorkflowStage.NotStarted));
+
+        Assert.AreEqual("The durable ingest checkpoint is invalid.", exception.Message);
+        Assert.IsNull(exception.InnerException);
+        Assert.IsEmpty(fixture.Calls);
+    }
+
+    [TestMethod]
     [DataRow("unknown-property")]
     [DataRow("warning-evidence")]
     [DataRow("stage-binding")]
     [DataRow("fractional-integer")]
+    [DataRow("tiny-fractional-integer")]
     [DataRow("out-of-range-integer")]
     public async Task DurableCheckpointRejectsCanonicalSchemaAndEvidenceMutations(
         string mutation)
@@ -508,6 +652,10 @@ public sealed class IngestWorkflowTests
                     case "fractional-integer":
                         root["sourcePtsIndex"]!["entries"]![0]!["sequence"] =
                             0.5m;
+                        break;
+                    case "tiny-fractional-integer":
+                        root["sourcePtsIndex"]!["entries"]![0]!["sequence"] =
+                            JsonNode.Parse("1e-30");
                         break;
                     case "out-of-range-integer":
                         root["sourcePtsIndex"]!["entries"]![0]!["sequence"] =
@@ -559,6 +707,14 @@ public sealed class IngestWorkflowTests
             CancellationToken.None);
         StoredIngestWorkflow stored = fixture.WorkflowStore.Get(
             fixture.Request.JobId)!;
+        IngestThumbnailSourceReader thumbnailReader = PrepareThumbnailSourceReader(fixture);
+        var playerReader = new IngestPlayerBridgeReader(
+            fixture.Store,
+            fixture.WorkflowStore,
+            fixture.Codec);
+        fixture.Calls.Clear();
+        fixture.RejectIngestWrites();
+        string[] filesBefore = fixture.CaptureWorkspaceFiles();
 
         WorkflowResumeState restored = await fixture.Codec.DeserializeAsync(
             fixture.Request,
@@ -587,6 +743,689 @@ public sealed class IngestWorkflowTests
         Assert.AreEqual(
             completed.PreviewAssets.SpriteIndex.CanonicalJson,
             restored.PreviewAssets.SpriteIndex.CanonicalJson);
+
+        PlayerBridgeReadResult player = await playerReader.ReadAsync(
+            fixture.Request.JobId,
+            CancellationToken.None);
+        ThumbnailSourceReadResult thumbnail = await thumbnailReader.ReadAsync(
+            fixture.Request.JobId,
+            CancellationToken.None);
+
+        Assert.AreEqual(PlayerBridgeStatus.Available, player.Status);
+        Assert.IsNotNull(player.Snapshot);
+        Assert.AreEqual(ThumbnailBridgeStatus.Available, thumbnail.Status);
+        Assert.IsNotNull(thumbnail.Context);
+        Assert.AreEqual(fixture.ProjectId, thumbnail.Context.Project.Id);
+        Assert.AreEqual(completed.Asset!.Id, thumbnail.Context.SourceAsset.Id);
+        Assert.AreEqual(completed.Original!.Artifact.Id, thumbnail.Context.SourceArtifact.Id);
+        Assert.AreEqual(
+            completed.SourcePtsIndex.CanonicalJson,
+            thumbnail.Context.SourcePtsIndex.CanonicalJson);
+        Assert.AreEqual(
+            completed.FrameMap.CanonicalJson,
+            thumbnail.Context.ProxyFrameMap.CanonicalJson);
+        Assert.AreEqual(player.Snapshot.EvidenceDigest, thumbnail.Context.PlayerEvidenceDigest);
+        Assert.IsEmpty(fixture.Calls);
+        CollectionAssert.AreEqual(filesBefore, fixture.CaptureWorkspaceFiles());
+    }
+
+    [TestMethod]
+    [DataRow("source-sequence-fraction", false)]
+    [DataRow("proxy-sequence-fraction", false)]
+    [DataRow("deep-unknown-property", false)]
+    [DataRow("source-sequence-fraction", true)]
+    public async Task CompletedCheckpointReadersRejectRehashedFractionsAndUnknownDeepPropertiesWithoutWrites(
+        string mutation,
+        bool tamperProxy)
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        IngestWorkflowRunResult completed = await fixture.Workflow.RunAsync(fixture.Request);
+        Assert.IsTrue(completed.IsComplete);
+        IngestThumbnailSourceReader thumbnailReader = PrepareThumbnailSourceReader(fixture);
+        var playerReader = new IngestPlayerBridgeReader(
+            fixture.Store,
+            fixture.WorkflowStore,
+            fixture.Codec);
+        StoredIngestWorkflow checkpoint = fixture.WorkflowStore.Get(fixture.Request.JobId)!;
+        string changed = MutateCanonicalJson(checkpoint.CheckpointPayloadJson, root =>
+        {
+            switch (mutation)
+            {
+                case "source-sequence-fraction":
+                    root["sourcePtsIndex"]!["entries"]![0]!["sequence"] = JsonNode.Parse("1e-30");
+                    break;
+                case "proxy-sequence-fraction":
+                    root["proxy"]!["proxyPtsIndex"]!["entries"]![0]!["sequence"] = JsonNode.Parse("1e-30");
+                    break;
+                case "deep-unknown-property":
+                    root["previewAssets"]!["spriteIndex"]!["cells"]![0]!["proxyPresentationTime"]!["unexpected"] = true;
+                    break;
+                default:
+                    throw new AssertFailedException("Unknown checkpoint reader mutation.");
+            }
+        });
+        fixture.ReplaceCheckpointPayload(changed);
+        StoredIngestWorkflow tampered = fixture.WorkflowStore.Get(fixture.Request.JobId)!;
+        Assert.AreEqual(changed, tampered.CheckpointPayloadJson);
+        Assert.AreEqual(changed, CanonicalJson.Canonicalize(changed));
+        Assert.AreNotEqual(checkpoint.CheckpointDigest, tampered.CheckpointDigest);
+        Assert.AreEqual(
+            ContentDigest.Compute(Encoding.UTF8.GetBytes(changed)),
+            tampered.CheckpointDigest);
+        using JsonDocument document = JsonDocument.Parse(tampered.CheckpointPayloadJson);
+        if (mutation == "deep-unknown-property")
+        {
+            Assert.IsTrue(document.RootElement.GetProperty("previewAssets")
+                .GetProperty("spriteIndex").GetProperty("cells")[0]
+                .GetProperty("proxyPresentationTime").GetProperty("unexpected").GetBoolean());
+        }
+        else
+        {
+            JsonElement pts = mutation == "source-sequence-fraction"
+                ? document.RootElement.GetProperty("sourcePtsIndex")
+                : document.RootElement.GetProperty("proxy").GetProperty("proxyPtsIndex");
+            JsonElement sequence = pts.GetProperty("entries")[0].GetProperty("sequence");
+            Assert.AreEqual(JsonValueKind.Number, sequence.ValueKind);
+            Assert.AreEqual("1e-30", sequence.GetRawText());
+            Assert.AreEqual(0m, sequence.GetDecimal());
+        }
+
+        if (tamperProxy)
+        {
+            // Artifact validation must still precede the reconstructed-payload
+            // comparison, preserving the readers' existing stale classification.
+            string proxyPath = fixture.GetRegisteredArtifactPath(fixture.Request.ProxyArtifactId);
+            byte[] bytes = File.ReadAllBytes(proxyPath);
+            bytes[^1] ^= 0xff;
+            File.WriteAllBytes(proxyPath, bytes);
+        }
+
+        fixture.Calls.Clear();
+        fixture.RejectIngestWrites();
+        string[] filesBefore = fixture.CaptureWorkspaceFiles();
+
+        InvalidOperationException warningReadException = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            IngestWorkflowCheckpointCodec.ReadWarningCodes(
+                tampered.CheckpointPayloadJson,
+                tampered.JobId,
+                tampered.ProjectId,
+                tampered.RequestDigest,
+                tampered.CheckpointStage));
+        Assert.AreEqual("The durable ingest checkpoint is invalid.", warningReadException.Message);
+        Assert.IsNull(warningReadException.InnerException);
+
+        InvalidOperationException exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            fixture.Codec.DeserializeAsync(fixture.Request, tampered, CancellationToken.None));
+
+        Assert.AreEqual("The durable ingest checkpoint is invalid.", exception.Message);
+        if (tamperProxy)
+        {
+            Assert.IsInstanceOfType<ArtifactStoreException>(exception.InnerException);
+            Assert.AreEqual(
+                ArtifactStoreFailureReason.DigestMismatch,
+                ((ArtifactStoreException)exception.InnerException).Reason);
+        }
+        else
+        {
+            Assert.IsNull(exception.InnerException);
+        }
+
+        PlayerBridgeReadResult player = await playerReader.ReadAsync(
+            fixture.Request.JobId,
+            CancellationToken.None);
+        ThumbnailSourceReadResult thumbnail = await thumbnailReader.ReadAsync(
+            fixture.Request.JobId,
+            CancellationToken.None);
+
+        Assert.AreEqual(
+            tamperProxy ? PlayerBridgeStatus.Stale : PlayerBridgeStatus.Mismatched,
+            player.Status);
+        Assert.IsNull(player.Snapshot);
+        Assert.AreEqual(
+            tamperProxy ? ThumbnailBridgeStatus.Stale : ThumbnailBridgeStatus.Mismatched,
+            thumbnail.Status);
+        Assert.IsNull(thumbnail.Context);
+        Assert.AreEqual(
+            JsonSerializer.Serialize(tampered),
+            JsonSerializer.Serialize(fixture.WorkflowStore.Get(fixture.Request.JobId)));
+        Assert.IsEmpty(fixture.Calls);
+        CollectionAssert.AreEqual(filesBefore, fixture.CaptureWorkspaceFiles());
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task ReadCompletedAsync_FreshRuntimeRehydratesExactEvidenceWithoutWrites(
+        bool recoverCompletedCheckpoint)
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        IngestWorkflowRunResult completed = await fixture.Workflow.RunAsync(
+            fixture.Request);
+        Assert.IsTrue(completed.IsComplete);
+        StoredIngestWorkflow checkpoint = fixture.WorkflowStore.Get(
+            fixture.Request.JobId)!;
+
+        if (recoverCompletedCheckpoint)
+        {
+            // Model a restart after the last checkpoint was committed. A retry
+            // may succeed without advancing that earlier attempt's checkpoint.
+            fixture.ExecuteCorruptionForTest($"""
+                UPDATE jobs SET state = 'interrupted'
+                WHERE id = '{fixture.Request.JobId}';
+                UPDATE job_attempts
+                SET state = 'interrupted', error_code = 'job.app_restarted'
+                WHERE job_id = '{fixture.Request.JobId}';
+                """);
+            (JobCoordinator coordinator, IngestWorkflow retryWorkflow) =
+                fixture.CreateFreshRuntime(hourOffset: 1);
+            Assert.AreEqual(
+                JobRetryOutcome.Queued,
+                coordinator.QueueRetry(fixture.Request.JobId).Outcome);
+            fixture.Calls.Clear();
+            completed = await retryWorkflow.ResumeAsync(fixture.Request.JobId);
+            Assert.IsTrue(completed.IsComplete);
+            Assert.IsEmpty(fixture.Calls);
+            Assert.AreEqual(2, completed.Job.SequenceNumber);
+        }
+
+        (_, IngestWorkflow workflow) = fixture.CreateFreshRuntime(hourOffset: 2);
+        fixture.Calls.Clear();
+        fixture.RejectIngestWrites();
+        string[] filesBefore = fixture.CaptureWorkspaceFiles();
+
+        IngestWorkflowRunResult restored = await workflow.ReadCompletedAsync(
+            fixture.Request.JobId);
+        IngestWorkflowRunResult repeated = await workflow.ReadCompletedAsync(
+            fixture.Request.JobId,
+            CancellationToken.None);
+
+        Assert.IsTrue(restored.IsComplete);
+        Assert.IsFalse(restored.CanResumeWithThisResult);
+        Assert.IsFalse(restored.ReconciliationRequired);
+        Assert.IsNull(restored.FailureReason);
+        Assert.AreEqual(completed.RequestDigest, restored.RequestDigest);
+        Assert.AreEqual(
+            JsonSerializer.Serialize(completed.Job),
+            JsonSerializer.Serialize(restored.Job));
+        Assert.AreEqual(
+            JsonSerializer.Serialize(restored.Job),
+            JsonSerializer.Serialize(repeated.Job));
+        Assert.AreEqual(
+            checkpoint.CheckpointPayloadJson,
+            fixture.Codec.Serialize(restored.CopyResumeState()));
+        Assert.AreEqual(
+            checkpoint.CheckpointPayloadJson,
+            fixture.Codec.Serialize(repeated.CopyResumeState()));
+        Assert.AreEqual(
+            completed.SourcePtsIndex!.CanonicalJson,
+            restored.SourcePtsIndex!.CanonicalJson);
+        Assert.AreEqual(
+            completed.Proxy!.ProxyPtsIndex.CanonicalJson,
+            restored.Proxy!.ProxyPtsIndex.CanonicalJson);
+        Assert.AreEqual(completed.FrameMap!.CanonicalJson, restored.FrameMap!.CanonicalJson);
+        Assert.AreEqual(
+            completed.PreviewAssets!.WaveformIndex.CanonicalJson,
+            restored.PreviewAssets!.WaveformIndex.CanonicalJson);
+        Assert.AreEqual(
+            completed.PreviewAssets.SpriteIndex.CanonicalJson,
+            restored.PreviewAssets.SpriteIndex.CanonicalJson);
+        CollectionAssert.AreEqual(
+            completed.Warnings.Select(static warning => warning.Code).ToArray(),
+            restored.Warnings.Select(static warning => warning.Code).ToArray());
+
+        Assert.AreNotSame(completed.Asset, restored.Asset);
+        Assert.AreSame(restored.Asset, restored.Original!.Asset);
+        Assert.AreEqual(fixture.Request.AssetCandidateId, restored.Asset!.Id);
+        Assert.AreEqual(fixture.Request.OriginalArtifactId, restored.Original.Artifact.Id);
+        Assert.AreNotEqual(restored.Asset.Id.ToString(), restored.Original.Artifact.Id.ToString());
+        Assert.AreEqual(restored.Asset.ContentDigest, restored.Original.Artifact.ContentDigest);
+        Assert.AreEqual(restored.Asset.ByteSize, restored.Original.Artifact.ByteSize);
+        Assert.AreEqual(restored.Asset.Id, restored.Proxy.SourceAssetId);
+        Assert.AreEqual(restored.Original.Artifact.Id, restored.Proxy.SourceOriginalArtifactId);
+        Assert.AreEqual(1, checkpoint.CheckpointAttemptNumber);
+        Assert.AreEqual(
+            checkpoint.CheckpointAttemptNumber,
+            fixture.WorkflowStore.Get(fixture.Request.JobId)!.CheckpointAttemptNumber);
+
+        // Reading a completed result must not relax ResumeAsync's queued-only contract.
+        _ = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            workflow.ResumeAsync(fixture.Request.JobId));
+        Assert.IsEmpty(fixture.Calls);
+        CollectionAssert.AreEqual(filesBefore, fixture.CaptureWorkspaceFiles());
+    }
+
+    [TestMethod]
+    [DataRow("missing-job")]
+    [DataRow("missing-workflow")]
+    [DataRow("queued")]
+    [DataRow("running")]
+    [DataRow("failed")]
+    [DataRow("retry-queued")]
+    [DataRow("cancelled")]
+    [DataRow("interrupted")]
+    [DataRow("incomplete-success")]
+    public async Task ReadCompletedAsync_RejectsMissingOrNonCompletedJobsWithoutWrites(
+        string condition)
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        EntityId<JobIdTag> jobId = fixture.Request.JobId;
+        if (condition is not ("missing-job" or "missing-workflow"))
+        {
+            _ = fixture.WorkflowStore.RegisterOrGet(
+                jobId,
+                fixture.ProjectId,
+                fixture.Request.Version,
+                fixture.Request.RequestDigest,
+                fixture.Request.CanonicalJson,
+                IngestWorkflowCheckpointCodec.SchemaVersion,
+                fixture.Codec.Serialize(WorkflowResumeState.Create(fixture.Request)));
+        }
+
+        switch (condition)
+        {
+            case "missing-job":
+                jobId = EntityId<JobIdTag>.New();
+                break;
+            case "missing-workflow":
+                _ = await fixture.Coordinator.RunAsync(
+                    jobId,
+                    static (_, _) => Task.CompletedTask,
+                    CancellationToken.None);
+                break;
+            case "queued":
+                break;
+            case "running":
+                fixture.SeedAbandonedWarningCheckpoint();
+                break;
+            case "failed":
+            case "retry-queued":
+                fixture.TimeoutOnceAt = "decode";
+                IngestWorkflowRunResult failed = await fixture.Workflow.RunAsync(fixture.Request);
+                Assert.AreEqual(JobState.Failed, failed.Job.Snapshot.State);
+                Assert.AreEqual(IngestWorkflowStage.WarningsNormalized, failed.LastCompletedStage);
+                if (condition == "retry-queued")
+                {
+                    Assert.AreEqual(
+                        JobRetryOutcome.Queued,
+                        fixture.Coordinator.QueueRetry(jobId).Outcome);
+                }
+
+                break;
+            case "cancelled":
+                _ = fixture.Store.CancelQueued(
+                    jobId,
+                    expectedRevision: 0,
+                    fixture.TimeProvider.GetUtcNow());
+                break;
+            case "interrupted":
+            case "incomplete-success":
+                fixture.SeedAbandonedWarningCheckpoint();
+                StoredJobAggregate running = fixture.RequireAggregate();
+                JobAttempt attempt = running.Attempts[^1];
+                DateTimeOffset completedAt = running.Job.UpdatedAt.AddMinutes(1);
+                _ = fixture.Store.CompleteAttempt(
+                    jobId,
+                    running.Revision,
+                    new JobAttempt(
+                        attempt.Id,
+                        jobId,
+                        attempt.SequenceNumber,
+                        condition == "interrupted" ? JobState.Interrupted : JobState.Succeeded,
+                        attempt.QueuedAt,
+                        attempt.StartedAt,
+                        completedAt,
+                        condition == "interrupted" ? "job.app_restarted" : null),
+                    completedAt);
+                break;
+            default:
+                throw new AssertFailedException("Unknown completed-read condition.");
+        }
+
+        await AssertCompletedReadRejectedWithoutWritesAsync(fixture, jobId);
+    }
+
+    [TestMethod]
+    public async Task ReadCompletedAsync_RejectsFullCheckpointWhenFinalProgressFailed()
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        fixture.ExecuteNonQuery("""
+            CREATE TRIGGER reject_completed_ingest_progress
+            BEFORE INSERT ON job_progress
+            WHEN NEW.completed_units = 9
+            BEGIN
+                SELECT RAISE(ABORT, 'injected final progress failure');
+            END;
+            """);
+        IngestWorkflowRunResult failed = await fixture.Workflow.RunAsync(fixture.Request);
+        Assert.AreEqual(JobState.Failed, failed.Job.Snapshot.State);
+        Assert.AreEqual(IngestWorkflowStage.PreviewAssetsCommitted, failed.LastCompletedStage);
+        Assert.AreEqual(IngestWorkflowFailureReason.ProgressPersistenceFailed, failed.FailureReason);
+        Assert.AreEqual(
+            (int)IngestWorkflowStage.PreviewAssetsCommitted,
+            fixture.WorkflowStore.Get(fixture.Request.JobId)!.CheckpointStage);
+
+        await AssertCompletedReadRejectedWithoutWritesAsync(fixture);
+    }
+
+    [TestMethod]
+    [DataRow("request-digest")]
+    [DataRow("request-rebound")]
+    [DataRow("request-schema")]
+    [DataRow("checkpoint-digest")]
+    [DataRow("checkpoint-schema")]
+    [DataRow("future-attempt")]
+    [DataRow("job-kind")]
+    [DataRow("job-project")]
+    [DataRow("attempt-state")]
+    [DataRow("attempt-missing")]
+    public async Task ReadCompletedAsync_RejectsTamperedStoredBindingsWithoutWrites(
+        string mutation)
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        IngestWorkflowRunResult completed = await fixture.Workflow.RunAsync(fixture.Request);
+        Assert.IsTrue(completed.IsComplete);
+        string jobId = fixture.Request.JobId.ToString();
+        switch (mutation)
+        {
+            case "request-digest":
+                fixture.ExecuteNonQuery($"""
+                    UPDATE ingest_workflows SET request_digest = '{new string('f', 64)}'
+                    WHERE job_id = '{jobId}';
+                    """);
+                break;
+            case "request-rebound":
+                IngestWorkflowRequest changed = fixture.CreateEquivalentRequest(
+                    mediaType: "video/mp4");
+                fixture.ExecuteNonQuery($"""
+                    UPDATE ingest_workflows
+                    SET request_digest = '{changed.RequestDigest.Hex}',
+                        request_payload = X'{Convert.ToHexString(Encoding.UTF8.GetBytes(changed.CanonicalJson))}'
+                    WHERE job_id = '{jobId}';
+                    """);
+                break;
+            case "request-schema":
+                fixture.ExecuteNonQuery($"""
+                    UPDATE ingest_workflows SET request_schema_version = 'unsupported-request'
+                    WHERE job_id = '{jobId}';
+                    """);
+                break;
+            case "checkpoint-digest":
+                fixture.ExecuteNonQuery($"""
+                    UPDATE ingest_workflows SET checkpoint_digest = '{new string('f', 64)}'
+                    WHERE job_id = '{jobId}';
+                    """);
+                break;
+            case "checkpoint-schema":
+                fixture.ExecuteNonQuery($"""
+                    UPDATE ingest_workflows SET checkpoint_schema_version = 'unsupported-checkpoint'
+                    WHERE job_id = '{jobId}';
+                    """);
+                break;
+            case "future-attempt":
+                fixture.ExecuteNonQuery($"""
+                    UPDATE ingest_workflows SET checkpoint_attempt_number = 2
+                    WHERE job_id = '{jobId}';
+                    """);
+                break;
+            case "job-kind":
+                fixture.ExecuteNonQuery($"""
+                    UPDATE jobs SET kind = 'media.other.v1' WHERE id = '{jobId}';
+                    """);
+                break;
+            case "job-project":
+                EntityId<ProjectIdTag> otherProject = EntityId<ProjectIdTag>.New();
+                fixture.ExecuteCorruptionForTest($"""
+                    UPDATE jobs SET project_id = '{otherProject}' WHERE id = '{jobId}';
+                    UPDATE ingest_workflows SET project_id = '{otherProject}'
+                    WHERE job_id = '{jobId}';
+                    """);
+                break;
+            case "attempt-state":
+                fixture.ExecuteNonQuery($"""
+                    UPDATE job_attempts
+                    SET state = 'failed', error_code = 'job.execution_failed'
+                    WHERE job_id = '{jobId}';
+                    """);
+                break;
+            case "attempt-missing":
+                fixture.ExecuteNonQuery($"""
+                    DELETE FROM job_progress WHERE job_id = '{jobId}';
+                    DELETE FROM job_heartbeats WHERE job_id = '{jobId}';
+                    DELETE FROM job_attempts WHERE job_id = '{jobId}';
+                    """);
+                break;
+            default:
+                throw new AssertFailedException("Unknown completed binding mutation.");
+        }
+
+        await AssertCompletedReadRejectedWithoutWritesAsync(fixture);
+    }
+
+    [TestMethod]
+    [DataRow("unknown-property")]
+    [DataRow("missing-preview")]
+    [DataRow("stage-binding")]
+    [DataRow("asset-binding")]
+    [DataRow("original-binding")]
+    [DataRow("source-pts")]
+    [DataRow("proxy-pts")]
+    [DataRow("frame-map")]
+    [DataRow("waveform")]
+    [DataRow("sprite")]
+    [DataRow("warning-evidence")]
+    public async Task ReadCompletedAsync_RejectsRehashedCanonicalEvidenceMutations(
+        string mutation)
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        IngestWorkflowRunResult completed = await fixture.Workflow.RunAsync(fixture.Request);
+        Assert.IsTrue(completed.IsComplete);
+        StoredIngestWorkflow checkpoint = fixture.WorkflowStore.Get(fixture.Request.JobId)!;
+        string changed = MutateCanonicalJson(checkpoint.CheckpointPayloadJson, root =>
+        {
+            switch (mutation)
+            {
+                case "unknown-property":
+                    root["unexpectedCompletedEvidence"] = true;
+                    break;
+                case "missing-preview":
+                    root["previewAssets"] = null;
+                    break;
+                case "stage-binding":
+                    root["stage"] = 8;
+                    break;
+                case "asset-binding":
+                    root["asset"]!["id"] = EntityId<AssetIdTag>.New().ToString();
+                    break;
+                case "original-binding":
+                    root["proxy"]!["sourceOriginalArtifactId"] =
+                        fixture.Request.SpriteImageArtifactId.ToString();
+                    break;
+                case "source-pts":
+                    root["sourcePtsIndex"]!["entries"]![1]!["keyFrame"] = true;
+                    break;
+                case "proxy-pts":
+                    root["proxy"]!["proxyPtsIndex"]!["entries"]![1]!["keyFrame"] = true;
+                    break;
+                case "frame-map":
+                    root["frameMapDigest"] = new string('f', 64);
+                    break;
+                case "waveform":
+                    root["previewAssets"]!["waveformIndex"]!["proxyPtsIndexDigest"] = new string('f', 64);
+                    break;
+                case "sprite":
+                    root["previewAssets"]!["spriteIndex"]!["spriteImageDigest"] = new string('f', 64);
+                    break;
+                case "warning-evidence":
+                    JsonNode warning = root["mediaInfo"]!["warnings"]!.AsArray().Single(node =>
+                        node!["code"]!.GetValue<string>() == nameof(MediaInfoWarningCode.LowResolution))!;
+                    warning["lowResolution"]!["observedWidth"] = 641;
+                    break;
+                default:
+                    throw new AssertFailedException("Unknown completed evidence mutation.");
+            }
+        });
+        fixture.ReplaceCheckpointPayload(changed);
+
+        await AssertCompletedReadRejectedWithoutWritesAsync(fixture);
+    }
+
+    [TestMethod]
+    public async Task ReadCompletedAsync_RejectsRehashedFractionalSequenceWithoutWrites()
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        IngestWorkflowRunResult completed = await fixture.Workflow.RunAsync(fixture.Request);
+        Assert.IsTrue(completed.IsComplete);
+        StoredIngestWorkflow checkpoint = fixture.WorkflowStore.Get(fixture.Request.JobId)!;
+        const string fractionalSequence = "1.000000000000000000000000000001";
+        string changed = MutateCanonicalJson(
+            checkpoint.CheckpointPayloadJson,
+            static root => root["sourcePtsIndex"]!["entries"]![1]!["sequence"] =
+                JsonNode.Parse(fractionalSequence));
+        fixture.ReplaceCheckpointPayload(changed);
+        StoredIngestWorkflow tampered = fixture.WorkflowStore.Get(fixture.Request.JobId)!;
+        Assert.AreEqual(changed, tampered.CheckpointPayloadJson);
+        Assert.AreNotEqual(checkpoint.CheckpointDigest, tampered.CheckpointDigest);
+        Assert.AreEqual(
+            ContentDigest.Compute(Encoding.UTF8.GetBytes(changed)),
+            tampered.CheckpointDigest);
+        using JsonDocument document = JsonDocument.Parse(tampered.CheckpointPayloadJson);
+        JsonElement sequence = document.RootElement.GetProperty("sourcePtsIndex")
+            .GetProperty("entries")[1].GetProperty("sequence");
+        Assert.AreEqual(JsonValueKind.Number, sequence.ValueKind);
+        Assert.AreEqual(CanonicalJson.Canonicalize(fractionalSequence), sequence.GetRawText());
+        Assert.AreNotEqual("1", sequence.GetRawText());
+
+        (_, IngestWorkflow workflow) = fixture.CreateFreshRuntime(hourOffset: 2);
+        fixture.Calls.Clear();
+        fixture.RejectIngestWrites();
+        string[] filesBefore = fixture.CaptureWorkspaceFiles();
+
+        InvalidOperationException exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            workflow.ReadCompletedAsync(fixture.Request.JobId));
+
+        Assert.AreEqual("The durable ingest checkpoint is invalid.", exception.Message);
+        Assert.IsEmpty(fixture.Calls);
+        CollectionAssert.AreEqual(filesBefore, fixture.CaptureWorkspaceFiles());
+    }
+
+    [TestMethod]
+    [DataRow("original", "missing")]
+    [DataRow("proxy", "missing")]
+    [DataRow("waveform", "missing")]
+    [DataRow("sprite-image", "missing")]
+    [DataRow("sprite-index", "missing")]
+    [DataRow("original", "tampered")]
+    [DataRow("proxy", "tampered")]
+    [DataRow("waveform", "tampered")]
+    [DataRow("sprite-image", "tampered")]
+    [DataRow("sprite-index", "tampered")]
+    [DataRow("original", "unregistered")]
+    [DataRow("proxy", "unregistered")]
+    [DataRow("waveform", "unregistered")]
+    [DataRow("sprite-image", "unregistered")]
+    [DataRow("sprite-index", "unregistered")]
+    [DataRow("proxy", "metadata")]
+    [DataRow("original", "rehashed")]
+    public async Task ReadCompletedAsync_RejectsMissingTamperedOrReboundArtifactsWithoutWrites(
+        string artifactName,
+        string mutation)
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        IngestWorkflowRunResult completed = await fixture.Workflow.RunAsync(fixture.Request);
+        Assert.IsTrue(completed.IsComplete);
+        EntityId<ArtifactIdTag> artifactId = artifactName switch
+        {
+            "original" => fixture.Request.OriginalArtifactId,
+            "proxy" => fixture.Request.ProxyArtifactId,
+            "waveform" => fixture.Request.WaveformIndexArtifactId,
+            "sprite-image" => fixture.Request.SpriteImageArtifactId,
+            "sprite-index" => fixture.Request.SpriteIndexArtifactId,
+            _ => throw new AssertFailedException("Unknown completed artifact."),
+        };
+        string path = fixture.GetRegisteredArtifactPath(artifactId);
+        switch (mutation)
+        {
+            case "missing":
+                File.Delete(path);
+                break;
+            case "unregistered":
+                fixture.ExecuteNonQuery($"DELETE FROM artifacts WHERE id = '{artifactId}';");
+                break;
+            case "tampered":
+            case "rehashed":
+                byte[] changed = File.ReadAllBytes(path);
+                changed[^1] ^= 0xff;
+                File.WriteAllBytes(path, changed);
+                if (mutation == "rehashed")
+                {
+                    fixture.ExecuteNonQuery($"""
+                        UPDATE artifacts SET content_digest = '{ContentDigest.Compute(changed).Hex}'
+                        WHERE id = '{artifactId}';
+                        """);
+                }
+
+                break;
+            case "metadata":
+                fixture.ExecuteNonQuery($"""
+                    UPDATE artifacts SET created_at = '2044-01-01T00:00:00.0000000+00:00'
+                    WHERE id = '{artifactId}';
+                    """);
+                break;
+            default:
+                throw new AssertFailedException("Unknown completed artifact mutation.");
+        }
+
+        await AssertCompletedReadRejectedWithoutWritesAsync(fixture);
+    }
+
+    [TestMethod]
+    [DataRow("ready")]
+    [DataRow("partial")]
+    public async Task ReadCompletedAsync_RejectsRecreatedStagingWithoutRepairingIt(string kind)
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        IngestWorkflowRunResult completed = await fixture.Workflow.RunAsync(fixture.Request);
+        Assert.IsTrue(completed.IsComplete);
+        fixture.CreateUncheckpointedStaging(kind);
+
+        await AssertCompletedReadRejectedWithoutWritesAsync(fixture);
+    }
+
+    [TestMethod]
+    public async Task ReadCompletedAsync_RejectsNullAndHonorsPreCancellationWithoutWrites()
+    {
+        using WorkflowFixture fixture = new(useRegisteredArtifacts: true);
+        fixture.RejectIngestWrites();
+        string[] filesBefore = fixture.CaptureWorkspaceFiles();
+        ArgumentNullException invalid = await Assert.ThrowsExactlyAsync<ArgumentNullException>(() =>
+            fixture.Workflow.ReadCompletedAsync(null!));
+        Assert.AreEqual("jobId", invalid.ParamName);
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+
+        OperationCanceledException cancelled = await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
+            fixture.Workflow.ReadCompletedAsync(EntityId<JobIdTag>.New(), cancellation.Token));
+
+        Assert.AreEqual(cancellation.Token, cancelled.CancellationToken);
+        Assert.IsEmpty(fixture.Calls);
+        CollectionAssert.AreEqual(filesBefore, fixture.CaptureWorkspaceFiles());
+    }
+
+    private static async Task AssertCompletedReadRejectedWithoutWritesAsync(
+        WorkflowFixture fixture,
+        EntityId<JobIdTag>? jobId = null)
+    {
+        (_, IngestWorkflow workflow) = fixture.CreateFreshRuntime(hourOffset: 2);
+        fixture.Calls.Clear();
+        fixture.RejectIngestWrites();
+        string[] filesBefore = fixture.CaptureWorkspaceFiles();
+
+        InvalidOperationException exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            workflow.ReadCompletedAsync(jobId ?? fixture.Request.JobId));
+
+        Assert.IsFalse(exception.Message.Contains(fixture.RootPath, StringComparison.OrdinalIgnoreCase));
+        Assert.IsEmpty(fixture.Calls);
+        CollectionAssert.AreEqual(filesBefore, fixture.CaptureWorkspaceFiles());
     }
 
     [TestMethod]
@@ -1449,7 +2288,7 @@ public sealed class IngestWorkflowTests
                 property.PropertyType == typeof(StagedMediaImport)));
         Assert.AreEqual(0, typeof(IngestWorkflowRunResult).GetConstructors().Length);
         CollectionAssert.AreEqual(
-            new[] { "ResumeAsync", "RunAsync" },
+            new[] { "ReadCompletedAsync", "ResumeAsync", "RunAsync" },
             typeof(IngestWorkflow)
                 .GetMethods(
                     BindingFlags.Instance |
@@ -1848,6 +2687,57 @@ public sealed class IngestWorkflowTests
             command.CommandText = sql;
             _ = command.ExecuteNonQuery();
         }
+
+        internal void RejectIngestWrites()
+        {
+            foreach (string table in new[]
+            {
+                "projects", "jobs", "job_attempts", "job_progress", "job_heartbeats",
+                "ingest_workflows", "artifacts",
+            })
+            {
+                foreach (string operation in new[] { "INSERT", "UPDATE", "DELETE" })
+                {
+                    ExecuteNonQuery($"""
+                        CREATE TRIGGER reject_completed_read_{table}_{operation}
+                        BEFORE {operation} ON {table}
+                        BEGIN
+                            SELECT RAISE(ABORT, 'completed ingest read attempted a write');
+                        END;
+                        """);
+                }
+            }
+        }
+
+        internal string[] CaptureWorkspaceFiles() =>
+            Directory.EnumerateFileSystemEntries(
+                    RootPath,
+                    "*",
+                    SearchOption.AllDirectories)
+                .OrderBy(static path => path, StringComparer.Ordinal)
+                .Select(path =>
+                {
+                    string relativePath = Path.GetRelativePath(RootPath, path);
+                    if (Directory.Exists(path))
+                    {
+                        return JsonSerializer.Serialize(new
+                        {
+                            kind = "directory",
+                            relativePath,
+                        });
+                    }
+
+                    var file = new FileInfo(path);
+                    return JsonSerializer.Serialize(new
+                    {
+                        kind = "file",
+                        relativePath,
+                        byteSize = file.Length,
+                        lastWriteTimeUtc = file.LastWriteTimeUtc,
+                        digest = ContentDigest.Compute(File.ReadAllBytes(path)).Hex,
+                    });
+                })
+                .ToArray();
 
         internal void ExecuteCorruptionForTest(string sql)
         {
@@ -2674,6 +3564,55 @@ public sealed class IngestWorkflowTests
                 "unrecognized-container-signature",
                 "variable-rate-fields-differ",
             ]);
+
+    private static IngestThumbnailSourceReader PrepareThumbnailSourceReader(WorkflowFixture fixture)
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null &&
+            !File.Exists(Path.Combine(directory.FullName, "HubRadio.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        string repositoryPath = directory?.FullName
+            ?? throw new AssertFailedException("Could not resolve the repository root.");
+        ProjectCreationCatalog catalog = ProjectCreationCatalog.Load(
+            Path.Combine(repositoryPath, "src", "HubRadio.App", "Profiles"));
+        var draft = new ProjectCreationDraft(
+            EntityId<ProjectCreationDraftIdTag>.New(),
+            fixture.Request.AssetCandidateId,
+            "Ingest workflow test",
+            "Verify checkpoint reader validation.",
+            "Test suite",
+            PublicationScope.InternalOnly,
+            [catalog.ResolveOutputProfile(catalog.OutputProfiles[0].Id)],
+            "ja-JP",
+            ["Test performer"],
+            new ProjectDeadlineSelection(deadline: null),
+            catalog.ResolveBrandTemplate(catalog.BrandTemplates[0].Id));
+        Assert.IsTrue(draft.IsComplete);
+        var projectStore = new ProjectStore(fixture.DatabasePath);
+        StoredProject stored = projectStore.GetProject(fixture.ProjectId)!;
+        _ = projectStore.UpdateProject(
+            new Project(
+                fixture.ProjectId,
+                draft.ContentName!,
+                draft.Purpose!,
+                draft.Audience!,
+                draft.PublicationScope!.Value,
+                draft.DeadlineSelection!.Deadline,
+                assets: [],
+                performers: []),
+            ProjectCreationPayloadCodec.Serialize(draft),
+            stored.Revision,
+            fixture.TimeProvider.GetUtcNow());
+        return new IngestThumbnailSourceReader(
+            fixture.Store,
+            fixture.WorkflowStore,
+            projectStore,
+            fixture.Codec,
+            catalog);
+    }
 
     private static StoredIngestWorkflow WithCheckpointPayload(
         StoredIngestWorkflow stored,

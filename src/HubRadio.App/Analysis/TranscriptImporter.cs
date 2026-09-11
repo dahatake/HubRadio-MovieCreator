@@ -882,13 +882,15 @@ public static class TranscriptImporter
             workerResult.ModelManifestDigest != PinnedModelManifestDigest ||
             !string.Equals(configuration.Device, "cpu", StringComparison.Ordinal) ||
             !string.Equals(configuration.ComputeType, "int8", StringComparison.Ordinal) ||
-            !string.Equals(configuration.Language, "ja", StringComparison.Ordinal) ||
+            configuration.Language is not ("ja" or LocalAnalysisWorker.AutoLanguagePolicy) ||
             !string.Equals(configuration.Task, "transcribe", StringComparison.Ordinal) ||
             configuration.BeamSize != 5 ||
             !configuration.WordTimestamps ||
             configuration.VadFilter ||
             !configuration.ConditionOnPreviousText ||
-            !string.Equals(workerResult.Language, "ja", StringComparison.Ordinal))
+            (configuration.Language == "ja"
+                ? !string.Equals(workerResult.Language, "ja", StringComparison.Ordinal)
+                : !LocalAnalysisWorker.IsSupportedLanguage(workerResult.Language)))
         {
             throw Failure(TranscriptImportFailureReason.WorkerIdentityMismatch);
         }

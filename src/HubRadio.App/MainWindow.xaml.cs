@@ -1,6 +1,7 @@
 using HubRadio.App.Projects;
 using HubRadio.App.Web;
 using HubRadio.Infrastructure.Diagnostics;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.Web.WebView2.Core;
 
@@ -11,8 +12,20 @@ public sealed partial class MainWindow : Window
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private readonly MainWindowStartupLifecycle startupLifecycle = new();
     private readonly JobBridgeRequestHandler? jobBridgeHandler;
+    private Task<ApplicationBridgeHandlers>? applicationRuntimeCreation;
+    private ApplicationBridgeHandlers? applicationBridgeHandlers;
+    private Task<string?>? shutdownTask;
+    private Task<string?>? closeCompletionTask;
     private WebViewHost? webViewHost;
     private bool isWebViewClosed;
+    private bool allowFinalClose;
+    private bool isWindowClosed;
+
+    internal Task<string?> ShutdownTask => shutdownTask ?? Task.FromResult<string?>(null);
+
+    internal Task<string?> WindowCloseTask => closeCompletionTask ?? Task.FromResult<string?>(null);
+
+    internal string? NativeRecoveryFailureCode { get; private set; }
 
     public MainWindow()
         : this(jobBridgeHandler: null)
@@ -23,13 +36,33 @@ public sealed partial class MainWindow : Window
     {
         this.jobBridgeHandler = jobBridgeHandler;
         InitializeComponent();
+        AppWindow.Closing += OnAppWindowClosing;
         Closed += (_, _) =>
         {
+            isWindowClosed = true;
+            AppWindow.Closing -= OnAppWindowClosing;
             // Release the owned control on the UI thread, while lifecycle UI access is still allowed.
             CloseWebApplicationView();
             startupLifecycle.Close();
-            lifetimeCancellation.Cancel();
+            BeginNativeShutdown();
         };
+    }
+
+    private void OnAppWindowClosing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        if (allowFinalClose) { return; }
+        // The last Window.Closed terminates WinUI's message loop. Retain the window
+        // until native disposal finishes; await it asynchronously, never Wait()/Result.
+        args.Cancel = true;
+        CloseWebApplicationView();
+        startupLifecycle.Close();
+        BeginNativeShutdown();
+        closeCompletionTask ??= SourceOnlyApplicationShutdown.CloseAfterStopAsync(ShutdownTask, () =>
+        {
+            if (isWindowClosed) { return; }
+            allowFinalClose = true;
+            Close();
+        });
     }
 
     private async void OnRootGridLoaded(object sender, RoutedEventArgs args)
@@ -112,15 +145,24 @@ public sealed partial class MainWindow : Window
                 }
 #endif
 
-                ApplicationBridgeHandlers bridgeHandlers =
-                    ProjectApplicationRuntime.Create(
+                // Own the creation task BEFORE awaiting: Closed may run while a
+                // verified offline model is being copied. Shutdown awaits and disposes
+                // even a runtime that completes after the window has gone away.
+                applicationRuntimeCreation = ProjectApplicationRuntime.CreateAsync(
                     this,
                     applicationDataDirectory,
                     Path.Combine(AppContext.BaseDirectory, "Profiles"),
                     Path.Combine(
                         AppContext.BaseDirectory,
                         "DefaultSettings",
-                        "Profiles"));
+                        "Profiles"),
+                    lifetimeCancellation.Token);
+                ApplicationBridgeHandlers bridgeHandlers = await applicationRuntimeCreation;
+                applicationBridgeHandlers = bridgeHandlers;
+                if (!startupLifecycle.CanUpdateUi)
+                {
+                    return;
+                }
                 PlayerApplicationRuntime playerRuntime =
                     PlayerApplicationRuntime.Create(applicationDataDirectory);
                 ThumbnailApplicationRuntime thumbnailRuntime =
@@ -143,7 +185,11 @@ public sealed partial class MainWindow : Window
                     bridgeHandlers.Delivery,
                     bridgeHandlers.Analysis,
                     bridgeHandlers.LayoutSubtitles,
-                    bridgeHandlers.Settings);
+                    bridgeHandlers.Settings,
+                    bridgeHandlers.GlobalSettings,
+                    bridgeHandlers.FileSettings,
+                    bridgeHandlers.SourceOnly,
+                    bridgeHandlers.SourceOnlyMedia);
                 // Own the host before awaiting so Closed can detach it before closing the control.
                 webViewHost = host;
                 WebApplicationView.Visibility = Visibility.Visible;
@@ -169,6 +215,19 @@ public sealed partial class MainWindow : Window
                 WebApplicationView,
                 "Bundled Web UI ready");
             StartupPanel.Visibility = Visibility.Collapsed;
+            if (applicationBridgeHandlers is not null)
+            {
+                // Only the owned pipeline may recover its accepted jobs, and only
+                // after the real WebView handshake. Never run generic workspace/job
+                // recovery or start processing on behalf of hidden editor views.
+                try
+                {
+                    SourceOnlyRecoveryResult recovery = await applicationBridgeHandlers.RecoverSourceOnlyAsync(lifetimeCancellation.Token);
+                    NativeRecoveryFailureCode = recovery.FailureCode;
+                }
+                catch (OperationCanceledException) when (!startupLifecycle.CanUpdateUi) { }
+                catch (Exception) { NativeRecoveryFailureCode = "source_only.recovery_failed"; }
+            }
             return;
         }
 
@@ -194,6 +253,27 @@ public sealed partial class MainWindow : Window
             title,
             detail,
             result.DiagnosticCode ?? StableErrorCodes.WebViewInitializationFailed);
+    }
+
+    private void BeginNativeShutdown()
+    {
+        // This task observes cancellation/initialization/disposal failures itself.
+        // Keep it available to the application/test host; do not block the dispatcher
+        // or put an unobserved async-void delegate on Closed.
+        shutdownTask ??= StopNativeAsync();
+    }
+
+    private async Task<string?> StopNativeAsync()
+    {
+        try
+        {
+            string? failure = await SourceOnlyApplicationShutdown.StopAsync(
+                applicationRuntimeCreation, () => lifetimeCancellation.CancelAsync()).ConfigureAwait(false);
+            return failure ?? (applicationRuntimeCreation is { IsCompletedSuccessfully: true }
+                ? applicationRuntimeCreation.Result.SourceOnlyRuntime?.ShutdownFailureCode : null);
+        }
+        catch (Exception) { return "source_only.shutdown_failed"; }
+        finally { lifetimeCancellation.Dispose(); }
     }
 
     private void CloseWebApplicationView()
@@ -243,6 +323,7 @@ public sealed partial class MainWindow : Window
         }
 
         CloseWebApplicationView();
+        BeginNativeShutdown();
         StartupPanel.Visibility = Visibility.Visible;
         StartupTitleText.Text = title;
         StartupDetailText.Text = detail;

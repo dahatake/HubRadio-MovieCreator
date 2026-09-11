@@ -22,5 +22,13 @@
                       LogicalName="HubRadio.Infrastructure.Database.Migrations.007_project_creation_drafts.sql" />
     <EmbeddedResource Include="Database\Migrations\008_default_settings.sql"
                       LogicalName="HubRadio.Infrastructure.Database.Migrations.008_default_settings.sql" />
+    <EmbeddedResource Include="Database\Migrations\009_automated_evaluation.sql"
+              LogicalName="HubRadio.Infrastructure.Database.Migrations.009_automated_evaluation.sql" />
+    <EmbeddedResource Include="Database\Migrations\010_quick_start_workflows.sql"
+              LogicalName="HubRadio.Infrastructure.Database.Migrations.010_quick_start_workflows.sql" />
+    <EmbeddedResource Include="Database\Migrations\011_source_only_executions.sql"
+          LogicalName="HubRadio.Infrastructure.Database.Migrations.011_source_only_executions.sql" />
+        <EmbeddedResource Include="Database\Migrations\012_subtitle_edits.sql"
+          LogicalName="HubRadio.Infrastructure.Database.Migrations.012_subtitle_edits.sql" />
   </ItemGroup>
 </Project>

@@ -140,6 +140,17 @@ internal sealed class IngestWorkflowCheckpointCodec
                 throw InvalidCheckpoint();
             }
 
+            // Warning reads must not depend on staging or artifact files. Compare
+            // the entire encoded structure even before warnings exist: numeric
+            // converters can round a tiny JSON fraction to an integer.
+            if (!string.Equals(
+                    SerializeCanonical(dto),
+                    canonicalCheckpointJson,
+                    StringComparison.Ordinal))
+            {
+                throw InvalidCheckpoint();
+            }
+
             if (dto.MediaInfo is null)
             {
                 return Array.Empty<MediaInfoWarningCode>();
@@ -374,6 +385,16 @@ internal sealed class IngestWorkflowCheckpointCodec
             }
 
             state.ValidateFor(request);
+            // Canonical JSON can still lose numeric precision during deserialization.
+            // Require every reader to preserve the exact persisted payload.
+            if (!string.Equals(
+                    Serialize(state),
+                    stored.CheckpointPayloadJson,
+                    StringComparison.Ordinal))
+            {
+                throw InvalidCheckpoint();
+            }
+
             return state;
         }
         catch (OperationCanceledException)

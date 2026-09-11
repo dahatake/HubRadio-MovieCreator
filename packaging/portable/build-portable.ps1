@@ -371,7 +371,9 @@ function Get-BundleContract([object]$Sources, [string]$SdkVersion) {
         'HubRadio.Core.dll', 'HubRadio.Infrastructure.dll', 'System.Private.CoreLib.dll',
         'Microsoft.WinUI.dll', 'Microsoft.UI.Xaml.dll', 'Microsoft.WindowsAppRuntime.dll',
         'WebAssets/index.html', 'WebAssets/asset-manifest.json', 'Worker/python.exe',
-        'Tools/ffmpeg.exe', 'Tools/ffprobe.exe', 'WebView2Runtime/msedgewebview2.exe'
+        'Tools/ffmpeg.exe', 'Tools/ffprobe.exe', 'WebView2Runtime/msedgewebview2.exe',
+        'Worker/runtime-files.json', 'Fonts/NotoSansJP-Regular.otf', 'Fonts/font-manifest.json', 'Fonts/LICENSE',
+        'Evidence/application-build.json'
     )) {
         if (-not $sourceLookup.ContainsKey($required)) { throw "OSL012:BUNDLE_REQUIRED Missing actual bundle input: $required" }
     }
@@ -388,6 +390,19 @@ function Get-BundleContract([object]$Sources, [string]$SdkVersion) {
     # Bundle/Manifest.cs writes minor 0; native corehost/bundle/header.cpp accepts it.
     # The obj host carries App resources, so its product version is NOT the SDK version.
     return [pscustomobject]@{ runtimeKind = 'integrated-clr'; runtimeVersion = '10.0.11'; bundleMajorVersion = 6; bundleMinorVersion = 0 }
+}
+
+function Assert-ApplicationBuildEvidence([string]$ContentsRoot) {
+    $identity = Read-Json (Join-Path $ContentsRoot 'Evidence/application-build.json')
+    $dll = Join-Path $ContentsRoot 'HubRadio.App.dll'
+    $actual = Get-FileEvidence $dll
+    if ($identity -isnot [Collections.IDictionary] -or @($identity.GetEnumerator()).Count -ne 5 -or
+        $identity['schemaVersion'] -ne 1 -or $identity['relativePath'] -cne 'HubRadio.App.dll' -or
+        ($identity['size'] -isnot [long] -and $identity['size'] -isnot [int]) -or $identity['size'] -ne $actual.byteSize -or
+        $identity['sha256'] -cne $actual.sha256 -or
+        $identity['version'] -cne [Reflection.AssemblyName]::GetAssemblyName($dll).Version.ToString()) {
+        throw 'OSL012:APPLICATION_BUILD App build evidence must identify the actual compiled DLL, not the bundle EXE or release approval.'
+    }
 }
 
 function Assert-Candidate([string]$AppRoot, [long]$ContentBytes, [long]$HostBytes, [object]$Contract) {
@@ -457,7 +472,7 @@ Assert-SafePath $DotnetPath -File
 Assert-SafePath $SbomToolPath -File
 Assert-SafePath $PayloadPath
 
-$payloadRoots = @('Worker', 'Tools', 'ModelCatalog', 'WebView2Runtime', 'Licenses', 'Evidence')
+$payloadRoots = @('Worker', 'Tools', 'ModelCatalog', 'Fonts', 'WebView2Runtime', 'Licenses', 'Evidence')
 $manifestName = 'Evidence/portable-payload.json'
 $manifestPath = Join-Path $PayloadPath $manifestName
 $manifestEvidence = Get-FileEvidence $manifestPath
@@ -485,7 +500,7 @@ foreach ($record in $manifest['files']) {
     }
     try { $relative = Get-RelativeName $record['path'] }
     catch { throw 'OSL012:MANIFEST_FILES Invalid relative path.' }
-    if ($relative -cne $record['path'] -or $relative -ieq $manifestName -or $relative.Split('/')[0] -cnotin $payloadRoots -or
+    if ($relative -cne $record['path'] -or $relative -ieq $manifestName -or $relative -ieq 'Evidence/application-build.json' -or $relative.Split('/')[0] -cnotin $payloadRoots -or
         -not $names.Add($relative) -or ($null -ne $previous -and [StringComparer]::Ordinal.Compare($previous, $relative) -ge 0)) {
         throw 'OSL012:MANIFEST_FILES Paths must be unique, canonical and strictly Ordinal, excluding the manifest itself.'
     }
@@ -513,6 +528,8 @@ $evidenceSources = [ordered]@{
     'Evidence/model-catalog.json' = 'packaging/models/catalog.json'
     'Evidence/webview2-runtime-manifest.json' = 'packaging/webview2/runtime-manifest.json'
     'Evidence/web-dependency-manifest.json' = 'packaging/web/dependency-manifest.json'
+    'Evidence/font-manifest.json' = 'packaging/fonts/font-manifest.json'
+    'Fonts/font-manifest.json' = 'packaging/fonts/font-manifest.json'
     'ModelCatalog/catalog.json' = 'packaging/models/catalog.json'
 }
 $originalEvidence = @{}
@@ -522,6 +539,10 @@ foreach ($name in $evidenceSources.Keys) {
         $payloadRecords[$name].sha256 -cne $original.sha256) { throw 'OSL012:EVIDENCE_ORIGINAL Prepared evidence/catalog differs from the repository original.' }
     $originalEvidence[$name] = $original
 }
+
+# Data-only gate. Source metadata is embedded by this build; an old Worker or a
+# rehashed arbitrary font/payload cannot supply its own independent trust anchor.
+& (Join-Path $PSScriptRoot 'verify-runtime-payload.ps1') -PayloadPath $PayloadPath
 
 # Exactly nine curated descriptor files; no recursive component-source copy.
 $componentInputs = [ordered]@{}
@@ -620,6 +641,7 @@ try {
         if (-not $contents.ContainsKey($name) -or $contents[$name].byteSize -ne $expectedContent[$name].byteSize -or
             $contents[$name].sha256 -cne $expectedContent[$name].sha256) { throw 'OSL012:BUNDLE_CONTENT Prepared payload, Web assets or profiles are missing/changed in actual FilesToBundle.' }
     }
+    Assert-ApplicationBuildEvidence $contentsRoot
     # XAML resources may be PRI-embedded; loose App.xbf/MainWindow.xbf are NOT required.
     $contentsDigest = Get-ArtifactSetSha256 $contents
     $contentsBytes = [long](($contents.Values | Measure-Object byteSize -Sum).Sum)
@@ -684,6 +706,11 @@ try {
         sourceProvenance = 'HEAD is not a WIP snapshot; actual compiled/generated inputs are measured in Contents. Git status is private build evidence.'
         candidate = [ordered]@{ path = 'App/HubRadio.App.exe'; byteSize = $candidate.byteSize; sha256 = $candidate.sha256 }
         preparedPayload = [ordered]@{ manifestPath = 'Contents/Evidence/portable-payload.json'; manifestSha256 = $manifestEvidence.sha256; artifactSetSha256 = $payloadDigest }
+        applicationBuild = [ordered]@{
+            path = 'Contents/Evidence/application-build.json'
+            sha256 = (Get-FileEvidence (Join-Path $contentsRoot 'Evidence/application-build.json')).sha256
+            purpose = 'build-identity-not-authenticity-or-release-approval'
+        }
         contents = [ordered]@{ path = 'Contents'; purpose = 'audit-only-not-for-folder-distribution'; fileCount = $contents.Count; totalBytes = $contentsBytes; artifactSetSha256 = $contentsDigest; files = @($contents.Values) }
         sbom = [ordered]@{
             path = $sbomRelativePath; byteSize = $sbomEvidence.byteSize; sha256 = $sbomEvidence.sha256; format = 'SPDX-2.2'

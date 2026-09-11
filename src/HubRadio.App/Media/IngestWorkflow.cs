@@ -427,6 +427,111 @@ public sealed class IngestWorkflow
         return RunAsync(request, previousRun: null, cancellationToken);
     }
 
+    /// <summary>
+    /// Rehydrates a succeeded ingest from its validated durable checkpoint without
+    /// queueing work, starting an attempt, or writing jobs, checkpoints, or artifacts.
+    /// </summary>
+    /// <remarks>
+    /// The asset candidate ID and original artifact ID are independent identities
+    /// restored unchanged, bound by Original.Asset and Proxy.SourceOriginalArtifactId.
+    /// This is a validated read, not a reservation; revalidate artifacts when used.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">The job ID is null.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The succeeded job or complete checkpoint is missing, invalid, mismatched,
+    /// or changed during the read, or its registered artifacts fail validation.
+    /// </exception>
+    /// <exception cref="OperationCanceledException">The read was cancelled.</exception>
+    public async Task<IngestWorkflowRunResult> ReadCompletedAsync(
+        EntityId<JobIdTag> jobId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        StoredJob storedJob = _jobCoordinator.GetStoredJob(jobId);
+        JobSnapshot snapshot = GetCompletedSnapshot(storedJob);
+        StoredIngestWorkflow persisted = _workflowStore.Get(jobId)
+            ?? throw new InvalidOperationException(
+                "The durable ingest workflow is not registered.");
+        IngestWorkflowRequest request =
+            IngestWorkflowCheckpointCodec.DeserializeRequest(
+                persisted.RequestPayloadJson);
+        // A retry may finish an earlier attempt's complete checkpoint without
+        // advancing it. Reject future attempts, but preserve that valid lineage.
+        if (request.JobId != jobId ||
+            request.ProjectId != storedJob.Job.ProjectId ||
+            request.ProjectId != persisted.ProjectId ||
+            request.RequestDigest != persisted.RequestDigest ||
+            persisted.CheckpointStage !=
+                (int)IngestWorkflowStage.PreviewAssetsCommitted ||
+            persisted.CheckpointAttemptNumber <= 0 ||
+            persisted.CheckpointAttemptNumber > snapshot.CurrentAttemptNumber)
+        {
+            throw new InvalidOperationException(
+                "The succeeded ingest requires its exact complete checkpoint.");
+        }
+
+        WorkflowResumeState state;
+        try
+        {
+            _checkpointCodec.ValidateStagingCheckpointBoundary(
+                request,
+                persisted.CheckpointStage);
+            EnsureArtifactCheckpointBoundary(request, persisted);
+            state = await _checkpointCodec.DeserializeAsync(
+                request,
+                persisted,
+                cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Validation can span several large artifact reads. Recheck the
+            // boundary and all registrations, including artifacts read first.
+            _checkpointCodec.ValidateStagingCheckpointBoundary(
+                request,
+                persisted.CheckpointStage);
+            StoredArtifact[] artifacts =
+            [
+                state.Original!.Artifact,
+                state.Proxy!.ProxyArtifact,
+                state.PreviewAssets!.WaveformIndexArtifact,
+                state.PreviewAssets.SpriteImageArtifact,
+                state.PreviewAssets.SpriteIndexArtifact,
+            ];
+            foreach (StoredArtifact artifact in artifacts)
+            {
+                EnsureCompletedArtifactUnchanged(artifact);
+            }
+        }
+        catch (ArtifactStoreException exception)
+        {
+            throw new InvalidOperationException(
+                "The completed ingest artifacts could not be validated.",
+                exception);
+        }
+
+        StoredJob? currentJob = _jobCoordinator.FindStoredJob(jobId);
+        StoredIngestWorkflow? currentWorkflow = _workflowStore.Get(jobId);
+        if (!IsSameStoredJob(storedJob, currentJob) ||
+            !IsSameStoredWorkflow(persisted, currentWorkflow) ||
+            !IsSameCompletedSnapshot(snapshot, GetCompletedSnapshot(currentJob!)))
+        {
+            throw new InvalidOperationException(
+                "The completed ingest changed while it was being read.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return new IngestWorkflowRunResult(
+            request.RequestDigest,
+            new JobCoordinatorRunResult(
+                snapshot.CurrentAttemptId!,
+                snapshot.CurrentAttemptNumber,
+                snapshot),
+            state.Copy(),
+            failureReason: null,
+            reconciliationRequired: false);
+    }
+
     public async Task<IngestWorkflowRunResult> RunAsync(
         IngestWorkflowRequest request,
         IngestWorkflowRunResult? previousRun = null,
@@ -792,6 +897,100 @@ public sealed class IngestWorkflow
             state.Copy(),
             failureReason,
             reconciliationRequired);
+    }
+
+    private JobSnapshot GetCompletedSnapshot(StoredJob stored)
+    {
+        if (stored.Job.State != JobState.Succeeded ||
+            !string.Equals(stored.Job.Kind, JobKind, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "Reading a completed ingest requires a succeeded ingest job.");
+        }
+
+        // GetSnapshot validates the stored aggregate, including the terminal
+        // attempt and its progress/heartbeats; a succeeded job row alone is not evidence.
+        JobSnapshot snapshot = _jobCoordinator.GetSnapshot(stored.Job.Id);
+        if (snapshot.State != JobState.Succeeded ||
+            snapshot.CurrentAttemptId is null ||
+            snapshot.CurrentAttemptNumber <= 0 ||
+            snapshot.CurrentAttemptNumber != stored.Job.CurrentAttemptNumber ||
+            snapshot.Revision != stored.Revision ||
+            snapshot.UpdatedAt != stored.Job.UpdatedAt)
+        {
+            throw new InvalidOperationException(
+                "The completed ingest job does not match its stored attempt.");
+        }
+
+        return snapshot;
+    }
+
+    private static bool IsSameStoredJob(StoredJob expected, StoredJob? actual) =>
+        actual is not null &&
+        actual.Revision == expected.Revision &&
+        actual.Job.Id == expected.Job.Id &&
+        actual.Job.ProjectId == expected.Job.ProjectId &&
+        string.Equals(actual.Job.Kind, expected.Job.Kind, StringComparison.Ordinal) &&
+        actual.Job.State == expected.Job.State &&
+        actual.Job.CurrentAttemptNumber == expected.Job.CurrentAttemptNumber &&
+        actual.Job.CreatedAt == expected.Job.CreatedAt &&
+        actual.Job.UpdatedAt == expected.Job.UpdatedAt;
+
+    private static bool IsSameStoredWorkflow(
+        StoredIngestWorkflow expected,
+        StoredIngestWorkflow? actual) =>
+        actual is not null &&
+        actual.JobId == expected.JobId &&
+        actual.ProjectId == expected.ProjectId &&
+        actual.Revision == expected.Revision &&
+        actual.RequestDigest == expected.RequestDigest &&
+        actual.CheckpointDigest == expected.CheckpointDigest &&
+        actual.CheckpointStage == expected.CheckpointStage &&
+        actual.CheckpointAttemptNumber == expected.CheckpointAttemptNumber &&
+        string.Equals(
+            actual.RequestSchemaVersion,
+            expected.RequestSchemaVersion,
+            StringComparison.Ordinal) &&
+        string.Equals(
+            actual.CheckpointSchemaVersion,
+            expected.CheckpointSchemaVersion,
+            StringComparison.Ordinal) &&
+        actual.UpdatedAt == expected.UpdatedAt;
+
+    private static bool IsSameCompletedSnapshot(
+        JobSnapshot expected,
+        JobSnapshot actual) =>
+        actual.JobId == expected.JobId &&
+        actual.State == expected.State &&
+        actual.CurrentAttemptId == expected.CurrentAttemptId &&
+        actual.CurrentAttemptNumber == expected.CurrentAttemptNumber &&
+        actual.Revision == expected.Revision &&
+        actual.UpdatedAt == expected.UpdatedAt &&
+        actual.CompletedUnits == expected.CompletedUnits &&
+        actual.TotalUnits == expected.TotalUnits &&
+        actual.ProgressRatio == expected.ProgressRatio &&
+        actual.LastProgressAt == expected.LastProgressAt &&
+        actual.LastHeartbeatAt == expected.LastHeartbeatAt &&
+        string.Equals(actual.ErrorCode, expected.ErrorCode, StringComparison.Ordinal) &&
+        actual.Retryability == expected.Retryability;
+
+    private void EnsureCompletedArtifactUnchanged(StoredArtifact expected)
+    {
+        StoredArtifact? actual = _artifactStore.GetArtifact(expected.Id);
+        if (actual is null ||
+            actual.ProjectId != expected.ProjectId ||
+            actual.Kind != expected.Kind ||
+            !string.Equals(
+                actual.StorageReference,
+                expected.StorageReference,
+                StringComparison.Ordinal) ||
+            actual.ContentDigest != expected.ContentDigest ||
+            actual.ByteSize != expected.ByteSize ||
+            actual.CreatedAt != expected.CreatedAt)
+        {
+            throw new InvalidOperationException(
+                "The completed ingest artifact changed while it was being read.");
+        }
     }
 
     private void ValidateQueuedJob(IngestWorkflowRequest request)

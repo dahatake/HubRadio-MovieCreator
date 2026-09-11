@@ -9,6 +9,7 @@ import {
 import {
   initialThumbnailState,
   selectionMatchesSnapshot,
+  selectThumbnailOutput,
   selectThumbnailTemplate,
   thumbnailStateReducer,
   type ThumbnailGenerationExpectation,
@@ -151,6 +152,46 @@ describe('thumbnail state', () => {
       expect(rejected.output).toBeNull()
       expect(rejected.snapshot).toBeNull()
     }
+  })
+
+  it('presents retained output only for its current project, source, evidence, exact frame, and template', () => {
+    const selection = createSelection()
+    const ready = createReadyState(selection)
+    const generating = thumbnailStateReducer(ready, {
+      type: 'generationRequested',
+      requestId: thumbnailRequestId,
+      expectation: createExpectation(ready, selection),
+    })
+    const generated = thumbnailStateReducer(generating, {
+      type: 'generationReceived',
+      response: requireGenerateResponse(createThumbnailGenerateResponseValue()),
+    })
+    const output = generated.output
+    expect(output).not.toBeNull()
+    expect(selectThumbnailOutput(generated, selection)).toBe(output)
+
+    const differentSelections: Array<PlayerExactFrameSelection | null> = [
+      null,
+      { ...selection, projectId: secondRequestId },
+      { ...selection, sourceAssetId: secondRequestId },
+      { ...selection, playerEvidenceDigest: 'f'.repeat(64) },
+      { ...selection, frame: { ...selection.frame, proxyFrameSequence: 2 } },
+      { ...selection, frame: { ...selection.frame, sourceFrameSequence: 8 } },
+      {
+        ...selection,
+        frame: {
+          ...selection.frame,
+          sourcePresentationTime: { value: '0', rate: '1' },
+        },
+      },
+    ]
+    for (const different of differentSelections) {
+      expect(selectThumbnailOutput(generated, different)).toBeNull()
+    }
+    expect(selectThumbnailOutput({ ...generated, selectedTemplateId: null }, selection))
+      .toBeNull()
+    expect(generated.output).toBe(output)
+    expect(selectThumbnailOutput(generated, selection)).toBe(output)
   })
 
   it('keeps one operation pending across cancel races and ignores late or unrelated responses', () => {

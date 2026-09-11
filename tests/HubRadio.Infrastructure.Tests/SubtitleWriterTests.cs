@@ -56,7 +56,7 @@ public sealed class SubtitleWriterTests
         StringAssert.Contains(assText, "[Events]\n");
         StringAssert.Contains(
             assText,
-            "Dialogue: 0,0:00:00.00,0:00:01.50,Quote,,0,0,0,,引用 \\{value\\} \\\\ path,comma");
+            "Dialogue: 0,0:00:00.00,0:00:01.50,Quote,,0,0,0,,引用 \\{value\\} \\ path,comma");
         StringAssert.Contains(assText, "注意 <script>&\\N二行目");
 
         Assert.IsTrue(vttText.IndexOf(CueId(1).ToString(), StringComparison.Ordinal)
@@ -130,7 +130,7 @@ public sealed class SubtitleWriterTests
             FileCue(
                 1,
                 Range(1, 2),
-                "{literal} \\N not-a-break\nactual-break",
+                "{literal} C:\\media\\clips \\\\server\\share\nactual-break",
                 SubtitleFileCueStyle.Quote),
         ];
 
@@ -150,8 +150,47 @@ public sealed class SubtitleWriterTests
         Assert.AreEqual(100L, parsed[0].Rate);
         Assert.AreEqual(SubtitleFileCueStyle.Quote, parsed[0].Style);
         Assert.AreEqual(
-            "{literal} \\N not-a-break\nactual-break",
+            "{literal} C:\\media\\clips \\\\server\\share\nactual-break",
             parsed[0].Text);
+    }
+
+    [TestMethod]
+    [DataRow(@"\N")]
+    [DataRow(@"\n")]
+    [DataRow(@"\h")]
+    [DataRow(@"\\N")]
+    [DataRow(@"\\n")]
+    [DataRow(@"\\h")]
+    [DataRow(@"{\N}")]
+    public void AssRejectsLiteralReservedSequencesWhileSidecarsKeepTheLiteralText(string sequence)
+    {
+        SubtitleFileCue cue = FileCue(1, Range(0, 1),
+            "literal " + sequence + " remains literal", SubtitleFileCueStyle.Normal);
+
+        SubtitleWriterException failure = AssertFailure(
+            () => AssSubtitleWriter.Write([cue], CreateAssProfile()),
+            SubtitleWriterFailureReason.InvalidText);
+
+        Assert.IsFalse(failure.ToString().Contains(cue.Text, StringComparison.Ordinal));
+        Assert.AreEqual(cue.Text, ParseVtt(Decode(WebVttSubtitleWriter.Write([cue]))).Single().Text);
+        Assert.AreEqual(cue.Text, ParseSrt(Decode(SubRipSubtitleWriter.Write([cue]))).Single().Text);
+    }
+
+    [TestMethod]
+    [DataRow(@"single \ path", @"single \ path")]
+    [DataRow(@"double \\ path", @"double \\ path")]
+    [DataRow(@"C:\media\clip", @"C:\media\clip")]
+    [DataRow(@"braces \{x\}", @"braces \\{x\\}")]
+    [DataRow(@"literal \H \q2", @"literal \H \q2")]
+    [DataRow(@"trailing\", @"trailing\")]
+    public void AssDoesNotDoubleOrdinaryBackslashes(string source, string expectedPayload)
+    {
+        SubtitleExportFile file = AssSubtitleWriter.Write(
+            [FileCue(1, Range(0, 1), source, SubtitleFileCueStyle.Normal)], CreateAssProfile());
+        string text = Decode(file);
+
+        StringAssert.EndsWith(text, ",," + expectedPayload + "\n");
+        Assert.AreEqual(source, ParseAss(text).Single().Text);
     }
 
     [TestMethod]
@@ -704,15 +743,18 @@ public sealed class SubtitleWriterTests
                 continue;
             }
 
-            char next = value[++index];
-            _ = result.Append(next switch
+            // Decode only the writer-emitted escapes. Consecutive backslashes
+            // are two characters, not an escape pair in libass.
+            char next = value[index + 1];
+            if (next is 'N' or '{' or '}')
             {
-                'N' => '\n',
-                '\\' => '\\',
-                '{' => '{',
-                '}' => '}',
-                _ => next,
-            });
+                index++;
+                _ = result.Append(next == 'N' ? '\n' : next);
+            }
+            else
+            {
+                _ = result.Append(current);
+            }
         }
 
         return result.ToString();

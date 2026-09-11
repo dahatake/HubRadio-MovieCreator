@@ -150,6 +150,38 @@ export type LayoutOperation =
   | LayoutSubtitleOperation
   | LayoutTeropOperation
 
+export interface LayoutVersionContext {
+  readonly projectId: string
+  readonly versionId: string
+  readonly versionDigest: string
+}
+
+export interface LayoutReadOptions {
+  readonly latestInBranch?: true
+}
+
+export interface LayoutDurableSubtitles {
+  readonly rootVersionId: string
+  readonly headVersionId: string
+  readonly headVersionDigest: string
+  readonly sequence: number
+  readonly journalDigest: string | null
+}
+
+/** Local, correlated evidence only; never serialized as request parameters. */
+export interface LayoutBranchContext {
+  readonly root: LayoutVersionContext
+  readonly sequence: number
+}
+
+type LayoutVersionParameters =
+  | Readonly<{ expectedVersionId: string; expectedVersionDigest: string }>
+  | Readonly<{ expectedVersionId?: never; expectedVersionDigest?: never }>
+
+type LayoutReadVersionParameters =
+  | Readonly<{ expectedVersionId: string; expectedVersionDigest: string; latestInBranch?: true }>
+  | Readonly<{ expectedVersionId?: never; expectedVersionDigest?: never; latestInBranch?: never }>
+
 export interface LayoutReadRequest {
   readonly version: typeof BRIDGE_PROTOCOL_VERSION
   readonly requestId: string
@@ -157,7 +189,7 @@ export interface LayoutReadRequest {
   readonly params: Readonly<{
     projectId: string
     evaluationTime: LayoutRationalTime | null
-  }>
+  } & LayoutReadVersionParameters>
 }
 
 export interface LayoutApplyRequest {
@@ -168,7 +200,7 @@ export interface LayoutApplyRequest {
     projectId: string
     expectedRevision: number
     operation: LayoutOperation
-  }>
+  } & LayoutVersionParameters>
 }
 
 export type LayoutBridgeRequest = LayoutReadRequest | LayoutApplyRequest
@@ -355,7 +387,9 @@ export interface LayoutSnapshot {
   readonly revision: number
   readonly compositionVersionId: string
   readonly compositionVersionDigest: string
-  readonly persistence: 'notPersisted'
+  readonly persistence: 'notPersisted' | 'persisted'
+  /** Native omits this field for an editable vertical layout; it never sends false. */
+  readonly subtitleOnly?: true
   readonly output: LayoutOutput
   readonly layout: LayoutProjection
   readonly sources: readonly LayoutSource[]
@@ -373,7 +407,7 @@ export type LayoutBridgeResponse =
       version: typeof BRIDGE_PROTOCOL_VERSION
       requestId: string
       method: typeof LAYOUT_READ_METHOD | typeof LAYOUT_APPLY_METHOD
-      result: Readonly<{ status: 'available'; snapshot: LayoutSnapshot }>
+      result: Readonly<{ status: 'available'; snapshot: LayoutSnapshot; durableSubtitles?: LayoutDurableSubtitles }>
     }>
   | Readonly<{
       version: typeof BRIDGE_PROTOCOL_VERSION
@@ -389,6 +423,8 @@ export function createLayoutReadRequest(
   requestId: string,
   projectId: string,
   evaluationTime: LayoutRationalTime | null,
+  target?: LayoutVersionContext,
+  options?: LayoutReadOptions,
 ): LayoutReadRequest {
   requireCanonicalId(requestId, 'request')
   requireCanonicalId(projectId, 'project')
@@ -399,7 +435,7 @@ export function createLayoutReadRequest(
     version: BRIDGE_PROTOCOL_VERSION,
     requestId,
     method: LAYOUT_READ_METHOD,
-    params: Object.freeze({ projectId, evaluationTime: normalizedTime }),
+    params: Object.freeze({ projectId, evaluationTime: normalizedTime, ...readVersionParameters(projectId, target, options) }),
   }))
 }
 
@@ -408,6 +444,7 @@ export function createLayoutApplyRequest(
   projectId: string,
   expectedRevision: number,
   operation: LayoutOperation,
+  target?: LayoutVersionContext,
 ): LayoutApplyRequest {
   requireCanonicalId(requestId, 'request')
   requireCanonicalId(projectId, 'project')
@@ -422,8 +459,200 @@ export function createLayoutApplyRequest(
       projectId,
       expectedRevision,
       operation: normalizeOperation(operation),
+      ...versionParameters(projectId, target),
     }),
   }))
+}
+
+function versionParameters(projectId: string, target?: LayoutVersionContext): LayoutVersionParameters {
+  if (target === undefined) return {}
+  if (target.projectId !== projectId) throw new TypeError('The layout target must belong to the requested project.')
+  requireCanonicalId(target.versionId, 'composition version')
+  requireDigest(target.versionDigest, 'composition version')
+  return { expectedVersionId: target.versionId, expectedVersionDigest: target.versionDigest }
+}
+
+function readVersionParameters(
+  projectId: string,
+  target?: LayoutVersionContext,
+  options?: LayoutReadOptions,
+): LayoutReadVersionParameters {
+  const pins = versionParameters(projectId, target)
+  if (options === undefined) return pins
+  const latest = Object.hasOwn(options, 'latestInBranch')
+  if (!hasExactKeys(options, latest ? ['latestInBranch'] : []) ||
+    (latest && (options.latestInBranch !== true || pins.expectedVersionId === undefined))) {
+    throw new TypeError('Latest branch reads require true and both composition version pins.')
+  }
+  return latest && pins.expectedVersionId !== undefined ? { ...pins, latestInBranch: true } : pins
+}
+
+export function layoutSnapshotMatchesTarget(snapshot: LayoutSnapshot, target: LayoutVersionContext): boolean {
+  return snapshot.projectId === target.projectId &&
+    snapshot.compositionVersionId === target.versionId &&
+    snapshot.compositionVersionDigest === target.versionDigest
+}
+
+/** Inherited cues require evidence already accepted by an exact native read or
+ * an operation-correlated child. A cue's version identifies its revision, not
+ * necessarily the composition snapshot that contains that revision. */
+export function hasTargetSubtitleEvidence(
+  snapshot: LayoutSnapshot,
+  target: LayoutVersionContext,
+  acceptedSnapshot?: LayoutSnapshot,
+): boolean {
+  return layoutSnapshotMatchesTarget(snapshot, target) && snapshot.subtitles.length > 0 &&
+    snapshot.subtitles.every(cue => cue.text.trim().length > 0) &&
+    (acceptedSnapshot === undefined
+      ? snapshot.subtitles.every(cue => cue.compositionVersionId === target.versionId)
+      : layoutSnapshotMatchesTarget(acceptedSnapshot, target) &&
+        unchangedLayoutCuesMatch(snapshot.subtitles, acceptedSnapshot.subtitles) &&
+        unchangedLayoutCuesMatch(snapshot.terops, acceptedSnapshot.terops))
+}
+
+/** WithSubtitle/WithTerop replace only the edited cue and retain all others.
+ * No parent field is exposed on the wire; use the actual submitted candidate
+ * and its previously accepted snapshot instead of accepting arbitrary ancestry. */
+export function layoutChildSnapshotMatchesOperation(
+  snapshot: LayoutSnapshot,
+  previous: LayoutSnapshot,
+  operation: LayoutOperation,
+): boolean {
+  if (operation.kind !== 'editSubtitle' && operation.kind !== 'editTerop') return false
+  const previousCues = operation.kind === 'editSubtitle' ? previous.subtitles : previous.terops
+  const cues = operation.kind === 'editSubtitle' ? snapshot.subtitles : snapshot.terops
+  const before = previousCues.find(cue => cue.cueId === operation.cueId)
+  const edited = cues.find(cue => cue.cueId === operation.cueId)
+  return snapshot.projectId === previous.projectId &&
+    snapshot.compositionVersionId !== previous.compositionVersionId &&
+    ![...previous.subtitles, ...previous.terops].some(cue => cue.compositionVersionId === snapshot.compositionVersionId) &&
+    snapshot.compositionVersionDigest === previous.compositionVersionDigest &&
+    snapshot.revision === previous.revision + 1 && snapshot.variantPair === null &&
+    before !== undefined &&
+    before.revisionId === operation.expectedRevisionId && before.revisionDigest === operation.expectedRevisionDigest &&
+    edited !== undefined && edited.compositionVersionId === snapshot.compositionVersionId &&
+    edited.revisionId !== before.revisionId && edited.revisionDigest !== before.revisionDigest &&
+    edited.revisionCount === before.revisionCount + 1 && cueMatchesEdit(edited, operation.edit) &&
+    unchangedLayoutCuesMatch(snapshot.subtitles, previous.subtitles, operation.kind === 'editSubtitle' ? operation.cueId : null) &&
+    unchangedLayoutCuesMatch(snapshot.terops, previous.terops, operation.kind === 'editTerop' ? operation.cueId : null)
+}
+
+function unchangedLayoutCuesMatch(
+  actual: readonly (LayoutSubtitleCue | LayoutTeropCue)[],
+  previous: readonly (LayoutSubtitleCue | LayoutTeropCue)[],
+  editedCueId: string | null = null,
+): boolean {
+  const known = new Map(previous.map(cue => [cue.cueId, cue]))
+  return actual.length === previous.length && known.size === previous.length &&
+    new Set(actual.map(cue => cue.cueId)).size === actual.length && actual.every(cue =>
+      known.has(cue.cueId) && (cue.cueId === editedCueId || JSON.stringify(cue) === JSON.stringify(known.get(cue.cueId))))
+}
+
+export function layoutSnapshotVersion(snapshot: LayoutSnapshot): LayoutVersionContext {
+  return Object.freeze({
+    projectId: snapshot.projectId,
+    versionId: snapshot.compositionVersionId,
+    versionDigest: snapshot.compositionVersionDigest,
+  })
+}
+
+export function layoutSupportsManualEditing(snapshot: LayoutSnapshot): boolean {
+  return snapshot.subtitleOnly !== true &&
+    BigInt(snapshot.output.aspectWidth) * 16n === BigInt(snapshot.output.aspectHeight) * 9n
+}
+
+export function isCanonicalLayoutVersionDigest(value: unknown): value is string {
+  return isDigest(value)
+}
+
+/** Correlate only fields actually returned by LayoutSubtitleBridgeJson (no parent fields). */
+export function layoutResponseMatchesRequest(
+  response: LayoutBridgeResponse,
+  request: LayoutBridgeRequest,
+  branch?: LayoutBranchContext | null,
+): boolean {
+  if (response.requestId !== request.requestId || response.method !== request.method) return false
+  if (response.result.status !== 'available') return true
+  const snapshot = response.result.snapshot
+  const durable = response.result.durableSubtitles
+  const params = request.params
+  if (snapshot.projectId !== params.projectId) return false
+  if (!durableResultMatchesSnapshot(snapshot, durable)) return false
+  // Preserve the legacy unpinned transport contract. The provider pins all mutations.
+  if (params.expectedVersionId === undefined) return durable === undefined
+  const root = branch?.root ?? {
+    projectId: params.projectId, versionId: params.expectedVersionId, versionDigest: params.expectedVersionDigest,
+  }
+  if (root.projectId !== params.projectId || root.versionDigest !== params.expectedVersionDigest ||
+    (durable !== undefined && (durable.rootVersionId !== root.versionId ||
+      durable.headVersionDigest !== root.versionDigest))) return false
+  const sameVersion = snapshot.compositionVersionId === params.expectedVersionId &&
+    snapshot.compositionVersionDigest === params.expectedVersionDigest
+  if (request.method === LAYOUT_READ_METHOD) {
+    if (request.params.latestInBranch !== true) return sameVersion
+    // Only a latest read may introduce an unobserved child. Legacy exact-shaped
+    // replies can still be used without claiming a saved branch or advancing it.
+    return durable === undefined ? sameVersion && (branch?.sequence ?? 0) === 0
+      : layoutSnapshotMatchesDurableHead(snapshot, durable) && durable.sequence >= (branch?.sequence ?? 0)
+  }
+  // An apply/replay attests its committed row, not necessarily today's latest
+  // branch head. Never compare its sequence against the observed head floor.
+  if (durable !== undefined && !layoutSnapshotMatchesDurableHead(snapshot, durable)) return false
+  if (snapshot.revision !== request.params.expectedRevision + 1) return false
+  const operation = request.params.operation
+  if (operation.kind === 'setManualLayout' || operation.kind === 'setKeyframes') {
+    return sameVersion && layoutSupportsManualEditing(snapshot)
+  }
+  // Subtitle/terop edits create a fresh composition. The parent is checked by
+  // native against the request's expected binding, not included in its response.
+  const cues = operation.kind === 'editSubtitle' ? snapshot.subtitles : snapshot.terops
+  const cue = cues.find(item => item.cueId === operation.cueId)
+  return snapshot.compositionVersionId !== params.expectedVersionId &&
+    snapshot.compositionVersionDigest === params.expectedVersionDigest &&
+    snapshot.variantPair === null && cue !== undefined &&
+    cue.compositionVersionId === snapshot.compositionVersionId &&
+    cue.revisionId !== operation.expectedRevisionId &&
+    cue.revisionDigest !== operation.expectedRevisionDigest &&
+    cueMatchesEdit(cue, operation.edit)
+}
+
+export function layoutSnapshotMatchesDurableHead(snapshot: LayoutSnapshot, durable: LayoutDurableSubtitles): boolean {
+  return parseDurableSubtitles(durable) !== null && snapshot.compositionVersionId === durable.headVersionId &&
+    snapshot.compositionVersionDigest === durable.headVersionDigest && snapshot.revision === durable.sequence
+}
+
+function durableResultMatchesSnapshot(snapshot: LayoutSnapshot, durable?: LayoutDurableSubtitles): boolean {
+  if (durable === undefined) return snapshot.persistence === 'notPersisted'
+  return parseDurableSubtitles(durable) !== null &&
+    snapshot.compositionVersionDigest === durable.headVersionDigest &&
+    snapshot.persistence === (durable.sequence > 0 && layoutSnapshotMatchesDurableHead(snapshot, durable)
+      ? 'persisted' : 'notPersisted')
+}
+
+function parseDurableSubtitles(value: unknown): LayoutDurableSubtitles | null {
+  if (!hasExactKeys(value, ['rootVersionId', 'headVersionId', 'headVersionDigest', 'sequence', 'journalDigest']) ||
+    !isCanonicalId(value.rootVersionId) || !isCanonicalId(value.headVersionId) || !isDigest(value.headVersionDigest) ||
+    !isNonnegativeInt32(value.sequence) ||
+    (value.sequence === 0 ? value.journalDigest !== null || value.rootVersionId !== value.headVersionId
+      : !isDigest(value.journalDigest) || value.rootVersionId === value.headVersionId)) return null
+  const journalDigest = value.journalDigest
+  if (journalDigest !== null && !isDigest(journalDigest)) return null
+  return Object.freeze({
+    rootVersionId: value.rootVersionId, headVersionId: value.headVersionId, headVersionDigest: value.headVersionDigest,
+    sequence: value.sequence, journalDigest,
+  })
+}
+
+function cueMatchesEdit(cue: LayoutSubtitleCue | LayoutTeropCue, edit: LayoutSubtitleEdit | LayoutTeropEdit): boolean {
+  switch (edit.kind) {
+    case 'text': return cue.text === edit.text
+    case 'style': return cue.style === edit.style
+    case 'timing': return layoutTimesEqual(cue.outputRange.start, edit.outputRange.start) &&
+      layoutTimesEqual(cue.outputRange.duration, edit.outputRange.duration)
+    case 'region': return 'regionName' in cue && cue.regionName === edit.regionName
+    case 'placement': return 'layoutResolution' in cue && cue.layoutResolution.evaluations.some(candidate =>
+      candidate.regionName === edit.regionName && rectsEqual(candidate.rect, edit.rect))
+  }
 }
 
 export function parseLayoutReadResponse(value: unknown): LayoutBridgeResponse | null {
@@ -437,13 +666,14 @@ export function parseLayoutApplyResponse(value: unknown): LayoutBridgeResponse |
 }
 
 export function parseLayoutBridgeResponse(value: unknown): LayoutBridgeResponse | null {
+  const hasDurableSubtitles = isRecord(value) && isRecord(value.result) && Object.hasOwn(value.result, 'durableSubtitles')
   if (
     !isWithinUtf8Limit(value, LAYOUT_MAX_RESPONSE_UTF8_BYTES) ||
     !hasExactKeys(value, ['version', 'requestId', 'method', 'result']) ||
     value.version !== BRIDGE_PROTOCOL_VERSION ||
     !isCanonicalId(value.requestId) ||
     (value.method !== LAYOUT_READ_METHOD && value.method !== LAYOUT_APPLY_METHOD) ||
-    !hasExactKeys(value.result, ['status', 'snapshot'])
+    !hasExactKeys(value.result, ['status', 'snapshot', ...(hasDurableSubtitles ? ['durableSubtitles'] : [])])
   ) {
     return null
   }
@@ -451,18 +681,21 @@ export function parseLayoutBridgeResponse(value: unknown): LayoutBridgeResponse 
   const method = value.method
   if (value.result.status === 'available') {
     const snapshot = parseSnapshot(value.result.snapshot)
-    if (snapshot === null) {
+    const durableSubtitles = hasDurableSubtitles ? parseDurableSubtitles(value.result.durableSubtitles) : undefined
+    if (snapshot === null || durableSubtitles === null || !durableResultMatchesSnapshot(snapshot, durableSubtitles)) {
       return null
     }
     return Object.freeze({
       version: BRIDGE_PROTOCOL_VERSION,
       requestId: value.requestId,
       method,
-      result: Object.freeze({ status: 'available' as const, snapshot }),
+      result: Object.freeze({ status: 'available' as const, snapshot,
+        ...(durableSubtitles === undefined ? {} : { durableSubtitles }) }),
     })
   }
 
   if (
+    hasDurableSubtitles ||
     value.result.snapshot !== null ||
     !layoutFailureStatuses.has(value.result.status as never)
   ) {
@@ -683,6 +916,7 @@ function normalizeCueEdit(value: unknown, subtitle: boolean): LayoutSubtitleEdit
 }
 
 function parseSnapshot(value: unknown): LayoutSnapshot | null {
+  const hasSubtitleOnly = isRecord(value) && Object.hasOwn(value, 'subtitleOnly')
   if (!hasExactKeys(value, [
     'projectId',
     'revision',
@@ -699,12 +933,14 @@ function parseSnapshot(value: unknown): LayoutSnapshot | null {
     'subtitleDisplays',
     'terops',
     'variantPair',
+    ...(hasSubtitleOnly ? ['subtitleOnly'] : []),
   ]) ||
+    (hasSubtitleOnly && value.subtitleOnly !== true) ||
     !isCanonicalId(value.projectId) ||
     !isNonnegativeInt32(value.revision) ||
     !isCanonicalId(value.compositionVersionId) ||
     !isDigest(value.compositionVersionDigest) ||
-    value.persistence !== 'notPersisted' ||
+    (value.persistence !== 'notPersisted' && value.persistence !== 'persisted') ||
     !Array.isArray(value.sources) ||
     !Array.isArray(value.templates) ||
     !Array.isArray(value.keyframeTracks) ||
@@ -716,13 +952,16 @@ function parseSnapshot(value: unknown): LayoutSnapshot | null {
   }
 
   const output = parseOutput(value.output)
-  if (output === null) {
+  if (output === null || (!hasSubtitleOnly &&
+    BigInt(output.aspectWidth) * 16n !== BigInt(output.aspectHeight) * 9n)) {
     return null
   }
-  const layout = parseProjection(value.layout, output)
+  const layout = parseProjection(value.layout, output, hasSubtitleOnly)
   const sources = parseUniqueArray(value.sources, parseSource, (item) => item.sourceAssetId)
   const templates = parseUniqueArray(value.templates, parseTemplate, (item) => item.templateId)
-  if (layout === null || sources === null || sources.length === 0 || templates === null) {
+  if (layout === null || sources === null || (!hasSubtitleOnly && sources.length === 0) || templates === null ||
+    (hasSubtitleOnly && (value.manualSelection !== null || value.keyframeTracks.length !== 0 ||
+      layout.regions.some(region => region.role !== 'subtitle' && region.role !== 'graphic')))) {
     return null
   }
   const sourceMap = new Map(sources.map((source) => [source.sourceAssetId, source]))
@@ -773,7 +1012,8 @@ function parseSnapshot(value: unknown): LayoutSnapshot | null {
     revision: value.revision,
     compositionVersionId: value.compositionVersionId,
     compositionVersionDigest: value.compositionVersionDigest,
-    persistence: 'notPersisted',
+    persistence: value.persistence,
+    ...(hasSubtitleOnly ? { subtitleOnly: true as const } : {}),
     output,
     layout,
     sources,
@@ -794,7 +1034,8 @@ function parseOutput(value: unknown): LayoutOutput | null {
     !isPositiveInt32(value.aspectWidth) ||
     !isPositiveInt32(value.aspectHeight) ||
     BigInt(value.width) * BigInt(value.aspectHeight) !== BigInt(value.height) * BigInt(value.aspectWidth) ||
-    BigInt(value.aspectWidth) * 16n !== BigInt(value.aspectHeight) * 9n
+    (BigInt(value.aspectWidth) * 16n !== BigInt(value.aspectHeight) * 9n &&
+      BigInt(value.aspectWidth) * 9n !== BigInt(value.aspectHeight) * 16n)
   ) {
     return null
   }
@@ -806,11 +1047,11 @@ function parseOutput(value: unknown): LayoutOutput | null {
   })
 }
 
-function parseProjection(value: unknown, output: LayoutOutput): LayoutProjection | null {
+function parseProjection(value: unknown, output: LayoutOutput, subtitleOnly = false): LayoutProjection | null {
   if (!hasExactKeys(value, ['layoutSpecId', 'regions', 'safeZones']) ||
     !isCanonicalId(value.layoutSpecId) ||
     !Array.isArray(value.regions) ||
-    value.regions.length === 0 ||
+    (!subtitleOnly && value.regions.length === 0) ||
     !Array.isArray(value.safeZones) ||
     value.safeZones.length !== 1
   ) {

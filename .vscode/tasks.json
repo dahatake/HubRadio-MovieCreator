@@ -112,6 +112,828 @@
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "test"
+		},
+		{
+			"label": "Live PTS diagnostic 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-pts-diagnostic-20260909.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Live schema12 integration build 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-observed-20260909.ps1",
+				"-Step",
+				"build"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Live pipeline E2E initial 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-observed-20260909.ps1",
+				"-Step",
+				"e2e",
+				"-Filter",
+				"RealSourceOnlyPipeline_DeliversTheEntireGeneratedSet_AndReopensWithoutRerunning"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Subtitle journal verification 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-observed-20260909.ps1",
+				"-Step",
+				"test",
+				"-Runner",
+				"Infrastructure",
+				"-Filter",
+				"FullyQualifiedName~SubtitleEditStoreTests"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Durable subtitle service tests 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-observed-20260909.ps1",
+				"-Step",
+				"test",
+				"-Filter",
+				"FullyQualifiedName~DurableSubtitleEditServiceTests"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect isolated ASR stage 20260909",
+			"type": "shell",
+			"command": "C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\inspect-e2e-stage-20260909.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Live Web type verification 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\resume-verify-20260909.ps1",
+				"-Step",
+				"web-type"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Subtitle projection native verification 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-observed-20260909.ps1",
+				"-Step",
+				"test",
+				"-Filter",
+				"FullyQualifiedName~SubtitleEditProjectionTests|FullyQualifiedName~SubtitleProjectionRenderTests|FullyQualifiedName~SourceOnlySubtitleProjectionTests|FullyQualifiedName~SourceOnlyProjectedResultTests"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Subtitle projection safe runner 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-subtitle-projection-tests-20260909.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Isolated actual ASR probe 20260909",
+			"type": "shell",
+			"command": "C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\probe-asr-worker-20260909.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Live Web layout regression 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\resume-verify-20260909.ps1",
+				"-Step",
+				"web-layout"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Actual ASR exception trace 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-actual-asr-trace-20260909.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Complete Core regression 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-core-regression-20260909.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Complete Infrastructure regression 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-infra-regression-20260909.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Durable layout contract tests 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-observed-20260909.ps1",
+				"-Step",
+				"test",
+				"-Filter",
+				"FullyQualifiedName~DurableLayoutContractTests"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect synthetic ASR receipts 20260909",
+			"type": "shell",
+			"command": "C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\inspect-asr-receipts-20260909.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Complete Architecture regression 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-architecture-regression-20260909.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Complete App regression 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-app-regression-20260909.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Complete Web regression 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-web-all-20260909.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Complete Worker regression 20260909",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-worker-all-20260909.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect resume process state 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\inspect-resume-state-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Stop verified stuck App test 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\stop-owned-app-test-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Worker output path repro 20260909b",
+			"type": "shell",
+			"command": "C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\probe-worker-publication-20260909.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Worker publication fix regression 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-worker-fix-tests-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect MTP test options 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\inspect-test-options-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Measure fixed Worker inputs 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\measure-worker-input-20260909.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Discover actual App tests 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\discover-app-tests-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Rebuild path-fixed Worker 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\rebuild-worker-pathfix-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Bounded complete App shards 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-app-shards-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect real evaluation failure 20260909b",
+			"type": "shell",
+			"command": "C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\inspect-evaluation-failure-20260909b.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect App shard identity 20260909b",
+			"type": "shell",
+			"command": "C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\inspect-shard-ids-20260909b.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Read actual QC codes 20260909b",
+			"type": "shell",
+			"command": "C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\read-evaluation-codes-20260909b.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Validate shard accounting 20260909b",
+			"type": "shell",
+			"command": "C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\verify-shard-accounting-20260909b.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Generation warning contract tests 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-warning-contract-tests-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Probe rendered timing shape 20260909b",
+			"type": "shell",
+			"command": "C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\probe-render-timing-20260909b.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Build corrected dependency payload 20260909c",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-new-payload-20260909c.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Inspect App shard progress 20260909b",
+			"type": "shell",
+			"command": "C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\inspect-active-shards-20260909b.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Final four App regression 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-last-four-regression-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Output QC frame regression 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-qc-regression-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Real edited subtitle rendering 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-real-projected-subtitles-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Real regeneration E2E 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-real-regenerate-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Real retry E2E 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-real-retry-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Final Web production assets 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-final-static-20260909b.ps1",
+				"-Step",
+				"web"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Final source static verification 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-final-static-20260909b.ps1",
+				"-Step",
+				"source"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Final formatting verification 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-final-static-20260909b.ps1",
+				"-Step",
+				"format"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Prepare whitespace-only patches 20260909b",
+			"type": "shell",
+			"command": "C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\prepare-whitespace-patches-20260909b.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify whitespace token equivalence 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\verify-format-token-equivalence-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Collect verified evidence hashes 20260909b",
+			"type": "shell",
+			"command": "C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\collect-final-evidence-20260909b.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Build runtime-integrated App output 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-runtime-copy-build-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Inspect real PRI input items 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-pri-input-inspection-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify MRT and MSIX PRI contracts 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-pri-contract-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Audit final source integrity 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\audit-final-sources-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Verify completed App runtime output 20260909c",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\verify-app-runtime-output-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Audit completed task ledger 20260909b",
+			"type": "shell",
+			"command": "C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe",
+			"args": [
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\audit-completion-ledger-20260909b.py"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Final package version verification 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-File",
+				"C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\run-final-version-check-20260909b.ps1"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Final document link audit 20260909b",
+			"type": "shell",
+			"command": "pwsh.exe",
+			"args": [
+				"-NoLogo",
+				"-NoProfile",
+				"-NonInteractive",
+				"-Command",
+				"& 'C:\\GitHub\\HubRadio-MovieCreator\\src\\HubRadio.Worker\\.venv\\Scripts\\python.exe' 'C:\\GitHub\\HubRadio-MovieCreator\\artifacts\\validation\\audit-final-document-links-20260909b.py'; exit $LASTEXITCODE"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
 		}
 	]
 }

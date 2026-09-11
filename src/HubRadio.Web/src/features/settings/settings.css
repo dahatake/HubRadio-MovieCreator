@@ -1,0 +1,169 @@
+.settings-panel {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0.75rem;
+  color: var(--cp-text);
+  background: var(--cp-surface);
+  border: 1px solid var(--cp-border);
+  border-radius: 0.625rem;
+}
+
+.settings-panel[hidden] { display: none; }
+.settings-page-content { display: grid; min-width: 0; gap: 0.5rem; }
+.settings-heading, .settings-scope, .settings-toolbar, .settings-view-switch, .settings-page-actions, .settings-confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.settings-heading h2 { margin: 0; }
+.settings-heading { gap: 0.75rem; }
+.settings-close { margin-inline-start: auto; }
+.settings-scope > span { color: var(--cp-text-muted); }
+.settings-scope-note, .settings-operation-status { margin: 0; font-size: 0.875rem; line-height: 1.4; color: var(--cp-text-muted); }
+.settings-operation-status:empty { display: none; }
+.settings-toolbar { justify-content: space-between; }
+.settings-panel :where(button, input, select, textarea, summary) { font-size: 1rem; }
+.settings-panel :where(button, summary) { min-height: 2.5rem; }
+.settings-panel :where(button, input, textarea, select, summary, [tabindex]):focus-visible { outline: 3px solid var(--cp-accent); outline-offset: 2px; }
+.settings-scope [aria-pressed='true'], .settings-view-switch [aria-pressed='true'], .settings-panel .settings-list-row[aria-pressed='true'] {
+  background: var(--cp-accent-soft);
+  border-color: var(--cp-accent);
+  box-shadow: inset 0 -0.15rem 0 var(--cp-accent);
+}
+.settings-panel .settings-group-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.375rem; overflow: visible; }
+.settings-panel .settings-group-tabs button { min-width: 0; overflow-wrap: anywhere; padding: 0.375rem; }
+.settings-workspace { display: grid; grid-template-columns: minmax(18rem, 1fr) minmax(0, 1.25fr); gap: 0.75rem; align-items: start; min-width: 0; min-height: 0; }
+.settings-list-pane, .settings-detail-pane, .settings-panel [role='tabpanel'] { min-width: 0; min-height: 0; }
+.settings-panel .settings-list-pane > [role='tabpanel'] { padding: 0; }
+.settings-panel .settings-list { display: grid; gap: 0.25rem; min-width: 0; }
+
+/* The standalone list owns native group buttons. This page supplies the five
+   manual-activation tabs and passes only that group's definitions, not new APIs. */
+.settings-panel .settings-list-groups { display: none; }
+.settings-panel .settings-list > h3 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.settings-panel .settings-list-controls { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0.25rem 0.5rem; align-items: center; }
+.settings-panel .settings-list-controls input[type='search'] {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
+  padding: 0.375rem 0.5rem;
+  color: var(--cp-text);
+  background: var(--cp-surface);
+  border: 1px solid var(--cp-border-strong);
+  border-radius: 0.625rem;
+}
+.settings-panel .settings-list-controls > p { grid-column: 1 / -1; margin: 0; font-size: 0.875rem; line-height: 1.4; color: var(--cp-text-muted); }
+.settings-panel .settings-list-controls > label:last-child { grid-column: 3; grid-row: 1; display: flex; justify-content: flex-end; align-items: center; gap: 0.375rem; font-size: 0.875rem; }
+.settings-panel .settings-list-selection { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; min-width: 0; font-size: 0.875rem; }
+/* The selected row and full inspector already identify an on-page selection.
+  Keep the reveal control when filtering/paging actually hides that selection. */
+.settings-panel .settings-list-selection:not(:has(> p:not([id], [class]))) { display: none; }
+.settings-panel .settings-list-selection > p { margin: 0; }
+.settings-panel .settings-list-selected-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.settings-panel .settings-list-selection > code, .settings-panel .settings-list-row > code { display: none; }
+.settings-panel .settings-list-selection > button { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
+.settings-panel .settings-list-items { display: grid; gap: 0.25rem; list-style: none; margin: 0; padding: 0; min-width: 0; }
+.settings-panel .settings-list-items > li { min-width: 0; }
+.settings-panel .settings-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.7fr) repeat(2, auto);
+  gap: 0.125rem 0.5rem;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
+  padding: 0.375rem 0.5rem;
+  text-align: start;
+}
+.settings-panel .settings-list-row-name, .settings-panel .settings-list-row-value { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.settings-panel .settings-list-row-value { color: var(--cp-text-muted); font-weight: 400; font-size: 0.875rem; }
+.settings-panel .settings-list-row .setting-badge { justify-self: start; margin: 0; }
+.settings-panel .settings-list-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.375rem; min-width: 0; margin: 0; }
+.settings-panel .settings-list-pagination p { margin: 0; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.settings-panel .settings-list-pagination button { padding: 0.375rem 0.5rem; font-size: 0.875rem; }
+.settings-detail-pane {
+  max-block-size: min(30rem, calc(100dvh - 18rem));
+  padding: 0.5rem;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  border: 1px solid var(--cp-border);
+  border-radius: 0.625rem;
+}
+.settings-panel .setting-card { gap: 0.5rem; padding: 0.5rem; background: var(--cp-surface-soft); }
+.settings-panel .setting-inspector { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); align-items: start; }
+.settings-panel .setting-inspector > :is(.setting-copy, .setting-actions, details) { grid-column: 1 / -1; }
+.settings-panel .setting-inspector > .field-group { min-width: 0; margin: 0; gap: 0.375rem; }
+.settings-panel .setting-inspector > .field-group > :is(label, span, p) { margin: 0; font-size: 0.875rem; line-height: 1.4; overflow-wrap: anywhere; }
+.settings-panel .setting-current-value { margin: 0; max-block-size: 10rem; overflow: auto; scroll-padding: 0.5rem; }
+.settings-panel .setting-list-editor { max-block-size: 10rem; overflow: auto; padding: 0.375rem; scroll-padding: 0.5rem; }
+.settings-panel .setting-list-editor > .field-group { margin: 0 0 0.5rem; gap: 0.375rem; }
+.settings-panel .setting-list-editor label { font-size: 0.875rem; line-height: 1.4; }
+.settings-panel .setting-list-editor textarea { min-height: 3rem; }
+.settings-panel .setting-copy h3 { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+.settings-panel .setting-copy p { margin: 0.25rem 0 0; color: var(--cp-text-muted); font-size: 0.875rem; }
+.settings-panel .setting-value-summary { grid-template-columns: minmax(0, 1fr); }
+.settings-panel .setting-value-summary dt { font-size: 0.875rem; }
+.settings-panel .setting-value-summary dd { white-space: pre-wrap; overflow-wrap: anywhere; }
+.settings-panel .setting-card :where(input:not([type='checkbox']), select, textarea) { min-width: 0; width: 100%; min-height: 2.5rem; }
+.settings-panel .setting-card textarea { min-height: 4.5rem; resize: vertical; }
+.settings-panel .rational-input { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 0.5rem; }
+.settings-panel .rational-input input { width: 100% !important; }
+.settings-panel .setting-actions { gap: 0.5rem; margin: 0; }
+.settings-panel .setting-badge { color: var(--cp-text); background: var(--cp-surface); font-size: 0.875rem; }
+.settings-panel .setting-card details { color: var(--cp-text); }
+.settings-panel summary { align-content: center; cursor: pointer; overflow-wrap: anywhere; }
+.settings-panel :where(code, pre, dd, p, th, td) { overflow-wrap: anywhere; }
+.settings-panel pre { white-space: pre-wrap; font-family: Consolas, 'Courier New', Courier, monospace; }
+.settings-panel table { min-width: 0; width: 100%; table-layout: fixed; }
+.settings-panel :where(th, td) { padding: 0.5rem; font-size: 0.875rem; }
+.settings-panel :where(.settings-file-actions, .settings-file-preview, .settings-outcome-preview) { display: grid; gap: 0.5rem; min-width: 0; }
+.settings-panel :where(.settings-file-actions, .settings-outcome-preview) :where(h3, h4, p) { margin: 0; }
+.settings-panel .settings-outcome-preview { margin: 0; padding: 0.5rem; }
+.settings-panel .settings-file-confirmation { display: grid; gap: 0.5rem; min-width: 0; margin: 0; padding: 0.75rem; border: 1px solid var(--cp-border-strong); border-radius: 0.625rem; }
+.settings-panel .settings-file-confirmation legend { font-size: 1rem; }
+.settings-panel :where(.settings-file-identity, .settings-provenance) dl { display: grid; gap: 0.5rem; margin: 0.5rem 0; }
+.settings-panel :where(.settings-file-identity, .settings-provenance) dd { margin: 0.25rem 0 0; }
+.settings-provenance { min-width: 0; border-top: 1px solid var(--cp-border); }
+.settings-provenance summary { font-size: 0.875rem; color: var(--cp-text-muted); }
+.settings-application-note, .settings-context-warning, .settings-error, .settings-panel .inline-error { padding: 0.5rem 0.75rem; border-inline-start: 0.25rem solid var(--cp-warning); background: var(--cp-surface-soft); }
+.settings-error, .settings-panel .inline-error { border-inline-start-color: var(--cp-danger); }
+.settings-error { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.settings-error p, .settings-empty { margin: 0; }
+.settings-confirmation-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 1rem; background: var(--cp-overlay); }
+.settings-confirmation { width: min(100%, 34rem); max-height: calc(100dvh - 2rem); overflow: auto; padding: 1rem; background: var(--cp-surface); border: 1px solid var(--cp-border-strong); border-radius: 0.625rem; }
+.settings-confirmation h3 { margin: 0 0 0.75rem; font-size: 1.125rem; }
+.settings-confirmation-actions { justify-content: flex-end; }
+
+@media (max-width: 64rem) {
+  .settings-workspace { grid-template-columns: minmax(0, 1fr); }
+  .settings-detail-pane { max-block-size: none; overflow: visible; }
+  .settings-panel .settings-group-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 36rem) {
+  .settings-panel { padding: 0.5rem; }
+  .settings-panel .setting-inspector { grid-template-columns: minmax(0, 1fr); }
+  .settings-panel :is(.setting-current-value, .setting-list-editor) { max-block-size: none; overflow: visible; }
+  .settings-close { margin-inline-start: 0; }
+  .settings-panel .settings-group-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-panel .settings-list-controls { grid-template-columns: minmax(0, 1fr); }
+  .settings-panel .settings-list-controls > label:last-child { grid-column: auto; grid-row: auto; justify-content: flex-start; }
+  .settings-panel .settings-list-row { grid-template-columns: minmax(0, 1fr); }
+  .settings-panel .settings-list-row-name, .settings-panel .settings-list-row-value { white-space: normal; overflow-wrap: anywhere; }
+  .settings-confirmation-actions { align-items: stretch; flex-direction: column; }
+}
+
+@media (max-height: 40rem) {
+  .settings-detail-pane { max-block-size: none; overflow: visible; }
+}

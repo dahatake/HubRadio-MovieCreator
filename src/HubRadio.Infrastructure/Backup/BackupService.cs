@@ -749,6 +749,18 @@ public sealed class BackupService
 
         try
         {
+            AutomatedEvaluationStore.ValidateAll(_databasePath);
+            QuickStartWorkflowStore.ValidateAll(_databasePath);
+            SourceOnlyExecutionStore.ValidateAll(_databasePath);
+            SubtitleEditStore.ValidateAll(_databasePath);
+        }
+        catch (Exception exception) when (IsOperationalFailure(exception))
+        {
+            throw Failure(BackupServiceFailureReason.SourceWorkspaceInvalid);
+        }
+
+        try
+        {
             new AuditLog(_databasePath).Verify();
         }
         catch (Exception exception) when (IsOperationalFailure(exception))
@@ -1534,6 +1546,10 @@ public sealed class BackupService
     {
         DatabaseMigrator.ValidateCurrentDatabase(databasePath);
         ValidateSqliteChecks(databasePath);
+        AutomatedEvaluationStore.ValidateAll(databasePath);
+        QuickStartWorkflowStore.ValidateAll(databasePath);
+        SourceOnlyExecutionStore.ValidateAll(databasePath);
+        SubtitleEditStore.ValidateAll(databasePath);
         new AuditLog(databasePath).Verify();
     }
 

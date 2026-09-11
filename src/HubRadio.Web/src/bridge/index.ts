@@ -68,9 +68,13 @@ import {
   type LayoutBridgeResponse,
 } from '../features/layout/layoutProtocol'
 import {
-  parseSettingsResponse,
+  SETTINGS_METHODS,
+  parseSettingsWorkspaceResponse,
+  type GlobalSettingsMutationIdentity,
   type SettingsRequest,
   type SettingsResponse,
+  type SettingsWorkspaceRequest,
+  type SettingsWorkspaceResponse,
 } from '../features/settings/settingsProtocol'
 import {
   createThumbnailCancelRequest,
@@ -85,8 +89,16 @@ import {
   type ThumbnailGenerateResponse,
   type ThumbnailReadResponse,
 } from '../features/thumbnails/thumbnailProtocol'
+import {
+  parsePipelineRequest,
+  pipelineResponseMatchesRequest,
+  verifiedPipelineResponse,
+  type PipelineRequest,
+  type PipelineResponse,
+} from '../features/workflow/pipelineProtocol'
 
 export * from './projectProtocol'
+export * from '../features/workflow/pipelineProtocol'
 export * from '../features/timeline/timelineProtocol'
 export * from '../features/review/reviewProtocol'
 export * from '../features/compare/compareProtocol'
@@ -112,7 +124,8 @@ export interface BridgeTransport {
       | ComparisonReadRequest
       | DeliveryReadRequest
       | LayoutBridgeRequest
-      | SettingsRequest
+      | SettingsWorkspaceRequest
+      | PipelineRequest
       | ThumbnailBridgeRequest,
   ): void
   addEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
@@ -120,6 +133,9 @@ export interface BridgeTransport {
 }
 
 export interface BridgeClient {
+  sendPipeline(request: PipelineRequest): void
+  abandonPipelineRequest(requestId: string): void
+  onPipelineResponse(listener: (response: PipelineResponse) => void): () => void
   sendPing(requestId: string): void
   sendJobStatus(requestId: string, jobId: string): void
   sendJobCancellation(requestId: string, jobId: string, expectedRevision: number): void
@@ -184,6 +200,13 @@ export interface BridgeClient {
   onSettingsResponse(
     listener: (response: SettingsResponse) => void,
   ): () => void
+  /** UX-013: all 11 methods share one pending slot with the legacy project API. */
+  sendSettingsWorkspace(request: SettingsWorkspaceRequest): void
+  abandonSettingsWorkspaceRequest(requestId: string): void
+  /** Includes legacy project responses; global/file responses never reach legacy listeners. */
+  onSettingsWorkspaceResponse(
+    listener: (response: SettingsWorkspaceResponse) => void,
+  ): () => void
   sendThumbnailRead(requestId: string, jobId: string): void
   onThumbnailReadResponse(
     listener: (response: ThumbnailReadResponse) => void,
@@ -235,11 +258,15 @@ interface PendingLayoutRequest {
 }
 
 interface PendingSettingsRequest {
-  readonly method: SettingsRequest['method']
-  readonly projectId: string
+  readonly method: SettingsWorkspaceRequest['method']
+  readonly projectId: string | null
+  readonly identity: GlobalSettingsMutationIdentity | null
+  readonly expectedFileSha256: string | null
 }
 
 export function createBridgeClient(transport: BridgeTransport): BridgeClient {
+  const pipelineListeners = new Set<(response: PipelineResponse) => void>()
+  const pendingPipelineRequests = new Map<string, PipelineRequest>()
   const pingListeners = new Set<(response: BridgePingResponse) => void>()
   const projectListeners = new Set<(response: ProjectBridgeResponse) => void>()
   const jobListeners = new Set<(response: BridgeJobResponse) => void>()
@@ -285,6 +312,9 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
   const settingsListeners = new Set<
     (response: SettingsResponse) => void
   >()
+  const settingsWorkspaceListeners = new Set<
+    (response: SettingsWorkspaceResponse) => void
+  >()
   const pendingSettingsRequests = new Map<string, PendingSettingsRequest>()
   const thumbnailReadListeners = new Set<
     (response: ThumbnailReadResponse) => void
@@ -298,6 +328,19 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
   let disposed = false
 
   const receive = (event: BridgeMessageEvent): void => {
+    const data = event.data
+    if (typeof data === 'object' && data !== null && 'method' in data &&
+        typeof data.method === 'string' && data.method.startsWith('pipeline.')) {
+      // Other feature clients share this transport; do not decode the large
+      // result projection once per idle provider. Unknown pipeline verbs stop here.
+      const pipelineResponse = pendingPipelineRequests.size === 0 ? null : verifiedPipelineResponse(data)
+      if (pipelineResponse === null) return
+      const pending = pendingPipelineRequests.get(pipelineResponse.requestId)
+      if (pending === undefined || !pipelineResponseMatchesRequest(pipelineResponse, pending)) return
+      pendingPipelineRequests.delete(pipelineResponse.requestId)
+      for (const listener of pipelineListeners) listener(pipelineResponse)
+      return
+    }
     const pingResponse = parsePingResponse(event.data)
     if (pingResponse !== null) {
       for (const listener of pingListeners) {
@@ -412,20 +455,23 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       return
     }
 
-    const settingsResponse = parseSettingsResponse(event.data)
+    const settingsResponse = parseSettingsWorkspaceResponse(event.data)
     if (settingsResponse !== null) {
       const pending = pendingSettingsRequests.get(settingsResponse.requestId)
       if (
         pending === undefined ||
-        pending.method !== settingsResponse.method ||
-        (settingsResponse.result.status === 'available' &&
-          settingsResponse.result.snapshot.projectId !== pending.projectId)
+        !settingsResponseMatchesPending(settingsResponse, pending)
       ) {
         return
       }
 
       pendingSettingsRequests.delete(settingsResponse.requestId)
-      for (const listener of settingsListeners) {
+      if (isProjectSettingsResponse(settingsResponse)) {
+        for (const listener of settingsListeners) {
+          listener(settingsResponse)
+        }
+      }
+      for (const listener of settingsWorkspaceListeners) {
         listener(settingsResponse)
       }
       return
@@ -528,6 +574,24 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
   transport.addEventListener('message', receive)
 
   return Object.freeze({
+    sendPipeline(request: PipelineRequest): void {
+      throwIfDisposed(disposed)
+      const normalized = parsePipelineRequest(request)
+      if (normalized === null) throw new TypeError('Invalid pipeline request.')
+      if (pendingPipelineRequests.size !== 0) throw new Error('A pipeline request is already pending.')
+      pendingPipelineRequests.set(normalized.requestId, normalized)
+      try { transport.postMessage(normalized) }
+      catch (error: unknown) { pendingPipelineRequests.delete(normalized.requestId); throw error }
+    },
+    abandonPipelineRequest(requestId: string): void {
+      throwIfDisposed(disposed)
+      pendingPipelineRequests.delete(requestId)
+    },
+    onPipelineResponse(listener: (response: PipelineResponse) => void): () => void {
+      throwIfDisposed(disposed)
+      pipelineListeners.add(listener)
+      return () => { pipelineListeners.delete(listener) }
+    },
     sendPing(requestId: string): void {
       throwIfDisposed(disposed)
       transport.postMessage(createPingRequest(requestId))
@@ -780,20 +844,12 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       }
     },
     sendSettings(request: SettingsRequest): void {
-      throwIfDisposed(disposed)
-      if (pendingSettingsRequests.size !== 0) {
-        throw new Error('A settings bridge request is already pending.')
-      }
-      pendingSettingsRequests.set(request.requestId, {
-        method: request.method,
-        projectId: request.params.projectId,
-      })
-      try {
-        transport.postMessage(request)
-      } catch (error: unknown) {
-        pendingSettingsRequests.delete(request.requestId)
-        throw error
-      }
+      sendCorrelatedSettingsRequest(
+        request,
+        transport,
+        pendingSettingsRequests,
+        disposed,
+      )
     },
     abandonSettingsRequest(requestId: string): void {
       throwIfDisposed(disposed)
@@ -806,6 +862,27 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       settingsListeners.add(listener)
       return (): void => {
         settingsListeners.delete(listener)
+      }
+    },
+    sendSettingsWorkspace(request: SettingsWorkspaceRequest): void {
+      sendCorrelatedSettingsRequest(
+        request,
+        transport,
+        pendingSettingsRequests,
+        disposed,
+      )
+    },
+    abandonSettingsWorkspaceRequest(requestId: string): void {
+      throwIfDisposed(disposed)
+      pendingSettingsRequests.delete(requestId)
+    },
+    onSettingsWorkspaceResponse(
+      listener: (response: SettingsWorkspaceResponse) => void,
+    ): () => void {
+      throwIfDisposed(disposed)
+      settingsWorkspaceListeners.add(listener)
+      return (): void => {
+        settingsWorkspaceListeners.delete(listener)
       }
     },
     sendThumbnailRead(requestId: string, jobId: string): void {
@@ -858,6 +935,8 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       }
 
       disposed = true
+      pipelineListeners.clear()
+      pendingPipelineRequests.clear()
       pingListeners.clear()
       projectListeners.clear()
       jobListeners.clear()
@@ -878,6 +957,7 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       layoutListeners.clear()
       pendingLayoutRequests.clear()
       settingsListeners.clear()
+      settingsWorkspaceListeners.clear()
       pendingSettingsRequests.clear()
       thumbnailReadListeners.clear()
       thumbnailGenerateListeners.clear()
@@ -1089,4 +1169,97 @@ function sendCorrelatedLayoutRequest(
     pendingRequests.delete(request.requestId)
     throw error
   }
+}
+
+function sendCorrelatedSettingsRequest(
+  request: SettingsWorkspaceRequest,
+  transport: BridgeTransport,
+  pendingRequests: Map<string, PendingSettingsRequest>,
+  disposed: boolean,
+): void {
+  throwIfDisposed(disposed)
+  if (pendingRequests.size !== 0) {
+    throw new Error('A settings bridge request is already pending.')
+  }
+
+  const identity =
+    request.method === 'settings.read' || request.method === 'settings.global.read'
+      ? null
+      : {
+          expectedRevision: request.params.expectedRevision,
+          expectedProfileId: request.params.expectedProfileId,
+          expectedProfileVersion: request.params.expectedProfileVersion,
+          expectedProfileDigest: request.params.expectedProfileDigest,
+          expectedSnapshotDigest: request.params.expectedSnapshotDigest,
+        }
+  pendingRequests.set(request.requestId, {
+    method: request.method,
+    projectId: 'projectId' in request.params ? request.params.projectId : null,
+    identity,
+    expectedFileSha256: request.method === 'settings.file.apply'
+      ? request.params.expectedFileSha256
+      : null,
+  })
+  try {
+    transport.postMessage(request)
+  } catch (error: unknown) {
+    pendingRequests.delete(request.requestId)
+    throw error
+  }
+}
+
+function settingsResponseMatchesPending(
+  response: SettingsWorkspaceResponse,
+  pending: PendingSettingsRequest,
+): boolean {
+  if (response.method !== pending.method) {
+    return false
+  }
+  // Failures have no target snapshot. The parser validates their status/hash shape,
+  // including overwriteRequired's current-file hash, which is not an apply hash.
+  if (response.result.status !== 'available') {
+    return true
+  }
+
+  const snapshot = response.result.snapshot
+  if (snapshot.projectId !== pending.projectId) {
+    return false
+  }
+  const identity = pending.identity
+  if (identity === null) {
+    return true
+  }
+  if (
+    snapshot.profileId !== identity.expectedProfileId ||
+    snapshot.profileVersion !== identity.expectedProfileVersion ||
+    snapshot.profileDigest !== identity.expectedProfileDigest
+  ) {
+    return false
+  }
+  if (response.method === 'settings.file.preview') {
+    // The candidate digest/values may differ, but its revision is the saved target's.
+    return snapshot.revision === identity.expectedRevision
+  }
+  if (response.method === 'settings.file.export') {
+    // Export returns saved state and a newly written file hash, not the overwrite hash.
+    return snapshot.revision === identity.expectedRevision &&
+      snapshot.snapshotDigest === identity.expectedSnapshotDigest
+  }
+  if (
+    response.method === 'settings.file.apply' &&
+    response.result.fileSha256 !== pending.expectedFileSha256
+  ) {
+    return false
+  }
+
+  // A mutation may be a no-op; an actual OCC write advances the revision once.
+  return snapshot.revision === identity.expectedRevision
+    ? snapshot.snapshotDigest === identity.expectedSnapshotDigest
+    : snapshot.revision === identity.expectedRevision + 1
+}
+
+function isProjectSettingsResponse(
+  response: SettingsWorkspaceResponse,
+): response is SettingsResponse {
+  return SETTINGS_METHODS.some(method => method === response.method)
 }

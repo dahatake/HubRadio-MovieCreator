@@ -2,7 +2,7 @@
 
 <#
 OSL-009: offline component payload only, not an application publish or release.
-Use the latest installed Windows x64 pwsh. All eight paths are mandatory, absolute
+Use the latest installed Windows x64 pwsh. All ten paths are mandatory, absolute
 local paths. ModelBundlePath contains the four catalog files directly (an optional
 HF .cache is ignored). WebView2RuntimePath is the expanded vendor directory.
 OutputPath must not exist and must be below this repository's artifacts/portable.
@@ -20,11 +20,17 @@ param(
     [Parameter(Mandatory)] [string]$ModelBundlePath,
     [Parameter(Mandatory)] [string]$WebView2RuntimePath,
     [Parameter(Mandatory)] [string]$WebView2LicensePath,
+    [Parameter(Mandatory)] [string]$FontPath,
+    [Parameter(Mandatory)] [string]$FontLicensePath,
     [Parameter(Mandatory)] [string]$OutputPath
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+function Write-PayloadProgress([string]$Message) {
+    # Opt-in common -Verbose switch; stdout remains the single result JSON.
+    if ($VerbosePreference -eq 'Continue') { [Console]::Error.WriteLine($Message) }
+}
 if ($PSVersionTable.PSEdition -ne 'Core' -or -not $IsWindows -or
     [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'X64' -or
     [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'X64') {
@@ -66,6 +72,8 @@ $inputPaths = [ordered]@{
     ModelBundlePath = $ModelBundlePath
     WebView2RuntimePath = $WebView2RuntimePath
     WebView2LicensePath = $WebView2LicensePath
+    FontPath = $FontPath
+    FontLicensePath = $FontLicensePath
 }
 foreach ($name in @($inputPaths.Keys)) {
     $inputPaths[$name] = Get-LocalPath $inputPaths[$name] $name
@@ -215,6 +223,7 @@ function Assert-FileEvidence([string]$Path, [object]$Expected) {
 
 function Get-TreeRecords([string]$Root) {
     $records = [Collections.Generic.SortedDictionary[string, object]]::new([StringComparer]::Ordinal)
+    $measuredFiles = 0
     foreach ($entry in @(Get-SafeTree $Root)) {
         if ($entry -is [IO.FileInfo]) {
             $relative = [IO.Path]::GetRelativePath($Root, $entry.FullName).Replace('\', '/')
@@ -222,6 +231,10 @@ function Get-TreeRecords([string]$Root) {
             $records.Add($relative, [pscustomobject][ordered]@{
                 path = $relative; byteSize = $evidence.byteSize; sha256 = $evidence.sha256
             })
+            $measuredFiles++
+            if ($measuredFiles % 250 -eq 0) {
+                Write-PayloadProgress "OSL009:PROGRESS inventory $measuredFiles files verified"
+            }
         }
     }
     return ,$records
@@ -268,6 +281,9 @@ function Copy-PayloadFile([string]$SourcePath, [string]$RelativePath, [object]$E
     $payloadRecords.Add($relative, [pscustomobject][ordered]@{
         path = $relative; byteSize = [long]$Expected.byteSize; sha256 = [string]$Expected.sha256
     })
+    if ($payloadRecords.Count % 100 -eq 0) {
+        Write-PayloadProgress "OSL009:PROGRESS copied and verified $($payloadRecords.Count) files"
+    }
 }
 
 function Remove-OwnedTree([string]$Path) {
@@ -285,6 +301,7 @@ function Remove-OwnedTree([string]$Path) {
     [IO.Directory]::Delete($Path, $false)
 }
 
+Write-PayloadProgress 'OSL009:PROGRESS validating fixed input paths and manifests'
 foreach ($name in $inputPaths.Keys) {
     Assert-SafePath $inputPaths[$name] -File:($name -notin @('PythonRuntimePath', 'ModelBundlePath', 'WebView2RuntimePath'))
 }
@@ -298,6 +315,7 @@ $evidenceSources = [ordered]@{
     'model-catalog.json' = Join-Path $repoRoot 'packaging\models\catalog.json'
     'webview2-runtime-manifest.json' = Join-Path $repoRoot 'packaging\webview2\runtime-manifest.json'
     'web-dependency-manifest.json' = Join-Path $repoRoot 'packaging\web\dependency-manifest.json'
+    'font-manifest.json' = Join-Path $repoRoot 'packaging\fonts\font-manifest.json'
 }
 $evidenceHashes = @{}
 foreach ($name in $evidenceSources.Keys) { $evidenceHashes[$name] = Get-FileEvidence $evidenceSources[$name] }
@@ -309,6 +327,7 @@ $pythonManifest = Get-Content -LiteralPath $evidenceSources['python-runtime-mani
 $ffmpegManifest = Get-Content -LiteralPath $evidenceSources['ffmpeg-manifest.json'] -Raw -Encoding utf8 | ConvertFrom-Json
 $modelCatalog = Get-Content -LiteralPath $evidenceSources['model-catalog.json'] -Raw -Encoding utf8 | ConvertFrom-Json
 $webView2Manifest = Get-Content -LiteralPath $evidenceSources['webview2-runtime-manifest.json'] -Raw -Encoding utf8 | ConvertFrom-Json
+$fontManifest = Get-Content -LiteralPath $evidenceSources['font-manifest.json'] -Raw -Encoding utf8 | ConvertFrom-Json
 
 $ffmpegInputs = [ordered]@{ ffmpeg = $inputPaths.FfmpegPath; ffprobe = $inputPaths.FfprobePath; license = $inputPaths.FfmpegLicensePath }
 if (@($ffmpegManifest.selectedFiles).Count -ne 3) { throw 'OSL009:FFMPEG_ROLES Exactly three roles are required.' }
@@ -319,6 +338,22 @@ foreach ($role in $ffmpegInputs.Keys) {
     $ffmpegFiles[$role] = $selected[0]
     Assert-FileEvidence $ffmpegInputs[$role] $selected[0]
 }
+
+# SHA values are filled only from the fixed official OTF and root LICENSE input.
+# Do not turn an arbitrary local font into an approved binary by self-inventorying it.
+if ($fontManifest.schemaVersion -ne 1 -or $fontManifest.family -cne 'Noto Sans JP' -or
+    $fontManifest.style -cne 'Regular' -or $fontManifest.version -cne '2.004' -or
+    $fontManifest.sourceCommit -cne '523d033d6cb47f4a80c58a35753646f5c3608a78' -or
+    $fontManifest.sourcePath -cne 'Sans/SubsetOTF/JP/NotoSansJP-Regular.otf' -or
+    $fontManifest.relativePath -cne 'NotoSansJP-Regular.otf' -or
+    $fontManifest.sha256 -cnotmatch '\A[0-9a-f]{64}\z' -or $fontManifest.byteSize -le 0 -or
+    $fontManifest.license.relativePath -cne 'LICENSE' -or $fontManifest.license.sourcePath -cne 'LICENSE' -or
+    $fontManifest.license.spdxId -cne 'OFL-1.1' -or
+    $fontManifest.license.sha256 -cnotmatch '\A[0-9a-f]{64}\z' -or $fontManifest.license.byteSize -le 0) {
+    throw 'OSL009:FONT_PIN Measured official font/license SHA-256 and byte sizes are required in packaging/fonts/font-manifest.json.'
+}
+Assert-FileEvidence $inputPaths.FontPath $fontManifest
+Assert-FileEvidence $inputPaths.FontLicensePath $fontManifest.license
 
 $models = @($modelCatalog.models | Where-Object { $_.runtimeEligible -eq $true })
 if ($models.Count -ne 1 -or $models[0].modelId -cne 'asr.faster-whisper-small.cpu-int8' -or
@@ -362,6 +397,7 @@ if ($webView2Manifest.schemaVersion -cne '1.0.0' -or $webView2Manifest.runtime.d
     $webOutput.artifactSetDigestAlgorithm.pathOrder -cne 'Ordinal') {
     throw 'OSL009:WEBVIEW2_MANIFEST Unsupported Fixed Runtime contract.'
 }
+Write-PayloadProgress 'OSL009:PROGRESS validating complete WebView2 input tree'
 $webFiles = Get-TreeRecords $WebView2RuntimePath
 if ($webFiles.Count -ne $webOutput.expectedFileCount -or
     [long](($webFiles.Values | Measure-Object byteSize -Sum).Sum) -ne $webOutput.expectedTotalBytes -or
@@ -385,6 +421,7 @@ if ($licenseSnapshot.kind -cne 'official-license-modal-page-text-snapshot' -or
     throw 'OSL009:LICENSE_SNAPSHOT The fixed license-page-text snapshot must match its evidence SHA-256.'
 }
 Assert-FileEvidence (Join-Path $PythonRuntimePath 'LICENSE.txt') $pythonManifest.runtime.license
+Write-PayloadProgress 'OSL009:PROGRESS validating complete Worker input tree'
 $workerFiles = Get-TreeRecords $PythonRuntimePath
 if ($workerFiles.Count -ne ([int]$pythonManifest.output.expectedFileCount + 1) -or
     -not $workerFiles.ContainsKey([string]$pythonManifest.output.fileManifestName)) {
@@ -393,7 +430,7 @@ if ($workerFiles.Count -ne ([int]$pythonManifest.output.expectedFileCount + 1) -
     throw 'OSL009:WORKER_FILES Expected the runtime payload plus exactly one root file manifest.'
 }
 
-$payloadRoots = @('Worker', 'Tools', 'ModelCatalog', 'WebView2Runtime', 'Licenses', 'Evidence')
+$payloadRoots = @('Worker', 'Tools', 'ModelCatalog', 'Fonts', 'WebView2Runtime', 'Licenses', 'Evidence')
 $payloadRecords = [Collections.Generic.SortedDictionary[string, object]]::new([StringComparer]::Ordinal)
 $parent = [IO.Path]::GetDirectoryName($OutputPath)
 New-SafeDirectory $parent
@@ -419,10 +456,12 @@ try {
     $verificationOwned = $true
     Assert-SafePath $verificationWorkspace
     Assert-FileEvidence $pythonVerifyScriptPath $verifyScriptEvidence
+    Write-PayloadProgress 'OSL009:PROGRESS verifying isolated Worker execution'
     & $pythonVerifyScriptPath -RuntimePath $PythonRuntimePath -WorkspacePath $verificationWorkspace 6>$null | Out-Null
     Assert-FileEvidence $pythonVerifyScriptPath $verifyScriptEvidence
     foreach ($name in $evidenceSources.Keys) { Assert-FileEvidence $evidenceSources[$name] $evidenceHashes[$name] }
 
+    Write-PayloadProgress 'OSL009:PROGRESS copying verified component inputs'
     foreach ($root in $payloadRoots) { New-SafeDirectory (Join-Path $stageRoot $root) }
     foreach ($tree in @(
         @{ source = $PythonRuntimePath; destination = 'Worker'; files = $workerFiles },
@@ -445,6 +484,10 @@ try {
     }
     Copy-PayloadFile $inputPaths.FfmpegPath 'Tools/ffmpeg.exe' $ffmpegFiles.ffmpeg
     Copy-PayloadFile $inputPaths.FfprobePath 'Tools/ffprobe.exe' $ffmpegFiles.ffprobe
+    Copy-PayloadFile $inputPaths.FontPath 'Fonts/NotoSansJP-Regular.otf' $fontManifest
+    Copy-PayloadFile $inputPaths.FontLicensePath 'Fonts/LICENSE' $fontManifest.license
+    Copy-PayloadFile $inputPaths.FontLicensePath 'Licenses/NotoSansJP-OFL.txt' $fontManifest.license
+    Copy-PayloadFile $evidenceSources['font-manifest.json'] 'Fonts/font-manifest.json' $evidenceHashes['font-manifest.json']
     Copy-PayloadFile $inputPaths.FfmpegLicensePath 'Licenses/FFmpeg-LICENSE.txt' $ffmpegFiles.license
     Copy-PayloadFile (Join-Path $PythonRuntimePath 'LICENSE.txt') 'Licenses/CPython-LICENSE.txt' $pythonManifest.runtime.license
     Copy-PayloadFile $inputPaths.WebView2LicensePath 'Licenses/WebView2-FIXED-LICENSE-PAGE.txt' $licenseEvidence
@@ -458,6 +501,7 @@ try {
         Copy-PayloadFile $evidenceSources[$name] ('Evidence/' + $name) $evidenceHashes[$name]
     }
 
+    Write-PayloadProgress 'OSL009:PROGRESS validating complete staged payload'
     $actual = Get-TreeRecords $stageRoot
     $digest = Get-ArtifactSetSha256 $payloadRecords
     if ($actual.Count -ne $payloadRecords.Count -or (Get-ArtifactSetSha256 $actual) -cne $digest -or

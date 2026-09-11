@@ -140,6 +140,8 @@ export interface ThumbnailReadRequest {
   readonly params: Readonly<{ jobId: string }>
 }
 
+// This legacy generation contract requires approved external-publication rights.
+// It supplies no authoritative internal-consumer scope policy.
 export interface ThumbnailGenerateParams {
   readonly jobId: string
   readonly generationId: string

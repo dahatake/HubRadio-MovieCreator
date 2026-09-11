@@ -46,6 +46,7 @@ export type PlayerAction =
       proxyFrameSequence: number
     }>
   | Readonly<{ type: 'seekReceived'; response: PlayerSeekResponse }>
+  | Readonly<{ type: 'seekAbandoned'; requestId: string }>
   | Readonly<{ type: 'playbackFrameObserved'; proxyFrameSequence: number }>
   | Readonly<{ type: 'mediaUnavailable' }>
   | Readonly<{ type: 'mediaAvailable' }>
@@ -172,6 +173,10 @@ export function playerStateReducer(
         currentFrameSequence: pending.proxyFrameSequence,
       }
     }
+
+    case 'seekAbandoned':
+      // Keep the last verified evidence/frame; timeout is not a successful seek.
+      return state.pendingSeek?.requestId === action.requestId ? { ...state, pendingSeek: null } : state
 
     case 'playbackFrameObserved':
       if (

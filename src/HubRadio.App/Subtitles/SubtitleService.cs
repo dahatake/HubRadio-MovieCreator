@@ -264,9 +264,18 @@ public sealed class SubtitleCueHistory
     internal SubtitleCueHistory(
         SubtitleCueCandidate sourceCandidate,
         IReadOnlyList<SubtitleCueRevision> revisions)
+        : this(sourceCandidate, revisions, [])
+    {
+    }
+
+    internal SubtitleCueHistory(
+        SubtitleCueCandidate sourceCandidate,
+        IReadOnlyList<SubtitleCueRevision> revisions,
+        IReadOnlyList<SubtitleCompositionInheritance> inheritance)
     {
         ArgumentNullException.ThrowIfNull(sourceCandidate);
         ArgumentNullException.ThrowIfNull(revisions);
+        ArgumentNullException.ThrowIfNull(inheritance);
         if (revisions.Count == 0)
         {
             throw new ArgumentException(
@@ -274,11 +283,26 @@ public sealed class SubtitleCueHistory
                 nameof(revisions));
         }
 
+        SubtitleCompositionInheritance[] copiedInheritance = inheritance.ToArray();
+        var paths = new Dictionary<
+            EntityId<SubtitleCueRevisionIdTag>, SubtitleCompositionInheritance>();
+        foreach (SubtitleCompositionInheritance path in copiedInheritance)
+        {
+            if (path is null || !paths.TryAdd(path.RevisionId, path))
+            {
+                throw new ArgumentException(
+                    "Subtitle inheritance must bind unique revisions.",
+                    nameof(inheritance));
+            }
+        }
+
         SubtitleCueRevision[] copied = new SubtitleCueRevision[revisions.Count];
         var revisionIds = new HashSet<EntityId<SubtitleCueRevisionIdTag>>();
         var compositionVersionIds =
             new HashSet<EntityId<CompositionVersionIdTag>>();
         SubtitleCueRevision? previous = null;
+        SubtitleCompositionInheritance? previousPath = null;
+        int usedPaths = 0;
         for (int index = 0; index < copied.Length; index++)
         {
             SubtitleCueRevision revision = revisions[index]
@@ -297,10 +321,14 @@ public sealed class SubtitleCueHistory
                     || revision.Change.Kind != SubtitleCueChangeKind.Initial
                 : revision.ParentRevisionId != previous.Id
                     || revision.ParentCompositionVersionId !=
-                        previous.CompositionVersionId
+                        (previousPath?.Parent.Id ?? previous.CompositionVersionId)
                     || revision.ProjectId != previous.ProjectId
                     || revision.Snapshot.Cue.Id != previous.Snapshot.Cue.Id
                     || revision.CreatedAt < previous.CreatedAt
+                    || (previousPath is not null
+                        && (revision.CreatedAt < previousPath.Parent.CreatedAt
+                            || revision.CompositionVersionDigest !=
+                                previousPath.Parent.ContentDigest))
                     || revision.Change.Previous is null
                     || !SubtitleServiceContract.StableEquals(
                         revision.Change.Previous,
@@ -320,8 +348,33 @@ public sealed class SubtitleCueHistory
                     nameof(revisions));
             }
 
+            paths.TryGetValue(revision.Id, out SubtitleCompositionInheritance? path);
+            if (path is not null)
+            {
+                path.ValidateFor(revision);
+                foreach (CompositionVersion inherited in path.Versions.Skip(1))
+                {
+                    if (!compositionVersionIds.Add(inherited.Id))
+                    {
+                        throw new ArgumentException(
+                            "Subtitle inheritance must not revisit a composition version.",
+                            nameof(inheritance));
+                    }
+                }
+
+                usedPaths++;
+            }
+
             copied[index] = revision;
             previous = revision;
+            previousPath = path;
+        }
+
+        if (usedPaths != copiedInheritance.Length)
+        {
+            throw new ArgumentException(
+                "Subtitle inheritance must bind a revision in this history.",
+                nameof(inheritance));
         }
 
         SourceCandidate = sourceCandidate;
@@ -329,6 +382,7 @@ public sealed class SubtitleCueHistory
         CurrentRevision = copied[^1];
         ProjectId = copied[0].ProjectId;
         CueId = copied[0].Snapshot.Cue.Id;
+        Inheritance = Array.AsReadOnly(copiedInheritance);
     }
 
     public SubtitleCueCandidate SourceCandidate { get; }
@@ -343,6 +397,10 @@ public sealed class SubtitleCueHistory
     public SubtitleCueRevision CurrentRevision { get; }
 
     public IReadOnlyList<SubtitleCueRevision> Revisions { get; }
+
+    // Not part of subtitle JSON/digests. Native restoration must retain these
+    // paths or replay the real edits; revisions alone intentionally stay strict.
+    internal IReadOnlyList<SubtitleCompositionInheritance> Inheritance { get; }
 }
 
 public enum SubtitleServiceFailureReason
@@ -407,6 +465,83 @@ public sealed class SubtitleServiceException : Exception
 
 public static class SubtitleService
 {
+    /// <summary>
+    /// A projection initial is not a fresh editorial action. Only the bounded,
+    /// replay-validated projection can supply its final snapshot and original field
+    /// origins. The public source-only CreateInitial contract remains unchanged.
+    /// </summary>
+    internal static SubtitleCueHistory MaterializeProjectedInitial(
+        SubtitleEditProjection.ValidatedProjection proof,
+        EntityId<CueIdTag> cueId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(proof);
+        ArgumentNullException.ThrowIfNull(cueId);
+        cancellationToken.ThrowIfCancellationRequested();
+        SubtitleEditProjection.ProjectedCue cue = proof.Cues.Single(value => value.Initial.CueId == cueId);
+        CompositionVersion version = proof.Target.Version;
+        SubtitleCueCandidate candidate = cue.Initial.SourceCandidate;
+        ValidateCompositionIntegrity(version);
+        ValidateInitialSource(candidate);
+        ValidateLayoutBinding(candidate, cue.Snapshot.LayoutResolution);
+        ValidateActorAndReason(proof.ActorSid, SubtitleEditProjection.MaterializationReason);
+        ContentDigest digest = ComputeContentDigest(cue.Snapshot);
+        var change = new SubtitleCueChange(SubtitleCueChangeKind.Initial, null, cue.Snapshot, cue.Snapshot.TextOrigin);
+        var revision = new SubtitleCueRevision(cue.RevisionId, null, version.ProjectId, version.Id,
+            version.ParentVersionId, version.ContentDigest, candidate.Id, candidate.SourceRevisionId,
+            candidate.SourceRevisionDigest, candidate.Origin, cue.Snapshot, change,
+            proof.ActorSid, proof.CreatedAt, SubtitleEditProjection.MaterializationReason, digest);
+        cancellationToken.ThrowIfCancellationRequested();
+        return new SubtitleCueHistory(candidate, [revision]);
+    }
+
+    /// <summary>
+    /// Durable registration may call this instead of source-only CreateInitial for
+    /// a materialized root, but ONLY with evidence freshly rederived by Apply from
+    /// the saved authoritative capture and the fresh generated target. A persisted
+    /// canonical string or a caller's list of editorial IDs is not such a proof.
+    /// The caller still validates the whole root snapshot, input key and journal.
+    /// </summary>
+    internal static void ValidateMaterializedInitial(
+        CompositionVersion version,
+        SubtitleCueHistory history,
+        SubtitleEditProjectionEvidence proof,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(version);
+        ArgumentNullException.ThrowIfNull(history);
+        ArgumentNullException.ThrowIfNull(proof);
+        proof.ValidateInitial(version, history, cancellationToken);
+    }
+
+    internal static SubtitleCueHistory WithInheritedComposition(
+        SubtitleCueHistory history,
+        IReadOnlyList<CompositionVersion> versions)
+    {
+        ArgumentNullException.ThrowIfNull(history);
+        var path = new SubtitleCompositionInheritance(history.CurrentRevision, versions);
+        SubtitleCompositionInheritance? existing = history.Inheritance
+            .SingleOrDefault(value => value.RevisionId == history.CurrentRevision.Id);
+        if (existing is not null
+            && (path.Versions.Count < existing.Versions.Count
+                || !existing.Versions.Select(CompositionSnapshotJson.WriteVersion)
+                    .SequenceEqual(path.Versions.Take(existing.Versions.Count)
+                        .Select(CompositionSnapshotJson.WriteVersion), StringComparer.Ordinal)))
+        {
+            throw Failure(SubtitleServiceFailureReason.CompositionVersionConflict);
+        }
+
+        if (path.Versions.Count == 1)
+        {
+            return history;
+        }
+
+        return new SubtitleCueHistory(
+            history.SourceCandidate,
+            history.Revisions,
+            [.. history.Inheritance.Where(value => value.RevisionId != path.RevisionId), path]);
+    }
+
     public static SubtitleCueHistory CreateInitial(
         CompositionVersion compositionVersion,
         SubtitleCueCandidate sourceCandidate,
@@ -701,7 +836,8 @@ public static class SubtitleService
         cancellationToken.ThrowIfCancellationRequested();
         return new SubtitleCueHistory(
             history.SourceCandidate,
-            [.. history.Revisions, revision]);
+            [.. history.Revisions, revision],
+            history.Inheritance);
     }
 
     private static void ValidateInitialSource(SubtitleCueCandidate candidate)
@@ -770,12 +906,16 @@ public static class SubtitleService
     {
         ValidateCompositionIntegrity(child);
         SubtitleCueRevision current = history.CurrentRevision;
+        SubtitleCompositionInheritance? inherited = history.Inheritance
+            .SingleOrDefault(path => path.RevisionId == current.Id);
+        inherited?.ValidateChild(child);
         if (child.ProjectId != history.ProjectId
-            || child.ParentVersionId != current.CompositionVersionId
+            || child.ParentVersionId != (inherited?.Parent.Id ?? current.CompositionVersionId)
             || child.Id == current.CompositionVersionId
             || child.CreatedAt < current.CreatedAt
             || history.Revisions.Any(revision =>
-                revision.CompositionVersionId == child.Id))
+                revision.CompositionVersionId == child.Id)
+            || history.Inheritance.Any(path => path.Versions.Any(version => version.Id == child.Id)))
         {
             throw Failure(
                 SubtitleServiceFailureReason.CompositionVersionConflict);

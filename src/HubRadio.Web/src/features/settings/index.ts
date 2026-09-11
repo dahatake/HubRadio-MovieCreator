@@ -1,4 +1,4 @@
-export { SettingsPanel } from './SettingsPanel'
-export { SettingsStateProvider, useSettingsState } from './SettingsStateProvider'
+export { SettingsPanel, type SettingsPanelProps } from './SettingsPanel'
+export { SettingsStateProvider, useSettingsState, SettingsWorkspaceStateProvider, useSettingsWorkspace } from './SettingsStateProvider'
 export * from './settingsProtocol'
 export * from './settingsState'

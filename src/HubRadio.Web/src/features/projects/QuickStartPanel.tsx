@@ -6,16 +6,20 @@ import type {
   SourceOnlyProjectSummary,
   SourceStatus,
 } from '../../bridge'
+import { SettingsOutcomePreview } from '../settings/SettingsOutcomePreview'
 import {
   getProjectInputSourceStatus,
   isProjectInputFinalizable,
   type PendingProjectRequest,
 } from './projectState'
+import './projects.css'
 
 export interface QuickStartPanelProps {
   readonly draft: ProjectDraft
   readonly input: ProjectDraftInput
   readonly pending: PendingProjectRequest | null
+  /** The owner controls visibility; inactive panels stay mounted without taking focus. */
+  readonly active?: boolean
   readonly finalizeDraft: () => void
   readonly closeDraft: () => void
   readonly pickSource: () => void
@@ -31,6 +35,7 @@ export function QuickStartPanel({
   draft,
   input,
   pending,
+  active = true,
   finalizeDraft,
   closeDraft,
   pickSource,
@@ -41,20 +46,23 @@ export function QuickStartPanel({
   const isPending = pending !== null
   const canStart = !draft.isFinalized && isProjectInputFinalizable(input, draft)
   const warningCount = sourceStatus === 'available' ? 0 : 1
+  const contentName = input.contentName ?? draft.contentName ?? '名称未入力'
 
   useEffect(() => {
-    headingRef.current?.focus()
-  }, [draft.draftId])
+    if (active) {
+      headingRef.current?.focus()
+    }
+  }, [active, draft.draftId])
 
   return (
-    <section className="project-panel quick-start-panel" aria-labelledby="quick-start-title">
+    <section className="project-panel quick-start-panel quick-start-compact" aria-labelledby="quick-start-title">
       <div className="wizard-heading">
         <div>
           <p className="section-kicker">Quick start</p>
           <h2 id="quick-start-title" ref={headingRef} tabIndex={-1}>
             {draft.isFinalized ? '案件の内容' : 'かんたん編集'}
           </h2>
-          <p>元動画と固定済みの既定設定を確認して、編集を開始します。</p>
+          {!draft.isFinalized && <p>一回の確認で案件を作成します。</p>}
         </div>
         <span className={`state-badge ${draft.isFinalized ? 'finalized' : 'draft'}`}>
           {draft.isFinalized ? '作成済み' : '確認待ち'}
@@ -62,23 +70,28 @@ export function QuickStartPanel({
       </div>
 
       <div className="quick-start-source">
-        <div>
+        <div className="project-card-heading">
           <h3>元動画</h3>
-          <p>ファイルパスはこの画面へ表示しません。</p>
+          <p className="project-card-name quick-start-content-name" title={contentName}>
+            {contentName}
+          </p>
         </div>
-        <span className={`source-status ${sourceStatus}`}>
-          {sourceStatusLabels[sourceStatus]}
-        </span>
-        {!draft.isFinalized && sourceStatus !== 'available' && (
-          <button
-            className="secondary-button"
-            type="button"
-            disabled={isPending}
-            onClick={pickSource}
-          >
-            元動画を選び直す
-          </button>
-        )}
+        <div className="section-actions">
+          <span className="state-badge">社内限定</span>
+          <span className={`source-status ${sourceStatus}`}>
+            {sourceStatusLabels[sourceStatus]}
+          </span>
+          {!draft.isFinalized && sourceStatus !== 'available' && (
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={isPending}
+              onClick={pickSource}
+            >
+              元動画を選び直す
+            </button>
+          )}
+        </div>
       </div>
 
       {sourceStatus !== 'available' && !draft.isFinalized && (
@@ -87,25 +100,17 @@ export function QuickStartPanel({
         </p>
       )}
 
-      <section className="completion-summary" aria-labelledby="quick-start-summary-title">
-        <h3 id="quick-start-summary-title">適用する既定設定</h3>
-        <p>
-          社内限定の版付き設定と標準成果物を、この一回の確認で案件へ固定します。
-        </p>
-        <dl className="review-list">
-          <SummaryItem term="公開範囲" value="社内限定" />
+      <SettingsOutcomePreview mode="sourceOnly" sourceOnly={sourceOnly} />
+
+      <details className="completion-summary">
+        <summary id="quick-start-summary-title">適用する既定設定</summary>
+        <dl className="project-card-metadata quick-start-provenance">
           <SummaryItem term="設定プロファイル版" value={sourceOnly.profileVersion} />
           <SummaryItem term="設定プロファイルdigest" value={sourceOnly.profileDigest} />
           <SummaryItem term="設定snapshot digest" value={sourceOnly.settingsSnapshotDigest} />
           <SummaryItem term="開始前の警告" value={`${warningCount} 件`} />
         </dl>
-        <h4>標準成果物</h4>
-        <ul className="quick-start-artifacts">
-          {sourceOnly.artifactSet.map((artifact) => (
-            <li key={artifact}>{artifact}</li>
-          ))}
-        </ul>
-      </section>
+      </details>
 
       {draft.isFinalized ? (
         <div className="quick-start-actions">
@@ -116,6 +121,7 @@ export function QuickStartPanel({
       ) : (
         <form
           className="quick-start-actions"
+          aria-describedby="quick-start-rights"
           onSubmit={(event) => {
             event.preventDefault()
             if (canStart && !isPending) {
@@ -138,16 +144,19 @@ export function QuickStartPanel({
           >
             編集を開始
           </button>
+          <p id="quick-start-rights">開始すると、選択した元動画を社内編集に使用する権限があることを確認したものとして記録します。外部公開は許可しません。</p>
         </form>
       )}
 
       <p className="operation-status" role="status" aria-live="polite">
         {pending === null
           ? draft.isFinalized
-            ? 'この案件は作成済みです。'
-            : warningCount === 0
-              ? '編集を開始できます。'
-              : '元動画の再選択を待っています。'
+            ? '案件を作成しました。自動編集画面で処理状況を確認できます。'
+            : canStart
+              ? 'この内容で案件を作成できます。'
+              : sourceStatus !== 'available'
+                ? '元動画の再選択を待っています。'
+                : '案件の作成に必要な情報を確認してください。'
           : '操作を処理しています。'}
       </p>
     </section>

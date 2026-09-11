@@ -60,14 +60,14 @@ public sealed class PortableArtifactVerificationTests
         public string Root { get; } = Path.Combine(Path.GetTempPath(), "HubRadio.OSL013-" + Guid.NewGuid().ToString("N"));
         public string PrivateCanary { get; } = "private-osl013-canary";
         private string AppPath => Path.Combine(Root, "App/HubRadio.App.exe");
-        private string ContentsPath => Path.Combine(Root, "Contents/data.bin");
+        private string ContentsPath => Path.Combine(Root, "Contents/Worker/data.bin");
         private string PayloadPath => Path.Combine(Root, "Contents/Evidence/portable-payload.json");
         private string ReleasePath => Path.Combine(Root, "Evidence/portable-release.json");
         private string SbomPath => Path.Combine(Root, "Sbom/manifest.json");
 
         public CandidateFixture()
         {
-            foreach (string directory in new[] { "App", "Contents/Evidence", "Evidence", "Sbom" }) { Directory.CreateDirectory(Path.Combine(Root, directory)); }
+            foreach (string directory in new[] { "App", "Contents/Evidence", "Contents/Worker", "Evidence", "Sbom" }) { Directory.CreateDirectory(Path.Combine(Root, directory)); }
             File.WriteAllBytes(AppPath, [0x4d, 0x5a, 0x01]);
             File.WriteAllText(ContentsPath, "synthetic payload", new UTF8Encoding(false));
             WriteManifests();
@@ -102,30 +102,45 @@ public sealed class PortableArtifactVerificationTests
             string contentHash = Hash(content);
             string payloadText = JsonSerializer.Serialize(new
             {
-                schemaVersion = "1.0.0", taskId = "OSL-009", architecture = "x64", releaseApproved = false,
-                fileCount = 1, totalBytes = content.LongLength, artifactSetSha256 = Digest("data.bin", content),
-                files = new[] { new { path = "data.bin", byteSize = content.LongLength, sha256 = contentHash } },
+                schemaVersion = "1.0.0",
+                taskId = "OSL-009",
+                architecture = "x64",
+                releaseApproved = false,
+                fileCount = 1,
+                totalBytes = content.LongLength,
+                artifactSetSha256 = Digest("Worker/data.bin", content),
+                files = new[] { new { path = "Worker/data.bin", byteSize = content.LongLength, sha256 = contentHash } },
             });
             File.WriteAllText(PayloadPath, payloadText, new UTF8Encoding(false));
             JsonObject payload = JsonNode.Parse(payloadText)!.AsObject();
             string payloadHash = Hash(File.ReadAllBytes(PayloadPath));
-            string contentsDigest = Digest("Evidence/portable-payload.json", File.ReadAllBytes(PayloadPath), "data.bin", content);
+            string contentsDigest = Digest("Evidence/portable-payload.json", File.ReadAllBytes(PayloadPath), "Worker/data.bin", content);
             string sbomText = JsonSerializer.Serialize(new
             {
-                spdxVersion = "SPDX-2.2", files = new[]
+                spdxVersion = "SPDX-2.2",
+                files = new[]
                 {
                     new { fileName = "./Evidence/portable-payload.json", checksums = new[] { new { algorithm = "SHA256", checksumValue = payloadHash } } },
-                    new { fileName = "./data.bin", checksums = new[] { new { algorithm = "SHA256", checksumValue = contentHash } } },
+                    new { fileName = "./Worker/data.bin", checksums = new[] { new { algorithm = "SHA256", checksumValue = contentHash } } },
                 },
             });
             File.WriteAllText(SbomPath, sbomText, new UTF8Encoding(false));
             string appHash = Hash(File.ReadAllBytes(AppPath));
             JsonObject release = new()
             {
-                ["schemaVersion"] = "1.0.0", ["taskId"] = "OSL-012", ["architecture"] = "x64", ["releaseApproved"] = false,
+                ["schemaVersion"] = "1.0.0",
+                ["taskId"] = "OSL-012",
+                ["architecture"] = "x64",
+                ["releaseApproved"] = false,
                 ["candidate"] = new JsonObject { ["path"] = "App/HubRadio.App.exe", ["byteSize"] = 3, ["sha256"] = appHash },
-                ["contents"] = new JsonObject { ["path"] = "Contents", ["fileCount"] = 2, ["totalBytes"] = File.ReadAllBytes(PayloadPath).LongLength + content.LongLength, ["artifactSetSha256"] = contentsDigest,
-                    ["files"] = new JsonArray(Record("Evidence/portable-payload.json", File.ReadAllBytes(PayloadPath)), Record("data.bin", content)) },
+                ["contents"] = new JsonObject
+                {
+                    ["path"] = "Contents",
+                    ["fileCount"] = 2,
+                    ["totalBytes"] = File.ReadAllBytes(PayloadPath).LongLength + content.LongLength,
+                    ["artifactSetSha256"] = contentsDigest,
+                    ["files"] = new JsonArray(Record("Evidence/portable-payload.json", File.ReadAllBytes(PayloadPath)), Record("Worker/data.bin", content))
+                },
                 ["preparedPayload"] = new JsonObject { ["manifestPath"] = "Contents/Evidence/portable-payload.json", ["manifestSha256"] = payloadHash, ["artifactSetSha256"] = payload["artifactSetSha256"]!.GetValue<string>() },
                 ["sbom"] = new JsonObject { ["path"] = "Sbom/manifest.json", ["byteSize"] = new FileInfo(SbomPath).Length, ["sha256"] = Hash(File.ReadAllBytes(SbomPath)), ["format"] = "SPDX-2.2" },
             };
@@ -158,7 +173,7 @@ public sealed class PortableArtifactVerificationTests
                         .FirstOrDefault(path => File.Exists(path)),
                 }
                 .Where(static path => !string.IsNullOrWhiteSpace(path))
-                .Select(static path => Path.GetFileName(path).Equals("pwsh.exe", StringComparison.OrdinalIgnoreCase)
+                .Select(static path => string.Equals(Path.GetFileName(path), "pwsh.exe", StringComparison.OrdinalIgnoreCase)
                     ? path
                     : Path.Combine(path!, "pwsh.exe"))
                 .FirstOrDefault(static path => File.Exists(path));

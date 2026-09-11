@@ -94,6 +94,7 @@ internal sealed class ProjectCreationService
     private readonly AssetCandidateRegistry candidateRegistry;
     private readonly ProjectCreationCatalog catalog;
     private readonly DefaultSettingsStore? settingsStore;
+    private readonly ISourceOnlyProjectCoordinator? sourceOnlyCoordinator;
     private readonly Func<string> getCurrentActorSid;
     private readonly Func<CancellationToken, Task<EntityId<AssetIdTag>?>> pickSourceAsync;
     private readonly TimeProvider timeProvider;
@@ -105,7 +106,8 @@ internal sealed class ProjectCreationService
         ProjectCreationCatalog catalog,
         Func<string> getCurrentActorSid,
         Func<CancellationToken, Task<EntityId<AssetIdTag>?>> pickSourceAsync,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ISourceOnlyProjectCoordinator? sourceOnlyCoordinator = null)
         : this(
             draftStore,
             authorizationService,
@@ -115,6 +117,7 @@ internal sealed class ProjectCreationService
             getCurrentActorSid,
             pickSourceAsync,
             timeProvider,
+            sourceOnlyCoordinator,
             initialize: true)
     {
     }
@@ -127,7 +130,8 @@ internal sealed class ProjectCreationService
         DefaultSettingsStore settingsStore,
         Func<string> getCurrentActorSid,
         Func<CancellationToken, Task<EntityId<AssetIdTag>?>> pickSourceAsync,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ISourceOnlyProjectCoordinator? sourceOnlyCoordinator = null)
         : this(
             draftStore,
             authorizationService,
@@ -137,6 +141,7 @@ internal sealed class ProjectCreationService
             getCurrentActorSid,
             pickSourceAsync,
             timeProvider,
+            sourceOnlyCoordinator,
             initialize: true)
     {
     }
@@ -150,6 +155,7 @@ internal sealed class ProjectCreationService
         Func<string> getCurrentActorSid,
         Func<CancellationToken, Task<EntityId<AssetIdTag>?>> pickSourceAsync,
         TimeProvider? timeProvider,
+        ISourceOnlyProjectCoordinator? sourceOnlyCoordinator,
         bool initialize)
     {
         _ = initialize;
@@ -165,6 +171,7 @@ internal sealed class ProjectCreationService
         this.candidateRegistry = candidateRegistry;
         this.catalog = catalog;
         this.settingsStore = settingsStore;
+        this.sourceOnlyCoordinator = sourceOnlyCoordinator;
         this.getCurrentActorSid = getCurrentActorSid;
         this.pickSourceAsync = pickSourceAsync;
         this.timeProvider = timeProvider ?? TimeProvider.System;
@@ -210,7 +217,7 @@ internal sealed class ProjectCreationService
     internal async Task<ProjectCreationDraftView> CreateSourceOnlyDraftAsync(
         CancellationToken cancellationToken = default)
     {
-        _ = Demand(AuthorizationOperation.CreateProject);
+        string actorSid = Demand(AuthorizationOperation.CreateProject);
         DefaultSettingsStore requiredSettingsStore = settingsStore
             ?? throw new SourceOnlyProjectCreationException(
                 SourceOnlyProjectCreationFailureReason.SettingsUnavailable);
@@ -232,23 +239,30 @@ internal sealed class ProjectCreationService
 
         SourceOnlyProjectCreationResolution resolution;
         StoredProjectCreationDraft stored;
+        var draftId = EntityId<ProjectCreationDraftIdTag>.New();
         using (reservation)
         {
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (!File.Exists(reservation.SelectedPath))
+                if (sourceOnlyCoordinator is null && !File.Exists(reservation.SelectedPath))
                 {
                     throw new ProjectCreationException(
                         ProjectCreationFailureReason.SourceReselectionRequired);
                 }
 
                 resolution = SourceOnlyProjectCreationContract.Resolve(
-                    EntityId<ProjectCreationDraftIdTag>.New(),
+                    draftId,
                     candidateId,
                     reservation.SelectedPath,
                     requiredSettingsStore.GetGlobalSettings(),
                     catalog);
+                if (sourceOnlyCoordinator is not null)
+                {
+                    await sourceOnlyCoordinator.CaptureSelectionAsync(draftId, candidateId,
+                        reservation.SelectedPath, actorSid, GetUtcNow(), cancellationToken).ConfigureAwait(true);
+                }
+                cancellationToken.ThrowIfCancellationRequested();
                 stored = draftStore.CreateDraft(
                     resolution.Draft,
                     SourceOnlyProjectCreationContract.Serialize(resolution),
@@ -257,6 +271,7 @@ internal sealed class ProjectCreationService
             catch
             {
                 reservation.Discard();
+                sourceOnlyCoordinator?.ForgetSelection(draftId);
                 throw;
             }
         }
@@ -309,18 +324,20 @@ internal sealed class ProjectCreationService
         JsonElement input)
     {
         ArgumentNullException.ThrowIfNull(draftId);
-        _ = Demand(AuthorizationOperation.CreateProject);
+        string actorSid = Demand(AuthorizationOperation.CreateProject);
         StoredProjectCreationDraft current = GetRequiredDraft(draftId);
-        EnsureMutable(current);
         if (SourceOnlyProjectCreationContract.IsSourceOnlyPayload(
             current.CanonicalJson))
         {
+            if (sourceOnlyCoordinator is null) { EnsureMutable(current); }
             return FinalizeSourceOnlyDraft(
             current,
             expectedRevision,
-            input);
+            input,
+            actorSid);
         }
 
+        EnsureMutable(current);
         ProjectCreationDraft draft = ProjectCreationPayloadCodec.ParseInput(
             input,
             draftId,
@@ -398,13 +415,14 @@ internal sealed class ProjectCreationService
 
     private ProjectListItem ReadAndProjectListItem(StoredProjectCreationDraft stored)
     {
-        ProjectCreationDraft draft = ParseStored(stored).Draft;
+        StoredProjectPayload payload = ParseStored(stored);
+        ProjectCreationDraft draft = payload.Draft;
         return new ProjectListItem(
             draft.Id.ToString(),
             stored.FinalizedProjectId?.ToString(),
             stored.IsFinalized ? "finalized" : "draft",
             draft.ContentName,
-            GetSourceStatus(draft.SourceCandidateId, stored.IsFinalized),
+            GetSourceStatus(draft, stored.IsFinalized, payload.SourceOnly is not null),
             draft.PublicationScope is PublicationScope scope
                 ? ProjectCreationPayloadCodec.ToWireName(scope)
                 : null,
@@ -431,7 +449,7 @@ internal sealed class ProjectCreationService
             stored.IsFinalized,
             stored.FinalizedProjectId?.ToString(),
             draft.SourceCandidateId?.ToString(),
-            GetSourceStatus(draft.SourceCandidateId, stored.IsFinalized),
+            GetSourceStatus(draft, stored.IsFinalized, sourceOnly is not null),
             draft.ContentName,
             draft.Purpose,
             draft.Audience,
@@ -503,7 +521,8 @@ internal sealed class ProjectCreationService
     private ProjectCreationDraftView FinalizeSourceOnlyDraft(
         StoredProjectCreationDraft current,
         int expectedRevision,
-        JsonElement input)
+        JsonElement input,
+        string actorSid)
     {
         StoredProjectPayload payload = ParseStored(current);
         SourceOnlyProjectCreationResolution sourceOnly = payload.SourceOnly
@@ -527,6 +546,23 @@ internal sealed class ProjectCreationService
         }
 
         ProjectCreationDraft draft = submitted;
+        if (sourceOnlyCoordinator is not null)
+        {
+            // Native execution binds the ORIGINAL picker identity, not a same-name file
+            // or a replacement opaque token. Legacy reselection behavior remains below.
+            if (draft.SourceCandidateId != payload.Draft.SourceCandidateId)
+            {
+                throw new ProjectCreationException(ProjectCreationFailureReason.SourceReselectionRequired);
+            }
+            var acceptedSourceOnly = new SourceOnlyProjectCreationResolution(
+                draft, sourceOnly.SettingsSnapshot, sourceOnly.ArtifactSet);
+            StoredProjectCreationDraft accepted = sourceOnlyCoordinator.Accept(
+                draft, sourceOnly.SettingsSnapshot,
+                SourceOnlyProjectCreationContract.Serialize(acceptedSourceOnly),
+                expectedRevision, actorSid, GetUtcNow());
+            return BuildView(accepted, draft, acceptedSourceOnly);
+        }
+
         if (!candidateRegistry.TryReserve(draft.SourceCandidateId!, out var reservation))
         {
             throw new ProjectCreationException(
@@ -624,15 +660,17 @@ internal sealed class ProjectCreationService
     }
 
     private string GetSourceStatus(
-        EntityId<AssetIdTag>? sourceCandidateId,
-        bool isFinalized = false) =>
-        sourceCandidateId is null
-            ? "notSelected"
-            : isFinalized
-                ? "available"
-                : candidateRegistry.IsAvailable(sourceCandidateId)
-                ? "available"
-                : "reselectionRequired";
+        ProjectCreationDraft draft,
+        bool isFinalized,
+        bool isSourceOnly)
+    {
+        if (draft.SourceCandidateId is null) { return "notSelected"; }
+        if (isFinalized) { return "available"; }
+        bool available = isSourceOnly && sourceOnlyCoordinator is not null
+            ? sourceOnlyCoordinator.RestoreSelection(draft.Id, draft.SourceCandidateId)
+            : candidateRegistry.IsAvailable(draft.SourceCandidateId);
+        return available ? "available" : "reselectionRequired";
+    }
 
     private string Demand(AuthorizationOperation operation)
     {

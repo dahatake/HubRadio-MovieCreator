@@ -77,9 +77,406 @@
     { "$ref": "#/$defs/settingsReadResponse" },
     { "$ref": "#/$defs/settingsUpdateResponse" },
     { "$ref": "#/$defs/settingsResetResponse" },
-    { "$ref": "#/$defs/settingsResetAllResponse" }
+    { "$ref": "#/$defs/settingsResetAllResponse" },
+    { "$ref": "#/$defs/settingsGlobalReadRequest" },
+    { "$ref": "#/$defs/settingsGlobalUpdateRequest" },
+    { "$ref": "#/$defs/settingsGlobalResetRequest" },
+    { "$ref": "#/$defs/settingsGlobalResetAllRequest" },
+    { "$ref": "#/$defs/settingsFileExportRequest" },
+    { "$ref": "#/$defs/settingsFilePreviewRequest" },
+    { "$ref": "#/$defs/settingsFileApplyRequest" },
+    { "$ref": "#/$defs/settingsGlobalReadResponse" },
+    { "$ref": "#/$defs/settingsGlobalUpdateResponse" },
+    { "$ref": "#/$defs/settingsGlobalResetResponse" },
+    { "$ref": "#/$defs/settingsGlobalResetAllResponse" },
+    { "$ref": "#/$defs/settingsFileExportResponse" },
+    { "$ref": "#/$defs/settingsFilePreviewResponse" },
+    { "$ref": "#/$defs/settingsFileApplyResponse" },
+    { "$ref": "#/$defs/pipelineReadRequest" },
+    { "$ref": "#/$defs/pipelineRegenerateRequest" },
+    { "$ref": "#/$defs/pipelineRetryRequest" },
+    { "$ref": "#/$defs/pipelineCancelRequest" },
+    { "$ref": "#/$defs/pipelineReadResponse" },
+    { "$ref": "#/$defs/pipelineRegenerateResponse" },
+    { "$ref": "#/$defs/pipelineRetryResponse" },
+    { "$ref": "#/$defs/pipelineCancelResponse" }
   ],
   "$defs": {
+    "sourceOnlyProtocolLimits": {
+      "$comment": "pipeline.read/regenerate/retry/cancel use exactly 1 KiB (1024) request and 8 MiB (8388608) response UTF-8 ceilings, including envelopes. Responses always contain result {status,snapshot}, never an error envelope. The current native actor must have ViewProject for reads and Editor/CreateCompositionVersion for commands; no renderer-supplied identity or approval exists. Consumers correlate requestId and method and the exact requested project. Retry returns a new execution; regeneration returns a new execution with the exact requested parent. Cancel checks the current execution/revision before signaling and awaits native cleanup. With no pipeline, commands are unavailable; saved snapshots can still be read through the real stores/result service. The entire result is projected through SourceOnlyResult.ToWebDto with camelCase properties; nested evaluation is a JSON object, never a string. Native recovery locators are excluded. previousResult is only an explicitly earlier stored same-project result that passed file/DB validation, not a result inferred from the current working copy. Result validity is not QC success or publication/delivery approval. Invalid descriptors can remain visible with resultStatus=invalid, but cannot authorize media. Generated media uses the separate reserved source-only URL below, GET only, MP4/PNG only, a held validated artifact stream and the existing single-byte-range rules. All malformed source-only URLs are intercepted, never fetched remotely.",
+      "x-maxRequestUtf8Bytes": 1024,
+      "x-maxResponseUtf8Bytes": 8388608,
+      "x-maxMediaUriCharacters": 226,
+      "x-maxMediaRangeHeaderCharacters": 128
+    },
+    "pipelineReadParams": {
+      "type": "object", "additionalProperties": false,
+      "required": ["projectId"],
+      "properties": { "projectId": { "$ref": "#/$defs/entityId" } }
+    },
+    "pipelineRegenerateParams": {
+      "$comment": "Regeneration is not reconciliation: native rejects a current ReconciliationRequired phase or a canonical current result with stagingCleanupRequired=true or ReconciliationRequired (generationDisposition=ReconciliationRequired or nonempty reconciliationArtifacts), even if no root job is busy. Rejection is conflict with snapshot=null and accepts no new execution/job or cleanup side effects. The native pipeline must repeat these checks under its acceptance gate, alongside exact parent/settings checks.",
+      "type": "object", "additionalProperties": false,
+      "required": ["projectId", "expectedVersionId", "expectedVersionDigest", "expectedSettingsRevision", "expectedSettingsSnapshotDigest"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "expectedVersionId": { "$ref": "#/$defs/entityId" },
+        "expectedVersionDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedSettingsRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "expectedSettingsSnapshotDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "pipelineCommandParams": {
+      "type": "object", "additionalProperties": false,
+      "required": ["projectId", "executionId", "expectedRevision"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "executionId": { "$ref": "#/$defs/entityId" },
+        "expectedRevision": { "$ref": "#/$defs/nonnegativeInt32" }
+      }
+    },
+    "pipelineReadRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "pipeline.read" }, "params": { "$ref": "#/$defs/pipelineReadParams" }
+      }
+    },
+    "pipelineRegenerateRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "pipeline.regenerate" }, "params": { "$ref": "#/$defs/pipelineRegenerateParams" }
+      }
+    },
+    "pipelineRetryRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "pipeline.retry" }, "params": { "$ref": "#/$defs/pipelineCommandParams" }
+      }
+    },
+    "pipelineCancelRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "pipeline.cancel" }, "params": { "$ref": "#/$defs/pipelineCommandParams" }
+      }
+    },
+    "pipelineReadResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "pipeline.read" }, "result": { "$ref": "#/$defs/sourceOnlyBridgeResult" }
+      }
+    },
+    "pipelineRegenerateResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "pipeline.regenerate" }, "result": { "$ref": "#/$defs/sourceOnlyBridgeResult" }
+      }
+    },
+    "pipelineRetryResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "pipeline.retry" }, "result": { "$ref": "#/$defs/sourceOnlyBridgeResult" }
+      }
+    },
+    "pipelineCancelResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "pipeline.cancel" }, "result": { "$ref": "#/$defs/sourceOnlyBridgeResult" }
+      }
+    },
+    "sourceOnlyBridgeResult": {
+      "$comment": "available requires a nonnull snapshot with resultStatus=none or valid. invalid permits snapshot=null, or a diagnostic snapshot with resultStatus=invalid and a safe canonical-codec result DTO or null. Consumers retain diagnostic descriptors but revoke previously verified media on invalid; descriptors are never media authorization. notFound/conflict/forbidden/unavailable require snapshot=null. The native media factory independently rejects an invalid result on every GET, including an unchanged artifact in an invalid set.",
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "snapshot"],
+      "properties": {
+        "status": { "enum": ["available", "notFound", "conflict", "forbidden", "unavailable", "invalid"] },
+        "snapshot": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlySnapshot" }] }
+      },
+      "oneOf": [
+        { "properties": { "status": { "const": "available" }, "snapshot": { "$ref": "#/$defs/sourceOnlySnapshot", "properties": { "resultStatus": { "enum": ["none", "valid"] } } } } },
+        { "properties": { "status": { "enum": ["notFound", "conflict", "forbidden", "unavailable"] }, "snapshot": { "type": "null" } } },
+        { "properties": { "status": { "const": "invalid" }, "snapshot": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlySnapshot", "properties": { "resultStatus": { "const": "invalid" } } }] } } }
+      ]
+    },
+    "sourceOnlySnapshot": {
+      "$comment": "All bindings are native stored identities. Consumers verify a current result's six binding fields against this snapshot. previousResult must be a validated strictly earlier stored execution in the same project, with a different executionId and binding.versionId/versionDigest exactly equal to parentVersionId/parentDigest. No parent or no valid exact-parent result means previousResult=null; never select an unrelated older/latest-valid result or infer one from the working copy. Cross-field equality and persisted acceptance-time ordering are enforced by native consumers. PascalCase phase is the exact SourceOnlyExecutionPhase name. An invalid result may have a safe descriptor or null, never usable media.",
+      "type": "object", "additionalProperties": false,
+      "required": ["projectId", "executionId", "revision", "phase", "rootJobId", "ingestJobId", "settingsSnapshotDigest", "versionId", "versionDigest", "parentVersionId", "parentDigest", "resultStatus", "result", "previousResult", "failureCode"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" }, "executionId": { "$ref": "#/$defs/entityId" },
+        "revision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "phase": { "enum": ["Queued", "Ingesting", "Analyzing", "Composing", "Rendering", "Evaluating", "Delivering", "Completed", "Failed", "Canceled", "ReselectionRequired", "ReconciliationRequired"] },
+        "rootJobId": { "$ref": "#/$defs/entityId" }, "ingestJobId": { "$ref": "#/$defs/entityId" },
+        "settingsSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "versionId": { "$ref": "#/$defs/nullableId" }, "versionDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" },
+        "parentVersionId": { "$ref": "#/$defs/nullableId" }, "parentDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" },
+        "resultStatus": { "enum": ["none", "valid", "invalid"] },
+        "result": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlyResult" }] },
+        "previousResult": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlyResult" }] },
+        "failureCode": { "type": ["string", "null"], "minLength": 1, "maxLength": 128, "pattern": "^[a-z0-9_.-]+(?![\\s\\S])" }
+      },
+      "oneOf": [
+        { "properties": { "resultStatus": { "const": "none" }, "result": { "type": "null" } } },
+        { "properties": { "resultStatus": { "const": "valid" }, "result": { "$ref": "#/$defs/sourceOnlyResult" } } },
+        { "properties": { "resultStatus": { "const": "invalid" } } }
+      ]
+    },
+    "sourceOnlyMediaReference": {
+      "type": "string", "minLength": 226, "maxLength": 226,
+      "pattern": "^https://player-media\\.appassets\\.example/source-only/(?!00000000-0000-0000-0000-000000000000/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/(?!00000000-0000-0000-0000-000000000000/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/(?!00000000-0000-0000-0000-000000000000/)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{64}(?![\\s\\S])"
+    },
+    "sourceOnlyNullableDigest": { "oneOf": [{ "$ref": "#/$defs/contentDigest" }, { "type": "null" }] },
+    "sourceOnlySafeInteger": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+    "sourceOnlyTime": {
+      "$comment": "Unlike legacy bridge rationalTime, result-codec rationals are JSON safe integers, not strings. Native consumers additionally enforce reduced positive-rate form.",
+      "type": "object", "additionalProperties": false, "required": ["value", "rate"],
+      "properties": { "value": { "$ref": "#/$defs/sourceOnlySafeInteger" }, "rate": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 } }
+    },
+    "sourceOnlyNullableTime": { "oneOf": [{ "$ref": "#/$defs/sourceOnlyTime" }, { "type": "null" }] },
+    "sourceOnlyBinding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["projectId", "executionId", "rootJobId", "settingsSnapshotDigest", "versionId", "versionDigest"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" }, "executionId": { "$ref": "#/$defs/entityId" },
+        "rootJobId": { "$ref": "#/$defs/entityId" }, "settingsSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "versionId": { "$ref": "#/$defs/entityId" }, "versionDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "sourceOnlyReference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifactId", "contentDigest", "byteSize", "kind"],
+      "properties": {
+        "artifactId": { "$ref": "#/$defs/entityId" }, "contentDigest": { "$ref": "#/$defs/contentDigest" },
+        "byteSize": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "kind": { "enum": ["Original", "Proxy", "Analysis", "Composition", "Preview", "Render", "Delivery", "Evidence"] }
+      }
+    },
+    "sourceOnlyEvidence": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "artifact"],
+      "properties": {
+        "kind": { "enum": ["Graph", "Manifest", "RenderingInputs", "QualityControl", "DeliveryReceipt"] },
+        "artifact": { "$ref": "#/$defs/sourceOnlyReference", "properties": { "kind": { "const": "Evidence" } } }
+      }
+    },
+    "sourceOnlyFrame": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sourceAssetId", "sourceSpanId", "sourceDigest", "sourcePtsIndexDigest", "sourceFrameSequence", "sourcePresentationTime", "sourceFrameDuration", "sourceWidth", "sourceHeight", "width", "height", "extractionRule"],
+      "properties": {
+        "sourceAssetId": { "$ref": "#/$defs/entityId" }, "sourceSpanId": { "$ref": "#/$defs/entityId" },
+        "sourceDigest": { "$ref": "#/$defs/contentDigest" }, "sourcePtsIndexDigest": { "$ref": "#/$defs/contentDigest" },
+        "sourceFrameSequence": { "$ref": "#/$defs/nonnegativeInt32" },
+        "sourcePresentationTime": { "$ref": "#/$defs/sourceOnlyTime" }, "sourceFrameDuration": { "$ref": "#/$defs/sourceOnlyTime" },
+        "sourceWidth": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "sourceHeight": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "width": { "type": "integer", "minimum": 2, "maximum": 4096 },
+        "height": { "type": "integer", "minimum": 2, "maximum": 4096 },
+        "extractionRule": { "const": "decode-original-select-source-sequence-contain-v1" }
+      }
+    },
+    "sourceOnlyMeasuredValue": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "value"],
+      "properties": { "kind": { "enum": ["Finite", "NegativeInfinity", "PositiveInfinity"] }, "value": { "type": ["number", "null"] } },
+      "oneOf": [
+        { "properties": { "kind": { "const": "Finite" }, "value": { "type": "number" } } },
+        { "properties": { "kind": { "enum": ["NegativeInfinity", "PositiveInfinity"] }, "value": { "type": "null" } } }
+      ]
+    },
+    "sourceOnlyCue": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cueId", "start", "duration", "characterCount", "maximumLineCharacters", "lineCount", "safeZoneSatisfied"],
+      "properties": {
+        "cueId": { "$ref": "#/$defs/entityId" }, "start": { "$ref": "#/$defs/sourceOnlyTime" }, "duration": { "$ref": "#/$defs/sourceOnlyTime" },
+        "characterCount": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "maximumLineCharacters": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "lineCount": { "type": "integer", "minimum": 1, "maximum": 1024 }, "safeZoneSatisfied": { "type": "boolean" }
+      }
+    },
+    "sourceOnlyMeasurements": {
+      "type": "object", "additionalProperties": false,
+      "required": ["expectedDuration", "videoStart", "videoEnd", "audioStart", "audioEnd", "videoFrameCount", "audioFrameCount", "probeDigest", "videoTimingDigest", "audioTimingDigest", "subtitleTimingDigest", "lumaDigest", "audioDigest", "minimumLuma", "maximumLuma", "meanLuma", "loudness", "truePeak", "decodedSuccessfully", "cues", "videoTimeBase", "audioTimeBase", "videoTimingContinuous", "videoFrameCadenceExact", "outputDigitalSilence", "audioVideoStartOffset", "audioVideoEndOffset"],
+      "properties": {
+        "expectedDuration": { "$ref": "#/$defs/sourceOnlyTime" }, "videoStart": { "$ref": "#/$defs/sourceOnlyTime" }, "videoEnd": { "$ref": "#/$defs/sourceOnlyTime" },
+        "audioStart": { "$ref": "#/$defs/sourceOnlyNullableTime" }, "audioEnd": { "$ref": "#/$defs/sourceOnlyNullableTime" },
+        "videoFrameCount": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "audioFrameCount": { "type": ["integer", "null"], "minimum": 1, "maximum": 2147483647 },
+        "probeDigest": { "$ref": "#/$defs/contentDigest" }, "videoTimingDigest": { "$ref": "#/$defs/contentDigest" },
+        "audioTimingDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" }, "subtitleTimingDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" },
+        "lumaDigest": { "$ref": "#/$defs/contentDigest" }, "audioDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" },
+        "minimumLuma": { "type": "number", "minimum": 0, "maximum": 255 },
+        "maximumLuma": { "type": "number", "minimum": 0, "maximum": 255 }, "meanLuma": { "type": "number", "minimum": 0, "maximum": 255 },
+        "loudness": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlyMeasuredValue" }] },
+        "truePeak": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlyMeasuredValue" }] },
+        "decodedSuccessfully": { "type": "boolean" }, "cues": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/sourceOnlyCue" } },
+        "videoTimeBase": { "$ref": "#/$defs/sourceOnlyTime" }, "audioTimeBase": { "$ref": "#/$defs/sourceOnlyNullableTime" },
+        "videoTimingContinuous": { "type": "boolean" }, "videoFrameCadenceExact": { "type": "boolean" }, "outputDigitalSilence": { "type": "boolean" },
+        "audioVideoStartOffset": { "$ref": "#/$defs/sourceOnlyNullableTime" }, "audioVideoEndOffset": { "$ref": "#/$defs/sourceOnlyNullableTime" }
+      }
+    },
+    "sourceOnlyRuleId": { "enum": ["codec", "fullDecode", "duration", "avSync", "subtitlePresence", "subtitleReadingSpeed", "subtitleLineLength", "subtitleLineCount", "subtitleTiming", "subtitleSafeZone", "loudness", "truePeak", "provenance", "settingsBinding", "keyboard", "focus", "contrast", "accessibilityTree", "subtitleSemanticCompleteness", "nonSpeechSoundCoverage", "speakerInformationCoverage", "mainContentUnderstanding", "humanReadability", "naturalness", "perceivedAudioQuality", "emotionalFit", "legalCompliance"] },
+    "sourceOnlyReasonCode": { "type": "string", "minLength": 3, "maxLength": 128, "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+(?![\\s\\S])" },
+    "sourceOnlySettingKey": { "type": ["string", "null"], "minLength": 1, "maxLength": 128, "pattern": "^[a-z][a-zA-Z0-9]*(?:\\.[a-z][a-zA-Z0-9]*)*(?![\\s\\S])" },
+    "sourceOnlyTarget": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "projectId", "versionId", "versionDigest", "artifactId", "artifactDigest", "timeBasis", "time", "settingKey", "editorKind"],
+      "properties": {
+        "kind": { "enum": ["Preview", "Settings", "Evidence", "Editor"] }, "projectId": { "$ref": "#/$defs/entityId" },
+        "versionId": { "$ref": "#/$defs/entityId" }, "versionDigest": { "$ref": "#/$defs/contentDigest" },
+        "artifactId": { "$ref": "#/$defs/nullableId" }, "artifactDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" },
+        "timeBasis": { "enum": [null, "Source", "Output"] }, "time": { "$ref": "#/$defs/sourceOnlyNullableTime" },
+        "settingKey": { "$ref": "#/$defs/sourceOnlySettingKey" }, "editorKind": { "enum": [null, "Timeline", "Subtitles", "Audio", "Layout", "Metadata"] }
+      }
+    },
+    "sourceOnlyWarning": {
+      "type": "object", "additionalProperties": false, "required": ["id", "ruleId", "status", "reasonCode", "target"],
+      "properties": {
+        "id": { "type": "string", "minLength": 38, "maxLength": 128, "pattern": "^[0-9a-f-]{36}:[a-zA-Z]+(?![\\s\\S])" },
+        "ruleId": { "$ref": "#/$defs/sourceOnlyRuleId" }, "status": { "enum": ["Warning", "Fail"] },
+        "reasonCode": { "$ref": "#/$defs/sourceOnlyReasonCode" }, "target": { "$ref": "#/$defs/sourceOnlyTarget" }
+      }
+    },
+    "sourceOnlyEvaluationTarget": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "projectId", "compositionVersionId", "compositionVersionDigest", "artifactId", "artifactDigest", "timeBasis", "time", "settingKey", "editorKind"],
+      "properties": {
+        "kind": { "enum": ["preview", "settings", "evidence", "editor"] }, "projectId": { "$ref": "#/$defs/entityId" },
+        "compositionVersionId": { "$ref": "#/$defs/entityId" }, "compositionVersionDigest": { "$ref": "#/$defs/contentDigest" },
+        "artifactId": { "$ref": "#/$defs/nullableId" }, "artifactDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" },
+        "timeBasis": { "enum": [null, "source", "output"] }, "time": { "$ref": "#/$defs/sourceOnlyNullableTime" },
+        "settingKey": { "$ref": "#/$defs/sourceOnlySettingKey" }, "editorKind": { "enum": [null, "timeline", "subtitles", "audio", "layout", "metadata"] }
+      }
+    },
+    "sourceOnlyEvaluationRule": {
+      "type": "object", "additionalProperties": false, "required": ["ruleId", "category", "scope", "status", "reasonCode", "evidenceDigest", "target"],
+      "properties": {
+        "ruleId": { "$ref": "#/$defs/sourceOnlyRuleId" }, "category": { "enum": ["machine", "humanLimitation"] },
+        "scope": { "enum": ["artifact", "userInterface", "humanReview"] }, "status": { "enum": ["PASS", "WARNING", "FAIL", "NOT EVALUATED"] },
+        "reasonCode": { "$ref": "#/$defs/sourceOnlyReasonCode" }, "evidenceDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" },
+        "target": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlyEvaluationTarget" }] }
+      }
+    },
+    "sourceOnlyEvaluationCounts": {
+      "type": "object", "additionalProperties": false, "required": ["pass", "warning", "fail", "notEvaluated"],
+      "properties": {
+        "pass": { "type": "integer", "minimum": 0, "maximum": 27 }, "warning": { "type": "integer", "minimum": 0, "maximum": 27 },
+        "fail": { "type": "integer", "minimum": 0, "maximum": 27 }, "notEvaluated": { "type": "integer", "minimum": 0, "maximum": 27 }
+      }
+    },
+    "sourceOnlyEvaluation": {
+      "$comment": "Exact nested AutomatedEvaluationRun canonical JSON. Its own codec replays rules, counts, target bindings, timestamps and digest; the uppercase statuses are distinct from PascalCase warning DTO statuses.",
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "evaluationId", "jobId", "projectId", "compositionVersionId", "compositionVersionDigest", "artifactId", "artifactDigest", "settingsProfileId", "settingsProfileVersion", "settingsProfileDigest", "settingsSnapshotDigest", "ruleSetVersion", "environmentVersion", "environmentDigest", "toolVersionsDigest", "modelVersionsDigest", "templateDigest", "musicDigest", "startedAt", "completedAt", "evaluatedAt", "inputDigest", "outputDigest", "aggregateStatus", "statusCounts", "rules", "limitations"],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" }, "evaluationId": { "$ref": "#/$defs/entityId" }, "jobId": { "$ref": "#/$defs/entityId" },
+        "projectId": { "$ref": "#/$defs/entityId" }, "compositionVersionId": { "$ref": "#/$defs/entityId" },
+        "compositionVersionDigest": { "$ref": "#/$defs/contentDigest" }, "artifactId": { "$ref": "#/$defs/entityId" }, "artifactDigest": { "$ref": "#/$defs/contentDigest" },
+        "settingsProfileId": { "$ref": "#/$defs/entityId" }, "settingsProfileVersion": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?![\\s\\S])", "maxLength": 32 },
+        "settingsProfileDigest": { "$ref": "#/$defs/contentDigest" }, "settingsSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "ruleSetVersion": { "const": "2.0.0" }, "environmentVersion": { "const": "source-only.output-evaluation.v2" },
+        "environmentDigest": { "$ref": "#/$defs/contentDigest" }, "toolVersionsDigest": { "$ref": "#/$defs/contentDigest" },
+        "modelVersionsDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" }, "templateDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" }, "musicDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" },
+        "startedAt": { "$ref": "#/$defs/timestamp" }, "completedAt": { "$ref": "#/$defs/timestamp" }, "evaluatedAt": { "$ref": "#/$defs/timestamp" },
+        "inputDigest": { "$ref": "#/$defs/contentDigest" }, "outputDigest": { "$ref": "#/$defs/contentDigest" },
+        "aggregateStatus": { "enum": ["PASS", "WARNING", "FAIL", "NOT EVALUATED"] }, "statusCounts": { "$ref": "#/$defs/sourceOnlyEvaluationCounts" },
+        "rules": { "type": "array", "minItems": 18, "maxItems": 18, "items": { "$ref": "#/$defs/sourceOnlyEvaluationRule" } },
+        "limitations": { "type": "array", "minItems": 9, "maxItems": 9, "items": { "$ref": "#/$defs/sourceOnlyEvaluationRule" } }
+      }
+    },
+    "sourceOnlyFailureCode": { "enum": ["GenerationFailed", "GenerationCanceled", "GenerationReconciliationRequired", "NoArtifacts", "PrimaryArtifactMissing", "BindingMismatch", "SettingsBindingMismatch", "VersionNotPersisted", "ArtifactValidationFailed", "QualityControlFailed", "Canceled", "EvidencePersistenceFailed", "EvaluationPersistenceFailed", "WorkflowConflict", "StoredEvidenceInvalid", "DeliveryNotValidated", "EvidencePromotionReconciliationRequired"] },
+    "sourceOnlyDelivery": {
+      "type": "object", "additionalProperties": false, "required": ["artifact", "receipt"],
+      "properties": {
+        "artifact": { "$ref": "#/$defs/sourceOnlyReference", "properties": { "kind": { "const": "Delivery" } } },
+        "receipt": { "$ref": "#/$defs/sourceOnlyEvidence", "properties": { "kind": { "const": "DeliveryReceipt" } } }
+      }
+    },
+    "sourceOnlyArtifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["role", "renditionId", "artifact", "mediaType", "versionId", "versionDigest", "source", "graphDigest", "manifestDigest", "evidence", "evaluation", "evaluationDigest", "measurements", "failureCode", "qcFailureReason", "qcFailureStage", "warnings", "delivered", "delivery", "thumbnailPlanId", "frameEvidence", "qcApplicability", "profileId", "profileDigest"],
+      "properties": {
+        "role": { "enum": ["LandscapeClean", "LandscapeBurnIn", "VerticalBurnIn", "SubRip", "WebVtt", "LandscapeThumbnail", "VerticalThumbnail"] },
+        "renditionId": { "$ref": "#/$defs/nullableId" }, "artifact": { "$ref": "#/$defs/sourceOnlyReference", "properties": { "kind": { "const": "Render" } } },
+        "mediaType": { "enum": ["video/mp4", "image/png", "application/x-subrip", "text/vtt"] },
+        "versionId": { "$ref": "#/$defs/entityId" }, "versionDigest": { "$ref": "#/$defs/contentDigest" },
+        "source": { "$ref": "#/$defs/sourceOnlyReference", "properties": { "kind": { "const": "Original" } } },
+        "graphDigest": { "$ref": "#/$defs/contentDigest" }, "manifestDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" },
+        "evidence": { "type": "array", "maxItems": 4, "items": { "$ref": "#/$defs/sourceOnlyEvidence", "properties": { "kind": { "enum": ["Graph", "Manifest", "RenderingInputs", "QualityControl"] } } } },
+        "evaluation": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlyEvaluation" }] }, "evaluationDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" },
+        "measurements": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlyMeasurements" }] },
+        "failureCode": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlyFailureCode" }] },
+        "qcFailureReason": { "enum": [null, "GraphInvalid", "ManifestBindingMismatch", "SubtitleEvidenceInvalid", "RegisteredArtifactInvalid", "ArtifactBindingMismatch", "ToolVerificationFailed", "ProcessTimedOut", "ProcessFailed", "OutputTruncated", "InvalidEncoding", "ProbeOutputInvalid", "ContainerMismatch", "StreamTopologyMismatch", "StreamMetadataMismatch", "TimingOutputInvalid", "NonMonotonicTiming", "DecodeFailed", "LumaOutputInvalid", "LoudnessOutputInvalid"] },
+        "qcFailureStage": { "enum": [null, "Evidence", "Probe", "VideoTiming", "AudioTiming", "SubtitleTiming", "Decode", "ScreenLuma", "AudioLoudness"] },
+        "warnings": { "type": "array", "maxItems": 18, "items": { "$ref": "#/$defs/sourceOnlyWarning" } },
+        "delivered": { "type": "boolean" }, "delivery": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlyDelivery" }] },
+        "thumbnailPlanId": { "$ref": "#/$defs/nullableId" }, "frameEvidence": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlyFrame" }] },
+        "qcApplicability": { "enum": ["VideoOutputQc", "SubtitleFileOnly", "ImageFileOnly"] },
+        "profileId": { "$ref": "#/$defs/nullableId" }, "profileDigest": { "$ref": "#/$defs/sourceOnlyNullableDigest" }
+      }
+    },
+    "sourceOnlyOmission": {
+      "type": "object", "additionalProperties": false, "required": ["role", "reason", "renditionId"],
+      "properties": {
+        "role": { "enum": ["ShortForm", "Thumbnail", "LandscapeSubtitles", "VerticalSubtitles", "VerticalCallToAction", "PreRollMargin", "Opening", "ProgramName", "EpisodeNumber", "EpisodeTitle", "PerformerIntroduction", "PublicationScopeIndicator", "Body", "Topic", "Summary", "CallToAction", "Ending", "PostRollMargin", "Other"] },
+        "reason": { "enum": ["NoGroundedCandidate", "NoAdditionalGroundedCandidate", "NoMeasuredSourceFrame", "NoAdditionalMeasuredSourceFrame", "NoDisplayCues", "UntimedPlanMetadataNotRendered", "ThumbnailRendererNotConnected", "CallToActionRendererNotConnected", "UnrecognizedOmission"] },
+        "renditionId": { "$ref": "#/$defs/nullableId" }
+      }
+    },
+    "sourceOnlyFailure": {
+      "type": "object", "additionalProperties": false, "required": ["code", "artifactId", "promotionArtifact", "evidenceKind"],
+      "properties": {
+        "code": { "$ref": "#/$defs/sourceOnlyFailureCode" }, "artifactId": { "$ref": "#/$defs/nullableId" },
+        "promotionArtifact": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlyReference", "properties": { "kind": { "const": "Evidence" } } }] },
+        "evidenceKind": { "enum": [null, "Graph", "Manifest", "RenderingInputs", "QualityControl"] }
+      }
+    },
+    "sourceOnlyTranscript": {
+      "type": "object", "additionalProperties": false, "required": ["revisionId", "revisionDigest", "sourceArtifactId"],
+      "properties": { "revisionId": { "$ref": "#/$defs/entityId" }, "revisionDigest": { "$ref": "#/$defs/contentDigest" }, "sourceArtifactId": { "$ref": "#/$defs/entityId" } }
+    },
+    "sourceOnlyWorkflow": {
+      "type": "object", "additionalProperties": false, "required": ["artifactId", "revision", "canonicalDigest", "state", "evaluationId"],
+      "properties": {
+        "artifactId": { "$ref": "#/$defs/entityId" }, "revision": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "canonicalDigest": { "$ref": "#/$defs/contentDigest" }, "state": { "enum": ["Ready", "ReadyWithWarnings", "Failed"] }, "evaluationId": { "$ref": "#/$defs/entityId" }
+      }
+    },
+    "sourceOnlyGenerationWarning": {
+      "type": "object", "additionalProperties": false, "required": ["role", "code"],
+      "properties": {
+        "role": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^(?:plan|music|video|landscape-clean|landscape-burn-in|landscape-srt|landscape-vtt|(?:vertical-burn-in-|thumbnail-landscape-|thumbnail-vertical-)(?!00000000-0000-0000-0000-000000000000(?![\\s\\S]))[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![\\s\\S])" },
+        "code": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9_]*(?![\\s\\S])" }
+      }
+    },
+    "sourceOnlyResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "binding", "generationDisposition", "artifacts", "omissions", "failures", "reconciliationArtifacts", "transcriptReferences", "primaryWorkflow", "stagingCleanupRequired", "generationWarnings"],
+      "properties": {
+        "schemaVersion": { "const": "source-only.result.v2" }, "binding": { "$ref": "#/$defs/sourceOnlyBinding" },
+        "generationDisposition": { "enum": ["Completed", "Failed", "Cancelled", "ReconciliationRequired", "GeneratedWithOmissions"] },
+        "artifacts": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/sourceOnlyArtifact" } },
+        "omissions": { "type": "array", "maxItems": 128, "items": { "$ref": "#/$defs/sourceOnlyOmission" } },
+        "failures": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/sourceOnlyFailure" } },
+        "reconciliationArtifacts": { "$comment": "Canonical diagnostic references include Delivery as well as Render/Evidence. A reconciliation reference does not prove completed delivery or grant media access, approval, or any mutation authority.", "type": "array", "maxItems": 80, "items": { "$ref": "#/$defs/sourceOnlyReference", "properties": { "kind": { "enum": ["Render", "Evidence", "Delivery"] } } } },
+        "transcriptReferences": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/sourceOnlyTranscript" } },
+        "primaryWorkflow": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlyWorkflow" }] },
+        "stagingCleanupRequired": { "type": "boolean" },
+        "generationWarnings": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/sourceOnlyGenerationWarning" } }
+      }
+    },
     "protocolVersion": { "const": 1 },
     "canonicalId": {
       "type": "string",
@@ -153,7 +550,18 @@
         "settings.read",
         "settings.update",
         "settings.reset",
-        "settings.resetAll"
+        "settings.resetAll",
+        "settings.global.read",
+        "settings.global.update",
+        "settings.global.reset",
+        "settings.global.resetAll",
+        "settings.file.export",
+        "settings.file.preview",
+        "settings.file.apply",
+        "pipeline.read",
+        "pipeline.regenerate",
+        "pipeline.retry",
+        "pipeline.cancel"
       ]
     },
     "projectMethod": {
@@ -5092,7 +5500,7 @@
       }
     },
     "layoutProtocolLimits": {
-      "$comment": "layout.read and layout.apply requests are limited to exactly 64 KiB of well-formed UTF-8 and responses to 4 MiB. Native code enforces exact Int64 bounds, reduced rationals, normalized-rectangle arithmetic, total keyframe count <= 256, direct-child composition lineage, aggregate/cue optimistic concurrency, and response bounds before installing mutations. Actor identity, face/provider evidence, paths, persistence capabilities, and render commands never cross this boundary."
+      "$comment": "layout.read and layout.apply requests retain the 64 KiB well-formed UTF-8 limit and responses the 4 MiB limit, including optional durableSubtitles metadata. Native code enforces exact Int64 bounds, reduced rationals, normalized-rectangle arithmetic, total keyframe count <= 256, verified composition lineage, aggregate/cue optimistic concurrency, and response bounds before committing mutations. Actor identity, face/provider evidence, paths, arbitrary persistence commands, and render commands never cross this boundary."
     },
     "layoutText": {
       "type": "string",
@@ -5422,27 +5830,42 @@
     },
     "layoutReadParams": {
       "type": "object",
+      "$comment": "Omitting latestInBranch preserves exact reads: the optional paired expectedVersionId/expectedVersionDigest selects that exact same-project version, never its child. latestInBranch is optional true-only, read-only, and requires BOTH pins. The durable provider validates that exact requested version and digest FIRST, then resolves its verified branch and returns the observed saved head. A generated root or any known journal child may be pinned; native-only composition dictionary entries alone are not branch membership proof. Unknown project/version returns notFound, wrong exact digest conflict, invalid parameters invalid. The legacy session provider returns unavailable for latestInBranch. evaluationTime retains its existing shape but does not re-evaluate durable subtitle snapshots. Unpinned reads retain default-branch behavior.",
       "additionalProperties": false,
       "required": ["projectId", "evaluationTime"],
       "properties": {
         "projectId": { "$ref": "#/$defs/entityId" },
+        "expectedVersionId": { "$ref": "#/$defs/entityId" },
+        "expectedVersionDigest": { "$ref": "#/$defs/contentDigest" },
+        "latestInBranch": { "const": true },
         "evaluationTime": {
           "oneOf": [
             { "$ref": "#/$defs/rationalTime" },
             { "type": "null" }
           ]
         }
+      },
+      "dependentRequired": {
+        "expectedVersionId": ["expectedVersionDigest"],
+        "expectedVersionDigest": ["expectedVersionId"],
+        "latestInBranch": ["expectedVersionId", "expectedVersionDigest"]
       }
     },
     "layoutApplyParams": {
       "type": "object",
-      "$comment": "expectedRevision is aggregate optimistic-concurrency evidence; cue edits independently pin the current immutable cue revision ID and digest.",
+      "$comment": "expectedRevision is aggregate optimistic-concurrency evidence; cue edits independently pin the current immutable cue revision ID and digest. The version pair remains optional in the legacy single-branch contract but is mandatory for every durable mutation and legacy multi-branch mutation. latestInBranch and every other unknown key are forbidden. Non-head versions cannot be mutated, except that an exact idempotent request retry returns its original committed child and row metadata without advancing the branch. Durable editSubtitle ACKs follow commit; legacy edits remain notPersisted. No read or edit starts rendering, changes settings, updates the working copy, or grants approval.",
       "additionalProperties": false,
       "required": ["projectId", "expectedRevision", "operation"],
       "properties": {
         "projectId": { "$ref": "#/$defs/entityId" },
+        "expectedVersionId": { "$ref": "#/$defs/entityId" },
+        "expectedVersionDigest": { "$ref": "#/$defs/contentDigest" },
         "expectedRevision": { "$ref": "#/$defs/nonnegativeInt32" },
         "operation": { "$ref": "#/$defs/layoutOperation" }
+      },
+      "dependentRequired": {
+        "expectedVersionId": ["expectedVersionDigest"],
+        "expectedVersionDigest": ["expectedVersionId"]
       }
     },
     "layoutReadRequest": {
@@ -5490,7 +5913,7 @@
     },
     "layoutOutput": {
       "type": "object",
-      "$comment": "Native and Web consumers enforce width/height == aspectWidth/aspectHeight and aspectWidth:aspectHeight == 9:16 by exact cross multiplication.",
+      "$comment": "Native and Web consumers enforce width/height == aspectWidth/aspectHeight and aspectWidth:aspectHeight == 9:16 or 16:9 by exact cross multiplication. 16:9 is a genuine subtitle-only workspace with manualSelection=null and no keyframe tracks, never a fabricated vertical plan.",
       "additionalProperties": false,
       "required": ["width", "height", "aspectWidth", "aspectHeight"],
       "properties": {
@@ -5523,6 +5946,7 @@
     },
     "layoutProjection": {
       "type": "object",
+      "$comment": "When snapshot.subtitleOnly=true, regions is the subtitle/graphic subset of the actual layout identified by layoutSpecId. Video geometry is intentionally not projected; no video crop or manual plan is invented or rounded.",
       "additionalProperties": false,
       "required": ["layoutSpecId", "regions", "safeZones"],
       "properties": {
@@ -5910,7 +6334,7 @@
     },
     "layoutSnapshot": {
       "type": "object",
-      "$comment": "This aggregate is a native-authoritative projection. persistence is always notPersisted; preview and future render compilation consume the same normalized/native-pixel geometry and immutable composition evidence.",
+      "$comment": "This aggregate is a native-authoritative projection. persistence is persisted ONLY when sibling result.durableSubtitles has sequence > 0 and its headVersionId/headVersionDigest/sequence exactly match this compositionVersionId/compositionVersionDigest/revision. Otherwise it is notPersisted, including legacy responses, sequence 0 and historical exact reads whose branch head is newer. persisted attests recorded subtitle edits, NOT manual-layout persistence, rendering, delivery or approval. Durable metadata is NEVER placed inside this snapshot. Journal snapshot-v1 hashing uses the original metadata-free Available(snapshot) serialization with notPersisted, preserving stable replay hashes.",
       "additionalProperties": false,
       "required": [
         "projectId",
@@ -5934,7 +6358,8 @@
         "revision": { "$ref": "#/$defs/nonnegativeInt32" },
         "compositionVersionId": { "$ref": "#/$defs/entityId" },
         "compositionVersionDigest": { "$ref": "#/$defs/contentDigest" },
-        "persistence": { "const": "notPersisted" },
+        "persistence": { "enum": ["notPersisted", "persisted"] },
+        "subtitleOnly": { "const": true, "$comment": "Optional capability restriction: no manualSelection or keyframe tracks; vertical manual-layout/keyframe mutations are unavailable. Always true for 16:9; may also be true for a 9:16 subtitle-only projection whose video geometry is not representable by this editor." },
         "output": { "$ref": "#/$defs/layoutOutput" },
         "layout": { "$ref": "#/$defs/layoutProjection" },
         "sources": {
@@ -5967,6 +6392,22 @@
         "variantPair": { "$ref": "#/$defs/layoutVariantPair" }
       }
     },
+    "layoutDurableSubtitles": {
+      "type": "object",
+      "$comment": "Only the durable service emits this read/commit receipt. rootVersionId is the ORIGINAL generated branch root, including a short's own root, not the overall landscape ancestor. headVersionDigest is the head composition ContentDigest (not the full snapshot digest). sequence counts committed edits from that root; journalDigest is the corresponding final row RecordDigest, null exactly for sequence 0. At sequence 0 rootVersionId equals headVersionId; otherwise they differ. Reads describe the observed current branch head even when returning an exact historical snapshot. Apply and idempotent replay receipts describe that operation's committed prefix, not necessarily the latest head. Clients correlate requestId/method/project, check the expected branch root (a child request requires previously accepted native branch evidence), and for latest reads require headVersionId/headVersionDigest/sequence to equal the returned snapshot version/digest/revision. Exact reads still require the requested version/digest, and must not treat a different advertised head as that snapshot. No requestedVersionId echo is needed: the correlated request retains both pins.",
+      "additionalProperties": false,
+      "required": ["rootVersionId", "headVersionId", "headVersionDigest", "sequence", "journalDigest"],
+      "properties": {
+        "rootVersionId": { "$ref": "#/$defs/entityId" },
+        "headVersionId": { "$ref": "#/$defs/entityId" },
+        "headVersionDigest": { "$ref": "#/$defs/contentDigest" },
+        "sequence": { "$ref": "#/$defs/nonnegativeInt32" },
+        "journalDigest": { "oneOf": [{ "$ref": "#/$defs/contentDigest" }, { "type": "null" }] }
+      },
+      "if": { "properties": { "sequence": { "const": 0 } }, "required": ["sequence"] },
+      "then": { "properties": { "journalDigest": { "type": "null" } } },
+      "else": { "properties": { "journalDigest": { "$ref": "#/$defs/contentDigest" } } }
+    },
     "layoutResult": {
       "oneOf": [
         {
@@ -5975,8 +6416,19 @@
           "required": ["status", "snapshot"],
           "properties": {
             "status": { "const": "available" },
-            "snapshot": { "$ref": "#/$defs/layoutSnapshot" }
-          }
+            "snapshot": { "$ref": "#/$defs/layoutSnapshot" },
+            "durableSubtitles": { "$ref": "#/$defs/layoutDurableSubtitles" }
+          },
+          "allOf": [
+            {
+              "if": { "not": { "required": ["durableSubtitles"] } },
+              "then": { "properties": { "snapshot": { "properties": { "persistence": { "const": "notPersisted" } } } } }
+            },
+            {
+              "if": { "properties": { "snapshot": { "properties": { "persistence": { "const": "persisted" } }, "required": ["persistence"] } }, "required": ["snapshot"] },
+              "then": { "required": ["durableSubtitles"], "properties": { "durableSubtitles": { "properties": { "sequence": { "minimum": 1 } } } } }
+            }
+          ]
         },
         {
           "type": "object",
@@ -6019,6 +6471,9 @@
         "method": { "const": "layout.apply" },
         "result": { "$ref": "#/$defs/layoutResult" }
       }
+    },
+    "settingsProtocolLimits": {
+      "$comment": "All project, global, and file settings requests retain the 64 KiB UTF-8 limit and responses the 4 MiB limit. Native validation rejects duplicate and unknown properties, noncanonical IDs, versions, digests and Int64 strings, and numeric overflow. Profile version components are nonnegative Int32 values. Setting types, ranges and allowlists are validated against the existing profile. Global parameters never contain projectId; only file parameters allow projectId=null. The five expected fields bind the target scope's current identity, never another scope's revision. File hashes identify the original bytes, not canonicalized text. No filesystem location, file body, exception body, SQL or arbitrary command is exposed. These additional methods describe the protocol only, not runtime availability."
     },
     "settingsKey": {
       "type": "string",
@@ -6262,6 +6717,189 @@
     "settingsResetAllResponse": {
       "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
       "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.resetAll" }, "result": { "$ref": "#/$defs/settingsResult" } }
+    },
+    "settingsGlobalSnapshot": {
+      "type": "object",
+      "$comment": "The same inventory and identity fields as settingsSnapshot, with projectId=null for global scope. initialValues and initialSnapshotDigest are the profile's initial defaults; definitionCount equals definitions.length. Global revision is independent of every project's revision.",
+      "additionalProperties": false,
+      "required": ["projectId", "profileId", "profileName", "profileVersion", "profileDigest", "initialSnapshotDigest", "snapshotDigest", "revision", "updatedAt", "definitionCount", "definitions", "initialValues", "values"],
+      "properties": {
+        "projectId": { "type": "null" },
+        "profileId": { "$ref": "#/$defs/entityId" },
+        "profileName": { "type": "string", "minLength": 1 },
+        "profileVersion": { "$ref": "#/$defs/settingsProfileVersion" },
+        "profileDigest": { "$ref": "#/$defs/contentDigest" },
+        "initialSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "snapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "revision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" },
+        "definitionCount": { "$ref": "#/$defs/nonnegativeInt32" },
+        "definitions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/settingsDefinition" } },
+        "initialValues": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/settingsSelection" } },
+        "values": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/settingsSelection" } }
+      }
+    },
+    "settingsGlobalUpdateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expectedRevision", "expectedProfileId", "expectedProfileVersion", "expectedProfileDigest", "expectedSnapshotDigest", "key", "value"],
+      "properties": {
+        "expectedRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "expectedProfileId": { "$ref": "#/$defs/entityId" },
+        "expectedProfileVersion": { "$ref": "#/$defs/settingsProfileVersion" },
+        "expectedProfileDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "key": { "$ref": "#/$defs/settingsKey" },
+        "value": { "$ref": "#/$defs/settingsValue" }
+      }
+    },
+    "settingsGlobalResetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expectedRevision", "expectedProfileId", "expectedProfileVersion", "expectedProfileDigest", "expectedSnapshotDigest", "key"],
+      "properties": {
+        "expectedRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "expectedProfileId": { "$ref": "#/$defs/entityId" },
+        "expectedProfileVersion": { "$ref": "#/$defs/settingsProfileVersion" },
+        "expectedProfileDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "key": { "$ref": "#/$defs/settingsKey" }
+      }
+    },
+    "settingsGlobalResetAllParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expectedRevision", "expectedProfileId", "expectedProfileVersion", "expectedProfileDigest", "expectedSnapshotDigest"],
+      "properties": {
+        "expectedRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "expectedProfileId": { "$ref": "#/$defs/entityId" },
+        "expectedProfileVersion": { "$ref": "#/$defs/settingsProfileVersion" },
+        "expectedProfileDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedSnapshotDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "settingsFileExportParams": {
+      "type": "object",
+      "$comment": "projectId=null selects global scope. expectedFileSha256=null means create only if absent; an existing file requires overwriteRequired and confirmation with its current hash. A changed hash after confirmation yields conflict.",
+      "additionalProperties": false,
+      "required": ["projectId", "expectedRevision", "expectedProfileId", "expectedProfileVersion", "expectedProfileDigest", "expectedSnapshotDigest", "expectedFileSha256"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/nullableId" },
+        "expectedRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "expectedProfileId": { "$ref": "#/$defs/entityId" },
+        "expectedProfileVersion": { "$ref": "#/$defs/settingsProfileVersion" },
+        "expectedProfileDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedFileSha256": { "oneOf": [{ "$ref": "#/$defs/contentDigest" }, { "type": "null" }] }
+      }
+    },
+    "settingsFilePreviewParams": {
+      "type": "object",
+      "$comment": "Preview binds to the current target scope and all five expected identity fields without updating stored state.",
+      "additionalProperties": false,
+      "required": ["projectId", "expectedRevision", "expectedProfileId", "expectedProfileVersion", "expectedProfileDigest", "expectedSnapshotDigest"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/nullableId" },
+        "expectedRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "expectedProfileId": { "$ref": "#/$defs/entityId" },
+        "expectedProfileVersion": { "$ref": "#/$defs/settingsProfileVersion" },
+        "expectedProfileDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedSnapshotDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "settingsFileApplyParams": {
+      "type": "object",
+      "$comment": "Apply revalidates both the target mutation identity and the required SHA-256 of the original preview bytes before updating stored state.",
+      "additionalProperties": false,
+      "required": ["projectId", "expectedRevision", "expectedProfileId", "expectedProfileVersion", "expectedProfileDigest", "expectedSnapshotDigest", "expectedFileSha256"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/nullableId" },
+        "expectedRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "expectedProfileId": { "$ref": "#/$defs/entityId" },
+        "expectedProfileVersion": { "$ref": "#/$defs/settingsProfileVersion" },
+        "expectedProfileDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedFileSha256": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "settingsGlobalReadRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.global.read" }, "params": { "$ref": "#/$defs/emptyObject" } }
+    },
+    "settingsGlobalUpdateRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.global.update" }, "params": { "$ref": "#/$defs/settingsGlobalUpdateParams" } }
+    },
+    "settingsGlobalResetRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.global.reset" }, "params": { "$ref": "#/$defs/settingsGlobalResetParams" } }
+    },
+    "settingsGlobalResetAllRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.global.resetAll" }, "params": { "$ref": "#/$defs/settingsGlobalResetAllParams" } }
+    },
+    "settingsFileExportRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.file.export" }, "params": { "$ref": "#/$defs/settingsFileExportParams" } }
+    },
+    "settingsFilePreviewRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.file.preview" }, "params": { "$ref": "#/$defs/settingsFilePreviewParams" } }
+    },
+    "settingsFileApplyRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.file.apply" }, "params": { "$ref": "#/$defs/settingsFileApplyParams" } }
+    },
+    "settingsGlobalResult": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["status", "snapshot"], "properties": { "status": { "const": "available" }, "snapshot": { "$ref": "#/$defs/settingsGlobalSnapshot" } } },
+        { "type": "object", "additionalProperties": false, "required": ["status", "snapshot"], "properties": { "status": { "enum": ["forbidden", "notFound", "unbound", "conflict", "invalid", "unavailable"] }, "snapshot": { "type": "null" } } }
+      ]
+    },
+    "settingsFileSnapshot": {
+      "oneOf": [
+        { "$ref": "#/$defs/settingsSnapshot" },
+        { "$ref": "#/$defs/settingsGlobalSnapshot" }
+      ]
+    },
+    "settingsFileResult": {
+      "$comment": "available always includes a scope-bound snapshot and a SHA-256 of the original file bytes. Export/apply snapshots are saved state; preview alone carries candidate values. Every failure has snapshot=null. Only overwriteRequired returns the current file hash for confirmation; every other failure has fileSha256=null.",
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["status", "snapshot", "fileSha256"], "properties": { "status": { "const": "available" }, "snapshot": { "$ref": "#/$defs/settingsFileSnapshot" }, "fileSha256": { "$ref": "#/$defs/contentDigest" } } },
+        { "type": "object", "additionalProperties": false, "required": ["status", "snapshot", "fileSha256"], "properties": { "status": { "enum": ["forbidden", "notFound", "unbound", "conflict", "invalid", "unavailable", "fileNotFound", "profileMismatch", "snapshotMismatch"] }, "snapshot": { "type": "null" }, "fileSha256": { "type": "null" } } },
+        { "type": "object", "additionalProperties": false, "required": ["status", "snapshot", "fileSha256"], "properties": { "status": { "const": "overwriteRequired" }, "snapshot": { "type": "null" }, "fileSha256": { "$ref": "#/$defs/contentDigest" } } }
+      ]
+    },
+    "settingsGlobalReadResponse": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.global.read" }, "result": { "$ref": "#/$defs/settingsGlobalResult" } }
+    },
+    "settingsGlobalUpdateResponse": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.global.update" }, "result": { "$ref": "#/$defs/settingsGlobalResult" } }
+    },
+    "settingsGlobalResetResponse": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.global.reset" }, "result": { "$ref": "#/$defs/settingsGlobalResult" } }
+    },
+    "settingsGlobalResetAllResponse": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.global.resetAll" }, "result": { "$ref": "#/$defs/settingsGlobalResult" } }
+    },
+    "settingsFileExportResponse": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.file.export" }, "result": { "$ref": "#/$defs/settingsFileResult" } }
+    },
+    "settingsFilePreviewResponse": {
+      "type": "object",
+      "$comment": "An available preview snapshot never replaces saved state: revision and initialValues remain bound to the target's current state, and only values and snapshotDigest describe the candidate. fileSha256 identifies the original bytes to confirm on apply.",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.file.preview" }, "result": { "$ref": "#/$defs/settingsFileResult" } }
+    },
+    "settingsFileApplyResponse": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.file.apply" }, "result": { "$ref": "#/$defs/settingsFileResult" } }
     }
   }
 }

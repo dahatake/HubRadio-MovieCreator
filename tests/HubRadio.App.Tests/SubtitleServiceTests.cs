@@ -445,6 +445,205 @@ public sealed class SubtitleServiceTests
     }
 
     [TestMethod]
+    public void VerifiedInheritancePreservesRealRevisionsAndRequiresExplicitHistoryProof()
+    {
+        Fixture fixture = Fixture.Create();
+        SubtitleCueHistory initial = fixture.CreateInitial();
+        CompositionVersion sibling = fixture.ChildComposition(fixture.Composition, 2);
+        CompositionVersion child = fixture.ChildComposition(sibling, 3);
+        CompositionVersion[] path = [fixture.Composition, sibling];
+
+        AssertFailure(
+            () => fixture.SetText(initial, child, RevisionId(2), "No implicit inheritance"),
+            SubtitleServiceFailureReason.CompositionVersionConflict);
+        SubtitleCueHistory inherited = SubtitleService.WithInheritedComposition(initial, path);
+        Assert.AreSame(initial, SubtitleService.WithInheritedComposition(initial, [fixture.Composition]));
+        Assert.HasCount(1, inherited.Revisions);
+        Assert.AreSame(initial.CurrentRevision, inherited.CurrentRevision);
+        Assert.AreSame(initial.SourceCandidate, inherited.SourceCandidate);
+        Assert.AreEqual(fixture.Composition.Id, inherited.CurrentRevision.CompositionVersionId);
+        Assert.AreEqual(fixture.Composition.ContentDigest, inherited.CurrentRevision.CompositionVersionDigest);
+        Assert.AreEqual(initial.CurrentRevision.ContentDigest, inherited.CurrentRevision.ContentDigest);
+        path[1] = fixture.Composition;
+        Assert.AreSame(sibling, inherited.Inheritance.Single().Parent);
+        Assert.ThrowsExactly<NotSupportedException>(() =>
+            ((IList<CompositionVersion>)inherited.Inheritance.Single().Versions).Clear());
+        Assert.ThrowsExactly<NotSupportedException>(() =>
+            ((IList<SubtitleCompositionInheritance>)inherited.Inheritance).Clear());
+
+        SubtitleCueHistory edited = SubtitleService.SetText(
+            inherited, child, fixture.SourceCandidate, RevisionId(2), "Actual edit",
+            EditorialOrigin(101), ActorSid, CreatedAt.AddMinutes(3), "Edit after sibling.");
+
+        Assert.HasCount(2, edited.Revisions);
+        Assert.AreSame(initial.CurrentRevision, edited.Revisions[0]);
+        Assert.AreSame(initial.CurrentRevision.Snapshot, edited.CurrentRevision.Change.Previous);
+        Assert.AreEqual(initial.CurrentRevision.Id, edited.CurrentRevision.ParentRevisionId);
+        Assert.AreEqual(sibling.Id, edited.CurrentRevision.ParentCompositionVersionId);
+        Assert.AreEqual(child.Id, edited.CurrentRevision.CompositionVersionId);
+        Assert.AreEqual(child.ContentDigest, edited.CurrentRevision.CompositionVersionDigest);
+        Assert.ThrowsExactly<ArgumentException>(() =>
+            new SubtitleCueHistory(edited.SourceCandidate, edited.Revisions));
+        var restored = new SubtitleCueHistory(edited.SourceCandidate, edited.Revisions, edited.Inheritance);
+        Assert.AreSame(edited.CurrentRevision, restored.CurrentRevision);
+
+        // A subsequent direct edit must retain the earlier gap's proof as history.
+        CompositionVersion next = fixture.ChildComposition(child, 4);
+        SubtitleCueHistory subsequent = SubtitleService.SetStyle(
+            restored, next, fixture.SourceCandidate, RevisionId(3), SubtitleCueStyle.Quote,
+            EditorialOrigin(102), ActorSid, CreatedAt.AddMinutes(4), "Direct edit after inheritance.");
+        Assert.HasCount(3, subsequent.Revisions);
+        Assert.AreSame(edited.Inheritance.Single(), subsequent.Inheritance.Single());
+        Assert.AreEqual(child.Id, subsequent.CurrentRevision.ParentCompositionVersionId);
+    }
+
+    [TestMethod]
+    [DataRow("empty")]
+    [DataRow("missingStart")]
+    [DataRow("missingLink")]
+    [DataRow("nonAncestor")]
+    [DataRow("foreign")]
+    [DataRow("forgedDigest")]
+    [DataRow("changedElements")]
+    [DataRow("changedThenRestored")]
+    [DataRow("beforeCue")]
+    [DataRow("backwardLink")]
+    [DataRow("duplicate")]
+    [DataRow("cycle")]
+    [DataRow("wrongStartParent")]
+    [DataRow("tooLong")]
+    public void InheritanceRejectsUnverifiedPaths(string corruption)
+    {
+        Fixture fixture = Fixture.Create();
+        SubtitleCueHistory initial = fixture.CreateInitial();
+        CompositionVersion root = fixture.Composition;
+        CompositionVersion sibling = InheritanceVersion(root, 2);
+        CompositionVersion child = InheritanceVersion(sibling, 3);
+        CompositionElement[] changedElements =
+        [
+            new(Id<CompositionElementIdTag>(0x73000010, 1), Range(0, 1), EditorialOrigin(103)),
+        ];
+        CompositionVersion changed = InheritanceVersion(root, 2, elements: changedElements);
+        IReadOnlyList<CompositionVersion> path = corruption switch
+        {
+            "empty" => [],
+            "missingStart" => [sibling],
+            "missingLink" => [root, child],
+            "nonAncestor" => [root, fixture.CompositionVersion(2, parentVersionId: null)],
+            "foreign" => [root, InheritanceVersion(root, 2,
+                projectId: Id<HubRadio.Core.Projects.ProjectIdTag>(0x73000005, 99))],
+            "forgedDigest" => [root, InheritanceVersion(root, 2, digest: Digest('f'))],
+            "changedElements" => [root, changed],
+            "changedThenRestored" => [root, changed, InheritanceVersion(changed, 3, elements: [])],
+            "beforeCue" => [root, InheritanceVersion(root, 2,
+                createdAt: initial.CurrentRevision.CreatedAt.AddTicks(-1))],
+            "backwardLink" => [root, sibling, InheritanceVersion(sibling, 3,
+                createdAt: sibling.CreatedAt.AddTicks(-1))],
+            "duplicate" => [root, sibling, sibling],
+            "cycle" => [InheritanceVersion(sibling, 1, createdAt: root.CreatedAt), sibling],
+            "wrongStartParent" => [InheritanceVersion(child, 1, createdAt: root.CreatedAt), sibling],
+            "tooLong" => Enumerable.Repeat(root, SubtitleCompositionInheritance.MaxVersions + 1).ToArray(),
+            _ => throw new AssertFailedException("Unknown corruption."),
+        };
+
+        AssertFailure(
+            () => SubtitleService.WithInheritedComposition(initial, path),
+            SubtitleServiceFailureReason.CompositionVersionConflict);
+        Assert.HasCount(1, initial.Revisions);
+        Assert.HasCount(0, initial.Inheritance);
+    }
+
+    [TestMethod]
+    public void InheritedContextCannotBeRolledBackForkedOrUsedForAChangedChild()
+    {
+        Fixture fixture = Fixture.Create();
+        SubtitleCueHistory initial = fixture.CreateInitial();
+        CompositionVersion sibling = InheritanceVersion(fixture.Composition, 2);
+        SubtitleCueHistory inherited = SubtitleService.WithInheritedComposition(
+            initial, [fixture.Composition, sibling]);
+        CompositionElement[] changedElements =
+        [
+            new(Id<CompositionElementIdTag>(0x73000010, 1), Range(0, 1), EditorialOrigin(103)),
+        ];
+        CompositionVersion[] invalidChildren =
+        [
+            InheritanceVersion(fixture.Composition, 3),
+            InheritanceVersion(sibling, 3, createdAt: sibling.CreatedAt.AddTicks(-1)),
+            InheritanceVersion(sibling, 3, elements: changedElements),
+            InheritanceVersion(sibling, 3, elements: changedElements, digest: sibling.ContentDigest),
+            InheritanceVersion(sibling, 1),
+        ];
+        foreach (CompositionVersion child in invalidChildren)
+        {
+            AssertFailure(
+                () => fixture.SetText(inherited, child, RevisionId(2), "Rejected"),
+                SubtitleServiceFailureReason.CompositionVersionConflict);
+        }
+
+        AssertFailure(
+            () => SubtitleService.WithInheritedComposition(inherited, [fixture.Composition]),
+            SubtitleServiceFailureReason.CompositionVersionConflict);
+        AssertFailure(
+            () => SubtitleService.WithInheritedComposition(inherited,
+                [fixture.Composition, InheritanceVersion(fixture.Composition, 4)]),
+            SubtitleServiceFailureReason.CompositionVersionConflict);
+        AssertFailure(
+            () => SubtitleService.WithInheritedComposition(inherited,
+                [fixture.Composition, InheritanceVersion(fixture.Composition, 2,
+                    createdAt: sibling.CreatedAt.AddTicks(1))]),
+            SubtitleServiceFailureReason.CompositionVersionConflict);
+
+        CompositionVersion next = InheritanceVersion(sibling, 3);
+        SubtitleCueHistory extended = SubtitleService.WithInheritedComposition(
+            inherited, [fixture.Composition, sibling, next]);
+        Assert.AreSame(initial.CurrentRevision, extended.CurrentRevision);
+        Assert.AreSame(next, extended.Inheritance.Single().Parent);
+        Assert.AreSame(sibling, inherited.Inheritance.Single().Parent);
+    }
+
+    [TestMethod]
+    public void InheritedNoOpStillFailsAndHistoryRejectsDuplicateOrOrphanProof()
+    {
+        Fixture fixture = Fixture.Create();
+        SubtitleCueHistory initial = fixture.CreateInitial();
+        CompositionVersion sibling = InheritanceVersion(fixture.Composition, 2);
+        SubtitleCueHistory inherited = SubtitleService.WithInheritedComposition(
+            initial, [fixture.Composition, sibling]);
+        AssertFailure(
+            () => SubtitleService.SetText(
+                inherited, InheritanceVersion(sibling, 3), fixture.SourceCandidate, RevisionId(2),
+                initial.CurrentRevision.Snapshot.Text, EditorialOrigin(104), ActorSid,
+                CreatedAt.AddMinutes(3), "Not a real cue edit."),
+            SubtitleServiceFailureReason.NoChange);
+
+        SubtitleCompositionInheritance proof = inherited.Inheritance.Single();
+        Assert.ThrowsExactly<ArgumentException>(() => new SubtitleCueHistory(
+            inherited.SourceCandidate, inherited.Revisions, [proof, proof]));
+        SubtitleCueHistory other = fixture.CreateInitial(revisionId: RevisionId(99));
+        Assert.ThrowsExactly<ArgumentException>(() => new SubtitleCueHistory(
+            other.SourceCandidate, other.Revisions, [proof]));
+        SubtitleCueHistory[] reusedIds =
+        [
+            SubtitleService.CreateInitial(
+                fixture.Composition, fixture.SourceCandidate, fixture.ResolvedLayout,
+                initial.CueId, initial.CurrentRevision.Id, Range(11, 2), ActorSid,
+                initial.CurrentRevision.CreatedAt, initial.CurrentRevision.Reason),
+            SubtitleService.CreateInitial(
+                fixture.Composition, fixture.SourceCandidate, fixture.ResolvedLayout,
+                initial.CueId, initial.CurrentRevision.Id, initial.CurrentRevision.Snapshot.Cue.Range,
+                ActorSid, initial.CurrentRevision.CreatedAt.AddTicks(1), initial.CurrentRevision.Reason),
+        ];
+        foreach (SubtitleCueHistory reused in reusedIds)
+        {
+            AssertFailure(() => new SubtitleCueHistory(reused.SourceCandidate, reused.Revisions, [proof]),
+                SubtitleServiceFailureReason.CompositionVersionConflict);
+        }
+
+        Assert.IsNull(typeof(SubtitleCueHistory).GetProperty("Inheritance"));
+        Assert.HasCount(1, inherited.Revisions);
+    }
+
+    [TestMethod]
     public void InvalidTextTimingStyleOriginSidAndTimeUseStablePrivateFailures()
     {
         Fixture fixture = Fixture.Create();
@@ -783,6 +982,23 @@ public sealed class SubtitleServiceTests
             .Any(static parameter => parameter.ParameterType == typeof(double)
                 || parameter.ParameterType == typeof(float)));
     }
+
+    private static CompositionVersion InheritanceVersion(
+        CompositionVersion parent,
+        int ordinal,
+        DateTimeOffset? createdAt = null,
+        ContentDigest? digest = null,
+        IReadOnlyList<CompositionElement>? elements = null,
+        EntityId<HubRadio.Core.Projects.ProjectIdTag>? projectId = null) =>
+        new(
+            Id<CompositionVersionIdTag>(0x73000004, ordinal),
+            projectId ?? parent.ProjectId,
+            parent.Id,
+            ActorSid,
+            createdAt ?? CreatedAt.AddMinutes(ordinal),
+            "Composition inheritance test.",
+            digest ?? ContentDigest.Compute(CompositionSnapshotJson.WriteElementsObjectToUtf8(elements ?? parent.Elements)),
+            elements ?? parent.Elements);
 
     private static SubtitleServiceException AssertFailure(
         Action action,

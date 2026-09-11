@@ -19,6 +19,7 @@ public enum SubtitleBoundaryReason
     SpeakerChange,
     PositiveSourceGap,
     EndOfTranscript,
+    ExactTokenBoundary,
 }
 
 public sealed class SubtitleTimingFallback
@@ -299,6 +300,7 @@ public enum SubtitleSegmentationFailureReason
     InvalidText,
     ArithmeticOverflow,
     CandidateBindingMismatch,
+    SourceRevisionNotMachine,
 }
 
 public sealed class SubtitleSegmentationException : Exception
@@ -316,6 +318,8 @@ public sealed class SubtitleSegmentationException : Exception
         {
             SubtitleSegmentationFailureReason.SourceRevisionNotHumanChild =>
                 "Subtitle segmentation requires a human child transcript revision.",
+            SubtitleSegmentationFailureReason.SourceRevisionNotMachine =>
+                "Machine subtitle segmentation requires a machine transcript revision.",
             SubtitleSegmentationFailureReason.RevisionDigestMismatch =>
                 "The subtitle source revision digest is inconsistent.",
             SubtitleSegmentationFailureReason.SourceSpanBindingMismatch =>
@@ -335,23 +339,43 @@ public sealed class SubtitleSegmentationException : Exception
 public static class SubtitleSegmenter
 {
     public const string RuleVersion = "fr012-2026-08-31.human-transcript-boundaries.v1";
+    public const string MachineRuleVersion = "fr012-2026-09-08.machine-transcript-boundaries.v1";
 
     public static SubtitleSegmentationResult Segment(
         TranscriptRevision revision,
         ContentDigest sourceRevisionDigest,
         IReadOnlyList<SourceSpan> sourceSpans,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        SegmentCore(revision, sourceRevisionDigest, sourceSpans,
+            TranscriptChangeSource.Human, cancellationToken);
+
+    /// <summary>Segments real ASR evidence, including a root revision, without creating a human edit.</summary>
+    public static SubtitleSegmentationResult SegmentMachine(
+        TranscriptRevision revision,
+        ContentDigest sourceRevisionDigest,
+        IReadOnlyList<SourceSpan> sourceSpans,
+        CancellationToken cancellationToken = default) =>
+        SegmentCore(revision, sourceRevisionDigest, sourceSpans,
+            TranscriptChangeSource.Machine, cancellationToken);
+
+    private static SubtitleSegmentationResult SegmentCore(
+        TranscriptRevision revision,
+        ContentDigest sourceRevisionDigest,
+        IReadOnlyList<SourceSpan> sourceSpans,
+        TranscriptChangeSource expectedSource,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(revision);
         ArgumentNullException.ThrowIfNull(sourceRevisionDigest);
         ArgumentNullException.ThrowIfNull(sourceSpans);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (revision.ChangeSource != TranscriptChangeSource.Human
-            || revision.ParentRevisionId is null)
+        if (revision.ChangeSource != expectedSource
+            || expectedSource == TranscriptChangeSource.Human && revision.ParentRevisionId is null)
         {
-            throw Failure(
-                SubtitleSegmentationFailureReason.SourceRevisionNotHumanChild);
+            throw Failure(expectedSource == TranscriptChangeSource.Human
+                ? SubtitleSegmentationFailureReason.SourceRevisionNotHumanChild
+                : SubtitleSegmentationFailureReason.SourceRevisionNotMachine);
         }
 
         ContentDigest actualRevisionDigest = ComputeRevisionDigest(
@@ -437,7 +461,7 @@ public static class SubtitleSegmenter
             return new SubtitleSegmentationResult(
                 revision.Id,
                 sourceRevisionDigest,
-                RuleVersion,
+                expectedSource == TranscriptChangeSource.Machine ? MachineRuleVersion : RuleVersion,
                 tokens.Length,
                 candidates,
                 overlaps);
@@ -612,7 +636,7 @@ public static class SubtitleSegmenter
         return fragments;
     }
 
-    private static int[] FindUniqueOrderedTextStarts(
+    internal static int[] FindUniqueOrderedTextStarts(
         string source,
         IReadOnlyList<string> orderedParts,
         CancellationToken cancellationToken)
@@ -857,6 +881,7 @@ public static class SubtitleSegmenter
                 SubtitleBoundaryReason.PositiveSourceGap =>
                     "positive source-timing gap",
                 SubtitleBoundaryReason.EndOfTranscript => "end of transcript",
+                SubtitleBoundaryReason.ExactTokenBoundary => "existing transcript token boundary",
                 _ => throw new ArgumentOutOfRangeException(nameof(boundaryReasons)),
             });
         return string.Concat(

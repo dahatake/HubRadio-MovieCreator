@@ -55,7 +55,7 @@
 - `tests/HubRadio.App.Tests/BundledDefaultSettingsBootstrapTests.cs`
 - `docs/dev/reviews/v2-settings-bootstrap-integration-adversarial-review.md`（本closure）
 
-既存task review、計画/status、`work/*.md`、asset、他worktreeは変更していない。
+既存task review、計画/status、当時の一時作業記録、asset、他worktreeは変更していない。
 
 ## 2. 独立レビュー軸
 

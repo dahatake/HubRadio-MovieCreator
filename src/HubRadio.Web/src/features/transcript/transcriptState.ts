@@ -22,12 +22,14 @@ export interface PendingTranscriptRequest {
   readonly requestId: string
   readonly method: TranscriptMethod
   readonly projectId: string
+  readonly submittedEdit?: TranscriptEditDraft | null
 }
 
 export interface TranscriptEditDraft {
   readonly tokenId: string
   readonly expectedText: string
   readonly revisedText: string
+  readonly stale?: boolean
 }
 
 export interface TranscriptState {
@@ -74,12 +76,7 @@ export function transcriptStateReducer(
     case 'sessionStarted':
       return state.pending === null
         ? state
-        : {
-            ...state,
-            status: state.snapshot === null ? 'idle' : 'available',
-            pending: null,
-            edit: null,
-          }
+        : preserveCancellableDraft(state, 'sendFailed')
 
     case 'projectChanged':
       if (action.projectId === state.projectId) return state
@@ -89,7 +86,14 @@ export function transcriptStateReducer(
       }
 
     case 'requestStarted':
-      if (state.projectId !== action.projectId || state.pending !== null) {
+      if (
+        state.projectId !== action.projectId || state.pending !== null ||
+        (action.method !== 'transcript.read' && (
+          state.snapshot === null ||
+          (state.status !== 'available' && state.status !== 'noChange') ||
+          (action.method === 'transcript.editToken' && state.edit?.stale === true)
+        ))
+      ) {
         return state
       }
       return {
@@ -99,6 +103,7 @@ export function transcriptStateReducer(
           requestId: action.requestId,
           method: action.method,
           projectId: action.projectId,
+          ...(action.method === 'transcript.editToken' ? { submittedEdit: state.edit } : {}),
         },
         navigationMessage: null,
       }
@@ -107,6 +112,7 @@ export function transcriptStateReducer(
       const pending = state.pending
       if (
         pending === null ||
+        pending.projectId !== state.projectId ||
         action.response.requestId !== pending.requestId ||
         action.response.method !== pending.method
       ) {
@@ -114,73 +120,55 @@ export function transcriptStateReducer(
       }
 
       const result = action.response.result
+      // An acknowledgement covers only the unchanged draft sent by this request.
+      const edit = pending.method === 'transcript.editToken' && pending.submittedEdit === state.edit
+        ? null
+        : state.edit
       if (result.status === 'available') {
         if (result.snapshot.projectId !== pending.projectId) {
-          return {
-            ...state,
-            status: 'invalid',
-            pending: null,
-            snapshot: null,
-            edit: null,
-          }
+          return preserveCancellableDraft(state, 'invalid')
         }
         return {
           ...state,
           status: 'available',
           pending: null,
           snapshot: result.snapshot,
-          edit: null,
+          edit: edit !== null && !hasSameEditBase(state.snapshot, result.snapshot, edit)
+            ? { ...edit, stale: true }
+            : edit,
         }
       }
 
       if (result.status === 'noChange') {
+        // A read without evidence cannot reconcile a retained, unverified snapshot.
+        if (pending.method === 'transcript.read') return preserveCancellableDraft(state, 'invalid')
         return {
           ...state,
           status: 'noChange',
           pending: null,
-          edit: null,
+          edit,
         }
       }
 
-      return {
-        ...state,
-        status: result.status,
-        pending: null,
-        snapshot: null,
-        edit: null,
-      }
+      return preserveCancellableDraft(state, result.status)
     }
 
     case 'requestInvalid':
-      return {
-        ...state,
-        status: 'invalid',
-        pending: null,
-        snapshot: null,
-        edit: null,
-      }
+      return preserveCancellableDraft(state, 'invalid')
 
     case 'bridgeUnavailable':
-      return {
-        ...state,
-        status: 'bridgeUnavailable',
-        pending: null,
-        snapshot: null,
-        edit: null,
-      }
+      return preserveCancellableDraft(state, 'bridgeUnavailable')
 
     case 'sendFailed':
       if (state.pending?.requestId !== action.requestId) return state
-      return {
-        ...state,
-        status: 'sendFailed',
-        pending: null,
-        snapshot: null,
-        edit: null,
-      }
+      return preserveCancellableDraft(state, 'sendFailed')
 
     case 'editStarted':
-      if (state.snapshot === null || state.pending !== null) return state
+      if (
+        state.snapshot === null || state.pending !== null || state.edit?.stale === true ||
+        (state.status !== 'available' && state.status !== 'noChange') ||
+        findTranscriptToken(state.snapshot, action.token.id)?.text !== action.token.text
+      ) return state
       return {
         ...state,
         edit: {
@@ -191,7 +179,7 @@ export function transcriptStateReducer(
       }
 
     case 'editChanged':
-      if (state.edit === null) return state
+      if (state.edit === null || state.edit.stale === true) return state
       return {
         ...state,
         edit: { ...state.edit, revisedText: action.value },
@@ -208,14 +196,52 @@ export function transcriptStateReducer(
   return exhaustiveAction
 }
 
+function preserveCancellableDraft(
+  state: TranscriptState,
+  status: TranscriptUiStatus,
+): TranscriptState {
+  return {
+    ...state,
+    status,
+    pending: null,
+    // Retained evidence is unverified; only an available refresh enables mutations.
+    snapshot: status === 'forbidden' || status === 'unavailable' ? null : state.snapshot,
+  }
+}
+
+function hasSameEditBase(
+  previous: TranscriptSnapshot | null,
+  current: TranscriptSnapshot,
+  edit: TranscriptEditDraft,
+): boolean {
+  if (
+    previous === null || previous.projectId !== current.projectId ||
+    previous.revisionId !== current.revisionId || previous.revisionDigest !== current.revisionDigest ||
+    previous.parentRevisionId !== current.parentRevisionId ||
+    previous.changeSource !== current.changeSource || previous.createdAt !== current.createdAt
+  ) return false
+  const before = findTranscriptTokenBinding(previous, edit.tokenId)
+  const after = findTranscriptTokenBinding(current, edit.tokenId)
+  return before !== null && after !== null &&
+    before.sourceSpanId === after.sourceSpanId && before.utteranceId === after.utteranceId &&
+    before.sentenceId === after.sentenceId && before.token.text === edit.expectedText &&
+    after.token.text === edit.expectedText
+}
+
 export function findTranscriptToken(
   snapshot: TranscriptSnapshot,
   tokenId: string,
 ): TranscriptToken | null {
+  return findTranscriptTokenBinding(snapshot, tokenId)?.token ?? null
+}
+
+function findTranscriptTokenBinding(snapshot: TranscriptSnapshot, tokenId: string) {
   for (const utterance of snapshot.utterances) {
     for (const sentence of utterance.sentences) {
       const token = sentence.tokens.find((candidate) => candidate.id === tokenId)
-      if (token !== undefined) return token
+      if (token !== undefined) {
+        return { token, sourceSpanId: utterance.sourceSpanId, utteranceId: utterance.id, sentenceId: sentence.id }
+      }
     }
   }
   return null

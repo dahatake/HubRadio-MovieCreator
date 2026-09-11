@@ -1,108 +1,430 @@
-import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { useSettingsState } from './SettingsStateProvider'
-import type { SettingDefinition, SettingValue, SettingsGroup } from './settingsProtocol'
-import type { SettingsError } from './settingsState'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { SettingInspector } from './SettingInspector'
+import { SettingsFileActions } from './SettingsFileActions'
+import { SettingsList } from './SettingsList'
+import { SettingsOutcomePreview } from './SettingsOutcomePreview'
+import { useSettingsWorkspace } from './SettingsStateProvider'
+import { createSettingsReadRequest, type AnySettingsSnapshot, type SettingsGroup, type SettingsWorkspaceMethod } from './settingsProtocol'
+import type { WorkspaceSettingsDraftValues, WorkspaceSettingsError } from './settingsState'
+import './settings.css'
+
+export interface SettingsPanelProps {
+  readonly isActive?: boolean
+  readonly activeProjectId?: string | null
+  readonly onClose?: () => void
+  readonly initialSettingKey?: string | null
+  readonly onDirtyChange?: (dirty: boolean) => void
+}
 
 const groupNames: Readonly<Record<SettingsGroup, string>> = {
   projectAndOutput: '案件と出力', editing: '編集', subtitlesAndGraphics: '字幕とグラフィック', audioAndAssets: '音声と素材', privacyAndStorage: 'プライバシーと保存',
 }
-const errorMessages: Readonly<Record<SettingsError, string>> = {
-  forbidden: 'この設定を表示または変更する権限がありません。', notFound: '案件が見つかりません。', unbound: 'この案件には初期設定がまだ関連付けられていません。', conflict: '設定が別の操作で更新されました。再読み込みしてください。', invalid: '設定値を確認してください。', unavailable: '設定を利用できません。',
-}
 const groups = Object.keys(groupNames) as SettingsGroup[]
-const completionMessages = {
+const errorMessages: Readonly<Record<WorkspaceSettingsError, string>> = {
+  forbidden: 'この設定を表示または変更する権限がありません。',
+  notFound: '対象の動画が見つかりません。',
+  unbound: 'この動画には初期設定がまだ関連付けられていません。',
+  conflict: '設定が別の操作で更新されました。未保存項目は保持しています。再読み込みしてください。',
+  invalid: '設定値を確認してください。',
+  unavailable: '設定の操作結果を確認できません。再読み込みして状態を確認してください。',
+  timeout: '設定の操作が時間内に完了しませんでした。再読み込みして状態を確認してください。',
+  fileNotFound: 'setting.txtが見つかりません。',
+  profileMismatch: '設定ファイルのプロファイルが対象と一致しません。',
+  snapshotMismatch: '設定ファイルの内容とダイジェストが一致しません。',
+  overwriteRequired: '設定ファイルの表示からsetting.txtの上書きを確認してください。',
+}
+const completionMessages: Readonly<Record<SettingsWorkspaceMethod, string>> = {
   'settings.read': '設定を読み込みました。',
+  'settings.global.read': '新しい動画の既定値を読み込みました。',
   'settings.update': '現在値を保存しました。',
+  'settings.global.update': '既定値を保存しました。',
   'settings.reset': '案件開始時の値へ戻しました。',
+  'settings.global.reset': 'プロファイル初期値へ戻しました。',
   'settings.resetAll': 'すべての設定を案件開始時の値へ戻しました。',
-} as const
+  'settings.global.resetAll': 'すべての設定をプロファイル初期値へ戻しました。',
+  'settings.file.export': '保存済み設定をsetting.txtに出力しました。',
+  'settings.file.preview': '設定ファイルの差分を取得しました。設定は未変更です。',
+  'settings.file.apply': '読み込んだ設定を保存しました。既存の動画や成果物は未更新です。',
+}
+type DetailView = 'setting' | 'outcome' | 'file'
+type ConfirmationAction =
+  | Readonly<{ kind: 'scope'; target: string | null }>
+  | Readonly<{ kind: 'reset'; key: string }>
+  | Readonly<{ kind: 'resetAll' }>
+  | Readonly<{ kind: 'close' }>
+interface Confirmation {
+  readonly action: ConfirmationAction
+  readonly projectId: string | null
+  readonly snapshot: AnySettingsSnapshot | null
+  readonly drafts: WorkspaceSettingsDraftValues
+}
 
-export function SettingsPanel() {
-  const { state, changeProjectId, load, refresh, update, reset, resetAll, setAdvancedVisible, clearError } = useSettingsState()
-  const busy = state.pendingMethod !== null
-  const [activeGroup, setActiveGroup] = useState<SettingsGroup>(groups[0])
+/** Keep one SettingsWorkspaceStateProvider mounted above this page; legacy consumers remain separate. */
+export function SettingsPanel({ isActive = true, activeProjectId = null, onClose, initialSettingKey = null, onDirtyChange }: SettingsPanelProps) {
+  const workspace = useSettingsWorkspace()
+  const { state, isDirty, setScope, load } = workspace
+  const { snapshot, draftValues, pendingRequest } = state
+  const activeTarget = useMemo(() => canonicalProjectId(activeProjectId), [activeProjectId])
+  const id = `settings-${useId()}`
+  const panel = useRef<HTMLElement>(null)
+  const title = useRef<HTMLHeadingElement>(null)
+  const inspector = useRef<HTMLDivElement>(null)
+  const detailPane = useRef<HTMLDivElement>(null)
+  const opener = useRef<HTMLElement | null>(null)
+  const confirmationOpener = useRef<HTMLElement | null>(null)
+  const tabs = useRef<Partial<Record<SettingsGroup, HTMLButtonElement | null>>>({})
+  const seenContext = useRef<string | null | undefined>(undefined)
+  const requestedReveal = useRef<{ key: string; projectId: string | null } | null>(null)
+  const revealed = useRef<{ key: string; projectId: string | null } | null>(null)
+  const sending = useRef(false)
+  const closing = useRef(false)
+  const reportedDirty = useRef<boolean | undefined>(undefined)
+  const focusTarget = useRef<HTMLElement | 'editor' | null>(null)
+  const [focusRevision, setFocusRevision] = useState(0)
+  const [revealRevision, setRevealRevision] = useState(0)
+  const [activeGroup, setActiveGroup] = useState<SettingsGroup>('projectAndOutput')
+  const [focusedGroup, setFocusedGroup] = useState<SettingsGroup | null>(null)
+  const [selectedKeys, setSelectedKeys] = useState<Partial<Record<SettingsGroup, string>>>({})
+  const [missingKey, setMissingKey] = useState<string | null>(null)
+  const [detailView, setDetailView] = useState<DetailView>('setting')
+  // Keep confirmation intent here; values stay in provider state.
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
+  const definitions = useMemo(() => snapshot?.definitions.filter(item => item.group === activeGroup) ?? [], [snapshot?.definitions, activeGroup])
+  const selectedKey = missingKey ?? selectedKeys[activeGroup] ?? definitions.find(item => !item.isAdvanced)?.key ?? definitions[0]?.key ?? null
+  const definition = snapshot?.definitions.find(item => item.key === selectedKey)
+  const current = snapshot?.values.find(item => item.key === selectedKey)?.value
+  const initial = snapshot?.initialValues.find(item => item.key === selectedKey)?.value
+  const changedKeys = Object.keys(draftValues)
+  const busy = pendingRequest !== null
+  const oldProject = state.projectId !== null && state.projectId !== activeTarget
+  const scopeName = state.scope === 'global' ? '新しい動画の既定値' : oldProject ? '切替前の動画' : 'この動画'
+  const restoreName = state.scope === 'global' ? 'プロファイル初期値' : '案件開始時の初期値'
+  const blocked = !isActive || busy || snapshot === null || state.needsRefresh || confirmation !== null
+  const confirmationIsCurrent = confirmation !== null && confirmation.projectId === state.projectId
+    && confirmation.snapshot === snapshot && confirmation.drafts === draftValues
+    && (confirmation.action.kind !== 'scope' || confirmation.action.target === null || confirmation.action.target === activeTarget)
+
+  useLayoutEffect(() => { sending.current = false }, [state, confirmation])
+  useEffect(() => {
+    if (onDirtyChange === undefined || reportedDirty.current === isDirty) return
+    reportedDirty.current = isDirty
+    onDirtyChange(isDirty)
+  }, [isDirty, onDirtyChange])
+
+  useLayoutEffect(() => {
+    if (!isActive || panel.current?.closest('[hidden], [inert]') || detailPane.current === null) return
+    detailPane.current.scrollTop = 0
+    detailPane.current.scrollLeft = 0
+  }, [isActive, selectedKey, detailView])
+  const queueFocus = useCallback((target: HTMLElement | 'editor' | null) => {
+    focusTarget.current = target
+    setFocusRevision(value => value + 1)
+  }, [])
+  useLayoutEffect(() => {
+    if (!isActive) { focusTarget.current = null; return }
+    if (confirmation !== null || panel.current?.closest('[hidden], [inert]')) return
+    const target = focusTarget.current
+    focusTarget.current = null
+    if (target === null) return
+    const element = target === 'editor'
+      ? inspector.current?.querySelector<HTMLElement>('input:not(:disabled), textarea:not(:disabled), select:not(:disabled)') ?? inspector.current
+      : target
+    // Reveal explicit focus targets even below long saved values.
+    if (!focusVisible(element, false)) focusVisible(title.current)
+  }, [isActive, confirmation, selectedKey, detailView, focusRevision])
+
+  useLayoutEffect(() => {
+    const element = panel.current
+    if (!isActive || element === null || element.closest('[hidden], [inert]')) return
+    closing.current = false
+    const previous = document.activeElement
+    if (previous instanceof HTMLElement && previous !== document.body && !element.contains(previous)) opener.current = previous
+    if (element.querySelector('[role="alertdialog"]') === null) focusVisible(title.current)
+    return () => {
+      const active = document.activeElement
+      // Do not take focus back from a destination already chosen by the shell.
+      if (active === document.body || element.contains(active)) {
+        if (!focusVisible(opener.current) && active instanceof HTMLElement) active.blur()
+      }
+    }
+    // Visibility, not responses/errors or callback identity, owns entry focus.
+  }, [isActive])
+
+  const ask = useCallback((action: ConfirmationAction) => {
+    confirmationOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setConfirmation({ action, projectId: state.projectId, snapshot, drafts: draftValues })
+  }, [state.projectId, snapshot, draftValues])
+  const requestScope = useCallback((target: string | null, allowPendingRead = false) => {
+    if (!isActive || (pendingRequest !== null && !(allowPendingRead && isRead(pendingRequest.method)))) return
+    if (state.projectId === target) {
+      if (snapshot === null && pendingRequest === null) load()
+      return
+    }
+    if (!setScope(target)) { if (isDirty) ask({ kind: 'scope', target }); return }
+    setConfirmation(null)
+    setMissingKey(null)
+    setDetailView('setting')
+    load()
+  }, [isActive, pendingRequest, state.projectId, snapshot, load, setScope, isDirty, ask])
+
+  useEffect(() => {
+    if (!isActive || initialSettingKey === null) requestedReveal.current = null
+    const needsRevealScope = initialSettingKey !== null
+      && (requestedReveal.current?.key !== initialSettingKey || requestedReveal.current?.projectId !== activeTarget)
+    if (!isActive || (seenContext.current === activeTarget && !needsRevealScope)
+      || (pendingRequest !== null && !isRead(pendingRequest.method))) return
+    let cancelled = false
+    // Defer beyond layout/session setup, including StrictMode's setup/cleanup replay.
+    queueMicrotask(() => {
+      if (cancelled || panel.current?.closest('[hidden], [inert]')) return
+      seenContext.current = activeTarget
+      // Consume warning intent before asking, so cancellation does not retry it.
+      if (initialSettingKey !== null) requestedReveal.current = { key: initialSettingKey, projectId: activeTarget }
+      requestScope(activeTarget, true)
+    })
+    return () => { cancelled = true }
+  }, [isActive, activeTarget, initialSettingKey, pendingRequest, requestScope])
+
+  const revealSetting = useCallback((key: string, focus: boolean) => {
+    const target = snapshot?.definitions.find(item => item.key === key)
+    setMissingKey(target === undefined ? key : null)
+    if (target !== undefined) {
+      setActiveGroup(target.group)
+      setSelectedKeys(keys => ({ ...keys, [target.group]: key }))
+      setRevealRevision(value => value + 1)
+    }
+    setDetailView('setting')
+    if (focus) queueFocus('editor')
+  }, [snapshot, queueFocus])
+  useEffect(() => {
+    if (!isActive || initialSettingKey === null) { revealed.current = null; return }
+    if (snapshot === null || snapshot.projectId !== activeTarget) return
+    if (revealed.current?.key === initialSettingKey && revealed.current.projectId === snapshot.projectId) return
+    revealed.current = { key: initialSettingKey, projectId: snapshot.projectId }
+    // A late response may reveal a warning target, but must not interrupt typing.
+    revealSetting(initialSettingKey, document.activeElement === title.current)
+  }, [isActive, initialSettingKey, snapshot, activeTarget, revealSetting])
+
+  function send(action: () => boolean): boolean {
+    if (!isActive || busy || sending.current || confirmation !== null) return false
+    sending.current = true
+    const accepted = action()
+    if (!accepted) sending.current = false
+    return accepted
+  }
+  function close() {
+    if (onClose === undefined || closing.current) return
+    closing.current = true
+    onClose()
+    if (document.activeElement === document.body || panel.current?.contains(document.activeElement)) focusVisible(opener.current)
+  }
+  function requestClose() {
+    if (!isActive || busy || confirmation !== null || onClose === undefined) return
+    if (isDirty) ask({ kind: 'close' })
+    else close()
+  }
+  function closeWithDrafts() {
+    if (!isActive || busy || sending.current || confirmation?.action.kind !== 'close' || !confirmationIsCurrent) return
+    setConfirmation(null)
+    close()
+  }
+  function returnToDraft() {
+    setConfirmation(null)
+    const key = selectedKey !== null && Object.hasOwn(draftValues, selectedKey) ? selectedKey : changedKeys[0]
+    if (key !== undefined) revealSetting(key, true)
+  }
+  function cancelConfirmation() {
+    setConfirmation(null)
+    queueFocus(confirmationOpener.current ?? title.current)
+  }
+  function confirm() {
+    if (!isActive || busy || sending.current || confirmation === null || !confirmationIsCurrent) return
+    sending.current = true
+    const action = confirmation.action
+    if (action.kind === 'close') {
+      workspace.discardDrafts()
+      if (onDirtyChange !== undefined && reportedDirty.current !== false) { reportedDirty.current = false; onDirtyChange(false) }
+      setConfirmation(null)
+      close()
+      return
+    }
+    if (action.kind === 'scope') {
+      workspace.discardDrafts()
+      if (setScope(action.target)) { setMissingKey(null); setDetailView('setting'); load() }
+    } else {
+      // Preserve drafts until the reset succeeds.
+      if (action.kind === 'reset') workspace.reset(action.key)
+      else workspace.resetAll()
+    }
+    setConfirmation(null)
+    queueFocus(confirmationOpener.current ?? title.current)
+  }
   function moveGroup(event: KeyboardEvent<HTMLButtonElement>, group: SettingsGroup) {
-    const current = groups.indexOf(group)
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? groups.length - 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? (current + groups.length - 1) % groups.length : event.key === 'ArrowRight' || event.key === 'ArrowDown' ? (current + 1) % groups.length : -1
+    if (!isActive || confirmation !== null) return
+    const index = groups.indexOf(group)
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? groups.length - 1
+      : event.key === 'ArrowLeft' ? (index + groups.length - 1) % groups.length
+      : event.key === 'ArrowRight' ? (index + 1) % groups.length : -1
     if (next < 0) return
     event.preventDefault()
-    setActiveGroup(groups[next])
-    document.getElementById(`settings-tab-${groups[next]}`)?.focus()
+    tabs.current[groups[next]!]?.focus()
+    // Enter/Space use native button activation; Up/Down remain native scroll keys.
   }
+
   return (
-    <section className="workspace-panel settings-panel" aria-labelledby="settings-title">
-      <div className="panel-heading-row">
-        <div><p className="eyebrow">Project defaults</p><h2 id="settings-title">案件設定</h2></div>
-        {state.snapshot !== null && <p>{state.snapshot.definitionCount} 項目 · revision {state.snapshot.revision}</p>}
-      </div>
-      <form className="settings-project-form" onSubmit={(event) => { event.preventDefault(); load() }}>
-        <label htmlFor="settings-project-id">案件 ID</label>
-        <input id="settings-project-id" value={state.projectIdInput} onChange={(event) => changeProjectId(event.currentTarget.value)} autoComplete="off" spellCheck={false} />
-        <button type="submit" disabled={busy}>設定を読み込む</button>
-        <button type="button" disabled={busy || state.snapshot === null} onClick={refresh}>再読み込み</button>
-      </form>
-      <div aria-live="polite" role="status">
-        {busy && '設定を処理しています。'}
-        {state.needsRefresh && '変更を続けるには設定を再読み込みしてください。'}
-        {!busy && !state.needsRefresh && state.lastCompletedMethod !== null && completionMessages[state.lastCompletedMethod]}
-      </div>
-      {state.error !== null && <div className="inline-error" role="alert"><p>{errorMessages[state.error]}</p><button type="button" onClick={clearError}>閉じる</button></div>}
-      {state.snapshot !== null && (
-        <>
-          <div className="settings-toolbar">
-            <button type="button" aria-expanded={state.advancedVisible} onClick={() => setAdvancedVisible(!state.advancedVisible)}>{state.advancedVisible ? '詳細設定を閉じる' : '詳細設定を表示'}</button>
-            <button type="button" className="danger-button" disabled={busy || state.needsRefresh} onClick={resetAll}>案件開始時の値へすべて戻す</button>
+    <section ref={panel} className="settings-panel" hidden={!isActive} inert={!isActive} aria-labelledby={`${id}-title`}>
+      <div className="settings-page-content" inert={confirmation !== null} aria-hidden={confirmation !== null ? true : undefined}
+        onKeyDown={event => {
+          if (!isActive || event.key !== 'Escape' || event.defaultPrevented) return
+          const disclosure = event.target instanceof Element ? event.target.closest('details[open]') : null
+          if (disclosure instanceof HTMLDetailsElement) {
+            event.preventDefault()
+            disclosure.open = false
+            focusVisible(disclosure.querySelector('summary'), false)
+            return
+          }
+          if (event.target instanceof Element && event.target.closest('.settings-file-actions')) return
+          if (onClose !== undefined && !busy) { event.preventDefault(); requestClose() }
+        }}>
+        <header className="settings-heading">
+          <h2 id={`${id}-title`} ref={title} tabIndex={-1}>設定</h2>
+          <div className="settings-scope" role="group" aria-label="設定の対象">
+            <span>対象</span>
+            <button type="button" aria-pressed={state.scope === 'global'} disabled={!isActive || busy} onClick={() => requestScope(null)}>新しい動画の既定値</button>
+            <button type="button" aria-pressed={state.scope === 'project' && !oldProject} disabled={!isActive || busy || activeTarget === null} onClick={() => requestScope(activeTarget)}>この動画</button>
           </div>
-          <p className="settings-profile">{state.snapshot.profileName} v{state.snapshot.profileVersion}</p>
-          <div className="settings-group-tabs" role="tablist" aria-label="設定グループ">
-            {groups.map((group) => <button id={`settings-tab-${group}`} key={group} type="button" role="tab" aria-selected={activeGroup === group} aria-controls={`settings-panel-${group}`} tabIndex={activeGroup === group ? 0 : -1} onClick={() => setActiveGroup(group)} onKeyDown={(event) => moveGroup(event, group)}>{groupNames[group]}</button>)}
+          {onClose !== undefined && <button type="button" className="settings-close" disabled={!isActive || busy} onClick={requestClose}>設定を閉じて戻る</button>}
+        </header>
+        <p className="settings-scope-note">編集中：{scopeName}。{activeTarget === null && (activeProjectId === null ? '動画の作成前も既定値を編集できます。' : 'この動画の設定先を確認できません。')}設定の保存だけでは動画・既存の成果物を更新しません。</p>
+        {oldProject && <div className="settings-context-warning" role="status">切替前の動画の設定を保持しています。個別に保存するか、対象を切り替えてください。</div>}
+        <div className="settings-toolbar">
+          <div className="settings-view-switch" role="group" aria-label="設定の表示">
+            {([['setting', '項目を編集'], ['outcome', '予定を確認'], ['file', '設定ファイル']] as const).map(([view, label]) => (
+              <button key={view} type="button" aria-pressed={detailView === view} aria-controls={`${id}-detail-${view}`} disabled={!isActive || snapshot === null}
+                onClick={() => setDetailView(view)}>{label}</button>
+            ))}
           </div>
-          {groups.map((group) => {
-            const definitions = state.snapshot!.definitions.filter((item) => item.group === group && (state.advancedVisible || !item.isAdvanced))
-            return <fieldset id={`settings-panel-${group}`} role="tabpanel" aria-labelledby={`settings-tab-${group}`} hidden={activeGroup !== group} className="settings-group" key={group}><legend>{groupNames[group]}</legend>{definitions.map((definition) => {
-              const selection = state.snapshot!.values.find((item) => item.key === definition.key)!
-              const initial = state.snapshot!.initialValues.find((item) => item.key === definition.key)!
-              return <SettingEditor key={`${definition.key}:${state.snapshot!.revision}`} definition={definition} value={selection.value} initialValue={initial.value} disabled={busy || state.needsRefresh} onSave={(value) => update(definition.key, value)} onReset={() => reset(definition.key)} />
-            })}</fieldset>
-          })}
-        </>
-      )}
+          <div className="settings-page-actions">
+            {isDirty && <button type="button" disabled={!isActive} onClick={returnToDraft}>未保存 {changedKeys.length} 項目</button>}
+            <button type="button" disabled={!isActive || busy} onClick={() => send(workspace.refresh)}>設定を再読み込み</button>
+            <button type="button" disabled={blocked || oldProject} onClick={() => ask({ kind: 'resetAll' })}>初期値へすべて戻す</button>
+          </div>
+        </div>
+        <p className="settings-operation-status" role="status" aria-live={isActive ? 'polite' : 'off'} aria-atomic="true">
+          {busy ? '設定を処理しています。' : state.needsRefresh ? '変更を続けるには設定を再読み込みしてください。未保存項目は保持しています。'
+            : state.error === null && state.lastCompletedMethod !== null ? completionMessages[state.lastCompletedMethod] : ''}
+        </p>
+        {state.error !== null && detailView !== 'file' && <div className="settings-error" role="alert"><p>{errorMessages[state.error]}</p><button type="button" disabled={!isActive || busy} onClick={workspace.clearError}>エラーを閉じる</button></div>}
+        {snapshot === null ? <p className="settings-empty">{busy ? '設定を読み込んでいます。' : '設定は未取得です。再読み込みを利用できます。'}</p> : (
+          <>
+            <div className="settings-group-tabs" role="tablist" aria-label="設定グループ" aria-orientation="horizontal"
+              onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocusedGroup(null) }}>
+              {groups.map(group => <button id={`${id}-tab-${group}`} key={group} ref={element => { tabs.current[group] = element }}
+                type="button" role="tab" aria-selected={activeGroup === group} aria-controls={`${id}-panel-${group}`}
+                tabIndex={(focusedGroup ?? activeGroup) === group ? 0 : -1} disabled={!isActive}
+                onFocus={() => setFocusedGroup(group)} onClick={() => { setActiveGroup(group); setMissingKey(null); setDetailView('setting') }}
+                onKeyDown={event => moveGroup(event, group)}>{groupNames[group]}</button>)}
+            </div>
+            <div className="settings-workspace">
+              <div className="settings-list-pane">
+                {groups.map(group => <div id={`${id}-panel-${group}`} key={group} role="tabpanel" aria-labelledby={`${id}-tab-${group}`} hidden={activeGroup !== group} tabIndex={0}>
+                  {activeGroup === group && (definitions.length === 0 ? <p>この分類に設定はありません。</p> : (
+                    <SettingsList key={`${state.projectId ?? 'global'}:${group}:${revealRevision}`} definitions={definitions} values={snapshot.values}
+                      selectedKey={selectedKey} changedKeys={changedKeys} disabled={!isActive}
+                      onSelect={key => { setSelectedKeys(keys => ({ ...keys, [group]: key })); setMissingKey(null); setDetailView('setting') }} />
+                  ))}
+                </div>)}
+              </div>
+              <div ref={detailPane} className="settings-detail-pane">
+                <div id={`${id}-detail-setting`} ref={inspector} hidden={detailView !== 'setting'} inert={!isActive || detailView !== 'setting'} tabIndex={-1} role="region" aria-label="選択した設定の詳細">
+                  {definition !== undefined && current !== undefined && initial !== undefined ? (
+                    <SettingInspector key={definition.key} definition={definition} value={current} initialValue={initial}
+                      draft={Object.hasOwn(draftValues, definition.key) ? draftValues[definition.key] ?? current : current}
+                      scope={state.scope} profileVersion={snapshot.profileVersion} disabled={blocked}
+                      onChange={value => workspace.changeDraft(definition.key, value)} onSave={() => send(() => workspace.save(definition.key))}
+                      onReset={() => { if (blocked) return; if (Object.hasOwn(draftValues, definition.key)) ask({ kind: 'reset', key: definition.key }); else send(() => workspace.reset(definition.key)) }} />
+                  ) : <p>指定された設定項目はこの一覧にありません。設定一覧から項目を選択してください。</p>}
+                  <details className="settings-provenance">
+                    <summary>{snapshot.profileName} v{snapshot.profileVersion} · {snapshot.definitionCount} 項目 · 保存状態の詳細</summary>
+                    <dl>
+                      <div><dt>対象</dt><dd>{scopeName}</dd></div>
+                      <div><dt>保存済みrevision</dt><dd>{snapshot.revision}</dd></div>
+                      <div><dt>プロファイル ID</dt><dd><code>{snapshot.profileId}</code></dd></div>
+                      <div><dt>プロファイルダイジェスト</dt><dd><code>{snapshot.profileDigest}</code></dd></div>
+                      <div><dt>初期値ダイジェスト</dt><dd><code>{snapshot.initialSnapshotDigest}</code></dd></div>
+                      <div><dt>保存済み設定ダイジェスト</dt><dd><code>{snapshot.snapshotDigest}</code></dd></div>
+                    </dl>
+                  </details>
+                </div>
+                <div id={`${id}-detail-outcome`} hidden={detailView !== 'outcome'} inert={!isActive || detailView !== 'outcome'}>
+                  <p className="settings-application-note">動画への再適用機能は未接続です。設定保存済みと生成済みを区別します。</p>
+                  <SettingsOutcomePreview mode="snapshot" snapshot={snapshot} draftValues={Object.entries(draftValues).flatMap(([key, value]) => value === undefined ? [] : [{ key, value }])} />
+                </div>
+                <div id={`${id}-detail-file`} hidden={detailView !== 'file'} inert={!isActive || detailView !== 'file' || oldProject}>
+                  {oldProject ? <p>対象を切り替えてから設定ファイルを操作してください。</p>
+                    : <SettingsFileActions active={isActive && detailView === 'file'} onReturnToDraft={returnToDraft} />}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      {isActive && confirmation !== null && <SettingsConfirmation confirmation={confirmation} scopeName={scopeName} restoreName={restoreName}
+        blocked={busy || !confirmationIsCurrent} stale={!confirmationIsCurrent} onCancel={cancelConfirmation} onConfirm={confirm} onReturn={returnToDraft} onKeepDrafts={closeWithDrafts} />}
     </section>
   )
 }
 
-function SettingEditor({ definition, value, initialValue, disabled, onSave, onReset }: { definition: SettingDefinition; value: SettingValue; initialValue: SettingValue; disabled: boolean; onSave: (value: SettingValue) => void; onReset: () => void }) {
-  const [draft, setDraft] = useState(value)
-  useEffect(() => setDraft(value), [value])
-  const changed = JSON.stringify(draft) !== JSON.stringify(value)
-  const differsFromInitial = JSON.stringify(value) !== JSON.stringify(initialValue)
-  const id = `setting-${definition.key.replaceAll('.', '-')}`
-  function submit(event: FormEvent) { event.preventDefault(); onSave(draft) }
+function SettingsConfirmation({ confirmation, scopeName, restoreName, blocked, stale, onCancel, onConfirm, onReturn, onKeepDrafts }: {
+  confirmation: Confirmation; scopeName: string; restoreName: string; blocked: boolean; stale: boolean
+  onCancel: () => void; onConfirm: () => void; onReturn: () => void; onKeepDrafts: () => void
+}) {
+  const id = useId()
+  const cancel = useRef<HTMLButtonElement>(null)
+  useLayoutEffect(() => { focusVisible(cancel.current) }, [])
+  const { action } = confirmation
+  const dirty = Object.keys(confirmation.drafts).length > 0
+  const label = action.kind === 'scope' ? '設定の対象を切り替えますか？' : action.kind === 'close' ? '未保存の設定があります' : '初期値へ戻しますか？'
+  const confirmLabel = action.kind === 'scope' ? '変更を破棄して切り替える' : action.kind === 'close' ? '変更を破棄して閉じる' : '初期値へ戻す'
   return (
-    <form className="setting-card" onSubmit={submit} aria-describedby={`${id}-description ${id}-evidence`}>
-      <div className="setting-copy"><label htmlFor={id}>{definition.displayName}{definition.isAdvanced && <span className="setting-badge">詳細</span>}</label><p id={`${id}-description`}>{definition.description}</p><code>{definition.key}</code></div>
-      <dl className="setting-value-summary"><div><dt>現在値</dt><dd>{formatValue(value)}</dd></div><div><dt>案件開始時の初期値</dt><dd>{formatValue(initialValue)}</dd></div><div><dt>プロファイル既定値</dt><dd>{formatValue(definition.defaultValue)}</dd></div></dl>
-      <ValueControl id={id} definition={definition} value={draft} disabled={disabled} onChange={setDraft} />
-      <div className="setting-actions"><button type="submit" disabled={disabled || !changed}>保存</button><button type="button" disabled={disabled || !differsFromInitial} onClick={onReset}>案件開始時の値へ戻す</button></div>
-      <details id={`${id}-evidence`} onKeyDown={(event) => { if (event.key === 'Escape' && event.currentTarget.open) { event.preventDefault(); event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}><summary tabIndex={0}>根拠</summary><ul>{definition.evidence.map((item) => <li key={`${item.kind}:${item.sourceId}`}>{item.sourceId} · {item.kind}</li>)}</ul></details>
-    </form>
+    <div className="settings-confirmation-backdrop">
+      <section className="settings-confirmation" role="alertdialog" aria-modal="true" aria-labelledby={`${id}-title`} aria-describedby={`${id}-message`}
+        onKeyDown={event => {
+          if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onCancel() }
+          if (event.key !== 'Tab') return
+          const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'))
+          const first = controls[0]
+          const last = controls.at(-1)
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+        }}>
+        <h3 id={`${id}-title`}>{label}</h3>
+        <div id={`${id}-message`}>
+          <p>対象：{scopeName}</p>
+          {action.kind === 'scope' ? <p>「{action.target === null ? '新しい動画の既定値' : 'この動画'}」へ切り替えます。未保存項目を個別に保存する場合は入力へ戻ってください。</p>
+            : action.kind === 'close' ? <p>「未保存のまま戻る」では入力を保持して画面を閉じます。保存はしません。個別に保存する場合は「未保存項目へ戻る」を選んでください。</p>
+              : <p>{action.kind === 'resetAll' ? 'すべての設定' : '選択した設定'}を{restoreName}へ戻します。既存の動画や成果物は更新しません。</p>}
+          {dirty && <p>{action.kind === 'close' ? '「変更を破棄して閉じる」を選ぶと、未保存の変更を破棄します。' : '未保存の変更を破棄する操作です。'}{action.kind === 'reset' && '他の項目の未保存値は保持します。'}</p>}
+          {stale && <p>確認中に設定状態が変わりました。取り消して操作をやり直してください。</p>}
+        </div>
+        <div className="settings-confirmation-actions">
+          {dirty && <button type="button" onClick={onReturn}>未保存項目へ戻る</button>}
+          {action.kind === 'close' && <button type="button" disabled={blocked} onClick={onKeepDrafts}>未保存のまま戻る</button>}
+          <button type="button" disabled={blocked} onClick={onConfirm}>{confirmLabel}</button>
+          <button ref={cancel} type="button" onClick={onCancel}>取消</button>
+        </div>
+      </section>
+    </div>
   )
 }
 
-function formatValue(value: SettingValue): string {
-  if (value.kind === 'boolean') return value.booleanValue ? '有効' : '無効'
-  if (value.kind === 'integer') return value.integerValue
-  if (value.kind === 'rational') return `${value.numerator}/${value.denominator}`
-  if (value.kind === 'text') return value.textValue
-  return value.textListValue.join('、')
+function canonicalProjectId(value: string | null): string | null {
+  if (value === null) return null
+  try { createSettingsReadRequest(value, value); return value } catch { return null }
 }
-
-function ValueControl({ id, definition, value, disabled, onChange }: { id: string; definition: SettingDefinition; value: SettingValue; disabled: boolean; onChange: (value: SettingValue) => void }) {
-  const unit = definition.unit === 'none' ? '' : ` (${definition.unit})`
-  if (value.kind === 'boolean') return <select id={id} disabled={disabled} value={String(value.booleanValue)} onChange={(event) => onChange({ kind: 'boolean', booleanValue: event.currentTarget.value === 'true' })}><option value="true">有効</option><option value="false">無効</option></select>
-  if (value.kind === 'integer') return <input id={id} disabled={disabled} type="number" value={value.integerValue} min={definition.minimum?.kind === 'integer' ? definition.minimum.integerValue : undefined} max={definition.maximum?.kind === 'integer' ? definition.maximum.integerValue : undefined} aria-label={`${definition.displayName}${unit}`} onChange={(event) => onChange({ kind: 'integer', integerValue: event.currentTarget.value })} />
-  if (value.kind === 'rational') return <span className="rational-input"><input id={id} disabled={disabled} inputMode="numeric" aria-label={`${definition.displayName} 分子${unit}`} value={value.numerator} onChange={(event) => onChange({ ...value, numerator: event.currentTarget.value })} /><span aria-hidden="true">/</span><input disabled={disabled} inputMode="numeric" aria-label={`${definition.displayName} 分母`} value={value.denominator} onChange={(event) => onChange({ ...value, denominator: event.currentTarget.value })} /></span>
-  if (value.kind === 'text' && definition.allowedTextValues.length > 0) return <select id={id} disabled={disabled} value={value.textValue} onChange={(event) => onChange({ kind: 'text', textValue: event.currentTarget.value })}>{definition.allowedTextValues.map((item) => <option key={item}>{item}</option>)}</select>
-  if (value.kind === 'text') return <input id={id} disabled={disabled} value={value.textValue} onChange={(event) => onChange({ kind: 'text', textValue: event.currentTarget.value })} />
-  return <textarea id={id} disabled={disabled} rows={Math.max(2, value.textListValue.length)} value={value.textListValue.join('\n')} onChange={(event) => onChange({ kind: 'textList', textListValue: event.currentTarget.value.split('\n').filter((item) => item.length > 0) })} />
+function isRead(method: SettingsWorkspaceMethod): boolean { return method === 'settings.read' || method === 'settings.global.read' }
+function focusVisible(element: HTMLElement | null | undefined, preventScroll = true): boolean {
+  if (element === null || element === undefined || !element.isConnected || element.closest('[hidden], [inert]') || element.matches(':disabled')) return false
+  element.focus({ preventScroll })
+  return document.activeElement === element
 }

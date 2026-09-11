@@ -8,6 +8,11 @@ from hubradio_worker.protocol import run_protocol
 
 
 def main() -> int:
+    # Do not echo task-mode arguments (possibly containing private input) via argparse.
+    task_mode = any(argument == "--task" or argument.startswith("--task=") for argument in sys.argv[1:])
+    if task_mode and sys.argv[1:] != ["--task"]:
+        print('{"version":1,"status":"error","code":"task.invalid_request"}')
+        return 1
     parser = argparse.ArgumentParser(
         prog="python -m hubradio_worker",
         allow_abbrev=False,
@@ -15,7 +20,13 @@ def main() -> int:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--health", action="store_true")
     mode.add_argument("--protocol", action="store_true")
+    mode.add_argument("--task", action="store_true")
     arguments = parser.parse_args()
+
+    if arguments.task:
+        from hubradio_worker.task_runner import run_task_cli
+
+        return run_task_cli()
 
     if arguments.health:
         print(json.dumps({"status": "ok"}, sort_keys=True, separators=(",", ":")))

@@ -25,12 +25,14 @@
            Code="OSL010_REPORT_PATH"
            Text="The local build-only HubRadioPortableBundleManifestPath must be outside HubRadioPortablePayloadPath." />
     <ItemGroup>
-      <_HubRadioPortableRoot Include="Worker;Tools;ModelCatalog;WebView2Runtime;Licenses;Evidence" />
+      <_HubRadioPortableRoot Include="Worker;Tools;ModelCatalog;Fonts;WebView2Runtime;Licenses;Evidence" />
     </ItemGroup>
     <Error Condition="!$([System.IO.Directory]::Exists('$(_HubRadioPortableRootPath)%(_HubRadioPortableRoot.Identity)'))" Code="OSL010_ROOT"
            Text="Required prepared payload root is missing: %(_HubRadioPortableRoot.Identity)." />
     <Error Condition="!$([System.IO.File]::Exists('$(_HubRadioPortableRootPath)Evidence\portable-payload.json'))" Code="OSL010_EVIDENCE"
            Text="Prepared payload evidence is missing: Evidence/portable-payload.json. Run preparation and verification before publishing." />
+        <Error Condition="$([System.IO.File]::Exists('$(_HubRadioPortableRootPath)Evidence\application-build.json'))" Code="OSL010_BUILD_EVIDENCE"
+          Text="Evidence/application-build.json is generated from the compiled App DLL, never supplied by a prepared component payload." />
     <Error Condition="'$(SelfContained)' != 'true' or '$(WindowsAppSDKSelfContained)' != 'true' or
                       '$(PublishSingleFile)' != 'true' or '$(IncludeAllContentForSelfExtract)' != 'true' or '$(EnableMsixTooling)' != 'true'"
            Code="OSL010_PROFILE"
@@ -65,7 +67,7 @@
        <None Remove="@(_HubRadioPortableUnlinkedContent)" MatchOnMetadata="FullPath" MatchOnMetadataOptions="PathLike"
           Condition="'%(None.Link)' == '' and '%(None.TargetPath)' == ''" />
       <_HubRadioPortableFile Include="$(_HubRadioPortableRootPath)Worker\**\*;$(_HubRadioPortableRootPath)Tools\**\*;
-                                     $(_HubRadioPortableRootPath)ModelCatalog\**\*;$(_HubRadioPortableRootPath)WebView2Runtime\**\*;
+                                     $(_HubRadioPortableRootPath)ModelCatalog\**\*;$(_HubRadioPortableRootPath)Fonts\**\*;$(_HubRadioPortableRootPath)WebView2Runtime\**\*;
                                      $(_HubRadioPortableRootPath)Licenses\**\*;$(_HubRadioPortableRootPath)Evidence\**\*" />
     </ItemGroup>
     <ItemGroup>

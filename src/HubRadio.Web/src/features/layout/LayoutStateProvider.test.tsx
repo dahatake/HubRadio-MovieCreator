@@ -549,8 +549,11 @@ describe('LayoutStateProvider integration', () => {
     )
   })
 
-  it('retains evidence on noChange and closes it on a correlated conflict', () => {
+  it('retains evidence on noChange and keeps the standalone form through conflict and explicit refresh', () => {
     loadAndComplete()
+    const workspace = requiredElement<HTMLElement>('.layout-workspace')
+    const keyframeForm = requiredElement<HTMLFormElement>('.keyframe-form')
+    const keyframe = requiredElement<HTMLInputElement>('#keyframe-0-0-destination-x')
     submit(requiredElement<HTMLFormElement>('.keyframe-form'))
     const firstApply = requiredApply(1)
     complete(createLayoutFailureValue(
@@ -565,6 +568,7 @@ describe('LayoutStateProvider integration', () => {
     )
     expect(container.textContent).toContain('revision 3・未永続化')
 
+    setControlValue(keyframe, '1/4')
     submit(requiredElement<HTMLFormElement>('.keyframe-form'))
     const secondApply = requiredApply(2)
     complete(createLayoutFailureValue(
@@ -573,12 +577,33 @@ describe('LayoutStateProvider integration', () => {
       LAYOUT_APPLY_METHOD,
     ))
 
-    expect(container.querySelector('.layout-workspace')).toBeNull()
+    expect(requiredElement('.layout-workspace')).toBe(workspace)
+    expect(requiredElement('.keyframe-form')).toBe(keyframeForm)
+    expect(requiredElement('#keyframe-0-0-destination-x')).toBe(keyframe)
+    expect(keyframe.value).toBe('1/4')
+    expect(container.textContent).toContain('旧根拠（再確認が必要）')
+    expect(requiredElement('.layout-panel').getAttribute('data-layout-dirty')).toBe('true')
     const failure = requiredElement<HTMLElement>('.layout-failure[role="alert"]')
     expect(failure.textContent).toContain(
       'レイアウトまたは Cue の revision が更新されました。',
     )
     expect(failure.textContent).not.toMatch(/C:\\|exception|actor|path/i)
+    submit(keyframeForm)
+    expect(client.sent).toHaveLength(3)
+    expect(buttonByText('最新版を再読み込み').disabled).toBe(false)
+    act(() => buttonByText('最新版を再読み込み').click())
+    const refresh = requiredSent(3)
+    expect(refresh.method).toBe('layout.read')
+    const latest = createLayoutResponseValue(refresh.requestId)
+    latest.result.snapshot.revision = 4
+    complete(latest)
+    expect(requiredElement('.layout-workspace')).toBe(workspace)
+    expect(requiredElement('.keyframe-form')).toBe(keyframeForm)
+    expect(keyframe.value).toBe('1/4')
+    expect(client.sent).toHaveLength(4)
+    submit(keyframeForm)
+    expect(requiredApply(4).params.expectedRevision).toBe(4)
+    expect(requiredApply(4).params.operation).toEqual(secondApply.params.operation)
   })
 
   function loadSnapshot(): void {

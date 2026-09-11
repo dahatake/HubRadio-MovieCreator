@@ -365,3 +365,53 @@ export function createLayoutFailureValue(
     result: { status, snapshot: null },
   }
 }
+
+/** Native subtitle-only projection: no video geometry, manual plan or tracks. */
+export function createSubtitleOnlyLayoutResponseValue(
+  requestId = layoutRequestId,
+  landscape = true,
+) {
+  const value = createLayoutResponseValue(requestId)
+  const snapshot = value.result.snapshot
+  const output = landscape
+    ? { width: 1920, height: 1080, aspectWidth: 16, aspectHeight: 9 }
+    : snapshot.output
+  const pixels = (rect: { x: number; y: number; width: number; height: number }) => ({
+    x: rect.x * output.width / snapshot.output.width,
+    y: rect.y * output.height / snapshot.output.height,
+    width: rect.width * output.width / snapshot.output.width,
+    height: rect.height * output.height / snapshot.output.height,
+  })
+  return {
+    ...value,
+    result: {
+      ...value.result,
+      snapshot: {
+        ...snapshot,
+        subtitleOnly: true as const,
+        output,
+        sources: [],
+        templates: [],
+        manualSelection: null,
+        keyframeTracks: [],
+        variantPair: null,
+        layout: {
+          ...snapshot.layout,
+          regions: snapshot.layout.regions.filter(region => region.role !== 'video').map(region => ({
+            ...region, pixels: pixels(region.pixels),
+          })),
+          safeZones: snapshot.layout.safeZones.map(zone => ({ ...zone, pixels: pixels(zone.pixels) })),
+        },
+        subtitles: snapshot.subtitles.map(cue => ({
+          ...cue,
+          layoutResolution: {
+            ...cue.layoutResolution,
+            evaluations: cue.layoutResolution.evaluations.map(evaluation => ({
+              ...evaluation, pixels: pixels(evaluation.pixels),
+            })),
+          },
+        })),
+      },
+    },
+  }
+}

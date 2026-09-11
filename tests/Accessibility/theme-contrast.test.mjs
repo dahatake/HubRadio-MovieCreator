@@ -5,7 +5,7 @@ import test from 'node:test'
 const styles = readFileSync(
   new URL('../../src/HubRadio.Web/src/styles.css', import.meta.url),
   'utf8',
-)
+).replace(/\r\n?/g, '\n')
 
 const lightTheme = readCustomProperties(':root')
 const darkTheme = readCustomProperties('html[data-theme="dark"]')
@@ -36,6 +36,12 @@ test('light and dark normal-text token pairs meet 4.5:1', () => {
   assertPairsMeetRatio('dark', darkTheme, normalTextPairs, 4.5)
 })
 
+test('base page text meets 4.5:1 on the page background in both themes', () => {
+  const pageTextPairs = [['--cp-text', '--cp-bg']]
+  assertPairsMeetRatio('light', lightTheme, pageTextPairs, 4.5)
+  assertPairsMeetRatio('dark', darkTheme, pageTextPairs, 4.5)
+})
+
 test('filled control text meets 4.5:1 in both themes', () => {
   assertPairsMeetRatio('light', lightTheme, filledControlPairs, 4.5)
   assertPairsMeetRatio('dark', darkTheme, filledControlPairs, 4.5)
@@ -51,6 +57,13 @@ test('description text uses the theme-aware muted text token', () => {
   const rule = readRule('.description')
   assert.match(rule, /color:\s*var\(--cp-text-muted\)\s*;/)
   assert.doesNotMatch(rule, /color:\s*#[0-9a-f]{3,8}\s*;/i)
+})
+
+test('page roots can shrink below 320px when the vertical scrollbar consumes inline space', () => {
+  const rule = readRule('html,\nbody,\n#root')
+  assert.match(rule, /min-width:\s*0\s*;/)
+  assert.doesNotMatch(rule, /(?:min-)?width:\s*(?:320px|100vw)\s*;/)
+  assert.doesNotMatch(rule, /overflow(?:-x)?:\s*(?:hidden|clip)\s*;/)
 })
 
 function assertPairsMeetRatio(themeName, theme, pairs, minimum) {

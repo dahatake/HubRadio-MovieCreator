@@ -316,6 +316,34 @@ export function selectThumbnailTemplate(
   )
 }
 
+export function selectThumbnailOutput(
+  state: ThumbnailState,
+  selection: PlayerExactFrameSelection | null,
+): ThumbnailOutput | null {
+  const { snapshot, output } = state
+  const template = selectThumbnailTemplate(state)
+  if (
+    selection === null ||
+    snapshot === null ||
+    output === null ||
+    template === null ||
+    !selectionMatchesSnapshot(selection, snapshot)
+  ) {
+    return null
+  }
+
+  // Retain the completed operation, but never present it as a different frame.
+  return outputMatchesExpectation(output, {
+    jobId: selection.jobId,
+    generationId: output.generationId,
+    snapshot,
+    template,
+    frame: selection.frame,
+  })
+    ? output
+    : null
+}
+
 export function selectionMatchesSnapshot(
   selection: PlayerExactFrameSelection | null,
   snapshot: ThumbnailSnapshot | null,

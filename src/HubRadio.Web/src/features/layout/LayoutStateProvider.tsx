@@ -13,7 +13,12 @@ import { createHostBridgeClient } from '../../bridge'
 import {
   createLayoutApplyRequest,
   createLayoutReadRequest,
+  layoutSnapshotMatchesTarget,
+  layoutSnapshotVersion,
+  layoutSupportsManualEditing,
   type LayoutOperation,
+  type LayoutReadOptions,
+  type LayoutVersionContext,
 } from './layoutProtocol'
 import {
   startLayoutBridgeSession,
@@ -26,6 +31,7 @@ import {
   layoutErrorCleared,
   layoutLocalInvalidRequest,
   layoutProjectIdChanged,
+  layoutSnapshotVersionAdopted,
   layoutStateReducer,
   type LayoutUiState,
 } from './layoutState'
@@ -33,8 +39,12 @@ import {
 export interface LayoutStateContextValue {
   readonly state: LayoutUiState
   readonly changeProjectId: (value: string) => void
-  readonly loadSnapshot: () => void
-  readonly refreshSnapshot: () => void
+  readonly loadSnapshot: (target?: LayoutVersionContext, options?: LayoutReadOptions) => void
+  readonly refreshSnapshot: (target?: LayoutVersionContext, options?: LayoutReadOptions) => void
+  /** Invalidate the result, but drain a pending mutation before another request. */
+  readonly invalidatePendingContext?: () => void
+  /** Adopt only the current correlated child; no read, rebase or draft reset. */
+  readonly adoptSnapshotVersion?: (target: LayoutVersionContext) => void
   readonly applyOperation: (operation: LayoutOperation) => void
   readonly clearError: () => void
 }
@@ -68,40 +78,84 @@ export function LayoutStateProvider({
     }
   }, [createClient])
 
-  const send = useCallback((request: Parameters<LayoutBridgeSession['send']>[0]) => {
+  const send = useCallback((
+    request: Parameters<LayoutBridgeSession['send']>[0],
+    selection?: LayoutVersionContext | null,
+  ) => {
     const session = sessionRef.current
     if (session === null) {
       dispatch(layoutBridgeUnavailable())
       return
     }
-    session.send(request)
+    session.send(request, selection)
   }, [])
 
   const changeProjectId = useCallback((value: string) => {
+    if (value !== state.projectIdInput) sessionRef.current?.invalidatePendingContext()
     dispatch(layoutProjectIdChanged(value))
-  }, [])
+  }, [state.projectIdInput])
 
-  const loadSnapshot = useCallback(() => {
+  const loadSnapshot = useCallback((target?: LayoutVersionContext, options?: LayoutReadOptions) => {
     try {
       send(createLayoutReadRequest(
         createRequestId(),
-        state.projectIdInput,
+        target?.projectId ?? state.projectIdInput,
         null,
-      ))
+        target,
+        options,
+      ), target === undefined ? null : Object.freeze({ ...target }))
     } catch {
       dispatch(layoutLocalInvalidRequest())
     }
   }, [send, state.projectIdInput])
 
-  const refreshSnapshot = useCallback(() => {
-    loadSnapshot()
-  }, [loadSnapshot])
+  const refreshSnapshot = useCallback((target?: LayoutVersionContext, options?: LayoutReadOptions) => {
+    const latest = options === undefined ? (target === undefined ? state.latestInBranch : undefined) : options.latestInBranch
+    const sameRoot = target !== undefined && state.branch != null &&
+      target.projectId === state.branch.root.projectId && target.versionId === state.branch.root.versionId &&
+      target.versionDigest === state.branch.root.versionDigest
+    if (target !== undefined && !(latest === true && sameRoot) &&
+      !(state.snapshot !== null && layoutSnapshotMatchesTarget(state.snapshot, target))) {
+      loadSnapshot(target, options)
+      return
+    }
+    // A latest refresh pins the ORIGINAL root even after child adoption. An
+    // exact warning refresh stays exact; neither path changes dirty selection.
+    const currentTarget = target ?? (latest === true ? state.branch?.root ?? state.target ?? undefined
+      : state.target == null ? undefined : state.snapshot === null ? state.target : layoutSnapshotVersion(state.snapshot))
+    try {
+      send(createLayoutReadRequest(createRequestId(), state.projectIdInput, null, currentTarget,
+        options ?? (latest === true ? { latestInBranch: true } : undefined)))
+    } catch {
+      dispatch(layoutLocalInvalidRequest())
+    }
+  }, [loadSnapshot, send, state.branch, state.latestInBranch, state.projectIdInput, state.snapshot, state.target])
+
+  const invalidatePendingContext = useCallback(() => {
+    sessionRef.current?.invalidatePendingContext()
+  }, [])
+
+  const adoptSnapshotVersion = useCallback((target: LayoutVersionContext) => {
+    dispatch(layoutSnapshotVersionAdopted(target))
+  }, [])
 
   const applyOperation = useCallback((operation: LayoutOperation) => {
     const snapshot = state.snapshot
-    if (snapshot === null) {
+    if (snapshot === null || state.pending !== null || state.status === 'conflict' || state.status === 'invalid' ||
+      ((operation.kind === 'setManualLayout' || operation.kind === 'setKeyframes') &&
+        !layoutSupportsManualEditing(snapshot))) {
       dispatch(layoutLocalInvalidRequest())
       return
+    }
+    if (state.target != null && (operation.kind === 'editSubtitle' || operation.kind === 'editTerop')) {
+      const cues = operation.kind === 'editSubtitle' ? snapshot.subtitles : snapshot.terops
+      const cue = cues.find(item => item.cueId === operation.cueId)
+      // An effective snapshot may retain a cue revision from an ancestor.
+      if (cue === undefined ||
+        cue.revisionId !== operation.expectedRevisionId || cue.revisionDigest !== operation.expectedRevisionDigest) {
+        dispatch(layoutLocalInvalidRequest())
+        return
+      }
     }
     try {
       send(createLayoutApplyRequest(
@@ -109,11 +163,12 @@ export function LayoutStateProvider({
         snapshot.projectId,
         snapshot.revision,
         operation,
+        state.target == null ? undefined : layoutSnapshotVersion(snapshot),
       ))
     } catch {
       dispatch(layoutLocalInvalidRequest())
     }
-  }, [send, state.snapshot])
+  }, [send, state.pending, state.snapshot, state.status, state.target])
 
   const clearError = useCallback(() => {
     dispatch(layoutErrorCleared())
@@ -125,6 +180,8 @@ export function LayoutStateProvider({
       changeProjectId,
       loadSnapshot,
       refreshSnapshot,
+      invalidatePendingContext,
+      adoptSnapshotVersion,
       applyOperation,
       clearError,
     }),
@@ -134,6 +191,8 @@ export function LayoutStateProvider({
       clearError,
       loadSnapshot,
       refreshSnapshot,
+      invalidatePendingContext,
+      adoptSnapshotVersion,
       state,
     ],
   )

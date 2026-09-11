@@ -3,7 +3,7 @@
 - 日付: 2026-09-06
 - 対象: OSL-001〜012の現在の実装・文書・試験証拠と、それらが呼ぶ既存起動／Python検証境界
 - 目的: 保存済み単一EXEへの1回の起動指示で、対象Windowsの標準ユーザーが追加セットアップなしに既存UIを操作できること。内部展開を許容し、インストーラー・自動更新・業務E2E完成は別扱いとする。
-- 正本: [NFR-009/AC-007](../../requirement-definition.md)、[ADR-0010](../decisions/ADR-0010-one-action-portable-launch.md)、[OSL計画](../../../work/20260906-OneActionLaunch-ImplementationPlan.md)
+- 正本: [NFR-009/AC-007](../../requirement-definition.md)、[ADR-0010](../decisions/ADR-0010-one-action-portable-launch.md)、[詳細実装計画§0.7](../planning/implementation-plan.md#07-os-onlyの1操作起動2026-09-06追補)
 - 方法: builder、payload、起動、文書、試験証拠を独立担当で並列に検査。作成時の意図や過去のPASSだけを根拠にせず、実コード・実bundle一覧・実ログ・公式APIと照合した。同一問題を複数担当が指摘した場合は統合した。
 - 現在の状態: **16件すべてに最小修正を反映し、完成候補・SBOM・全自動回帰・独立再レビューを確認済み。実WebView、clean production Windows、署名・実配布は別の未評価受入。**
 
@@ -22,7 +22,7 @@
 | 7 | 根拠性・不確実性管理 | Major | `WebViewHost.cs`／`MainWindow.xaml.cs` Ready条件 | navigation成功とURL一致だけでReadyとなり、React未起動やJS欠落を成功に見せ得た。既存smokeも同じAutomation名を確認するだけだった。 | navigation成功と、React mount後の既存pingに対するnative応答post成功の両方を有限時間内に確認。JS受領ACKまでは保証しない。欠けたsignal・失敗・取消・StrictModeの試験を追加。修正・回帰済み。 |
 | 8 | 品質・運用性 | Major | `MainWindow.xaml.cs` WebView2環境作成 | SDKは`WEBVIEW2_USER_DATA_FOLDER`で明示値を上書き可能だが、実user-data folderを検査していなかった。実行依存tree等への保存先変更を検出できない。 | `environment.UserDataFolder`と期待per-user pathをcontroller生成前に照合。不一致はpathを含まない初期化失敗。共通の直接path比較と負例試験を追加。修正・回帰済み。 |
 | 9 | 品質・運用性 | Minor | `MainWindow.xaml.cs` 起動失敗／Closed | 初期化後の失敗でhostイベントを解除してもWebView本体を閉じず、ブラウザーとuser-data使用が残る経路があった。 | 所有者がhost破棄、非表示化、`Close()`を一度だけ実施。既存案件・profileを削除しない。コード修正・再レビュー済み。実process終了確認は未実施。 |
-| 10 | 根拠性・不確実性管理 | Major | `work/20260906-OneActionLaunch-Execution.md` OSL-012 | 最新candidate02がexit1で終了済みなのに「生成中」と記載され、publish成功と候補／SBOM成功を区別できない状態だった。 | attempt名、exit1、`BUNDLE_REQUIRED`、完成候補なし、SBOM未生成を追記。過去の限定成功は保全。修正済み。 |
+| 10 | 根拠性・不確実性管理 | Major | OSL-012の当時の実行記録 | 最新candidate02がexit1で終了済みなのに「生成中」と記載され、publish成功と候補／SBOM成功を区別できない状態だった。 | attempt名、exit1、`BUNDLE_REQUIRED`、完成候補なし、SBOM未生成を恒久記録へ反映。過去の限定成功は保全。修正済み。 |
 | 11 | 整合性 | Major | `docs/dev/planning/implementation-plan.md` §0 | 現在の実行順は§0だけと案内する一方、承認・実施中のOSL系への参照がなく、V2-010だけを次手としていた。 | 業務系V2と起動系OSLを分離し、§0.7からADR・計画・最新台帳へ誘導。旧203件snapshotは変更しない。修正済み。 |
 | 12 | 根拠性・不確実性管理 | Major | `artifacts/validation/osl009/Test-PayloadEvidence.ps1` manifest照合 | 件数と各行の存在だけを確認し、宣言を`[A,B]→[A,A]`へ変えても完全一致と判定できた。実treeのdigestだけでは宣言の欠落を検出できない。 | 宣言pathの一意性・厳密なOrdinal順・完全キー集合・宣言側digestを検査し、同数の重複／欠落等の6合成試験を追加。修正済み、6合成試験＋18実証項目成功。 |
 | 13 | 整合性 | Major | `tests/smoke/Test-WebViewStartup.ps1`／`tests/Acceptance/OneActionLaunch.md` | Portableの正しい失敗タイトルは「アプリの配布ファイルが不完全です」だが、検査は開発版タイトルだけを要求し誤FAILする。 | developer用Distribution指定とPortable時の明示AppPathを追加し、表示契約を分離。SDK override負例と物理欠落負例を混同しない。手順・コード修正済み、実GUIは未実施。 |

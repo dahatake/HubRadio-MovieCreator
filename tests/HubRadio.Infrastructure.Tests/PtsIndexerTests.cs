@@ -81,6 +81,134 @@ public sealed class PtsIndexerTests
     }
 
     [TestMethod]
+    [DataRow(false, "")]
+    [DataRow(true, "")]
+    [DataRow(false, "\n")]
+    [DataRow(true, "\n")]
+    [DataRow(false, "\r\n")]
+    [DataRow(true, "\r\n")]
+    public void ParseOutput_SyntheticMfFourFramesAcceptOptionalEmptySideDataDelimiter(
+        bool emptySideDataDelimiter,
+        string terminalLineEnding)
+    {
+        using PtsFixture fixture = new();
+        MediaProbeResult probeResult = CreateProbeResult(
+            fixture.Staged,
+            streams: [CreateVideoStream(0, new RationalNumber(1, 15360))]);
+        // First four frame records of the synthetic MF video diagnostic shape.
+        // frame_side_data= suppresses SEI fields, but compact retains one empty
+        // section delimiter on the first frame; it is not a fifth frame field.
+        string lineEnding = terminalLineEnding.Length == 0 ? "\n" : terminalLineEnding;
+        string output = string.Join(
+            lineEnding,
+            "stream_index=0|key_frame=1|best_effort_timestamp=0|duration=512" +
+                (emptySideDataDelimiter ? "|" : string.Empty),
+            "stream_index=0|key_frame=0|best_effort_timestamp=512|duration=512",
+            "stream_index=0|key_frame=0|best_effort_timestamp=1024|duration=512",
+            "stream_index=0|key_frame=0|best_effort_timestamp=1536|duration=512") +
+            terminalLineEnding;
+
+        PtsIndex result = PtsIndexer.ParseProcessResult(
+            fixture.Staged,
+            probeResult,
+            new ProcessRunResult(0, output, string.Empty, false, TimeSpan.Zero));
+
+        Assert.AreEqual(0, result.StreamIndex);
+        Assert.AreEqual(new RationalTime(1, 15360), result.TimeBase);
+        Assert.HasCount(4, result.Entries);
+        for (int sequence = 0; sequence < result.Entries.Count; sequence++)
+        {
+            AssertEntry(
+                result.Entries[sequence],
+                sequence,
+                new RationalTime(sequence, 30),
+                new RationalTime(1, 30),
+                keyFrame: sequence == 0);
+        }
+
+        Assert.AreEqual(new RationalTime(0, 1), result.PresentationStart);
+        Assert.AreEqual(new RationalTime(2, 15), result.PresentationEnd);
+        Assert.AreEqual(new RationalTime(2, 15), result.PresentationRange.Duration);
+    }
+
+    [TestMethod]
+    public void ParseOutput_EmptySideDataDelimiterDoesNotPermitInvalidFrameFields()
+    {
+        using PtsFixture fixture = new();
+        (string Output, PtsIndexFailureReason Reason)[] failures =
+        [
+            (FrameLine() + "||", PtsIndexFailureReason.UnexpectedField),
+            (FrameLine() + "|||", PtsIndexFailureReason.UnexpectedField),
+            (FrameLine() + "|duration=20|", PtsIndexFailureReason.UnexpectedField),
+            (FrameLine() + "|side_data_type=SEI|", PtsIndexFailureReason.UnexpectedField),
+            (FrameLine() + "|side_data_type=SEI", PtsIndexFailureReason.UnexpectedField),
+            (FrameLine() + "|unknown=value|", PtsIndexFailureReason.UnexpectedField),
+            (FrameLine() + "|raw metadata|", PtsIndexFailureReason.UnexpectedField),
+            (FrameLine() + "|broken=value=extra|", PtsIndexFailureReason.UnexpectedField),
+            ("|" + FrameLine(), PtsIndexFailureReason.UnexpectedField),
+            ("stream_index=2||key_frame=1|best_effort_timestamp=0|duration=20|",
+                PtsIndexFailureReason.UnexpectedField),
+            ("stream_index=2|key_frame=1|best_effort_timestamp=0|",
+                PtsIndexFailureReason.UnexpectedField),
+            ("stream_index=2|key_frame=1|best_effort_timestamp=0|unknown=20|",
+                PtsIndexFailureReason.UnexpectedField),
+            ("stream_index=2|key_frame=1|best_effort_timestamp=0|key_frame=1|",
+                PtsIndexFailureReason.UnexpectedField),
+            ("stream_index=2|key_frame=1|best_effort_timestamp=0||",
+                PtsIndexFailureReason.UnexpectedField),
+            ("stream_index=2|key_frame=1|best_effort_timestamp=0|duration=20=30|",
+                PtsIndexFailureReason.UnexpectedField),
+            (FrameLine(streamIndex: "") + "|", PtsIndexFailureReason.MissingStreamIndex),
+            (FrameLine(keyFrame: "") + "|", PtsIndexFailureReason.MissingKeyFrameFlag),
+            (FrameLine(presentationTimestamp: "") + "|",
+                PtsIndexFailureReason.MissingPresentationTimestamp),
+            (FrameLine(duration: "") + "|", PtsIndexFailureReason.MissingDuration),
+            (FrameLine(presentationTimestamp: "N/A") + "|",
+                PtsIndexFailureReason.MissingPresentationTimestamp),
+            (FrameLine(duration: "N/A") + "|", PtsIndexFailureReason.MissingDuration),
+            (FrameLine(streamIndex: "02") + "|", PtsIndexFailureReason.InvalidStreamIndex),
+            (FrameLine(streamIndex: "7") + "|", PtsIndexFailureReason.StreamIndexMismatch),
+            (FrameLine(keyFrame: "true") + "|", PtsIndexFailureReason.InvalidKeyFrameFlag),
+            (FrameLine(presentationTimestamp: "1.5") + "|",
+                PtsIndexFailureReason.InvalidPresentationTimestamp),
+            (FrameLine(duration: "0") + "|", PtsIndexFailureReason.InvalidDuration),
+        ];
+
+        foreach ((string output, PtsIndexFailureReason reason) in failures)
+        {
+            Assert.AreEqual(
+                reason,
+                AssertPtsFailure(() => PtsIndexer.ParseOutput(
+                    fixture.Staged,
+                    fixture.ProbeResult,
+                    output)));
+        }
+    }
+
+    [TestMethod]
+    public void ParsePacketOutput_StillRejectsEmptySectionsAndExtraFields()
+    {
+        using PtsFixture fixture = new();
+        const string packet = "stream_index=2|flags=K__|pts=0|duration=20";
+        foreach (string output in new[]
+        {
+            packet + "|",
+            packet + "||",
+            packet + "|duration=20",
+            packet + "|side_data_type=SEI",
+            "stream_index=2||flags=K__|pts=0|duration=20",
+        })
+        {
+            Assert.AreEqual(
+                PtsIndexFailureReason.UnexpectedField,
+                AssertPtsFailure(() => PtsIndexer.ParsePacketOutput(
+                    fixture.Staged,
+                    fixture.ProbeResult,
+                    output)));
+        }
+    }
+
+    [TestMethod]
     public void ParsePacketOutput_UsesObservedPacketTimingAndStrictKeyFrameFlags()
     {
         using PtsFixture fixture = new();
@@ -340,7 +468,9 @@ public sealed class PtsIndexerTests
             (
                 "stream_index:2|key_frame=1|best_effort_timestamp=0|duration=20",
                 PtsIndexFailureReason.UnexpectedField),
-            (FrameLine() + "|", PtsIndexFailureReason.UnexpectedField),
+            // One terminal separator represents an empty frame_side_data section;
+            // only two or more remain invalid under the explicit suppression contract.
+            (FrameLine() + "||", PtsIndexFailureReason.UnexpectedField),
             (" " + FrameLine(), PtsIndexFailureReason.MalformedOutput),
             (FrameLine() + "\t", PtsIndexFailureReason.MalformedOutput),
             (FrameLine() + "\r", PtsIndexFailureReason.MalformedOutput),
@@ -456,7 +586,7 @@ public sealed class PtsIndexerTests
                 "2",
                 "-show_frames",
                 "-show_entries",
-                "frame=stream_index,key_frame,best_effort_timestamp,duration",
+                "frame=stream_index,key_frame,best_effort_timestamp,duration:frame_side_data=",
                 "-of",
                 "compact=p=0:nk=0:escape=none:s=|",
                 fixture.Staged.StagingPath,

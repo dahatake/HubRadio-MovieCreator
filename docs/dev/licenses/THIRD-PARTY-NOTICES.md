@@ -5,7 +5,7 @@
 - Release approval: **not granted**
 - Legal approval: **not granted**
 
-This document is an inventory for later notice assembly. It is not a release notice, a complete SBOM, legal advice, a license grant, or evidence that redistribution has been approved. It intentionally does not copy license text. Exact component rows, artifact or lock evidence, hashes, status, and conditions are maintained in [`dependencies.csv`](dependencies.csv) and [`models.csv`](models.csv).
+This document is an inventory for later notice assembly. It is not a release notice, a complete SBOM, legal advice, a license grant, or evidence that redistribution has been approved. The complete upstream MIT license is retained below for the vendored Fluent UI System Icons subset, together with the complete root OFL-1.1 license for the verified Noto Sans JP Regular input; final notice assembly for other components remains open. Exact component rows, artifact or lock evidence, hashes, status, and conditions are maintained in [`dependencies.csv`](dependencies.csv) and [`models.csv`](models.csv).
 
 Any `pending-PK-*`, held, condition-false, benchmark-only, unreviewed host component, missing transitive closure, or unresolved license/CVE blocks release until the applicable PK task and Q-010 close it. Inclusion in this inventory means “known and tracked,” not “approved to ship.”
 
@@ -16,6 +16,8 @@ Any `pending-PK-*`, held, condition-false, benchmark-only, unreviewed host compo
 | `declared-product` | Directly declared by current product source, but not approved for release by F-008. |
 | `declared-dev`, `declared-test`, `resolved-test` | Build or test dependency; not automatically part of the shipped package. |
 | `locked-*` / `adopted-*-locked` | Exact wheel and SHA-256 are fixed by PK-001; this is reproducibility evidence, not release or legal approval. |
+| `vendored-commit-pinned` | Selected upstream source assets are copied into product source at an exact commit; source identity and retained license do not grant release or legal approval. |
+| `verified-input-release-pending` | Saved primary-input verification records exact source identity, bytes, hashes, and license; it does not establish a rebuilt runtime, accepted package, or legal/release approval. |
 | `adopted-conditional` | Accepted only as the bounded Stage 1 baseline described by ADR-0007; release conditions remain open. |
 | `held` | Do not add to the product dependency graph until stated re-evaluation evidence and a later decision exist. |
 | `condition-false` | The implementation condition is false; do not implement or package the candidate. |
@@ -31,6 +33,7 @@ Any `pending-PK-*`, held, condition-false, benchmark-only, unreviewed host compo
 | React 19.2.8 | Exact lock plus PK-005 tarball size/SHA-256 and hashed Vite output | MIT declared by lock and package tarball | Preserve the evidence in `packaging/web/dependency-manifest.json`; complete final notices, advisories, SBOM, and release approval at Q-010. |
 | React DOM 19.2.8 | Exact lock plus PK-005 tarball size/SHA-256 and hashed Vite output | MIT declared by lock and package tarball | Preserve the evidence in `packaging/web/dependency-manifest.json`; complete final notices, advisories, SBOM, and release approval at Q-010. |
 | Scheduler 0.27.0 | Exact transitive lock plus PK-005 tarball size/SHA-256 and hashed Vite output | MIT declared by lock and package tarball | Keep it in the closed production runtime set; complete final notices, advisories, SBOM, and release approval at Q-010. |
+| Fluent UI System Icons (six 20px regular assets) | UX-015 copies actual SVG paths from commit `5bae3fb7771054c252a54b1d9210e9c03439fa1b` into `AppIcons.tsx`; no npm dependency | Exact-commit MIT license retained in full below | Preserve the source map and notice in the UX-015 section; UX-043 checks the actual portable notice copy; final release review remains Q-010. |
 | CPython worker runtime | Official CPython 3.12.10 Windows x64 embeddable ZIP, exact size/SHA-256, 35 entries, selected PSF signatures, and deterministic 2,695-file payload fixed by PK-002 | PSF License Agreement and bundled third-party notices are retained in the official `LICENSE.txt` | Preserve `packaging/python/runtime-manifest.json`; PK-006 must verify the installed package and Q-010 must close complete notices, vulnerabilities, SBOM, legal, and release approval. |
 | faster-whisper 1.2.1 | Exact declaration plus PK-001 runtime lock and wheel SHA-256 | MIT evidence for the exact tag | CPU/int8 only; retain SYSTRAN and embedded Silero notices; PK-004 pins the exact offline model while Q-010 retains final notice closure. |
 | CTranslate2 4.8.1 | Exact declaration plus PK-001 runtime lock and Windows x64 wheel SHA-256 | MIT evidence for the exact tag | No CUDA runtime is included or approved; complete binary notice review at Q-010. |
@@ -125,3 +128,164 @@ OSL-017 currently reviews the bounded OSL-012 candidate described by [`artifacts
 The detailed OSL-017 result is [`release-review.md`](release-review.md). It classifies the candidate as `CONDITIONAL_CANDIDATE` for local technical evaluation only, not `GENERAL_REDISTRIBUTION`. It covers the Fixed Version WebView2 terms, CPython and Python wheels, FFmpeg/ffprobe, the offline ASR model, Web production assets, .NET/Windows App SDK, and native payload binaries. Unmapped or incompletely verified components remain `NOASSERTION` or `REVIEW_PENDING`; selected Authenticode evidence, SPDX format validation, package labels, and local execution do not establish legal approval, redistribution permission, or a CVE/vulnerability result.
 
 This section does not replace, narrow, or grant any existing notice. Foundry Local/CUDA cache, held and benchmark-only models, GPL-enabled FFmpeg, test/build tools, host WebView2/font components, and unapproved media remain excluded from general redistribution. The existing Q-010, PK-006, OSL-020, and OSL-021 closure gates remain open.
+
+## UX-015 Fluent UI System Icons subset
+
+- Upstream: Microsoft, `microsoft/fluentui-system-icons`.
+- Exact pin: [commit `5bae3fb7771054c252a54b1d9210e9c03439fa1b`](https://github.com/microsoft/fluentui-system-icons/commit/5bae3fb7771054c252a54b1d9210e9c03439fa1b), confirmed through the official GitHub ref and commit API. This is a commit pin, not an inferred npm version or release tag.
+- Retrieval date: 2026-09-07. All six SVG XML files and `LICENSE` were fetched at that commit, not drawn from an image or recreated from memory.
+- Local implementation: `src/HubRadio.Web/src/components/AppIcons.tsx`. Only the six regular 20px paths below are copied. Path data and `viewBox="0 0 20 20"` are unchanged; the original path `fill="#212121"` is removed and the shared SVG uses `fill="currentColor"`, configurable width/height (default 20), `aria-hidden="true"`, and `focusable="false"`.
+- `AppIcon({ name, size? })` is decorative. Visible Japanese labels belong to the caller. The application name `processing` maps to the actual upstream **Sparkle** icon; it is not an upstream icon named Processing, an animated progress indicator, or evidence of successful processing.
+- No npm package, UI kit, icon font, remote HTML, runtime fetch, or raw-HTML SVG insertion is added. The remaining upstream assets are not included.
+
+The Git blob SHA-1 identifiers below were returned by the official GitHub file API and by the fetched file-content metadata. They identify the **original SVG files**, not the modified JSX or a raw-file SHA-256. No independent SHA-256 rehash was performed for this change; the CSV's SHA-256 remains `pending-Q-010`. `AppIcons.test.tsx` includes offline checks that reconstruct the original three-line SVG envelope from each rendered path and compare its Git blob SHA-1; these tests were added but not executed here.
+
+| AppIcon name | Original source path at the pinned commit | Git blob SHA-1 |
+|---|---|---|
+| `video` | [`assets/Video/SVG/ic_fluent_video_20_regular.svg`](https://raw.githubusercontent.com/microsoft/fluentui-system-icons/5bae3fb7771054c252a54b1d9210e9c03439fa1b/assets/Video/SVG/ic_fluent_video_20_regular.svg) | `04f29c5d88569dcc0efe39e555724d3a25e3acf1` |
+| `processing` | [`assets/Sparkle/SVG/ic_fluent_sparkle_20_regular.svg`](https://raw.githubusercontent.com/microsoft/fluentui-system-icons/5bae3fb7771054c252a54b1d9210e9c03439fa1b/assets/Sparkle/SVG/ic_fluent_sparkle_20_regular.svg) | `ba11497b00c12a394dc3d15092b4927b9cade4ba` |
+| `play` | [`assets/Play/SVG/ic_fluent_play_20_regular.svg`](https://raw.githubusercontent.com/microsoft/fluentui-system-icons/5bae3fb7771054c252a54b1d9210e9c03439fa1b/assets/Play/SVG/ic_fluent_play_20_regular.svg) | `05a0ec3f98ee72567238bfeee1ffa980553d8b0b` |
+| `save` | [`assets/Save/SVG/ic_fluent_save_20_regular.svg`](https://raw.githubusercontent.com/microsoft/fluentui-system-icons/5bae3fb7771054c252a54b1d9210e9c03439fa1b/assets/Save/SVG/ic_fluent_save_20_regular.svg) | `4df2b9d636fdaa2635ebcb825acdde439043442c` |
+| `settings` | [`assets/Settings/SVG/ic_fluent_settings_20_regular.svg`](https://raw.githubusercontent.com/microsoft/fluentui-system-icons/5bae3fb7771054c252a54b1d9210e9c03439fa1b/assets/Settings/SVG/ic_fluent_settings_20_regular.svg) | `54752c20fe6c380b1f2b5bcbef8738295e2cc1d0` |
+| `arrowLeft` | [`assets/Arrow Left/SVG/ic_fluent_arrow_left_20_regular.svg`](https://raw.githubusercontent.com/microsoft/fluentui-system-icons/5bae3fb7771054c252a54b1d9210e9c03439fa1b/assets/Arrow%20Left/SVG/ic_fluent_arrow_left_20_regular.svg) | `32618604e0ece64de2688e01ce14c2959a25c0c3` |
+
+Preserve the entire license below with this subset. The existing `packaging/portable/prepare-payload.ps1` copies this document to `Licenses/THIRD-PARTY-NOTICES-NONFINAL.md`; checking the updated copy inside an actual payload remains UX-043 integration work. No payload was prepared or verified here, and the historical OSL-017 candidate evidence above is not evidence for these new source assets. Existing release and legal approval gates remain unchanged.
+
+### Fluent UI System Icons — complete upstream MIT license
+
+Source: [`LICENSE` at the same commit](https://raw.githubusercontent.com/microsoft/fluentui-system-icons/5bae3fb7771054c252a54b1d9210e9c03439fa1b/LICENSE). Git blob SHA-1: `bc9c36b28f467f7006c4e5f1be4ca0a1a0b895f3`.
+
+```text
+MIT License
+
+Copyright (c) 2020 Microsoft Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Noto Sans JP Regular 2.004 — verified font input (not approved for release)
+
+- Upstream: official `notofonts/noto-cjk`, tag `Sans2.004`, commit `523d033d6cb47f4a80c58a35753646f5c3608a78`.
+- Font source: `Sans/SubsetOTF/JP/NotoSansJP-Regular.otf`; Git blob SHA-1 `4af556abb9cc42e585aab777b01857246a110746`; 4,533,028 bytes; raw-file SHA-256 `dff723ba59d57d136764a04b9b2d03205544f7cd785a711442d6d2d085ac5073`.
+- Recorded sfnt names: family `Noto Sans JP`, style `Regular`, version `Version 2.004;hotconv 1.0.118;makeotfexe 2.5.65603`, PostScript name `NotoSansJP-Regular`.
+- License source: the same commit's **root `LICENSE`**, not `Sans/LICENSE`; Git blob SHA-1 `d952d62c065f3f35fb83a173496e90b21525aef3`; 4,301 bytes; raw-file SHA-256 `6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2`; SIL Open Font License 1.1 (`OFL-1.1`).
+- Saved primary files and verification record: `artifacts/inputs/fonts/verified-2.004-7388bda58dd8/` contains `NotoSansJP-Regular.otf`, `LICENSE`, and `verification.json`. The existing `packaging/fonts/font-manifest.json` already records these measured values and root license path. This documentation update reads the saved evidence and license; it does not reacquire files, recompute hashes, or reparse the font.
+
+Retain the original font, complete license, and applicable copyright notices. OFL-1.1 prohibits selling the font by itself and sets conditions on redistribution, modification, Reserved Font Names, and endorsements; the font remains under OFL-1.1, while the license's font-licensing requirement does not apply to documents created using the font. These recorded terms are not a legal approval or a claim of completed compliance review. The payload layout calls for `Fonts/LICENSE` and `Licenses/NotoSansJP-OFL.txt`; their presence in a rebuilt package is not verified here.
+
+`releaseApproved=false` remains unchanged. Worker rebuild has not yet been executed; no payload preparation, App build, test, or native acceptance is claimed by this documentation update. `Evidence/application-build.json` is only a build identifier, not authenticity or independent distribution approval. UX041/UX043 are outside this update's scope. Historical candidate evidence elsewhere in this document does not validate this font input's integration or close the existing release/legal gates.
+
+### Noto Sans JP — complete upstream root LICENSE
+
+The following is the complete text of the saved root `LICENSE` identified above. Its SHA-256 refers to the original file bytes, not this Markdown transcription.
+
+```text
+This Font Software is licensed under the SIL Open Font License,
+Version 1.1.
+
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font
+creation efforts of academic and linguistic communities, and to
+provide a free and open framework in which fonts may be shared and
+improved in partnership with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply to
+any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software
+components as distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to,
+deleting, or substituting -- in part or in whole -- any of the
+components of the Original Version, by changing formats or by porting
+the Font Software to a new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed,
+modify, redistribute, and sell modified and unmodified copies of the
+Font Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components, in
+Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the
+corresponding Copyright Holder. This restriction only applies to the
+primary font name as presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created using
+the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+```

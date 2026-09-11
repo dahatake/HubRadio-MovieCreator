@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useRef,
   useState,
   type FormEvent,
@@ -83,8 +84,48 @@ const operationLabels = {
   [REVIEW_RECORD_APPROVAL_METHOD]: '承認を記録しました。',
 } as const
 
-export function ReviewPanel() {
-  return <ReviewPanelView {...useReviewState()} />
+export interface ReviewPanelProps {
+  /** Undefined preserves the standalone legacy forms; null/invalid IDs select nothing. */
+  readonly context?: Readonly<{ versionId: string | null }>
+  readonly active?: boolean
+  /** Unsaved inputs or a pending mutation, never review approval or export eligibility. */
+  readonly onDirtyChange?: (dirty: boolean) => void
+}
+
+export interface ReviewPanelViewProps extends ReviewStateContextValue, ReviewPanelProps {}
+
+interface ReviewFormDraft {
+  readonly value: string
+  readonly rate: string
+  readonly text: string
+  readonly actorRole: ReviewAuthorActorRole | ''
+}
+
+type ReviewDrafts = Readonly<Record<ReviewActionKind, ReviewFormDraft>>
+
+const emptyDraft: ReviewFormDraft = Object.freeze({
+  value: '0', rate: '1', text: '', actorRole: '',
+})
+const emptyDrafts: ReviewDrafts = Object.freeze({
+  addComment: emptyDraft,
+  requestChanges: emptyDraft,
+  recordApproval: emptyDraft,
+})
+const mutationMethods = {
+  addComment: REVIEW_ADD_COMMENT_METHOD,
+  requestChanges: REVIEW_REQUEST_CHANGES_METHOD,
+  recordApproval: REVIEW_RECORD_APPROVAL_METHOD,
+} as const
+const retainedInputMessage =
+  '未保存の入力・処理を保持しています。元の版に戻るか、処理後に入力を取り消してください。'
+
+function sameDraft(left: ReviewFormDraft, right: ReviewFormDraft): boolean {
+  return left.value === right.value && left.rate === right.rate &&
+    left.text === right.text && left.actorRole === right.actorRole
+}
+
+export function ReviewPanel(props: ReviewPanelProps) {
+  return <ReviewPanelView {...useReviewState()} {...props} />
 }
 
 export function ReviewPanelView({
@@ -96,75 +137,283 @@ export function ReviewPanelView({
   requestChanges,
   recordApproval,
   clearError,
-}: ReviewStateContextValue) {
+  context,
+  active = true,
+  onDirtyChange,
+}: ReviewPanelViewProps) {
+  // Keep drafts above the target-dependent workspace so hiding an old target
+  // cannot discard its inputs or display them as evidence for a new selection.
+  const [drafts, setDrafts] = useState(emptyDrafts)
+  const [savedDrafts, setSavedDrafts] = useState(emptyDrafts)
+  const [draftTarget, setDraftTarget] = useState<Readonly<
+    Pick<ReviewSnapshot, 'versionId' | 'versionDigest'>
+  > | null>(null)
+  const [submitted, setSubmitted] = useState<Readonly<{
+    kind: ReviewActionKind
+    draft: ReviewFormDraft
+    snapshot: ReviewSnapshot
+  }> | null>(null)
+  const [inputMessage, setInputMessage] = useState<string | null>(null)
+  const panelRef = useRef<HTMLElement | null>(null)
+  const onDirtyChangeRef = useRef(onDirtyChange)
+  const autoLoadVersionRef = useRef<string | null>(null)
+  const workflow = context !== undefined
+  const versionId = typeof context?.versionId === 'string' &&
+    isCanonicalReviewEntityId(context.versionId) ? context.versionId : null
   const pending = state.pending !== null
-  const canLoad =
-    !pending && isCanonicalReviewEntityId(state.versionIdInput)
+  const hasDraftChanges = actionKinds.some((kind) => !sameDraft(drafts[kind], savedDrafts[kind]))
+  const dirty = hasDraftChanges || submitted !== null ||
+    (state.pending !== null && state.pending.method !== REVIEW_GET_SNAPSHOT_METHOD)
+  const draftMatchesSnapshot = draftTarget === null ||
+    (draftTarget.versionId === state.snapshot?.versionId &&
+      draftTarget.versionDigest === state.snapshot.versionDigest)
+  const draftTargetChanged = draftTarget !== null &&
+    ((workflow && versionId !== draftTarget.versionId) ||
+      state.versionIdInput !== draftTarget.versionId ||
+      (state.snapshot !== null && !draftMatchesSnapshot))
+  const targetSwitchBlocked =
+    (workflow && state.versionIdInput !== (versionId ?? '') && (dirty || pending)) ||
+    (dirty && draftTargetChanged)
+  const matchesTarget = !workflow ||
+    (versionId !== null && state.versionIdInput === versionId)
+  const snapshot = !targetSwitchBlocked && matchesTarget &&
+    (!workflow || state.snapshot?.versionId === versionId)
+    ? state.snapshot : null
+  const displayedDrafts = draftMatchesSnapshot ? drafts : emptyDrafts
+  const canInteract = active && !pending && submitted === null && snapshot !== null
+  const canLoad = active && !pending && submitted === null && !targetSwitchBlocked &&
+    isCanonicalReviewEntityId(state.versionIdInput)
+
+  useEffect(() => {
+    onDirtyChangeRef.current = onDirtyChange
+  }, [onDirtyChange])
+
+  useEffect(() => {
+    onDirtyChangeRef.current?.(dirty)
+  }, [dirty])
+
+  useEffect(() => () => onDirtyChangeRef.current?.(false), [])
+
+  useEffect(() => {
+    if (submitted === null || pending) return
+    // A click, a read, or a previous success is not a saved draft. The real
+    // provider supplies a new snapshot only for a correlated native response.
+    if (
+      state.error === null && state.lastCompletedMethod === mutationMethods[submitted.kind] &&
+      state.snapshot !== null && state.snapshot !== submitted.snapshot &&
+      state.snapshot.versionId === submitted.snapshot.versionId &&
+      state.snapshot.versionDigest === submitted.snapshot.versionDigest
+    ) {
+      setSavedDrafts((previous) => ({ ...previous, [submitted.kind]: submitted.draft }))
+    }
+    setSubmitted(null)
+  }, [pending, state.error, state.lastCompletedMethod, state.snapshot, submitted])
+
+  useEffect(() => {
+    if (!workflow) {
+      autoLoadVersionRef.current = null
+      return
+    }
+    if (!active || dirty || pending) return
+    const input = versionId ?? ''
+    if (state.versionIdInput !== input) {
+      autoLoadVersionRef.current = null
+      setDrafts(emptyDrafts)
+      setSavedDrafts(emptyDrafts)
+      setDraftTarget(null)
+      setInputMessage(null)
+      changeVersionId(input)
+      return
+    }
+    if (versionId === null || autoLoadVersionRef.current === versionId) return
+
+    // loadSnapshot closes over the provider's input, not the prop. Wait for
+    // that input to match and for the parent provider to install its session.
+    let cancelled = false
+    queueMicrotask(() => {
+      if (cancelled || autoLoadVersionRef.current === versionId) return
+      autoLoadVersionRef.current = versionId
+      loadSnapshot()
+    })
+    return () => { cancelled = true }
+  }, [active, changeVersionId, dirty, loadSnapshot, pending, state.versionIdInput, versionId, workflow])
+
+  useEffect(() => {
+    if (active) return
+    const panel = panelRef.current
+    const focused = panel?.ownerDocument.activeElement
+    if (focused instanceof HTMLElement && panel?.contains(focused)) focused.blur()
+  }, [active])
+
+  const reload = (): void => {
+    if (!active || pending || submitted !== null || !matchesTarget || targetSwitchBlocked) return
+    if (workflow) {
+      if (versionId === null || state.versionIdInput !== versionId) return
+      autoLoadVersionRef.current = versionId
+      loadSnapshot()
+    } else {
+      refreshSnapshot()
+    }
+  }
+
+  const updateDraft = (kind: ReviewActionKind, draft: ReviewFormDraft): void => {
+    if (!canInteract || snapshot === null) return
+    if (draftTarget === null || !draftMatchesSnapshot) {
+      setDraftTarget({ versionId: snapshot.versionId, versionDigest: snapshot.versionDigest })
+      setSavedDrafts(emptyDrafts)
+      setDrafts({ ...emptyDrafts, [kind]: draft })
+    } else {
+      setDrafts((previous) => ({ ...previous, [kind]: draft }))
+    }
+  }
+
+  const submitDraft = (kind: ReviewActionKind, send: () => void): void => {
+    if (
+      !canInteract || snapshot === null || (workflow && kind !== 'addComment') ||
+      selectReviewAction(snapshot, kind).status !== 'authorized'
+    ) return
+    setSubmitted({ kind, draft: displayedDrafts[kind], snapshot })
+    send()
+  }
+
+  const workflowStatus = versionId === null
+    ? 'レビュー対象は未選択です。'
+    : targetSwitchBlocked
+      ? '元の版の入力・処理を保持しています。'
+      : !matchesTarget
+        ? '選択した版の履歴を待っています。'
+        : state.error !== null
+          ? '旧形式の履歴を確認できませんでした。'
+          : pending
+            ? '旧形式の履歴を確認しています。'
+            : snapshot === null
+              ? '旧形式の履歴は未取得です。'
+              : state.lastCompletedMethod === REVIEW_ADD_COMMENT_METHOD
+                ? '旧形式の履歴にコメントを記録しました。'
+                : '旧形式の履歴を表示しています。'
 
   return (
-    <section className="review-panel" aria-labelledby="review-title">
+    <section
+      ref={panelRef}
+      className="review-panel"
+      aria-labelledby="review-title"
+      hidden={!active}
+      inert={!active}
+      onFocusCapture={(event) => {
+        if (!active) event.target.blur()
+      }}
+    >
       <div className="review-heading">
         <div>
-          <p className="eyebrow">Version-bound review</p>
-          <h2 id="review-title">レビュー・コメント・承認</h2>
-          <p>
-            構成版と完全な内容 digest を固定し、追記専用のレビュー根拠を表示します。
-          </p>
+          <p className="eyebrow">{workflow ? 'Legacy review history' : 'Version-bound review'}</p>
+          <h2 id="review-title">{workflow ? '旧形式のレビュー履歴' : 'レビュー・コメント・承認'}</h2>
+          {workflow ? (
+            <p>
+              自己レビューの完了記録は未接続です。コメントは任意で、書き出しの必須条件ではありません。
+              この画面では、旧形式の履歴から自己レビュー完了・書き出し可否を判定しません。
+            </p>
+          ) : (
+            <p>構成版と完全な内容 digest を固定し、追記専用のレビュー根拠を表示します。</p>
+          )}
         </div>
-        {state.snapshot !== null && (
+        {snapshot !== null && (
           <span
             className={`review-target-badge ${
-              state.snapshot.isCurrentTarget ? 'current' : 'stale'
+              snapshot.isCurrentTarget ? 'current' : 'stale'
             }`}
           >
-            {state.snapshot.isCurrentTarget ? '現行版' : '非現行版'}
+            {snapshot.isCurrentTarget ? '現行版' : '非現行版'}
           </span>
         )}
       </div>
 
-      <form
-        className="review-load-form"
-        onSubmit={(event) => {
-          event.preventDefault()
-          loadSnapshot()
-        }}
-      >
-        <label htmlFor="review-version-id">構成版 ID</label>
-        <div className="review-load-row">
-          <input
-            id="review-version-id"
-            name="reviewVersionId"
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            minLength={36}
-            maxLength={36}
-            pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-            value={state.versionIdInput}
-            disabled={pending}
-            aria-describedby="review-version-help"
-            onChange={(event) => changeVersionId(event.currentTarget.value)}
-          />
-          <button type="submit" disabled={!canLoad}>
-            レビューを開く
+      {workflow ? (
+        versionId !== null && (
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={!active || pending || submitted !== null || !matchesTarget || targetSwitchBlocked}
+            onClick={reload}
+          >
+            履歴を再読み込み
           </button>
-          {state.snapshot !== null && (
-            <button
-              className="secondary-button"
-              type="button"
-              disabled={pending}
-              onClick={refreshSnapshot}
-            >
-              再読み込み
+        )
+      ) : (
+        <form
+          className="review-load-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (canLoad) loadSnapshot()
+          }}
+        >
+          <label htmlFor="review-version-id">構成版 ID</label>
+          <div className="review-load-row">
+            <input
+              id="review-version-id"
+              name="reviewVersionId"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              minLength={36}
+              maxLength={36}
+              pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+              value={state.versionIdInput}
+              disabled={!active || pending || submitted !== null}
+              aria-describedby="review-version-help"
+              onChange={(event) => {
+                if (!active || pending || submitted !== null) return
+                if (dirty) {
+                  setInputMessage(retainedInputMessage)
+                  return
+                }
+                setDrafts(emptyDrafts)
+                setSavedDrafts(emptyDrafts)
+                setDraftTarget(null)
+                setInputMessage(null)
+                changeVersionId(event.currentTarget.value)
+              }}
+            />
+            <button type="submit" disabled={!canLoad}>
+              レビューを開く
             </button>
-          )}
-        </div>
-        <p id="review-version-help" className="field-help">
-          小文字 UUID の構成版 ID を指定します。ユーザー ID や役割はネイティブ側で判定されます。
-        </p>
-      </form>
+            {state.snapshot !== null && (
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={!active || pending || submitted !== null || targetSwitchBlocked}
+                onClick={reload}
+              >
+                再読み込み
+              </button>
+            )}
+          </div>
+          <p id="review-version-help" className="field-help">
+            小文字 UUID の構成版 ID を指定します。ユーザー ID や役割はネイティブ側で判定されます。
+          </p>
+        </form>
+      )}
 
-      {state.error !== null && (
+      {(targetSwitchBlocked || inputMessage !== null) && (
+        <p className="review-input-warning" role="alert">
+          {targetSwitchBlocked ? retainedInputMessage : inputMessage}
+        </p>
+      )}
+      {hasDraftChanges && (
+        <button
+          className="quiet-button"
+          type="button"
+          disabled={!active || pending || submitted !== null}
+          onClick={() => {
+            if (!active || pending || submitted !== null) return
+            setDrafts(savedDrafts)
+            setInputMessage(null)
+          }}
+        >
+          未保存の入力を取り消す
+        </button>
+      )}
+
+      {state.error !== null && matchesTarget && !targetSwitchBlocked && (
         <div className="review-error" role="alert">
           <div>
             <strong>レビュー操作を完了できませんでした</strong>
@@ -173,12 +422,12 @@ export function ReviewPanelView({
           <div className="review-error-actions">
             {(state.error.code === 'review.conflict' ||
               state.error.code === 'review.stale_version') &&
-              state.snapshot !== null && (
+              snapshot !== null && (
                 <button
                   className="secondary-button"
                   type="button"
-                  disabled={pending}
-                  onClick={refreshSnapshot}
+                  disabled={!active || pending || submitted !== null}
+                  onClick={reload}
                 >
                   現在の状態を再読み込み
                 </button>
@@ -186,7 +435,8 @@ export function ReviewPanelView({
             <button
               className="quiet-button"
               type="button"
-              onClick={clearError}
+              disabled={!active}
+              onClick={() => { if (active) clearError() }}
             >
               閉じる
             </button>
@@ -200,25 +450,29 @@ export function ReviewPanelView({
         aria-live="polite"
         data-review-pending={pending ? 'true' : 'false'}
       >
-        {state.pending !== null
+        {workflow ? workflowStatus : state.pending !== null
           ? 'ネイティブ側でレビュー根拠を確認しています。'
           : state.lastCompletedMethod === null
             ? '構成版を指定してレビューを読み込んでください。'
             : operationLabels[state.lastCompletedMethod]}
       </p>
 
-      {state.snapshot === null ? (
+      {snapshot === null ? (
         <div className="review-empty">
-          <strong>レビュー対象は未選択です</strong>
-          <p>構成版 ID を読み込むまで、レビュー根拠や操作は表示されません。</p>
+          <strong>{workflow && versionId !== null ? '旧形式の履歴は未取得です' : 'レビュー対象は未選択です'}</strong>
+          {!workflow && <p>構成版 ID を読み込むまで、レビュー根拠や操作は表示されません。</p>}
         </div>
       ) : (
         <ReviewWorkspace
-          snapshot={state.snapshot}
-          pending={pending}
-          addComment={addComment}
-          requestChanges={requestChanges}
-          recordApproval={recordApproval}
+          snapshot={snapshot}
+          pending={pending || submitted !== null}
+          workflow={workflow}
+          active={active}
+          drafts={displayedDrafts}
+          onDraftChange={updateDraft}
+          addComment={(role, time, text) => submitDraft('addComment', () => addComment(role, time, text))}
+          requestChanges={(time, text) => submitDraft('requestChanges', () => requestChanges(time, text))}
+          recordApproval={(role, reason) => submitDraft('recordApproval', () => recordApproval(role, reason))}
         />
       )}
     </section>
@@ -256,12 +510,20 @@ export function getReviewActionAfterKey(
 function ReviewWorkspace({
   snapshot,
   pending,
+  workflow,
+  active,
+  drafts,
+  onDraftChange,
   addComment,
   requestChanges,
   recordApproval,
 }: Readonly<{
   snapshot: ReviewSnapshot
   pending: boolean
+  workflow: boolean
+  active: boolean
+  drafts: ReviewDrafts
+  onDraftChange: (kind: ReviewActionKind, draft: ReviewFormDraft) => void
   addComment: ReviewStateContextValue['addComment']
   requestChanges: ReviewStateContextValue['requestChanges']
   recordApproval: ReviewStateContextValue['recordApproval']
@@ -269,7 +531,7 @@ function ReviewWorkspace({
   return (
     <div className="review-workspace">
       <VersionSummary snapshot={snapshot} />
-      {!snapshot.isCurrentTarget && (
+      {!workflow && !snapshot.isCurrentTarget && (
         <div className="review-stale-warning" role="alert">
           <strong>この版は現行の作業対象ではありません</strong>
           <p>
@@ -277,14 +539,14 @@ function ReviewWorkspace({
           </p>
         </div>
       )}
-      {snapshot.reviewState === 'publicationBlocked' && (
+      {!workflow && snapshot.reviewState === 'publicationBlocked' && (
         <div className="publication-blocked" role="alert">
           <strong>この構成版は公開停止です</strong>
           <p>{snapshot.reviewStateReason}</p>
           <p>公開停止はこの版の終端状態です。この画面は復旧操作を提供しません。</p>
         </div>
       )}
-      {snapshot.reviewState === 'changesRequested' && (
+      {!workflow && snapshot.reviewState === 'changesRequested' && (
         <div className="changes-requested" role="status">
           <strong>変更依頼が記録されています</strong>
           <p>{snapshot.reviewStateReason}</p>
@@ -294,6 +556,10 @@ function ReviewWorkspace({
       <ReviewActions
         snapshot={snapshot}
         pending={pending}
+        workflow={workflow}
+        active={active}
+        drafts={drafts}
+        onDraftChange={onDraftChange}
         addComment={addComment}
         requestChanges={requestChanges}
         recordApproval={recordApproval}
@@ -373,12 +639,20 @@ function VersionSummary({ snapshot }: Readonly<{ snapshot: ReviewSnapshot }>) {
 function ReviewActions({
   snapshot,
   pending,
+  workflow,
+  active,
+  drafts,
+  onDraftChange,
   addComment,
   requestChanges,
   recordApproval,
 }: Readonly<{
   snapshot: ReviewSnapshot
   pending: boolean
+  workflow: boolean
+  active: boolean
+  drafts: ReviewDrafts
+  onDraftChange: (kind: ReviewActionKind, draft: ReviewFormDraft) => void
   addComment: ReviewStateContextValue['addComment']
   requestChanges: ReviewStateContextValue['requestChanges']
   recordApproval: ReviewStateContextValue['recordApproval']
@@ -390,6 +664,7 @@ function ReviewActions({
     event: KeyboardEvent<HTMLButtonElement>,
     index: number,
   ): void => {
+    if (!active) return
     const nextIndex = getReviewActionAfterKey(index, event.key)
     if (nextIndex === null) {
       return
@@ -397,6 +672,34 @@ function ReviewActions({
     event.preventDefault()
     setSelectedIndex(nextIndex)
     tabs.current[nextIndex]?.focus()
+  }
+
+  if (workflow) {
+    const action = selectReviewAction(snapshot, 'addComment')
+    return (
+      <section className="review-card review-actions" aria-labelledby="review-actions-title">
+        <h3 id="review-actions-title">任意コメント（旧形式）</h3>
+        <p className={`review-action-status status-${action.status}`}>
+          {actionStatusMessages[action.status]}
+        </p>
+        {snapshot.isCurrentTarget && action.status === 'authorized' && action.actorRoles.length > 0 && (
+          <TimecodedTextForm
+            idPrefix="review-comment"
+            legend="旧形式の履歴にコメントを追記（任意）"
+            submitLabel="コメントを記録"
+            textLabel="コメント"
+            actionStatus={action.status}
+            actorRoles={action.actorRoles}
+            pending={pending || !active}
+            draft={drafts.addComment}
+            onChange={(draft) => onDraftChange('addComment', draft)}
+            onSubmit={(time, text, role) => {
+              if (role !== null) addComment(role, time, text)
+            }}
+          />
+        )}
+      </section>
+    )
   }
 
   return (
@@ -416,7 +719,8 @@ function ReviewActions({
             aria-selected={selectedIndex === index}
             aria-controls={`review-action-panel-${kind}`}
             tabIndex={selectedIndex === index ? 0 : -1}
-            onClick={() => setSelectedIndex(index)}
+            disabled={!active}
+            onClick={() => { if (active) setSelectedIndex(index) }}
             onKeyDown={(event) => onTabKeyDown(event, index)}
           >
             {actionLabels[kind]}
@@ -445,7 +749,9 @@ function ReviewActions({
                 textLabel="コメント"
                 actionStatus={status}
                 actorRoles={action.actorRoles}
-                pending={pending}
+                pending={pending || !active}
+                draft={drafts.addComment}
+                onChange={(draft) => onDraftChange('addComment', draft)}
                 onSubmit={(outputTime, text, actorRole) => {
                   if (actorRole !== null) {
                     addComment(actorRole, outputTime, text)
@@ -459,14 +765,18 @@ function ReviewActions({
                 submitLabel="変更を依頼"
                 textLabel="変更内容"
                 actionStatus={status}
-                pending={pending}
+                pending={pending || !active}
+                draft={drafts.requestChanges}
+                onChange={(draft) => onDraftChange('requestChanges', draft)}
                 onSubmit={(outputTime, text) => requestChanges(outputTime, text)}
               />
             ) : (
               <ApprovalForm
                 actionStatus={status}
                 actorRoles={action.actorRoles.filter(isApprovalActorRole)}
-                pending={pending}
+                pending={pending || !active}
+                draft={drafts.recordApproval}
+                onChange={(draft) => onDraftChange('recordApproval', draft)}
                 onSubmit={recordApproval}
               />
             )}
@@ -485,6 +795,8 @@ function TimecodedTextForm({
   actionStatus,
   actorRoles,
   pending,
+  draft,
+  onChange,
   onSubmit,
 }: Readonly<{
   idPrefix: string
@@ -494,17 +806,15 @@ function TimecodedTextForm({
   actionStatus: ReviewActionStatus
   actorRoles?: readonly ReviewAuthorActorRole[]
   pending: boolean
+  draft: ReviewFormDraft
+  onChange: (draft: ReviewFormDraft) => void
   onSubmit: (
     outputTime: ReviewRationalTime,
     text: string,
     actorRole: ReviewAuthorActorRole | null,
   ) => void
 }>) {
-  const [value, setValue] = useState('0')
-  const [rate, setRate] = useState('1')
-  const [text, setText] = useState('')
-  const [selectedActorRole, setSelectedActorRole] =
-    useState<ReviewAuthorActorRole | ''>('')
+  const { value, rate, text, actorRole: selectedActorRole } = draft
   const outputTime = { value, rate }
   const actorRole = actorRoles?.includes(
     selectedActorRole as ReviewAuthorActorRole,
@@ -515,6 +825,9 @@ function TimecodedTextForm({
   const textIsValid = isReviewTextInput(text)
   const actorRoleIsValid = actorRoles === undefined || actorRole !== null
   const controlsDisabled = actionStatus !== 'authorized' || pending
+  const update = (changes: Partial<ReviewFormDraft>): void => {
+    if (!controlsDisabled) onChange({ ...draft, ...changes })
+  }
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
     if (!controlsDisabled && actorRoleIsValid && timeIsValid && textIsValid) {
@@ -531,7 +844,7 @@ function TimecodedTextForm({
             id={`${idPrefix}-actor-role`}
             actorRoles={actorRoles}
             value={actorRole}
-            onChange={setSelectedActorRole}
+            onChange={(role) => update({ actorRole: role })}
           />
         )}
         <div className="rational-time-fields">
@@ -544,7 +857,7 @@ function TimecodedTextForm({
               pattern="(?:0|[1-9][0-9]{0,18})"
               value={value}
               aria-describedby={`${idPrefix}-time-help`}
-              onChange={(event) => setValue(event.currentTarget.value)}
+              onChange={(event) => update({ value: event.currentTarget.value })}
             />
           </div>
           <div className="field-group">
@@ -556,7 +869,7 @@ function TimecodedTextForm({
               pattern="[1-9][0-9]{0,18}"
               value={rate}
               aria-describedby={`${idPrefix}-time-help`}
-              onChange={(event) => setRate(event.currentTarget.value)}
+              onChange={(event) => update({ rate: event.currentTarget.value })}
             />
           </div>
         </div>
@@ -571,7 +884,7 @@ function TimecodedTextForm({
             maxLength={16_384}
             value={text}
             aria-describedby={`${idPrefix}-text-help`}
-            onChange={(event) => setText(event.currentTarget.value)}
+            onChange={(event) => update({ text: event.currentTarget.value })}
           />
           <p id={`${idPrefix}-text-help`} className="field-help">
             前後に空白を付けず、UTF-8 で 16 KiB 以内にします。
@@ -595,16 +908,18 @@ function ApprovalForm({
   actionStatus,
   actorRoles,
   pending,
+  draft,
+  onChange,
   onSubmit,
 }: Readonly<{
   actionStatus: ReviewActionStatus
   actorRoles: readonly ReviewApprovalActorRole[]
   pending: boolean
+  draft: ReviewFormDraft
+  onChange: (draft: ReviewFormDraft) => void
   onSubmit: (actorRole: ReviewApprovalActorRole, reason: string) => void
 }>) {
-  const [reason, setReason] = useState('')
-  const [selectedActorRole, setSelectedActorRole] =
-    useState<ReviewApprovalActorRole | ''>('')
+  const { text: reason, actorRole: selectedActorRole } = draft
   const actorRole = actorRoles.includes(
     selectedActorRole as ReviewApprovalActorRole,
   )
@@ -612,6 +927,9 @@ function ApprovalForm({
     : null
   const reasonIsValid = isReviewTextInput(reason)
   const controlsDisabled = actionStatus !== 'authorized' || pending
+  const update = (changes: Partial<ReviewFormDraft>): void => {
+    if (!controlsDisabled) onChange({ ...draft, ...changes })
+  }
   return (
     <form
       className="review-action-form"
@@ -628,7 +946,7 @@ function ApprovalForm({
           id="review-approval-actor-role"
           actorRoles={actorRoles}
           value={actorRole}
-          onChange={setSelectedActorRole}
+          onChange={(role) => update({ actorRole: role })}
         />
         <div className="field-group">
           <label htmlFor="review-approval-reason">承認理由</label>
@@ -638,7 +956,7 @@ function ApprovalForm({
             maxLength={16_384}
             value={reason}
             aria-describedby="review-approval-help"
-            onChange={(event) => setReason(event.currentTarget.value)}
+            onChange={(event) => update({ text: event.currentTarget.value })}
           />
           <p id="review-approval-help" className="field-help">
             承認は上記の構成版 ID と完全 digest に固定され、同じ役割での二重承認は競合として拒否されます。

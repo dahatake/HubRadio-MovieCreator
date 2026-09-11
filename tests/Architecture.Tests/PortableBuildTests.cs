@@ -573,7 +573,7 @@ public sealed class PortableBuildTests
             }
             ConvertTo-Json -InputObject @($results) -Compress
             """));
-        Assert.AreEqual(17, result.RootElement.GetArrayLength());
+        Assert.AreEqual(22, result.RootElement.GetArrayLength());
         foreach (JsonElement item in result.RootElement.EnumerateArray())
         {
             Assert.AreEqual("OSL012:BUNDLE_REQUIRED Missing actual bundle input: " + item.GetProperty("name").GetString(),
@@ -917,7 +917,8 @@ public sealed class PortableBuildTests
         string[] required = ["HubRadio.App.exe", "HubRadio.App.dll", "HubRadio.App.pri", "HubRadio.App.deps.json",
             "HubRadio.App.runtimeconfig.json", "HubRadio.Core.dll", "HubRadio.Infrastructure.dll", "System.Private.CoreLib.dll",
             "Microsoft.WinUI.dll", "Microsoft.UI.Xaml.dll", "Microsoft.WindowsAppRuntime.dll", "WebAssets/index.html",
-            "WebAssets/asset-manifest.json", "Worker/python.exe", "Tools/ffmpeg.exe", "Tools/ffprobe.exe", "WebView2Runtime/msedgewebview2.exe"];
+            "WebAssets/asset-manifest.json", "Worker/python.exe", "Tools/ffmpeg.exe", "Tools/ffprobe.exe", "WebView2Runtime/msedgewebview2.exe",
+            "Worker/runtime-files.json", "Fonts/NotoSansJP-Regular.otf", "Fonts/font-manifest.json", "Fonts/LICENSE", "Evidence/application-build.json"];
         var sources = required.ToDictionary(static name => name, static name => Path.Combine(@"C:\metadata-only", name), StringComparer.Ordinal);
         sources["HubRadio.App.exe"] = Path.Combine(GetRepositoryRoot(),
             "src/HubRadio.App/obj/x64/Release/net10.0-windows10.0.26100.0/win-x64/singlefilehost.exe");
@@ -1080,7 +1081,7 @@ public sealed class PortableBuildTests
         public RejectionInputs()
         {
             Directory.CreateDirectory(InputRoot);
-            foreach (string root in new[] { "Worker", "Tools", "ModelCatalog", "WebView2Runtime", "Licenses", "Evidence" })
+            foreach (string root in new[] { "Worker", "Tools", "ModelCatalog", "Fonts", "WebView2Runtime", "Licenses", "Evidence" })
             {
                 Directory.CreateDirectory(Path.Combine(PayloadRoot, root));
             }
@@ -1091,6 +1092,8 @@ public sealed class PortableBuildTests
                 ("Evidence/model-catalog.json", "packaging/models/catalog.json"),
                 ("Evidence/webview2-runtime-manifest.json", "packaging/webview2/runtime-manifest.json"),
                 ("Evidence/web-dependency-manifest.json", "packaging/web/dependency-manifest.json"),
+                ("Evidence/font-manifest.json", "packaging/fonts/font-manifest.json"),
+                ("Fonts/font-manifest.json", "packaging/fonts/font-manifest.json"),
                 ("ModelCatalog/catalog.json", "packaging/models/catalog.json"),
             })
             {
@@ -1136,7 +1139,7 @@ public sealed class PortableBuildTests
                 ["architecture"] = "x64",
                 ["releaseApproved"] = false,
                 ["appPublishRequired"] = true,
-                ["rootDirectories"] = new JsonArray("Worker", "Tools", "ModelCatalog", "WebView2Runtime", "Licenses", "Evidence"),
+                ["rootDirectories"] = new JsonArray("Worker", "Tools", "ModelCatalog", "Fonts", "WebView2Runtime", "Licenses", "Evidence"),
                 ["fileCount"] = records.Count,
                 ["totalBytes"] = totalBytes,
                 ["artifactSetSha256"] = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(digestInput.ToString()))).ToLowerInvariant(),

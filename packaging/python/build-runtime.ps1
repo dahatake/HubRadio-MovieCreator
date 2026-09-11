@@ -225,12 +225,9 @@ function Move-GeneratedTreeWithRetry {
             return
         }
         catch [UnauthorizedAccessException], [IO.IOException] {
+            # Destination existence alone cannot prove that this move succeeded.
             $sourceExists = Test-Path -LiteralPath $SourcePath -PathType Container
             $destinationExists = Test-Path -LiteralPath $DestinationPath
-            if (-not $sourceExists -and $destinationExists) {
-                return
-            }
-
             if (-not $sourceExists -or $destinationExists -or $attempt -eq $maximumAttempts) {
                 throw
             }
@@ -557,8 +554,16 @@ try {
     $moved = $true
 }
 finally {
-    if (-not $moved -and (Test-Path -LiteralPath $stagingPath)) {
-        Remove-GeneratedTree -Path $stagingPath -Confirm:$false
+    if (-not $moved) {
+        try {
+            if (Test-Path -LiteralPath $stagingPath) {
+                Remove-GeneratedTree -Path $stagingPath -Confirm:$false
+            }
+        }
+        catch {
+            # Cleanup must not replace the original build/move error, even with WarningPreference=Stop.
+            Write-Warning 'The generated partial runtime tree could not be removed and requires reconciliation.' -WarningAction Continue
+        }
     }
 }
 

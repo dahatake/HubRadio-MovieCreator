@@ -15,7 +15,7 @@ import {
   playerSourceAssetId,
 } from '../player/playerTestFixture'
 import { GenericUiMask } from './GenericUiMask'
-import { PreviewModeControls } from './PreviewModeControls'
+import { PreviewModeControls, type PreviewModeControlsProps } from './PreviewModeControls'
 import { PreviewModeProvider } from './PreviewModeProvider'
 
 describe('PreviewModeControls', () => {
@@ -38,7 +38,7 @@ describe('PreviewModeControls', () => {
   })
 
   it('uses keyboard-native controls for every canonical display choice', () => {
-    renderControls(null)
+    renderControls(createSelection())
 
     const orientationInputs = container.querySelectorAll<HTMLInputElement>(
       'input[type="radio"][name="preview-orientation"]',
@@ -69,7 +69,7 @@ describe('PreviewModeControls', () => {
   })
 
   it('changes subtitle visibility and orientation with keyboard input', async () => {
-    renderControls(null)
+    renderControls(createSelection())
     const user = userEvent.setup({ document })
     const card = requiredElement<HTMLElement>('.preview-mode-card')
     const subtitles = [...container.querySelectorAll<HTMLInputElement>(
@@ -117,6 +117,20 @@ describe('PreviewModeControls', () => {
         '動画・媒体のプレビュー根拠がありません',
       )
 
+      for (const input of container.querySelectorAll<HTMLInputElement>('input')) {
+        expect(input.disabled).toBe(true)
+        act(() => input.click())
+      }
+      const emptyCard = requiredElement<HTMLElement>('.preview-mode-card')
+      expect(emptyCard.dataset.previewOrientation).toBe('source')
+      expect(emptyCard.dataset.subtitlesVisible).toBe('true')
+      expect(emptyCard.dataset.genericMask).toBe('false')
+      expect(emptyCard.dataset.thumbnailReduced).toBe('false')
+      expect(emptyCard.dataset.mobilePreview).toBe('false')
+      expect(emptyCard.dataset.audioOnly).toBe('false')
+      expect(fetchCalls).toBe(0)
+
+      renderControls(createSelection())
       clickInput('input[value="landscape"]')
       clickInput('input[value="portrait"]')
       for (const input of container.querySelectorAll<HTMLInputElement>(
@@ -152,6 +166,108 @@ describe('PreviewModeControls', () => {
     expect(container.innerHTML).not.toContain(playerJobId)
     expect(container.innerHTML).not.toContain(playerProjectId)
     expect(container.innerHTML).not.toMatch(/file:\/\/|C:\\|S-1-5-/)
+  })
+
+  it('uses compact workflow controls with explicit proxy and platform fidelity limits', () => {
+    renderControls(createSelection(), { context: { jobId: playerJobId } })
+
+    expect(requiredElement<HTMLElement>('.preview-mode-workflow').hidden).toBe(false)
+    expect(container.querySelector('.eyebrow, .preview-mode-notes, .field-help, form')).toBeNull()
+    expect(requiredElement('.preview-mode-position').textContent).toBe(
+      '代理フレーム 3・Source 1/20・Proxy 1/12',
+    )
+    const note = requiredElement<HTMLElement>('.preview-mode-fidelity')
+    expect(note.dataset.outputVerification).toBe('not-verified')
+    expect(note.dataset.platformFidelity).toBe('not-claimed')
+    expect(note.textContent).toContain('最終出力の画質・コーデック、配信先 UI・セーフゾーンは未検証')
+    expect(container.textContent).toContain('汎用 UI mask（配信先未検証）')
+    expect([...container.querySelectorAll<HTMLInputElement>('input')].every((input) => !input.disabled)).toBe(true)
+    expect(container.innerHTML).not.toContain(playerEvidenceDigest)
+    expect(container.innerHTML).not.toContain(playerJobId)
+    expect(container.innerHTML).not.toContain(playerProjectId)
+    expect(container.innerHTML).not.toContain(playerSourceAssetId)
+  })
+
+  it.each([null, '', 'invalid', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'])(
+    'hides a stale selection for context %s and disables all modes without changing their state',
+    (jobId) => {
+      const selection = createSelection()
+      renderControls(selection, { context: { jobId: playerJobId } })
+      clickInput('input[value="portrait"]')
+      const portrait = requiredElement<HTMLInputElement>('input[value="portrait"]')
+
+      renderControls(selection, { context: { jobId } })
+
+      expect(requiredElement('.preview-mode-position').getAttribute('data-media-available')).toBe('false')
+      expect(requiredElement('.preview-mode-position').textContent).toBe('動画・媒体のプレビュー根拠がありません')
+      expect(container.textContent).not.toContain('Source 1/20')
+      for (const input of container.querySelectorAll<HTMLInputElement>('input')) {
+        expect(input.disabled).toBe(true)
+        act(() => input.click())
+      }
+      expect(requiredElement('input[value="portrait"]')).toBe(portrait)
+      expect(portrait.checked).toBe(true)
+      expect(selection.frame.outputPresentationTime).toBeNull()
+    },
+  )
+
+  it('keeps the same controls and mode choices mounted while inactive and on return', () => {
+    const selection = createSelection()
+    renderControls(selection, { context: { jobId: playerJobId } })
+    clickInput('input[value="portrait"]')
+    const inputs = [...container.querySelectorAll<HTMLInputElement>('input')]
+    for (const input of inputs.filter((candidate) => candidate.type === 'checkbox')) {
+      act(() => input.click())
+    }
+    const checked = inputs.map((input) => input.checked)
+    const card = requiredElement<HTMLElement>('.preview-mode-card')
+
+    renderControls(selection, { context: { jobId: playerJobId }, active: false })
+
+    expect(requiredElement('.preview-mode-card')).toBe(card)
+    expect(card.hidden).toBe(true)
+    expect(card.hasAttribute('inert')).toBe(true)
+    expect(inputs.every((input) => input.disabled)).toBe(true)
+    for (const input of inputs) act(() => input.click())
+    expect(inputs.map((input) => input.checked)).toEqual(checked)
+
+    renderControls(selection, { context: { jobId: playerJobId }, active: true })
+
+    expect(requiredElement('.preview-mode-card')).toBe(card)
+    expect(card.hidden).toBe(false)
+    expect(card.hasAttribute('inert')).toBe(false)
+    expect(inputs.every((input) => !input.disabled)).toBe(true)
+    const returnedInputs = [...container.querySelectorAll('input')]
+    expect(returnedInputs.every((input, index) => input === inputs[index])).toBe(true)
+    expect(inputs.map((input) => input.checked)).toEqual(checked)
+  })
+
+  it('never mutates the supplied source, evidence identity, or actual frame to simulate output', () => {
+    const selection = createSelection()
+    Object.freeze(selection.frame)
+    Object.freeze(selection)
+    const before = JSON.stringify(selection)
+    renderControls(selection, { context: { jobId: playerJobId } })
+    clickInput('input[value="landscape"]')
+    clickInput('input[value="portrait"]')
+    for (const input of container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) {
+      act(() => input.click())
+    }
+
+    expect(JSON.stringify(selection)).toBe(before)
+    expect(selection.frame.outputPresentationTime).toBeNull()
+    expect(selection).toMatchObject({
+      jobId: playerJobId,
+      projectId: playerProjectId,
+      sourceAssetId: playerSourceAssetId,
+      playerEvidenceDigest,
+    })
+    expect(requiredElement('.preview-mode-position').textContent).toBe('代理フレーム 3・Source 1/20・Proxy 1/12')
+    expect(container.querySelector('video, canvas')).toBeNull()
+
+    renderControls(null, { context: { jobId: playerJobId } })
+    expect(requiredElement('.preview-mode-position').getAttribute('data-media-available')).toBe('false')
+    expect([...container.querySelectorAll<HTMLInputElement>('input')].every((input) => input.disabled)).toBe(true)
   })
 
   it('renders the generic mask deterministically without platform claims', () => {
@@ -191,11 +307,12 @@ describe('PreviewModeControls', () => {
 
   function renderControls(
     selection: PlayerExactFrameSelection | null,
+    props: Omit<PreviewModeControlsProps, 'selection'> = {},
   ): void {
     act(() => {
       root.render(
         <PreviewModeProvider>
-          <PreviewModeControls selection={selection} />
+          <PreviewModeControls selection={selection} {...props} />
         </PreviewModeProvider>,
       )
     })

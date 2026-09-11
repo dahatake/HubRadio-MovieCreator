@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 
 import {
   createBridgeClient,
   createHostBridgeClient,
+  type BridgeClient,
   type BridgeMessageEvent,
   type BridgeTransport,
 } from './index'
@@ -93,6 +94,29 @@ import {
   layoutSecondProjectId,
   layoutSecondRequestId,
 } from '../features/layout/layoutTestFixture'
+import {
+  SETTINGS_METHODS,
+  SETTINGS_WORKSPACE_METHODS,
+  createSettingsReadRequest,
+  createSettingsUpdateRequest,
+  createSettingsResetRequest,
+  createSettingsResetAllRequest,
+  createSettingsGlobalReadRequest,
+  createSettingsGlobalUpdateRequest,
+  createSettingsGlobalResetRequest,
+  createSettingsGlobalResetAllRequest,
+  createSettingsFileExportRequest,
+  createSettingsFilePreviewRequest,
+  createSettingsFileApplyRequest,
+  parseSettingsWorkspaceResponse,
+  type AnySettingsSnapshot,
+  type GlobalSettingsSnapshot,
+  type SettingsRequest,
+  type SettingsResponse,
+  type SettingsSnapshot,
+  type SettingsWorkspaceRequest,
+  type SettingsWorkspaceResponse,
+} from '../features/settings/settingsProtocol'
 import {
   createThumbnailCancelRequest,
   createThumbnailGenerateRequest,
@@ -832,6 +856,542 @@ describe('web bridge client', () => {
 
   it('does not fabricate a host transport outside WebView2', () => {
     expect(() => createHostBridgeClient()).toThrow('outside a browser window')
+  })
+})
+
+describe('settings workspace bridge client', () => {
+  const secondRequestId = '22334455-6677-4899-8aab-bbccddeeff00'
+  const otherProjectId = '99999999-8888-4777-8666-555555555555'
+  const key = 'subtitles.enabled'
+  const enabled = { kind: 'boolean', booleanValue: true } as const
+  const disabled = { kind: 'boolean', booleanValue: false } as const
+  const fileSha256 = 'd'.repeat(64)
+  const previousFileSha256 = 'e'.repeat(64)
+  const projectSnapshot: SettingsSnapshot = {
+    projectId: '11112222-3333-4444-8555-666677778888',
+    profileId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    profileName: 'Bridge settings',
+    profileVersion: '1.0.0',
+    profileDigest: 'f'.repeat(64),
+    initialSnapshotDigest: 'a'.repeat(64),
+    snapshotDigest: 'b'.repeat(64),
+    revision: 3,
+    updatedAt: '2026-09-07T00:00:00.0000000+00:00',
+    definitionCount: 1,
+    definitions: [{
+      key,
+      group: 'subtitlesAndGraphics',
+      isAdvanced: false,
+      displayName: 'Subtitles',
+      description: 'Enable subtitles.',
+      unit: 'none',
+      defaultValue: enabled,
+      minimum: null,
+      maximum: null,
+      allowedTextValues: [],
+      evidence: [{ kind: 'productDecision', sourceId: 'productDecision' }],
+    }],
+    initialValues: [{ key, value: enabled }],
+    values: [{ key, value: disabled }],
+  }
+  const globalSnapshot: GlobalSettingsSnapshot = {
+    ...projectSnapshot,
+    projectId: null,
+    revision: 7,
+  }
+  const targets: readonly AnySettingsSnapshot[] = [projectSnapshot, globalSnapshot]
+  const scopes = targets.map(target => ({
+    target,
+    scope: target.projectId === null ? 'global' : 'project',
+  }))
+  const cases = scopes.flatMap(({ target, scope }) =>
+    workspaceRequests(target).map(request => ({
+      method: request.method,
+      request,
+      target,
+      scope,
+    })),
+  )
+
+  function projectRequests(target: SettingsSnapshot): readonly SettingsRequest[] {
+    return [
+      createSettingsReadRequest(requestId, target.projectId),
+      createSettingsUpdateRequest(requestId, target, key, enabled),
+      createSettingsResetRequest(requestId, target, key),
+      createSettingsResetAllRequest(requestId, target),
+    ]
+  }
+
+  function workspaceRequests(target: AnySettingsSnapshot): readonly SettingsWorkspaceRequest[] {
+    const requests = target.projectId === null
+      ? [
+          createSettingsGlobalReadRequest(requestId),
+          createSettingsGlobalUpdateRequest(requestId, target, key, enabled),
+          createSettingsGlobalResetRequest(requestId, target, key),
+          createSettingsGlobalResetAllRequest(requestId, target),
+        ]
+      : projectRequests(target)
+    return [
+      ...requests,
+      createSettingsFileExportRequest(requestId, target, null),
+      createSettingsFilePreviewRequest(requestId, target),
+      createSettingsFileApplyRequest(requestId, target, fileSha256),
+    ]
+  }
+
+  function responseSnapshot(
+    request: SettingsWorkspaceRequest,
+    target: AnySettingsSnapshot,
+  ): AnySettingsSnapshot {
+    if (
+      request.method === 'settings.read' ||
+      request.method === 'settings.global.read' ||
+      request.method === 'settings.file.export'
+    ) {
+      return target
+    }
+    return {
+      ...target,
+      revision: request.method === 'settings.file.preview'
+        ? target.revision
+        : target.revision + 1,
+      snapshotDigest: target.initialSnapshotDigest,
+      values: target.initialValues,
+    }
+  }
+
+  function available(request: SettingsWorkspaceRequest, snapshot: AnySettingsSnapshot) {
+    const result = { status: 'available' as const, snapshot }
+    return {
+      version: 1 as const,
+      requestId: request.requestId,
+      method: request.method,
+      result: request.method.startsWith('settings.file.')
+        ? { ...result, fileSha256 }
+        : result,
+    }
+  }
+
+  it('exposes additive workspace signatures and transports all 11 actual request types', () => {
+    expect(new Set(cases.map(item => item.method))).toEqual(new Set(SETTINGS_WORKSPACE_METHODS))
+    expect(new Set(cases.map(item => item.method)).size).toBe(11)
+    expectTypeOf<BridgeClient['sendSettings']>().toEqualTypeOf<(request: SettingsRequest) => void>()
+    expectTypeOf<BridgeClient['onSettingsResponse']>().toEqualTypeOf<(listener: (response: SettingsResponse) => void) => () => void>()
+    expectTypeOf<BridgeClient['sendSettingsWorkspace']>().toEqualTypeOf<(request: SettingsWorkspaceRequest) => void>()
+    expectTypeOf<BridgeClient['onSettingsWorkspaceResponse']>().toEqualTypeOf<(listener: (response: SettingsWorkspaceResponse) => void) => () => void>()
+    expectTypeOf<BridgeClient['abandonSettingsWorkspaceRequest']>().toEqualTypeOf<(requestId: string) => void>()
+    expectTypeOf<BridgeClient['abandonSettingsRequest']>().toEqualTypeOf<(requestId: string) => void>()
+    expectTypeOf<Extract<Parameters<BridgeTransport['postMessage']>[0], { method: SettingsWorkspaceRequest['method'] }>>().toEqualTypeOf<SettingsWorkspaceRequest>()
+    expectTypeOf<import('./index').SettingsWorkspaceRequest>().toEqualTypeOf<SettingsWorkspaceRequest>()
+    expectTypeOf<import('./index').SettingsWorkspaceResponse>().toEqualTypeOf<SettingsWorkspaceResponse>()
+  })
+
+  it.each(cases)('round-trips $method ($scope) once without leaking to the legacy listener', ({ request, target }) => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const workspaceListener = vi.fn()
+    const legacyListener = vi.fn()
+    client.onSettingsWorkspaceResponse(workspaceListener)
+    client.onSettingsResponse(legacyListener)
+
+    client.sendSettingsWorkspace(request)
+    expect(transport.posted).toEqual([request])
+    expect(transport.posted[0]).toBe(request)
+    const response = available(request, responseSnapshot(request, target))
+    const wire: unknown = JSON.parse(JSON.stringify(response))
+    expect(parseSettingsWorkspaceResponse(wire)).not.toBeNull()
+    transport.emit(wire)
+    transport.emit(wire)
+
+    expect(workspaceListener).toHaveBeenCalledExactlyOnceWith(response)
+    expect(legacyListener).toHaveBeenCalledTimes(
+      SETTINGS_METHODS.some(method => method === request.method) ? 1 : 0,
+    )
+  })
+
+  it.each(projectRequests(projectSnapshot))('preserves legacy $method and also notifies workspace subscribers once', request => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const legacyListener = vi.fn()
+    const workspaceListener = vi.fn()
+    client.onSettingsResponse(legacyListener)
+    client.onSettingsWorkspaceResponse(workspaceListener)
+    client.sendSettings(request)
+    const response = available(request, responseSnapshot(request, projectSnapshot))
+
+    transport.emit(response)
+    transport.emit(response)
+
+    expect(transport.posted).toEqual([request])
+    expect(legacyListener).toHaveBeenCalledExactlyOnceWith(response)
+    expect(workspaceListener).toHaveBeenCalledExactlyOnceWith(response)
+  })
+
+  it.each(cases)('retains $method ($scope) pending after stale IDs, wrong methods/scopes, and invalid input', ({ request, target }) => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    const legacyListener = vi.fn()
+    client.onSettingsWorkspaceResponse(listener)
+    client.onSettingsResponse(legacyListener)
+    client.sendSettingsWorkspace(request)
+    const snapshot = responseSnapshot(request, target)
+    const response = available(request, snapshot)
+    const wrongMethod = request.method === 'settings.global.read'
+      ? available(createSettingsReadRequest(requestId, projectSnapshot.projectId), projectSnapshot)
+      : available(createSettingsGlobalReadRequest(requestId), globalSnapshot)
+    const wrongScope = target.projectId === null ? otherProjectId : null
+
+    transport.emit({ ...response, requestId: secondRequestId })
+    transport.emit(wrongMethod)
+    transport.emit({ ...response, method: 'settings.file.delete' })
+    transport.emit({ ...response, unexpected: true })
+    transport.emit(available(request, { ...snapshot, projectId: wrongScope }))
+    transport.emit(available(request, { ...snapshot, projectId: otherProjectId }))
+    transport.emit(available(request, { ...snapshot, profileVersion: '01.0.0' }))
+    expect(listener).not.toHaveBeenCalled()
+    expect(legacyListener).not.toHaveBeenCalled()
+    const next = { ...request, requestId: secondRequestId }
+    expect(() => client.sendSettingsWorkspace(next)).toThrow('already pending')
+
+    transport.emit(response)
+    expect(listener).toHaveBeenCalledExactlyOnceWith(response)
+    client.sendSettingsWorkspace(next)
+    transport.emit(response)
+    expect(listener).toHaveBeenCalledOnce()
+    expect(transport.posted).toEqual([request, next])
+  })
+
+  it.each(cases.filter(({ request }) =>
+    request.method !== 'settings.read' && request.method !== 'settings.global.read',
+  ))('pins $method ($scope) to the expected profile and revision, not just the project', ({ request, target }) => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    client.onSettingsWorkspaceResponse(listener)
+    client.sendSettingsWorkspace(request)
+    const snapshot = responseSnapshot(request, target)
+    const mismatches: readonly Partial<SettingsSnapshot>[] = [
+      { profileId: otherProjectId },
+      { profileVersion: '2.0.0' },
+      { profileDigest: '9'.repeat(64) },
+      { revision: target.revision - 1 },
+      { revision: target.revision + 2 },
+    ]
+    for (const mismatch of mismatches) {
+      const response = available(request, { ...snapshot, ...mismatch })
+      expect(parseSettingsWorkspaceResponse(response)).not.toBeNull()
+      transport.emit(response)
+    }
+    expect(listener).not.toHaveBeenCalled()
+
+    const response = available(request, snapshot)
+    transport.emit(response)
+    expect(listener).toHaveBeenCalledExactlyOnceWith(response)
+  })
+
+  it.each(scopes)('accepts a changed preview digest at current revision zero for $scope, then applies against saved identity', ({ target }) => {
+    const saved = {
+      ...target,
+      revision: 0,
+      snapshotDigest: target.initialSnapshotDigest,
+      values: target.initialValues,
+    }
+    const candidate = {
+      ...saved,
+      snapshotDigest: 'b'.repeat(64),
+      values: [{ key, value: disabled }],
+    }
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    client.onSettingsWorkspaceResponse(listener)
+    const preview = createSettingsFilePreviewRequest(requestId, saved)
+    client.sendSettingsWorkspace(preview)
+    const advanced = available(preview, { ...candidate, revision: 1 })
+    expect(parseSettingsWorkspaceResponse(advanced)).not.toBeNull()
+    transport.emit(advanced)
+    expect(listener).not.toHaveBeenCalled()
+
+    const response = available(preview, candidate)
+    transport.emit(response)
+    expect(listener).toHaveBeenCalledExactlyOnceWith(response)
+    expect(candidate.snapshotDigest).not.toBe(saved.snapshotDigest)
+    expect(candidate.initialValues).toEqual(saved.initialValues)
+    const apply = createSettingsFileApplyRequest(secondRequestId, saved, fileSha256)
+    expect(apply.params.expectedRevision).toBe(0)
+    expect(apply.params.expectedSnapshotDigest).toBe(saved.snapshotDigest)
+    expect(apply.params.expectedSnapshotDigest).not.toBe(candidate.snapshotDigest)
+    client.sendSettingsWorkspace(apply)
+    transport.emit(available(apply, { ...candidate, revision: 1 }))
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(scopes)('accepts a $scope update no-op only with the unchanged saved digest', ({ target }) => {
+    const request = target.projectId === null
+      ? createSettingsGlobalUpdateRequest(requestId, target, key, disabled)
+      : createSettingsUpdateRequest(requestId, target, key, disabled)
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    client.onSettingsWorkspaceResponse(listener)
+    client.sendSettingsWorkspace(request)
+
+    transport.emit(available(request, {
+      ...target,
+      snapshotDigest: target.initialSnapshotDigest,
+      values: target.initialValues,
+    }))
+    expect(listener).not.toHaveBeenCalled()
+    const response = available(request, target)
+    transport.emit(response)
+    expect(listener).toHaveBeenCalledExactlyOnceWith(response)
+  })
+
+  it.each(scopes)('exports the saved $scope snapshot and accepts a new file hash, not the overwrite hash', ({ target }) => {
+    const request = createSettingsFileExportRequest(requestId, target, previousFileSha256)
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    client.onSettingsWorkspaceResponse(listener)
+    client.sendSettingsWorkspace(request)
+
+    transport.emit(available(request, { ...target, snapshotDigest: target.initialSnapshotDigest }))
+    transport.emit(available(request, { ...target, revision: target.revision + 1 }))
+    expect(listener).not.toHaveBeenCalled()
+    const response = available(request, target)
+    transport.emit(response)
+    expect(listener).toHaveBeenCalledExactlyOnceWith(response)
+    expect(fileSha256).not.toBe(request.params.expectedFileSha256)
+    expect(fileSha256).not.toBe(target.snapshotDigest)
+  })
+
+  it.each(scopes)('requires the preview file hash on a successful $scope apply without equating it to a snapshot digest', ({ target }) => {
+    const request = createSettingsFileApplyRequest(requestId, target, fileSha256)
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    client.onSettingsWorkspaceResponse(listener)
+    client.sendSettingsWorkspace(request)
+    const snapshot = responseSnapshot(request, target)
+    const response = available(request, snapshot)
+
+    transport.emit({ ...response, result: { ...response.result, fileSha256: previousFileSha256 } })
+    transport.emit(available(request, { ...snapshot, revision: target.revision }))
+    expect(listener).not.toHaveBeenCalled()
+    transport.emit(response)
+    expect(listener).toHaveBeenCalledExactlyOnceWith(response)
+    expect(snapshot.snapshotDigest).not.toBe(target.snapshotDigest)
+    expect(fileSha256).not.toBe(snapshot.snapshotDigest)
+  })
+
+  it.each(cases)('delivers strict $method ($scope) failures once and releases pending, including overwriteRequired hashes', ({ request }) => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    const legacyListener = vi.fn()
+    client.onSettingsWorkspaceResponse(listener)
+    client.onSettingsResponse(legacyListener)
+    const file = request.method.startsWith('settings.file.')
+    const commonStatuses = ['forbidden', 'notFound', 'unbound', 'conflict', 'invalid', 'unavailable']
+    const statuses = file
+      ? [...commonStatuses, 'fileNotFound', 'profileMismatch', 'snapshotMismatch', 'overwriteRequired']
+      : commonStatuses
+
+    for (const [index, status] of statuses.entries()) {
+      client.sendSettingsWorkspace(request)
+      const result = file
+        ? { status, snapshot: null, fileSha256: status === 'overwriteRequired' ? previousFileSha256 : null }
+        : { status, snapshot: null }
+      const response = { version: 1, requestId: request.requestId, method: request.method, result }
+      expect(parseSettingsWorkspaceResponse(response)).not.toBeNull()
+      transport.emit({ ...response, requestId: secondRequestId })
+      if (file) {
+        transport.emit({
+          ...response,
+          result: { ...result, fileSha256: status === 'overwriteRequired' ? null : fileSha256 },
+        })
+      }
+      expect(listener).toHaveBeenCalledTimes(index)
+      transport.emit(response)
+      transport.emit(response)
+      expect(listener).toHaveBeenCalledTimes(index + 1)
+      expect(listener).toHaveBeenLastCalledWith(response)
+    }
+    expect(legacyListener).toHaveBeenCalledTimes(
+      SETTINGS_METHODS.some(method => method === request.method) ? statuses.length : 0,
+    )
+  })
+
+  it.each(['abandonSettingsRequest', 'abandonSettingsWorkspaceRequest'] as const)('shares pending across both send APIs and cancels either with %s', abandon => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    const legacyListener = vi.fn()
+    client.onSettingsWorkspaceResponse(listener)
+    client.onSettingsResponse(legacyListener)
+    const first = createSettingsReadRequest(requestId, projectSnapshot.projectId)
+    const second = createSettingsFilePreviewRequest(secondRequestId, globalSnapshot)
+
+    client.sendSettings(first)
+    expect(() => client.sendSettingsWorkspace(second)).toThrow('already pending')
+    client[abandon](secondRequestId)
+    expect(() => client.sendSettingsWorkspace(second)).toThrow('already pending')
+    client[abandon](requestId)
+    client.sendSettingsWorkspace(second)
+    expect(() => client.sendSettings(first)).toThrow('already pending')
+    transport.emit(available(first, projectSnapshot))
+    const candidate = responseSnapshot(second, globalSnapshot)
+    transport.emit(available(second, { ...candidate, projectId: projectSnapshot.projectId }))
+    expect(listener).not.toHaveBeenCalled()
+    expect(legacyListener).not.toHaveBeenCalled()
+
+    client[abandon](secondRequestId)
+    transport.emit(available(second, candidate))
+    expect(listener).not.toHaveBeenCalled()
+    client.sendSettings(first)
+    transport.emit(available(first, projectSnapshot))
+    expect(listener).toHaveBeenCalledOnce()
+    expect(legacyListener).toHaveBeenCalledOnce()
+    expect(transport.posted).toEqual([first, second, first])
+
+    transport.throwOnPost = true
+    expect(() => client.sendSettings(first)).toThrow('transport failed')
+    transport.throwOnPost = false
+    client.sendSettingsWorkspace(second)
+    transport.emit(available(second, candidate))
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(legacyListener).toHaveBeenCalledOnce()
+  })
+
+  it.each(cases)('clears $method ($scope) pending on transport failure and permits retry', ({ request, target }) => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    client.onSettingsWorkspaceResponse(listener)
+    const response = available(request, responseSnapshot(request, target))
+    transport.throwOnPost = true
+
+    expect(() => client.sendSettingsWorkspace(request)).toThrow('transport failed')
+    transport.emit(response)
+    expect(listener).not.toHaveBeenCalled()
+    expect(transport.posted).toEqual([])
+
+    transport.throwOnPost = false
+    client.sendSettingsWorkspace(request)
+    transport.emit(response)
+    expect(listener).toHaveBeenCalledExactlyOnceWith(response)
+    expect(transport.posted).toEqual([request])
+  })
+
+  it('unsubscribes legacy and workspace listeners independently', () => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const legacy = vi.fn()
+    const removedLegacy = vi.fn()
+    const workspace = vi.fn()
+    const removedWorkspace = vi.fn()
+    client.onSettingsResponse(legacy)
+    const unsubscribeLegacy = client.onSettingsResponse(removedLegacy)
+    client.onSettingsWorkspaceResponse(workspace)
+    const unsubscribeWorkspace = client.onSettingsWorkspaceResponse(removedWorkspace)
+    unsubscribeLegacy()
+    unsubscribeLegacy()
+    unsubscribeWorkspace()
+    unsubscribeWorkspace()
+
+    const project = createSettingsReadRequest(requestId, projectSnapshot.projectId)
+    client.sendSettings(project)
+    transport.emit(available(project, projectSnapshot))
+    const global = createSettingsGlobalReadRequest(secondRequestId)
+    client.sendSettingsWorkspace(global)
+    transport.emit(available(global, globalSnapshot))
+
+    expect(legacy).toHaveBeenCalledOnce()
+    expect(workspace).toHaveBeenCalledTimes(2)
+    expect(removedLegacy).not.toHaveBeenCalled()
+    expect(removedWorkspace).not.toHaveBeenCalled()
+  })
+
+  it.each(cases)('disposes $method ($scope) pending and both listener families without late delivery', ({ request, target }) => {
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const legacy = vi.fn()
+    const workspace = vi.fn()
+    const unsubscribeLegacy = client.onSettingsResponse(legacy)
+    const unsubscribeWorkspace = client.onSettingsWorkspaceResponse(workspace)
+    client.sendSettingsWorkspace(request)
+    client.dispose()
+    client.dispose()
+    unsubscribeLegacy()
+    unsubscribeWorkspace()
+    expect(transport.listenerCount).toBe(0)
+    const response = available(request, responseSnapshot(request, target))
+    transport.emit(response)
+    expect(legacy).not.toHaveBeenCalled()
+    expect(workspace).not.toHaveBeenCalled()
+
+    const project = createSettingsReadRequest(requestId, projectSnapshot.projectId)
+    expect(() => client.sendSettings(project)).toThrow('disposed')
+    expect(() => client.sendSettingsWorkspace(request)).toThrow('disposed')
+    expect(() => client.abandonSettingsRequest(requestId)).toThrow('disposed')
+    expect(() => client.abandonSettingsWorkspaceRequest(requestId)).toThrow('disposed')
+    expect(() => client.onSettingsResponse(legacy)).toThrow('disposed')
+    expect(() => client.onSettingsWorkspaceResponse(workspace)).toThrow('disposed')
+
+    const replacement = createBridgeClient(transport)
+    const nextListener = vi.fn()
+    replacement.onSettingsWorkspaceResponse(nextListener)
+    replacement.sendSettingsWorkspace(request)
+    transport.emit(response)
+    expect(nextListener).toHaveBeenCalledExactlyOnceWith(response)
+    expect(workspace).not.toHaveBeenCalled()
+    expect(legacy).not.toHaveBeenCalled()
+    replacement.dispose()
+  })
+
+  it.each(['sendSettings', 'sendSettingsWorkspace'] as const)('registers pending before synchronous %s transport replies and clears it before callbacks', send => {
+    const first = createSettingsReadRequest(requestId, projectSnapshot.projectId)
+    const second = createSettingsReadRequest(secondRequestId, projectSnapshot.projectId)
+    class ReplyingTransport extends FakeTransport {
+      override postMessage(message: Parameters<BridgeTransport['postMessage']>[0]): void {
+        super.postMessage(message)
+        this.emit({ ...available(first, projectSnapshot), requestId: message.requestId })
+      }
+    }
+    const transport = new ReplyingTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn((response: SettingsWorkspaceResponse) => {
+      if (response.requestId === requestId) client.sendSettingsWorkspace(second)
+    })
+    client.onSettingsWorkspaceResponse(listener)
+
+    client[send](first)
+
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(transport.posted).toEqual([first, second])
+  })
+
+  it('captures the target identity rather than retaining mutable request params', () => {
+    const original = createSettingsFilePreviewRequest(requestId, globalSnapshot)
+    const params = { ...original.params }
+    const request = { ...original, params }
+    const transport = new FakeTransport()
+    const client = createBridgeClient(transport)
+    const listener = vi.fn()
+    client.onSettingsWorkspaceResponse(listener)
+    client.sendSettingsWorkspace(request)
+
+    params.projectId = otherProjectId
+    params.expectedRevision = 99
+    params.expectedProfileId = otherProjectId
+    params.expectedProfileVersion = '9.0.0'
+    params.expectedProfileDigest = '9'.repeat(64)
+    params.expectedSnapshotDigest = '9'.repeat(64)
+    const response = available(original, responseSnapshot(original, globalSnapshot))
+    transport.emit(response)
+
+    expect(listener).toHaveBeenCalledExactlyOnceWith(response)
   })
 })
 

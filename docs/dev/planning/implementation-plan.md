@@ -5,7 +5,7 @@
 **設計根拠:** `docs/dev/research/default-settings-research.md`、`docs/dev/decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md`、`docs/dev/research/implementation-research.md`、`docs/dev/reviews/adversarial-review.md`
 **初版計画日:** 2026年8月26日
 **再baseline日:** 2026年9月2日
-**計画状態:** 業務系は`V2-000`〜`V2-009`とshared integrationを完了し、次は`V2-010`自動代理評価である。別系統として、2026-09-06に承認されたOSLの1操作起動・配布実装を進行中。現在の実施・検証状態は§0.7の参照先を正本とする。
+**計画状態（2026-09-10 JST追補）:** 業務系は`V2-000`〜`V2-009`とshared integrationを完了。`V2-010/011`と必要なbackendを実接続し、**54実行単位からUX-041／UX-043を除く対象52単位を達成**した。限定合成実統合、全回帰・静的検査・資源結合・最終独立レビューは完了（§0.8.2）。App packageは`0.1.1.0`へ更新され、[CHANGELOGのUnreleased](../../../CHANGELOG.md#unreleased)へ反映済み。版更新後の検査・最終機械監査は主作業の確認予定で、本同期では未実行。V2全体・一般提供の完了とはせず、OSLの起動・配布検証は§0.7の別判定を維持する。
 
 ### 旧203 task baselineの履歴snapshot
 
@@ -103,8 +103,8 @@ SQLite業務store、永続job、worker protocol、編集操作、review/approval
 | `V2-007` | **完了。** closed候補を可逆な自動decisionへ適用するorchestrator。[敵対的レビュー](../reviews/v2-007-auto-decision-adversarial-review.md)はPASS | V2-002,A-007〜A-009,A-016,R-001〜R-003 | 明示cut/exact反復/版付き無音だけを自動適用し、曖昧候補を採用しない | FR-005,FR-030,NFR-008 |
 | `V2-008` | **完了。** 長尺、最大3短尺、字幕variant、thumbnail候補の標準Composition計画。[敵対的再レビュー](../reviews/v2-008-standard-composition-adversarial-rereview.md)はPASS | V2-003,V2-007,E-001/E-002/E-004/E-005/E-009,R-015 | 根拠付き候補だけ、候補不足を捏造せず理由記録、safe fallback layout | FR-007〜FR-015,FR-021/031 |
 | `V2-009` | **完了。** `Music/` read-only catalog、社内限定policy、決定的選択、ducking。[敵対的レビュー](../reviews/v2-009-music-catalog-policy-adversarial-review.md)はPASS | V2-002,V2-003,S-006,E-006/E-008 | asset変更なし、technical probe、cue長以上、digest順、loopなし、外部profile拒否、本編既定OFF。不在・不適格ならBGMなし+warning、音楽的適合性は`NOT EVALUATED` | FR-019/020,BR-004 |
-| `V2-010` | 自動代理評価のdomain、engine、evidence | V2-003,V2-008,V2-009,R-021,S-012/S-013 | PASS/WARNING/FAIL/NOT EVALUATED、環境・規則版・digest、human claim禁止。字幕の網羅性、speech/BGM理解、metadataの事実性は根拠なしにPASSにしない | FR-025/034,NFR-005/006/008,AC-006 |
-| `V2-011` | 単一利用者state、export policy、旧review data compatibility | V2-010,S-001/S-002/S-004/S-008/S-011/S-016 | approvalなし社内出力、closed failure block、旧event読取、scope自動拡大なし | FR-029,NFR-004,AC-004 |
+| `V2-010` | 自動代理評価のdomain、engine、evidence。**domain・観測集約engine・canonical・store/schema 009と実QC producer→App/UIを接続済み。今回52単位に関する限定実統合・全回帰は完了。V2全体の受入は別判定**（§0.8.2） | V2-003,V2-008,V2-009,R-021,S-012/S-013 | PASS/WARNING/FAIL/NOT EVALUATED、環境・規則版・digest、human claim禁止。字幕の網羅性、speech/BGM理解、metadataの事実性は根拠なしにPASSにしない | FR-025/034,NFR-005/006/008,AC-006 |
+| `V2-011` | 単一利用者state、export policy、旧review data compatibility。**state・出力許可/非同期消費・store/schema 010と実delivery／再読込を接続済み。今回52単位に関する限定実統合・全回帰は完了。V2全体の受入は別判定**（§0.8.2） | V2-010,S-001/S-002/S-004/S-008/S-011/S-016 | approvalなし社内出力、closed failure block、旧event読取、scope自動拡大なし | FR-029,NFR-004,AC-004 |
 | `V2-012` | 進捗・成果物・評価結果・任意self-review UI | V2-005,V2-006,V2-010,V2-011,U-006/U-012/U-013 | warningから時刻/設定/根拠へ移動、任意修正・再評価、human/proxy表示分離 | §14.2/14.5,FR-026/029/034 |
 | `V2-013` | 実render、delivery、付帯成果物の統合 | V2-008〜V2-012,R-019〜R-024,R-026 | profileどおりの全編decode/A-V/subtitle/audio/provenance QC、atomic昇格。付帯metadataは元動画・設定値の根拠必須、根拠なし項目は未生成 | FR-020/025/031/032,NFR-003/008 |
 | `V2-014` | 許可済みsampleを使うsource-only受入、全回帰、package再検証 | V2-013,PK-006/PK-007,Q-001/Q-002/Q-004〜Q-013 | Git管理外assetが実在する元worktreeまたは明示設定pathで実行。標準成果物、不成立理由、設定snapshot、自動代理評価、供給網証拠を実測。未実施human/外部/legalをPASSにしない | §18,AC-001〜AC-006 |
@@ -155,7 +155,7 @@ flowchart TD
    V2013 --> V2014[V2-014 acceptance / package]
 ```
 
-`V2-000`〜`V2-009`は個別・shared integrationの全回帰と敵対的レビューを完了した。`V2-008`と`V2-009`への依存が成立したため、次は`V2-010`自動代理評価を実装する。
+`V2-000`〜`V2-009`は個別・shared integrationの全回帰と敵対的レビューを完了した。`V2-010/011`と必要なbackendを含む今回52単位の実接続・限定実統合・全回帰は完了した（§0.8.2）。V2全体の残る受入は既存責務として追跡し、上記DAGのID・依存関係は変更しない。
 
 これは業務系のDAGであり、利用者が後日承認した起動・配布系OSLの順序を取り消す指示ではない。OSLは§0.7へ分離して管理する。
 
@@ -173,14 +173,14 @@ flowchart TD
 ### 0.7 OS-onlyの1操作起動（2026-09-06追補）
 
 - 要求はNFR-009/AC-007、配布判断は[ADR-0010](../decisions/ADR-0010-one-action-portable-launch.md)。インストーラー等は将来事項であり、現在のOSL技術検証に旧MSIX install gateを持ち込まない。
-- ファイル所有権と依存順は[OSL実装計画](../../../work/20260906-OneActionLaunch-ImplementationPlan.md)、最新attempt・個別レビュー・未完了事項は[実行台帳](../../../work/20260906-OneActionLaunch-Execution.md)で管理する。
+- ファイル所有権と依存順は本節§0.7と[ADR-0010](../decisions/ADR-0010-one-action-portable-launch.md)、最新attempt・個別レビュー・未完了事項は[残タスク状況](../reviews/remaining-task-status.md)と関連レビューで管理する。
 - OSL-012はローカル候補生成・SBOM・検証サマリーの基盤を完了し、後続の修正と再固定を経て現在の技術評価候補は`candidate-review-06`である。OSL-012の成功を、clean production Windows、署名・一般提供、業務E2Eの完了へ読み替えない。
 
 #### 0.7.1 OSL状態とNFR-009/AC-007対応
 
 | 範囲 | 現在状態 | NFR-009/AC-007への扱い | 主な既存参照 |
 |---|---|---|---|
-| `OSL-012` | 完了。現行候補は`candidate-review-06` | 候補EXE、SPDX 2.2 SBOM、公開検証サマリー、内容hashを技術評価の入力にする。release approvalやclean OS受入ではない | [portable distribution runbook](../packaging/portable-distribution.md)、[実行台帳](../../../work/20260906-OneActionLaunch-Execution.md) |
+| `OSL-012` | 完了。現行候補は`candidate-review-06` | 候補EXE、SPDX 2.2 SBOM、公開検証サマリー、内容hashを技術評価の入力にする。release approvalやclean OS受入ではない | [portable distribution runbook](../packaging/portable-distribution.md)、[1操作起動レビュー](../reviews/one-action-launch-adversarial-review.md) |
 | `OSL-013` | 完了 | 候補EXE、Contents、payload manifest、SBOMの対応を確認済み。実行・信頼・一般提供の証拠ではない | [portable distribution runbook](../packaging/portable-distribution.md) |
 | `OSL-014` | 本PC正常系PASS | 現行ホストでnative Ready、cold/warm、同梱Runtime、展開tree不変、通常終了を確認。clean OS、JavaScript受領ACK独立確認、負例・異常系は`NOT EVALUATED` | [OSL-014記録](../reviews/osl-014-local-host-verification.md)、[残タスク状況](../reviews/remaining-task-status.md) |
 | `OSL-015` | 完了 | Worker/native imports、FFmpeg/ffprobe、CPU/int8 model load、候補hash不変を独立確認。ASR精度、clean OS、業務E2Eではない | [残タスク状況](../reviews/remaining-task-status.md) |
@@ -192,7 +192,7 @@ flowchart TD
 | `OSL-021` | 利用者指示により明示スキップ | 署名・実配布・MOTW/policy受入は未実施。一般提供gateとしては未成立 | [portable signing runbook](../packaging/portable-signing.md)、[残タスク状況](../reviews/remaining-task-status.md) |
 | `OSL-022`〜`OSL-026` | 文書同期済み | 技術評価候補、開発者前提、アーキテクチャ境界、品質/security gate、非技術者向け起動説明を同期。一般提供完了とは書かない | [portable distribution runbook](../packaging/portable-distribution.md)、[MSIX README](../../../packaging/HubRadio.Package/README.md)、[getting-started](../getting-started.md)、[dev README](../README.md)、[architecture overview](../architecture/overview.md)、[quality](../quality.md)、[security/privacy](../security-privacy.md)、[README](../../../README.md)、[troubleshooting](../troubleshooting.md) |
 | `OSL-027` | 完了 | 本節でOSL/NFR-009/AC-007、PK/Q/V2の依存境界を同期した。旧203 task snapshotや過去証拠は変更しない | 本書§0.7 |
-| `OSL-028` | 未着手 | 技術検証全体の独立レビュー・差分整合は未実施。一般提供時はOSL-021結果を入力に再レビューする | [OSL実装計画](../../../work/20260906-OneActionLaunch-ImplementationPlan.md) |
+| `OSL-028` | 未着手 | 技術検証全体の独立レビュー・差分整合は未実施。一般提供時はOSL-021結果を入力に再レビューする | 本書§0.7、[残タスク状況](../reviews/remaining-task-status.md) |
 
 #### 0.7.2 PK/Q/V2との依存境界
 
@@ -202,6 +202,56 @@ flowchart TD
 - `Q-001`〜`Q-013`と`AC-001`〜`AC-006`は動画編集アプリケーション全体の受入であり、OSLの起動技術検証とは別である。NFR-009/AC-007の本PC正常系PASSを、動画1本から納品までのend-to-end成功へ読み替えない。
 - `V2-010`〜`V2-014`は業務系の別critical pathである。OSL-019/020の技術候補と証拠は`V2-014`のpackage再検証へ入力にできるが、一般提供判定にはOSL-021の署名後bytes受入とOSL-028のレビューが別途必要である。V2未完了機能を無視して「全製品完了」と表示しない。
 - 上記の現行判断を優先し、旧203 task snapshotと過去の未実施証拠は変更しない。
+
+### 0.8 UI/UX改善（2026-09-07承認）
+
+> **履歴の読み方:** 以下の冒頭記録・箇条書きと§0.8.1は2026-09-08までの承認・実装境界を保存する。A17によるbackend待機、E契約未受領、全54単位完了後という当時の条件を現在へ適用しない。現在の52必須範囲・接続状態・更新条件は§0.8.2を優先する。
+
+利用者は2026-09-07のUI/UX第2版方針A01〜A20と実行を承認した。[ADR-0011](../decisions/ADR-0011-compact-workflow-and-settings-file.md)、[UI実装契約](../architecture/ui-workflow-contract.md)、本書§0.8.2をこの枝の正本とする。9月7日・8日の途中経過と過去のV2完了記録・旧203タスク・OSLの履歴は、[品質記録](../quality.md)と関連レビューの履歴節で保全する。
+
+- V2-012の画面整理はUX-028〜039B/050が引き継ぐ。新しい過去版復元UI/RPCはV2-012のR-003再受入責務に残す。
+- V2-010/011/013のUI非依存契約（実開始、実評価、実成果物、再生成）はbackend側で先に確定する。UI単独の実装はこれらの完成を意味しない。
+- 大タスクのV2-012全完了→V2-013全完了を個別UIの着手条件にはしない。順序は「UI非依存契約→backend／UIを独立実装→UX-040A〜Dの結合受入」とし、未受領の実契約をfixtureで本番補完しない。
+- UI枝はtaskごとにfocused/関連回帰・独立敵対的レビュー・指摘反映を確認してから後続へ進む。共有schema等の不可分変更は直列taskの統合単位で検証し、全回帰はG-UI前後と実接続後に行う。
+- G-UIはUI・設定保存の部分到達、G-LIVEは実データ接続の到達。実契約が未受領ならUX-040系と最終UX-048は未完了。任意人手観察・clean OS・署名・全製品受入は別記録を維持する。
+- 利用者の追加指示に従い、全54実行単位の完了後にだけCHANGELOGのUnreleasedとpackage PATCH更新を行う。未完了をrelease更新で隠さない。
+
+#### 0.8.1 現在の実装境界と残る接続（2026-09-08）
+
+> **2026-09-08時点の履歴:** 以下の「現在」「未接続」は当時の状態を指す。実接続済みの現在状態と52必須範囲は§0.8.2で上書きし、当時の本文は変更しない。
+
+- **A17を維持する。** 未完了V2 backendはUI改善と別依存で、実接続は待機可能。既存task ID・DAG・完了条件を維持し、既存`V2-013`を新設taskとして扱ったり、UI改善へ追加scopeを抱き合わせたりしない。
+- **UX-032の解析入力統合:** `WorkflowWorkspace`は`AnalysisPanel`へ`readOnly`を渡さず、`analysisDirty`で未送信入力の案件切替を保護する。有効な既存snapshotがあれば項目別編集・候補の採否を利用でき、画面往復で未送信入力・ACK待ち・エラーを保持する。ホスト受付済みのstaged changesはメモリ内のみ（`persisted = false`）で、自動保存されない。入力の明示破棄で受付済み変更を戻すことはない。
+- **V2-010の実装済み境界:** Coreの`AutomatedEvaluation` domain・engine・canonical codecと`AutomatedEvaluationStore`、schema 009。engineは供給された観測を集約するもので、媒体のdecode/A-V/音量等を自ら実測するproducerではない。観測不足や人の理解・品質・法的判断をPASSへ補完しない。本番の実観測生成とApp/UIへの評価record供給は未接続。
+- **V2-011の実装済み境界:** schema 010、state/export policy、`QuickStartWorkflowStore`の実artifact検証付きauthorizationとone-shotの非同期消費。最終根拠照合・callback・receiptをimmediate transactionへ結び、Project revision/canonical snapshotと、正確な開始eventのcanonical digestに対する評価`InputDigest`を検証する。`TechnicalReevaluationStarted`は進行中の評価も新しい開始eventで置き換えられる。履歴から参照された評価の全列・規則を変更禁止とし、storeの履歴再構築・backup/restore検証も実装済み。ただし本番の実delivery統合・受入は未完了。
+- **未受領Eは継続:** E-STARTは`FinalizeSourceOnlyDraft`が実`jobId`を返さない。E-EVALUATIONは実pipelineの評価recordがApp/UIへ供給されない。E-RESULTはdelivery/layoutの未接続providerと、既定の未接続thumbnail template providerが残る。E-REGENERATEは設定snapshot→子版→実job→結果の製品経路が未接続。詳細は[UI実装契約§6](../architecture/ui-workflow-contract.md#6-外部依存の現在状態)を参照する。
+- **受入を分離する。** G-UIの部分到達・中間審査は、実E契約受領後のG-LIVEとUX-040A〜D／最終UX-048を代替しない。最終判断には実接続後の再試験・文書追補が必要。[UI/UX中間レビュー](../reviews/ui-ux-adversarial-review.md)へ指摘・反映・ローカル全回帰を記録したが、最終合格とはしない。全回帰の件数・hashと表示測定結果は実行台帳と審査記録で管理する。
+
+#### 0.8.2 対象52単位の完了と実接続の限定検証（2026-09-10 JST追補）
+
+- **必須範囲は52実行単位:** 当初54単位のうちUX-041／UX-043は利用者が明示除外した。両者は現在52単位の環境ブロッカーではない。必要なbackend実装・結合も承認範囲に含まれ、旧A17の「別依存として待機可能」は現在の実行条件ではない。新taskの追加や当初の手動機能scope拡大は行わない。
+- **E契約は実接続済み:** nativeのfinalize受付で案件・実行・実jobを確定し、`pipeline.read`の実snapshotからjob・版・結果を供給する。実offline ASR、`StandardArtifactGenerator`、実`OutputQc`、自動代理評価／state・出力policy、成果物setのローカル納品・再読込、明示的な再生成・再試行を接続した。`noJob`／未接続providerを通常経路の説明に使わず、未取得・不正な実値だけを理由付きで利用不可にする。
+- **字幕保存とsnapshot capture:** SQLite schema 12の`SubtitleEditStore`／`DurableSubtitleEditService`が字幕編集の子版・journalを保存し、commit後にACKする。再生成受付時に保存済み設定snapshotと字幕head／journal prefixを固定して子版へ投影する。後続編集は混入させず、字幕保存だけでは既存動画を変更しない。解析のstaged changesなど、他のセッション内編集まで永続化済みとはしない。
+- **当初の手動機能境界を維持:** UX-035のmanual reframe／layout・keyframe等はlegacyのセッション内機能／理由付き利用不可の範囲に留まり、source-onlyの字幕専用workspaceへ汎用手動編集・永続化を追加しない。UX-050の旧承認テンプレートによる手動thumbnailが`Unavailable`なのも当初の許容範囲である。一方、標準自動thumbnailは実際の元フレームを使う社内限定・ニュートラル経路へ接続済みであり、架空の`BrandApprover`や人手承認を作らない。UX-035／UX-050自体は52単位に残す。
+
+以下は2026-09-09に実行された既存ログの観測結果であり、本追補で再実行した結果ではない。各ログは1件成功・失敗0・skip 0である。
+
+| 限定技術検証 | 観測結果と範囲 | 既存ログ（Git管理外） |
+|---|---|---|
+| 初回生成・set納品・再読込 | **PASS。** 実offline ASR→実生成／QC→生成された全7成果物のset納品。store／pipeline再作成後の再読込・receipt再利用でも既存job・成果物を再実行／上書きしない | [observed-e2e-20260909T144834883Z-41b8cdcc](../../../artifacts/validation/observed-e2e-20260909T144834883Z-41b8cdcc.stdout.log) |
+| 再生成 | **PASS。** 新しい子版・job・納品を作り、元版・旧成果物・ASR根拠を保持 | [observed-e2e-20260909T145632533Z-ba46a2bd](../../../artifacts/validation/observed-e2e-20260909T145632533Z-ba46a2bd.stdout.log) |
+| 再試行 | **PASS。** 隔離model不在による実失敗を保持し、再読込・model復元後の明示retryで納品まで成功 | [observed-e2e-20260909T145852256Z-bac8df13](../../../artifacts/validation/observed-e2e-20260909T145852256Z-bac8df13.stdout.log) |
+| 保存済み字幕の実描画 | **PASS。** 既知の合成`Machine`字幕を手動修正・永続保存し、fresh serviceのreplayと変更設定で投影、実FFmpeg／機械QC、ASS／SRT／VTTと焼込画素差分・旧成果物不変を確認。**実認識や納品E2Eではない** | [observed-test-20260909T145059046Z-3a086056](../../../artifacts/validation/observed-test-20260909T145059046Z-3a086056.stdout.log) |
+
+最初の3件は**4秒の合成動画（無音）**で実offline ASRを動かした記録であり、原本`sample/20260615_024326000_iOS.MOV`は使用していない。手動字幕描画も別の4秒合成動画と既知の文字列を用いる。全7成果物は当該runの生成集合であって要求上の全成果物種類ではなく、ASR精度・実素材品質・人の理解の合格を示さない。再読込はstore／pipeline／serviceの再作成であり、native GUI再起動受入ではない。隔離workspace／DBで検証し、実ユーザーprofile・既存DBを変更せず、nativeアプリを起動していない。
+
+**G-LIVE、UX-040A〜D／最終UX-048を含む対象52単位は達成済み。** 最終独立レビューは重大指摘なしで閉鎖した。主作業による照合は52 ID・重複0、証拠hash18件で成功し、`artifacts/validation/final-evidence-hashes-20260909c.json`へ最終hash記録を残す。本結果をV2全体、原本sample・人手・clean OS・署名・legal／release受入へ拡張せず、9月7日・8日の54単位履歴、旧203 task表、OSL候補の履歴と`releaseApproved=false`を維持する。
+
+全回帰は**6,926成功・35 skip・失敗0**。Architectureは新PRI回帰を含む209成功、Appは2,410件＝2,402成功＋8 skip（環境条件4件＋opt-in実統合4件）。全体の35 skipは環境条件31件＋opt-in 4件で、別実行で成功した限定実統合4件を重複加算しない。初回E2Eは書式修正後の`observed-e2e-20260909T163411105Z-97f44d5a`でも成功した。以前のQC失敗は修正前の履歴であり、現在の未解決事項ではない。
+
+最終C# formatは`final-static-format-20260909T163633167Z`で成功し、39ファイルの構文トークン不変（説明コメント1行以外は空白修正）を照合済み。残る静的ブロッカーはない。runtime結合App出力`artifacts/validation/app-runtime-20260909c`は警告0・エラー0でビルド完了し、全6 rootのコピーとWeb manifest SHA-256 `8572ef7b0d75db6b83b4f2164f315ca4cb80371d6f8eee37e0322b15497d5134`の一致を検証済み。PRI修正はruntimeデータだけを通常MRT走査から除外し、WinUIのXBF／PRI・copy／publishを維持した。Vite約848KB bundle警告は残り、性能受入PASSとはしない。
+
+App packageは**`0.1.1.0`**へ更新され、[CHANGELOGのUnreleased](../../../CHANGELOG.md#unreleased)へ反映済み。実行用Appの.NET assembly版`1.0.0.0`とは別管理で、当該runtime出力の版を変更したとはしない。**版更新後の検査・最終機械監査は主作業の確認予定**で、本同期では実行していない。
 
 ---
 

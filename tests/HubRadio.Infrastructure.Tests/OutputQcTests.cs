@@ -184,7 +184,7 @@ public sealed class OutputQcTests
                 "7",
                 "-show_frames",
                 "-show_entries",
-                "frame=stream_index,best_effort_timestamp,duration",
+                "frame=stream_index,best_effort_timestamp,duration:frame_side_data=",
                 "-of",
                 "compact=p=0:nk=0:escape=none:s=|",
                 fixture.ArtifactPath,
@@ -371,14 +371,21 @@ public sealed class OutputQcTests
         ];
         foreach ((string output, OutputQcFailureReason reason) in failures)
         {
-            OutputQcException exception = AssertQcFailure(
-                () => OutputQc.ParseTimingOutput(
-                    stream,
-                    output,
-                    OutputQcStage.VideoTiming),
-                reason,
-                OutputQcStage.VideoTiming);
-            AssertDoesNotContain(exception.ToString(), output);
+            foreach (string variant in new[]
+            {
+                output,
+                output.Replace("\n", "|\n", StringComparison.Ordinal) + "|",
+            })
+            {
+                OutputQcException exception = AssertQcFailure(
+                    () => OutputQc.ParseTimingOutput(
+                        stream,
+                        variant,
+                        OutputQcStage.VideoTiming),
+                    reason,
+                    OutputQcStage.VideoTiming);
+                AssertDoesNotContain(exception.ToString(), variant);
+            }
         }
 
         AssertQcFailure(
@@ -407,6 +414,133 @@ public sealed class OutputQcTests
                 OutputQcStage.VideoTiming),
             OutputQcFailureReason.InvalidEncoding,
             OutputQcStage.VideoTiming);
+    }
+
+    [TestMethod]
+    [DataRow("\n")]
+    [DataRow("\r\n")]
+    public void TimingParserAcceptsObserved120FrameShapeWithFirstEmptySideDataSection(string newline)
+    {
+        // Reproduce the generated h264_mf compact shape: only frame zero has an empty section.
+        string[] lines = Enumerable.Range(0, 120).Select(static sequence =>
+            "stream_index=0|best_effort_timestamp=" +
+            (sequence * 1001L).ToString(System.Globalization.CultureInfo.InvariantCulture) +
+            "|duration=1001").ToArray();
+        string withoutEmptySection = string.Join(newline, lines) + newline;
+        lines[0] += "|";
+        string original = string.Join(newline, lines) + newline;
+
+        OutputQcStreamTiming timing = OutputQc.ParseTimingOutput(
+            CreateVideoStream(), original, OutputQcStage.VideoTiming);
+
+        Assert.AreEqual(120, timing.ObservedFrameCount);
+        Assert.AreEqual(new RationalTime(1, 30000), timing.TimeBase);
+        Assert.AreEqual(default(RationalTime), timing.PresentationStart);
+        Assert.AreEqual(new RationalTime(1001, 250), timing.PresentationEnd);
+        Assert.AreEqual(new RationalTime(1001, 250), timing.ObservedDuration);
+        for (int sequence = 0; sequence < 120; sequence++)
+        {
+            Assert.AreEqual(sequence, timing.Entries[sequence].Sequence);
+            Assert.AreEqual(sequence * 1001L, timing.Entries[sequence].PresentationTimestampTicks);
+            Assert.AreEqual(1001L, timing.Entries[sequence].DurationTicks);
+        }
+
+        var utf8 = new UTF8Encoding(false, true);
+        Assert.AreEqual(ContentDigest.Compute(utf8.GetBytes(original)), timing.EvidenceDigest);
+        Assert.AreNotEqual(
+            ContentDigest.Compute(utf8.GetBytes(withoutEmptySection)), timing.EvidenceDigest);
+    }
+
+    [TestMethod]
+    public void AudioTimingParserAcceptsSingleEmptySectionWithoutChangingRawEvidence()
+    {
+        const string original =
+            "stream_index=0|best_effort_timestamp=0|duration=1024|\r\n" +
+            "stream_index=0|best_effort_timestamp=1024|duration=1024|\r\n";
+        OutputQcStreamTiming timing = OutputQc.ParseTimingOutput(
+            CreateAudioStream(), original, OutputQcStage.AudioTiming);
+
+        Assert.AreEqual(2, timing.ObservedFrameCount);
+        Assert.AreEqual(default(RationalTime), timing.PresentationStart);
+        Assert.AreEqual(new RationalTime(16, 375), timing.PresentationEnd);
+        Assert.AreEqual(
+            ContentDigest.Compute(new UTF8Encoding(false, true).GetBytes(original)),
+            timing.EvidenceDigest);
+    }
+
+    [TestMethod]
+    [DataRow(OutputQcStage.VideoTiming)]
+    [DataRow(OutputQcStage.AudioTiming)]
+    public void TimingParserEmptySectionDoesNotRelaxRequiredFieldsOrRecordBoundaries(OutputQcStage stage)
+    {
+        ProbedMediaStream stream = stage == OutputQcStage.VideoTiming
+            ? CreateVideoStream()
+            : CreateAudioStream();
+        const string valid = "stream_index=0|best_effort_timestamp=0|duration=1001";
+        string[] invalidRecords =
+        [
+            string.Empty,
+            "\n",
+            "|",
+            "||",
+            "stream_index=0|duration=1001",
+            "best_effort_timestamp=0|duration=1001",
+            "stream_index=0|best_effort_timestamp=0|",
+            "stream_index=|best_effort_timestamp=0|duration=1001",
+            "stream_index=0|best_effort_timestamp=|duration=1001",
+            "stream_index=0|best_effort_timestamp=0|duration=",
+            "stream_index=N/A|best_effort_timestamp=0|duration=1001",
+            "stream_index=0|best_effort_timestamp=N/A|duration=1001",
+            "stream_index=0|best_effort_timestamp=0|duration=N/A",
+            "stream_index=0|best_effort_timestamp=0|duration=0",
+            "stream_index=0|best_effort_timestamp=0|duration=-1",
+            "stream_index=0|best_effort_timestamp=0|duration=1.5",
+            "stream_index=0|best_effort_timestamp=0.5|duration=1001",
+            "stream_index=0|best_effort_timestamp=9223372036854775808|duration=1001",
+            "stream_index=0|stream_index=0|duration=1001",
+            "stream_index=0|private=secret|duration=1001",
+            "stream_index=0||best_effort_timestamp=0|duration=1001",
+            "stream_index=0|best_effort_timestamp=0|1|duration=1001",
+            "|" + valid,
+            valid + "||",
+            valid + "|duration=1001",
+            valid + "|side_data_type=H.26[45] User Data Unregistered SEI message",
+            valid + "|side_datum=1|h_26_45_user_data_unregistered_sei_message=1",
+            valid + "|\t",
+            valid + "\0",
+            valid + "\n\n" + valid,
+        ];
+        foreach (string invalid in invalidRecords)
+        {
+            foreach (string suffix in new[] { string.Empty, "|" })
+            {
+                AssertQcFailure(
+                    () => OutputQc.ParseTimingOutput(stream, invalid + suffix, stage),
+                    OutputQcFailureReason.TimingOutputInvalid,
+                    stage);
+            }
+        }
+    }
+
+    [TestMethod]
+    public void SubtitleTimingParserStillRejectsAnEmptyTrailingSection()
+    {
+        var stream = new ProbedMediaStream(
+            2, MediaStreamKind.Other, "mov_text", null, null, null, null,
+            null, null, new RationalNumber(1, 1000000),
+            startSeconds: 0m, durationSeconds: 4m,
+            sampleRate: null, channels: null, channelLayout: null);
+        const string valid =
+            "media_type=subtitle|pts=1000000|pts_time=1.000000|format=1|" +
+            "start_display_time=0|end_display_time=2000|num_rects=1";
+        Assert.AreEqual(1, OutputQc.ParseSubtitleTimingOutput(stream, valid).ObservedCueCount);
+        foreach (string suffix in new[] { "|", "||" })
+        {
+            AssertQcFailure(
+                () => OutputQc.ParseSubtitleTimingOutput(stream, valid + suffix),
+                OutputQcFailureReason.TimingOutputInvalid,
+                OutputQcStage.SubtitleTiming);
+        }
     }
 
     [TestMethod]
@@ -824,6 +958,34 @@ public sealed class OutputQcTests
     }
 
     [TestMethod]
+    [DataRow("sample_rate", "44100")]
+    [DataRow("sample_rate", null)]
+    [DataRow("profile", "HE-AAC")]
+    [DataRow("profile", null)]
+    public async Task RunAsync_RejectsWrongOrMissingAudioRateAndProfile(string field, string? value)
+    {
+        using Fixture fixture = new();
+        OutputQc qc = fixture.CreateQc(runProcessAsync: (request, token) =>
+        {
+            token.ThrowIfCancellationRequested();
+            ProcessRunResult result = fixture.DefaultProcessResult(request);
+            if (fixture.IsProbeRequest(request))
+            {
+                JsonObject root = JsonNode.Parse(result.StandardOutput)!.AsObject();
+                JsonObject audio = root["streams"]!.AsArray()[1]!.AsObject();
+                if (value is null) audio.Remove(field);
+                else audio[field] = value;
+                result = result with { StandardOutput = root.ToJsonString() };
+            }
+            return Task.FromResult(result);
+        });
+        await AssertQcFailureAsync(() => qc.RunAsync(fixture.Request()),
+            OutputQcFailureReason.StreamMetadataMismatch, OutputQcStage.Probe,
+            OutputQcRemediationKind.TechnicalRerender);
+        Assert.HasCount(1, fixture.ProcessRequests); // no timing/decode after metadata rejection
+    }
+
+    [TestMethod]
     public async Task RunAsync_NullDependencyResultsFailClosedWithStableFailures()
     {
         using (Fixture nullArtifact = new())
@@ -1133,6 +1295,13 @@ public sealed class OutputQcTests
             sampleRate: null,
             channels: null,
             channelLayout: null);
+
+    private static ProbedMediaStream CreateAudioStream() =>
+        new(
+            0, MediaStreamKind.Audio, "aac", "LC", null, null, null,
+            null, null, new RationalNumber(1, 48000),
+            startSeconds: 0m, durationSeconds: 4m,
+            sampleRate: 48000, channels: 2, channelLayout: "stereo");
 
     private static OutputQcException AssertQcFailure(
         Action action,

@@ -14,7 +14,7 @@ public sealed class PythonRuntimePackageManifestTests
     private const string RuntimeWheelSetSha256 =
         "a08c4fafe13d834fdbdbdf031774b0b57f7dd03227700a8b525d0193f707f141";
     private const string WorkerSourceSetSha256 =
-        "a190c26138bf07a3070ca086e2370c911e4dd0541e192591657d66da99564c9d";
+        "1a1b1ab2e6ad4ecef67c2bb24b2229a7d18ce9279e3eae7207e2619db7107595";
 
     [TestMethod]
     public void RuntimeManifest_PinsOfficialWindowsX64EmbeddableArtifactAndIsolation()
@@ -96,10 +96,10 @@ public sealed class PythonRuntimePackageManifestTests
             File.ReadAllLines(Path.Combine(root, "packaging", "python", "python312._pth")));
 
         JsonElement output = manifest.GetProperty("output");
-        Assert.AreEqual(2695, output.GetProperty("expectedFileCount").GetInt32());
-        Assert.AreEqual(268_442_311, output.GetProperty("expectedTotalBytes").GetInt64());
+        Assert.AreEqual(2696, output.GetProperty("expectedFileCount").GetInt32());
+        Assert.AreEqual(268_462_606, output.GetProperty("expectedTotalBytes").GetInt64());
         Assert.AreEqual(
-            "1ef1e9fca2b89c006f6030de0b315a9255c9b969fdf3ac7cc36a30aeb412ab7f",
+            "eaadb7f2273afdb228b83df3966464703550c27a76a3ae0bb6b5e8539bb50350",
             output.GetProperty("expectedArtifactSetSha256").GetString());
     }
 
@@ -146,7 +146,10 @@ public sealed class PythonRuntimePackageManifestTests
             .EnumerateArray()
             .OrderBy(static file => file.GetProperty("path").GetString(), StringComparer.Ordinal)
             .ToArray();
-        Assert.AreEqual(6, expectedFiles.Length);
+        Assert.AreEqual(7, expectedFiles.Length);
+        Assert.AreEqual(7, worker.GetProperty("fileCount").GetInt32());
+        Assert.AreEqual(65_381, worker.GetProperty("totalBytes").GetInt64());
+        Assert.AreEqual(65_381, expectedFiles.Sum(static file => file.GetProperty("byteSize").GetInt64()));
 
         string[] actualPaths = Directory
             .EnumerateFiles(Path.Combine(workerRoot, "hubradio_worker"), "*.py", SearchOption.AllDirectories)
@@ -216,6 +219,136 @@ public sealed class PythonRuntimePackageManifestTests
         Assert.IsTrue(workerClient.Contains(
             "[\"-I\", \"-B\", \"-m\", \"hubradio_worker\", \"--protocol\"]",
             StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    [DataRow(true, "none")]
+    [DataRow(false, "none")]
+    [DataRow(false, "directory")]
+    [DataRow(false, "file")]
+    [DataRow(true, "directory")]
+    [DataRow(true, "file")]
+    public void RuntimeTreeMove_RequiresSuccessfulMoveAndPreservesExistingDestination(
+        bool sourceExists, string destinationKind)
+    {
+        string fixtureRoot = Path.Combine(Path.GetTempPath(), "hubradio-runtime-move-" + Guid.NewGuid().ToString("N"));
+        string sourcePath = Path.Combine(fixtureRoot, ".runtime.partial");
+        string destinationPath = Path.Combine(fixtureRoot, "runtime");
+        Directory.CreateDirectory(fixtureRoot);
+        try
+        {
+            if (sourceExists)
+            {
+                Directory.CreateDirectory(sourcePath);
+                File.WriteAllText(Path.Combine(sourcePath, "payload.txt"), "owned payload");
+            }
+            if (destinationKind == "directory")
+            {
+                Directory.CreateDirectory(destinationPath);
+                File.WriteAllText(Path.Combine(destinationPath, "payload.txt"), "foreign payload");
+            }
+            else if (destinationKind == "file")
+            {
+                File.WriteAllText(destinationPath, "foreign payload");
+            }
+
+            using JsonDocument result = RunRuntimeProbe("build-runtime.ps1", $$"""
+                $moveFunctions = @($ast.FindAll({ param($node)
+                    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -ceq 'Move-GeneratedTreeWithRetry'
+                }, $true))
+                if ($moveFunctions.Count -ne 1) { throw 'Expected exactly one runtime move helper.' }
+                . ([scriptblock]::Create($moveFunctions[0].Extent.Text))
+                $succeeded = $false
+                try {
+                    Move-GeneratedTreeWithRetry `
+                        -SourcePath '{{sourcePath.Replace("'", "''", StringComparison.Ordinal)}}' `
+                        -DestinationPath '{{destinationPath.Replace("'", "''", StringComparison.Ordinal)}}'
+                    $succeeded = $true
+                }
+                catch [IO.IOException], [UnauthorizedAccessException] { }
+                [pscustomobject]@{ succeeded = $succeeded } | ConvertTo-Json -Compress
+                """);
+
+            bool expectedSuccess = sourceExists && destinationKind == "none";
+            Assert.AreEqual(expectedSuccess, result.RootElement.GetProperty("succeeded").GetBoolean());
+            Assert.AreEqual(sourceExists && !expectedSuccess, Directory.Exists(sourcePath));
+            if (sourceExists)
+            {
+                string retainedRoot = expectedSuccess ? destinationPath : sourcePath;
+                Assert.AreEqual("owned payload", File.ReadAllText(Path.Combine(retainedRoot, "payload.txt")));
+            }
+            if (destinationKind == "directory")
+            {
+                Assert.AreEqual("foreign payload", File.ReadAllText(Path.Combine(destinationPath, "payload.txt")));
+            }
+            else if (destinationKind == "file")
+            {
+                Assert.AreEqual("foreign payload", File.ReadAllText(destinationPath));
+            }
+            else
+            {
+                Assert.AreEqual(expectedSuccess, Directory.Exists(destinationPath));
+                Assert.IsFalse(File.Exists(destinationPath));
+            }
+        }
+        finally
+        {
+            Directory.Delete(fixtureRoot, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void RuntimeBuildCleanup_PreservesOriginalFailureWhenCleanupFails(bool pathCheckFails)
+    {
+        using JsonDocument result = RunRuntimeProbe("build-runtime.ps1", $$"""
+            # Execute the real outer finally block, never the runtime build body.
+            $buildFinalizers = @($ast.EndBlock.Statements | Where-Object {
+                $_ -is [Management.Automation.Language.TryStatementAst] -and $null -ne $_.Finally -and
+                $_.Finally.Extent.Text.Contains('Remove-GeneratedTree', [StringComparison]::Ordinal)
+            })
+            if ($buildFinalizers.Count -ne 1) { throw 'Expected exactly one runtime build finalizer.' }
+            $pathCheckFails = {{(pathCheckFails ? "$true" : "$false")}}
+            $script:pathChecks = 0
+            $script:removals = 0
+            function Test-Path {
+                param([string]$LiteralPath)
+                $script:pathChecks++
+                if ($pathCheckFails) { throw [UnauthorizedAccessException]::new('synthetic cleanup path failure') }
+                return $true
+            }
+            function Remove-GeneratedTree {
+                param([string]$Path, [switch]$Confirm)
+                $script:removals++
+                throw [UnauthorizedAccessException]::new('synthetic cleanup removal failure')
+            }
+            $originalError = [Management.Automation.ErrorRecord]::new(
+                [IO.IOException]::new('original runtime move failure'), 'RuntimeMoveFailure',
+                [Management.Automation.ErrorCategory]::WriteError, 'synthetic-runtime-stage')
+            $moved = $false
+            $stagingPath = 'synthetic-runtime-stage'
+            $WarningPreference = 'Stop'
+            $probe = [scriptblock]::Create('try { throw $originalError } finally ' + $buildFinalizers[0].Finally.Extent.Text)
+            $caught = $null
+            try { & $probe 3>$null }
+            catch { $caught = $_ }
+            if ($null -eq $caught) { throw 'The original build error must propagate.' }
+            [pscustomobject]@{
+                sameException = [object]::ReferenceEquals($originalError.Exception, $caught.Exception)
+                errorId = $caught.FullyQualifiedErrorId
+                target = $caught.TargetObject
+                pathChecks = $script:pathChecks
+                removals = $script:removals
+            } | ConvertTo-Json -Compress
+            """);
+
+        Assert.IsTrue(result.RootElement.GetProperty("sameException").GetBoolean());
+        Assert.AreEqual("RuntimeMoveFailure", result.RootElement.GetProperty("errorId").GetString());
+        Assert.AreEqual("synthetic-runtime-stage", result.RootElement.GetProperty("target").GetString());
+        Assert.AreEqual(1, result.RootElement.GetProperty("pathChecks").GetInt32());
+        Assert.AreEqual(pathCheckFails ? 0 : 1, result.RootElement.GetProperty("removals").GetInt32());
     }
 
     [TestMethod]
@@ -327,8 +460,9 @@ public sealed class PythonRuntimePackageManifestTests
 
     private static JsonDocument RunRuntimeProbe(string scriptName, string body)
     {
-        // Parse the actual source; import ONLY this pure function, never either script body.
-        // No runtime, wheelhouse, ignored payload manifest, fixture files, or helper files are needed.
+        // Parse the actual source; never execute either script's top-level build/verification body.
+        // Import the pure digest function; finalization probes select isolated helper/finally ASTs
+        // with synthetic inputs only. No runtime, wheelhouse or packaged manifest is needed.
         string path = Path.Combine(GetRepositoryRoot(), "packaging", "python", scriptName);
         string code = $$"""
             Set-StrictMode -Version Latest
@@ -375,7 +509,7 @@ public sealed class PythonRuntimePackageManifestTests
         {
             process.Kill(entireProcessTree: true);
             Assert.IsTrue(process.WaitForExit(5000), "Runtime probe cleanup exceeded its safety bound.");
-            Assert.Fail("The metadata-only AST/culture probe exceeded 30 seconds; no runtime build or launch is allowed.");
+            Assert.Fail("The isolated AST/function probe exceeded 30 seconds; no runtime build or launch is allowed.");
         }
         Assert.IsTrue(Task.WaitAll([stdout, stderr], 5000), "Runtime probe output drain exceeded its safety bound.");
         string output = stdout.GetAwaiter().GetResult();

@@ -3,7 +3,7 @@
 import userEvent from '@testing-library/user-event'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { PlayerExactFrameSelection } from '../player'
 import {
@@ -18,6 +18,7 @@ import {
 import {
   ThumbnailPanel,
   type ThumbnailBridgeClient,
+  type ThumbnailPanelProps,
 } from './ThumbnailPanel'
 import {
   createThumbnailCancelResponseValue,
@@ -264,6 +265,254 @@ describe('ThumbnailPanel', () => {
     expect(requiredButton('選択フレームから生成').disabled).toBe(true)
   })
 
+  it('starts hidden and inert without sending a read or a generation request', () => {
+    const client = new FakeThumbnailClient()
+    renderPanel(client, false, { active: false })
+
+    const panel = requiredElement<HTMLElement>('.thumbnail-card')
+    expect(panel.hidden).toBe(true)
+    expect(panel.hasAttribute('inert')).toBe(true)
+    expect(requiredButton('信頼済み根拠を読み込む').disabled).toBe(true)
+    clickButton('信頼済み根拠を読み込む')
+    expect(client.reads).toEqual([])
+    expect(client.generates).toEqual([])
+    expect(client.cancellations).toEqual([])
+
+    renderPanel(client)
+    expect(panel.hidden).toBe(false)
+    expect(panel.hasAttribute('inert')).toBe(false)
+    expect(requiredButton('信頼済み根拠を読み込む').disabled).toBe(false)
+  })
+
+  it('retains a non-default template, exact frame, and completed PNG while hidden and on return', () => {
+    const client = new FakeThumbnailClient()
+    renderPanel(client)
+    const readValue = createThumbnailReadResponseValue()
+    const alternate = {
+      ...readValue.result.snapshot.templates[0]!,
+      templateId: cancelRequestId,
+      name: 'Another approved thumbnail',
+    }
+    readValue.result.snapshot.templates.push(alternate)
+    completeRead(client, readValue)
+    const selected = requiredElement<HTMLInputElement>(
+      `input[value="${alternate.templateId}"]`,
+    )
+    act(() => selected.click())
+    clickButton('選択フレームから生成')
+    const generatedValue = createThumbnailGenerateResponseValue()
+    generatedValue.result.output.template.templateId = alternate.templateId
+    completeGeneration(client, generatedValue)
+    const image = requiredElement<HTMLImageElement>('.thumbnail-preview img')
+    expect(selected.checked).toBe(true)
+    expect(client.generates[0]?.params.templateId).toBe(alternate.templateId)
+
+    renderPanel(client, false, { active: false })
+    expect(requiredElement<HTMLElement>('.thumbnail-card').hidden).toBe(true)
+    expect(requiredElement('input:checked')).toBe(selected)
+    expect(requiredElement('.thumbnail-preview img')).toBe(image)
+    expect(requiredElement('fieldset').matches(':disabled')).toBe(true)
+    clickButton('選択フレームから生成')
+    clickButton('生成をキャンセル')
+
+    renderPanel(client)
+    expect(requiredElement('input:checked')).toBe(selected)
+    expect(requiredElement('.thumbnail-preview img')).toBe(image)
+    expect(image.getAttribute('alt')).toContain(alternate.name)
+    expect(container.textContent).toContain('Source PTS-1/20frame 7')
+    expect(status().dataset.thumbnailStatus).toBe('generated')
+    expect(client.reads).toHaveLength(1)
+    expect(client.generates).toHaveLength(1)
+    expect(client.cancellations).toEqual([])
+    expect(client.listenerCount).toBe(3)
+    expect(client.disposed).toBe(false)
+  })
+
+  it('keeps pending generation across visibility changes and accepts hidden completion without moving focus', () => {
+    const client = new FakeThumbnailClient()
+    renderPanel(client)
+    completeRead(client)
+    clickButton('選択フレームから生成')
+
+    renderPanel(client, false, { active: false })
+    expect(status().dataset.thumbnailStatus).toBe('generating')
+    expect(requiredButton('生成をキャンセル').disabled).toBe(true)
+    clickButton('生成をキャンセル')
+    expect(client.cancellations).toEqual([])
+
+    renderPanel(client)
+    expect(status().dataset.thumbnailStatus).toBe('generating')
+    expect(requiredButton('生成をキャンセル').disabled).toBe(false)
+    renderPanel(client, false, { active: false })
+
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    act(() => outside.focus())
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    try {
+      act(() => client.emitRead(requireReadResponse(createThumbnailReadResponseValue())))
+      act(() => client.emitCancel(requireCancelResponse(createThumbnailCancelResponseValue())))
+      completeGeneration(client)
+
+      expect(requiredElement<HTMLElement>('.thumbnail-card').hidden).toBe(true)
+      expect(status().dataset.thumbnailStatus).toBe('generated')
+      expect(focus).not.toHaveBeenCalled()
+      expect(document.activeElement).toBe(outside)
+
+      renderPanel(client)
+      expect(status().dataset.thumbnailStatus).toBe('generated')
+      expect(requiredElement<HTMLImageElement>('.thumbnail-preview img').src)
+        .toContain(thumbnailOutputDigest)
+      expect(document.activeElement).toBe(outside)
+      expect(focus).not.toHaveBeenCalled()
+      expect(client.reads).toHaveLength(1)
+      expect(client.generates).toHaveLength(1)
+      expect(client.cancellations).toEqual([])
+      expect(client.listenerCount).toBe(3)
+      expect(client.disposed).toBe(false)
+    } finally {
+      focus.mockRestore()
+      outside.remove()
+    }
+  })
+
+  it.each([
+    ['approved', true],
+    ['approved', false],
+    ['unconfirmed', true],
+    ['unconfirmed', false],
+    ['rejected', true],
+    ['rejected', false],
+  ] as const)(
+    'keeps internal workflow read-only and unavailable independently of legacy rights %s/%s',
+    (rightsStatus, externalPublicationAllowed) => {
+      const client = new FakeThumbnailClient()
+      renderPanel(client, false, { context: { projectId: thumbnailProjectId } })
+      expect(status().textContent).toBe('社内向けサムネイル生成は未接続です')
+      expect(container.textContent).toContain('Source PTS-1/20frame 7')
+      expect(container.textContent).toContain('Proxy PTS1001/30000frame 1')
+      expect(container.textContent).toContain('Output PTS—')
+
+      const value = createThumbnailReadResponseValue()
+      value.result.snapshot.rights.status = rightsStatus
+      value.result.snapshot.rights.externalPublicationAllowed = externalPublicationAllowed
+      completeRead(client, value)
+
+      expect(status().dataset.thumbnailStatus).toBe('unavailable')
+      expect(status().textContent).toBe('社内向けサムネイル生成は未接続です')
+      expect(container.textContent).toContain(`権利状態${rightsStatus}`)
+      expect(container.textContent).toContain('既存の外部公開用 API の根拠（参照のみ）')
+      expect(container.textContent).not.toContain('生成不可')
+      expect(container.textContent).not.toContain('場合にのみ生成できます')
+      expect(container.querySelector('input, .thumbnail-actions, img, video, canvas, svg')).toBeNull()
+      expect(container.innerHTML).not.toMatch(/data:image|blob:|\.gif/i)
+      expect([...container.querySelectorAll('button')].map((button) => button.textContent))
+        .toEqual(['信頼済み根拠を読み込む'])
+      expect(client.reads).toEqual([{ requestId: thumbnailRequestId, jobId: thumbnailJobId }])
+      expect(client.generates).toEqual([])
+      expect(client.cancellations).toEqual([])
+    },
+  )
+
+  it.each([
+    { name: 'missing frame', selection: null, projectId: thumbnailProjectId },
+    { name: 'missing project', selection: createSelection(), projectId: null },
+    { name: 'different project', selection: createSelection(), projectId: cancelRequestId },
+  ])('shows only the short workflow unavailable state for $name', ({ selection, projectId }) => {
+    const client = new FakeThumbnailClient()
+    renderPanel(client, false, { selection, context: { projectId } })
+
+    expect(status().dataset.thumbnailStatus).toBe('unavailable')
+    expect(status().textContent).toBe('サムネイルを表示する元フレームは未取得です')
+    expect(container.querySelector('.thumbnail-time-grid, button, img, video, canvas, svg')).toBeNull()
+    expect(container.textContent).not.toContain('上の代理動画プレイヤー')
+    expect(container.innerHTML).not.toMatch(/data:image|blob:|\.gif/i)
+    expect(client.reads).toEqual([])
+    expect(client.generates).toEqual([])
+    expect(client.cancellations).toEqual([])
+  })
+
+  it('never presents a late legacy completion as an internal or different-project workflow result', () => {
+    const client = new FakeThumbnailClient()
+    renderPanel(client)
+    completeRead(client)
+    clickButton('選択フレームから生成')
+
+    const otherContext = { projectId: cancelRequestId }
+    renderPanel(client, false, { context: otherContext })
+    completeGeneration(client)
+    expect(status().textContent).toBe('サムネイルを表示する元フレームは未取得です')
+    expect(container.querySelector('img, .thumbnail-time-grid, .thumbnail-evidence-list')).toBeNull()
+
+    renderPanel(client, false, {
+      context: otherContext,
+      selection: { ...createSelection(), projectId: otherContext.projectId },
+    })
+    expect(status().textContent).toBe('社内向けサムネイル生成は未接続です')
+    expect(container.querySelector('img, .thumbnail-evidence-list')).toBeNull()
+
+    renderPanel(client, false, { context: { projectId: thumbnailProjectId } })
+    expect(status().textContent).toBe('社内向けサムネイル生成は未接続です')
+    expect(container.querySelector('img, .thumbnail-actions')).toBeNull()
+    expect(container.querySelector('.thumbnail-evidence-list')).not.toBeNull()
+
+    renderPanel(client)
+    expect(status().dataset.thumbnailStatus).toBe('generated')
+    expect(requiredElement<HTMLImageElement>('.thumbnail-preview img').src)
+      .toContain(thumbnailOutputDigest)
+    expect(client.generates).toHaveLength(1)
+    expect(client.cancellations).toEqual([])
+  })
+
+  it('hides an old PNG and generated header for a different exact frame without losing the completed result', () => {
+    const client = new FakeThumbnailClient()
+    renderPanel(client)
+    completeRead(client)
+    clickButton('選択フレームから生成')
+    completeGeneration(client)
+
+    renderPanel(client, false, {
+      selection: {
+        ...createSelection(),
+        frame: {
+          ...createSelection().frame,
+          proxyFrameSequence: 2,
+          sourceFrameSequence: 8,
+          sourcePresentationTime: { value: '0', rate: '1' },
+        },
+      },
+    })
+    expect(status().dataset.thumbnailStatus).toBe('mismatched')
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.textContent).toContain('Source PTS0/1frame 8')
+
+    renderPanel(client)
+    expect(status().dataset.thumbnailStatus).toBe('generated')
+    expect(requiredElement<HTMLImageElement>('.thumbnail-preview img').src)
+      .toContain(thumbnailOutputDigest)
+    expect(client.generates).toHaveLength(1)
+    expect(client.cancellations).toEqual([])
+  })
+
+  it('keeps full hashes in collapsed details rather than the result header', () => {
+    const client = new FakeThumbnailClient()
+    renderPanel(client)
+    completeRead(client)
+    clickButton('選択フレームから生成')
+    completeGeneration(client)
+
+    const digests = [...container.querySelectorAll('code')].filter(
+      (code) => /[0-9a-f]{64}/.test(code.textContent ?? ''),
+    )
+    expect(digests.length).toBeGreaterThan(0)
+    for (const digest of digests) {
+      const details = digest.closest('details')
+      expect(details).not.toBeNull()
+      expect(details?.open).toBe(false)
+    }
+    expect(requiredElement('.thumbnail-heading').textContent).not.toMatch(/[0-9a-f]{64}/)
+  })
+
   it('removes all native listeners and disposes its client', () => {
     const client = new FakeThumbnailClient()
     renderPanel(client)
@@ -279,6 +528,7 @@ describe('ThumbnailPanel', () => {
   function renderPanel(
     client: FakeThumbnailClient,
     previewReduced = false,
+    props: Partial<ThumbnailPanelProps> = {},
   ): void {
     act(() => {
       root.render(
@@ -287,18 +537,32 @@ describe('ThumbnailPanel', () => {
           createClient={() => client}
           createId={createIdSequence()}
           previewReduced={previewReduced}
+          {...props}
         />,
       )
     })
   }
 
-  function completeRead(client: FakeThumbnailClient): void {
+  function completeRead(
+    client: FakeThumbnailClient,
+    value = createThumbnailReadResponseValue(),
+  ): void {
     clickButton('信頼済み根拠を読み込む')
-    const read = client.reads[0]
+    const read = client.reads.at(-1)
     if (read === undefined) throw new Error('Expected read request.')
-    const value = createThumbnailReadResponseValue()
     value.requestId = read.requestId
     act(() => client.emitRead(requireReadResponse(value)))
+  }
+
+  function completeGeneration(
+    client: FakeThumbnailClient,
+    value = createThumbnailGenerateResponseValue(),
+  ): void {
+    const generate = client.generates.at(-1)
+    if (generate === undefined) throw new Error('Expected generation request.')
+    value.requestId = generate.requestId
+    value.result.output.generationId = generate.params.generationId
+    act(() => client.emitGenerate(requireGenerateResponse(value)))
   }
 
   function clickButton(text: string): void {

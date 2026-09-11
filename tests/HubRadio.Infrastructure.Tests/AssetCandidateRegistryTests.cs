@@ -248,6 +248,78 @@ public sealed class AssetCandidateRegistryTests
         Assert.IsTrue(registry.IsAvailable(candidateId));
     }
 
+    [TestMethod]
+    public void NativeDraftRestoreReusesOnlyTheExactPendingTokenWithoutCommittingIt()
+    {
+        var registry = new AssetCandidateRegistry();
+        var candidate = EntityId<AssetIdTag>.New();
+        const string path = @"C:\private\pending-native-source.mov";
+
+        Assert.IsTrue(registry.RestoreVerifiedSelectionForDraft(candidate, path));
+        Assert.IsTrue(registry.RestoreVerifiedSelectionForDraft(candidate, path));
+        Assert.IsFalse(registry.RestoreVerifiedSelectionForDraft(candidate, path + ".other"));
+        Assert.AreEqual(1, registry.PendingCount);
+        Assert.IsTrue(registry.IsAvailable(candidate));
+        Assert.IsFalse(registry.RestoreVerifiedSelectionForIngest(candidate, path));
+        Assert.IsTrue(registry.TryReserve(candidate, out var reservation));
+        using (reservation)
+        {
+            Assert.AreEqual(path, reservation.SelectedPath);
+            Assert.IsFalse(registry.RestoreVerifiedSelectionForDraft(candidate, path));
+        }
+        Assert.IsTrue(registry.RestoreVerifiedSelectionForDraft(candidate, path));
+    }
+
+    [TestMethod]
+    public void NativeDraftRestoreNeverDowngradesACommittedIngestHandoff()
+    {
+        var registry = new AssetCandidateRegistry();
+        var candidate = EntityId<AssetIdTag>.New();
+        const string path = @"C:\private\committed-native-source.mov";
+        Assert.IsTrue(registry.RestoreVerifiedSelectionForIngest(candidate, path));
+
+        Assert.IsFalse(registry.RestoreVerifiedSelectionForDraft(candidate, path));
+        Assert.IsFalse(registry.IsAvailable(candidate));
+        Assert.IsTrue(registry.IsClaimable(candidate));
+        Assert.IsTrue(registry.TryClaim(candidate, out string? actual));
+        Assert.AreEqual(path, actual);
+    }
+
+    [TestMethod]
+    public void NativeRestorePreservesExactIdentityAndOnlyCreatesAnIngestHandoff()
+    {
+        var registry = new AssetCandidateRegistry();
+        var candidate = EntityId<AssetIdTag>.New();
+        const string path = @"C:\private\native-source.mov";
+
+        Assert.IsTrue(registry.RestoreVerifiedSelectionForIngest(candidate, path));
+        Assert.IsTrue(registry.RestoreVerifiedSelectionForIngest(candidate, path));
+        Assert.IsFalse(registry.RestoreVerifiedSelectionForIngest(candidate, path + ".other"));
+        Assert.IsFalse(registry.IsAvailable(candidate));
+        Assert.IsFalse(registry.TryReserve(candidate, out _));
+        Assert.IsTrue(registry.TryClaim(candidate, out string? actual));
+        Assert.AreEqual(path, actual);
+        Assert.IsFalse(registry.TryClaim(candidate, out _));
+    }
+
+    [TestMethod]
+    public void NativeRestoreDoesNotOverrideUncommittedOrReservedSelection()
+    {
+        var registry = new AssetCandidateRegistry();
+        const string path = @"C:\private\reserved-native-source.mov";
+        var candidate = registry.RegisterSelection(path)!;
+
+        Assert.IsFalse(registry.RestoreVerifiedSelectionForIngest(candidate, path));
+        Assert.IsTrue(registry.TryReserve(candidate, out var reservation));
+        using (reservation)
+        {
+            Assert.IsFalse(registry.RestoreVerifiedSelectionForIngest(candidate, path));
+            Assert.AreEqual(path, reservation.SelectedPath);
+            reservation.Commit();
+        }
+        Assert.IsTrue(registry.RestoreVerifiedSelectionForIngest(candidate, path));
+    }
+
     private static ClaimResult Claim(
         AssetCandidateRegistry registry,
         EntityId<AssetIdTag> candidateId) =>

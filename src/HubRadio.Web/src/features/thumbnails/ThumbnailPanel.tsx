@@ -16,12 +16,14 @@ import type {
   ThumbnailGenerateParams,
   ThumbnailGenerateResponse,
   ThumbnailReadResponse,
+  ThumbnailSnapshot,
   ThumbnailTemplateSnapshot,
 } from './thumbnailProtocol'
 import {
   expectationMatchesCurrent,
   initialThumbnailState,
   selectionMatchesSnapshot,
+  selectThumbnailOutput,
   selectThumbnailTemplate,
   thumbnailStateReducer,
   type ThumbnailGenerationExpectation,
@@ -72,13 +74,17 @@ export type ThumbnailBridgeClient = Pick<
 
 export interface ThumbnailPanelProps {
   readonly selection: PlayerExactFrameSelection | null
+  readonly active?: boolean
+  readonly context?: Readonly<{ projectId: string | null }>
   readonly createClient?: () => ThumbnailBridgeClient
   readonly createId?: () => string
   readonly previewReduced?: boolean
 }
 
 export function ThumbnailPanel({
-  selection,
+  selection: playerSelection,
+  active = true,
+  context,
   createClient = createHostBridgeClient,
   createId = createCanonicalId,
   previewReduced = false,
@@ -89,11 +95,17 @@ export function ThumbnailPanel({
   )
   const [previewFailed, setPreviewFailed] = useState(false)
   const clientRef = useRef<ThumbnailBridgeClient | null>(null)
+  const createClientRef = useRef(createClient)
+  createClientRef.current = createClient
+  const selection =
+    context === undefined || playerSelection?.projectId === context.projectId
+      ? playerSelection
+      : null
 
   useEffect(() => {
     let client: ThumbnailBridgeClient
     try {
-      client = createClient()
+      client = createClientRef.current()
     } catch {
       dispatch({ type: 'bridgeUnavailable' })
       return
@@ -140,7 +152,7 @@ export function ThumbnailPanel({
         client.dispose()
       }
     }
-  }, [createClient])
+  }, [])
 
   useEffect(() => {
     setPreviewFailed(false)
@@ -148,13 +160,23 @@ export function ThumbnailPanel({
 
   const template = selectThumbnailTemplate(state)
   const bindingMatches = selectionMatchesSnapshot(selection, state.snapshot)
+  const output = selectThumbnailOutput(state, selection)
+  const displayStatus =
+    state.snapshot !== null &&
+    (!bindingMatches || (state.output !== null && output === null))
+      ? selection === null ? 'idle' : 'mismatched'
+      : state.status
   const rightsApproved =
     state.snapshot?.rights.status === 'approved' &&
     state.snapshot.rights.externalPublicationAllowed
   const busy =
     state.pendingRead !== null || state.pendingGeneration !== null
-  const canRead = selection !== null && !busy
+  const canRead = active && selection !== null && !busy
+  // The legacy API has no authoritative internal-consumer scope policy.
+  // Workflow may read its evidence, but must not use it for internal generation.
   const canGenerate =
+    active &&
+    context === undefined &&
     selection !== null &&
     state.snapshot !== null &&
     template !== null &&
@@ -162,6 +184,8 @@ export function ThumbnailPanel({
     rightsApproved &&
     state.pendingGeneration === null
   const canCancel =
+    active &&
+    context === undefined &&
     state.pendingGeneration !== null && state.pendingCancel === null
   const retryingSameGeneration =
     selection !== null &&
@@ -263,13 +287,77 @@ export function ThumbnailPanel({
   }
 
   const onTemplateChange = (event: ChangeEvent<HTMLInputElement>): void => {
+    if (!active || context !== undefined) return
     dispatch({ type: 'templateSelected', templateId: event.currentTarget.value })
+  }
+
+  if (context !== undefined) {
+    return (
+      <section
+        className="thumbnail-card"
+        aria-labelledby="thumbnail-title"
+        hidden={!active}
+        inert={!active}
+        data-thumbnail-preview={previewReduced ? 'reduced' : 'fit'}
+      >
+        <div className="thumbnail-heading">
+          <h2 id="thumbnail-title">サムネイル</h2>
+          <p
+            className="thumbnail-status"
+            role="status"
+            data-thumbnail-status="unavailable"
+          >
+            {selection === null
+              ? 'サムネイルを表示する元フレームは未取得です'
+              : '社内向けサムネイル生成は未接続です'}
+          </p>
+        </div>
+        {selection === null ? null : (
+          <div className="thumbnail-body">
+            <section className="thumbnail-step" aria-labelledby="thumbnail-frame-title">
+              <div className="thumbnail-step-heading">
+                <h3 id="thumbnail-frame-title">プレイヤーの選択フレーム</h3>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={!canRead}
+                  onClick={readCurrentEvidence}
+                >
+                  信頼済み根拠を読み込む
+                </button>
+              </div>
+              <FrameEvidence selection={selection} />
+              <p className="field-help">
+                既存 API の根拠は参照専用です。社内向けの生成可否は含まれません。
+              </p>
+              {bindingMatches && state.snapshot !== null ? (
+                <details>
+                  <summary>既存の外部公開用 API の根拠（参照のみ）</summary>
+                  <SnapshotEvidence snapshot={state.snapshot} />
+                  <ul>
+                    {state.snapshot.templates.map((candidate) => (
+                      <li key={candidate.templateId}>
+                        {candidate.name} · {candidate.width} × {candidate.height} PNG
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ) : (
+                <p className="thumbnail-empty">選択フレームの根拠は未取得です。</p>
+              )}
+            </section>
+          </div>
+        )}
+      </section>
+    )
   }
 
   return (
     <section
       className="thumbnail-card"
       aria-labelledby="thumbnail-title"
+      hidden={!active}
+      inert={!active}
       data-thumbnail-preview={previewReduced ? 'reduced' : 'fit'}
     >
       <div className="thumbnail-heading">
@@ -280,9 +368,9 @@ export function ThumbnailPanel({
         <p
           className="thumbnail-status"
           role="status"
-          data-thumbnail-status={state.status}
+          data-thumbnail-status={displayStatus}
         >
-          {statusMessages[state.status]}
+          {statusMessages[displayStatus]}
         </p>
       </div>
 
@@ -309,23 +397,7 @@ export function ThumbnailPanel({
             </p>
           ) : (
             <>
-              <dl className="thumbnail-time-grid">
-                <TimeEvidence
-                  label="Source PTS"
-                  value={formatRationalTime(selection.frame.sourcePresentationTime)}
-                  sequence={selection.frame.sourceFrameSequence}
-                />
-                <TimeEvidence
-                  label="Proxy PTS"
-                  value={formatRationalTime(selection.frame.proxyPresentationTime)}
-                  sequence={selection.frame.proxyFrameSequence}
-                />
-                <TimeEvidence
-                  label="Output PTS"
-                  value={formatRationalTime(selection.frame.outputPresentationTime)}
-                  sequence={null}
-                />
-              </dl>
+              <FrameEvidence selection={selection} />
               <p className="field-help">
                 時刻は整数の value/rate のまま保持され、生成は Source frame
                 sequence を使用します。
@@ -355,23 +427,10 @@ export function ThumbnailPanel({
                   {rightsApproved ? '外部公開可' : '生成不可'}
                 </span>
               </div>
-              <dl className="thumbnail-evidence-list">
-                <Evidence label="権利状態" value={state.snapshot.rights.status} />
-                <Evidence
-                  label="外部公開"
-                  value={
-                    state.snapshot.rights.externalPublicationAllowed
-                      ? '許可'
-                      : '未許可'
-                  }
-                />
-                <Evidence label="権利 digest" value={state.snapshot.sourceRightsDigest} code />
-                <Evidence label="ソース digest" value={state.snapshot.sourceContentDigest} code />
-                <Evidence label="PTS index digest" value={state.snapshot.sourcePtsIndexDigest} code />
-                <Evidence label="frame map digest" value={state.snapshot.proxyFrameMapDigest} code />
-                <Evidence label="player evidence" value={state.snapshot.playerEvidenceDigest} code />
-                <Evidence label="thumbnail evidence" value={state.snapshot.evidenceDigest} code />
-              </dl>
+              <details>
+                <summary>根拠の詳細</summary>
+                <SnapshotEvidence snapshot={state.snapshot} />
+              </details>
               {!rightsApproved ? (
                 <p className="thumbnail-warning" role="alert">
                   権利状態が approved かつ外部公開許可の場合にのみ生成できます。
@@ -393,7 +452,7 @@ export function ThumbnailPanel({
               ) : (
                 <fieldset
                   className="thumbnail-template-list"
-                  disabled={state.pendingGeneration !== null}
+                  disabled={!active || state.pendingGeneration !== null}
                 >
                   <legend className="visually-hidden">承認済みテンプレートを選択</legend>
                   {state.snapshot.templates.map((candidate) => (
@@ -442,7 +501,7 @@ export function ThumbnailPanel({
                 </p>
               )}
 
-              {state.output === null ? (
+              {output === null ? (
                 <p className="thumbnail-empty">
                   出力は exact source PTS と承認済み template binding の検証後に表示されます。
                 </p>
@@ -453,39 +512,42 @@ export function ThumbnailPanel({
                       <p role="alert">生成済み PNG を読み込めません。</p>
                     ) : (
                       <img
-                        src={state.output.mediaReference}
-                        width={state.output.width}
-                        height={state.output.height}
-                        alt={`${template?.name ?? '承認済みテンプレート'}、Source PTS ${formatRationalTime(state.output.selection.sourcePresentationTime)} の生成済みサムネイル`}
+                        src={output.mediaReference}
+                        width={output.width}
+                        height={output.height}
+                        alt={`${template?.name ?? '承認済みテンプレート'}、Source PTS ${formatRationalTime(output.selection.sourcePresentationTime)} の生成済みサムネイル`}
                         onError={() => setPreviewFailed(true)}
                       />
                     )}
                     <figcaption>
-                      {state.output.width} × {state.output.height} PNG ·{' '}
-                      {state.output.byteSize} bytes
+                      {output.width} × {output.height} PNG ·{' '}
+                      {output.byteSize} bytes
                       {previewReduced ? '・縮小表示（拡大なし）' : ''}
                     </figcaption>
                   </figure>
-                  <dl className="thumbnail-output-evidence">
-                    <Evidence label="output SHA-256" value={state.output.contentDigest} code />
-                    <Evidence label="binding digest" value={state.output.bindingDigest} code />
-                    <Evidence label="artifact ID" value={state.output.artifactId} code />
-                    <Evidence
-                      label="exact source PTS"
-                      value={formatRationalTime(state.output.selection.sourcePresentationTime)}
-                      code
-                    />
-                    <Evidence
-                      label="source frame"
-                      value={String(state.output.selection.sourceFrameSequence)}
-                    />
-                    <Evidence
-                      label="proxy frame"
-                      value={String(state.output.selection.proxyFrameSequence)}
-                    />
-                    <Evidence label="template approval" value={state.output.template.approvalDigest} code />
-                    <Evidence label="作成日時 (UTC)" value={state.output.createdAt} code />
-                  </dl>
+                  <details>
+                    <summary>生成結果の詳細</summary>
+                    <dl className="thumbnail-output-evidence">
+                      <Evidence label="output SHA-256" value={output.contentDigest} code />
+                      <Evidence label="binding digest" value={output.bindingDigest} code />
+                      <Evidence label="artifact ID" value={output.artifactId} code />
+                      <Evidence
+                        label="exact source PTS"
+                        value={formatRationalTime(output.selection.sourcePresentationTime)}
+                        code
+                      />
+                      <Evidence
+                        label="source frame"
+                        value={String(output.selection.sourceFrameSequence)}
+                      />
+                      <Evidence
+                        label="proxy frame"
+                        value={String(output.selection.proxyFrameSequence)}
+                      />
+                      <Evidence label="template approval" value={output.template.approvalDigest} code />
+                      <Evidence label="作成日時 (UTC)" value={output.createdAt} code />
+                    </dl>
+                  </details>
                 </div>
               )}
             </section>
@@ -493,6 +555,50 @@ export function ThumbnailPanel({
         )}
       </div>
     </section>
+  )
+}
+
+function FrameEvidence({
+  selection,
+}: Readonly<{ selection: PlayerExactFrameSelection }>) {
+  return (
+    <dl className="thumbnail-time-grid">
+      <TimeEvidence
+        label="Source PTS"
+        value={formatRationalTime(selection.frame.sourcePresentationTime)}
+        sequence={selection.frame.sourceFrameSequence}
+      />
+      <TimeEvidence
+        label="Proxy PTS"
+        value={formatRationalTime(selection.frame.proxyPresentationTime)}
+        sequence={selection.frame.proxyFrameSequence}
+      />
+      <TimeEvidence
+        label="Output PTS"
+        value={formatRationalTime(selection.frame.outputPresentationTime)}
+        sequence={null}
+      />
+    </dl>
+  )
+}
+
+function SnapshotEvidence({
+  snapshot,
+}: Readonly<{ snapshot: ThumbnailSnapshot }>) {
+  return (
+    <dl className="thumbnail-evidence-list">
+      <Evidence label="権利状態" value={snapshot.rights.status} />
+      <Evidence
+        label="外部公開"
+        value={snapshot.rights.externalPublicationAllowed ? '許可' : '未許可'}
+      />
+      <Evidence label="権利 digest" value={snapshot.sourceRightsDigest} code />
+      <Evidence label="ソース digest" value={snapshot.sourceContentDigest} code />
+      <Evidence label="PTS index digest" value={snapshot.sourcePtsIndexDigest} code />
+      <Evidence label="frame map digest" value={snapshot.proxyFrameMapDigest} code />
+      <Evidence label="player evidence" value={snapshot.playerEvidenceDigest} code />
+      <Evidence label="thumbnail evidence" value={snapshot.evidenceDigest} code />
+    </dl>
   )
 }
 
@@ -535,24 +641,31 @@ function TemplateOption({
   onChange: (event: ChangeEvent<HTMLInputElement>) => void
 }>) {
   return (
-    <label className="thumbnail-template-option">
-      <input
-        type="radio"
-        name="thumbnail-template"
-        value={template.templateId}
-        checked={checked}
-        onChange={onChange}
-      />
-      <span className="thumbnail-template-copy">
-        <strong>{template.name}</strong>
-        <span>{template.width} × {template.height} PNG</span>
-        <span>BrandApprover · {template.approvedAt}</span>
-        <code>approval {template.approvalDigest}</code>
-        <code>template {template.templateVersionDigest}</code>
-        <code>profile {template.renderProfileDigest}</code>
-        <code>layout {template.layoutSpecDigest}</code>
-      </span>
-    </label>
+    <div>
+      <label className="thumbnail-template-option">
+        <input
+          type="radio"
+          name="thumbnail-template"
+          value={template.templateId}
+          checked={checked}
+          onChange={onChange}
+        />
+        <span className="thumbnail-template-copy">
+          <strong>{template.name}</strong>
+          <span>{template.width} × {template.height} PNG</span>
+          <span>BrandApprover · {template.approvedAt}</span>
+        </span>
+      </label>
+      <details>
+        <summary>テンプレートの詳細</summary>
+        <div className="thumbnail-template-copy">
+          <code>approval {template.approvalDigest}</code>
+          <code>template {template.templateVersionDigest}</code>
+          <code>profile {template.renderProfileDigest}</code>
+          <code>layout {template.layoutSpecDigest}</code>
+        </div>
+      </details>
+    </div>
   )
 }
 

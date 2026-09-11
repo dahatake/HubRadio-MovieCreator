@@ -8,6 +8,7 @@ import {
 } from 'react'
 
 import { createHostBridgeClient } from '../../bridge'
+import { isCanonicalBridgeId } from '../../bridge/protocol'
 import { usePlayerSourceNavigation } from '../player'
 import { useProjectState } from '../projects/ProjectStateProvider'
 import {
@@ -17,11 +18,13 @@ import {
   createAnalysisUpdateTopicRequest,
   type AnalysisCandidate,
   type AnalysisCandidatePayload,
+  type AnalysisSnapshot,
   type AnalysisSpeaker,
   type AnalysisStagedChange,
   type AnalysisTimeRange,
   type AnalysisTopic,
   type AnalysisTopicUpdate,
+  type AnalysisUpdateTopicRequest,
 } from './analysisProtocol'
 import {
   startAnalysisBridgeSession,
@@ -31,8 +34,14 @@ import {
 } from './analysisBridgeSession'
 import {
   analysisStateReducer,
+  analysisTopicInputIsCurrent,
+  getAnalysisTopicValue,
+  hasLocalAnalysisInputs,
   initialAnalysisState,
+  isAnalysisDirty,
   type AnalysisState,
+  type AnalysisTopicField,
+  type AnalysisTopicInputs,
   type AnalysisUiStatus,
 } from './analysisState'
 
@@ -96,13 +105,34 @@ const sensitivityLabels = Object.freeze({
   dictionaryTerm: '機微語辞書との一致',
 } as const)
 
+/** analysis.read needs only the selected project's ID; revisions come from its snapshot. */
+export interface AnalysisPanelContext {
+  readonly projectId: string | null
+  /** Meaningful native registration identity, never a per-poll progress revision. */
+  readonly refreshKey?: string
+}
+
 export interface AnalysisPanelProps {
   readonly projectId?: string | null
+  readonly context?: AnalysisPanelContext
+  readonly active?: boolean
+  readonly readOnly?: boolean
+  readonly onDirtyChange?: (dirty: boolean) => void
   readonly createClient?: () => AnalysisBridgeClient
 }
 
-export function AnalysisPanel({
+export function AnalysisPanel(props: AnalysisPanelProps) {
+  // Explicit workflow context must not fall back to a provider's selected project.
+  return props.context === undefined
+    ? <ProjectAnalysisPanel {...props} />
+    : <AnalysisPanelView {...props} />
+}
+
+function ProjectAnalysisPanel({
   projectId: explicitProjectId,
+  active = true,
+  readOnly = false,
+  onDirtyChange,
   createClient = createHostBridgeClient,
 }: AnalysisPanelProps) {
   const { state: projectState } = useProjectState()
@@ -115,52 +145,160 @@ export function AnalysisPanel({
 
   return (
     <AnalysisPanelView
-      key={selectedProjectId ?? 'no-project'}
       projectId={selectedProjectId}
+      active={active}
+      readOnly={readOnly}
+      onDirtyChange={onDirtyChange}
       createClient={createClient}
     />
   )
 }
 
 export interface AnalysisPanelViewProps {
-  readonly projectId: string | null
+  readonly projectId?: string | null
+  readonly context?: AnalysisPanelContext
+  readonly active?: boolean
+  readonly readOnly?: boolean
+  readonly onDirtyChange?: (dirty: boolean) => void
   readonly createClient?: () => AnalysisBridgeClient
 }
 
 export function AnalysisPanelView({
-  projectId,
+  projectId = null,
+  context,
+  active = true,
+  readOnly = false,
+  onDirtyChange,
   createClient = createHostBridgeClient,
 }: AnalysisPanelViewProps) {
-  const [state, dispatch] = useReducer(analysisStateReducer, {
+  const isContextual = context !== undefined
+  const suppliedProjectId = isContextual ? context?.projectId : projectId
+  const selectedProjectId = isContextual
+    ? typeof suppliedProjectId === 'string' && isCanonicalBridgeId(suppliedProjectId)
+      ? suppliedProjectId
+      : null
+    : projectId
+
+  return (
+    <AnalysisPanelSession
+      key={selectedProjectId ?? 'no-project'}
+      projectId={selectedProjectId}
+      isContextual={isContextual}
+      refreshKey={context?.refreshKey}
+      active={active}
+      readOnly={readOnly}
+      onDirtyChange={onDirtyChange}
+      createClient={createClient}
+    />
+  )
+}
+
+function AnalysisPanelSession({
+  projectId,
+  isContextual,
+  refreshKey,
+  active,
+  readOnly,
+  onDirtyChange,
+  createClient,
+}: Readonly<{
+  projectId: string | null
+  isContextual: boolean
+  refreshKey?: string
+  active: boolean
+  readOnly: boolean
+  onDirtyChange?: (dirty: boolean) => void
+  createClient: () => AnalysisBridgeClient
+}>) {
+  const [state, reduce] = useReducer(analysisStateReducer, {
     ...initialAnalysisState,
     projectId,
   })
-  const [reason, setReason] = useState('')
   const [inputMessage, setInputMessage] = useState<string | null>(null)
   const sessionRef = useRef<AnalysisBridgeSession | null>(null)
+  const autoReadAttemptedRef = useRef(false)
+  const readRefreshKeyRef = useRef(refreshKey)
+  const [readRefreshKey, setReadRefreshKey] = useState(refreshKey)
+  const createClientRef = useRef(createClient)
   const stateRef = useRef<AnalysisState>(state)
+  const topicRequestRef = useRef<AnalysisUpdateTopicRequest | null>(null)
+  const lastReportedDirtyRef = useRef<boolean | null>(null)
+  const panelRef = useRef<HTMLElement | null>(null)
+  const resultTitleRef = useRef<HTMLHeadingElement | null>(null)
+  const hadResultsRef = useRef(false)
   const requestPlayerSourceSeek = usePlayerSourceNavigation()
+  createClientRef.current = createClient
   stateRef.current = state
 
+  const dispatch = useCallback<AnalysisDispatch>((action) => {
+    const request = topicRequestRef.current
+    const correlatedAction = action.type === 'requestStarted' &&
+      request !== null && request.requestId === action.requestId &&
+      request.method === action.method && request.params.projectId === action.projectId
+      ? {
+          ...action,
+          topicUpdate: { topicId: request.params.topicId, field: request.params.update.field },
+        }
+      : action
+    // Guard imperative events even before React commits a batched send/response.
+    // Both reductions receive the same actions; input identities stay within each state.
+    stateRef.current = analysisStateReducer(stateRef.current, correlatedAction)
+    reduce(correlatedAction)
+  }, [reduce])
+
+  const dirty = isAnalysisDirty(state)
   useEffect(() => {
-    const session = startAnalysisBridgeSession(createClient, dispatch)
+    if (onDirtyChange === undefined || lastReportedDirtyRef.current === dirty) return
+    // An inline parent callback may change identity after every notification.
+    lastReportedDirtyRef.current = dirty
+    onDirtyChange(dirty)
+  }, [dirty, onDirtyChange])
+
+  useEffect(() => {
+    if (isContextual && projectId === null) return
+    const session = startAnalysisBridgeSession(createClientRef.current, dispatch)
     sessionRef.current = session
+    autoReadAttemptedRef.current = false
     dispatch({ type: 'sessionStarted' })
-    if (projectId !== null) {
+    return () => {
+      if (sessionRef.current === session) sessionRef.current = null
+      session.dispose()
+    }
+  }, [dispatch, isContextual, projectId])
+
+  useEffect(() => {
+    if (projectId === null || (isContextual && !active) ||
+      (autoReadAttemptedRef.current && readRefreshKeyRef.current === refreshKey) ||
+      isAnalysisDirty(stateRef.current) || stateRef.current.pending !== null) return
+    const session = sessionRef.current
+    if (session === null) return
+    let cancelled = false
+    // Cancel StrictMode's discarded setup, without reconnecting when a tab is hidden.
+    queueMicrotask(() => {
+      if (cancelled || sessionRef.current !== session ||
+        (autoReadAttemptedRef.current && readRefreshKeyRef.current === refreshKey) ||
+        isAnalysisDirty(stateRef.current) || stateRef.current.pending !== null ||
+        (refreshKey !== undefined && panelRef.current?.closest('[hidden], [inert], [aria-hidden="true"]') !== null)) return
+      // Consume the attempt even on failure; recovery is an explicit reload, not an effect loop.
+      autoReadAttemptedRef.current = true
+      readRefreshKeyRef.current = refreshKey
+      setReadRefreshKey(refreshKey)
       try {
         session.send(createAnalysisReadRequest(createRequestId(), projectId))
       } catch {
         dispatch({ type: 'requestInvalid' })
       }
-    }
-    return () => {
-      if (sessionRef.current === session) sessionRef.current = null
-      session.dispose()
-    }
-  }, [createClient, projectId])
+    })
+    return () => { cancelled = true }
+  }, [active, dispatch, isContextual, projectId, refreshKey, dirty, state.pending])
 
   const sendRead = useCallback(() => {
-    if (projectId === null || stateRef.current.pending !== null) return
+    if (!active || panelRef.current?.closest('[hidden], [inert], [aria-hidden="true"]') !== null ||
+      projectId === null || stateRef.current.pending !== null) return
+    autoReadAttemptedRef.current = true
+    readRefreshKeyRef.current = refreshKey
+    setReadRefreshKey(refreshKey)
+    setInputMessage(null)
     try {
       send(
         sessionRef.current,
@@ -170,19 +308,61 @@ export function AnalysisPanelView({
     } catch {
       setInputMessage('案件 ID を解析要求として検証できませんでした。')
     }
-  }, [projectId])
+  }, [active, dispatch, projectId, refreshKey])
 
   const snapshot = state.snapshot
+  const hasResults = snapshot !== null
   const pending = state.pending !== null
-  const reasonIsValid = isRequiredText(reason)
+  const navigationDisabled = pending || !active
+  const mutationDisabled = readOnly || navigationDisabled
+  const reason = state.reasonInput.value
+  const hasLocalInputs = hasLocalAnalysisInputs(state)
+  const mutationPending = state.pending !== null && state.pending.method !== 'analysis.read'
+
+  const localControlsBlocked = (): boolean => readOnly || !active ||
+    stateRef.current.pending !== null ||
+    panelRef.current?.closest('[hidden], [inert], [aria-hidden="true"]') !== null
+
+  const canUseEvidence = (): boolean => stateRef.current.snapshot?.projectId === projectId &&
+    (stateRef.current.status === 'available' || stateRef.current.status === 'noChange')
+
+  const discardTopicInput = (topicId: string, field: AnalysisTopicField): void => {
+    if (localControlsBlocked()) return
+    dispatch({ type: 'topicInputDiscarded', topicId, field })
+    setInputMessage(null)
+  }
+
+  const discardLocalInputs = (): void => {
+    if (localControlsBlocked()) return
+    dispatch({ type: 'localInputsDiscarded' })
+    setInputMessage(null)
+  }
+
+  const changeTopicInput = (topic: AnalysisTopic, field: AnalysisTopicField, value: string): void => {
+    if (localControlsBlocked() || !canUseEvidence() ||
+      !stateRef.current.snapshot?.topics.includes(topic)) return
+    dispatch({ type: 'topicInputChanged', topicId: topic.topicId, field, value })
+  }
+
+  useEffect(() => {
+    const justLoaded = hasResults && !hadResultsRef.current
+    hadResultsRef.current ||= hasResults
+    // A hidden load is still successful; switching tabs must not steal focus later.
+    if (!justLoaded || !isContextual || !active) return
+    const heading = resultTitleRef.current
+    if (heading === null || heading.closest('[hidden], [inert], [aria-hidden="true"]') !== null) return
+    heading.focus({ preventScroll: true })
+  }, [active, hasResults, isContextual])
 
   const decideCandidate = (
     candidate: AnalysisCandidate,
     decision: 'adopt' | 'reject',
   ): void => {
     const currentSnapshot = stateRef.current.snapshot
-    if (currentSnapshot === null || stateRef.current.pending !== null) return
-    if (!reasonIsValid) {
+    if (localControlsBlocked() || !canUseEvidence() || currentSnapshot === null ||
+      !currentSnapshot.candidates.includes(candidate)) return
+    const currentReason = stateRef.current.reasonInput.value
+    if (!isRequiredText(currentReason)) {
       setInputMessage('採否の理由を入力してください。')
       return
     }
@@ -199,7 +379,7 @@ export function AnalysisPanelView({
       revisionId: currentSnapshot.revisionId,
       digest: currentSnapshot.revisionDigest,
       candidateId: candidate.candidateId,
-      reason,
+      reason: currentReason,
     }
     setInputMessage(null)
     try {
@@ -215,36 +395,43 @@ export function AnalysisPanelView({
     }
   }
 
-  const updateTopic = (topic: AnalysisTopic, update: AnalysisTopicUpdate): void => {
+  const updateTopic = (topic: AnalysisTopic, field: AnalysisTopicField): void => {
     const currentSnapshot = stateRef.current.snapshot
-    if (currentSnapshot === null || stateRef.current.pending !== null) return
-    if (!reasonIsValid) {
+    if (localControlsBlocked() || !canUseEvidence() || currentSnapshot === null ||
+      !currentSnapshot.topics.includes(topic)) return
+    const input = stateRef.current.topicInputs[topic.topicId]?.[field]
+    if (input !== undefined && !analysisTopicInputIsCurrent(currentSnapshot, topic, field, input)) return
+    const currentReason = stateRef.current.reasonInput.value
+    if (!isRequiredText(currentReason)) {
       setInputMessage('トピック変更の理由を入力してください。')
       return
     }
     setInputMessage(null)
     try {
-      send(
-        sessionRef.current,
-        createAnalysisUpdateTopicRequest(createRequestId(), {
-          projectId: currentSnapshot.projectId,
-          revisionId: currentSnapshot.revisionId,
-          digest: currentSnapshot.revisionDigest,
-          topicId: topic.topicId,
-          expectedTopicRevisionId: topic.metadataRevisionId,
-          update,
-          reason,
-        }),
-        dispatch,
-      )
+      const request = createAnalysisUpdateTopicRequest(createRequestId(), {
+        projectId: currentSnapshot.projectId,
+        revisionId: currentSnapshot.revisionId,
+        digest: currentSnapshot.revisionDigest,
+        topicId: topic.topicId,
+        expectedTopicRevisionId: input?.base.metadataRevisionId ?? topic.metadataRevisionId,
+        update: topicUpdate(field, input?.value ?? getAnalysisTopicValue(topic, field)),
+        reason: currentReason,
+      })
+      // The existing bridge emits requestStarted synchronously before transport/ACK.
+      topicRequestRef.current = request
+      send(sessionRef.current, request, dispatch)
     } catch {
       setInputMessage('トピック入力を安全な単一項目の変更として検証できませんでした。')
+    } finally {
+      topicRequestRef.current = null
     }
   }
 
   const navigateToRange = (range: AnalysisTimeRange): void => {
     const currentSnapshot = stateRef.current.snapshot
-    if (currentSnapshot === null) return
+    if (!active || currentSnapshot === null || currentSnapshot.projectId !== projectId ||
+      stateRef.current.pending !== null ||
+      panelRef.current?.closest('[hidden], [inert], [aria-hidden="true"]') !== null) return
     const outcome = requestPlayerSourceSeek({
       projectId: currentSnapshot.projectId,
       sourceTime: range.start,
@@ -253,60 +440,108 @@ export function AnalysisPanelView({
   }
 
   return (
-    <section className="analysis-panel" aria-labelledby="analysis-title">
+    <section ref={panelRef} className="analysis-panel" aria-labelledby="analysis-title" hidden={!active}>
       <div className="analysis-heading">
         <div>
           <p className="eyebrow">Revision-bound analysis</p>
-          <h2 id="analysis-title">解析結果</h2>
+          <h2 id="analysis-title" ref={resultTitleRef} tabIndex={isContextual ? -1 : undefined}>
+            解析結果
+          </h2>
         </div>
         <div className="analysis-heading-actions">
           <p className="analysis-status" role="status" data-analysis-status={state.status}>
-            {statusMessages[state.status]}
+            {isContextual && projectId === null
+              ? '未選択 — 解析する案件を選択してください。'
+              : isContextual && (state.status === 'bridgeUnavailable' || state.status === 'unavailable')
+                ? `未接続 — ${statusMessages[state.status]}`
+                : statusMessages[state.status]}
           </p>
-          <button
-            type="button"
-            className="quiet-button"
-            disabled={projectId === null || pending}
-            onClick={sendRead}
-          >
-            最新版を読み込む
-          </button>
+          {!isContextual || projectId !== null ? (
+            <button
+              type="button"
+              className="quiet-button"
+              disabled={projectId === null || navigationDisabled}
+              onClick={sendRead}
+            >
+              最新版を読み込む
+            </button>
+          ) : null}
         </div>
       </div>
 
-      {projectId === null ? (
+      {!isContextual && projectId === null ? (
         <div className="analysis-empty">
           <p>確定済み案件を案件一覧から開いてください。</p>
         </div>
       ) : null}
 
-      {snapshot === null ? null : (
-        <div className="analysis-workspace">
-          <div className="analysis-persistence-notice" role="note">
-            <strong>作業中データ</strong>
-            <span>ここでの採用・編集は自動保存されません。保存操作とは分離されています。</span>
-          </div>
+      {dirty && autoReadAttemptedRef.current && readRefreshKey !== refreshKey ? (
+        <p className="analysis-registration-notice" role={active ? 'status' : undefined}>
+          解析データが更新されました。未送信の入力を保持しています。保存または取消後、表示中に最新版を読み込みます。
+        </p>
+      ) : null}
 
+      {snapshot === null && !hasLocalInputs ? null : (
+        <div className="analysis-local-inputs">
           <label className="analysis-reason">
             <span>判断・変更理由</span>
             <input
               type="text"
               value={reason}
-              disabled={pending}
-              onChange={(event) => setReason(event.currentTarget.value)}
+              disabled={mutationDisabled}
+              readOnly={snapshot === null}
+              onChange={(event) => {
+                if (!localControlsBlocked() && canUseEvidence()) {
+                  dispatch({ type: 'reasonInputChanged', value: event.currentTarget.value })
+                }
+              }}
               aria-describedby="analysis-reason-help"
             />
           </label>
           <p id="analysis-reason-help" className="field-help">
-            候補の採否またはトピック1項目の変更に記録する理由です。
+            {snapshot === null
+              ? '保持した未送信の理由です。選択してコピーできます。最新版の確認前は編集・送信できません。'
+              : '候補の採否またはトピック1項目の変更に記録する理由です。'}
           </p>
+          {hasLocalInputs ? (
+            <div className="analysis-persistence-notice" role="note">
+              <p>未送信の入力だけを取り消します。ホスト受付済みの未永続化の変更は取り消しません。</p>
+              <button type="button" disabled={mutationDisabled} onClick={discardLocalInputs}>
+                未送信の入力を取り消す
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
+      {mutationPending ? (
+        <p className="analysis-operation-status" role="status">変更要求を送信中です。</p>
+      ) : null}
+      {inputMessage === null ? null : (
+        <p className="analysis-input-error" role="alert">{inputMessage}</p>
+      )}
+
+      <RetainedTopicInputs
+        inputs={state.topicInputs}
+        snapshot={snapshot}
+        showRawIdFields={!isContextual}
+        active={active}
+        disabled={mutationDisabled}
+        onDiscard={discardTopicInput}
+      />
+
+      {snapshot === null ? null : (
+        <div className="analysis-workspace">
+          <div className="analysis-persistence-notice" role="note">
+            <strong>{readOnly ? '参照専用' : '作業中データ'}</strong>
+            <span>{readOnly
+              ? '最新版の読み込みと元時刻・文字起こしへの移動は利用できます。ここでは採用・編集できません。'
+              : 'ここでの採用・編集は自動保存されません。ホストのメモリ内への反映であり、永続化や未送信の入力とは別です。'}</span>
+          </div>
+
           <p className="analysis-confidence-note">
             確度は解析元の正規値または「未提供」をそのまま表示し、画面側で補完しません。
           </p>
 
-          {inputMessage === null ? null : (
-            <p className="analysis-input-error" role="alert">{inputMessage}</p>
-          )}
           {state.operationMessage === null ? null : (
             <p className="analysis-operation-status" role="status">{state.operationMessage}</p>
           )}
@@ -340,7 +575,7 @@ export function AnalysisPanelView({
                   <SpeakerCard
                     key={speaker.speakerId}
                     speaker={speaker}
-                    disabled={pending}
+                    disabled={navigationDisabled}
                     onNavigate={() => navigateToRange(speaker.source.range)}
                   />
                 ))}
@@ -361,12 +596,18 @@ export function AnalysisPanelView({
               <div className="analysis-topic-list">
                 {snapshot.topics.map((topic) => (
                   <TopicCard
-                    key={topic.metadataRevisionId}
+                    key={topic.topicId}
                     topic={topic}
+                    snapshot={snapshot}
+                    inputs={state.topicInputs[topic.topicId]}
                     speakers={snapshot.speakers}
-                    disabled={pending}
+                    disabled={mutationDisabled}
+                    navigationDisabled={navigationDisabled}
+                    showRawIdFields={!isContextual}
                     onNavigate={() => navigateToRange(topic.range)}
-                    onUpdate={(update) => updateTopic(topic, update)}
+                    onChange={(field, value) => changeTopicInput(topic, field, value)}
+                    onUpdate={(field) => updateTopic(topic, field)}
+                    onDiscard={(field) => discardTopicInput(topic.topicId, field)}
                   />
                 ))}
               </div>
@@ -375,14 +616,15 @@ export function AnalysisPanelView({
 
           <CandidateSection
             candidates={snapshot.candidates}
-            disabled={pending}
+            disabled={mutationDisabled}
+            navigationDisabled={navigationDisabled}
             onNavigate={(candidate) => navigateToRange(candidate.source.range)}
             onDecide={decideCandidate}
           />
 
           <SensitivitySection
             sensitivity={snapshot.sensitivity}
-            disabled={pending}
+            disabled={navigationDisabled}
             onNavigate={navigateToRange}
           />
 
@@ -423,31 +665,48 @@ function SpeakerCard({
 
 function TopicCard({
   topic,
+  snapshot,
+  inputs,
   speakers,
   disabled,
+  navigationDisabled,
+  showRawIdFields,
   onNavigate,
+  onChange,
   onUpdate,
+  onDiscard,
 }: Readonly<{
   topic: AnalysisTopic
+  snapshot: AnalysisSnapshot
+  inputs: AnalysisTopicInputs | undefined
   speakers: readonly AnalysisSpeaker[]
   disabled: boolean
+  navigationDisabled: boolean
+  showRawIdFields: boolean
   onNavigate: () => void
-  onUpdate: (update: AnalysisTopicUpdate) => void
+  onChange: (field: AnalysisTopicField, value: string) => void
+  onUpdate: (field: AnalysisTopicField) => void
+  onDiscard: (field: AnalysisTopicField) => void
 }>) {
-  const [title, setTitle] = useState(topic.title)
-  const [summary, setSummary] = useState(topic.summary ?? '')
-  const [mainSpeakerId, setMainSpeakerId] = useState(topic.mainSpeaker?.speakerId ?? '')
-  const [keywords, setKeywords] = useState(topic.keywords.join('\n'))
-  const [importantStatements, setImportantStatements] = useState(
-    topic.importantStatementSourceSpanIds.join('\n'),
-  )
-  const [audience, setAudience] = useState(topic.audience)
-  const [publicationCautions, setPublicationCautions] = useState(
-    topic.publicationCautions.join('\n'),
-  )
+  const fieldProps = (field: AnalysisTopicField) => {
+    const input = inputs?.[field]
+    return {
+      value: input?.value ?? getAnalysisTopicValue(topic, field),
+      disabled,
+      hasInput: input !== undefined,
+      stale: input !== undefined && !analysisTopicInputIsCurrent(snapshot, topic, field, input),
+      helpId: `analysis-topic-${topic.topicId}-${field}-input`,
+      onChange: (value: string) => onChange(field, value),
+      onSave: () => onUpdate(field),
+      onDiscard: () => onDiscard(field),
+    }
+  }
+  const mainSpeakerProps: TopicFieldProps = {
+    ...fieldProps('mainSpeaker'), label: '主話者', origin: topic.mainSpeakerOrigin,
+  }
 
   return (
-    <article className="analysis-topic-card">
+    <article className="analysis-topic-card" data-topic-id={topic.topicId}>
       <header className="analysis-card-heading">
         <div>
           <h4>{topic.title}</h4>
@@ -455,7 +714,7 @@ function TopicCard({
         </div>
         <div className="analysis-topic-actions">
           <span className="analysis-chip">変更元 {fieldLabel(topic.changedField)}</span>
-          <button type="button" disabled={disabled} onClick={onNavigate}>
+          <button type="button" disabled={navigationDisabled} onClick={onNavigate}>
             トピックの元時刻へ移動
           </button>
         </div>
@@ -469,34 +728,33 @@ function TopicCard({
 
       <div className="analysis-topic-fields">
         <TopicTextField
+          {...fieldProps('title')}
           label="タイトル"
-          value={title}
-          disabled={disabled}
           origin={topic.titleOrigin}
-          onChange={setTitle}
-          onSave={() => onUpdate({ field: 'title', text: title })}
         />
         <TopicTextAreaField
+          {...fieldProps('summary')}
           label="要約"
-          value={summary}
-          disabled={disabled}
           origin={topic.summaryOrigin}
-          onChange={setSummary}
-          onSave={() => onUpdate({ field: 'summary', text: summary === '' ? null : summary })}
         />
+        {mainSpeakerProps.stale ? <TopicTextField {...mainSpeakerProps} /> : (
         <form
           className="analysis-topic-field"
           onSubmit={(event) => {
             event.preventDefault()
-            onUpdate({ field: 'mainSpeaker', speakerId: mainSpeakerId || null })
+            if (disabled) return
+            onUpdate('mainSpeaker')
           }}
         >
           <label>
             <span>主話者</span>
             <select
-              value={mainSpeakerId}
+              value={mainSpeakerProps.value}
               disabled={disabled}
-              onChange={(event) => setMainSpeakerId(event.currentTarget.value)}
+              aria-describedby={mainSpeakerProps.hasInput ? mainSpeakerProps.helpId : undefined}
+              onChange={(event) => {
+                if (!disabled) mainSpeakerProps.onChange(event.currentTarget.value)
+              }}
             >
               <option value="">未設定</option>
               {speakers.map((speaker) => (
@@ -507,106 +765,100 @@ function TopicCard({
             </select>
           </label>
           <p className="analysis-field-origin">由来: {originLabel(topic.mainSpeakerOrigin)}</p>
+          <TopicInputNotice {...mainSpeakerProps} />
           <button type="submit" disabled={disabled}>主話者を保存</button>
         </form>
+        )}
         <TopicListField
+          {...fieldProps('keywords')}
           label="キーワード"
-          value={keywords}
-          disabled={disabled}
           origin={topic.keywordsOrigin}
-          onChange={setKeywords}
-          onSave={() => onUpdate({ field: 'keywords', values: splitEntries(keywords) })}
         />
-        <TopicListField
-          label="重要発言の元区間 ID"
-          value={importantStatements}
-          disabled={disabled}
-          origin={topic.importantStatementsOrigin}
-          onChange={setImportantStatements}
-          onSave={() => onUpdate({
-            field: 'importantStatements',
-            sourceSpanIds: splitEntries(importantStatements),
-          })}
-        />
+        {showRawIdFields ? (
+          <TopicListField
+            {...fieldProps('importantStatements')}
+            label="重要発言の元区間 ID"
+            origin={topic.importantStatementsOrigin}
+          />
+        ) : null}
         <TopicTextField
+          {...fieldProps('audience')}
           label="対象視聴者"
-          value={audience}
-          disabled={disabled}
           origin={topic.audienceOrigin}
-          onChange={setAudience}
-          onSave={() => onUpdate({ field: 'audience', text: audience })}
         />
         <TopicListField
+          {...fieldProps('publicationCautions')}
           label="公開時の注意"
-          value={publicationCautions}
-          disabled={disabled}
           origin={topic.publicationCautionsOrigin}
-          onChange={setPublicationCautions}
-          onSave={() => onUpdate({
-            field: 'publicationCautions',
-            values: splitEntries(publicationCautions),
-          })}
         />
       </div>
     </article>
   )
 }
 
-function TopicTextField({
-  label,
-  value,
-  disabled,
-  origin,
-  onChange,
-  onSave,
-}: TopicFieldProps) {
+function TopicTextField(props: TopicFieldProps) {
   return (
-    <form className="analysis-topic-field" onSubmit={(event) => submit(event, onSave)}>
+    <form className="analysis-topic-field" onSubmit={(event) => submit(event, props.onSave, props.disabled || props.stale)}>
       <label>
-        <span>{label}</span>
+        <span>{props.label}</span>
         <input
           type="text"
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.currentTarget.value)}
+          value={props.value}
+          disabled={props.disabled}
+          readOnly={props.stale}
+          aria-describedby={props.hasInput ? props.helpId : undefined}
+          onChange={(event) => {
+            if (!props.disabled && !props.stale) props.onChange(event.currentTarget.value)
+          }}
         />
       </label>
-      <p className="analysis-field-origin">由来: {originLabel(origin)}</p>
-      <button type="submit" disabled={disabled}>{label}を保存</button>
+      <p className="analysis-field-origin">由来: {originLabel(props.origin)}</p>
+      <TopicInputNotice {...props} />
+      <button type="submit" disabled={props.disabled || props.stale}>{props.label}を保存</button>
     </form>
   )
 }
 
 function TopicTextAreaField(props: TopicFieldProps) {
   return (
-    <form className="analysis-topic-field" onSubmit={(event) => submit(event, props.onSave)}>
+    <form className="analysis-topic-field" onSubmit={(event) => submit(event, props.onSave, props.disabled || props.stale)}>
       <label>
         <span>{props.label}</span>
         <textarea
           value={props.value}
           disabled={props.disabled}
-          onChange={(event) => props.onChange(event.currentTarget.value)}
+          readOnly={props.stale}
+          aria-describedby={props.hasInput ? props.helpId : undefined}
+          onChange={(event) => {
+            if (!props.disabled && !props.stale) props.onChange(event.currentTarget.value)
+          }}
         />
       </label>
       <p className="analysis-field-origin">由来: {originLabel(props.origin)}</p>
-      <button type="submit" disabled={props.disabled}>{props.label}を保存</button>
+      <TopicInputNotice {...props} />
+      <button type="submit" disabled={props.disabled || props.stale}>{props.label}を保存</button>
     </form>
   )
 }
 
 function TopicListField(props: TopicFieldProps) {
   return (
-    <form className="analysis-topic-field" onSubmit={(event) => submit(event, props.onSave)}>
+    <form className="analysis-topic-field" onSubmit={(event) => submit(event, props.onSave, props.disabled || props.stale)}>
       <label>
         <span>{props.label}（1行1件）</span>
         <textarea
           value={props.value}
           disabled={props.disabled}
-          onChange={(event) => props.onChange(event.currentTarget.value)}
+          readOnly={props.stale}
+          aria-describedby={props.hasInput ? props.helpId : undefined}
+          onChange={(event) => {
+            if (!props.disabled && !props.stale) props.onChange(event.currentTarget.value)
+          }}
         />
       </label>
       <p className="analysis-field-origin">由来: {originLabel(props.origin)}</p>
-      <button type="submit" disabled={props.disabled}>{props.label}を保存</button>
+      <TopicInputNotice {...props} />
+      <button type="submit" disabled={props.disabled || props.stale}>{props.label}を保存</button>
     </form>
   )
 }
@@ -615,19 +867,79 @@ interface TopicFieldProps {
   readonly label: string
   readonly value: string
   readonly disabled: boolean
+  readonly hasInput: boolean
+  readonly stale: boolean
+  readonly helpId: string
   readonly origin: AnalysisTopic['titleOrigin']
   readonly onChange: (value: string) => void
   readonly onSave: () => void
+  readonly onDiscard: () => void
+}
+
+function TopicInputNotice(props: TopicFieldProps) {
+  if (!props.hasInput) return null
+  return (
+    <div data-input-status={props.stale ? 'stale' : 'unsent'}>
+      <p id={props.helpId} className="field-help">
+        {props.stale
+          ? '入力の基準版が変わったため送信できません。原文は選択してコピーできます。最新版から編集するには、この項目の入力を取り消してください。'
+          : 'この項目には未送信の入力があります。'}
+      </p>
+      <button type="button" disabled={props.disabled} onClick={props.onDiscard}>
+        {props.stale ? 'この入力を取り消して最新版から編集' : 'この入力を取り消す'}
+      </button>
+    </div>
+  )
+}
+
+function RetainedTopicInputs({
+  inputs, snapshot, showRawIdFields, active, disabled, onDiscard,
+}: Readonly<{
+  inputs: AnalysisState['topicInputs']
+  snapshot: AnalysisSnapshot | null
+  showRawIdFields: boolean
+  active: boolean
+  disabled: boolean
+  onDiscard: (topicId: string, field: AnalysisTopicField) => void
+}>) {
+  const retained = Object.entries(inputs).flatMap(([topicId, fields]) => {
+    const topicVisible = snapshot?.topics.some((topic) => topic.topicId === topicId) === true
+    return Object.entries(fields).flatMap(([field, input]) =>
+      topicVisible && (showRawIdFields || field !== 'importantStatements')
+        ? []
+        : [{ topicId, field: field as AnalysisTopicField, input }],
+    )
+  })
+  if (retained.length === 0) return null
+  return (
+    <section className="analysis-section analysis-retained-inputs" aria-labelledby="analysis-retained-title">
+      <h3 id="analysis-retained-title">保持している未送信の入力</h3>
+      <p>対応する解析結果を表示できないため送信できません。自分の入力だけを保持しています。原文は選択してコピーできます。</p>
+      {retained.map(({ topicId, field, input }, index) => (
+        <div className="analysis-retained-topic-input" key={`${topicId}-${field}`}>
+          <label>
+            <span>保持した入力 {index + 1}: {fieldLabel(field)}</span>
+            <textarea value={input.value} readOnly disabled={!active} />
+          </label>
+          <button type="button" disabled={disabled} onClick={() => onDiscard(topicId, field)}>
+            この入力を取り消す
+          </button>
+        </div>
+      ))}
+    </section>
+  )
 }
 
 function CandidateSection({
   candidates,
   disabled,
+  navigationDisabled,
   onNavigate,
   onDecide,
 }: Readonly<{
   candidates: readonly AnalysisCandidate[]
   disabled: boolean
+  navigationDisabled: boolean
   onNavigate: (candidate: AnalysisCandidate) => void
   onDecide: (candidate: AnalysisCandidate, decision: 'adopt' | 'reject') => void
 }>) {
@@ -685,7 +997,7 @@ function CandidateSection({
                     </div>
                   )}
                   <div className="analysis-card-actions">
-                    <button type="button" disabled={disabled} onClick={() => onNavigate(candidate)}>
+                    <button type="button" disabled={navigationDisabled} onClick={() => onNavigate(candidate)}>
                       元時刻へ移動
                     </button>
                     {candidate.displayKind === 'technicalWarning' ? null : (
@@ -837,19 +1149,19 @@ function StagedChanges({ changes }: Readonly<{ changes: readonly AnalysisStagedC
     <section className="analysis-section analysis-staged" aria-labelledby="analysis-staged-title">
       <div className="analysis-section-heading">
         <div>
-          <h3 id="analysis-staged-title">未保存の変更</h3>
-          <p>採用と編集の結果です。いずれも persisted = false です。</p>
+          <h3 id="analysis-staged-title">ホスト受付済みの変更（未永続化）</h3>
+          <p>採用と編集をホストのメモリ内へ反映した結果です。いずれも persisted = false で、未送信の入力とは別です。</p>
         </div>
         <span className="analysis-chip is-warning">未永続化</span>
       </div>
       {changes.length === 0 ? (
-        <p>この解析セッションに未保存の変更はありません。</p>
+        <p>この解析セッションにホスト受付済みの変更はありません。</p>
       ) : (
         <ul className="analysis-staged-list">
           {changes.map((change, index) => (
             <li key={stagedChangeKey(change, index)}>
               <strong>{stagedChangeLabel(change)}</strong>
-              <span>未保存</span>
+              <span>未永続化</span>
             </li>
           ))}
         </ul>
@@ -870,9 +1182,9 @@ function send(
   session.send(request)
 }
 
-function submit(event: FormEvent<HTMLFormElement>, onSave: () => void): void {
+function submit(event: FormEvent<HTMLFormElement>, onSave: () => void, disabled: boolean): void {
   event.preventDefault()
-  onSave()
+  if (!disabled) onSave()
 }
 
 function groupCandidates(candidates: readonly AnalysisCandidate[]) {
@@ -882,6 +1194,18 @@ function groupCandidates(candidates: readonly AnalysisCandidate[]) {
 
 function splitEntries(value: string): readonly string[] {
   return [...new Set(value.split(/\r?\n/u).map((entry) => entry.trim()).filter(Boolean))]
+}
+
+function topicUpdate(field: AnalysisTopicField, value: string): AnalysisTopicUpdate {
+  switch (field) {
+    case 'title':
+    case 'audience': return { field, text: value }
+    case 'summary': return { field, text: value === '' ? null : value }
+    case 'mainSpeaker': return { field, speakerId: value || null }
+    case 'keywords':
+    case 'publicationCautions': return { field, values: splitEntries(value) }
+    case 'importantStatements': return { field, sourceSpanIds: splitEntries(value) }
+  }
 }
 
 function formatConfidence(value: number | null): string {

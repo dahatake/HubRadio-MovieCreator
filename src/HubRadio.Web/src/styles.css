@@ -98,7 +98,8 @@ html[data-theme="dark"] {
 html,
 body,
 #root {
-  min-width: 320px;
+  /* A 320px viewport can have less inline space after its vertical scrollbar. */
+  min-width: 0;
   min-height: 100%;
   margin: 0;
 }
@@ -106,6 +107,7 @@ body,
 body {
   min-height: 100vh;
   color: var(--cp-text);
+  font-size: 1rem;
   background: var(--cp-bg);
 }
 
@@ -117,10 +119,12 @@ select {
 }
 
 button {
-  min-height: 2.75rem;
-  padding: 0.625rem 1rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
   color: var(--cp-text);
+  font-size: 0.875rem;
   font-weight: 700;
+  line-height: 1.5;
   background: var(--cp-surface);
   border: 1px solid var(--cp-border-strong);
   border-radius: 0.625rem;
@@ -170,16 +174,25 @@ fieldset:disabled select {
   width: min(100%, 100rem);
   min-height: 100vh;
   margin: 0 auto;
-  padding: clamp(1rem, 3vw, 2.5rem);
+  padding: clamp(0.75rem, 1.5vw, 1.5rem);
+}
+
+.app-shell > #project-content,
+.app-header,
+.app-header > .brand-lockup,
+.app-header > .connection-controls,
+.app-header .brand-lockup > div {
+  min-width: 0;
+  min-height: 0;
 }
 
 .app-header {
   display: flex;
-  gap: 1.5rem;
+  gap: 1rem;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1.5rem;
-  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
   background: var(--cp-panel-strong);
   border: 1px solid var(--cp-border);
   border-radius: 1rem;
@@ -204,6 +217,7 @@ fieldset:disabled select {
   display: grid;
   width: 2.75rem;
   height: 2.75rem;
+  flex-shrink: 0;
   color: var(--cp-accent-fg);
   font-size: 1.25rem;
   font-weight: 900;
@@ -230,13 +244,13 @@ p {
 
 h1 {
   margin-bottom: 0;
-  font-size: clamp(1.2rem, 3vw, 1.65rem);
+  font-size: clamp(1.125rem, 2vw, 1.5rem);
   line-height: 1.15;
 }
 
 h2 {
-  margin-bottom: 0.4rem;
-  font-size: clamp(1.4rem, 3vw, 2rem);
+  margin-bottom: 0.25rem;
+  font-size: clamp(1.25rem, 2vw, 1.5rem);
   line-height: 1.2;
 }
 
@@ -251,8 +265,9 @@ h2 {
 }
 
 .description {
-  margin: 0.5rem 0 0;
+  margin: 0.25rem 0 0;
   color: var(--cp-text-muted);
+  font-size: 0.875rem;
   line-height: 1.6;
 }
 
@@ -321,8 +336,8 @@ h2 {
 }
 
 .quiet-button {
-  min-height: 2.4rem;
-  padding: 0.45rem 0.75rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
   color: var(--cp-text-muted);
   background: var(--cp-surface);
   border-color: var(--cp-border);
@@ -350,7 +365,7 @@ h2 {
 
 .section-heading-row {
   align-items: flex-start;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1rem;
 }
 
 .section-heading-row > div:first-child {
@@ -1015,10 +1030,12 @@ input[type="radio"] {
 }
 
 .button {
-  min-height: 2.75rem;
-  padding: 0.625rem 1rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.75rem;
   font: inherit;
+  font-size: 0.875rem;
   font-weight: 700;
+  line-height: 1.5;
   border: 1px solid transparent;
   border-radius: 0.5rem;
   cursor: pointer;

@@ -1,6 +1,7 @@
 using System.Security;
 using System.Security.Cryptography;
 using HubRadio.Core.Identity;
+using HubRadio.Core.Jobs;
 using HubRadio.Core.Projects;
 using HubRadio.Infrastructure.Database;
 using HubRadio.Infrastructure.Integrity;
@@ -301,6 +302,9 @@ public sealed class ArtifactStore
     private readonly string _databasePath;
     private readonly string _workspacePath;
 
+    internal string LocalDatabasePath => _databasePath;
+    internal string LocalWorkspacePath => _workspacePath;
+
     public ArtifactStore(string databasePath, string workspacePath)
     {
         try
@@ -433,6 +437,131 @@ public sealed class ArtifactStore
             }
 
             throw Failure(ClassifyFailure(exception));
+        }
+    }
+
+    /// <summary>Prevents a caller's delivery lock from protecting a different store/workspace.</summary>
+    internal void RequireLocalBinding(string databasePath, string workspacePath)
+    {
+        if (!string.Equals(_databasePath, SqliteStoreSupport.ValidateLocalAbsolutePath(databasePath, nameof(databasePath)), PathComparison) ||
+            !string.Equals(_workspacePath, Path.TrimEndingDirectorySeparator(
+                SqliteStoreSupport.ValidateLocalAbsolutePath(workspacePath, nameof(workspacePath))), PathComparison))
+        {
+            throw Failure(ArtifactStoreFailureReason.UnsafePath);
+        }
+        ValidateWorkspaceChain(_workspacePath);
+    }
+
+    /// <summary>
+    /// Registers ONLY an execution-owned local delivery set already moved out of staging.
+    /// The caller holds this database's immediate transaction through validation and commit.
+    /// This does not commit, move, overwrite, approve, or accept arbitrary existing paths.
+    /// Returned non-delete-shared handles must remain held through the caller's commit.
+    /// A failed INSERT leaves filesystem reconciliation to the owner; never retry a move here.
+    /// </summary>
+    internal async Task<IReadOnlyList<ValidatedArtifactReadStream>> RegisterLocalDeliverySetAsync(
+        SqliteConnection connection, SqliteTransaction transaction,
+        EntityId<SourceOnlyExecutionIdTag> executionId, EntityId<JobIdTag> rootJobId,
+        IReadOnlyList<ArtifactPromotionRequest> requests, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(connection); ArgumentNullException.ThrowIfNull(transaction);
+        ArgumentNullException.ThrowIfNull(executionId); ArgumentNullException.ThrowIfNull(rootJobId);
+        ArgumentNullException.ThrowIfNull(requests);
+        cancellationToken.ThrowIfCancellationRequested();
+        requests = requests.ToArray(); // Freeze the batch before any awaited file validation.
+        if (!ReferenceEquals(transaction.Connection, connection) ||
+            !string.Equals(Path.GetFullPath(connection.DataSource), _databasePath, PathComparison) ||
+            requests.Count is < 2 or > 17 || requests.Any(r => r is null) ||
+            requests.Select(r => r.Id).Distinct().Count() != requests.Count)
+            throw Failure(ArtifactStoreFailureReason.DatabaseRejected);
+
+        EntityId<ProjectIdTag> projectId = requests[0].ProjectId;
+        string relativeRoot = $"source-only/{executionId}/{rootJobId}";
+        string stagingRoot = Path.Combine(_workspacePath, "projects", projectId.ToString(), "staging",
+            $"source-only-delivery-{executionId}-{rootJobId}");
+        string deliveryRoot = Path.Combine(_workspacePath, "projects", projectId.ToString(), "deliveries",
+            "source-only", executionId.ToString(), rootJobId.ToString());
+        var paths = new List<PromotionPaths>(requests.Count);
+        for (int i = 0; i < requests.Count; i++)
+        {
+            ArtifactPromotionRequest request = requests[i];
+            bool receipt = i == requests.Count - 1;
+            string extension = Path.GetExtension(request.RelativePath);
+            string name = request.Id + extension;
+            string expectedRelative = receipt ? $"source-only/{executionId}/{rootJobId}.delivery-receipt.json" : relativeRoot + "/" + name;
+            string expectedStaging = receipt ? Path.Combine(stagingRoot, "receipt.json") : Path.Combine(stagingRoot, "files", name);
+            if (request.ProjectId != projectId || request.CreatedAt != requests[0].CreatedAt ||
+                request.Kind != (receipt ? ArtifactKind.Evidence : ArtifactKind.Delivery) ||
+                (!receipt && extension is not (".mp4" or ".png" or ".srt" or ".vtt")) ||
+                request.RelativePath != expectedRelative || !string.Equals(request.StagingPath, expectedStaging, PathComparison))
+                throw Failure(ArtifactStoreFailureReason.UnsafePath);
+            paths.Add(BuildPromotionPaths(request));
+        }
+        using (SqliteCommand owner = connection.CreateCommand())
+        {
+            owner.Transaction = transaction;
+            owner.CommandText = "SELECT COUNT(*) FROM source_only_executions WHERE id = $id AND project_id = $project AND root_job_id = $job AND phase = 'Delivering';";
+            SqliteStoreSupport.AddText(owner, "$id", executionId.ToString());
+            SqliteStoreSupport.AddText(owner, "$project", projectId.ToString());
+            SqliteStoreSupport.AddText(owner, "$job", rootJobId.ToString());
+            if (owner.ExecuteScalar() is not long count || count != 1)
+                throw Failure(ArtifactStoreFailureReason.DatabaseRejected);
+        }
+
+        var opened = new List<ValidatedArtifactReadStream>(requests.Count);
+        try
+        {
+            EnsureProjectExists(connection, transaction, projectId);
+            EnsureDestinationDirectoryChain(deliveryRoot, createMissing: false, cancellationToken);
+            var expectedFiles = paths.Take(requests.Count - 1).Select(p => p.DestinationPath).ToHashSet(WorkspacePathSafety.PathComparer);
+            if (!expectedFiles.SetEquals(Directory.EnumerateFileSystemEntries(deliveryRoot)))
+                throw Failure(ArtifactStoreFailureReason.UnsafePath);
+            for (int i = 0; i < requests.Count; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ArtifactPromotionRequest request = requests[i];
+                PromotionPaths path = paths[i];
+                if (ReadArtifact(connection, transaction, request.Id) is not null || PathEntryExistsWithoutThrowing(path.StagingPath))
+                    throw Failure(ArtifactStoreFailureReason.DestinationExists);
+                EnsureStorageReferenceAbsent(connection, transaction, projectId, path.StorageReference);
+                ValidateRegisteredArtifactPath(path.DestinationPath);
+                FileStream? stream = new(path.DestinationPath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                    FileBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                try
+                {
+                    ValidateRegisteredArtifactPath(path.DestinationPath);
+                    ValidateOpenedFile(stream);
+                    await VerifyStoredContentAsync(stream, request.ExpectedDigest, request.ExpectedByteSize, cancellationToken).ConfigureAwait(false);
+                    ResetOpenedFile(stream);
+                    var artifact = new StoredArtifact(request.Id, projectId, request.Kind, path.StorageReference,
+                        request.ExpectedDigest, request.ExpectedByteSize, request.CreatedAt.ToUniversalTime());
+                    opened.Add(new ValidatedArtifactReadStream(artifact, stream));
+                    stream = null;
+                }
+                finally { stream?.Dispose(); }
+            }
+            // Do not insert any row until EVERY final file (including the receipt) was hashed.
+            for (int i = 0; i < requests.Count; i++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                InsertArtifact(connection, transaction, requests[i], paths[i].StorageReference, requests[i].ExpectedDigest,
+                    SqliteStoreSupport.FormatTimestamp(requests[i].CreatedAt, nameof(requests)));
+            }
+            foreach (ValidatedArtifactReadStream stream in opened)
+            {
+                StoredArtifact stored = ReadArtifact(connection, transaction, stream.Id)
+                    ?? throw Failure(ArtifactStoreFailureReason.DatabaseRejected);
+                if (!HasSameMetadata(stream.RegisteredArtifact, stored))
+                    throw Failure(ArtifactStoreFailureReason.DatabaseRejected);
+            }
+            if (!expectedFiles.SetEquals(Directory.EnumerateFileSystemEntries(deliveryRoot)))
+                throw Failure(ArtifactStoreFailureReason.UnsafePath);
+            return Array.AsReadOnly(opened.ToArray());
+        }
+        catch
+        {
+            foreach (ValidatedArtifactReadStream stream in opened) await stream.DisposeAsync().ConfigureAwait(false);
+            throw;
         }
     }
 

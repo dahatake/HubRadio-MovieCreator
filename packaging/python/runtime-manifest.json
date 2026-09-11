@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "evidenceDate": "2026-08-30",
+  "evidenceDate": "2026-09-09",
   "runtime": {
     "identity": "CPython",
     "version": "3.12.10",
@@ -107,9 +107,9 @@
   },
   "workerSource": {
     "root": "src/HubRadio.Worker/src",
-    "fileCount": 6,
-    "totalBytes": 45086,
-    "artifactSetSha256": "a190c26138bf07a3070ca086e2370c911e4dd0541e192591657d66da99564c9d",
+    "fileCount": 7,
+    "totalBytes": 65381,
+    "artifactSetSha256": "1a1b1ab2e6ad4ecef67c2bb24b2229a7d18ce9279e3eae7207e2619db7107595",
     "files": [
       {
         "path": "hubradio_worker/__init__.py",
@@ -118,13 +118,18 @@
       },
       {
         "path": "hubradio_worker/__main__.py",
-        "byteSize": 745,
-        "sha256": "96b93fdcb6b43d669698d491f6533c4db0fe9d5dae3ed50344102460120418d7"
+        "byteSize": 1262,
+        "sha256": "6b3a125f4173ff353bc699405b20c9cdc553ef55802c781b1d336ddb8244a208"
       },
       {
         "path": "hubradio_worker/protocol.py",
         "byteSize": 7901,
         "sha256": "b62969c5557636abbee7f9c74dea59f37be6c83c305d2e88e15bbd3443add4c2"
+      },
+      {
+        "path": "hubradio_worker/task_runner.py",
+        "byteSize": 16094,
+        "sha256": "3de79da3999fa6c037f9e8b92195c78a99b31e0bdf72ae3eb66299c14bdf3d46"
       },
       {
         "path": "hubradio_worker/tasks/__init__.py",
@@ -138,8 +143,8 @@
       },
       {
         "path": "hubradio_worker/tasks/transcribe.py",
-        "byteSize": 17031,
-        "sha256": "1b624974063aa84490f9f82c543848990e6c9b30b83284c3a7db28ee4576f5f5"
+        "byteSize": 20715,
+        "sha256": "1061fe5d45b3410a411c0f06b34117ebb5d03feaee283eb9ae263801d3cd0fb7"
       }
     ]
   },
@@ -147,9 +152,9 @@
     "rootName": "HubRadio.WorkerRuntime",
     "fileManifestName": "runtime-files.json",
     "entryPoint": "python.exe",
-    "expectedFileCount": 2695,
-    "expectedTotalBytes": 268442311,
-    "expectedArtifactSetSha256": "1ef1e9fca2b89c006f6030de0b315a9255c9b969fdf3ac7cc36a30aeb412ab7f",
+    "expectedFileCount": 2696,
+    "expectedTotalBytes": 268462606,
+    "expectedArtifactSetSha256": "eaadb7f2273afdb228b83df3966464703550c27a76a3ae0bb6b5e8539bb50350",
     "healthArguments": [
       "-I",
       "-B",

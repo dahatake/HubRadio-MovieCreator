@@ -392,8 +392,9 @@ public sealed class PtsIndexException : Exception
 
 public sealed class PtsIndexer
 {
+    // An empty section entry list explicitly suppresses all frame side-data fields.
     internal const string FrameShowEntries =
-        "frame=stream_index,key_frame,best_effort_timestamp,duration";
+        "frame=stream_index,key_frame,best_effort_timestamp,duration:frame_side_data=";
     internal const string PacketShowEntries =
         "packet=stream_index,flags,pts,duration";
     internal const string CompactOutputFormat =
@@ -898,6 +899,16 @@ public sealed class PtsIndexer
         string line,
         int expectedStreamIndex)
     {
+        // compact can emit one separator for the explicitly empty frame_side_data
+        // section after the four frame columns. This is not an optional value:
+        // all four known, distinct, required values must still pass validation.
+        // Do not trim repeated separators or relax the shared packet field parser.
+        if (line.EndsWith('|') &&
+            line.Count(static character => character == '|') == KnownFrameFields.Count)
+        {
+            line = line[..^1];
+        }
+
         Dictionary<string, string> fields = ParseFields(line, KnownFrameFields);
 
         string rawStreamIndex = ReadRequiredField(

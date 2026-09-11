@@ -68,15 +68,33 @@ export function SubtitleEditor({
 }: SubtitleEditorProps) {
   const [subtitleIndex, setSubtitleIndex] = useState(0)
   const [teropIndex, setTeropIndex] = useState(0)
+  const [visitedSubtitleIds, setVisitedSubtitleIds] = useState<readonly string[]>(
+    () => snapshot.subtitles.slice(0, 1).map((cue) => cue.cueId),
+  )
+  const [visitedTeropIds, setVisitedTeropIds] = useState<readonly string[]>(
+    () => snapshot.terops.slice(0, 1).map((cue) => cue.cueId),
+  )
   const [navigationMessage, setNavigationMessage] = useState<string | null>(null)
   const subtitleButtons = useRef<Array<HTMLButtonElement | null>>([])
   const teropButtons = useRef<Array<HTMLButtonElement | null>>([])
   const requestPlayerSourceSeek = usePlayerSourceNavigation()
-  const subtitle = snapshot.subtitles[subtitleIndex]
-  const terop = snapshot.terops[teropIndex]
   const subtitleRegionNames = snapshot.layout.regions
     .filter((region) => region.role === 'subtitle')
     .map((region) => region.name)
+
+  const chooseSubtitle = (index: number): void => {
+    const cue = snapshot.subtitles[index]
+    if (cue === undefined) return
+    setSubtitleIndex(index)
+    setVisitedSubtitleIds((current) => current.includes(cue.cueId) ? current : [...current, cue.cueId])
+  }
+
+  const chooseTerop = (index: number): void => {
+    const cue = snapshot.terops[index]
+    if (cue === undefined) return
+    setTeropIndex(index)
+    setVisitedTeropIds((current) => current.includes(cue.cueId) ? current : [...current, cue.cueId])
+  }
 
   const navigateSubtitle = (cue: LayoutSubtitleCue): void => {
     const outcome = requestPlayerSourceSeek({
@@ -93,11 +111,12 @@ export function SubtitleEditor({
           <p className="section-kicker">Immutable cue revisions</p>
           <h3 id="subtitle-editor-title">字幕 Cue とテロップ</h3>
         </div>
-        <span className="layout-evidence-badge">未永続化</span>
+        <span className="layout-evidence-badge">{snapshot.persistence === 'persisted' ? '字幕変更は保存済み' : '未永続化'}</span>
       </div>
       <p className="layout-card-note">
         字幕とテロップは別の revision evidence で編集します。文字列は React text node として表示し、HTML として解釈しません。
       </p>
+      {snapshot.persistence === 'persisted' && <p className="layout-card-note">保存済みなのは字幕の変更記録です。動画への反映には再生成が必要です。</p>}
       {navigationMessage !== null && (
         <p className="subtitle-navigation-status" role="status">
           {navigationMessage}
@@ -122,12 +141,12 @@ export function SubtitleEditor({
                     role="option"
                     aria-selected={subtitleIndex === index}
                     tabIndex={subtitleIndex === index ? 0 : -1}
-                    onClick={() => setSubtitleIndex(index)}
+                    onClick={() => chooseSubtitle(index)}
                     onKeyDown={(event) => handleListKey(
                       event,
                       index,
                       snapshot.subtitles.length,
-                      setSubtitleIndex,
+                      chooseSubtitle,
                       subtitleButtons.current,
                     )}
                   >
@@ -137,16 +156,23 @@ export function SubtitleEditor({
                   </button>
                 ))}
               </div>
-              {subtitle !== undefined && (
-                <SubtitleCueEditor
-                  key={subtitle.revisionId}
-                  cue={subtitle}
-                  disabled={disabled}
-                  applyOperation={applyOperation}
-                  navigate={() => navigateSubtitle(subtitle)}
-                  regionNames={subtitleRegionNames}
-                />
-              )}
+              {snapshot.subtitles.map((cue, index) => (
+                (subtitleIndex === index || visitedSubtitleIds.includes(cue.cueId)) &&
+                <div
+                  className="cue-editor-slot"
+                  key={`${cue.cueId}-${cue.revisionId}`}
+                  hidden={subtitleIndex !== index}
+                  inert={disabled || subtitleIndex !== index}
+                >
+                  <SubtitleCueEditor
+                    cue={cue}
+                    disabled={disabled || subtitleIndex !== index}
+                    applyOperation={applyOperation}
+                    navigate={() => navigateSubtitle(cue)}
+                    regionNames={subtitleRegionNames}
+                  />
+                </div>
+              ))}
             </>
           )}
         </section>
@@ -168,12 +194,12 @@ export function SubtitleEditor({
                     role="option"
                     aria-selected={teropIndex === index}
                     tabIndex={teropIndex === index ? 0 : -1}
-                    onClick={() => setTeropIndex(index)}
+                    onClick={() => chooseTerop(index)}
                     onKeyDown={(event) => handleListKey(
                       event,
                       index,
                       snapshot.terops.length,
-                      setTeropIndex,
+                      chooseTerop,
                       teropButtons.current,
                     )}
                   >
@@ -183,15 +209,22 @@ export function SubtitleEditor({
                   </button>
                 ))}
               </div>
-              {terop !== undefined && (
-                <TeropCueEditor
-                  key={terop.revisionId}
-                  cue={terop}
-                  disabled={disabled}
-                  applyOperation={applyOperation}
-                  regionNames={graphicRegionNames}
-                />
-              )}
+              {snapshot.terops.map((cue, index) => (
+                (teropIndex === index || visitedTeropIds.includes(cue.cueId)) &&
+                <div
+                  className="cue-editor-slot"
+                  key={`${cue.cueId}-${cue.revisionId}`}
+                  hidden={teropIndex !== index}
+                  inert={disabled || teropIndex !== index}
+                >
+                  <TeropCueEditor
+                    cue={cue}
+                    disabled={disabled || teropIndex !== index}
+                    applyOperation={applyOperation}
+                    regionNames={graphicRegionNames}
+                  />
+                </div>
+              ))}
             </>
           )}
         </section>
@@ -231,6 +264,7 @@ function SubtitleCueEditor({
 
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
+    if (disabled) return
     if (!isRequiredText(reason)) {
       setInputMessage('前後空白のない変更理由を入力してください。')
       return
@@ -302,7 +336,7 @@ function SubtitleCueEditor({
           ))}
         </ul>
       )}
-      <form className="cue-edit-form" onSubmit={submit}>
+      <form className="cue-edit-form" data-layout-cue-id={cue.cueId} onSubmit={submit}>
         <fieldset disabled={disabled}>
           <legend>字幕 Cue の typed child revision を作成する</legend>
           <label>
@@ -324,6 +358,7 @@ function SubtitleCueEditor({
             <label>
               <span>字幕本文</span>
               <textarea
+                name="subtitle-text"
                 value={text}
                 maxLength={16_384}
                 onChange={(event) => setText(event.currentTarget.value)}
@@ -396,6 +431,7 @@ function TeropCueEditor({
 
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
+    if (disabled) return
     if (!isRequiredText(reason)) {
       setInputMessage('前後空白のない変更理由を入力してください。')
       return
@@ -444,7 +480,7 @@ function TeropCueEditor({
         <span className="layout-evidence-badge">{cue.sourceKind}</span>
       </div>
       <p className="cue-text-preview">{cue.text}</p>
-      <form className="cue-edit-form" onSubmit={submit}>
+      <form className="cue-edit-form" data-layout-cue-id={cue.cueId} onSubmit={submit}>
         <fieldset disabled={disabled}>
           <legend>テロップ Cue の typed child revision を作成する</legend>
           <label>
@@ -466,6 +502,7 @@ function TeropCueEditor({
             <label>
               <span>テロップ本文</span>
               <textarea
+                name="terop-text"
                 value={text}
                 maxLength={16_384}
                 onChange={(event) => setText(event.currentTarget.value)}

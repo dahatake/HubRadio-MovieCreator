@@ -18,7 +18,7 @@
 - `src/HubRadio.App/HubRadio.App.csproj`
 - `tests/HubRadio.App.Tests/BundledDefaultSettingsProfileTests.cs`
 
-根拠として、`docs/dev/research/default-settings-research.md`、`docs/requirement-definition.md`、`work/20260902-1750-taskplan.md`、V2-001のdomain/schema、既存`src/HubRadio.App/Profiles/**`も照合した。
+根拠として、`docs/dev/research/default-settings-research.md`、`docs/requirement-definition.md`、V2-001のdomain/schema、既存`src/HubRadio.App/Profiles/**`も照合した。
 
 ## 2. 受入した指摘と反映
 

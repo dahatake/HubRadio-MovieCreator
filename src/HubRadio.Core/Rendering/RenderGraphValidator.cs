@@ -481,6 +481,23 @@ public static class RenderGraphValidator
                 .ToArray();
             int audioCount = terminalInputs.Count(static node =>
                 node.Kind == RenderNodeKind.Audio);
+            // Multiple audio terminals represent ordered cuts, never an implicit mix.
+            RenderNode[] audioCuts = terminalInputs.Where(static node =>
+                node.Kind == RenderNodeKind.Audio).OrderBy(static node =>
+                    node.OutputRange.Start).ToArray();
+            bool audioCoverage = audioCuts.Length <= 1;
+            if (audioCuts.Length > 1)
+            {
+                RationalTime cursor = default;
+                audioCoverage = true;
+                foreach (RenderNode cut in audioCuts)
+                {
+                    audioCoverage &= cut.OutputRange.Start == cursor;
+                    cursor = cut.OutputRange.End;
+                }
+
+                audioCoverage &= cursor == output.OutputRange.End;
+            }
             int subtitleCount = terminalInputs.Count(static node =>
                 node.Kind == RenderNodeKind.Subtitle);
             int primaryVisualCount = terminalInputs.Count(static node =>
@@ -490,11 +507,11 @@ public static class RenderGraphValidator
             bool streamsMatch = context.Profile.SubtitleBurnIn
                 ? subtitleCount == 1
                     && primaryVisualCount == 0
-                    && audioCount <= 1
+                    && audioCoverage
                     && terminalInputs.Length == subtitleCount + audioCount
                 : primaryVisualCount == 1
                     && subtitleCount <= 1
-                    && audioCount <= 1
+                    && audioCoverage
                     && terminalInputs.Length ==
                         primaryVisualCount + subtitleCount + audioCount;
             if (!streamsMatch)

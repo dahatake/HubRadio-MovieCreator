@@ -23,6 +23,11 @@ internal enum SettingsBridgeStatus
 
 internal static class SettingsBridgeProtocol
 {
+    // CanonicalJson writes integer tokens such as 10 as 1e1. Parse them
+    // without floating-point or decimal rounding of fractional input.
+    private const NumberStyles RevisionNumberStyles =
+        NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent;
+
     internal static bool HasValidParameters(BridgeMethod method, JsonElement parameters)
     {
         return method switch
@@ -39,6 +44,26 @@ internal static class SettingsBridgeProtocol
                 IsSettingKey(parameters.GetProperty("key")),
             BridgeMethod.SettingsResetAll =>
                 HasMutationIdentity(parameters, []),
+            BridgeMethod.SettingsGlobalRead =>
+                HasExactProperties(parameters, []),
+            BridgeMethod.SettingsGlobalUpdate =>
+                HasExpectedIdentity(parameters, ["key", "value"]) &&
+                IsSettingKey(parameters.GetProperty("key")) &&
+                IsSettingValue(parameters.GetProperty("value")),
+            BridgeMethod.SettingsGlobalReset =>
+                HasExpectedIdentity(parameters, ["key"]) &&
+                IsSettingKey(parameters.GetProperty("key")),
+            BridgeMethod.SettingsGlobalResetAll =>
+                HasExpectedIdentity(parameters, []),
+            BridgeMethod.SettingsFileExport =>
+                HasFileMutationIdentity(parameters, ["expectedFileSha256"]) &&
+                (parameters.GetProperty("expectedFileSha256").ValueKind == JsonValueKind.Null ||
+                    IsDigest(parameters.GetProperty("expectedFileSha256"))),
+            BridgeMethod.SettingsFilePreview =>
+                HasFileMutationIdentity(parameters, []),
+            BridgeMethod.SettingsFileApply =>
+                HasFileMutationIdentity(parameters, ["expectedFileSha256"]) &&
+                IsDigest(parameters.GetProperty("expectedFileSha256")),
             _ => false,
         };
     }
@@ -47,7 +72,10 @@ internal static class SettingsBridgeProtocol
         EntityId<ProjectIdTag>.Parse(request.Parameters.GetProperty("projectId").GetString()!);
 
     internal static int ReadExpectedRevision(BridgeRequest request) =>
-        request.Parameters.GetProperty("expectedRevision").GetInt32();
+        int.Parse(
+            request.Parameters.GetProperty("expectedRevision").GetRawText(),
+            RevisionNumberStyles,
+            CultureInfo.InvariantCulture);
 
     internal static string ReadKey(BridgeRequest request) =>
         request.Parameters.GetProperty("key").GetString()!;
@@ -111,11 +139,23 @@ internal static class SettingsBridgeProtocol
 
     private static bool HasMutationIdentity(
         JsonElement parameters,
+        IReadOnlyList<string> additionalProperties) =>
+        HasExpectedIdentity(parameters, ["projectId", .. additionalProperties]) &&
+        IsCanonicalId(parameters.GetProperty("projectId"));
+
+    private static bool HasFileMutationIdentity(
+        JsonElement parameters,
+        IReadOnlyList<string> additionalProperties) =>
+        HasExpectedIdentity(parameters, ["projectId", .. additionalProperties]) &&
+        (parameters.GetProperty("projectId").ValueKind == JsonValueKind.Null ||
+            IsCanonicalId(parameters.GetProperty("projectId")));
+
+    private static bool HasExpectedIdentity(
+        JsonElement parameters,
         IReadOnlyList<string> additionalProperties)
     {
         string[] properties =
         [
-            "projectId",
             "expectedRevision",
             "expectedProfileId",
             "expectedProfileVersion",
@@ -124,7 +164,6 @@ internal static class SettingsBridgeProtocol
             .. additionalProperties,
         ];
         return HasExactProperties(parameters, properties) &&
-            IsCanonicalId(parameters.GetProperty("projectId")) &&
             IsNonnegativeInt32(parameters.GetProperty("expectedRevision")) &&
             IsCanonicalId(parameters.GetProperty("expectedProfileId")) &&
             IsProfileVersion(parameters.GetProperty("expectedProfileVersion")) &&
@@ -216,14 +255,14 @@ internal static class SettingsBridgeProtocol
         return !atSegmentStart;
     }
 
-    private static bool IsCanonicalId(JsonElement value) =>
+    internal static bool IsCanonicalId(JsonElement value) =>
         value.ValueKind == JsonValueKind.String &&
         value.GetString() is string text &&
         Guid.TryParseExact(text, "D", out Guid id) &&
         id != Guid.Empty &&
         string.Equals(text, id.ToString("D"), StringComparison.Ordinal);
 
-    private static bool IsDigest(JsonElement value) =>
+    internal static bool IsDigest(JsonElement value) =>
         value.ValueKind == JsonValueKind.String &&
         value.GetString() is string text &&
         text.Length == 64 &&
@@ -238,7 +277,11 @@ internal static class SettingsBridgeProtocol
 
     private static bool IsNonnegativeInt32(JsonElement value) =>
         value.ValueKind == JsonValueKind.Number &&
-        value.TryGetInt32(out int parsed) &&
+        int.TryParse(
+            value.GetRawText(),
+            RevisionNumberStyles,
+            CultureInfo.InvariantCulture,
+            out int parsed) &&
         parsed >= 0;
 
     private static bool IsCanonicalInt64(
@@ -269,7 +312,7 @@ internal static class SettingsBridgeProtocol
         (allowEmpty || text.Length > 0) &&
         text.Length <= maximumLength;
 
-    private static bool HasExactProperties(
+    internal static bool HasExactProperties(
         JsonElement value,
         IReadOnlyList<string> expectedProperties)
     {
@@ -597,7 +640,7 @@ internal static class SettingsBridgeJson
         writer.WriteEndObject();
     }
 
-    private static void WriteDefinition(Utf8JsonWriter writer, DefaultSettingDefinition definition)
+    internal static void WriteDefinition(Utf8JsonWriter writer, DefaultSettingDefinition definition)
     {
         writer.WriteStartObject();
         writer.WriteString("key", definition.Key);
@@ -632,7 +675,7 @@ internal static class SettingsBridgeJson
         writer.WriteEndObject();
     }
 
-    private static void WriteSelections(
+    internal static void WriteSelections(
         Utf8JsonWriter writer,
         string propertyName,
         IReadOnlyList<DefaultSettingSelection> selections)

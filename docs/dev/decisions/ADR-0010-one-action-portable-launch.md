@@ -3,7 +3,7 @@
 - 状態: Accepted（方式の採用。成立性・配布受入の完了ではない）
 - 決定日: 2026-09-06
 - タスク: OSL-002
-- 根拠: 利用者が[実装計画](../../../work/20260906-OneActionLaunch-ImplementationPlan.md)のD01〜D18をデフォルトで採用し、全タスク実行を指示した。
+- 根拠: 利用者が2026-09-06のD01〜D18既定案を採用し、全タスク実行を指示した。承認内容は本ADRと[詳細実装計画§0.7](../planning/implementation-plan.md#07-os-onlyの1操作起動2026-09-06追補)へ恒久化する。
 - 要求: [NFR-009 / AC-007](../../requirement-definition.md)、既存NFR-004/007/008、BR-004
 
 ## 置き換える範囲

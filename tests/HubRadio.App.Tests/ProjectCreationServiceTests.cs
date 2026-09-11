@@ -276,6 +276,7 @@ public sealed class ProjectCreationServiceTests
         Assert.AreNotEqual(
             changed.ContentDigest,
             settings.Settings.InitialSnapshot.ContentDigest);
+        Assert.IsNull(new SourceOnlyExecutionStore(fixture.DatabasePath).GetByDraft(draftId));
 
         ProjectCreationException duplicate =
             Assert.ThrowsExactly<ProjectCreationException>(() =>
@@ -756,6 +757,417 @@ public sealed class ProjectCreationServiceTests
             restartedService.ListProjects().Projects[0].SourceStatus);
     }
 
+    [TestMethod]
+    public async Task NativeDraftLoadRestoresOriginalSelectionAfterRestartWithoutRepickingOrStartingWork()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        ProjectCreationDraftView created;
+        await using (var first = new SourceOnlyPipeline(fixture.DatabasePath, Path.GetDirectoryName(fixture.DatabasePath)!,
+            fixture.Registry, (_, _) => Task.FromException(new AssertFailedException("Draft creation must not start work."))))
+        {
+            created = await fixture.CreateService(fixture.Registry, coordinator: first).CreateSourceOnlyDraftAsync();
+        }
+        var draftId = EntityId<ProjectCreationDraftIdTag>.Parse(created.DraftId);
+        var candidateId = EntityId<AssetIdTag>.Parse(created.SourceCandidateId!);
+        string before = fixture.DraftStore.GetDraft(draftId)!.CanonicalJson;
+        var restartedRegistry = new AssetCandidateRegistry();
+        await using var restarted = new SourceOnlyPipeline(fixture.DatabasePath, Path.GetDirectoryName(fixture.DatabasePath)!,
+            restartedRegistry, (_, _) => Task.FromException(new InvalidOperationException("Test stops before production.")));
+        ProjectCreationService service = fixture.CreateService(restartedRegistry, coordinator: restarted);
+
+        ProjectCreationDraftView loaded = service.LoadDraft(draftId);
+        Assert.AreEqual("available", loaded.SourceStatus);
+        Assert.AreEqual(created.SourceCandidateId, loaded.SourceCandidateId);
+        Assert.AreEqual(created.Revision, loaded.Revision);
+        Assert.AreEqual(created.SourceOnly!.SettingsSnapshotDigest, loaded.SourceOnly!.SettingsSnapshotDigest);
+        CollectionAssert.AreEqual(created.SourceOnly.ArtifactSet.ToArray(), loaded.SourceOnly.ArtifactSet.ToArray());
+        Assert.AreEqual(before, fixture.DraftStore.GetDraft(draftId)!.CanonicalJson);
+        Assert.AreEqual(1, fixture.PickerInvocationCount);
+        Assert.AreEqual(1, restartedRegistry.PendingCount);
+        Assert.AreEqual("available", service.LoadDraft(draftId).SourceStatus);
+        Assert.AreEqual("available", service.ListProjects().Projects.Single().SourceStatus);
+        Assert.IsTrue(restartedRegistry.IsAvailable(candidateId));
+        Assert.IsNull(new SourceOnlyExecutionStore(fixture.DatabasePath).GetByDraft(draftId));
+        Assert.IsEmpty(new JobStore(fixture.DatabasePath).ListJobs(HubRadio.Core.Jobs.JobState.Queued));
+        Assert.IsFalse(((ISourceOnlyProjectCoordinator)restarted).RestoreSelection(draftId,
+            restartedRegistry.RegisterSelection(fixture.PickerSourcePath)!));
+
+        ProjectCreationDraftView finalized = service.FinalizeDraft(draftId, loaded.Revision, ParseElement(CreateInput(loaded)));
+        StoredSourceOnlyExecution accepted = new SourceOnlyExecutionStore(fixture.DatabasePath).GetByDraft(draftId)!;
+        await restarted.Start(accepted.Request.ExecutionId);
+        Assert.IsTrue(finalized.IsFinalized);
+        Assert.AreEqual(candidateId, accepted.Request.SourceCandidateId);
+        Assert.AreEqual(1, fixture.PickerInvocationCount);
+    }
+
+    [TestMethod]
+    [DataRow("changed-bytes")]
+    [DataRow("replacement-file")]
+    [DataRow("missing-source")]
+    [DataRow("missing-locator")]
+    [DataRow("tampered-locator")]
+    public async Task NativeDraftRestoreRejectsMissingOrChangedPersistedIdentity(string defect)
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        ProjectCreationDraftView created;
+        await using (var first = new SourceOnlyPipeline(fixture.DatabasePath, Path.GetDirectoryName(fixture.DatabasePath)!,
+            fixture.Registry, (_, _) => Task.CompletedTask))
+        {
+            created = await fixture.CreateService(fixture.Registry, coordinator: first).CreateSourceOnlyDraftAsync();
+        }
+        var draftId = EntityId<ProjectCreationDraftIdTag>.Parse(created.DraftId);
+        string locatorPath = Path.Combine(Path.GetDirectoryName(fixture.DatabasePath)!, "source-only", "selections", draftId + ".dpapi");
+        switch (defect)
+        {
+            case "changed-bytes": File.WriteAllBytes(fixture.PickerSourcePath, [7]); break;
+            case "replacement-file":
+                string replacement = Path.Combine(Path.GetDirectoryName(fixture.DatabasePath)!, "replacement.mov");
+                File.WriteAllBytes(replacement, [0]);
+                File.Move(replacement, fixture.PickerSourcePath, overwrite: true);
+                break;
+            case "missing-source": File.Delete(fixture.PickerSourcePath); break;
+            case "missing-locator": File.Delete(locatorPath); break;
+            case "tampered-locator":
+                byte[] bytes = File.ReadAllBytes(locatorPath);
+                bytes[^1] ^= 1;
+                File.WriteAllBytes(locatorPath, bytes);
+                break;
+            default: Assert.Fail("Unknown fixture defect."); break;
+        }
+        var registry = new AssetCandidateRegistry();
+        await using var restarted = new SourceOnlyPipeline(fixture.DatabasePath, Path.GetDirectoryName(fixture.DatabasePath)!,
+            registry, (_, _) => Task.CompletedTask);
+        ProjectCreationService service = fixture.CreateService(registry, coordinator: restarted);
+
+        ProjectCreationDraftView loaded = service.LoadDraft(draftId);
+        Assert.AreEqual("reselectionRequired", loaded.SourceStatus);
+        Assert.AreEqual(created.SourceCandidateId, loaded.SourceCandidateId);
+        Assert.AreEqual(0, registry.PendingCount);
+        Assert.AreEqual(1, fixture.PickerInvocationCount);
+        Assert.IsFalse(fixture.DraftStore.GetDraft(draftId)!.IsFinalized);
+        Assert.IsNull(new SourceOnlyExecutionStore(fixture.DatabasePath).GetByDraft(draftId));
+        Assert.IsFalse(JsonSerializer.Serialize(loaded).Contains(fixture.PickerSourcePath, StringComparison.Ordinal));
+        Assert.AreEqual(ProjectCreationFailureReason.SourceReselectionRequired,
+            Assert.ThrowsExactly<ProjectCreationException>(() => service.FinalizeDraft(
+                draftId, loaded.Revision, ParseElement(CreateInput(loaded)))).Reason);
+    }
+
+    [TestMethod]
+    public async Task UnauthorizedDraftLoadDoesNotRestoreAValidPendingLocator()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        ProjectCreationDraftView created;
+        await using (var first = new SourceOnlyPipeline(fixture.DatabasePath, Path.GetDirectoryName(fixture.DatabasePath)!,
+            fixture.Registry, (_, _) => Task.CompletedTask))
+        {
+            created = await fixture.CreateService(fixture.Registry, coordinator: first).CreateSourceOnlyDraftAsync();
+        }
+        var registry = new AssetCandidateRegistry();
+        await using var restarted = new SourceOnlyPipeline(fixture.DatabasePath, Path.GetDirectoryName(fixture.DatabasePath)!,
+            registry, (_, _) => Task.CompletedTask);
+        ProjectCreationService denied = fixture.CreateService(registry, UnauthorizedSid, restarted);
+        AssertAuthorizationDenied(() => denied.LoadDraft(EntityId<ProjectCreationDraftIdTag>.Parse(created.DraftId)));
+        Assert.AreEqual(0, registry.PendingCount);
+    }
+
+    [TestMethod]
+    public async Task NativeCoordinatorAtomicallyAcceptsJobsAndSameInputReplayDoesNotStartTwice()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        int starts = 0;
+        await using var pipeline = new SourceOnlyPipeline(fixture.DatabasePath, Path.GetDirectoryName(fixture.DatabasePath)!,
+            fixture.Registry, async (_, token) =>
+            {
+                Interlocked.Increment(ref starts);
+                started.TrySetResult(true);
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            });
+        ProjectCreationService service = fixture.CreateService(fixture.Registry, coordinator: pipeline);
+        ProjectCreationDraftView draft = await service.CreateSourceOnlyDraftAsync();
+        var draftId = EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId);
+        JsonElement input = ParseElement(CreateInput(draft));
+        ProjectCreationDraftView finalized = service.FinalizeDraft(draftId, draft.Revision, input);
+        var execution = new SourceOnlyExecutionStore(fixture.DatabasePath).GetByDraft(draftId)!;
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        ProjectCreationDraftView replay = service.FinalizeDraft(draftId, draft.Revision, input);
+        Assert.AreEqual(finalized.ProjectId, replay.ProjectId);
+        Assert.AreEqual(1, starts);
+        Assert.IsNotNull(new HubRadio.Infrastructure.Database.JobStore(fixture.DatabasePath).GetJob(execution.Request.RootJobId));
+        Assert.IsNotNull(new HubRadio.Infrastructure.Database.JobStore(fixture.DatabasePath).GetJob(execution.Request.IngestJobId));
+        Assert.AreEqual(draft.SourceCandidateId, execution.Request.SourceCandidateId.ToString());
+        Assert.AreEqual(draft.SourceOnly!.SettingsSnapshotDigest, execution.Request.SettingsSnapshot.ContentDigest.Hex);
+        byte[] locator = new SourceOnlyExecutionStore(fixture.DatabasePath).GetProtectedSourceLocator(execution.Request.ExecutionId)!;
+        Assert.IsFalse(System.Text.Encoding.UTF8.GetString(locator).Contains(fixture.PickerSourcePath, StringComparison.Ordinal));
+        JsonObject altered = CreateInput(draft);
+        altered["purpose"] = "changed";
+        Assert.ThrowsExactly<ArgumentException>(() => service.FinalizeDraft(draftId, draft.Revision, ParseElement(altered)));
+        Assert.ThrowsExactly<InvalidOperationException>(() => service.FinalizeDraft(draftId, finalized.Revision, input));
+        var canceled = await pipeline.CancelAsync(execution.Request.ExecutionId);
+        Assert.AreEqual(SourceOnlyExecutionPhase.Canceled, canceled!.Execution!.Phase);
+        Assert.AreNotEqual(HubRadio.Core.Jobs.JobState.Succeeded,
+            new HubRadio.Infrastructure.Database.JobStore(fixture.DatabasePath).GetJob(execution.Request.RootJobId)!.Job.State);
+    }
+
+    [TestMethod]
+    public async Task NativeFinalizeRejectsSourceBytesChangedSinceSelectionAndReplacementTokens()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        await using var pipeline = new SourceOnlyPipeline(fixture.DatabasePath, Path.GetDirectoryName(fixture.DatabasePath)!,
+            fixture.Registry, (_, _) => Task.CompletedTask);
+        ProjectCreationService service = fixture.CreateService(fixture.Registry, coordinator: pipeline);
+        ProjectCreationDraftView draft = await service.CreateSourceOnlyDraftAsync();
+        var draftId = EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId);
+        File.WriteAllBytes(fixture.PickerSourcePath, [7]);
+        await Assert.ThrowsExactlyAsync<SourceOnlySourceException>(() => Task.Run(() => service.FinalizeDraft(
+            draftId, draft.Revision, ParseElement(CreateInput(draft)))));
+        Assert.IsNull(new SourceOnlyExecutionStore(fixture.DatabasePath).GetByDraft(draftId));
+        Assert.IsFalse(fixture.DraftStore.GetDraft(draftId)!.IsFinalized);
+        Assert.IsTrue(fixture.Registry.IsAvailable(EntityId<AssetIdTag>.Parse(draft.SourceCandidateId!)));
+        JsonObject replacement = CreateInput(draft);
+        replacement["sourceCandidateId"] = fixture.Registry.RegisterSelection(fixture.PickerSourcePath)!.ToString();
+        Assert.ThrowsExactly<ProjectCreationException>(() => service.FinalizeDraft(draftId, draft.Revision, ParseElement(replacement)));
+    }
+
+    [TestMethod]
+    public async Task NativeAtomicJobInsertFailureLeavesDraftAndCandidateAvailableForRetry()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        await using var pipeline = new SourceOnlyPipeline(fixture.DatabasePath, Path.GetDirectoryName(fixture.DatabasePath)!,
+            fixture.Registry, (_, _) => Task.CompletedTask);
+        ProjectCreationService service = fixture.CreateService(fixture.Registry, coordinator: pipeline);
+        ProjectCreationDraftView draft = await service.CreateSourceOnlyDraftAsync();
+        var draftId = EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId);
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = fixture.DatabasePath,
+            Mode = SqliteOpenMode.ReadWrite,
+        }.ToString()))
+        {
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "CREATE TRIGGER reject_native_job BEFORE INSERT ON jobs BEGIN SELECT RAISE(ABORT, 'injected'); END;";
+            command.ExecuteNonQuery();
+        }
+        Assert.ThrowsExactly<SqliteException>(() => service.FinalizeDraft(draftId, draft.Revision, ParseElement(CreateInput(draft))));
+        Assert.IsFalse(fixture.DraftStore.GetDraft(draftId)!.IsFinalized);
+        Assert.IsNull(new SourceOnlyExecutionStore(fixture.DatabasePath).GetByDraft(draftId));
+        Assert.IsTrue(fixture.Registry.IsAvailable(EntityId<AssetIdTag>.Parse(draft.SourceCandidateId!)));
+        Assert.IsEmpty(new HubRadio.Infrastructure.Database.JobStore(fixture.DatabasePath).ListJobs(HubRadio.Core.Jobs.JobState.Queued));
+    }
+
+    [TestMethod]
+    public async Task NativeExplicitRetryPreservesAcceptedSettingsAndCreatesFreshJobsWithoutSuccess()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        await using var pipeline = new SourceOnlyPipeline(fixture.DatabasePath, Path.GetDirectoryName(fixture.DatabasePath)!,
+            fixture.Registry, (_, _) => Task.FromException(new InvalidOperationException("injected stage failure")));
+        ProjectCreationService service = fixture.CreateService(fixture.Registry, coordinator: pipeline);
+        ProjectCreationDraftView draft = await service.CreateSourceOnlyDraftAsync();
+        var draftId = EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId);
+        service.FinalizeDraft(draftId, draft.Revision, ParseElement(CreateInput(draft)));
+        var store = new SourceOnlyExecutionStore(fixture.DatabasePath);
+        StoredSourceOnlyExecution initial = store.GetByDraft(draftId)!;
+        SourceOnlyPipelineRun firstRun = await pipeline.Start(initial.Request.ExecutionId);
+        Assert.AreEqual(SourceOnlyExecutionPhase.Failed, firstRun.Execution!.Phase);
+        DateTimeOffset retryAt = DateTimeOffset.UtcNow.AddMinutes(1);
+        StoredSourceOnlyExecution retry = pipeline.Retry(initial.Request.ExecutionId,
+            firstRun.Execution.Revision, AuthorizedSid, retryAt);
+        SourceOnlyPipelineRun retryRun = await pipeline.Start(retry.Request.ExecutionId);
+        Assert.AreEqual(initial.Request.ExecutionId, retry.RetryOfExecutionId);
+        Assert.AreEqual(initial.Request.SourceCandidateId, retry.Request.SourceCandidateId);
+        Assert.AreEqual(initial.Request.SettingsSnapshot.CanonicalJson, retry.Request.SettingsSnapshot.CanonicalJson);
+        Assert.AreNotEqual(initial.Request.RootJobId, retry.Request.RootJobId);
+        Assert.AreNotEqual(initial.Request.IngestJobId, retry.Request.IngestJobId);
+        Assert.AreEqual(SourceOnlyExecutionPhase.Failed, retryRun.Execution!.Phase);
+        Assert.AreEqual(retry.Request.ExecutionId, pipeline.Read(initial.Request.ProjectId)!.Request.ExecutionId);
+        Assert.AreEqual(retry.Request.ExecutionId, pipeline.Retry(initial.Request.ExecutionId,
+            firstRun.Execution.Revision, AuthorizedSid, retryAt).Request.ExecutionId);
+        Assert.AreEqual(SourceOnlyExecutionPhase.Failed, store.Get(initial.Request.ExecutionId)!.Phase);
+    }
+
+    [TestMethod]
+    public async Task NativeRegenerationCapturesExactParentAndReusesSucceededIngest()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        var jobStore = new JobStore(fixture.DatabasePath);
+        await using var pipeline = new SourceOnlyPipeline(fixture.DatabasePath, Path.GetDirectoryName(fixture.DatabasePath)!,
+            fixture.Registry, (execution, _) =>
+            {
+                StoredJob ingest = jobStore.GetJob(execution.Request.IngestJobId)!;
+                if (ingest.Job.State == HubRadio.Core.Jobs.JobState.Queued)
+                {
+                    DateTimeOffset at = DateTimeOffset.UtcNow;
+                    var attempt = new HubRadio.Core.Jobs.JobAttempt(EntityId<HubRadio.Core.Jobs.JobAttemptIdTag>.New(),
+                        ingest.Job.Id, 1, HubRadio.Core.Jobs.JobState.Running, ingest.Job.UpdatedAt, at, null, null);
+                    StoredJob running = jobStore.StartAttempt(ingest.Job.Id, ingest.Revision, attempt, at);
+                    jobStore.CompleteAttempt(ingest.Job.Id, running.Revision, new HubRadio.Core.Jobs.JobAttempt(
+                        attempt.Id, attempt.JobId, 1, HubRadio.Core.Jobs.JobState.Succeeded, attempt.QueuedAt, at, at, null), at);
+                }
+                return Task.FromException(new InvalidOperationException("test: ingest completed, root failed"));
+            });
+        ProjectCreationService service = fixture.CreateService(fixture.Registry, coordinator: pipeline);
+        ProjectCreationDraftView draft = await service.CreateSourceOnlyDraftAsync();
+        service.FinalizeDraft(EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId), draft.Revision, ParseElement(CreateInput(draft)));
+        var executions = new SourceOnlyExecutionStore(fixture.DatabasePath);
+        StoredSourceOnlyExecution initial = executions.GetByDraft(EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId))!;
+        await pipeline.Start(initial.Request.ExecutionId);
+        var projectStore = new ProjectStore(fixture.DatabasePath);
+        DateTimeOffset createdAt = DateTimeOffset.UtcNow;
+        var element = new HubRadio.Core.Compositions.CompositionElement(EntityId<HubRadio.Core.Compositions.CompositionElementIdTag>.New(),
+            new HubRadio.Core.Time.TimeRange(default, new HubRadio.Core.Time.RationalTime(1, 1)),
+            HubRadio.Core.Provenance.OriginRef.FromAsset(initial.Request.SourceCandidateId));
+        var parent = new HubRadio.Core.Compositions.CompositionVersion(EntityId<HubRadio.Core.Compositions.CompositionVersionIdTag>.New(),
+            initial.Request.ProjectId, null, AuthorizedSid, createdAt, "Test parent",
+            HubRadio.Core.Rendering.RenderGraphCanonicalEvidence.ComputeCompositionDigest([element]), [element]);
+        projectStore.AppendCompositionVersion(parent, HubRadio.App.Compositions.CompositionSnapshotJson.WriteVersion(parent));
+        var copy = new HubRadio.Core.Compositions.WorkingCopy(EntityId<HubRadio.Core.Compositions.WorkingCopyIdTag>.New(),
+            parent.ProjectId, parent.Id, createdAt, createdAt, parent.Elements);
+        projectStore.CreateWorkingCopy(copy, HubRadio.App.Compositions.CompositionSnapshotJson.WriteWorkingCopy(copy));
+        Assert.ThrowsExactly<InvalidOperationException>(() => pipeline.Regenerate(parent.ProjectId, parent.Id,
+            ContentDigest.Compute([9]), initial.Request.SettingsSnapshot, 0, AuthorizedSid, createdAt.AddSeconds(1)));
+
+        StoredSourceOnlyExecution regenerated = pipeline.Regenerate(parent.ProjectId, parent.Id, parent.ContentDigest,
+            initial.Request.SettingsSnapshot, 0, AuthorizedSid, createdAt.AddSeconds(1));
+        await pipeline.Start(regenerated.Request.ExecutionId);
+        Assert.AreEqual(initial.Request.IngestJobId, regenerated.Request.IngestJobId);
+        Assert.AreNotEqual(initial.Request.RootJobId, regenerated.Request.RootJobId);
+        Assert.AreEqual(parent.Id, regenerated.Request.ParentVersionId);
+        Assert.AreEqual(parent.ContentDigest, regenerated.Request.ParentDigest);
+        Assert.AreEqual(initial.Request.SettingsSnapshot.CanonicalJson, regenerated.Request.SettingsSnapshot.CanonicalJson);
+        Assert.AreEqual(1, jobStore.GetJob(initial.Request.IngestJobId)!.Job.CurrentAttemptNumber);
+    }
+
+    [TestMethod]
+    public async Task NativeProcessLeaseRejectsASecondOwnerIncludingSameDatabaseWithAnotherWorkspace()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        string workspace = Path.GetDirectoryName(fixture.DatabasePath)!;
+        string otherWorkspace = Path.Combine(workspace, "another-workspace");
+        Directory.CreateDirectory(otherWorkspace);
+        await using (var first = new SourceOnlyPipeline(fixture.DatabasePath, workspace, fixture.Registry, (_, _) => Task.CompletedTask))
+        {
+            foreach (string attemptedWorkspace in new[] { workspace, otherWorkspace })
+            {
+                SourceOnlySourceException refused = Assert.ThrowsExactly<SourceOnlySourceException>(() =>
+                    new SourceOnlyPipeline(fixture.DatabasePath, attemptedWorkspace, new AssetCandidateRegistry(), (_, _) => Task.CompletedTask));
+                Assert.AreEqual("source_only.process_lease_unavailable", refused.Code);
+                Assert.IsFalse(refused.ToString().Contains(workspace, StringComparison.Ordinal));
+            }
+        }
+        // A failed second acquisition releases its first handle; normal disposal
+        // releases both leases without deleting a possibly active owner's lock file.
+        await using var afterRelease = new SourceOnlyPipeline(fixture.DatabasePath, otherWorkspace,
+            new AssetCandidateRegistry(), (_, _) => Task.CompletedTask);
+        Assert.IsEmpty(new JobStore(fixture.DatabasePath).ListJobs(HubRadio.Core.Jobs.JobState.Running));
+    }
+
+    [TestMethod]
+    public async Task NativeRecoverySettlesRunningRootEvenWhenItsExecutionWasAlreadyFailed()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        string workspace = Path.GetDirectoryName(fixture.DatabasePath)!;
+        var store = new SourceOnlyExecutionStore(fixture.DatabasePath);
+        var jobs = new JobStore(fixture.DatabasePath);
+        StoredSourceOnlyExecution execution;
+        DateTimeOffset heartbeatAt = DateTimeOffset.UtcNow.AddMinutes(1);
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = fixture.DatabasePath,
+            Mode = SqliteOpenMode.ReadWrite,
+        }.ToString()))
+        {
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "CREATE TRIGGER reject_terminal_attempt BEFORE UPDATE ON job_attempts BEGIN SELECT RAISE(ABORT, 'injected'); END;";
+            command.ExecuteNonQuery();
+        }
+        await using (var pipeline = new SourceOnlyPipeline(fixture.DatabasePath, workspace, fixture.Registry, (accepted, _) =>
+        {
+            StoredJob root = jobs.GetJob(accepted.Request.RootJobId)!;
+            DateTimeOffset startedAt = DateTimeOffset.UtcNow;
+            var attempt = new HubRadio.Core.Jobs.JobAttempt(EntityId<HubRadio.Core.Jobs.JobAttemptIdTag>.New(), root.Job.Id, 1,
+                HubRadio.Core.Jobs.JobState.Running, root.Job.CreatedAt, startedAt, null, null);
+            jobs.StartAttempt(root.Job.Id, root.Revision, attempt, startedAt);
+            jobs.AppendHeartbeat(new HubRadio.Core.Jobs.JobHeartbeat(EntityId<HubRadio.Core.Jobs.JobHeartbeatIdTag>.New(),
+                root.Job.Id, attempt.Id, 1, heartbeatAt));
+            store.UpdateState(accepted.Request.ExecutionId, accepted.Revision, SourceOnlyExecutionPhase.Failed,
+                failureCode: "source_only.execution_failed");
+            return Task.FromException(new IOException("Test terminal attempt persistence failed."));
+        }))
+        {
+            ProjectCreationService service = fixture.CreateService(fixture.Registry, coordinator: pipeline);
+            ProjectCreationDraftView draft = await service.CreateSourceOnlyDraftAsync();
+            var draftId = EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId);
+            service.FinalizeDraft(draftId, draft.Revision, ParseElement(CreateInput(draft)));
+            execution = store.GetByDraft(draftId)!;
+            SourceOnlyPipelineRun run = await pipeline.Start(execution.Request.ExecutionId);
+            Assert.AreEqual("source_only.state_persistence_failed", run.InfrastructureFailureCode);
+            Assert.AreEqual(SourceOnlyExecutionPhase.Failed, store.Get(execution.Request.ExecutionId)!.Phase);
+            Assert.AreEqual(HubRadio.Core.Jobs.JobState.Running, jobs.GetJob(execution.Request.RootJobId)!.Job.State);
+        }
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = fixture.DatabasePath,
+            Mode = SqliteOpenMode.ReadWrite,
+        }.ToString()))
+        {
+            connection.Open();
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "DROP TRIGGER reject_terminal_attempt;";
+            command.ExecuteNonQuery();
+        }
+        await using var restarted = new SourceOnlyPipeline(fixture.DatabasePath, workspace, new AssetCandidateRegistry(),
+            (_, _) => Task.FromException(new AssertFailedException("Recovery must not execute a failed pipeline.")));
+        SourceOnlyRecoveryResult recovery = await restarted.RecoverAsync();
+        Assert.IsNull(recovery.FailureCode);
+        Assert.AreEqual(SourceOnlyExecutionPhase.Failed, recovery.Executions.Single().Phase);
+        StoredJobAggregate settled = jobs.GetJobAggregate(execution.Request.RootJobId)!;
+        Assert.AreEqual(HubRadio.Core.Jobs.JobState.Interrupted, settled.Job.State);
+        Assert.AreEqual(heartbeatAt, settled.Attempts.Single().CompletedAt);
+        Assert.AreEqual("job.app_restarted", settled.Attempts.Single().ErrorCode);
+        Assert.AreEqual(HubRadio.Core.Jobs.JobState.Cancelled, jobs.GetJob(execution.Request.IngestJobId)!.Job.State);
+    }
+
+    [TestMethod]
+    public async Task NativeRecoverySettlesOnlyItsOwnInterruptedJobsWithoutCreatingSuccess()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        ProjectCreationDraftView view = await fixture.Service.CreateSourceOnlyDraftAsync();
+        var draftId = EntityId<ProjectCreationDraftIdTag>.Parse(view.DraftId);
+        StoredSourceOnlyProjectCreation parsed = SourceOnlyProjectCreationContract.ParseStored(
+            fixture.DraftStore.GetDraft(draftId)!.CanonicalJson, fixture.Catalog, fixture.SettingsStore);
+        DateTimeOffset at = DateTimeOffset.UtcNow;
+        var project = new Project(EntityId<ProjectIdTag>.New(), parsed.Draft.ContentName!, parsed.Draft.Purpose!,
+            parsed.Draft.Audience!, PublicationScope.InternalOnly, null, [], []);
+        var request = new SourceOnlyExecutionRequest(EntityId<SourceOnlyExecutionIdTag>.New(), project.Id, draftId,
+            parsed.Draft.SourceCandidateId!, EntityId<HubRadio.Core.Jobs.JobIdTag>.New(), EntityId<HubRadio.Core.Jobs.JobIdTag>.New(),
+            parsed.SettingsSnapshot, AuthorizedSid, at);
+        StoredSourceOnlyExecution execution = fixture.DraftStore.FinalizeSourceOnlyWithExecution(parsed.Draft, project,
+            fixture.DraftStore.GetDraft(draftId)!.CanonicalJson, view.Revision, at, request);
+        var jobs = new JobStore(fixture.DatabasePath);
+        var otherId = EntityId<HubRadio.Core.Jobs.JobIdTag>.New();
+        jobs.CreateJob(new HubRadio.Core.Jobs.Job(otherId, project.Id, "unrelated.test", HubRadio.Core.Jobs.JobState.Queued, at, at, 0));
+        foreach (var id in new[] { request.RootJobId, otherId })
+        {
+            StoredJob current = jobs.GetJob(id)!;
+            jobs.StartAttempt(id, current.Revision, new HubRadio.Core.Jobs.JobAttempt(
+                EntityId<HubRadio.Core.Jobs.JobAttemptIdTag>.New(), id, 1, HubRadio.Core.Jobs.JobState.Running,
+                at, at, null, null), at);
+        }
+        var store = new SourceOnlyExecutionStore(fixture.DatabasePath);
+        store.UpdateState(execution.Request.ExecutionId, execution.Revision, SourceOnlyExecutionPhase.Analyzing);
+        await using var pipeline = new SourceOnlyPipeline(fixture.DatabasePath, Path.GetDirectoryName(fixture.DatabasePath)!,
+            fixture.Registry, (_, _) => Task.FromException(new AssertFailedException("Recovery must not start an interrupted root.")));
+        SourceOnlyRecoveryResult recovery = await pipeline.RecoverAsync();
+        Assert.IsNull(recovery.FailureCode);
+        Assert.IsFalse(recovery.Canceled);
+        Assert.AreEqual(SourceOnlyExecutionPhase.Failed, store.Get(request.ExecutionId)!.Phase);
+        Assert.AreEqual(HubRadio.Core.Jobs.JobState.Interrupted, jobs.GetJob(request.RootJobId)!.Job.State);
+        Assert.AreEqual(HubRadio.Core.Jobs.JobState.Cancelled, jobs.GetJob(request.IngestJobId)!.Job.State);
+        Assert.AreEqual(HubRadio.Core.Jobs.JobState.Running, jobs.GetJob(otherId)!.Job.State);
+    }
+
     private static void AssertAuthorizationDenied(Action action)
     {
         AuthorizationException exception =
@@ -993,7 +1405,8 @@ public sealed class ProjectCreationServiceTests
 
         internal ProjectCreationService CreateService(
             AssetCandidateRegistry registry,
-            string? currentActorSid = null) =>
+            string? currentActorSid = null,
+            ISourceOnlyProjectCoordinator? coordinator = null) =>
             new(
                 DraftStore,
                 Authorization,
@@ -1015,7 +1428,8 @@ public sealed class ProjectCreationServiceTests
                     CancelAfterSelection?.Cancel();
                     return Task.FromResult(LastCandidateId);
                 },
-                clock);
+                clock,
+                coordinator);
 
         public void Dispose()
         {

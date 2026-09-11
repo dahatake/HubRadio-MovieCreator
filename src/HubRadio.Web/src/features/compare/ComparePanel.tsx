@@ -69,8 +69,21 @@ const adoptionKindLabels: Readonly<Record<
   replaced: '採用差し替え',
 }
 
-export function ComparePanel() {
-  return <ComparePanelView {...useComparisonState()} />
+type ComparisonVersionTarget = Readonly<{
+  versionId: string
+  versionDigest: string
+}>
+
+export interface ComparePanelProps {
+  readonly context?: Readonly<{
+    left: ComparisonVersionTarget | null
+    right: ComparisonVersionTarget | null
+  }>
+  readonly active?: boolean
+}
+
+export function ComparePanel(props: ComparePanelProps = {}) {
+  return <ComparePanelView {...useComparisonState()} {...props} />
 }
 
 export function ComparePanelView({
@@ -78,20 +91,101 @@ export function ComparePanelView({
   changeInput,
   compareVersions,
   clearError,
-}: ComparisonStateContextValue) {
+  context,
+  active = true,
+}: ComparisonStateContextValue & ComparePanelProps) {
+  const workflow = context !== undefined
+  const leftVersionId = context?.left?.versionId ?? ''
+  const leftVersionDigest = context?.left?.versionDigest ?? ''
+  const rightVersionId = context?.right?.versionId ?? ''
+  const rightVersionDigest = context?.right?.versionDigest ?? ''
+  const contextKey =
+    isCanonicalComparisonEntityId(leftVersionId) &&
+    isCanonicalComparisonDigest(leftVersionDigest) &&
+    isCanonicalComparisonEntityId(rightVersionId) &&
+    isCanonicalComparisonDigest(rightVersionDigest)
+      ? `${leftVersionId}:${leftVersionDigest}:${rightVersionId}:${rightVersionDigest}`
+      : null
+  const inputsMatchContext =
+    state.leftVersionIdInput === leftVersionId &&
+    state.leftVersionDigestInput === leftVersionDigest &&
+    state.rightVersionIdInput === rightVersionId &&
+    state.rightVersionDigestInput === rightVersionDigest
   const pending = state.pending !== null
-  const canCompare = !pending &&
+  const rejectedContext = workflow && inputsMatchContext && (
+    state.error?.code === 'notFound' ||
+    state.error?.code === 'staleVersion' ||
+    state.error?.code === 'invalidRequest'
+  )
+  const canCompare = active && !pending && !rejectedContext &&
+    (!workflow || (contextKey !== null && inputsMatchContext)) &&
     isCanonicalComparisonEntityId(state.leftVersionIdInput) &&
     isCanonicalComparisonDigest(state.leftVersionDigestInput) &&
     isCanonicalComparisonEntityId(state.rightVersionIdInput) &&
     isCanonicalComparisonDigest(state.rightVersionDigestInput)
+  const comparison = !workflow || (
+    contextKey !== null &&
+    state.comparison?.left.versionId === leftVersionId &&
+    state.comparison.left.versionDigest === leftVersionDigest &&
+    state.comparison.right.versionId === rightVersionId &&
+    state.comparison.right.versionDigest === rightVersionDigest
+  ) ? state.comparison : null
+  const error = !workflow || (contextKey !== null && inputsMatchContext)
+    ? state.error
+    : null
+  const [selectedIndex, setSelectedIndex] = useState(0)
+  const requestedContextKey = useRef<string | null>(null)
+  const sectionRef = useRef<HTMLElement | null>(null)
   const resultTitle = useRef<HTMLHeadingElement | null>(null)
+  const previousComparison = useRef<ComparisonSnapshot | null>(null)
 
   useEffect(() => {
-    if (state.comparison !== null) {
+    if (active) return
+    const focusedElement = document.activeElement
+    if (focusedElement instanceof HTMLElement && sectionRef.current?.contains(focusedElement)) {
+      focusedElement.blur()
+    }
+  }, [active])
+
+  useEffect(() => {
+    if (!active || pending) return
+    if (contextKey === null) {
+      requestedContextKey.current = null
+      return
+    }
+    if (!inputsMatchContext) {
+      changeInput('leftVersionId', leftVersionId)
+      changeInput('leftVersionDigest', leftVersionDigest)
+      changeInput('rightVersionId', rightVersionId)
+      changeInput('rightVersionDigest', rightVersionDigest)
+      return
+    }
+    if (requestedContextKey.current === contextKey) return
+
+    // Read only after input updates (including a previous response) have committed.
+    // compareVersions closes over these exact inputs in the existing provider.
+    requestedContextKey.current = contextKey
+    compareVersions()
+  }, [
+    active,
+    changeInput,
+    compareVersions,
+    contextKey,
+    inputsMatchContext,
+    leftVersionDigest,
+    leftVersionId,
+    pending,
+    rightVersionDigest,
+    rightVersionId,
+  ])
+
+  useEffect(() => {
+    const changed = previousComparison.current !== state.comparison
+    previousComparison.current = state.comparison
+    if (active && changed && comparison !== null) {
       resultTitle.current?.focus()
     }
-  }, [state.comparison])
+  }, [active, comparison, state.comparison])
 
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
@@ -101,7 +195,13 @@ export function ComparePanelView({
   }
 
   return (
-    <section className="comparison-panel" aria-labelledby="comparison-title">
+    <section
+      ref={sectionRef}
+      className="comparison-panel"
+      aria-labelledby="comparison-title"
+      hidden={!active}
+      inert={!active}
+    >
       <div className="comparison-heading">
         <div>
           <p className="eyebrow">Exact-version comparison</p>
@@ -113,43 +213,68 @@ export function ComparePanelView({
         <span className="comparison-safety-badge">推測なし</span>
       </div>
 
-      <form className="comparison-form" onSubmit={submit}>
-        <VersionTargetFields
-          side="left"
-          label="比較元"
-          versionId={state.leftVersionIdInput}
-          versionDigest={state.leftVersionDigestInput}
-          disabled={pending}
-          onVersionIdChange={(value) => changeInput('leftVersionId', value)}
-          onDigestChange={(value) => changeInput('leftVersionDigest', value)}
-        />
-        <VersionTargetFields
-          side="right"
-          label="比較先"
-          versionId={state.rightVersionIdInput}
-          versionDigest={state.rightVersionDigestInput}
-          disabled={pending}
-          onVersionIdChange={(value) => changeInput('rightVersionId', value)}
-          onDigestChange={(value) => changeInput('rightVersionDigest', value)}
-        />
+      {workflow ? (
         <div className="comparison-submit-row">
-          <p id="comparison-target-help" className="field-help">
-            各版の小文字 UUID と、64文字の小文字 SHA-256 digest を指定します。
-            Windows ユーザーと閲覧権限はネイティブ側で確認されます。
-          </p>
-          <button type="submit" disabled={!canCompare}>
+          <button
+            type="button"
+            disabled={!canCompare}
+            onClick={() => {
+              if (canCompare) compareVersions()
+            }}
+          >
             {pending ? '比較しています…' : '2版を比較'}
           </button>
         </div>
-      </form>
+      ) : (
+        <form className="comparison-form" onSubmit={submit}>
+          <VersionTargetFields
+            side="left"
+            label="比較元"
+            versionId={state.leftVersionIdInput}
+            versionDigest={state.leftVersionDigestInput}
+            disabled={pending || !active}
+            onVersionIdChange={(value) => changeInput('leftVersionId', value)}
+            onDigestChange={(value) => changeInput('leftVersionDigest', value)}
+          />
+          <VersionTargetFields
+            side="right"
+            label="比較先"
+            versionId={state.rightVersionIdInput}
+            versionDigest={state.rightVersionDigestInput}
+            disabled={pending || !active}
+            onVersionIdChange={(value) => changeInput('rightVersionId', value)}
+            onDigestChange={(value) => changeInput('rightVersionDigest', value)}
+          />
+          <div className="comparison-submit-row">
+            <p id="comparison-target-help" className="field-help">
+              各版の小文字 UUID と、64文字の小文字 SHA-256 digest を指定します。
+              Windows ユーザーと閲覧権限はネイティブ側で確認されます。
+            </p>
+            <button type="submit" disabled={!canCompare}>
+              {pending ? '比較しています…' : '2版を比較'}
+            </button>
+          </div>
+        </form>
+      )}
 
-      {state.error !== null && (
+      {error !== null && (
         <div className="comparison-error" role="alert">
           <div>
             <strong>構成版を比較できませんでした</strong>
-            <p>{state.error.message}</p>
+            <p>
+              {workflow && (
+                error.code === 'notFound' ||
+                error.code === 'staleVersion' ||
+                error.code === 'invalidRequest'
+              ) ? '選択した2版を確認できませんでした。' : error.message}
+            </p>
           </div>
-          <button className="quiet-button" type="button" onClick={clearError}>
+          <button
+            className="quiet-button"
+            type="button"
+            disabled={!active}
+            onClick={clearError}
+          >
             閉じる
           </button>
         </div>
@@ -161,25 +286,33 @@ export function ComparePanelView({
         aria-live="polite"
         data-comparison-pending={pending ? 'true' : 'false'}
       >
-        {pending
-          ? 'ネイティブ側で版・digest・閲覧権限を確認しています。'
-          : state.comparison === null
-            ? '左右の exact version を指定してください。'
-            : '永続化された構成根拠を読み込みました。'}
+        {workflow && contextKey === null
+          ? '比較する2版が未選択です。'
+          : pending
+            ? 'ネイティブ側で版・digest・閲覧権限を確認しています。'
+            : comparison === null
+              ? workflow
+                ? '選択した2版の比較結果はまだありません。'
+                : '左右の exact version を指定してください。'
+              : '永続化された構成根拠を読み込みました。'}
       </p>
 
-      {state.comparison === null ? (
+      {comparison === null ? (
         <div className="comparison-empty">
           <strong>比較結果はまだありません</strong>
           <p>
-            2版を指定すると、使用区間、再生時間、要素差分、Suggestion
-            採用前後を表示します。
+            {workflow
+              ? '2版がそろうと比較できます。'
+              : '2版を指定すると、使用区間、再生時間、要素差分、Suggestion 採用前後を表示します。'}
           </p>
         </div>
       ) : (
         <ComparisonWorkspace
-          comparison={state.comparison}
+          comparison={comparison}
           resultTitleRef={resultTitle}
+          active={active}
+          selectedIndex={selectedIndex}
+          onSelectTab={setSelectedIndex}
         />
       )}
     </section>
@@ -270,11 +403,16 @@ function VersionTargetFields({
 function ComparisonWorkspace({
   comparison,
   resultTitleRef,
+  active,
+  selectedIndex,
+  onSelectTab,
 }: Readonly<{
   comparison: ComparisonSnapshot
   resultTitleRef: React.RefObject<HTMLHeadingElement | null>
+  active: boolean
+  selectedIndex: number
+  onSelectTab: (index: number) => void
 }>) {
-  const [selectedIndex, setSelectedIndex] = useState(0)
   const tabs = useRef<Array<HTMLButtonElement | null>>([])
   const sameVersion = comparison.left.versionId === comparison.right.versionId &&
     comparison.left.versionDigest === comparison.right.versionDigest
@@ -283,10 +421,11 @@ function ComparisonWorkspace({
     event: KeyboardEvent<HTMLButtonElement>,
     index: number,
   ): void => {
+    if (!active) return
     const nextIndex = getComparisonTabAfterKey(index, event.key)
     if (nextIndex === null) return
     event.preventDefault()
-    setSelectedIndex(nextIndex)
+    onSelectTab(nextIndex)
     tabs.current[nextIndex]?.focus()
   }
 
@@ -314,8 +453,11 @@ function ComparisonWorkspace({
             }}
             aria-selected={selectedIndex === index}
             aria-controls={`comparison-panel-${tab}`}
-            tabIndex={selectedIndex === index ? 0 : -1}
-            onClick={() => setSelectedIndex(index)}
+            disabled={!active}
+            tabIndex={active && selectedIndex === index ? 0 : -1}
+            onClick={() => {
+              if (active) onSelectTab(index)
+            }}
             onKeyDown={(event) => onTabKeyDown(event, index)}
           >
             {tabLabels[tab]}

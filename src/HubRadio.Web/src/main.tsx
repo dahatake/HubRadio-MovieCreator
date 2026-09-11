@@ -1,4 +1,6 @@
 import './theme'
+// Base rules precede the feature-local styles imported by App's workspace.
+import './styles.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
@@ -11,8 +13,7 @@ import { PreviewModeProvider } from './features/preview-modes'
 import { ProjectStateProvider } from './features/projects/ProjectStateProvider'
 import { ReviewStateProvider } from './features/review'
 import { AppStateProvider } from './state'
-import { SettingsStateProvider } from './features/settings'
-import './styles.css'
+import { SettingsWorkspaceStateProvider } from './features/settings'
 
 const rootElement = document.getElementById('root')
 
@@ -30,9 +31,9 @@ createRoot(rootElement).render(
               <ComparisonStateProvider>
                 <ReviewStateProvider>
                   <DeliveryStateProvider>
-                    <SettingsStateProvider>
+                    <SettingsWorkspaceStateProvider>
                       <App />
-                    </SettingsStateProvider>
+                    </SettingsWorkspaceStateProvider>
                   </DeliveryStateProvider>
                 </ReviewStateProvider>
               </ComparisonStateProvider>

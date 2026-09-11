@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Text;
 using System.Text.Json;
 using HubRadio.App.Analysis;
+using HubRadio.App.Compositions;
 using HubRadio.App.Delivery;
 using HubRadio.App.Graphics;
 using HubRadio.App.Rendering;
@@ -392,7 +393,8 @@ internal sealed class LayoutSubtitleBridgeSnapshot
         LayoutSubtitleVariantPair? variantPair = null,
         IReadOnlyDictionary<
             EntityId<CompositionVersionIdTag>,
-            CompositionVersion>? compositionVersions = null)
+            CompositionVersion>? compositionVersions = null,
+        bool subtitleOnly = false)
     {
         ArgumentNullException.ThrowIfNull(projectId);
         ArgumentNullException.ThrowIfNull(compositionVersion);
@@ -402,10 +404,15 @@ internal sealed class LayoutSubtitleBridgeSnapshot
         ArgumentNullException.ThrowIfNull(subtitles);
         ArgumentNullException.ThrowIfNull(terops);
         ArgumentNullException.ThrowIfNull(subtitleDisplays);
+        bool vertical = (BigInteger)outputEnvelope.OutputAspectWidth * 16
+            == (BigInteger)outputEnvelope.OutputAspectHeight * 9;
+        bool landscape = (BigInteger)outputEnvelope.OutputAspectWidth * 9
+            == (BigInteger)outputEnvelope.OutputAspectHeight * 16;
+        bool projectSubtitlesOnly = subtitleOnly || landscape;
         if (revision < 0
             || compositionVersion.ProjectId != projectId
-            || (BigInteger)outputEnvelope.OutputAspectWidth * 16
-                != (BigInteger)outputEnvelope.OutputAspectHeight * 9
+            || (!vertical && !landscape)
+            || (projectSubtitlesOnly && manualSelection is not null)
             || outputEnvelope.SafeZones.Count != 1
             || !string.Equals(
                 outputEnvelope.SafeZones[0].Name,
@@ -414,12 +421,12 @@ internal sealed class LayoutSubtitleBridgeSnapshot
             || !IsFullFrame(outputEnvelope.SafeZones[0].Rect))
         {
             throw new ArgumentException(
-                "The layout workspace identity, revision, or 9:16 output envelope is invalid.",
+                "The layout workspace identity, revision, or 9:16/16:9 output envelope is invalid.",
                 nameof(compositionVersion));
         }
 
         _ = LayoutResolver.Resolve(
-            outputEnvelope,
+            projectSubtitlesOnly ? SubtitleEnvelope(outputEnvelope) : outputEnvelope,
             outputPixelWidth,
             outputPixelHeight);
         LayoutSubtitleSourceBinding[] copiedSources = sources.ToArray();
@@ -436,6 +443,7 @@ internal sealed class LayoutSubtitleBridgeSnapshot
             || copiedTerops.Any(static terop => terop is null)
             || copiedSubtitleDisplays.Any(static display => display is null)
             || copiedKeyframes.Any(static keyframe => keyframe is null)
+            || (projectSubtitlesOnly && copiedKeyframes.Length != 0)
             || copiedSources.Select(static source => source.SourceAssetId)
                 .Distinct().Count() != copiedSources.Length
             || copiedTemplates.Select(static template => template.Id)
@@ -496,11 +504,33 @@ internal sealed class LayoutSubtitleBridgeSnapshot
                 if (!versions.TryGetValue(
                         cueRevision.CompositionVersionId,
                         out CompositionVersion? version)
+                    || version.Id != cueRevision.CompositionVersionId
                     || version.ProjectId != projectId
+                    || version.ParentVersionId != cueRevision.ParentCompositionVersionId
+                    || version.CreatedAt > cueRevision.CreatedAt
                     || version.ContentDigest != cueRevision.CompositionVersionDigest)
                 {
                     throw new ArgumentException(
                         "Every subtitle revision must bind a supplied composition version.",
+                        nameof(compositionVersions));
+                }
+
+                SubtitleCompositionInheritance? inherited = subtitle.History.Inheritance
+                    .SingleOrDefault(path => path.RevisionId == cueRevision.ParentRevisionId);
+                inherited?.ValidateChild(version);
+            }
+
+            foreach (CompositionVersion inherited in subtitle.History.Inheritance
+                .SelectMany(path => path.Versions))
+            {
+                if (!versions.TryGetValue(inherited.Id, out CompositionVersion? registered)
+                    || !string.Equals(
+                        CompositionSnapshotJson.WriteVersion(registered),
+                        CompositionSnapshotJson.WriteVersion(inherited),
+                        StringComparison.Ordinal))
+                {
+                    throw new ArgumentException(
+                        "Subtitle inheritance must bind the exact supplied composition path.",
                         nameof(compositionVersions));
                 }
             }
@@ -545,6 +575,7 @@ internal sealed class LayoutSubtitleBridgeSnapshot
         OutputEnvelope = outputEnvelope;
         OutputPixelWidth = outputPixelWidth;
         OutputPixelHeight = outputPixelHeight;
+        SubtitleOnly = projectSubtitlesOnly;
         Sources = Array.AsReadOnly(copiedSources);
         Templates = Array.AsReadOnly(copiedTemplates);
         Subtitles = Array.AsReadOnly(copiedSubtitles);
@@ -568,11 +599,29 @@ internal sealed class LayoutSubtitleBridgeSnapshot
 
     internal CompositionVersion CompositionVersion { get; }
 
+    internal IReadOnlyDictionary<EntityId<CompositionVersionIdTag>, CompositionVersion> CompositionVersions =>
+        new System.Collections.ObjectModel.ReadOnlyDictionary<EntityId<CompositionVersionIdTag>, CompositionVersion>(
+            new Dictionary<EntityId<CompositionVersionIdTag>, CompositionVersion>(compositions));
+
     internal LayoutSpec OutputEnvelope { get; }
 
     internal int OutputPixelWidth { get; }
 
     internal int OutputPixelHeight { get; }
+
+    internal bool SubtitleOnly { get; }
+
+    // A bounded view of the real layout, not a new persisted LayoutSpec or a
+    // replacement manual plan. Video geometry is deliberately not projected.
+    internal LayoutSpec PreviewEnvelope => SubtitleOnly ? SubtitleEnvelope(OutputEnvelope) : OutputEnvelope;
+
+    private static LayoutSpec SubtitleEnvelope(LayoutSpec layout) => new(
+        layout.Id, layout.OutputAspectWidth, layout.OutputAspectHeight,
+        layout.Regions.Where(region => region.Role is LayoutRegionRole.Subtitle or LayoutRegionRole.Graphic).ToArray(), layout.SafeZones);
+
+    internal bool SupportsManualLayout =>
+        !SubtitleOnly && (BigInteger)OutputEnvelope.OutputAspectWidth * 16
+        == (BigInteger)OutputEnvelope.OutputAspectHeight * 9;
 
     internal IReadOnlyList<LayoutSubtitleSourceBinding> Sources { get; }
 
@@ -597,6 +646,47 @@ internal sealed class LayoutSubtitleBridgeSnapshot
             ? value
             : throw new KeyNotFoundException(
                 "The cue composition version is not registered.");
+
+    internal SubtitleCueHistory WithInheritedComposition(SubtitleCueHistory history)
+    {
+        ArgumentNullException.ThrowIfNull(history);
+        // Only the effective member of this native snapshot can authorize
+        // inheritance. A matching cue ID or digest alone is not sufficient.
+        if (!Subtitles.Any(binding => ReferenceEquals(binding.History, history)))
+        {
+            throw new LayoutSubtitleBridgeConflictException();
+        }
+
+        var path = new List<CompositionVersion>();
+        var visited = new HashSet<EntityId<CompositionVersionIdTag>>();
+        CompositionVersion version = CompositionVersion;
+        while (true)
+        {
+            if (path.Count >= SubtitleCompositionInheritance.MaxVersions
+                || !visited.Add(version.Id))
+            {
+                throw new LayoutSubtitleBridgeConflictException();
+            }
+
+            path.Add(version);
+            if (version.Id == history.CurrentRevision.CompositionVersionId)
+            {
+                break;
+            }
+
+            if (version.ParentVersionId is not { } parentId
+                || !compositions.TryGetValue(parentId, out CompositionVersion? parent)
+                || parent.Id != parentId)
+            {
+                throw new LayoutSubtitleBridgeConflictException();
+            }
+
+            version = parent;
+        }
+
+        path.Reverse();
+        return SubtitleService.WithInheritedComposition(history, path);
+    }
 
     internal LayoutSubtitleBridgeSnapshot WithManualSelection(
         LayoutSubtitleManualSelection selection) =>
@@ -627,6 +717,7 @@ internal sealed class LayoutSubtitleBridgeSnapshot
         LayoutSubtitleCueBinding binding,
         CompositionVersion child)
     {
+        ValidateFreshChild(child);
         LayoutSubtitleCueBinding[] revised = Subtitles.ToArray();
         revised[index] = binding;
         var versions = new Dictionary<
@@ -649,6 +740,7 @@ internal sealed class LayoutSubtitleBridgeSnapshot
         LayoutSubtitleTeropBinding binding,
         CompositionVersion child)
     {
+        ValidateFreshChild(child);
         LayoutSubtitleTeropBinding[] revised = Terops.ToArray();
         revised[index] = binding;
         var versions = new Dictionary<
@@ -664,6 +756,18 @@ internal sealed class LayoutSubtitleBridgeSnapshot
             variantPair: null,
             replaceVariantPair: true,
             compositionVersions: versions);
+    }
+
+    private void ValidateFreshChild(CompositionVersion child)
+    {
+        // A replay runtime may only have this head registered; the native
+        // snapshot also knows older versions and must never overwrite them.
+        if (child.ProjectId != ProjectId
+            || child.ParentVersionId != CompositionVersion.Id
+            || compositions.ContainsKey(child.Id))
+        {
+            throw new LayoutSubtitleBridgeConflictException();
+        }
     }
 
     internal LayoutSubtitleBridgeSnapshot EvaluateAt(RationalTime time)
@@ -701,21 +805,66 @@ internal sealed class LayoutSubtitleBridgeSnapshot
             manualSelection ?? ManualSelection,
             keyframes ?? Keyframes,
             replaceVariantPair ? variantPair : VariantPair,
-            compositionVersions ?? compositions);
+            compositionVersions ?? compositions,
+            SubtitleOnly);
 }
 
 internal sealed class LayoutSubtitleBridgeConflictException : Exception
 {
 }
 
+/// <summary>
+/// Native journal evidence, separate from the immutable snapshot and its digest.
+/// Reads describe the observed branch head; mutation ACKs describe the committed
+/// row (including an older idempotent replay), not necessarily today's head.
+/// </summary>
+internal sealed class DurableSubtitleBranchMetadata
+{
+    internal DurableSubtitleBranchMetadata(
+        EntityId<CompositionVersionIdTag> rootVersionId,
+        EntityId<CompositionVersionIdTag> headVersionId,
+        ContentDigest headVersionDigest,
+        int sequence,
+        ContentDigest? journalDigest)
+    {
+        ArgumentNullException.ThrowIfNull(rootVersionId);
+        ArgumentNullException.ThrowIfNull(headVersionId);
+        ArgumentNullException.ThrowIfNull(headVersionDigest);
+        if (sequence < 0 || (sequence == 0) != (journalDigest is null)
+            || (sequence == 0) != (rootVersionId == headVersionId))
+        {
+            throw new ArgumentException("The durable subtitle branch evidence is inconsistent.", nameof(sequence));
+        }
+
+        RootVersionId = rootVersionId;
+        HeadVersionId = headVersionId;
+        HeadVersionDigest = headVersionDigest;
+        Sequence = sequence;
+        JournalDigest = journalDigest;
+    }
+
+    internal EntityId<CompositionVersionIdTag> RootVersionId { get; }
+    internal EntityId<CompositionVersionIdTag> HeadVersionId { get; }
+    internal ContentDigest HeadVersionDigest { get; }
+    internal int Sequence { get; }
+    internal ContentDigest? JournalDigest { get; }
+
+    internal bool MatchesSnapshot(LayoutSubtitleBridgeSnapshot snapshot) =>
+        HeadVersionId == snapshot.CompositionVersion.Id
+        && HeadVersionDigest == snapshot.CompositionVersion.ContentDigest
+        && Sequence == snapshot.Revision;
+}
+
 internal sealed class LayoutSubtitleBridgeOperationResult
 {
     private LayoutSubtitleBridgeOperationResult(
         LayoutSubtitleBridgeStatus status,
-        LayoutSubtitleBridgeSnapshot? snapshot)
+        LayoutSubtitleBridgeSnapshot? snapshot,
+        DurableSubtitleBranchMetadata? durableSubtitles = null)
     {
         if ((status == LayoutSubtitleBridgeStatus.Available)
-            != (snapshot is not null))
+            != (snapshot is not null)
+            || (snapshot is null && durableSubtitles is not null))
         {
             throw new ArgumentException(
                 "The layout bridge result is inconsistent.",
@@ -724,15 +873,19 @@ internal sealed class LayoutSubtitleBridgeOperationResult
 
         Status = status;
         Snapshot = snapshot;
+        DurableSubtitles = durableSubtitles;
     }
 
     internal LayoutSubtitleBridgeStatus Status { get; }
 
     internal LayoutSubtitleBridgeSnapshot? Snapshot { get; }
 
+    internal DurableSubtitleBranchMetadata? DurableSubtitles { get; }
+
     internal static LayoutSubtitleBridgeOperationResult Available(
-        LayoutSubtitleBridgeSnapshot snapshot) =>
-        new(LayoutSubtitleBridgeStatus.Available, snapshot);
+        LayoutSubtitleBridgeSnapshot snapshot,
+        DurableSubtitleBranchMetadata? durableSubtitles = null) =>
+        new(LayoutSubtitleBridgeStatus.Available, snapshot, durableSubtitles);
 
     internal static LayoutSubtitleBridgeOperationResult Failure(
         LayoutSubtitleBridgeStatus status) =>
@@ -781,7 +934,7 @@ internal sealed class LayoutSubtitleBridgeRuntime :
     private readonly object gate = new();
     private readonly Dictionary<
         EntityId<ProjectIdTag>,
-        LayoutSubtitleBridgeSnapshot> snapshots = [];
+        ProjectLayouts> snapshots = [];
     private readonly Func<DateTimeOffset> getCurrentTime;
     private readonly Func<Guid> createId;
 
@@ -802,27 +955,79 @@ internal sealed class LayoutSubtitleBridgeRuntime :
         this.createId = createId;
     }
 
-    internal void Register(LayoutSubtitleBridgeSnapshot snapshot)
+    // Deterministic, non-installing evaluation for a native durable adapter.
+    // The caller supplies its authoritative head and must compare-and-swap that
+    // head when persisting the result. No inheritance evidence enters web JSON.
+    internal static LayoutSubtitleBridgeOperationResult Evaluate(
+        LayoutSubtitleBridgeSnapshot snapshot,
+        BridgeRequest request,
+        string actorSid,
+        Func<DateTimeOffset> getCurrentTime,
+        Func<Guid> createId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        var runtime = new LayoutSubtitleBridgeRuntime(getCurrentTime, createId);
+        runtime.Register(snapshot);
+        return runtime.Execute(request, actorSid, cancellationToken);
+    }
+
+    internal void Register(LayoutSubtitleBridgeSnapshot snapshot, bool makeDefault = true)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         lock (gate)
         {
-            snapshots[snapshot.ProjectId] = snapshot;
+            if (!snapshots.TryGetValue(snapshot.ProjectId, out ProjectLayouts? project))
+            {
+                project = new ProjectLayouts();
+                snapshots.Add(snapshot.ProjectId, project);
+            }
+            EntityId<CompositionVersionIdTag> id = snapshot.CompositionVersion.Id;
+            // Registration is not an edit or permission to reset an existing branch.
+            // The source-only adapter additionally checks its complete generated key.
+            if (project.Versions.ContainsKey(id))
+            {
+                if (project.Versions[id].CompositionVersion.ContentDigest != snapshot.CompositionVersion.ContentDigest)
+                {
+                    throw new ArgumentException("The registered composition version has different content.", nameof(snapshot));
+                }
+                return;
+            }
+            project.Versions.Add(id, snapshot);
+            project.Roots.Add(id, id);
+            project.Heads.Add(id, id);
+            if (makeDefault) { project.DefaultRoot = id; }
         }
     }
 
     internal LayoutSubtitleBridgeSnapshot GetRequired(
-        EntityId<ProjectIdTag> projectId)
+        EntityId<ProjectIdTag> projectId,
+        EntityId<CompositionVersionIdTag>? versionId = null)
     {
         ArgumentNullException.ThrowIfNull(projectId);
         lock (gate)
         {
-            return snapshots.TryGetValue(
-                projectId,
-                out LayoutSubtitleBridgeSnapshot? snapshot)
-                ? snapshot
-                : throw new KeyNotFoundException(
-                    "No layout workspace is registered for the project.");
+            LayoutSubtitleBridgeSnapshot? snapshot = null;
+            if (snapshots.TryGetValue(projectId, out ProjectLayouts? project))
+            {
+                if (versionId is not null) { project.Versions.TryGetValue(versionId, out snapshot); }
+                else { snapshot = project.DefaultSnapshot; }
+            }
+            return snapshot ?? throw new KeyNotFoundException("No layout workspace is registered for the requested project/version.");
+        }
+    }
+
+    internal LayoutSubtitleBridgeSnapshot GetLatest(
+        EntityId<ProjectIdTag> projectId,
+        EntityId<CompositionVersionIdTag> versionId)
+    {
+        lock (gate)
+        {
+            if (!snapshots.TryGetValue(projectId, out ProjectLayouts? project) || !project.Roots.TryGetValue(versionId, out var root))
+            {
+                throw new KeyNotFoundException("No layout branch is registered for the requested project/version.");
+            }
+            return project.Versions[project.Heads[root]];
         }
     }
 
@@ -836,6 +1041,11 @@ internal sealed class LayoutSubtitleBridgeRuntime :
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
+            if (!LayoutSubtitleBridgeProtocol.HasValidParameters(request.Method, request.Parameters))
+            {
+                return LayoutSubtitleBridgeOperationResult.Failure(LayoutSubtitleBridgeStatus.Invalid);
+            }
+
             EntityId<ProjectIdTag> projectId = ParseEntity<ProjectIdTag>(
                 request.Parameters.GetProperty("projectId"));
             lock (gate)
@@ -843,14 +1053,35 @@ internal sealed class LayoutSubtitleBridgeRuntime :
                 cancellationToken.ThrowIfCancellationRequested();
                 if (!snapshots.TryGetValue(
                         projectId,
-                        out LayoutSubtitleBridgeSnapshot? snapshot))
+                        out ProjectLayouts? project))
                 {
                     return LayoutSubtitleBridgeOperationResult.Failure(
                         LayoutSubtitleBridgeStatus.NotFound);
                 }
 
+                bool pinned = request.Parameters.TryGetProperty("expectedVersionId", out JsonElement expectedVersion);
+                LayoutSubtitleBridgeSnapshot? snapshot = pinned
+                    ? project.Versions.GetValueOrDefault(ParseEntity<CompositionVersionIdTag>(expectedVersion))
+                    : project.DefaultSnapshot;
+                if (snapshot is null)
+                {
+                    return LayoutSubtitleBridgeOperationResult.Failure(LayoutSubtitleBridgeStatus.NotFound);
+                }
+                if (pinned && snapshot.CompositionVersion.ContentDigest != ContentDigest.Parse(
+                    GetRequiredString(request.Parameters, "expectedVersionDigest")))
+                {
+                    return LayoutSubtitleBridgeOperationResult.Failure(LayoutSubtitleBridgeStatus.Conflict);
+                }
+
                 if (request.Method == BridgeMethod.LayoutRead)
                 {
+                    // Saved-head discovery requires the durable provider. Never
+                    // silently reinterpret it as an exact/session-only read.
+                    if (request.Parameters.TryGetProperty("latestInBranch", out _))
+                    {
+                        return LayoutSubtitleBridgeOperationResult.Failure(LayoutSubtitleBridgeStatus.Unavailable);
+                    }
+
                     JsonElement evaluation = request.Parameters
                         .GetProperty("evaluationTime");
                     LayoutSubtitleBridgeSnapshot projected =
@@ -864,7 +1095,10 @@ internal sealed class LayoutSubtitleBridgeRuntime :
                 int expectedRevision = request.Parameters
                     .GetProperty("expectedRevision")
                     .GetInt32();
-                if (snapshot.Revision != expectedRevision)
+                EntityId<CompositionVersionIdTag> root = project.Roots[snapshot.CompositionVersion.Id];
+                if (snapshot.Revision != expectedRevision
+                    || (!pinned && project.Heads.Count != 1)
+                    || project.Heads[root] != snapshot.CompositionVersion.Id)
                 {
                     return LayoutSubtitleBridgeOperationResult.Failure(
                         LayoutSubtitleBridgeStatus.Conflict);
@@ -875,6 +1109,10 @@ internal sealed class LayoutSubtitleBridgeRuntime :
                 string kind = operation.GetProperty("kind").GetString()
                     ?? throw new FormatException(
                         "The layout operation kind is invalid.");
+                if (!snapshot.SupportsManualLayout && (kind is "setManualLayout" or "setKeyframes"))
+                {
+                    return LayoutSubtitleBridgeOperationResult.Failure(LayoutSubtitleBridgeStatus.Unavailable);
+                }
                 LayoutSubtitleBridgeSnapshot revised = kind switch
                 {
                     "setManualLayout" => SetManualLayout(
@@ -902,7 +1140,15 @@ internal sealed class LayoutSubtitleBridgeRuntime :
                         LayoutSubtitleBridgeStatus.Unavailable);
                 }
 
-                snapshots[projectId] = revised;
+                EntityId<CompositionVersionIdTag> childId = revised.CompositionVersion.Id;
+                if (childId != snapshot.CompositionVersion.Id && project.Versions.ContainsKey(childId))
+                {
+                    return LayoutSubtitleBridgeOperationResult.Failure(LayoutSubtitleBridgeStatus.Conflict);
+                }
+                cancellationToken.ThrowIfCancellationRequested();
+                project.Versions[childId] = revised;
+                project.Roots[childId] = root;
+                project.Heads[root] = childId;
                 return result;
             }
         }
@@ -951,6 +1197,15 @@ internal sealed class LayoutSubtitleBridgeRuntime :
             return LayoutSubtitleBridgeOperationResult.Failure(
                 LayoutSubtitleBridgeStatus.Invalid);
         }
+    }
+
+    private sealed class ProjectLayouts
+    {
+        internal Dictionary<EntityId<CompositionVersionIdTag>, LayoutSubtitleBridgeSnapshot> Versions { get; } = [];
+        internal Dictionary<EntityId<CompositionVersionIdTag>, EntityId<CompositionVersionIdTag>> Roots { get; } = [];
+        internal Dictionary<EntityId<CompositionVersionIdTag>, EntityId<CompositionVersionIdTag>> Heads { get; } = [];
+        internal EntityId<CompositionVersionIdTag>? DefaultRoot { get; set; }
+        internal LayoutSubtitleBridgeSnapshot? DefaultSnapshot => DefaultRoot is null ? null : Versions[Heads[DefaultRoot]];
     }
 
     private LayoutSubtitleBridgeSnapshot SetManualLayout(
@@ -1130,13 +1385,11 @@ internal sealed class LayoutSubtitleBridgeRuntime :
             history.CurrentRevision.Id,
             history.CurrentRevision.ContentDigest,
             operation);
-        ValidateCurrentComposition(
-            snapshot,
-            history.CurrentRevision.CompositionVersionId,
-            history.CurrentRevision.CompositionVersionDigest);
+        // Execute has already verified that snapshot is the branch's current
+        // head. Prove the unchanged member's ancestry without inventing a cue edit.
+        history = snapshot.WithInheritedComposition(history);
         string reason = GetRequiredString(operation, "reason");
-        CompositionVersion parent = snapshot.GetComposition(
-            history.CurrentRevision.CompositionVersionId);
+        CompositionVersion parent = snapshot.CompositionVersion;
         DateTimeOffset createdAt = GetMutationTime(
             history.CurrentRevision.CreatedAt > parent.CreatedAt
                 ? history.CurrentRevision.CreatedAt
@@ -1227,6 +1480,8 @@ internal sealed class LayoutSubtitleBridgeRuntime :
             history.CurrentRevision.Id,
             history.CurrentRevision.ContentDigest,
             operation);
+        // Terop histories still require direct parentage; their Graphics service
+        // has no verified inheritance contract and is intentionally not bypassed.
         ValidateCurrentComposition(
             snapshot,
             history.CurrentRevision.CompositionVersionId,
@@ -1595,21 +1850,36 @@ internal static class LayoutSubtitleBridgeProtocol
     {
         if (method == BridgeMethod.LayoutRead)
         {
-            return HasExactProperties(
+            return HasVersionedProperties(
                     parameters,
-                    ["projectId", "evaluationTime"])
+                    ["projectId", "evaluationTime"],
+                    allowLatestInBranch: true)
                 && IsCanonicalId(parameters.GetProperty("projectId"))
                 && IsNullOrTime(parameters.GetProperty("evaluationTime"));
         }
 
         return method == BridgeMethod.LayoutApply
-            && HasExactProperties(
+            && HasVersionedProperties(
                 parameters,
                 ["projectId", "expectedRevision", "operation"])
             && IsCanonicalId(parameters.GetProperty("projectId"))
             && IsNonnegativeInt32(
                 parameters.GetProperty("expectedRevision"))
             && IsOperation(parameters.GetProperty("operation"));
+    }
+
+    private static bool HasVersionedProperties(JsonElement parameters, IReadOnlyList<string> required,
+        bool allowLatestInBranch = false)
+    {
+        if (parameters.ValueKind != JsonValueKind.Object) { return false; }
+        bool pinned = parameters.TryGetProperty("expectedVersionId", out _) || parameters.TryGetProperty("expectedVersionDigest", out _);
+        bool latest = parameters.TryGetProperty("latestInBranch", out JsonElement latestValue);
+        if (latest && (!allowLatestInBranch || !pinned || latestValue.ValueKind != JsonValueKind.True)) { return false; }
+        IReadOnlyList<string> expected = pinned ? [.. required, "expectedVersionId", "expectedVersionDigest"] : required;
+        if (latest) { expected = [.. expected, "latestInBranch"]; }
+        return HasExactProperties(parameters, expected)
+            && (!pinned || (IsCanonicalId(parameters.GetProperty("expectedVersionId"))
+                && IsCanonicalDigest(parameters.GetProperty("expectedVersionDigest"))));
     }
 
     private static bool IsOperation(JsonElement value)
@@ -2136,7 +2406,20 @@ internal static class LayoutSubtitleBridgeJson
         }
         else
         {
-            WriteSnapshot(writer, result.Snapshot);
+            WriteSnapshot(writer, result.Snapshot,
+                persisted: result.DurableSubtitles is { Sequence: > 0 } metadata
+                    && metadata.MatchesSnapshot(result.Snapshot));
+        }
+
+        if (result.DurableSubtitles is { } durableSubtitles)
+        {
+            writer.WriteStartObject("durableSubtitles");
+            writer.WriteString("rootVersionId", durableSubtitles.RootVersionId.ToString());
+            writer.WriteString("headVersionId", durableSubtitles.HeadVersionId.ToString());
+            writer.WriteString("headVersionDigest", durableSubtitles.HeadVersionDigest.Hex);
+            writer.WriteNumber("sequence", durableSubtitles.Sequence);
+            writer.WriteString("journalDigest", durableSubtitles.JournalDigest?.Hex);
+            writer.WriteEndObject();
         }
 
         writer.WriteEndObject();
@@ -2147,7 +2430,8 @@ internal static class LayoutSubtitleBridgeJson
 
     private static void WriteSnapshot(
         Utf8JsonWriter writer,
-        LayoutSubtitleBridgeSnapshot snapshot)
+        LayoutSubtitleBridgeSnapshot snapshot,
+        bool persisted)
     {
         writer.WriteStartObject();
         writer.WriteString("projectId", snapshot.ProjectId.ToString());
@@ -2158,7 +2442,10 @@ internal static class LayoutSubtitleBridgeJson
         writer.WriteString(
             "compositionVersionDigest",
             snapshot.CompositionVersion.ContentDigest.Hex);
-        writer.WriteString("persistence", "notPersisted");
+        // Available(snapshot) without service evidence retains the original bytes,
+        // including the synthetic response used by ComputeSnapshotDigest/replay.
+        writer.WriteString("persistence", persisted ? "persisted" : "notPersisted");
+        if (snapshot.SubtitleOnly) { writer.WriteBoolean("subtitleOnly", true); }
         writer.WriteStartObject("output");
         writer.WriteNumber("width", snapshot.OutputPixelWidth);
         writer.WriteNumber("height", snapshot.OutputPixelHeight);
@@ -2171,7 +2458,7 @@ internal static class LayoutSubtitleBridgeJson
         writer.WriteEndObject();
 
         LayoutSpec activeLayout = snapshot.ManualSelection?.Resolution.Plan
-            ?.DerivedLayoutSpec ?? snapshot.OutputEnvelope;
+            ?.DerivedLayoutSpec ?? snapshot.PreviewEnvelope;
         ResolvedLayout resolved = LayoutResolver.Resolve(
             activeLayout,
             snapshot.OutputPixelWidth,

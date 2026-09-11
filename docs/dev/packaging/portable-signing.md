@@ -1,6 +1,6 @@
 # 単一EXEの署名・実配布手順（OSL-018）
 
-確認日: 2026-09-06。根拠は [NFR-009 / AC-007](../../requirement-definition.md)、[ADR-0010](../decisions/ADR-0010-one-action-portable-launch.md)、利用者がデフォルトを採用し全タスク実行を承認した[計画](../../../work/20260906-OneActionLaunch-ImplementationPlan.md)のD11〜D13、OSL-018〜021。
+確認日: 2026-09-06。根拠は [NFR-009 / AC-007](../../requirement-definition.md)、[ADR-0010](../decisions/ADR-0010-one-action-portable-launch.md)、利用者がデフォルトを採用し全タスク実行を承認したD11〜D13、OSL-018〜021（承認内容は[詳細実装計画§0.7](../planning/implementation-plan.md#07-os-onlyの1操作起動2026-09-06追補)へ恒久化）。
 
 ## 1. 現在の状態と適用範囲
 

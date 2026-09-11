@@ -12,9 +12,21 @@ import {
   warningLabels,
 } from './jobPresentation'
 
+import './jobs.css'
+
 const activePollMilliseconds = 1_500
 
-export function JobProgressPanel() {
+export interface JobProgressPanelProps {
+  readonly jobId?: string | null
+  readonly context?: Readonly<{ jobId: string | null }>
+  readonly active?: boolean
+}
+
+export function JobProgressPanel({
+  jobId,
+  context,
+  active = true,
+}: JobProgressPanelProps = {}) {
   const {
     state,
     monitorJob,
@@ -28,15 +40,51 @@ export function JobProgressPanel() {
   const [showInputError, setShowInputError] = useState(false)
   const normalizedJobId = jobIdInput.trim().toLowerCase()
   const inputIsValid = isCanonicalBridgeId(normalizedJobId)
-  const snapshot = jobMonitor.snapshot
+  // An explicit context (including null) takes precedence over the shorthand ID.
+  const suppliedJobId = context === undefined ? jobId : context.jobId
+  const isStandalone = suppliedJobId === undefined
+  const contextJobId =
+    typeof suppliedJobId === 'string' && isCanonicalBridgeId(suppliedJobId)
+      ? suppliedJobId
+      : null
+  const hasTrackedJob =
+    jobMonitor.trackedJobId !== null &&
+    (isStandalone || jobMonitor.trackedJobId === contextJobId)
+  const snapshot = hasTrackedJob ? jobMonitor.snapshot : null
   const displayStatus = useMemo(
     () => (snapshot === null ? null : selectJobDisplayStatus(snapshot)),
     [snapshot],
   )
 
   useEffect(() => {
+    if (isStandalone || contextJobId === jobMonitor.trackedJobId) {
+      return
+    }
+
+    let superseded = false
+    // Child effects run before the provider initializes its bridge client.
+    // Cleanup only discards this deferred switch; visibility never stops a job.
+    void Promise.resolve().then(() => {
+      if (superseded) {
+        return
+      }
+
+      if (jobMonitor.trackedJobId !== null) {
+        stopMonitoringJob()
+      }
+      if (contextJobId !== null) {
+        monitorJob(contextJobId)
+      }
+    })
+
+    return () => {
+      superseded = true
+    }
+  }, [contextJobId, isStandalone, jobMonitor.trackedJobId, monitorJob, stopMonitoringJob])
+
+  useEffect(() => {
     const shouldPoll =
-      jobMonitor.trackedJobId !== null &&
+      hasTrackedJob &&
       (snapshot?.state === 'queued' ||
         snapshot?.state === 'running' ||
         jobMonitor.lastError === 'conflict')
@@ -46,7 +94,7 @@ export function JobProgressPanel() {
 
     const timer = window.setInterval(refreshJob, activePollMilliseconds)
     return () => window.clearInterval(timer)
-  }, [jobMonitor.lastError, jobMonitor.trackedJobId, refreshJob, snapshot?.state])
+  }, [hasTrackedJob, jobMonitor.lastError, jobMonitor.trackedJobId, refreshJob, snapshot?.state])
 
   const submitJob = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -64,7 +112,7 @@ export function JobProgressPanel() {
     setShowInputError(false)
   }
 
-  const isPending = jobMonitor.pending !== null
+  const isPending = hasTrackedJob && jobMonitor.pending !== null
   const canCancel =
     snapshot !== null &&
     (snapshot.state === 'queued' || snapshot.state === 'running') &&
@@ -75,57 +123,90 @@ export function JobProgressPanel() {
     snapshot.retryability === 'retryable'
 
   return (
-    <section className="job-panel" aria-labelledby="job-panel-title">
+    <section
+      className="job-panel job-panel-compact"
+      aria-labelledby="job-panel-title"
+      hidden={!active}
+    >
       <div className="section-heading">
         <div>
           <p className="eyebrow">バックグラウンド処理</p>
           <h2 id="job-panel-title">ジョブの進行状況</h2>
         </div>
-        {jobMonitor.trackedJobId !== null && (
+        {isStandalone && hasTrackedJob && (
           <button className="button button-secondary" type="button" onClick={stopMonitoring}>
             表示を閉じる
           </button>
         )}
       </div>
 
-      <form className="job-lookup" onSubmit={submitJob} noValidate>
-        <label htmlFor="job-id">ジョブ ID</label>
-        <div className="job-lookup-row">
-          <input
-            id="job-id"
-            name="jobId"
-            type="text"
-            maxLength={64}
-            value={jobIdInput}
-            onChange={(event) => {
-              setJobIdInput(event.currentTarget.value)
-              setShowInputError(false)
-            }}
-            aria-describedby="job-id-help job-id-error"
-            aria-invalid={showInputError && !inputIsValid}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <button className="button button-primary" type="submit" disabled={isPending}>
-            状態を表示
-          </button>
-        </div>
-        <p id="job-id-help" className="field-help">
-          小文字 UUID 形式のジョブ ID を指定します。
-        </p>
-        <p id="job-id-error" className="field-error" role="alert">
-          {showInputError && !inputIsValid
-            ? 'ジョブ ID を正しい UUID 形式で入力してください。'
-            : ''}
-        </p>
-      </form>
+      {isStandalone && (
+        <form className="job-lookup" onSubmit={submitJob} noValidate>
+          <label htmlFor="job-id">ジョブ ID</label>
+          <div className="job-lookup-row">
+            <input
+              id="job-id"
+              name="jobId"
+              type="text"
+              maxLength={64}
+              value={jobIdInput}
+              onChange={(event) => {
+                setJobIdInput(event.currentTarget.value)
+                setShowInputError(false)
+              }}
+              aria-describedby="job-id-help job-id-error"
+              aria-invalid={showInputError && !inputIsValid}
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <button className="button button-primary" type="submit" disabled={isPending}>
+              状態を表示
+            </button>
+          </div>
+          <p id="job-id-help" className="field-help">
+            小文字 UUID 形式のジョブ ID を指定します。
+          </p>
+          <p id="job-id-error" className="field-error" role="alert">
+            {showInputError && !inputIsValid
+              ? 'ジョブ ID を正しい UUID 形式で入力してください。'
+              : ''}
+          </p>
+        </form>
+      )}
 
-      {jobMonitor.trackedJobId !== null && (
+      {!isStandalone && suppliedJobId === null && (
+        <p className="job-unstarted" role="status">
+          未開始 — 処理を開始すると進行状況が表示されます。
+        </p>
+      )}
+      {!isStandalone && suppliedJobId !== null && contextJobId === null && (
+        <p className="request-error" role="alert">
+          処理の状態は未取得です。対象の処理を選び直してください。
+        </p>
+      )}
+
+      {(hasTrackedJob || (!isStandalone && contextJobId !== null)) && (
         <div className="job-status-region" aria-live="polite" aria-atomic="true">
           {snapshot === null ? (
-            <p className="job-loading" role="status">
-              {isPending ? 'ジョブの状態を取得しています…' : '状態を取得できませんでした。'}
-            </p>
+            <>
+              <p className="job-loading" role="status">
+                {!hasTrackedJob || isPending
+                  ? 'ジョブの状態を取得しています…'
+                  : '状態を取得できませんでした。'}
+              </p>
+              {hasTrackedJob && (
+                <div className="job-actions" aria-label="ジョブ操作">
+                  <button
+                    className="button button-secondary"
+                    type="button"
+                    disabled={isPending}
+                    onClick={refreshJob}
+                  >
+                    最新状態を取得
+                  </button>
+                </div>
+              )}
+            </>
           ) : (
             <article className="job-card" data-job-status={displayStatus}>
               <header className="job-card-header">
@@ -133,9 +214,6 @@ export function JobProgressPanel() {
                   <p className="job-kind">{selectJobKindLabel(snapshot)}</p>
                   <h3>{displayStatus === null ? '' : jobStatusLabels[displayStatus]}</h3>
                 </div>
-                <span className="job-status-badge">
-                  試行 {snapshot.currentAttemptNumber}
-                </span>
               </header>
 
               {snapshot.state === 'running' && (
@@ -157,17 +235,6 @@ export function JobProgressPanel() {
                   </span>
                 </div>
               )}
-
-              <dl className="job-metadata">
-                <div>
-                  <dt>更新日時</dt>
-                  <dd>{new Date(snapshot.updatedAt).toLocaleString('ja-JP')}</dd>
-                </div>
-                <div>
-                  <dt>リビジョン</dt>
-                  <dd>{snapshot.revision}</dd>
-                </div>
-              </dl>
 
               {snapshot.state === 'interrupted' && (
                 <p className="notice notice-neutral">
@@ -250,17 +317,35 @@ export function JobProgressPanel() {
                     このジョブは安全に再試行できません。
                   </p>
                 )}
+
+              <details className="job-details">
+                <summary>処理の詳細</summary>
+                <dl className="job-metadata">
+                  <div>
+                    <dt>試行</dt>
+                    <dd>{snapshot.currentAttemptNumber}</dd>
+                  </div>
+                  <div>
+                    <dt>更新日時</dt>
+                    <dd>{new Date(snapshot.updatedAt).toLocaleString('ja-JP')}</dd>
+                  </div>
+                  <div>
+                    <dt>リビジョン</dt>
+                    <dd>{snapshot.revision}</dd>
+                  </div>
+                </dl>
+              </details>
             </article>
           )}
 
-          {jobMonitor.lastCommand !== null && (
+          {hasTrackedJob && jobMonitor.lastCommand !== null && (
             <p className="command-result" role="status">
               {jobMonitor.lastCommand.operation === 'cancel'
                 ? cancellationOutcomeLabels[jobMonitor.lastCommand.outcome]
                 : retryOutcomeLabels[jobMonitor.lastCommand.outcome]}
             </p>
           )}
-          {jobMonitor.lastError !== null && (
+          {hasTrackedJob && jobMonitor.lastError !== null && (
             <p className="request-error" role="alert">
               {requestErrorLabels[jobMonitor.lastError]}
             </p>

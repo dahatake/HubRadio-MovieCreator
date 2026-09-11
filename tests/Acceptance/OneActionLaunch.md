@@ -5,7 +5,7 @@
 - **状態: procedure implemented / execution NOT RUN（手順実装済み・実行未実施）**
 - 本書は承認済みD01〜D18に基づく手順であり、候補EXE、VM、起動、署名の検証結果ではない。各試験の初期判定は `NOT EVALUATED`。独立レビューは別工程とする。
 
-正本: [要求定義書 NFR-009 / AC-007](../../docs/requirement-definition.md)、[ADR-0010](../../docs/dev/decisions/ADR-0010-one-action-portable-launch.md)、[承認済み計画 OSL-004・020・021 / §7.7](../../work/20260906-OneActionLaunch-ImplementationPlan.md)。既存の[起動smoke](../smoke/Test-WebViewStartup.ps1)と[bridge schema](../../schemas/web-bridge.schema.json)を再利用する。
+正本: [要求定義書 NFR-009 / AC-007](../../docs/requirement-definition.md)、[ADR-0010](../../docs/dev/decisions/ADR-0010-one-action-portable-launch.md)、[詳細実装計画§0.7](../../docs/dev/planning/implementation-plan.md#07-os-onlyの1操作起動2026-09-06追補)。既存の[起動smoke](../smoke/Test-WebViewStartup.ps1)と[bridge schema](../../schemas/web-bridge.schema.json)を再利用する。
 
 ## 1. 範囲と判定
 

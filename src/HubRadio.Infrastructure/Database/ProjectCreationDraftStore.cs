@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Projects;
 using HubRadio.Core.Settings;
@@ -254,6 +255,34 @@ public sealed class ProjectCreationDraftStore
             initialSettingsSnapshot);
     }
 
+    /// <summary>
+    /// Atomically finalizes the draft and accepts a production root and ingest Job.
+    /// Retry with the exact original request, payload, revision and timestamp; callers
+    /// that lost those inputs can recover the original acceptance with GetByDraft.
+    /// The optional locator must already be encrypted by the trusted native caller.
+    /// </summary>
+    public StoredSourceOnlyExecution FinalizeSourceOnlyWithExecution(
+        ProjectCreationDraft draft,
+        Project project,
+        string payloadJson,
+        int expectedRevision,
+        DateTimeOffset finalizedAt,
+        SourceOnlyExecutionRequest request,
+        byte[]? protectedSourceLocator = null)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (protectedSourceLocator is not null &&
+            protectedSourceLocator.Length is <= 0 or > SourceOnlyExecutionStore.MaximumProtectedLocatorBytes)
+        {
+            throw new ArgumentException("Protected source locator exceeds its byte limits.", nameof(protectedSourceLocator));
+        }
+        _ = FinalizeDraftCore(draft, project, payloadJson,
+            ProjectSnapshotJson.WriteProject(project), expectedRevision, finalizedAt,
+            request.SettingsSnapshot, request, protectedSourceLocator);
+        return new SourceOnlyExecutionStore(_databasePath).GetByDraft(draft.Id)
+            ?? throw SqliteStoreSupport.InvalidStoredData("source-only execution");
+    }
+
     private StoredProjectCreationDraft FinalizeDraftCore(
         ProjectCreationDraft draft,
         Project project,
@@ -261,7 +290,9 @@ public sealed class ProjectCreationDraftStore
         string projectPayloadJson,
         int expectedRevision,
         DateTimeOffset finalizedAt,
-        DefaultSettingsSnapshot? initialSettingsSnapshot)
+        DefaultSettingsSnapshot? initialSettingsSnapshot,
+        SourceOnlyExecutionRequest? executionRequest = null,
+        byte[]? protectedSourceLocator = null)
     {
         ArgumentNullException.ThrowIfNull(draft);
         ArgumentNullException.ThrowIfNull(project);
@@ -286,12 +317,54 @@ public sealed class ProjectCreationDraftStore
             finalizedAt,
             nameof(finalizedAt));
 
+        byte[]? executionPayload = null;
+        byte[]? locatorCopy = protectedSourceLocator?.ToArray();
+        if (executionRequest is not null)
+        {
+            if (executionRequest.DraftId != draft.Id || executionRequest.ProjectId != project.Id ||
+                executionRequest.SourceCandidateId != draft.SourceCandidateId ||
+                executionRequest.CreatedAt != finalizedAt.ToUniversalTime() ||
+                initialSettingsSnapshot is null ||
+                initialSettingsSnapshot.CanonicalJson != executionRequest.SettingsSnapshot.CanonicalJson)
+            {
+                throw new ArgumentException("The execution must match the finalized draft and project.", nameof(executionRequest));
+            }
+
+            using JsonDocument draftDocument = JsonDocument.Parse(draftPayload);
+            using JsonDocument projectDocument = JsonDocument.Parse(projectPayload);
+            byte[] finalizationPayload = SqliteStoreSupport.CanonicalizePayload(JsonSerializer.Serialize(new
+            {
+                schema = "source-only.finalization.v1",
+                draft,
+                draftPayload = draftDocument.RootElement,
+                projectPayload = projectDocument.RootElement,
+                expectedRevision,
+                finalizedAt = storedFinalizedAt,
+            }), nameof(draftPayloadJson));
+            executionPayload = SourceOnlyExecutionStore.PrepareInitial(executionRequest,
+                ContentDigest.Compute(finalizationPayload), locatorCopy);
+        }
+
         using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
         StoredProjectCreationDraft current = ReadRequiredDraft(
             connection,
             transaction,
             draft.Id);
+        if (executionRequest is not null && current.IsFinalized)
+        {
+            StoredSourceOnlyExecution recorded = SourceOnlyExecutionStore.ReadByDraft(
+                connection, transaction, draft.Id)
+                ?? throw new InvalidOperationException("The finalized draft has no recorded source-only execution.");
+            SourceOnlyExecutionStore.EnsureSameRequest(recorded, executionPayload!);
+            if (current.FinalizedProjectId != project.Id || current.FinalizedAt != finalizedAt.ToUniversalTime() ||
+                current.Revision != checked(expectedRevision + 1) || current.CanonicalJson != Encoding.UTF8.GetString(draftPayload))
+            {
+                throw SqliteStoreSupport.InvalidStoredData("source-only finalization");
+            }
+            transaction.Commit();
+            return current;
+        }
         EnsureMutableAndCurrent(
             current,
             expectedRevision,
@@ -346,6 +419,12 @@ public sealed class ProjectCreationDraftStore
             finalized.FinalizedAt != finalizedAt.ToUniversalTime())
         {
             throw InvalidStoredDraft();
+        }
+
+        if (executionRequest is not null)
+        {
+            SourceOnlyExecutionStore.InsertInitial(connection, transaction,
+                executionRequest, executionPayload!, locatorCopy);
         }
 
         transaction.Commit();

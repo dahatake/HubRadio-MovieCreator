@@ -1,5 +1,4 @@
 using HubRadio.App.DefaultSettings;
-using HubRadio.App.Jobs;
 using HubRadio.App.Media;
 using HubRadio.App.Reviews;
 using HubRadio.App.Security;
@@ -10,11 +9,12 @@ using HubRadio.Infrastructure.Database;
 using HubRadio.Infrastructure.Identity;
 using HubRadio.Infrastructure.Media;
 using HubRadio.Infrastructure.Security;
+using HubRadio.Infrastructure.Settings;
 using Microsoft.UI.Xaml;
 
 namespace HubRadio.App.Projects;
 
-internal sealed class ApplicationBridgeHandlers
+internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
 {
     internal ApplicationBridgeHandlers(
         ProjectBridgeHandler project,
@@ -26,7 +26,12 @@ internal sealed class ApplicationBridgeHandlers
         DeliveryBridgeRequestHandler delivery,
         AnalysisBridgeRequestHandler analysis,
         LayoutSubtitleBridgeRequestHandler layoutSubtitles,
-        SettingsBridgeRequestHandler settings)
+        SettingsBridgeRequestHandler settings,
+        GlobalSettingsBridgeRequestHandler globalSettings,
+        SettingsFileBridgeRequestHandler fileSettings,
+        SourceOnlyApplicationRuntime? sourceOnlyRuntime = null,
+        SourceOnlyBridgeHandler? sourceOnly = null,
+        SourceOnlyMediaResponseFactory? sourceOnlyMedia = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
@@ -38,6 +43,8 @@ internal sealed class ApplicationBridgeHandlers
         ArgumentNullException.ThrowIfNull(analysis);
         ArgumentNullException.ThrowIfNull(layoutSubtitles);
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(globalSettings);
+        ArgumentNullException.ThrowIfNull(fileSettings);
         Project = project;
         Jobs = jobs;
         Timeline = timeline;
@@ -48,6 +55,11 @@ internal sealed class ApplicationBridgeHandlers
         Analysis = analysis;
         LayoutSubtitles = layoutSubtitles;
         Settings = settings;
+        GlobalSettings = globalSettings;
+        FileSettings = fileSettings;
+        SourceOnlyRuntime = sourceOnlyRuntime;
+        SourceOnly = sourceOnly;
+        SourceOnlyMedia = sourceOnlyMedia;
     }
 
     internal ProjectBridgeHandler Project { get; }
@@ -69,20 +81,43 @@ internal sealed class ApplicationBridgeHandlers
     internal LayoutSubtitleBridgeRequestHandler LayoutSubtitles { get; }
 
     internal SettingsBridgeRequestHandler Settings { get; }
+
+    internal GlobalSettingsBridgeRequestHandler GlobalSettings { get; }
+
+    internal SettingsFileBridgeRequestHandler FileSettings { get; }
+
+    internal SourceOnlyApplicationRuntime? SourceOnlyRuntime { get; }
+
+    internal SourceOnlyBridgeHandler? SourceOnly { get; }
+
+    internal SourceOnlyMediaResponseFactory? SourceOnlyMedia { get; }
+
+    internal SourceOnlyPipeline? SourceOnlyPipeline => SourceOnlyRuntime?.Pipeline;
+
+    internal SourceOnlyResultService? SourceOnlyResults => SourceOnlyRuntime?.Services.Results;
+
+    internal Task<SourceOnlyRecoveryResult> RecoverSourceOnlyAsync(CancellationToken cancellationToken) =>
+        SourceOnlyRuntime?.RecoverAsync(cancellationToken)
+            ?? Task.FromResult(new SourceOnlyRecoveryResult([], false, null));
+
+    public ValueTask DisposeAsync() => SourceOnlyRuntime?.DisposeAsync() ?? ValueTask.CompletedTask;
 }
 
 internal static class ProjectApplicationRuntime
 {
-    internal static ApplicationBridgeHandlers Create(
+    internal static async Task<ApplicationBridgeHandlers> CreateAsync(
         Window owner,
         string applicationDataDirectory,
         string profilesDirectory,
-        string defaultSettingsProfilesDirectory)
+        string defaultSettingsProfilesDirectory,
+        CancellationToken cancellationToken = default,
+        SourceOnlyApplicationResources? trustedResources = null)
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationDataDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(profilesDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(defaultSettingsProfilesDirectory);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var actorProvider = new WindowsActorProvider();
         string actorSid = actorProvider.GetCurrentSid();
@@ -114,59 +149,107 @@ internal static class ProjectApplicationRuntime
         var registry = new AssetCandidateRegistry();
         var picker = new MediaPicker(owner, registry);
         ProjectCreationCatalog catalog = ProjectCreationCatalog.Load(profilesDirectory);
+        var services = new SourceOnlyApplicationServices(databasePath, workspacePath, registry, defaultSettingsStore);
+        SourceOnlyApplicationRuntime native = await SourceOnlyApplicationRuntime.CreateAsync(
+            services,
+            trustedResources ?? SourceOnlyApplicationResources.FromPackage(
+                AppContext.BaseDirectory, profilesDirectory, defaultSettingsProfilesDirectory),
+            cancellationToken).ConfigureAwait(false);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return CreateHandlers(native, authorization, actorProvider, catalog, picker, applicationRoot, actorSid);
+        }
+        catch
+        {
+            await native.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private static ApplicationBridgeHandlers CreateHandlers(
+        SourceOnlyApplicationRuntime native,
+        AuthorizationService authorization,
+        WindowsActorProvider actorProvider,
+        ProjectCreationCatalog catalog,
+        MediaPicker picker,
+        string applicationRoot,
+        string actorSid)
+    {
+        SourceOnlyApplicationServices services = native.Services;
         var service = new ProjectCreationService(
-            new ProjectCreationDraftStore(databasePath),
+            services.Drafts,
             authorization,
-            registry,
+            services.Candidates,
             catalog,
-            defaultSettingsStore,
+            services.Settings,
             actorProvider.GetCurrentSid,
             async cancellationToken =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 return await picker.PickAssetCandidateAsync();
-            });
-        var projectHandler = new ProjectBridgeHandler(service);
-        var jobStore = new JobStore(databasePath);
-        var jobCoordinator = new JobCoordinator(
-            jobStore,
-            new LocalJobRunner(jobStore));
+            },
+            // Even a missing resource has a non-null coordinator: Start fails closed
+            // rather than finalizing an empty project through the legacy fallback.
+            sourceOnlyCoordinator: native);
+        var projectHandler = new ProjectBridgeHandler(service, native.RestoreAfterReadAsync);
         var jobHandler = new JobBridgeRequestHandler(
-            jobCoordinator,
+            services.Coordinator,
             new JobBridgeAuthorization(authorization, actorProvider),
             new DurableJobBridgeDetailsProvider(
-                new IngestWorkflowStore(databasePath)));
+                new IngestWorkflowStore(services.DatabasePath)));
         var transcriptHandler = new TranscriptBridgeRequestHandler(
-            new TranscriptBridgeRuntime(),
+            services.Registrations.Transcript,
             new TranscriptBridgeAuthorization(authorization, actorProvider));
-        var projectStore = new ProjectStore(databasePath);
         var analysisHandler = new AnalysisBridgeRequestHandler(
-            new AnalysisBridgeRuntime(),
+            services.Registrations.Analysis,
             new AnalysisBridgeAuthorization(authorization, actorProvider));
         var timelineHandler = new TimelineBridgeRequestHandler(
-            projectStore,
+            services.Projects,
             new TimelineBridgeAuthorization(authorization, actorProvider));
-        var reviewStore = new ReviewStore(databasePath);
+        var reviewStore = new ReviewStore(services.DatabasePath);
         var reviewHandler = new ReviewBridgeHandler(
             new ReviewWorkspaceService(
-                projectStore,
+                services.Projects,
                 reviewStore,
                 authorization,
                 actorProvider.GetCurrentSid));
         var comparisonHandler = new ComparisonBridgeRequestHandler(
-            projectStore,
+            services.Projects,
             new ComparisonBridgeAuthorization(authorization, actorProvider));
         var deliveryHandler = new DeliveryBridgeRequestHandler(
+            // This legacy API requires separate manual-review approval evidence.
+            // Source-only delivery uses the real SourceOnlyDeliveryService instead;
+            // do not manufacture that older approval just to populate its editor.
             UnavailableDeliveryEvidenceProvider.Instance,
             new DeliveryAccessAuthorization(authorization, actorProvider));
         var layoutSubtitleHandler = new LayoutSubtitleBridgeRequestHandler(
-            UnavailableLayoutSubtitleBridgeRuntime.Instance,
+            services.Registrations,
             new LayoutSubtitleBridgeAuthorization(
                 authorization,
                 actorProvider));
-        var settingsHandler = new SettingsBridgeRequestHandler(
-            defaultSettingsStore,
-            new SettingsBridgeAuthorization(authorization, actorProvider));
+        var settingsAuthorization = new SettingsBridgeAuthorization(
+            authorization,
+            actorProvider);
+        var settingsHandlers = CreateSettingsHandlers(
+            services.Settings,
+            settingsAuthorization,
+            applicationRoot,
+            actorSid);
+        var sourceOnlyHandler = new SourceOnlyBridgeHandler(
+            () => native.ReadyPipeline,
+            services.Executions,
+            services.Settings,
+            services.Results,
+            services.Projects,
+            actorProvider.GetCurrentSid,
+            authorization);
+        var sourceOnlyMedia = new SourceOnlyMediaResponseFactory(
+            services.Executions,
+            services.Results,
+            services.Artifacts,
+            actorProvider.GetCurrentSid,
+            authorization);
         return new ApplicationBridgeHandlers(
             projectHandler,
             jobHandler,
@@ -177,6 +260,29 @@ internal static class ProjectApplicationRuntime
             deliveryHandler,
             analysisHandler,
             layoutSubtitleHandler,
-            settingsHandler);
+            settingsHandlers.Settings,
+            settingsHandlers.GlobalSettings,
+            settingsHandlers.FileSettings,
+            native,
+            sourceOnlyHandler,
+            sourceOnlyMedia);
     }
+
+    internal static (
+        SettingsBridgeRequestHandler Settings,
+        GlobalSettingsBridgeRequestHandler GlobalSettings,
+        SettingsFileBridgeRequestHandler FileSettings) CreateSettingsHandlers(
+        DefaultSettingsStore defaultSettingsStore,
+        SettingsBridgeAuthorization settingsAuthorization,
+        string applicationRoot,
+        string actorSid) =>
+        (
+            new SettingsBridgeRequestHandler(defaultSettingsStore, settingsAuthorization),
+            new GlobalSettingsBridgeRequestHandler(defaultSettingsStore, settingsAuthorization),
+            new SettingsFileBridgeRequestHandler(
+                defaultSettingsStore,
+                settingsAuthorization,
+                // File-only root/SID checks must not prevent opening the existing DB.
+                () => new SettingsTextFile(applicationRoot, actorSid))
+        );
 }

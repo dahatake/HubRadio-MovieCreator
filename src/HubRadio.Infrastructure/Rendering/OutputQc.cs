@@ -863,7 +863,7 @@ public sealed class OutputQcResult
 public sealed class OutputQc
 {
     internal const string TimingShowEntries =
-        "frame=stream_index,best_effort_timestamp,duration";
+        "frame=stream_index,best_effort_timestamp,duration:frame_side_data=";
     internal const string SubtitleTimingShowEntries =
         "frame=pts,start_display_time,end_display_time,num_rects";
     internal const string LumaFilter =
@@ -1417,8 +1417,18 @@ public sealed class OutputQc
         var entries = new List<OutputQcTimingEntry>(lines.Length);
         for (int sequence = 0; sequence < lines.Length; sequence++)
         {
+            string line = lines[sequence];
+            // compact can retain one separator for the explicitly empty frame_side_data
+            // section after three required frame fields. Keep the shared subtitle parser strict.
+            if (stage is OutputQcStage.VideoTiming or OutputQcStage.AudioTiming &&
+                line.EndsWith('|') &&
+                line.Count(static character => character == '|') == TimingFields.Count)
+            {
+                line = line[..^1];
+            }
+
             Dictionary<string, string> fields = ParseFields(
-                lines[sequence],
+                line,
                 TimingFields,
                 stage);
             int parsedStreamIndex = ParseCanonicalNonnegativeInt32(
@@ -1913,10 +1923,13 @@ public sealed class OutputQc
             video.NominalFrameRate == profile.FrameRate &&
             video.AverageFrameRate == profile.FrameRate;
         bool audioMatches = !expectsAudio ||
-            string.Equals(
+            (string.Equals(
                 audioStreams[0].CodecName,
                 profile.AudioCodec,
-                StringComparison.Ordinal);
+                StringComparison.Ordinal)
+            && audioStreams[0].SampleRate == FfmpegCompiler.OutputAudioSampleRate
+            && string.Equals(audioStreams[0].Profile, FfmpegCompiler.OutputAudioProfile,
+                StringComparison.Ordinal));
         if (!videoMatches || !audioMatches)
         {
             throw Failure(

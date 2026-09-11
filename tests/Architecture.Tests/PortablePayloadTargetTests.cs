@@ -11,13 +11,14 @@ public sealed class PortablePayloadTargetTests
 {
     private const string TargetsPath = "packaging/portable/PortablePayload.targets";
     private const string EnabledCondition = "'$(HubRadioPortablePublish)' == 'true'";
-    private static readonly string[] PayloadRoots = ["Worker", "Tools", "ModelCatalog", "WebView2Runtime", "Licenses", "Evidence"];
+    private static readonly string[] PayloadRoots = ["Worker", "Tools", "ModelCatalog", "Fonts", "WebView2Runtime", "Licenses", "Evidence"];
     private static readonly string[] PayloadFiles =
     [
         "Worker/python.exe", "Worker/Lib/site-packages/package/data/table.dat",
         "Worker/Lib/site-packages/package/LICENSE", "Worker/Lib/site-packages/native/module.pyd",
         "Worker/Lib/site-packages/native/module.cp312-win_amd64.pyd",
         "Tools/ffmpeg.exe", "Tools/ffprobe.exe", "ModelCatalog/catalog.json",
+        "Fonts/NotoSansJP-Regular.otf", "Fonts/LICENSE", "Fonts/font-manifest.json",
         "ModelCatalog/Bundles/model/model.bin", "WebView2Runtime/msedgewebview2.exe",
         "WebView2Runtime/locales/ja.pak", "WebView2Runtime/resources.pak",
         "WebView2Runtime/undocked_copilot/Microsoft.UI.Xaml.Controls.pri",
@@ -198,11 +199,10 @@ public sealed class PortablePayloadTargetTests
         fixture.Properties["SelfContained"] = "false";
         AssertSucceeded(fixture.Run());
         string[][] items = ReadRows(fixture.ItemsPath, 6);
-        Assert.HasCount(4, items);
+        Assert.HasCount(3, items, "Without an explicit payload path the App no longer copies repository model bundles.");
         Assert.AreEqual(Path.GetFullPath(Path.Combine(fixture.Root, "packaging/models/catalog.json")),
             items.Single(static row => Normalize(row[2]) == "ModelCatalog/catalog.json")[0]);
-        Assert.AreEqual(Path.GetFullPath(Path.Combine(fixture.Root, "packaging/models/Bundles/model/model.bin")),
-            items.Single(static row => Normalize(row[2]) == "ModelCatalog/Bundles/model/model.bin")[0]);
+        Assert.IsFalse(items.Any(static row => Normalize(row[2]) == "ModelCatalog/Bundles/model/model.bin"));
         Assert.IsTrue(items.All(static row => row[3] == "PreserveNewest" && row[4] == "PreserveNewest"));
         Assert.IsFalse(File.Exists(fixture.ManifestPath));
         Assert.IsFalse(Directory.Exists(Path.Combine(fixture.Root, "obj")));
@@ -370,6 +370,7 @@ public sealed class PortablePayloadTargetTests
     [DataRow("Worker")]
     [DataRow("Tools")]
     [DataRow("ModelCatalog")]
+    [DataRow("Fonts")]
     [DataRow("WebView2Runtime")]
     [DataRow("Licenses")]
     [DataRow("Evidence")]
@@ -644,7 +645,7 @@ public sealed class PortablePayloadTargetTests
             // Only existence/layout is tested here; OSL-009 / OSL-012 own evidence/hash validation.
             Write(Path.Combine(PayloadPath, "Evidence/portable-payload.json"),
                 """{"schemaVersion":"1.0.0","taskId":"OSL009","architecture":"x64","releaseApproved":false,"appPublishRequired":true}""");
-            Write(Path.Combine(PayloadPath, "Unexpected/not-bundled.exe"), "outside the six allowed roots");
+            Write(Path.Combine(PayloadPath, "Unexpected/not-bundled.exe"), "outside the seven allowed roots");
             Write(Path.Combine(PayloadPath, "root-note.txt"), "not a payload root");
             Write(Path.Combine(Root, "packaging/models/catalog.json"), File.ReadAllText(Path.Combine(PayloadPath, "ModelCatalog/catalog.json")));
             Write(Path.Combine(Root, "packaging/models/Bundles/model/model.bin"), File.ReadAllText(Path.Combine(PayloadPath, "ModelCatalog/Bundles/model/model.bin")));

@@ -28,7 +28,11 @@ internal sealed class WebViewHost : IDisposable
     private readonly LayoutSubtitleBridgeRequestHandler?
         layoutSubtitleHandler;
     private readonly SettingsBridgeRequestHandler? settingsHandler;
+    private readonly GlobalSettingsBridgeRequestHandler? globalSettingsHandler;
+    private readonly SettingsFileBridgeRequestHandler? fileSettingsHandler;
     private readonly PlayerMediaResponseFactory mediaResponseFactory;
+    private readonly SourceOnlyBridgeHandler? sourceOnlyHandler;
+    private readonly SourceOnlyMediaResponseFactory? sourceOnlyMedia;
     private readonly CancellationTokenSource mediaCancellation = new();
     private Bridge? bridge;
     private TaskCompletionSource? initialNavigation;
@@ -149,7 +153,11 @@ internal sealed class WebViewHost : IDisposable
         DeliveryBridgeRequestHandler? deliveryHandler = null,
         AnalysisBridgeRequestHandler? analysisHandler = null,
         LayoutSubtitleBridgeRequestHandler? layoutSubtitleHandler = null,
-        SettingsBridgeRequestHandler? settingsHandler = null)
+        SettingsBridgeRequestHandler? settingsHandler = null,
+        GlobalSettingsBridgeRequestHandler? globalSettingsHandler = null,
+        SettingsFileBridgeRequestHandler? fileSettingsHandler = null,
+        SourceOnlyBridgeHandler? sourceOnlyHandler = null,
+        SourceOnlyMediaResponseFactory? sourceOnlyMedia = null)
         : this(
             coreWebView,
             webAssetsDirectory,
@@ -166,7 +174,11 @@ internal sealed class WebViewHost : IDisposable
             deliveryHandler,
             analysisHandler,
             layoutSubtitleHandler,
-            settingsHandler)
+            settingsHandler,
+            globalSettingsHandler,
+            fileSettingsHandler,
+            sourceOnlyHandler,
+            sourceOnlyMedia)
     {
     }
 
@@ -188,7 +200,11 @@ internal sealed class WebViewHost : IDisposable
         DeliveryBridgeRequestHandler? deliveryHandler = null,
         AnalysisBridgeRequestHandler? analysisHandler = null,
         LayoutSubtitleBridgeRequestHandler? layoutSubtitleHandler = null,
-        SettingsBridgeRequestHandler? settingsHandler = null)
+        SettingsBridgeRequestHandler? settingsHandler = null,
+        GlobalSettingsBridgeRequestHandler? globalSettingsHandler = null,
+        SettingsFileBridgeRequestHandler? fileSettingsHandler = null,
+        SourceOnlyBridgeHandler? sourceOnlyHandler = null,
+        SourceOnlyMediaResponseFactory? sourceOnlyMedia = null)
     {
         ArgumentNullException.ThrowIfNull(coreWebView);
         ArgumentException.ThrowIfNullOrWhiteSpace(webAssetsDirectory);
@@ -220,6 +236,10 @@ internal sealed class WebViewHost : IDisposable
         this.analysisHandler = analysisHandler;
         this.layoutSubtitleHandler = layoutSubtitleHandler;
         this.settingsHandler = settingsHandler;
+        this.globalSettingsHandler = globalSettingsHandler;
+        this.fileSettingsHandler = fileSettingsHandler;
+        this.sourceOnlyHandler = sourceOnlyHandler;
+        this.sourceOnlyMedia = sourceOnlyMedia;
         mediaResponseFactory = new PlayerMediaResponseFactory(
             mediaAssetReader,
             playerAuthorization);
@@ -276,7 +296,10 @@ internal sealed class WebViewHost : IDisposable
                 deliveryHandler,
                 analysisHandler,
                 layoutSubtitleHandler,
-                settingsHandler);
+                settingsHandler,
+                globalSettingsHandler,
+                fileSettingsHandler,
+                sourceOnlyHandler);
             bridge = startedBridge;
             await StartDocumentAsync(
                 startedBridge.Start,
@@ -290,6 +313,62 @@ internal sealed class WebViewHost : IDisposable
             Dispose();
             throw;
         }
+    }
+
+    internal static Task<string> HandleSourceOnlyRequestAsync(
+        BridgeRequest request,
+        SourceOnlyBridgeHandler? sourceOnlyHandler,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!BridgeProtocol.IsSourceOnlyMethod(request.Method))
+        {
+            throw new ArgumentException("A source-only pipeline request is required.", nameof(request));
+        }
+
+        return sourceOnlyHandler is null
+            ? Task.FromResult(SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Unavailable))
+            : sourceOnlyHandler.HandleAsync(request, cancellationToken);
+    }
+
+    internal static string HandleSettingsRequest(
+        BridgeRequest request,
+        SettingsBridgeRequestHandler? settingsHandler,
+        GlobalSettingsBridgeRequestHandler? globalSettingsHandler,
+        SettingsFileBridgeRequestHandler? fileSettingsHandler,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+        string? response = request.Method switch
+        {
+            BridgeMethod.SettingsRead or
+            BridgeMethod.SettingsUpdate or
+            BridgeMethod.SettingsReset or
+            BridgeMethod.SettingsResetAll => settingsHandler?.Handle(request),
+            BridgeMethod.SettingsGlobalRead or
+            BridgeMethod.SettingsGlobalUpdate or
+            BridgeMethod.SettingsGlobalReset or
+            BridgeMethod.SettingsGlobalResetAll => globalSettingsHandler?.Handle(request),
+            BridgeMethod.SettingsFileExport or
+            BridgeMethod.SettingsFilePreview or
+            BridgeMethod.SettingsFileApply => fileSettingsHandler?.Handle(request, cancellationToken),
+            _ => throw new ArgumentException("A settings request is required.", nameof(request)),
+        };
+        return response ?? BridgeProtocol.CreateResultResponse(request, writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("status", "unavailable");
+            writer.WriteNull("snapshot");
+            if (request.Method is BridgeMethod.SettingsFileExport or
+                BridgeMethod.SettingsFilePreview or BridgeMethod.SettingsFileApply)
+            {
+                writer.WriteNull("fileSha256");
+            }
+
+            writer.WriteEndObject();
+        });
     }
 
     internal static async Task StartDocumentAsync(
@@ -326,7 +405,7 @@ internal sealed class WebViewHost : IDisposable
     internal static bool IsAllowedResourceUri(string? value) => IsAllowedOrigin(value);
 
     internal static bool IsAllowedMediaAssetUri(string? value) =>
-        PlayerMediaAssetReference.IsAllowedValue(value);
+        PlayerMediaAssetReference.IsAllowedValue(value) || SourceOnlyMediaAssetReference.TryParse(value, out _);
 
     internal static bool IsAllowedOrigin(string? value) =>
         TryParseAllowedOrigin(value, VirtualHostName, out _);
@@ -434,6 +513,12 @@ internal sealed class WebViewHost : IDisposable
 
         if (IsAllowedMediaOrigin(args.Request.Uri))
         {
+            if (!IsAllowedTopLevelUri(sender.Source))
+            {
+                args.Response = CreateEmptyResponse(403, "Forbidden");
+                return;
+            }
+
             var deferral = args.GetDeferral();
             _ = CompleteMediaRequestAsync(
                 args,
@@ -468,10 +553,12 @@ internal sealed class WebViewHost : IDisposable
                 ? requestHeaders.GetHeader("Range")
                 : null;
             using PlayerMediaResponse response =
-                await mediaResponseFactory.CreateAsync(
+                await CreateMediaResponseAsync(
                     args.Request.Method,
                     args.Request.Uri,
                     rangeHeader,
+                    mediaResponseFactory,
+                    sourceOnlyMedia,
                     mediaCancellation.Token);
             content = response.DetachContent();
             if (content is not null)
@@ -513,6 +600,25 @@ internal sealed class WebViewHost : IDisposable
                 // The WebView may have closed while the deferred read was pending.
             }
         }
+    }
+
+    internal static Task<PlayerMediaResponse> CreateMediaResponseAsync(
+        string? method,
+        string? uri,
+        string? rangeHeader,
+        PlayerMediaResponseFactory mediaResponseFactory,
+        SourceOnlyMediaResponseFactory? sourceOnlyMedia,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (SourceOnlyMediaAssetReference.IsSourceOnlyRequest(uri))
+        {
+            return sourceOnlyMedia is null
+                ? Task.FromResult(SourceOnlyMediaResponseFactory.Unavailable())
+                : sourceOnlyMedia.CreateAsync(method, uri, rangeHeader, cancellationToken);
+        }
+
+        return mediaResponseFactory.CreateAsync(method, uri, rangeHeader, cancellationToken);
     }
 
     private CoreWebView2WebResourceResponse CreateEmptyResponse(

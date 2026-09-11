@@ -35,7 +35,7 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
     <Content Include="..\..\packaging\models\Bundles\**\*"
-             Condition="Exists('..\..\packaging\models\Bundles')">
+             Condition="'$(HubRadioRuntimePayloadPath)$(HubRadioPortablePayloadPath)' != '' and Exists('..\..\packaging\models\Bundles')">
       <Link>ModelCatalog\Bundles\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
@@ -59,4 +59,6 @@
       Condition="!Exists('..\HubRadio.Web\dist\asset-manifest.json')"
       Text="The verified Web asset manifest is missing. Run npm ci and npm run build in src/HubRadio.Web before building HubRadio.App." />
   </Target>
+
+  <Import Project="..\..\packaging\RuntimeResources.targets" />
 </Project>

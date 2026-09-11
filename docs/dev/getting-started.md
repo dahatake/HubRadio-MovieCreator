@@ -1,9 +1,23 @@
 # 開発を始める
 
-この手順は、現在の Stage 0 技術検証を再現する開発者向けです。一般利用者向けの完成アプリケーションをインストールする手順ではありません。
+この手順は、ソースからの開発・技術検証と既存Stage 0検証の再現を行う開発者向けです。一般利用者向けの完成アプリケーションをインストールする手順ではありません。
 
 > [!IMPORTANT]
-> FoundationとStage 1基盤の一部は実装済みですが、一般利用者向け業務UIとend-to-end render/export flowは未完了です。repository testではSQLite、job、媒体取込・proxy・preview素材、編集model、review/approval、backup/restoreを検証できますが、任意動画向けの一般的な編集CLIではありません。
+> **2026-09-10 JST現在:** 4タブ・設定UIに加え、必要なbackendと実offline ASR・生成・QC・自動代理評価／出力policy・set納品／再読込・再生成・再試行を接続済みです。UX-041／UX-043を除く**対象52単位は達成済み**で、全回帰・静的検査・資源結合・最終独立レビューを完了しました。任意動画向けの一般的な編集CLIや一般提供済み製品を意味しません。
+
+画面を操作する方は[画面の使い方](../ui-workflow-guide.md)を参照してください。4タブ・設定操作と道具ごとの利用可能範囲を案内するもので、以下の開発環境構築を利用者へ求めるものではありません。
+
+## 現在の実接続と検証範囲（2026-09-10追補）
+
+- 現在の必須範囲は当初54単位からUX-041／UX-043を除く**52単位**で、必要なbackend実装・結合も承認済みです。旧A17のbackend待機条件は失効しています。native受入のUX-041／UX-043は明示除外であり、現在52単位の環境ブロッカーにしません。
+- `V2-010/011`は実QC producer、評価record・state／出力policy、実納品証跡をApp/UIへ接続済みです。SQLite schema 12の字幕編集子版・journalはcommit後にACKし、再生成受付時に保存済み設定snapshotと字幕head／prefixを固定して投影します。保存だけでは動画を変更せず、旧版・旧成果物を保持します。
+- 2026-09-09の初回全7生成成果物のset納品／再読込、再生成、model不在の実失敗からの再試行は成功しました。入力は**4秒の合成動画だけ**で、後述の原本`sample/20260615_024326000_iOS.MOV`は今回のE2Eに使用していません。全7件は当該runの生成集合であって全要求の出力種類ではなく、ASR精度・実素材品質の合格も意味しません。
+- 別の手動字幕描画試験は、既知の合成`Machine`字幕を保存・fresh serviceでreplay・変更設定で投影し、実FFmpeg／機械QC、字幕ファイルと焼込画素差分を確認して成功しました。**実認識や納品E2Eではありません**。各再読込はstore／pipeline／service再作成で、native GUI再起動受入ではありません。検証は隔離workspace／DBで行い、実ユーザーprofile・既存DBを変更するnative起動はしていません。
+- UX-035のmanual reframe／layout・keyframe等はlegacyのセッション内機能／理由付き利用不可の当初範囲に留め、source-onlyは字幕専用です。UX-050の旧承認テンプレートによる手動thumbnailの`Unavailable`も許容範囲です。標準自動thumbnailは実元フレームを使う社内限定・ニュートラル経路へ接続済みで、架空の`BrandApprover`は作りません。両タスクは52単位に残り、手動機能の汎用永続化を追加完了条件にはしません。
+
+既存ログと現在判断は[詳細実装計画](planning/implementation-plan.md)と[品質記録](quality.md)に集約しています。全回帰は**6,926成功・35 skip・失敗0**、限定実統合4件は別実行で成功し、最終独立レビューは重大指摘なしで閉鎖済みです。runtime結合出力`artifacts/validation/app-runtime-20260909c`は警告0・エラー0でビルド完了し、全6 rootのコピーを照合済み。PRI修正はWinUIのXBF／PRIを無効化していません。最終C# formatも成功し、残る静的ブロッカーはありません。
+
+App packageは**`0.1.1.0`**へ更新され、[CHANGELOGのUnreleased](../../CHANGELOG.md#unreleased)へ反映済みです。実行用Appの.NET assembly版`1.0.0.0`とは別管理です。版更新後の検査・最終機械監査は主作業の確認予定で、本同期では未実行です。`V2-014`全体、原本sample・人手・clean OS・署名・legal／release承認の完了は宣言せず、過去の54単位台帳・OSL候補の履歴と`releaseApproved=false`を維持します。
 
 ## 開発者ビルドと候補の技術評価を分ける
 
@@ -150,4 +164,4 @@ pwsh.exe -NoLogo -NoProfile -File tools\create-test-video.ps1 -SourcePath sample
 
 ## 現在作らない設定
 
-Azure は通常経路に含まれず、現在は resource、region、model deployment が未選択です。API key、`.env`、Azure 設定ファイルは作成しません。
+Azure は通常の編集経路では既定無効です。[ADR-0008](decisions/ADR-0008-bounded-azure-evaluation.md)に記録された限定評価用resource・region・model deploymentは選定・作成済みですが、利用者向けcloud機能や実コンテンツ送信の完成を意味しません。今回のUI操作にAPI key、`.env`、新しいAzure設定ファイルは不要です。

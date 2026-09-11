@@ -103,7 +103,7 @@ R01〜R26を資料群ごとに再確認した。未解決の引用誤りは0件�
 レビュー修正後に次を確認した。
 
 - `git diff --check`: PASS
-- 変更範囲: `README.md`、`docs/**`、`work/**`だけ
+- 変更範囲: `README.md`、`docs/**`、当時の一時作業記録だけ
 - production code、schema、test、infra、package、benchmark、sample: 変更0
 - `Music/`: Git status上の変更0、内容変更・stage 0
 - `system-overview.svg`: XML parse PASS

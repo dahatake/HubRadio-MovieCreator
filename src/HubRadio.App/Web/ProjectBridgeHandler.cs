@@ -11,11 +11,14 @@ namespace HubRadio.App.Web;
 internal sealed class ProjectBridgeHandler
 {
     private readonly ProjectCreationService service;
+    private readonly Func<EntityId<ProjectIdTag>, CancellationToken, Task>? restoreAfterReadAsync;
 
-    internal ProjectBridgeHandler(ProjectCreationService service)
+    internal ProjectBridgeHandler(ProjectCreationService service,
+        Func<EntityId<ProjectIdTag>, CancellationToken, Task>? restoreAfterReadAsync = null)
     {
         ArgumentNullException.ThrowIfNull(service);
         this.service = service;
+        this.restoreAfterReadAsync = restoreAfterReadAsync;
     }
 
     internal async Task<string> HandleAsync(
@@ -36,7 +39,7 @@ internal sealed class ProjectBridgeHandler
                         await service.CreateSourceOnlyDraftAsync(
                             cancellationToken)),
                 BridgeMethod.LoadDraft =>
-                    WriteDraft(request, service.LoadDraft(ReadDraftId(request))),
+                    WriteDraft(request, await LoadDraftAsync(request, cancellationToken)),
                 BridgeMethod.SaveDraft =>
                     WriteDraft(
                         request,
@@ -75,6 +78,12 @@ internal sealed class ProjectBridgeHandler
             return BridgeProtocol.CreateErrorResponse(
                 request,
                 StableErrorCodes.ProjectRevisionConflict);
+        }
+        catch (SourceOnlyApplicationDependencyException)
+        {
+            // Keep the existing response schema: no private paths or dependency
+            // exception text, and critically no finalized draft/result on failure.
+            return BridgeProtocol.CreateErrorResponse(request, StableErrorCodes.ProjectOperationFailed);
         }
         catch (ProjectCreationException exception)
         {
@@ -125,6 +134,18 @@ internal sealed class ProjectBridgeHandler
                 request,
                 StableErrorCodes.ProjectOperationFailed);
         }
+    }
+
+    private async Task<ProjectCreationDraftView> LoadDraftAsync(BridgeRequest request, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        // LoadDraft authorizes before the optional native read-only rehydration hook.
+        ProjectCreationDraftView draft = service.LoadDraft(ReadDraftId(request));
+        if (draft.IsFinalized && draft.SourceOnly is not null && draft.ProjectId is not null && restoreAfterReadAsync is not null)
+        {
+            await restoreAfterReadAsync(EntityId<ProjectIdTag>.Parse(draft.ProjectId), cancellationToken);
+        }
+        return draft;
     }
 
     private static EntityId<ProjectCreationDraftIdTag> ReadDraftId(

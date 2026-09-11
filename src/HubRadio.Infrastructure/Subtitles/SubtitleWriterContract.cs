@@ -612,12 +612,27 @@ internal static class SubtitleWriterContract
             .Replace("<", "&lt;", StringComparison.Ordinal)
             .Replace(">", "&gt;", StringComparison.Ordinal);
 
-    internal static string EscapeAssText(string text) =>
-        NormalizeLineEndings(text)
-            .Replace("\\", "\\\\", StringComparison.Ordinal)
+    internal static string EscapeAssText(string text)
+    {
+        ValidateAssText(text);
+        return NormalizeLineEndings(text)
             .Replace("{", "\\{", StringComparison.Ordinal)
             .Replace("}", "\\}", StringComparison.Ordinal)
             .Replace("\n", "\\N", StringComparison.Ordinal);
+    }
+
+    internal static void ValidateAssText(string text)
+    {
+        // libass has no backslash-pair escape: doubling a backslash before
+        // N, n or h still changes the displayed text. Reject those literal
+        // sequences before encoding real line breaks; preserve other backslashes.
+        if (text.Contains("\\N", StringComparison.Ordinal)
+            || text.Contains("\\n", StringComparison.Ordinal)
+            || text.Contains("\\h", StringComparison.Ordinal))
+        {
+            throw Failure(SubtitleWriterFailureReason.InvalidText);
+        }
+    }
 
     internal static void ValidateBlockText(string text)
     {

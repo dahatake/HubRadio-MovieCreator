@@ -57,6 +57,18 @@ public sealed class JobStore
     public void CreateJob(Job job)
     {
         ArgumentNullException.ThrowIfNull(job);
+        using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        CreateJob(connection, transaction, job);
+        transaction.Commit();
+    }
+
+    internal static void CreateJob(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Job job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
         if (job.State != JobState.Queued || job.CurrentAttemptNumber != 0)
         {
             throw new ArgumentException(
@@ -67,8 +79,6 @@ public sealed class JobStore
         string createdAt = SqliteStoreSupport.FormatTimestamp(job.CreatedAt, nameof(job));
         string updatedAt = SqliteStoreSupport.FormatTimestamp(job.UpdatedAt, nameof(job));
 
-        using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
-        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
         using SqliteCommand command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -100,7 +110,6 @@ public sealed class JobStore
         SqliteStoreSupport.AddText(command, "$created_at", createdAt);
         SqliteStoreSupport.AddText(command, "$updated_at", updatedAt);
         EnsureSingleMutation(command, "job");
-        transaction.Commit();
     }
 
     public StoredJob? GetJob(EntityId<JobIdTag> jobId)

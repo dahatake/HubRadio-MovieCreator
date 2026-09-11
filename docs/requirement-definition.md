@@ -12,9 +12,13 @@
 
 **起動・配布要求の追補日:** 2026年9月6日（OSL-001、利用者がデフォルト案を採用）
 
+**UI/UX要求の追補承認日:** 2026年9月7日（UX-001、第2版方針A01〜A20の既定案と実装を利用者が明示承認。恒久化先は[ADR-0011](dev/decisions/ADR-0011-compact-workflow-and-settings-file.md)）
+
 **状態:** 要求再baseline済み。`V2-000`〜`V2-009`を実装・レビュー済み。`V2-010`以降の自動代理評価、state、実render／delivery、最終受入は未完了
 
 OS-onlyの1操作起動要求を追加した。この追補は起動実装、クリーンOS検証、署名、一般提供の完了を意味しない。
+
+UI/UX追補は承認済み要求の追加であり、UI・設定fileの実装／受入完了や現行V2 backendの完成を意味しない。上記の実装状況・過去の状態記録は変更しない。
 
 **既定値の根拠:** [既定設定調査](dev/research/default-settings-research.md)
 
@@ -216,6 +220,13 @@ quick startで作成する案件、素材、元動画内区間、編集版、出
 - 新規案件には開始時の`DefaultSettingsProfile`のsemantic version、内容digest、snapshotを固定すること。
 - 後日の既定値変更は既存版へ遡及適用しないこと。適用時は子`CompositionVersion`を作ること。
 - 初期値、出典、根拠区分、適用範囲は[既定設定調査](dev/research/default-settings-research.md)を正本とすること。
+
+**UI/UX追補（2026-09-07承認）**
+
+- 既存123項目を上記5群で欠落・重複なく保持し、高度な項目も閲覧・変更可能にすること。本追補で設定の定義・既定値・profile版を変更せず、型・範囲・profile／snapshotの厳密な検証を維持すること。
+- 適用範囲（scope）を「新しい動画の既定値」（global）と「この動画」（案件）に分け、常時表示すること。案件scopeは実在する案件にだけ結び付け、未作成下書きに架空の案件IDを使わないこと。global変更は今後の新規案件に適用し、動画選択時に固定済みの下書きsummary／snapshotには自動反映せず、未適用と表示すること。
+- 案件の開始時initial、既存Compositionと成果物の生成時snapshotは不変とし、案件の通常保存ではcurrentだけを変更すること。globalの初期化先はprofile初期値、案件の初期化先はinitialとすること。保存・初期化・file適用だけで既存動画を再処理せず、再適用は明示的な子版作成・再生成とすること。
+- 通常保存は1項目単位とし、成功しても他項目の未保存draftを保持すること。globalと案件のrevisionを別管理し、同一scopeの競合ではdraftを保持して再読込へ誘導すること。scope／案件切替や全初期化で未保存値を捨てる場合は確認し、暗黙の一括保存・上書き・mergeをしないこと。
 
 ---
 
@@ -808,6 +819,16 @@ quick startの標準成果物は、社内向け16:9長尺1本、最大3本の9:1
 
 システムは全設定の現在値、初期値、用途、根拠区分、設定profile版を専用画面に表示すること。個別および全体の`初期値に戻す`を提供すること。変更は新規案件へ直ちに適用し、既存Compositionへ遡及適用しないこと。
 
+**UI/UX追補 — `setting.txt`の明示export/import**
+
+- 実行時の正本は既存SQLite DBとし、選択scopeの保存済み`DefaultSettingsSnapshot`を`setting.txt`へ明示出力・明示読込できること。起動時、file変更監視、backup復元後の自動読込・自動追従・双方向同期を行わないこと。保存先と権限はNFR-009に従うこと。
+- 出力は既存snapshot形式のBOMなしUTF-8・LFの整形JSONとすること。読込はUTF-8を厳密に検査し、先頭BOM1個と文字列外のJSON空白・改行差だけをfile境界で許容すること。文字列値の内部を正規化しないこと。
+- 元fileはraw **4 MiB以下**を読取前のfile長と読取中の実bytesで制限し、伸長・途中変更を拒否すること。canonical UTF-8は既存上限と同じ**1 MiB以下**を別に検査し、整形出力もraw上限以内とすること。これらは承認済み製品上限であり、研究上の最適値や実装完了の証拠ではない。
+- 適用対象のprofile ID・semantic version・digestとsnapshotのcontentDigestを厳密に照合すること。不一致、未知・欠落・重複property／setting key、型・範囲・深さ違反は部分適用せず拒否すること。自動migration、既定値の穴埋め、digest再計算による不一致の通過、Core検証の緩和を行わないこと。
+- 全5型の値を保持し、Int64・有理数をdouble／JavaScript number経由で丸めず、既存canonical数値表現・配列順序の検証を維持すること。profile／snapshot digestと、読んだ元bytesそのものの`fileSha256`を区別すること。hashを出所の認証や安全性の証明とは扱わないこと。
+- 読込は検証・差分previewまでとし、DB・file・案件を更新しないこと。明示適用時にscope・対象identity・profile・revision・snapshot digestと`fileSha256`を再照合し、同じbytesの検証済みsnapshotを1回のstore更新で適用すること。対象・file・DBの変更は競合としてpreviewをやり直し、取消・拒否で既存DBとdraftを変えないこと。
+- 出力時に未保存draftがあれば、未保存項目へ戻る／保存済み値だけを出力／取消を明示すること。既存fileの上書きは確認し、確認後のfile変更を検出したら中止すること。同directoryの一時fileから安全に置換し、書込・flush・置換の失敗や取消では旧fileとDBを保持すること。置換後の応答断は実fileのidentityで結果確認し、成功の推測や即時再上書きをしないこと。
+
 ## FR\-034 自動代理評価
 
 システムは、keyboard event、focus順と可視style、contrast、accessibility tree、字幕の有無・読速・行長・同期・safe zone、全編decode、codec、duration、A/V同期、loudness、True Peak、来歴、設定版を機械判定できること。
@@ -915,6 +936,9 @@ quick startは外部ブランドassetを要求しない`内蔵ニュートラル
 - 自動提案には理由を表示すること
 - 自動decision、利用者decision、自動代理評価を明確に区別すること
 
+- UI/UX追補の標準基準は**1280×720 CSS px以上・Web zoom 100%**とし、通常4画面の主要操作・現在状態・標準成果物の種類、および設定の1page一覧と選択項目をページscrollなしで操作できること。モニター解像度と混同せず、実client領域・CSS viewport・Web zoom・OS表示倍率を記録すること。これは表示の製品基準であり、測定済み最小動作環境の保証ではない。
+- 長文入力・全文字幕・timeline・任意根拠・拡大時は、内容領域のscroll／panやreflowを許容すること。例外でも必要な情報・操作へ到達でき、全体の見切れ隠蔽や文字・操作領域の極小化で無scrollを達成したと扱わないこと。
+
 ## NFR\-002 性能
 
 - 長い動画でも処理状況を確認できること
@@ -950,6 +974,10 @@ quick startは外部ブランドassetを要求しない`内蔵ニュートラル
 - 音声がなくても主要な内容を理解できること
 - 自動試験可能な項目を自動代理評価し、人による可読性・理解の実施済み証拠と混同しないこと
 - 必要な非発話音、話者情報、主要内容理解の網羅性は、自動的に証明できない場合`NOT EVALUATED`と表示すること
+
+- UI/UX追補では200%文字拡大および320 CSS px幅相当で非例外部を1方向にreflowさせ、情報・機能を失わずscrollを許容すること。timeline等の二次元操作の例外を画面全体へ拡張せず、固定header／footerもfocusを覆わないこと。
+- navigation・主要操作のアイコンには常時見える短い日本語ラベルを併記し、状態を色だけで示さないこと。現行light/dark、可視focus、reduced-motionを維持すること。
+- 状態タブはrole・選択状態・対応panelを整合させ、左右矢印／Home／Endでfocus移動、Enter／Spaceで選択できること。横タブで上下矢印を奪わず、非表示panelをfocus対象にしないこと。設定から戻ると呼出し元へfocusを戻し、進捗更新だけでタブやfocusを移さないこと。
 
 WCAG criterionのLevel、scope、数値は[既定設定調査 §4.8](dev/research/default-settings-research.md#48-アクセシビリティと自動代理評価)に従うこと。
 
@@ -1005,6 +1033,10 @@ WCAG criterionのLevel、scope、数値は[既定設定調査 §4.8](dev/researc
 - Windowsや組織の保護を無効化しないこと。署名、SmartScreen、Smart App Control等の確認・拒否があり得ることと、実配布経路の信頼条件を明示し、全端末・全状態で無警告の1操作起動を保証しないこと。
 - ローカル技術検証、署名後の一般提供向け起動受入、AC-001〜006の業務受入を区別すること。署名や配布先の未選定だけで許諾済み技術検証を停止しないが、未署名試作の結果を一般提供の合格にしないこと。
 - インストーラー等は§4.2の将来事項とし、当面の更新は終了後の手動差替えとすること。既存migration/backupを維持し、DBのdowngrade互換性を推測して保証しないこと。
+
+- UI/UX追補の`setting.txt`は、nativeが確定するper-user app root直下の固定名`%LOCALAPPDATA%\HubRadio.MovieCreator\setting.txt`へ保存すること。Workspace、EXE隣、WebAssets、自己展開cacheへ置かず、Webからraw pathを受け取らないこと。利用者固有の設定fileを配布物へ同梱しないこと。
+- このexportは現行backupの対象外とし、実行設定はDB backupで保全すること。workspace restoreでもexportを変更・自動適用せず、再読込は復元後DBのprofile／revisionを再照合すること。export自体の別途保全は利用者の明示コピーとすること。
+- 一時fileと完成fileに現在actor／SYSTEM／Administratorsを想定したfile ACL・所有者の境界を設定・確認し、操作前後のpath安全性を検査すること。reparse point・非通常file・不正rootを拒否し、既存app root全体のACLを変更しないこと。安全性・権限を確認できないfile操作だけを拒否し、file欠落や読書き失敗で既存DBの利用・起動を妨げないこと。設定内容・個人pathを通常ログへ出さず、自由入力をprivateな利用者データとして扱うこと。別accountでの実アクセス拒否試験を新しい必須gateにはしないこと。
 
 本要求はアプリ自体の起動を対象とし、元動画選択後のquick startの開始確認（NFR-001、AC-001）とは別の操作である。具体的な同梱・自己展開方式は後続の設計判断で定める。
 
@@ -1089,6 +1121,12 @@ AIで生成または大幅に編集した要素を記録できること。
 
 # 14\. 画面要求
 
+**UI/UX追補（2026-09-07承認）:** 以下の画面機能を、戻れる**元動画／自動編集／仕上がり／保存**の4状態タブと、独立した**設定**画面に整理すること。状態タブは表示先であり、4段階の必須入力・承認wizardではない。単一利用者の既存Windowsアプリの改善に限定し、現行themeと必要なFluent単色SVG・文字ラベルを使い、UI frameworkの全面置換やmobile版を追加しないこと。
+
+- タブ移動は表示変更だけとし、job取消・再実行、設定reset、下書きcloseを呼ばないこと。未保存編集・選択・時刻・timelineのzoom／pan／undoを保持し、非表示動画はpauseして再生位置を残すこと。戻るだけで音声を自動再生せず、画面移動でjob監視を止めないこと。
+- 元動画1本の選択と1回の開始確認後は、自動処理・自動代理評価・社内限定ローカル昇格という既定経路を維持すること。「仕上がり」「保存」の訪問や人の確認を追加の必須gateにせず、任意self-reviewとすること。
+- 旧wizardは旧形式の案件から開く互換画面として保持し、新規source-only経路や設定画面へ混在させないこと。旧データの読取・検証・保存を壊さないこと。
+
 ## 14.1 かんたん編集画面
 
 表示項目:
@@ -1110,6 +1148,8 @@ AIで生成または大幅に編集した要素を記録できること。
 - 長尺、短尺、字幕、サムネイル等の成果物一覧
 - 自動代理評価のPASS、WARNING、FAIL、NOT EVALUATED
 - 設定snapshot、元区間、根拠への移動
+
+UI/UX追補では、作成予定・生成中・生成済み・変更後未生成・不成立／失敗、実ローカル保存、自動評価、人の確認を別の状態として示すこと。未完了V2 backendとの接続は別依存とし、未接続機能は短い理由と利用可能な戻り先を表示すること。予定件数を実成果物数にせず、仮の成功cardや未取得の評価をPASSとして補完しないこと。
 
 ## 14.3 詳細編集画面
 
@@ -1133,6 +1173,8 @@ AIで生成または大幅に編集した要素を記録できること。
 - 縦型レイアウト
 - 変更履歴
 
+UI/UX追補では「仕上がり」にpreviewを残し、任意editorを1つずつ選べること。比較は同じframe・時刻で行い、予定表示・proxy・忠実render・変更後未生成を区別すること。開始画面の予定表示は固定summaryで分かる範囲だけを使い、現在global値で補完しないこと。warningから実際の案件・版・時刻・設定・根拠へ移動して戻れ、参照不足や未接続を推測で補わないこと。
+
 ## 14.4 設定画面
 
 表示項目:
@@ -1144,6 +1186,13 @@ AIで生成または大幅に編集した要素を記録できること。
 - プライバシーと保存
 - 各設定の現在値、初期値、用途、根拠区分、適用profile版
 - 個別および全設定を初期値に戻す操作
+
+UI/UX追補:
+
+- scope、5分類、検索・ページ切替付き一覧と選択項目の詳細を表示し、123項目の同時展開や案件IDの手入力を要求しないこと。長い名前・値も選択すると全文へ到達でき、詳細展開は1段とすること。
+- 選択項目の現在値・未保存値・scopeに応じた復元先・profile既定値を区別し、§6.4の1項目保存・draft保持・scope切替確認を提供すること。全初期化はscopeと復元先を確認すること。
+- FR-033のfile出力、読込preview、明示適用、上書き・未保存確認と失敗理由を示すこと。長い差分は詳細領域でページ表示し、file全文をWebへ渡さないこと。
+- 設定保存済みを動画更新済みと表示しないこと。consumer未接続時は「保存済み・適用機能未接続」とし、source-onlyの固定制約、社内限定、cloud既定無効の境界をUIだけで緩めないこと。
 
 ## 14.5 任意確認画面
 
@@ -1207,6 +1256,18 @@ AIで生成または大幅に編集した要素を記録できること。
 - codec、全編decode、A/V同期、字幕、safe zone、loudness、True Peak、来歴、UIのkeyboard/focus/contrast契約を自動評価できる
 - `PASS`、`WARNING`、`FAIL`、`NOT EVALUATED`と実行環境を記録できる
 - 自動代理評価が人の可読性、理解、自然さ、音質、感情、法的適合を実行したとは表示しない
+
+UI/UX追補の受入条件（実装・実測の完了記録ではない）:
+
+- 4状態タブと独立設定を往復しても未保存編集・選択・再生時刻・undoを保持し、job取消や自動再生を起こさない。新規source-onlyは元動画1本・開始確認1回を維持し、旧wizardや人手確認を必須にしない。
+- 1280×720 CSS px以上・Web zoom 100%の標準画面で、通常4画面と設定1pageの主要要素boundsおよびページscrollの有無を実測する。長文・timeline・拡大の例外と実client／CSS／OS倍率を記録し、見切れ隠蔽を合格にしない。
+- 200%文字拡大・320 CSS px幅相当で非例外部のreflowと情報・操作の保持を確認し、タブkeyboard操作、非表示focus除外、呼出し元復帰、focus非遮蔽、アイコンと常時可視ラベルを検査できる。
+- 123項目・5分類・高度な項目へ欠落／重複なく到達し、1項目保存で他draftを保持する。global／案件のrevisionと初期化先を区別し、global変更が固定済み下書き・案件initial・既存Composition／成果物へ遡及しないことを確認できる。
+- 保存済みsnapshotの全5型・日本語・Int64境界・有理数・リストをfile往復してprofile／snapshot digestを維持できる。許容するBOM／空白差以外の不正、未知／欠落／重複、型・範囲違反、profile／contentDigest不一致を部分適用せず拒否できる。
+- raw 4 MiB・canonical 1 MiB双方の境界前後、空白肥大、深層JSON、読取中変更を検査できる。読込previewでは更新せず、適用時にfile bytesのhash・scope・profile・revision・snapshot identityが変われば適用を拒否できる。
+- 未保存draftを無言で除外せず、同名fileの上書きを確認できる。一時file・完成fileのACL／所有者・path安全性と置換前後を検査し、失敗・取消・競合で旧file／DB／draftを保全する。応答断は実fileで結果を確認し、別account隔離の実証とは呼ばない。
+- 一時per-user app root／DBで固定名のWorkspace外exportを検証し、restartやrestoreでfileの自動読込・同期をせず、復元後profile／revisionを再照合できる。exportはbackup対象外、実行設定はDB backup対象という区分を確認できる。
+- 予定・実生成・実保存・未接続・自動評価・人の確認を区別し、UI／設定の受入をV2実処理や製品全体の完了へ読み替えない。利用者walkthroughは任意の別記録とし、未実施は`NOT EVALUATED`として生成・releaseの人手必須gateにしない。
 
 ## AC\-007 OS-onlyの1操作起動
 

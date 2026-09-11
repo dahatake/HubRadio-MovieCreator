@@ -3,7 +3,11 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release')]
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+
+    # Opt-in prepared runtime, never downloaded implicitly and never required as a
+    # launch-time environment variable. Omit for ordinary lightweight source builds.
+    [string]$RuntimePayloadPath
 )
 
 Set-StrictMode -Version Latest
@@ -20,6 +24,18 @@ $workerRoot = Join-Path $repoRoot 'src\HubRadio.Worker'
 $workerPython = Join-Path $workerRoot '.venv\Scripts\python.exe'
 $workerRuntimeLock = Join-Path $workerRoot 'requirements.lock'
 $workerTestLock = Join-Path $workerRoot 'requirements-test.lock'
+$runtimePayloadArguments = @()
+if (-not [string]::IsNullOrWhiteSpace($RuntimePayloadPath)) {
+    if (-not [IO.Path]::IsPathFullyQualified($RuntimePayloadPath) -or
+        $RuntimePayloadPath -match '[;,%''"$@`\x00-\x1f\x7f]') {
+        throw 'RuntimePayloadPath must be an absolute prepared payload path without MSBuild delimiters.'
+    }
+    $RuntimePayloadPath = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($RuntimePayloadPath))
+    if (-not (Test-Path -LiteralPath $RuntimePayloadPath -PathType Container)) {
+        throw 'RuntimePayloadPath does not exist. Prepare the approved component payload first.'
+    }
+    $runtimePayloadArguments = @("-p:HubRadioRuntimePayloadPath=$RuntimePayloadPath")
+}
 
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_NOLOGO = '1'
@@ -215,6 +231,7 @@ Invoke-CheckedCommand -FilePath $dotnet -ArgumentList @(
     '-p:TreatWarningsAsErrors=true',
     '-warnaserror',
     '--verbosity', 'minimal'
+    $runtimePayloadArguments
 ) -WorkingDirectory $repoRoot -Description '.NET build'
 
 $pythonFiles = @(& $git -C $repoRoot ls-files -- '*.py')

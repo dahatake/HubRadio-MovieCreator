@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using HubRadio.App.Analysis;
+using HubRadio.App.Compositions;
 using HubRadio.App.Graphics;
 using HubRadio.App.Security;
 using HubRadio.App.Subtitles;
@@ -134,6 +135,182 @@ public sealed class LayoutSubtitleBridgeTests
                     templateId = (string?)null,
                 },
             });
+    }
+
+    [TestMethod]
+    [DataRow(BridgeProtocol.LayoutReadMethod)]
+    [DataRow(BridgeProtocol.LayoutApplyMethod)]
+    public async Task OptionalVersionPinsAreCanonicalPairedAndAcceptedByTheNativeHandler(string method)
+    {
+        Fixture fixture = Fixture.Create();
+        var parameters = new Dictionary<string, object?>
+        {
+            ["projectId"] = fixture.ProjectId.ToString(),
+            ["expectedVersionId"] = fixture.RootComposition.Id.ToString(),
+            ["expectedVersionDigest"] = fixture.RootComposition.ContentDigest.Hex,
+        };
+        if (method == BridgeProtocol.LayoutReadMethod) { parameters["evaluationTime"] = null; }
+        else
+        {
+            parameters["expectedRevision"] = 0;
+            parameters["operation"] = fixture.SubtitleTextOperation("版を指定した編集。");
+        }
+        BridgeRequest Parse(Dictionary<string, object?> value)
+        {
+            string message = JsonSerializer.Serialize(new { version = BridgeProtocol.Version, requestId = RequestId.ToString("D"), method, @params = value });
+            Assert.IsTrue(BridgeProtocol.TryParseRequest(WebViewHost.EntryPoint, message, out BridgeRequest? request, out _));
+            return request!;
+        }
+        Action<Dictionary<string, object?>>[] corruptions =
+        [
+            value => value.Remove("expectedVersionId"),
+            value => value.Remove("expectedVersionDigest"),
+            value => value["expectedVersionId"] = null,
+            value => value["expectedVersionDigest"] = null,
+            value => value["expectedVersionId"] = fixture.RootComposition.Id.ToString().ToUpperInvariant(),
+            value => value["expectedVersionDigest"] = new string('A', 64),
+            value => value["expectedVersionId"] = Guid.Empty.ToString("D"),
+            value => value["expectedVersionDigest"] = "invalid",
+            value => value["versionId"] = fixture.RootComposition.Id.ToString(),
+        ];
+        foreach (var corrupt in corruptions)
+        {
+            var invalid = new Dictionary<string, object?>(parameters);
+            corrupt(invalid);
+            AssertRejected(method, invalid);
+        }
+        var stale = new Dictionary<string, object?>(parameters) { ["expectedVersionDigest"] = Digest('f').Hex };
+        using JsonDocument conflict = await fixture.HandleAsync(Parse(stale));
+        AssertResult(conflict, "conflict", hasSnapshot: false);
+        Assert.AreEqual(0, fixture.Runtime.GetRequired(fixture.ProjectId).Revision);
+        using JsonDocument response = await fixture.HandleAsync(Parse(parameters));
+        JsonElement snapshot = AssertResult(response, "available", hasSnapshot: true);
+        Assert.AreEqual(fixture.ProjectId.ToString(), snapshot.GetProperty("projectId").GetString());
+        Assert.AreEqual(method == BridgeProtocol.LayoutReadMethod ? 0 : 1, snapshot.GetProperty("revision").GetInt32());
+    }
+
+    [TestMethod]
+    public void LatestInBranchIsTrueOnlyReadOnlyAndRequiresBothCanonicalPins()
+    {
+        Fixture fixture = Fixture.Create();
+        var parameters = new Dictionary<string, object?>
+        {
+            ["projectId"] = fixture.ProjectId.ToString(),
+            ["evaluationTime"] = null,
+            ["expectedVersionId"] = fixture.RootComposition.Id.ToString(),
+            ["expectedVersionDigest"] = fixture.RootComposition.ContentDigest.Hex,
+            ["latestInBranch"] = true,
+        };
+        string message = JsonSerializer.Serialize(new
+        {
+            version = BridgeProtocol.Version,
+            requestId = RequestId.ToString("D"),
+            method = BridgeProtocol.LayoutReadMethod,
+            @params = parameters,
+        });
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(WebViewHost.EntryPoint, message, out BridgeRequest? request, out _));
+        Assert.IsTrue(request!.Parameters.GetProperty("latestInBranch").GetBoolean());
+
+        Action<Dictionary<string, object?>>[] corruptions =
+        [
+            value => value["latestInBranch"] = false,
+            value => value["latestInBranch"] = null,
+            value => value["latestInBranch"] = "true",
+            value => value["latestInBranch"] = 1,
+            value => value["latestInBranch"] = new { enabled = true },
+            value => value.Remove("expectedVersionId"),
+            value => value.Remove("expectedVersionDigest"),
+            value => { value.Remove("expectedVersionId"); value.Remove("expectedVersionDigest"); },
+            value => value["expectedVersionId"] = Guid.Empty.ToString("D"),
+            value => value["expectedVersionId"] = fixture.RootComposition.Id.ToString().ToUpperInvariant(),
+            value => value["expectedVersionDigest"] = new string('A', 64),
+            value => value["LatestInBranch"] = true,
+            value => value["rootVersionId"] = fixture.RootComposition.Id.ToString(),
+            value => value["requestedVersionId"] = fixture.RootComposition.Id.ToString(),
+            value => value["durableSubtitles"] = new { sequence = 1 },
+        ];
+        foreach (var corrupt in corruptions)
+        {
+            var invalid = new Dictionary<string, object?>(parameters);
+            corrupt(invalid);
+            AssertRejected(BridgeProtocol.LayoutReadMethod, invalid);
+        }
+
+        var apply = new Dictionary<string, object?>(parameters)
+        {
+            ["expectedRevision"] = 0,
+            ["operation"] = fixture.SubtitleTextOperation("Reject read flags on apply."),
+        };
+        apply.Remove("evaluationTime");
+        AssertRejected(BridgeProtocol.LayoutApplyMethod, apply);
+        apply["latestInBranch"] = false;
+        AssertRejected(BridgeProtocol.LayoutApplyMethod, apply);
+
+        string duplicate = message.Replace("\"latestInBranch\":true", "\"latestInBranch\":true,\"latestInBranch\":true", StringComparison.Ordinal);
+        Assert.AreNotEqual(message, duplicate);
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(WebViewHost.EntryPoint, duplicate, out _, out _));
+        using JsonDocument raw = JsonDocument.Parse(duplicate);
+        Assert.IsFalse(LayoutSubtitleBridgeProtocol.HasValidParameters(BridgeMethod.LayoutRead, raw.RootElement.GetProperty("params")));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void ReadRequestByteLimitIsUnchangedWithOrWithoutLatestInBranch(bool latest)
+    {
+        Fixture fixture = Fixture.Create();
+        var parameters = new Dictionary<string, object?>
+        {
+            ["projectId"] = fixture.ProjectId.ToString(),
+            ["evaluationTime"] = null,
+            ["expectedVersionId"] = fixture.RootComposition.Id.ToString(),
+            ["expectedVersionDigest"] = fixture.RootComposition.ContentDigest.Hex,
+        };
+        if (latest) { parameters["latestInBranch"] = true; }
+        string message = JsonSerializer.Serialize(new
+        {
+            version = BridgeProtocol.Version,
+            requestId = RequestId.ToString("D"),
+            method = BridgeProtocol.LayoutReadMethod,
+            @params = parameters,
+        });
+        string boundary = message + new string(' ', BridgeProtocol.MaxLayoutRequestUtf8Bytes - Encoding.UTF8.GetByteCount(message));
+        Assert.AreEqual(64 * 1024, Encoding.UTF8.GetByteCount(boundary));
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(WebViewHost.EntryPoint, boundary, out _, out _));
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(WebViewHost.EntryPoint, boundary + " ", out _, out BridgeRequestRejection rejection));
+        Assert.AreEqual(BridgeRequestRejection.MessageTooLarge, rejection);
+        Assert.AreEqual(4 * 1024 * 1024, BridgeProtocol.GetMaximumResponseUtf8Bytes(BridgeMethod.LayoutRead));
+        Assert.AreEqual(4 * 1024 * 1024, BridgeProtocol.GetMaximumResponseUtf8Bytes(BridgeMethod.LayoutApply));
+    }
+
+    [TestMethod]
+    public async Task LegacyProviderDoesNotPretendAnExactReadIsSavedHeadDiscovery()
+    {
+        Fixture fixture = Fixture.Create();
+        using JsonDocument edit = await fixture.HandleAsync(fixture.ApplyRequest(fixture.SubtitleTextOperation("Session-only child.")));
+        Assert.AreEqual("notPersisted", AssertResult(edit, "available", hasSnapshot: true).GetProperty("persistence").GetString());
+        BridgeRequest latest = BridgeRequest.Create(Guid.NewGuid(), BridgeMethod.LayoutRead, JsonSerializer.SerializeToElement(new
+        {
+            projectId = fixture.ProjectId.ToString(),
+            evaluationTime = (object?)null,
+            expectedVersionId = fixture.RootComposition.Id.ToString(),
+            expectedVersionDigest = fixture.RootComposition.ContentDigest.Hex,
+            latestInBranch = true,
+        }));
+        using JsonDocument rejected = await fixture.HandleAsync(latest);
+        AssertResult(rejected, "unavailable", hasSnapshot: false);
+        Assert.IsFalse(rejected.RootElement.GetProperty("result").TryGetProperty("durableSubtitles", out _));
+        BridgeRequest exact = BridgeRequest.Create(Guid.NewGuid(), BridgeMethod.LayoutRead, JsonSerializer.SerializeToElement(new
+        {
+            projectId = fixture.ProjectId.ToString(),
+            evaluationTime = (object?)null,
+            expectedVersionId = fixture.RootComposition.Id.ToString(),
+            expectedVersionDigest = fixture.RootComposition.ContentDigest.Hex,
+        }));
+        using JsonDocument original = await fixture.HandleAsync(exact);
+        Assert.AreEqual(fixture.RootComposition.Id.ToString(), AssertResult(original, "available", hasSnapshot: true)
+            .GetProperty("compositionVersionId").GetString());
+        Assert.AreEqual(1, fixture.Runtime.GetRequired(fixture.ProjectId).Revision);
     }
 
     [TestMethod]
@@ -505,6 +682,228 @@ public sealed class LayoutSubtitleBridgeTests
     }
 
     [TestMethod]
+    public async Task SequentialSiblingEditsUseTheHeadAndPreserveUntouchedCueEvidenceExactly()
+    {
+        Fixture fixture = Fixture.Create(includeSecondSubtitle: true);
+        var states = new List<LayoutSubtitleBridgeSnapshot> { fixture.Snapshot };
+        foreach (int index in new[] { 0, 1, 0 })
+        {
+            LayoutSubtitleBridgeSnapshot before = states[^1];
+            SubtitleCueHistory previous = before.Subtitles[index].History;
+            BridgeRequest request = fixture.PinnedApplyRequest(before,
+                fixture.SubtitleTextOperation($"Edit {states.Count}", history: previous));
+            using JsonDocument response = await fixture.HandleAsync(request);
+            JsonElement json = AssertResult(response, "available", hasSnapshot: true);
+            LayoutSubtitleBridgeSnapshot after = fixture.Runtime.GetRequired(fixture.ProjectId);
+            SubtitleCueRevision revised = after.Subtitles[index].History.CurrentRevision;
+
+            Assert.AreEqual(before.CompositionVersion.Id, after.CompositionVersion.ParentVersionId);
+            Assert.AreEqual(before.CompositionVersion.Id, revised.ParentCompositionVersionId);
+            Assert.AreEqual(after.CompositionVersion.Id, revised.CompositionVersionId);
+            Assert.AreEqual(after.CompositionVersion.ContentDigest, revised.CompositionVersionDigest);
+            Assert.AreEqual(previous.CurrentRevision.Id, revised.ParentRevisionId);
+            Assert.AreSame(previous.CurrentRevision.Snapshot, revised.Change.Previous);
+            Assert.AreSame(before.Subtitles[1 - index], after.Subtitles[1 - index]);
+            Assert.AreSame(before, fixture.Runtime.GetRequired(fixture.ProjectId, before.CompositionVersion.Id));
+            Assert.AreEqual(before.Revision + 1, after.Revision);
+            using JsonDocument oldResponse = JsonDocument.Parse(LayoutSubtitleBridgeJson.WriteResponse(
+                fixture.ReadRequest(), LayoutSubtitleBridgeOperationResult.Available(before)));
+            JsonElement oldJson = oldResponse.RootElement.GetProperty("result").GetProperty("snapshot");
+            Assert.AreEqual(oldJson.GetProperty("subtitles")[1 - index].GetRawText(),
+                json.GetProperty("subtitles")[1 - index].GetRawText());
+            CollectionAssert.AreEquivalent(
+                oldJson.EnumerateObject().Select(property => property.Name).ToArray(),
+                json.EnumerateObject().Select(property => property.Name).ToArray());
+            Assert.IsFalse(response.RootElement.GetRawText().Contains("inheritance", StringComparison.OrdinalIgnoreCase));
+            states.Add(after);
+        }
+
+        LayoutSubtitleBridgeSnapshot current = states[^1];
+        SubtitleCueHistory a = current.Subtitles[0].History;
+        SubtitleCueHistory b = current.Subtitles[1].History;
+        Assert.HasCount(3, a.Revisions);
+        Assert.HasCount(2, b.Revisions);
+        Assert.AreSame(fixture.SubtitleHistory.CurrentRevision, a.Revisions[0]);
+        Assert.AreSame(fixture.Snapshot.Subtitles[1].History.CurrentRevision, b.Revisions[0]);
+        CollectionAssert.AreEqual(
+            new[] { states[0].CompositionVersion.Id, states[1].CompositionVersion.Id },
+            b.Inheritance.Single().Versions.Select(version => version.Id).ToArray());
+        CollectionAssert.AreEqual(
+            new[] { states[1].CompositionVersion.Id, states[2].CompositionVersion.Id },
+            a.Inheritance.Single().Versions.Select(version => version.Id).ToArray());
+        Assert.AreSame(current, fixture.Runtime.GetLatest(fixture.ProjectId, fixture.RootComposition.Id));
+        Assert.AreSame(a, current.EvaluateAt(Time(1)).Subtitles[0].History);
+
+        using JsonDocument oldHead = await fixture.HandleAsync(fixture.PinnedApplyRequest(states[1],
+            fixture.SubtitleTextOperation("Cannot edit old head", history: states[1].Subtitles[1].History)));
+        AssertResult(oldHead, "conflict", hasSnapshot: false);
+        using JsonDocument staleId = await fixture.HandleAsync(fixture.PinnedApplyRequest(current,
+            fixture.SubtitleTextOperation("Stale ID", history: a,
+                expectedRevisionId: fixture.SubtitleHistory.CurrentRevision.Id.ToString())));
+        AssertResult(staleId, "conflict", hasSnapshot: false);
+        using JsonDocument staleDigest = await fixture.HandleAsync(fixture.PinnedApplyRequest(current,
+            fixture.SubtitleTextOperation("Stale digest", history: a,
+                expectedRevisionDigest: fixture.SubtitleHistory.CurrentRevision.ContentDigest.Hex)));
+        AssertResult(staleDigest, "conflict", hasSnapshot: false);
+        Assert.AreSame(current, fixture.Runtime.GetRequired(fixture.ProjectId));
+        Assert.ThrowsExactly<LayoutSubtitleBridgeConflictException>(() =>
+            current.WithInheritedComposition(fixture.SubtitleHistory));
+        var lookalike = new SubtitleCueHistory(b.SourceCandidate, b.Revisions, b.Inheritance);
+        Assert.ThrowsExactly<LayoutSubtitleBridgeConflictException>(() => current.WithInheritedComposition(lookalike));
+    }
+
+    [TestMethod]
+    [DataRow("nonAncestor")]
+    [DataRow("missingLink")]
+    [DataRow("foreignIntermediate")]
+    [DataRow("backwardTime")]
+    [DataRow("cycle")]
+    [DataRow("wrongDictionaryKey")]
+    [DataRow("changedElements")]
+    [DataRow("forgedDigest")]
+    public void RuntimeRejectsUnverifiedAncestryWithoutInstallingState(string corruption)
+    {
+        Fixture fixture = Fixture.Create();
+        CompositionVersion root = fixture.RootComposition;
+        CompositionVersion Version(
+            int ordinal,
+            EntityId<CompositionVersionIdTag>? parent,
+            EntityId<ProjectIdTag>? project = null,
+            DateTimeOffset? time = null,
+            IReadOnlyList<CompositionElement>? elements = null,
+            ContentDigest? digest = null) => new(
+                Id<CompositionVersionIdTag>(0x8100000b, ordinal), project ?? fixture.ProjectId,
+                parent, ActorSid, time ?? CreatedAt.AddMinutes(ordinal), "Inheritance test.",
+                digest ?? ContentDigest.Compute(CompositionSnapshotJson.WriteElementsObjectToUtf8(elements ?? [])),
+                elements ?? []);
+        CompositionVersion middle = Version(2, root.Id);
+        CompositionVersion head = Version(3, middle.Id);
+        switch (corruption)
+        {
+            case "nonAncestor": middle = Version(2, null); break;
+            case "foreignIntermediate": middle = Version(2, root.Id, project: Id<ProjectIdTag>(0x81000001, 99)); break;
+            case "backwardTime": middle = Version(2, root.Id, time: CreatedAt.AddSeconds(30)); break;
+            case "cycle": middle = Version(2, head.Id); break;
+            case "changedElements":
+                middle = Version(2, root.Id, elements:
+                [
+                    new CompositionElement(Id<CompositionElementIdTag>(0x81000041, 1), Range(0, 1),
+                        OriginRef.FromAsset(fixture.SourceAssetId)),
+                ]);
+                break;
+            case "forgedDigest": head = Version(3, middle.Id, digest: Digest('f')); break;
+        }
+
+        var versions = new Dictionary<EntityId<CompositionVersionIdTag>, CompositionVersion>
+        {
+            [root.Id] = root,
+            [middle.Id] = middle,
+            [head.Id] = head,
+        };
+        if (corruption == "missingLink") { versions.Remove(middle.Id); }
+        if (corruption == "wrongDictionaryKey") { versions[middle.Id] = Version(4, root.Id); }
+        var snapshot = new LayoutSubtitleBridgeSnapshot(
+            fixture.ProjectId, 0, head, fixture.OutputEnvelope, 1080, 1920,
+            fixture.SourceBindings, [], fixture.SubtitleBindings, fixture.TeropBindings,
+            fixture.SubtitleDisplays, compositionVersions: versions);
+        var runtime = new LayoutSubtitleBridgeRuntime();
+        runtime.Register(snapshot);
+        LayoutSubtitleBridgeOperationResult result = runtime.Execute(
+            fixture.PinnedApplyRequest(snapshot, fixture.SubtitleTextOperation("Rejected ancestry")),
+            ActorSid, CancellationToken.None);
+
+        Assert.AreEqual(LayoutSubtitleBridgeStatus.Conflict, result.Status);
+        Assert.IsNull(result.Snapshot);
+        Assert.AreSame(snapshot, runtime.GetRequired(fixture.ProjectId));
+        Assert.AreSame(fixture.SubtitleHistory, snapshot.Subtitles[0].History);
+    }
+
+    [TestMethod]
+    public void DeterministicEvaluationReplaysSequentialEditsWithoutInstallingOrInventingRevisions()
+    {
+        Fixture fixture = Fixture.Create(includeSecondSubtitle: true);
+        Guid[] recordedIds = Enumerable.Range(1, 9)
+            .Select(ordinal => Guid.Parse($"81000042-0000-4000-8000-{ordinal:x12}"))
+            .ToArray();
+        var executionIds = new Queue<Guid>(recordedIds);
+        var evaluationIds = new Queue<Guid>(recordedIds);
+        DateTimeOffset recordedTime = CreatedAt.AddMinutes(20);
+        var runtime = new LayoutSubtitleBridgeRuntime(() => recordedTime, executionIds.Dequeue);
+        runtime.Register(fixture.Snapshot);
+        LayoutSubtitleBridgeSnapshot evaluated = fixture.Snapshot;
+        int step = 0;
+        foreach (int index in new[] { 0, 1, 0 })
+        {
+            LayoutSubtitleBridgeSnapshot before = runtime.GetRequired(fixture.ProjectId);
+            BridgeRequest request = fixture.PinnedApplyRequest(before,
+                fixture.SubtitleTextOperation($"Replay {++step}", history: before.Subtitles[index].History));
+            LayoutSubtitleBridgeOperationResult execution = runtime.Execute(request, ActorSid, CancellationToken.None);
+            LayoutSubtitleBridgeOperationResult evaluation = LayoutSubtitleBridgeRuntime.Evaluate(
+                evaluated, request, ActorSid, () => recordedTime, evaluationIds.Dequeue);
+
+            Assert.AreEqual(LayoutSubtitleBridgeStatus.Available, execution.Status);
+            Assert.AreEqual(LayoutSubtitleBridgeStatus.Available, evaluation.Status);
+            Assert.AreEqual(LayoutSubtitleBridgeJson.WriteResponse(request, execution),
+                LayoutSubtitleBridgeJson.WriteResponse(request, evaluation));
+            evaluated = evaluation.Snapshot!;
+            Assert.AreEqual(CompositionSnapshotJson.WriteVersion(execution.Snapshot!.CompositionVersion),
+                CompositionSnapshotJson.WriteVersion(evaluated.CompositionVersion));
+            SubtitleCueRevision actual = execution.Snapshot.Subtitles[index].History.CurrentRevision;
+            SubtitleCueRevision replayed = evaluated.Subtitles[index].History.CurrentRevision;
+            Assert.AreEqual(actual.CreatedAt, replayed.CreatedAt);
+            Assert.AreEqual(actual.ParentRevisionId, replayed.ParentRevisionId);
+            Assert.AreEqual(actual.ParentCompositionVersionId, replayed.ParentCompositionVersionId);
+            Assert.AreEqual(actual.Change.Origin, replayed.Change.Origin);
+            Assert.AreEqual(actual.ContentDigest, replayed.ContentDigest);
+        }
+
+        Assert.HasCount(0, executionIds);
+        Assert.HasCount(0, evaluationIds);
+        Assert.HasCount(3, evaluated.Subtitles[0].History.Revisions);
+        Assert.HasCount(2, evaluated.Subtitles[1].History.Revisions);
+        Assert.AreSame(fixture.Snapshot, fixture.Runtime.GetRequired(fixture.ProjectId));
+        Assert.HasCount(1, fixture.Snapshot.Subtitles[0].History.Revisions);
+    }
+
+    [TestMethod]
+    public void DeterministicEvaluationRejectsACompositionIdAlreadyKnownOnlyToTheSnapshot()
+    {
+        Fixture fixture = Fixture.Create();
+        CompositionVersion root = fixture.RootComposition;
+        var known = new CompositionVersion(
+            Id<CompositionVersionIdTag>(0x8100000b, 99), fixture.ProjectId,
+            root.Id, ActorSid, CreatedAt.AddMinutes(2), "An already known version.",
+            root.ContentDigest, root.Elements);
+        var snapshot = new LayoutSubtitleBridgeSnapshot(
+            fixture.ProjectId, 0, root, fixture.OutputEnvelope, 1080, 1920,
+            fixture.SourceBindings, [], fixture.SubtitleBindings, fixture.TeropBindings,
+            fixture.SubtitleDisplays, compositionVersions:
+                new Dictionary<EntityId<CompositionVersionIdTag>, CompositionVersion>
+                {
+                    [root.Id] = root,
+                    [known.Id] = known,
+                });
+        Func<Guid> Ids() => new Queue<Guid>(new[]
+        {
+            Guid.Parse(known.Id.ToString()),
+            Guid.Parse("81000042-0000-4000-8000-000000000098"),
+            Guid.Parse("81000042-0000-4000-8000-000000000097"),
+        }).Dequeue;
+        BridgeRequest request = fixture.PinnedApplyRequest(snapshot, fixture.SubtitleTextOperation("ID collision"));
+        var runtime = new LayoutSubtitleBridgeRuntime(() => CreatedAt.AddMinutes(20), Ids());
+        runtime.Register(snapshot);
+        LayoutSubtitleBridgeOperationResult execution = runtime.Execute(request, ActorSid, CancellationToken.None);
+        LayoutSubtitleBridgeOperationResult evaluation = LayoutSubtitleBridgeRuntime.Evaluate(
+            snapshot, request, ActorSid, () => CreatedAt.AddMinutes(20), Ids());
+
+        Assert.AreEqual(LayoutSubtitleBridgeStatus.Conflict, execution.Status);
+        Assert.AreEqual(LayoutSubtitleBridgeStatus.Conflict, evaluation.Status);
+        Assert.AreSame(snapshot, runtime.GetRequired(fixture.ProjectId));
+        Assert.AreSame(known, snapshot.GetComposition(known.Id));
+        Assert.HasCount(1, snapshot.Subtitles[0].History.Revisions);
+    }
+
+    [TestMethod]
     public async Task CrossCueCompositionBranchIsRejectedInsteadOfCreatingSibling()
     {
         Fixture fixture = Fixture.Create(includeTerop: true);
@@ -763,7 +1162,9 @@ public sealed class LayoutSubtitleBridgeTests
         }
     }
 
-    private sealed class Fixture
+    // Shared native evidence for DurableLayoutContractTests; no store or process
+    // is introduced into this legacy runtime fixture.
+    internal sealed class Fixture
     {
         private Fixture(
             EntityId<ProjectIdTag> projectId,
@@ -849,7 +1250,8 @@ public sealed class LayoutSubtitleBridgeTests
             bool includeTerop = false,
             bool withProhibitedRegion = false,
             bool missingRequiredSafeZone = false,
-            bool oversizedTemplateCatalog = false)
+            bool oversizedTemplateCatalog = false,
+            bool includeSecondSubtitle = false)
         {
             EntityId<ProjectIdTag> projectId = Id<ProjectIdTag>(0x81000001, 1);
             EntityId<TranscriptRevisionIdTag> transcriptRevisionId =
@@ -971,6 +1373,16 @@ public sealed class LayoutSubtitleBridgeTests
                 profile,
                 prohibited,
                 faceRegions: []);
+            IReadOnlyList<LayoutSubtitleCueBinding> subtitleBindings = [subtitleBinding];
+            if (includeSecondSubtitle)
+            {
+                SubtitleCueHistory second = SubtitleService.CreateInitial(
+                    root, candidate, resolution, Id<CueIdTag>(0x8100000c, 2),
+                    Id<SubtitleCueRevisionIdTag>(0x8100000d, 2), Range(2, 1),
+                    ActorSid, CreatedAt.AddMinutes(1), "Create sibling subtitle cue.");
+                subtitleBindings = [subtitleBinding, subtitleBinding.WithHistory(second)];
+            }
+
             IReadOnlyList<LayoutSubtitleDisplayBinding> subtitleDisplays =
             [
                 new(
@@ -1059,7 +1471,7 @@ public sealed class LayoutSubtitleBridgeTests
                         OriginRef.FromAsset(assetId),
                         new SourceDisplayGeometry(1080, 1920)),
                 ],
-                [subtitleBinding],
+                subtitleBindings,
                 teropBindings,
                 subtitleDisplays,
                 templates);
@@ -1101,6 +1513,16 @@ public sealed class LayoutSubtitleBridgeTests
                     expectedRevision,
                     operation,
                 });
+
+        internal BridgeRequest PinnedApplyRequest(LayoutSubtitleBridgeSnapshot snapshot, object operation) =>
+            ParseRequest(BridgeProtocol.LayoutApplyMethod, new
+            {
+                projectId = ProjectId.ToString(),
+                expectedRevision = snapshot.Revision,
+                expectedVersionId = snapshot.CompositionVersion.Id.ToString(),
+                expectedVersionDigest = snapshot.CompositionVersion.ContentDigest.Hex,
+                operation,
+            });
 
         internal object ManualLayoutOperation(
             string staticCropDecision = "singleStaticCropSufficient") =>
@@ -1164,14 +1586,18 @@ public sealed class LayoutSubtitleBridgeTests
 
         internal object SubtitleTextOperation(
             string text,
-            string? expectedRevisionDigest = null) =>
-            new
+            string? expectedRevisionDigest = null,
+            SubtitleCueHistory? history = null,
+            string? expectedRevisionId = null)
+        {
+            history ??= SubtitleHistory;
+            return new
             {
                 kind = "editSubtitle",
-                cueId = SubtitleHistory.CueId.ToString(),
-                expectedRevisionId = SubtitleHistory.CurrentRevision.Id.ToString(),
+                cueId = history.CueId.ToString(),
+                expectedRevisionId = expectedRevisionId ?? history.CurrentRevision.Id.ToString(),
                 expectedRevisionDigest = expectedRevisionDigest ??
-                    SubtitleHistory.CurrentRevision.ContentDigest.Hex,
+                    history.CurrentRevision.ContentDigest.Hex,
                 edit = new
                 {
                     kind = "text",
@@ -1179,6 +1605,7 @@ public sealed class LayoutSubtitleBridgeTests
                 },
                 reason = "Edit subtitle text.",
             };
+        }
 
         internal object SubtitlePlacementOperation(object rect) =>
             new

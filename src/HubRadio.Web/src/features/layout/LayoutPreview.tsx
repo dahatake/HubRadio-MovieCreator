@@ -27,6 +27,8 @@ export function LayoutPreview({
 }: LayoutPreviewProps) {
   const showSubtitles =
     previewModes.subtitlesVisible && variantChoice !== 'subtitleFree'
+  const aspect = `${snapshot.output.aspectWidth}:${snapshot.output.aspectHeight}`
+  const aspectRatio = `${snapshot.output.width} / ${snapshot.output.height}`
   return (
     <figure
       className="layout-preview"
@@ -36,9 +38,9 @@ export function LayoutPreview({
     >
       <div className="layout-preview-stage">
         {previewModes.audioOnly ? (
-          <div className="audio-only-placeholder" role="note">
+          <div className="audio-only-placeholder" role="note" style={{ aspectRatio }}>
             <strong>音声のみプレビュー</strong>
-            <span>9:16 layout evidence の映像表示を隠しています。</span>
+            <span>{aspect} layout evidence の映像表示を隠しています。</span>
           </div>
         ) : (
           <>
@@ -46,15 +48,17 @@ export function LayoutPreview({
               role="img"
               aria-labelledby="layout-preview-title layout-preview-description"
               viewBox={`0 0 ${snapshot.output.width} ${snapshot.output.height}`}
+              style={{ aspectRatio }}
               data-native-width={snapshot.output.width}
               data-native-height={snapshot.output.height}
-              data-aspect="9:16"
+              data-aspect={aspect}
+              data-subtitle-only={snapshot.subtitleOnly === true ? 'true' : 'false'}
               data-variant={variantChoice ?? 'editor'}
               data-subtitle-profile={
                 subtitleDisplay?.profileVersionDigest ?? 'unavailable'
               }
             >
-              <title id="layout-preview-title">9対16 レイアウト preview</title>
+              <title id="layout-preview-title">{`${aspect} ${snapshot.subtitleOnly ? '字幕配置' : 'レイアウト'} preview`}</title>
               <desc id="layout-preview-description">
                 ネイティブが返した整数 pixel rectangle を同じ viewBox 座標で表示します。
               </desc>
@@ -147,8 +151,9 @@ export function LayoutPreview({
         )}
       </div>
       <figcaption>
-        {snapshot.output.width} × {snapshot.output.height} px・9:16。表示は native pixel evidence を SVG viewBox へ直接投影し、小数座標を authority にしません。{' '}
-        {orientationDescription(previewModes.orientation)}
+        {snapshot.output.width} × {snapshot.output.height} px・{aspect}。表示は native pixel evidence を SVG viewBox へ直接投影し、小数座標を authority にしません。{' '}
+        {snapshot.subtitleOnly && '字幕・グラフィックの配置だけを表示し、映像の画角は投影していません。 '}
+        {orientationDescription(previewModes.orientation, aspect)}
       </figcaption>
     </figure>
   )
@@ -156,14 +161,15 @@ export function LayoutPreview({
 
 function orientationDescription(
   orientation: PreviewModeState['orientation'],
+  aspect: string,
 ): string {
   switch (orientation) {
     case null:
-      return '表示枠は媒体の比率を使用し、この 9:16 evidence は変更しません。'
+      return `表示枠は媒体の比率を使用し、この ${aspect} evidence は変更しません。`
     case 'landscape':
-      return '横長は代理媒体の確認枠だけに適用し、この 9:16 native layout evidence を変換しません。'
+      return `横長は代理媒体の確認枠だけに適用し、この ${aspect} native layout evidence を変換しません。`
     case 'portrait':
-      return '縦型確認枠と同じ向きの 9:16 native layout evidence を変更せず表示します。'
+      return `縦型確認枠の指定では、この ${aspect} native layout evidence を変換しません。`
   }
 }
 

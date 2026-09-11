@@ -34,6 +34,7 @@ public sealed class PortablePublishProfileTests
     [
         "Worker/python.exe", "Tools/ffmpeg.exe", "Tools/ffprobe.exe",
         "ModelCatalog/catalog.json", "WebView2Runtime/msedgewebview2.exe",
+        "Fonts/NotoSansJP-Regular.otf", "Fonts/LICENSE", "Fonts/font-manifest.json",
         "Licenses/NOTICE", "Evidence/portable-payload.json",
     ];
 

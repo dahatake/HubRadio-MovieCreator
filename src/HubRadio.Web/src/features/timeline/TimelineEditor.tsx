@@ -70,6 +70,9 @@ export interface TimelineEditorProps {
   readonly createRequestId?: () => string
   readonly initialProjectId?: string
   readonly playerPosition?: TimelinePlayerPosition | null
+  readonly context?: Readonly<{ projectId: string | null }>
+  readonly active?: boolean
+  readonly onDirtyChange?: (dirty: boolean) => void
 }
 
 type PointerInteraction =
@@ -99,15 +102,28 @@ const issueMessages: Readonly<Record<TimelineIssue, string>> = {
   invalidResponse: 'ホスト応答の対応関係を確認できませんでした。',
 }
 
-export function TimelineEditor({
+export function TimelineEditor(props: TimelineEditorProps) {
+  // Only a workflow project change resets the editor; visibility never does.
+  const projectKey = props.context === undefined
+    ? 'standalone'
+    : `workflow:${props.context.projectId ?? ''}`
+  return <TimelineEditorSession key={projectKey} {...props} />
+}
+
+function TimelineEditorSession({
   createClient = createHostBridgeClient,
   createRequestId = defaultRequestId,
   initialProjectId = '',
   playerPosition = null,
+  context,
+  active = true,
+  onDirtyChange,
 }: TimelineEditorProps) {
+  const hasContext = context !== undefined
+  const contextProjectId = context?.projectId ?? null
   const [state, dispatch] = useReducer(timelineStateReducer, {
     ...initialTimelineState,
-    projectIdInput: initialProjectId,
+    projectIdInput: hasContext ? contextProjectId ?? '' : initialProjectId,
   })
   const [pixelsPerSecond, setPixelsPerSecond] = useState(1)
   const [scrollOffset, setScrollOffset] = useState(0)
@@ -115,11 +131,21 @@ export function TimelineEditor({
   const [canvasRevision, setCanvasRevision] = useState(0)
   const [interaction, setInteraction] = useState<PointerInteraction | null>(null)
   const clientRef = useRef<TimelineBridgeClient | null>(null)
+  const factoryRef = useRef(createClient)
+  const onDirtyChangeRef = useRef(onDirtyChange)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const fittedWorkingCopyRef = useRef<string | null>(null)
+  const automaticLoadRef = useRef(false)
+
+  // Inline prop identities must not restart the keyed session or notify again.
+  useEffect(() => {
+    factoryRef.current = createClient
+    onDirtyChangeRef.current = onDirtyChange
+  }, [createClient, onDirtyChange])
 
   useEffect(() => {
     if (
+      !hasContext &&
       initialProjectId.length > 0 &&
       initialProjectId !== state.projectIdInput &&
       state.pendingRequest === null &&
@@ -127,12 +153,13 @@ export function TimelineEditor({
     ) {
       dispatch({ type: 'projectIdInputChanged', value: initialProjectId })
     }
-  }, [initialProjectId, state.baseline, state.pendingRequest, state.projectIdInput])
+  }, [hasContext, initialProjectId, state.baseline, state.pendingRequest, state.projectIdInput])
 
   useEffect(() => {
+    if (hasContext && !isCanonicalTimelineId(contextProjectId ?? '')) return
     let client: TimelineBridgeClient
     try {
-      client = createClient()
+      client = factoryRef.current()
     } catch {
       dispatch({ type: 'bridgeUnavailable' })
       return
@@ -169,15 +196,17 @@ export function TimelineEditor({
         client.dispose()
       }
     }
-  }, [createClient])
+  }, [contextProjectId, hasContext])
+
+  useEffect(() => {
+    if (!active) setInteraction(null)
+  }, [active])
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (canvas === null) return
+    if (!active || canvas === null) return
     const updateSize = (): void => {
-      const width = Math.round(
-        canvas.parentElement?.getBoundingClientRect().width ?? 0,
-      )
+      const width = measureVisibleCanvasWidth(canvas)
       if (!(width > 0)) return
       const ratio = typeof window === 'undefined' ? 1 : window.devicePixelRatio
       const previousWidth = canvas.width
@@ -198,20 +227,34 @@ export function TimelineEditor({
       window.removeEventListener('resize', updateSize)
       observer?.disconnect()
     }
-  }, [state.baseline?.workingCopyId])
+  }, [active, state.baseline?.workingCopyId])
 
   useEffect(() => {
-    if (state.baseline === null || viewportWidth <= 0) {
+    if (state.baseline === null) {
       fittedWorkingCopyRef.current = null
+      return
+    }
+    if (
+      !active ||
+      viewportWidth <= 0 ||
+      !(measureVisibleCanvasWidth(canvasRef.current) > 0)
+    ) {
       return
     }
     if (fittedWorkingCopyRef.current === state.baseline.workingCopyId) return
     fittedWorkingCopyRef.current = state.baseline.workingCopyId
     setPixelsPerSecond(fitTimelineZoom(state.previewElements, viewportWidth))
     setScrollOffset(0)
-  }, [state.baseline, state.previewElements, viewportWidth])
+  }, [active, state.baseline, state.previewElements, viewportWidth])
 
   useEffect(() => {
+    if (
+      !active ||
+      viewportWidth <= 0 ||
+      !(measureVisibleCanvasWidth(canvasRef.current) > 0)
+    ) {
+      return
+    }
     setScrollOffset((current) =>
       clampTimelineScroll(
         current,
@@ -219,7 +262,7 @@ export function TimelineEditor({
         viewportWidth,
       ),
     )
-  }, [pixelsPerSecond, state.previewElements, viewportWidth])
+  }, [active, pixelsPerSecond, state.previewElements, viewportWidth])
 
   const layout = useMemo(
     () =>
@@ -266,8 +309,10 @@ export function TimelineEditor({
   useEffect(() => {
     const canvas = canvasRef.current
     if (
+      !active ||
       canvas === null ||
       viewportWidth <= 0 ||
+      !(measureVisibleCanvasWidth(canvas) > 0) ||
       typeof CanvasRenderingContext2D === 'undefined'
     ) {
       return
@@ -290,6 +335,7 @@ export function TimelineEditor({
       palette: readPalette(canvas),
     })
   }, [
+    active,
     canvasRevision,
     dropTargetIndex,
     interaction,
@@ -343,11 +389,33 @@ export function TimelineEditor({
     ],
   )
 
+  useEffect(() => {
+    if (
+      !active ||
+      !hasContext ||
+      !isCanonicalTimelineId(contextProjectId ?? '') ||
+      automaticLoadRef.current
+    ) {
+      return
+    }
+    let superseded = false
+    // Cancel StrictMode's discarded setup before sending through the live client.
+    void Promise.resolve().then(() => {
+      if (superseded || automaticLoadRef.current) return
+      automaticLoadRef.current = true
+      load(false)
+    })
+    return () => {
+      superseded = true
+    }
+  }, [active, contextProjectId, hasContext, load])
+
   const applyPending = (): void => {
     const client = clientRef.current
     const baseline = state.baseline
     const operations = selectPendingTimelineOperations(state)
     if (
+      !active ||
       client === null ||
       baseline === null ||
       operations.length === 0 ||
@@ -377,6 +445,7 @@ export function TimelineEditor({
   }
 
   const queueSelected = (kind: 'keep' | 'delete'): void => {
+    if (!active) return
     const selected = new Set(state.selectedElementIds)
     const operations = state.previewElements
       .filter((element) => selected.has(element.id))
@@ -389,6 +458,7 @@ export function TimelineEditor({
   const splitAtPlayhead = (): void => {
     const elementId = state.selectedElementIds[0]
     if (
+      !active ||
       playhead === null ||
       elementId === undefined ||
       state.selectedElementIds.length !== 1
@@ -407,7 +477,7 @@ export function TimelineEditor({
   }
 
   const trimAtPlayhead = (edge: TrimEdge): void => {
-    if (playhead === null) return
+    if (!active || playhead === null) return
     const operations = createTrimOperations(
       state.previewElements,
       playhead,
@@ -420,11 +490,13 @@ export function TimelineEditor({
   }
 
   const fit = (): void => {
+    if (!active || viewportWidth <= 0 || !(measureVisibleCanvasWidth(canvasRef.current) > 0)) return
     setPixelsPerSecond(fitTimelineZoom(state.previewElements, viewportWidth))
     setScrollOffset(0)
   }
 
   const changeZoom = (factor: number, anchor = viewportWidth / 2): void => {
+    if (!active || viewportWidth <= 0 || !(measureVisibleCanvasWidth(canvasRef.current) > 0)) return
     const next = zoomTimelineAroundPointer(
       pixelsPerSecond,
       pixelsPerSecond * factor,
@@ -439,13 +511,13 @@ export function TimelineEditor({
 
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
-    load(false)
+    if (active) load(false)
   }
 
   const onCanvasPointerDown = (
     event: PointerEvent<HTMLCanvasElement>,
   ): void => {
-    if (event.button !== 0 || state.pendingRequest !== null) return
+    if (!active || event.button !== 0 || state.pendingRequest !== null) return
     const point = canvasPoint(event)
     const hit = hitTestTimelineElement(point.x, point.y, layout)
     event.currentTarget.setPointerCapture?.(event.pointerId)
@@ -476,7 +548,7 @@ export function TimelineEditor({
   const onCanvasPointerMove = (
     event: PointerEvent<HTMLCanvasElement>,
   ): void => {
-    if (interaction === null || interaction.pointerId !== event.pointerId) {
+    if (!active || interaction === null || interaction.pointerId !== event.pointerId) {
       return
     }
     const point = canvasPoint(event)
@@ -496,7 +568,7 @@ export function TimelineEditor({
   const finishPointerInteraction = (
     event: PointerEvent<HTMLCanvasElement>,
   ): void => {
-    if (interaction === null || interaction.pointerId !== event.pointerId) {
+    if (!active || interaction === null || interaction.pointerId !== event.pointerId) {
       return
     }
     event.currentTarget.releasePointerCapture?.(event.pointerId)
@@ -542,6 +614,7 @@ export function TimelineEditor({
   }
 
   const onCanvasWheel = (event: WheelEvent<HTMLCanvasElement>): void => {
+    if (!active) return
     event.preventDefault()
     const point = canvasPoint(event)
     if (event.ctrlKey) {
@@ -560,6 +633,7 @@ export function TimelineEditor({
   }
 
   const onCanvasKeyDown = (event: KeyboardEvent<HTMLCanvasElement>): void => {
+    if (!active) return
     const modifier = event.ctrlKey || event.metaKey
     if (modifier && event.key.toLowerCase() === 'z') {
       event.preventDefault()
@@ -605,8 +679,17 @@ export function TimelineEditor({
   const hasPending = pendingOperations.length > 0
   const canSplit = playhead !== null && selectedCount === 1 && !busy
 
+  useEffect(() => {
+    onDirtyChangeRef.current?.(hasPending)
+  }, [hasPending])
+
   return (
-    <section className="timeline-card" aria-labelledby="timeline-title">
+    <section
+      className="timeline-card"
+      aria-labelledby="timeline-title"
+      hidden={!active}
+      inert={!active}
+    >
       <div className="timeline-heading">
         <div>
           <p className="eyebrow">Exact composition</p>
@@ -621,44 +704,51 @@ export function TimelineEditor({
         </div>
       </div>
 
-      <form className="timeline-load-form" onSubmit={onSubmit}>
-        <label htmlFor="timeline-project-id">案件 ID</label>
-        <div>
-          <input
-            id="timeline-project-id"
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            minLength={36}
-            maxLength={36}
-            pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-            value={state.projectIdInput}
-            disabled={busy || hasPending}
-            onChange={(event) =>
-              dispatch({
-                type: 'projectIdInputChanged',
-                value: event.currentTarget.value,
-              })
-            }
-          />
-          <button
-            className="primary-button"
-            type="submit"
-            disabled={
-              busy ||
-              hasPending ||
-              !isCanonicalTimelineId(state.projectIdInput)
-            }
-          >
-            タイムラインを開く
-          </button>
-        </div>
-      </form>
+      {hasContext ? null : (
+        <form className="timeline-load-form" onSubmit={onSubmit}>
+          <label htmlFor="timeline-project-id">案件 ID</label>
+          <div>
+            <input
+              id="timeline-project-id"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              minLength={36}
+              maxLength={36}
+              pattern="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+              value={state.projectIdInput}
+              disabled={busy || hasPending}
+              onChange={(event) =>
+                dispatch({
+                  type: 'projectIdInputChanged',
+                  value: event.currentTarget.value,
+                })
+              }
+            />
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={
+                busy ||
+                hasPending ||
+                !isCanonicalTimelineId(state.projectIdInput)
+              }
+            >
+              タイムラインを開く
+            </button>
+          </div>
+        </form>
+      )}
 
       {state.issue === null ? null : (
         <div className="timeline-issue" role="alert">
           <p>{issueMessages[state.issue]}</p>
           <div>
+            {hasContext && state.baseline === null ? (
+              <button type="button" onClick={() => load(false)} disabled={!active || busy}>
+                タイムラインの読み込みを再試行
+              </button>
+            ) : null}
             {state.phase === 'conflict' && state.intentValid ? (
               <button type="button" onClick={() => load(true)} disabled={busy}>
                 未送信操作を保持して再読み込み
@@ -681,7 +771,11 @@ export function TimelineEditor({
       {state.baseline === null ? (
         <div className="timeline-empty">
           <strong>タイムラインは未読み込みです</strong>
-          <p>案件 ID を指定すると、権限確認後に working copy を表示します。</p>
+          <p>
+            {hasContext
+              ? '編集する案件を選択すると、権限確認後に working copy を表示します。'
+              : '案件 ID を指定すると、権限確認後に working copy を表示します。'}
+          </p>
         </div>
       ) : (
         <div className="timeline-workspace">
@@ -737,7 +831,7 @@ export function TimelineEditor({
             <canvas
               ref={canvasRef}
               className="timeline-canvas"
-              tabIndex={0}
+              tabIndex={active ? 0 : -1}
               aria-label="編集タイムライン。クリックで選択、ドラッグで移動、空白ドラッグまたはホイールでスクロール、Ctrl+ホイールで拡大縮小"
               onPointerDown={onCanvasPointerDown}
               onPointerMove={onCanvasPointerMove}
@@ -829,6 +923,11 @@ export function TimelineEditor({
       )}
     </section>
   )
+}
+
+function measureVisibleCanvasWidth(canvas: HTMLCanvasElement | null): number {
+  if (canvas === null || canvas.closest('[hidden], [inert]') !== null) return 0
+  return Math.round(canvas.parentElement?.getBoundingClientRect().width ?? 0)
 }
 
 function canvasPoint(

@@ -1,0 +1,158 @@
+<Project>
+  <!-- These small contracts are compile inputs. Vendor bytes are never downloaded
+       by MSBuild; the multi-GB prepared payload is strictly opt-in. -->
+  <PropertyGroup>
+    <_HubRadioResourcePackagingRoot>$(MSBuildThisFileDirectory)</_HubRadioResourcePackagingRoot>
+    <HubRadioRuntimePayloadPath Condition="'$(HubRadioRuntimePayloadPath)' == ''">$(HubRadioPortablePayloadPath)</HubRadioRuntimePayloadPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="$(_HubRadioResourcePackagingRoot)python\runtime-manifest.json"
+                      LogicalName="HubRadio.App.Resources.PythonRuntimeManifest.json" />
+    <EmbeddedResource Include="$(_HubRadioResourcePackagingRoot)fonts\font-manifest.json"
+                      LogicalName="HubRadio.App.Resources.FontManifest.json" />
+  </ItemGroup>
+
+  <!-- GetFileHash supplies the digest; this tiny task reads only length and the
+       compiled assembly identity. No EXE execution, environment lookup or approval. -->
+  <UsingTask TaskName="HubRadioDescribeApplicationBuild" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <FilePath ParameterType="System.String" Required="true" />
+      <Sha256 ParameterType="System.String" Required="true" />
+      <Json ParameterType="System.String" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Globalization" />
+      <Using Namespace="System.Reflection" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        if (!String.Equals(Path.GetFileName(FilePath), "HubRadio.App.dll", StringComparison.Ordinal) ||
+            !Regex.IsMatch(Sha256, "\\A[0-9a-fA-F]{64}\\z"))
+            throw new InvalidDataException("Expected the compiled HubRadio.App.dll and its SHA-256.");
+        var identity = AssemblyName.GetAssemblyName(FilePath);
+        long size = new FileInfo(FilePath).Length;
+        if (identity.Name != "HubRadio.App" || identity.Version == null || size <= 0)
+            throw new InvalidDataException("Invalid application build identity.");
+        Json = "{\"schemaVersion\":1,\"relativePath\":\"HubRadio.App.dll\",\"version\":\"" +
+            identity.Version.ToString() + "\",\"size\":" + size.ToString(CultureInfo.InvariantCulture) +
+            ",\"sha256\":\"" + Sha256.ToLowerInvariant() + "\"}";
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="GenerateHubRadioApplicationBuildManifest" AfterTargets="CopyFilesToOutputDirectory"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(TargetPath)')" Text="The compiled App DLL is required for application-build.json." />
+    <GetFileHash Files="$(TargetPath)" Algorithm="SHA256" HashEncoding="hex">
+      <Output TaskParameter="Hash" PropertyName="_HubRadioApplicationBuildSha256" />
+    </GetFileHash>
+    <HubRadioDescribeApplicationBuild FilePath="$(TargetPath)" Sha256="$(_HubRadioApplicationBuildSha256)">
+      <Output TaskParameter="Json" PropertyName="_HubRadioApplicationBuildJson" />
+    </HubRadioDescribeApplicationBuild>
+    <MakeDir Directories="$(TargetDir)Evidence" />
+    <WriteLinesToFile File="$(TargetDir)Evidence\application-build.json" Lines="$(_HubRadioApplicationBuildJson)"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <FileWrites Include="$(TargetDir)Evidence\application-build.json" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="IncludeHubRadioApplicationBuildManifestForPublish" AfterTargets="ComputeFilesToPublish"
+          DependsOnTargets="GenerateHubRadioApplicationBuildManifest"
+          Condition="'$(DesignTimeBuild)' != 'true' and '$(PublishSingleFile)' != 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(TargetDir)Evidence\application-build.json">
+        <RelativePath>Evidence\application-build.json</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="IncludeHubRadioApplicationBuildManifestInBundle" AfterTargets="PrepareForBundle"
+          BeforeTargets="RecordHubRadioPortableBundle;GenerateSingleFileBundle"
+          Condition="'$(DesignTimeBuild)' != 'true' and '$(PublishSingleFile)' == 'true'">
+    <ItemGroup>
+      <_HubRadioBundledApplication Include="@(FilesToBundle)" Condition="'%(FilesToBundle.RelativePath)' == 'HubRadio.App.dll'" />
+      <_HubRadioPreexistingBuildEvidence Include="@(FilesToBundle)"
+          Condition="'%(FilesToBundle.RelativePath)' == 'Evidence\application-build.json' or '%(FilesToBundle.RelativePath)' == 'Evidence/application-build.json'" />
+    </ItemGroup>
+    <Error Condition="'@(_HubRadioBundledApplication->Count())' != '1' or '@(_HubRadioPreexistingBuildEvidence)' != ''"
+           Text="Exactly one App DLL and no preexisting application-build.json are allowed before generating bundle evidence." />
+    <GetFileHash Files="@(_HubRadioBundledApplication)" Algorithm="SHA256" HashEncoding="hex">
+      <Output TaskParameter="Hash" PropertyName="_HubRadioBundledApplicationSha256" />
+    </GetFileHash>
+    <HubRadioDescribeApplicationBuild FilePath="%(_HubRadioBundledApplication.FullPath)" Sha256="$(_HubRadioBundledApplicationSha256)">
+      <Output TaskParameter="Json" PropertyName="_HubRadioBundledApplicationJson" />
+    </HubRadioDescribeApplicationBuild>
+    <PropertyGroup>
+      <_HubRadioApplicationBuildBundlePath>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'Evidence', 'application-build.json'))</_HubRadioApplicationBuildBundlePath>
+    </PropertyGroup>
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(_HubRadioApplicationBuildBundlePath)'))" />
+    <WriteLinesToFile File="$(_HubRadioApplicationBuildBundlePath)" Lines="$(_HubRadioBundledApplicationJson)"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <FilesToBundle Include="$(_HubRadioApplicationBuildBundlePath)">
+        <RelativePath>Evidence/application-build.json</RelativePath>
+      </FilesToBundle>
+      <FileWrites Include="$(_HubRadioApplicationBuildBundlePath)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="IncludeHubRadioRuntimePayload" BeforeTargets="AssignTargetPaths"
+          Condition="'$(DesignTimeBuild)' != 'true' and '$(HubRadioRuntimePayloadPath)' != '' and '$(HubRadioPortablePublish)' != 'true'">
+    <Error Condition="!$([System.IO.Path]::IsPathFullyQualified('$(HubRadioRuntimePayloadPath)'))"
+           Text="HubRadioRuntimePayloadPath must be an absolute prepared payload path." />
+    <Error Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(HubRadioRuntimePayloadPath)', '[;,%&quot;\x27$@`\x00-\x1f\x7f]'))"
+           Text="Runtime payload paths must not contain MSBuild or shell delimiters." />
+    <PropertyGroup>
+      <_HubRadioRuntimePayloadRoot>$([MSBuild]::NormalizeDirectory('$(HubRadioRuntimePayloadPath)'))</_HubRadioRuntimePayloadRoot>
+      <_HubRadioRuntimeOutputRoot>$([MSBuild]::NormalizeDirectory('$(TargetDir)'))</_HubRadioRuntimeOutputRoot>
+      <_HubRadioRuntimeIntermediateRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)'))</_HubRadioRuntimeIntermediateRoot>
+    </PropertyGroup>
+    <Error Condition="$(_HubRadioRuntimePayloadRoot.StartsWith('$(_HubRadioRuntimeOutputRoot)', System.StringComparison.OrdinalIgnoreCase)) or
+                      $(_HubRadioRuntimeOutputRoot.StartsWith('$(_HubRadioRuntimePayloadRoot)', System.StringComparison.OrdinalIgnoreCase)) or
+                      $(_HubRadioRuntimePayloadRoot.StartsWith('$(_HubRadioRuntimeIntermediateRoot)', System.StringComparison.OrdinalIgnoreCase)) or
+                      $(_HubRadioRuntimeIntermediateRoot.StartsWith('$(_HubRadioRuntimePayloadRoot)', System.StringComparison.OrdinalIgnoreCase))"
+           Text="Prepared runtime input must not overlap App output or intermediate directories." />
+    <Exec Command="pwsh.exe -NoLogo -NoProfile -NonInteractive -File &quot;$(_HubRadioResourcePackagingRoot)portable\verify-runtime-payload.ps1&quot; -PayloadPath &quot;$(HubRadioRuntimePayloadPath)&quot;" />
+    <ItemGroup>
+      <_HubRadioRuntimeLegacyModels Include="$(_HubRadioResourcePackagingRoot)models\catalog.json;$(_HubRadioResourcePackagingRoot)models\Bundles\**\*" />
+      <Content Remove="@(_HubRadioRuntimeLegacyModels)" MatchOnMetadata="FullPath" MatchOnMetadataOptions="PathLike" />
+      <_HubRadioRuntimePayloadFile Include="$(_HubRadioRuntimePayloadRoot)Worker\**\*;$(_HubRadioRuntimePayloadRoot)Tools\**\*;$(_HubRadioRuntimePayloadRoot)ModelCatalog\**\*;$(_HubRadioRuntimePayloadRoot)Fonts\**\*;$(_HubRadioRuntimePayloadRoot)Licenses\**\*;$(_HubRadioRuntimePayloadRoot)Evidence\**\*" />
+    </ItemGroup>
+    <ItemGroup>
+      <_HubRadioRuntimePayloadFile>
+        <RelativePath>$([MSBuild]::MakeRelative('$(_HubRadioRuntimePayloadRoot)', '%(_HubRadioRuntimePayloadFile.FullPath)'))</RelativePath>
+      </_HubRadioRuntimePayloadFile>
+    </ItemGroup>
+    <ItemGroup>
+      <Content Include="@(_HubRadioRuntimePayloadFile)">
+        <Link>%(_HubRadioRuntimePayloadFile.RelativePath)</Link>
+        <TargetPath>%(_HubRadioRuntimePayloadFile.RelativePath)</TargetPath>
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </Content>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="ExcludeHubRadioRuntimePayloadFromPri" AfterTargets="GetPriOutputs"
+          BeforeTargets="_GenerateProjectPriConfigurationFiles"
+          DependsOnTargets="IncludeHubRadioRuntimePayload"
+          Condition="'$(DesignTimeBuild)' != 'true' and '$(HubRadioRuntimePayloadPath)' != '' and '$(HubRadioPortablePublish)' != 'true'">
+    <!-- MRT Core (ordinary unpackaged builds) collects PackagingOutputs rather
+         than PriOutputs. Both SDK paths exclude this exact source-file set from
+         layout qualifier scanning. Keep Content and packaging/copy items intact. -->
+    <ItemGroup>
+      <PriOutputs Remove="@(_HubRadioRuntimePayloadFile)" MatchOnMetadata="FullPath" MatchOnMetadataOptions="PathLike" />
+      <_AppxLayoutAssetPackageFiles Include="@(_HubRadioRuntimePayloadFile)" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="VerifyCopiedHubRadioRuntimePayload" AfterTargets="CopyFilesToOutputDirectory"
+          DependsOnTargets="GenerateHubRadioApplicationBuildManifest"
+          Condition="'$(DesignTimeBuild)' != 'true' and '$(HubRadioRuntimePayloadPath)' != '' and '$(HubRadioPortablePublish)' != 'true'">
+    <Exec Command="pwsh.exe -NoLogo -NoProfile -NonInteractive -File &quot;$(_HubRadioResourcePackagingRoot)portable\verify-runtime-payload.ps1&quot; -PayloadPath &quot;$(HubRadioRuntimePayloadPath)&quot; -CopyDestination &quot;$(TargetDir).&quot;" />
+  </Target>
+</Project>
