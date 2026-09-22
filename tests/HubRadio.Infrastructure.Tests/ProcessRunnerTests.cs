@@ -787,6 +787,7 @@ public sealed class ProcessRunnerTests
         string startDescendantPath = Path.Combine(temporaryDirectory, "start-descendant");
         string descendantProcessIdPath = Path.Combine(temporaryDirectory, "descendant.pid");
         string allowHostCrashPath = Path.Combine(temporaryDirectory, "allow-host-crash");
+        string failFastEnteredPath = Path.Combine(temporaryDirectory, "fail-fast-entered.pid");
         Process? crashHost = null;
         Process? parent = null;
         Process? descendant = null;
@@ -798,16 +799,43 @@ public sealed class ProcessRunnerTests
                 parentProcessIdPath,
                 startDescendantPath,
                 descendantProcessIdPath,
-                allowHostCrashPath);
+                allowHostCrashPath,
+                failFastEnteredPath);
             Task<string> standardOutputTask = crashHost.StandardOutput.ReadToEndAsync();
             Task<string> standardErrorTask = crashHost.StandardError.ReadToEndAsync();
             parent = OpenRunningProcess(await ReadProcessIdAsync(parentProcessIdPath));
             descendant = OpenRunningProcess(await ReadProcessIdAsync(descendantProcessIdPath));
             AssertProcessIsRunning(crashHost);
             File.WriteAllText(allowHostCrashPath, string.Empty);
+            int failFastProcessId = await ReadProcessIdAsync(failFastEnteredPath);
+            Assert.AreEqual(crashHost.Id, failFastProcessId);
             using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(15));
 
-            await crashHost.WaitForExitAsync(cancellation.Token);
+            try
+            {
+                await crashHost.WaitForExitAsync(cancellation.Token);
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested && !crashHost.HasExited)
+            {
+                // The 15-second wait remains the pass budget. If the helper reached
+                // Environment.FailFast and Windows Error Reporting keeps it alive past that
+                // budget, wait only to verify job cleanup, then report Inconclusive; this is
+                // not a successful test result.
+                await crashHost.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(60));
+                await AssertProcessesExitedAsync(parent, descendant);
+                string delayedStandardOutput = await standardOutputTask.WaitAsync(TimeSpan.FromSeconds(5));
+                string delayedStandardError = await standardErrorTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+                Assert.AreNotEqual(0, crashHost.ExitCode);
+                Assert.AreEqual(string.Empty, delayedStandardOutput);
+                Assert.IsFalse(delayedStandardError.Contains(temporaryDirectory, StringComparison.OrdinalIgnoreCase));
+                Assert.Inconclusive(
+                    "Windows Error Reporting kept the Environment.FailFast helper process alive " +
+                    "beyond the 15-second budget after it reached the crash point. Job cleanup " +
+                    "was verified after the delayed termination. Inconclusive is not success.");
+                return;
+            }
+
             await AssertProcessesExitedAsync(parent, descendant);
             string standardOutput = await standardOutputTask.WaitAsync(TimeSpan.FromSeconds(5));
             string standardError = await standardErrorTask.WaitAsync(TimeSpan.FromSeconds(5));
@@ -1233,6 +1261,7 @@ internal static class ProcessRunnerTestHelper
         string startDescendantPath = RequireArgument(arguments, 2);
         string descendantProcessIdPath = RequireArgument(arguments, 3);
         string allowHostCrashPath = RequireArgument(arguments, 4);
+        string failFastEnteredPath = RequireArgument(arguments, 5);
         ProcessRunner runner = new();
         ProcessRunRequest request = CreateHelperRequest(
             "spawn-descendant",
@@ -1245,6 +1274,7 @@ internal static class ProcessRunnerTestHelper
         File.WriteAllText(startDescendantPath, string.Empty);
         WaitForFile(descendantProcessIdPath);
         WaitForFile(allowHostCrashPath);
+        WriteProcessIdAtomically(failFastEnteredPath);
         Environment.FailFast("Intentional J-004 process containment test crash.");
         return 99;
     }

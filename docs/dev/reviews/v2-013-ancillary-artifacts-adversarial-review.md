@@ -113,3 +113,60 @@
 - pipeline を実際に走らせた場合の付帯成果物生成 — exporter レベルでは実証したが、pipeline E2Eは**未実施**。
 - ASR精度・知覚品質・人手評価（17項目 `PENDING`）・`UX-044` — **未測定。**
 - clean OS受入・署名・一般配布 — **対象外・未実施。**
+
+---
+
+## 7. 追補（`P2-21` / 2026-09-23）— 付帯成果物の昇格位置の確定
+
+> 本節は追補である。§1〜§6 の判定・件数・IDは1文字も変更していない。
+
+### 7.1 問い
+
+第1版の自己レビューが「付帯成果物が納品ゲートの**前**に `ArtifactKind.Delivery` へ昇格される」と指摘したが、この指摘はcommit対象の文書に記録されていなかった。本節で**コード出典と実測の両方**により確定させる。
+
+### 7.2 コード上の位置（出典付き）
+
+| # | 事実 | 出典 |
+|---|---|---|
+| A-1 | 付帯成果物の書き出しと昇格は `ExportAncillaryArtifactsAsync` で行われ、`AncillaryArtifactExporter.ExportAsync` を呼ぶ | [SourceOnlyPipeline.cs:1579-1580](../../../src/HubRadio.App/Projects/SourceOnlyPipeline.cs) |
+| A-2 | 昇格要求の `ArtifactKind` は `Delivery` である | [AncillaryArtifactExporter.cs:600](../../../src/HubRadio.App/Delivery/AncillaryArtifactExporter.cs) |
+| A-3 | pipelineは `ExportAncillaryArtifactsAsync` を**先に**呼び、そのあと別の段で `DeliverResultAsync` を呼ぶ | [SourceOnlyPipeline.cs:1440-1442](../../../src/HubRadio.App/Projects/SourceOnlyPipeline.cs) と [:1461-1462](../../../src/HubRadio.App/Projects/SourceOnlyPipeline.cs) |
+| A-4 | 納品本体のDBトランザクションは `SourceOnlyDeliveryService` 側にあり、付帯成果物の昇格はその外側で完了している | [SourceOnlyDeliveryService.cs:159](../../../src/HubRadio.App/Projects/SourceOnlyDeliveryService.cs) |
+| A-5 | `DeliverResultAsync` には、先に昇格済みの付帯成果物を取り消す補償処理が**無い**（同メソッド全体を読み、`Delivery` 行の削除・巻き戻しに相当する処理は存在しない） | [SourceOnlyPipeline.cs:1600-1660](../../../src/HubRadio.App/Projects/SourceOnlyPipeline.cs) |
+
+**判定: 付帯成果物の `ArtifactKind.Delivery` への昇格は、納品トランザクションの「外」かつ「前」で行われる。**
+
+### 7.3 実測による裏付け
+
+`P2-12`（2026-09-23）の実素材実行は、生成を完了したのち**納品段階で失敗**した（`source_only.output_evaluation_failed`、成果物7件すべて `delivered=false`）。にもかかわらず保全された実行rootには次の2ファイルが存在した。
+
+```
+projects/64c69755-.../deliveries/ancillary/d7dbcbaf-.../c8d588fc-.../transcript.json
+projects/64c69755-.../deliveries/ancillary/d7dbcbaf-.../c8d588fc-.../used-source-ranges.json
+```
+
+**納品が成立しなかった実行でも、付帯成果物は `deliveries/` 配下に残る。** これは §7.2 の判定と一致する実測である。出典: [initial-pilot.md §3.7](../../../benchmarks/results/initial-pilot.md)。
+
+### 7.4 契約文書との照合
+
+| 文書 | 記述 | 実態との一致 |
+|---|---|---|
+| [implementation-plan.md:342](../planning/implementation-plan.md) | 「ファイルはステージングへ書き、ハッシュ検証後に同一ボリューム内で原子的に昇格する。SQLiteには昇格済み成果物だけを登録する」 | **一致する。** これは1成果物あたりのstaging→最終の原子性の記述であり、`AncillaryArtifactExporter` の実装（staging書込→検証→昇格→DB登録）と矛盾しない |
+| [ui-workflow-contract.md:68](../architecture/ui-workflow-contract.md) | E-RESULT行。`AncillaryArtifactExporter` を「文字起こし・使用区間一覧の2種のみを指定して呼ぶ」 | **一致する。** 昇格が納品トランザクションの内側であるとは書かれていない |
+
+**確定: 「原子的に昇格」という記述が実態と矛盾している契約文書は、`docs/` 内に存在しない。** 第1版の指摘は「契約文書の記述が誤っている」ではなく、**「納品が失敗しても `Delivery` 種別の付帯成果物が残る」という実装上の性質がどの文書にも書かれていない**という欠落の指摘として成立する。
+
+### 7.5 利用者判断事項（本タスクでは実装を変更しない）
+
+| # | 選択肢 | 影響 |
+|---|---|---|
+| (a) | 現状の実装を正とし、**文書に「付帯成果物は納品成立前に昇格され、納品失敗時も残る」ことを明記**する | 実装変更なし。運用上は納品失敗後に `deliveries/ancillary/` の残存を人が確認する必要がある |
+| (b) | 昇格を納品トランザクションの内側へ移す | `SourceOnlyPipeline` の段構成と `SourceOnlyDeliveryService` の双方に波及する。影響範囲が大きく、本計画の中断条件2（production 3ファイル以上への波及）に該当する |
+| (c) | 納品失敗時に付帯成果物を取り消す補償処理を追加する | 補償処理自体が失敗し得るため、`ReconciliationRequired` の経路が増える。**予防的な複雑化になりやすい** |
+
+**既定は (a)。** 理由: §7.4 のとおり文書との矛盾は無く、(b)(c) はいずれも中核production コードの構造変更であり、`V2-013`/`V2-014` の本来scopeを超える。**本タスクでは実装を変更していない。**
+
+### 7.6 本節で主張しないこと
+
+- (b)(c) を実施していない。どちらが正しいかを決定していない。
+- 納品失敗時の残存が利用者にとって許容可能かどうかを判定していない。**これは利用者判断である。**

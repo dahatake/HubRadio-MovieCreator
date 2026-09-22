@@ -215,7 +215,22 @@ public sealed class LongFormProvenanceSnapshot
         ProjectId = projectId;
         TranscriptRevisionId = transcriptRevisionId;
         TranscriptRevisionDigest = transcriptRevisionDigest;
-        SourceSpans = Array.AsReadOnly(sourceSpans.ToArray());
+
+        // The evidence envelope stores these spans in this order
+        // (StandardCompositionEvidenceCodec.ProvenanceDto.From), so holding the
+        // same order here keeps a restored snapshot structurally equal to the one
+        // that was checkpointed, whatever order the caller collected them in.
+        SourceSpans = Array.AsReadOnly(sourceSpans
+            .OrderBy(
+                static span => span.AssetId.ToString(),
+                StringComparer.Ordinal)
+            .ThenBy(static span => span.StreamId, StringComparer.Ordinal)
+            .ThenBy(static span => span.Range.Start)
+            .ThenBy(static span => span.Range.End)
+            .ThenBy(
+                static span => span.Id.ToString(),
+                StringComparer.Ordinal)
+            .ToArray());
         TrustedEditorialRecordIds = Array.AsReadOnly(
             trustedEditorialRecordIds.ToArray());
     }

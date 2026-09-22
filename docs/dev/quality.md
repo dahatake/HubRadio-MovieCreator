@@ -27,6 +27,99 @@
 
 詳細は[Stage 0ベンチマーク](benchmarks/README.md)、[実装進行成果物の敵対的レビュー](reviews/implementation-adversarial-review.md)、[アクセシビリティ評価記録](accessibility/test-report.md)を参照してください。過去のPASSは、そのrunが対象にしたsurfaceだけの証拠である。
 
+## 2026-09-23 `P2-11`/`P2-12` 生成段階の不一致解消と実素材受入の再実行
+
+**結論から述べる。`V2-014` は合格していない。** 2026-09-22に不合格だった生成前検査は通過するようになり、実素材から標準成果物が実際に生成されたが、自動代理評価の `loudness` と `truePeak` が `FAIL` となり納品へ到達していない。
+
+### 修正（production）
+
+`LongFormProvenanceSnapshot` のコンストラクタで `SourceSpans` を保存時と同じ正規順 `(AssetId, StreamId, Range.Start, Range.End, Id)` に整列するようにした。`src/` の差分は **`src/HubRadio.App/Compositions/LongFormComposer.cs` の1ファイルのみ**（16行追加・1行削除）である。比較を行う `StandardArtifactGenerator.ValidateCheckpoint` と `StandardRenderGraphFactory.Digest<T>` は**1行も変更していない**。すなわち**比較条件の緩和による症状隠しではない**。
+
+- **回帰試験:** `StandardCompositionOrchestratorTests.RestoredPlanMatchesTheCheckpointedPlanWhenProvenanceArrivesUnordered` を追加した。修正を一時的に戻して再ビルドし、**plan digest不一致で失敗することを実測**（`expected: e92107d5…` / `actual: 7d24af9f…`）。修正を戻すと成功する。
+- **後方互換:** 保存される並びは従来から codec 側の正規順であり、今回の変更でも**変わらない**。`PlanDigest` は long-form 側が `span.Id` で整列してから算出するため順序非依存で、既存の保存済みdigestは引き続き一致する。
+
+### 実素材受入の再実行（実測）
+
+実行root `artifacts/validation/approved-media-3d95736adfa048f5a45a6de1fe4209b5` を保全している。
+
+| 項目 | 結果 |
+|---|---|
+| `ValidateCheckpoint` の7条件 | **すべて一致**（2026-09-22は `cond2.plan` のみ不一致） |
+| 長尺16:9 | **1本生成**。承認済みffprobeで `1920x1080` / `h264` / `24000/1001` / `60.060000` を実測（素材は1280×720。**アップスケールを実測で確認**） |
+| サムネイル | **6枚生成**（16:9×3、9:16×3） |
+| 付帯成果物 | `transcript.json` / `used-source-ranges.json` の**2種を生成・昇格** |
+| 短尺 | **0本**。不成立理由 `NoGroundedCandidate` を記録。空・重複動画は作られていない |
+| 字幕 | **0件**。不成立理由 `NoDisplayCues`。読速・cue間隔・最小長の未解決warningを実測 |
+| 自動代理評価 | `LandscapeClean`: pass 6 / **fail 2** / notEvaluated 19。thumbnail 6件: 各 pass 3 / notEvaluated 24 |
+| 停止 | `source_only.output_evaluation_failed`。成果物7件すべて `delivered=false` |
+| 所要 | scenario 221.5秒（予算9000秒）、実行段 150.2秒（予算5400秒）、準備 70.2秒（予算1800秒）。**いずれも予算内**。ただし納品まで含めた上限は未測定 |
+
+**`loudness` / `truePeak` の `FAIL`（新たに判明した未解決事項）。** 入力素材は `-16.71` LUFS / `-1.88` dBTP で**要求の許容範囲内**だったが、単一passの `loudnorm`（`dynamic`）適用後の出力は `-14.27` LUFS / `-0.97` dBTP となり**範囲外**になった。**判定基準を緩める対処は行わない。** 修正方針は未決定であり、`FfmpegCompiler` を含む複数のproductionファイルへ波及するため利用者判断事項として記録した。詳細は[受入記録 §3.6](../../benchmarks/results/initial-pilot.md)。
+
+### 回帰（本機実測、2026-09-23）
+
+**下表は、他の検証を同時実行していない状態で測定した確定値である。**
+
+| runner | 合計 | 成功 | skip | 失敗 |
+|---|---:|---:|---:|---:|
+| Architecture | 209 | 209 | 0 | 0 |
+| Core | 732 | 731 | 1 | 0 |
+| App | **2429** | **2420** | 9 | **0** |
+| Infrastructure | 1362 | 1327 | 34 | **1** |
+| Web（vitest 85 files） | 2075 | 2075 | 0 | 0 |
+| Web accessibility / assets | 6 / 6 | 6 / 6 | 0 | 0 |
+| Python worker | 170 | 169 | 1 | 0 |
+
+- App の合計が `2428` から `2429` へ増えたのは、本節の回帰試験を1件追加したためである。
+- Architecture は package版を `0.1.3.0` へ更新した**後**の実行である。
+- `dotnet format --verify-no-changes` は終了コード `0`。ビルドは警告0・エラー0。
+
+**Infrastructure の失敗1件について。** 失敗したのは `MediaImportSecurityTests.NonterminatingTool_IsKilledAtDeadlineWithoutPathDisclosure`（5.02秒で時間切れ）である。**これは本変更に起因しない。** 根拠は次のとおり。
+
+1. 当該テストを**単独で実行すると成功する**（1/1成功）。
+2. `P2-30` の変更を一時的に戻して再ビルドし、同一条件で全件実行したところ、**まったく同じテストが同じ件数構成（1362/1327/34/1）で失敗した**。すなわち**変更前後で同一**であり、`P2-30` の変更が持ち込んだ失敗ではない。
+3. 当該テストも締切（deadline）に依存する時間敏感な試験であり、本日観測した他の時間切れ（Web、App）と同種の事象である。
+
+**この1件を「成功」や「既知のため問題なし」と読み替えない。** 原因の特定は本タスクの範囲外であり、**未解決の環境依存failureとして記録する**。
+
+### `P2-30` — Infrastructure の WER依存failure
+
+**採った対処: 選択肢(b)（環境を検出して `Inconclusive`）。** ただし**検査内容は1つも削っていない**。
+
+- 補助プロセスは `Environment.FailFast` を呼ぶ**直前**に自身のPIDをmarker fileへ書く（`ProcessRunnerTests.cs`）。テストはそのPIDがcrash hostと一致することを確認してから、**従来どおり15秒の合格予算**で待つ。
+- 15秒を超えても当該プロセスが生存している場合に限り、Windows Error Reporting による終了遅延と判定する。その場合も**job objectの解放、親・継承した子孫の終了、非0終了コード、標準出力が空であること、標準エラーが一時ディレクトリを漏らさないことを、遅延後に改めて全て検証**したうえで `Assert.Inconclusive` を報告する。メッセージには "Inconclusive is not success" を含める。
+- **WERが干渉しない環境では上記の分岐に入らず、従来の検証経路がそのまま実行される。** 実際、本日の負荷のない実行では当該テストは**成功**しており（失敗一覧に現れない）、`Inconclusive` 分岐は使われていない。
+- `Q-007`（`L-S` reliability）の判定は**変更していない**。`src/` は変更していない。新規NuGet依存は無い。
+
+**`Inconclusive`／skipは成功ではない。** 全回帰の成功件数へ加算しない。
+
+### Web の既定タイムアウトに関する判定（`P2-31`）
+
+2026-09-22の記録「既定タイムアウトで常に0とは主張しない」に対し、本日追加の実測を行った。
+
+| # | 実測 | 結論 |
+|---|---|---|
+| W-1 | **負荷のない状態での既定設定 `npm test` は 85 files / 2,075件すべて成功**（所要 114.25秒）。`test:accessibility` 6/6、`test:assets` 6/6 も成功。本日の最終確認でも同じ結果を再現した | 既定タイムアウトで落ちるのは**テスト側の欠陥ではない** |
+| W-2 | CPU負荷をかけた状態では、`WorkflowWorkspace.test.tsx` / `ResultGallery.test.tsx` が `5000ms` で時間切れ。いずれも**時間切れのみ**で、実時間依存のassertionや欠落した待機は見つからなかった | 原因は**本機の負荷**であり、実時間依存ではない |
+| W-3 | 上記2ファイルにsuite単位で `30,000ms` のタイムアウトを設定して既定設定で3回連続実行したところ、**1回目は別ファイル**（`SettingsList.test.tsx` / `SettingsPanel.test.tsx` / `TimelineEditor.test.tsx`）が `5000ms` で時間切れし 22件失敗。2回目・3回目は 2,075件全成功 | **対象ファイルを絞ったタイムアウト延長では安定しない。** 時間切れは負荷に応じてファイル間を移動する |
+
+**採った対処: コードを変更しない。** 理由は次の3点である。
+
+1. W-1 より、**既定設定そのものに欠陥はない**。負荷のない状態では全件成功する。
+2. W-3 より、**2ファイルへのタイムアウト延長は目的（既定設定での安定）を達成しない**。時間切れは他のファイルへ移るため、この変更は問題を解決しないまま差分だけを増やす。
+3. 影響を受け得るファイルは5件以上あり、そのうち2件だけを延長する根拠が無い。全体のタイムアウトを引き上げる案は、**実際に遅くなった退行を見逃しやすくする**ため採らない。
+
+**したがって `npm test` は「既定設定・負荷のない状態で全件成功」とだけ記録し、「常に失敗0」とは引き続き主張しない。** 本判定で新規npm依存は追加しておらず、`test:accessibility` / `test:assets` も削除していない。エージェントが一時的に加えた2ファイルのタイムアウト変更は**取り消した**（`git checkout -- src/HubRadio.Web`）。
+
+### 本節で主張しないこと
+
+- `V2-014` の合格、`Q-011`/`Q-012` の前進、`releaseApproved` の変更はいずれも**していない**。
+- ASR精度・知覚品質・人手評価・clean OS・署名は**未実施**であり `PASS` としない。
+- 納品まで通す統合試験（`P2-20`）は**未実装**である。
+
+### package版の更新
+
+今回の修正は**productionコードを含む**ため、開発用App packageを `0.1.2.0` から **`0.1.3.0`** へPATCH更新した（`Package.appxmanifest`、`build-package.ps1`、`verify-package.ps1`、版を固定している `Architecture.Tests.MsixPackagingProjectTests`）。更新後の Architecture runner 209件は全成功である。**版更新後のMSIX作成・インストール・検査は実行していない。**
 ## 2026-09-22 `V2-013` 付帯成果物追加の全回帰
 
 本節は追加のみで、以下の2026-09-09以前の記録は一切変更していない。

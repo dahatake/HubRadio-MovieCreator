@@ -182,3 +182,122 @@
 - 実行・シナリオの時間予算の妥当性は**未検証**である。
 - 実利用者profile・本番DB・`Music/` は変更していない（実行rootのみを使用）。
 - native GUI受入（`UX-041`/`UX-043`）、clean OS受入、署名、外部公開は**対象外・未実施**である。
+
+---
+
+## 3. 実素材によるsource-only受入の再実行（P2-12 / 2026-09-23）
+
+> [!CAUTION]
+> **結果: 不合格（FAIL）。** ただし停止箇所は §2 とは**異なる**。
+> §2 で停止していた生成前検査（`PreparationNotCheckpointed`）は**通過**し、**標準成果物の生成・付帯成果物の昇格まで到達した**。
+> 今回停止したのは**自動代理評価（QC）**であり、`loudness` と `truePeak` の2規則が `FAIL` になって納品に至らなかった。
+> **`V2-014` は引き続き未完了**であり、`releaseApproved=false` を維持する。人手評価・ASR精度・知覚品質は**実施しておらず `PASS` としない**。
+
+### 3.1 実行方法と識別子
+
+| 項目 | 値 |
+|---|---|
+| シナリオ | `tests/HubRadio.App.Tests/SourceOnlyApprovedMediaPipelineTests.cs`（`P2-10` の診断を含む。productionコード変更なし） |
+| 実行メソッド | `ApprovedMediaSourceOnlyPipeline_GeneratesTheStandardSet_AndRecordsTheAcceptanceMeasurements` |
+| 実行root（保全） | `artifacts/validation/approved-media-3d95736adfa048f5a45a6de1fe4209b5` |
+| 実行ID | `9ccb99ac-6ad3-4557-8093-2e5feb0a00cc` |
+| 案件ID / 子版ID | `64c69755-40f2-47ff-858f-cdd69d21d667` / `d7dbcbaf-dfaf-516c-aae0-8b149f74970b` |
+| 素材 | §1.2 と同一（SHA-256 `07904c1d…` / 9,971,886 bytes）。実行rootへ複製し digest照合済み |
+| 直前の変更 | `LongFormProvenanceSnapshot` の `SourceSpans` を保存時と同じ正規順で保持する修正（`P2-11`）のみ |
+
+### 3.2 §2 の停止箇所の解消（`P2-11` の効果の実測）
+
+保全された `checkpoint-diagnosis.txt` の内容は次のとおりで、**`ValidateCheckpoint` の7条件すべてが一致**した（§2.4.1 では `cond2.plan` のみ不一致だった）。
+
+| 条件 | §2.4.1（修正前） | 本節（修正後） |
+|---|---|---|
+| cond1 `Child` canonical JSON | 一致 | 一致 |
+| **cond2 `Plan`** | **不一致** | **一致** |
+| cond3〜cond7 | 一致 | 一致 |
+
+`source_only.reconciliation_required` は発生していない。**同一素材・同一手順で不一致が解消したことを実測した。**
+
+### 3.3 時間の実測
+
+| 区間 | 実測（scenario開始からの経過） |
+|---|---|
+| scenario実行開始（準備完了） | 70.216 秒 |
+| 案件受理 | 71.460 秒 |
+| ingest完了（callback.ingest） | 118.841 秒 |
+| 文字起こし完了（callback.transcript、実ASR） | 148.423 秒 |
+| 解析完了（callback.analysis） | 148.645 秒 |
+| 構成完了（callback.composition） | 151.660 秒 |
+| 生成runtime確定（callback.generated） | 152.390 秒 |
+| レンダー待機開始 | 161.676 秒 |
+| 評価待機開始 | 176.634 秒 |
+| 失敗確定（execution.Failed） | 219.721 秒 |
+| scenario終了 | 221.486 秒 |
+| testhost全体 | 3分42秒 |
+
+**時間予算の判定:** 準備1800秒に対し実測70.2秒、実行5400秒に対し実測150.2秒、シナリオ9000秒に対し実測221.5秒。**いずれも予算を超えていない。** ただし本実行は納品段階へ到達していないため、**納品まで含めた所要の上限は依然として未測定**である。§2 の初回試行で観測された準備予算超過は再現しなかった。
+
+### 3.4 標準成果物（§18の1〜6）の生成有無
+
+| 成果物 | 件数 | 根拠・理由 |
+|---|---:|---|
+| 社内向け16:9長尺版 | **1** | `98b8793e-9ca0-41d3-97cf-53a7e2f8d558.mp4` / 51,785,587 bytes。role `LandscapeClean` |
+| 9:16短尺候補（最大3） | **0** | omission `ShortForm` / `NoGroundedCandidate`。**空・重複した動画は1件も作られていない** |
+| 字幕焼込版 | **0** | omission `landscape-burn-in/srt/vtt` / `NoDisplayCues`（3.6参照） |
+| 字幕なし版 | **1** | 上記長尺版が字幕なし版に相当する |
+| 字幕file（SRT/VTT） | **0** | 同上（表示cueが0件のため） |
+| 文字起こし（`transcript.json`） | **1** | `deliveries/ancillary/d7dbcbaf…/c8d588fc…/transcript.json` |
+| サムネイル候補3枚 | **6** | 16:9×3・9:16×3（role `LandscapeThumbnail` / `VerticalThumbnail` 各3件） |
+| 使用区間一覧（`used-source-ranges.json`） | **1** | `deliveries/ancillary/d7dbcbaf…/c8d588fc…/used-source-ranges.json` |
+| 自動代理評価記録 | **7** | 成果物7件それぞれに独立した評価run |
+
+`GenerationDisposition = Completed`。**アップスケールは実施された。** 承認済みffprobe（§1.1、SHA-256 `4c2f7309…`）で長尺版を再測定した結果は `width=1920` / `height=1080` / `codec_name=h264` / `r_frame_rate=24000/1001` / `duration=60.060000`。素材の 1280×720（§1.3）から **1920×1080 へ拡大され、frame rateは 23.976 fps のまま保持**された。画質の良否は測定しておらず `PASS` としない。
+
+### 3.5 §18 の記録6項目
+
+| # | §18の記録項目 | 状態と実測値 |
+|---|---|---|
+| ① | 入力digest、設定profile版、tool/model版 | **取得済み。** 入力SHA-256 `07904c1d…`、設定snapshot digest `5e306d24…`、文字起こしdigest `69cb3fd5…`、source PTS index digest `011a198b…`。model run 3件＝`explicit-editorial-phrase-dictionary`(`fr005-2026-08-31.v1`/`HubRadio.Deterministic`)、`silencedetect`(`stage0-2026-08-27.ffmpeg-silencedetect.v1`/`FFmpeg`)、`hubradio_worker.repetition`(`fr005-2026-08-31.repetition.v1`/`CPython`)。出典 `automatic-decisions.json` |
+| ② | 自動候補、自動適用区間、未採用候補、warning | **取得済み。** `selectedCandidateIds` **0件**、`skipped` **0件**（自動適用した区間は無い）。warningは `PlatformUiUnmeasured` / `ThumbnailQualityNotEvaluated` / `LibraryAbsent`（music） / `NoEligibleNonDialogueCues`（music）。出典 `automatic-decisions.json`、`generation-evidence.json` |
+| ③ | 字幕の読速、行長、行数、同期、safe zone判定 | **部分取得。表示cueが0件のため合否判定は成立しない。** 未解決warningとして `subtitles.readingSpeedMaximum`（`source-reading-speed-exceeded`）2件、`subtitles.cueGapMinimum`（`no-feasible-partition-with-source-gaps`）2件、`subtitles.cueMinimumDuration`（`source-duration-below-minimum`）1件を実測。safe zoneは `subtitles.platformUiMaskStatus` = `platform-ui-mask-not-measured` で**未測定**。出典 `subtitle-warnings.json` |
+| ④ | codec、decode、duration、A/V同期、loudness、True Peak判定 | **取得済み。** `decodedSuccessfully=true`、`videoTimingContinuous=true`、`videoFrameCadenceExact=true`、video frame数 1,440、出力duration 3003/50（=60.06秒）、A/V開始offset 0・終了offset 0（**A/V同期は実測で0ずれ**）。**loudness `-14.27` LUFS（判定 `FAIL`）**、**True Peak `-0.97` dBTP（判定 `FAIL`）**。出典 `evaluation-receipt.json` |
+| ⑤ | 各出力要素の`OriginRef`と使用素材digest | **取得済み。** `used-source-ranges.json` の `origins` は `sourceSpan` 3件、entryの `sourceSpan.sourceDigest` は `07904c1d…`（§1.2と一致）、`assetId` `db038af2-…`、`streamId` `audio:1` |
+| ⑥ | 自動代理評価の`PASS`/`WARNING`/`FAIL`/`NOT EVALUATED` | **取得済み。** `LandscapeClean`: pass 6 / **fail 2** / warning 0 / notEvaluated 19。thumbnail 6件: 各 pass 3 / fail 0 / warning 0 / notEvaluated 24 |
+| — | 人手確認（任意記録） | **未実施** |
+
+### 3.6 停止の同定 — loudness / True Peak
+
+| 項目 | 観測 |
+|---|---|
+| 実行phase | `Failed` |
+| failure code | `source_only.output_evaluation_failed` |
+| 直接の原因 | `LandscapeClean` の自動代理評価に `FAIL` が2件あり `HasBlockingFailures` が成立した |
+| 規則1 | `loudness` → `source_only.loudness_outside_frozen_tolerance` |
+| 規則2 | `truePeak` → `source_only.true_peak_above_frozen_limit` |
+| 納品 | 成果物7件すべて `delivered=false`。納品受領証は作成されていない |
+
+**フィルター側の実測値（`generation-evidence.json` の `Loudness`、AAC符号化前の `render-filter` 段階）**
+
+| 項目 | 実測 |
+|---|---|
+| 目標 | `I=-16` LUFS / `TP=-1` dBTP / `LRA=11` |
+| 入力（素材そのもの） | `I=-16.71` LUFS / `TP=-1.88` dBTP / `LRA=9.2` |
+| 出力（正規化後） | `I=-14.21` LUFS / `LRA=6.6` |
+| 正規化種別 | `dynamic`（単一passの `loudnorm`） |
+| QCの最終ファイル再測定 | `I=-14.27` LUFS / `TP=-0.97` dBTP |
+
+**事実として確定できること:** 入力素材は要求の許容範囲（[要求定義書 FR-020](../../docs/requirement-definition.md)：-16 LKFS ±1 dB、True Peak -1 dBFS以下）に**既に収まっていた**（-16.71 は ±1 の範囲内、-1.88 は -1 以下）。正規化後の出力は **-14.21/-14.27 LUFS**、**-0.97 dBTP** となり、**いずれも許容範囲外**になった。適用されたのは単一passの `loudnorm`（`linear=false`、[FfmpegCompiler.cs:1120-1123](../../src/HubRadio.Infrastructure/Rendering/FfmpegCompiler.cs)）であり、目標値は [StandardRenderConfiguration.cs:108](../../src/HubRadio.App/Rendering/StandardRenderConfiguration.cs) が `audio.internalOnlineTargetLoudness` / `audio.truePeakMaximum` から束縛している。
+
+**本節で断定しないこと:** 単一passの `loudnorm` が常にこの乖離を生むとは断定しない。本件は**この素材・この設定での1回の実測**である。修正方針（2-pass化、既に範囲内の素材への非適用など）は**未決定**であり、本タスクでは実装していない。**QCの許容値を緩めて通すことは症状隠しであり行わない。**
+
+### 3.7 付帯成果物の昇格位置（`P2-21` の実測根拠）
+
+納品段階が `source_only.output_evaluation_failed` で失敗したにもかかわらず、`transcript.json` と `used-source-ranges.json` は**両方とも** `projects/<projectId>/deliveries/ancillary/<versionId>/<exportId>/` 配下に存在した。すなわち**付帯成果物は納品トランザクションの成立前に `ArtifactKind.Delivery` として昇格されている**。詳細な判定は [v2-013 レビュー追補](../../docs/dev/reviews/v2-013-ancillary-artifacts-adversarial-review.md)に記録する。
+
+### 3.8 本節で主張しないこと
+
+- **`V2-014` は合格していない。** 納品・再読込まで到達していない。
+- ASR精度、知覚品質、人手評価は**実施しておらず `PASS` としない**。実ASRの発話数は**2件**であったが、これは精度の測定ではない。
+- アップスケール結果は§3.4で測定した。納品まで含めた所要上限は**未測定**である。
+- 実利用者profile・本番DB・`Music/` は変更していない（実行rootのみを使用）。
+- native GUI受入（`UX-041`/`UX-043`）、clean OS受入、署名、外部公開は**対象外・未実施**である。
+- §2 の不合格記録は履歴として保全しており、1文字も改変していない。

@@ -8,7 +8,7 @@
   <Identity
     Name="HubRadio.MovieCreator.Development"
     Publisher="CN=HubRadio MovieCreator Development"
-    Version="0.1.2.0"
+    Version="0.1.3.0"
     ProcessorArchitecture="x64" />
 
   <Properties>

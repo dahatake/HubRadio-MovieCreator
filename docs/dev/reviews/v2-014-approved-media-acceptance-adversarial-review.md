@@ -100,3 +100,100 @@
 `T-30`〜`T-32d` の成果物（opt-in受入harnessと4件の記録）は7観点でPASSとする。
 **ただし `V2-014` そのものは不合格・未完了である。** 実素材で標準成果物が生成されない既知の欠陥が残っており、
 `G-Q` ゲートは通過していない。`releaseApproved=false` を維持する。
+
+---
+
+## 6. 追補（`P2-15` / 2026-09-23）— 群A（`P2-11`〜`P2-14`）の敵対的レビュー
+
+> 本節は追補である。§1〜§5 の**不合格記録・指摘・判定を1文字も変更していない**。
+
+### 6.1 レビュー対象
+
+| 対象 | 内容 |
+|---|---|
+| production変更 | `LongFormProvenanceSnapshot` のコンストラクタで `SourceSpans` を保存時と同じ正規順に整列（[LongFormComposer.cs](../../../src/HubRadio.App/Compositions/LongFormComposer.cs)）。`src/` の差分は**この1ファイル・16行追加/1行削除のみ** |
+| 試験追加 | `StandardCompositionOrchestratorTests.RestoredPlanMatchesTheCheckpointedPlanWhenProvenanceArrivesUnordered`（既存ファイルへの1ケース追加） |
+| 記録 | [initial-pilot.md §3](../../../benchmarks/results/initial-pilot.md)、[implementation-plan.md `V2-014` 行](../planning/implementation-plan.md)、README、本書 |
+
+### 6.2 7観点の判定
+
+| # | 観点 | 判定 | 根拠 |
+|---|---|---|---|
+| ① | correctness | **合格** | §6.3 |
+| ② | failure / 復旧 | **条件付き合格**（指摘10・Low を残す） | §6.4 |
+| ③ | security / privacy | **合格** | §6.5 |
+| ④ | citation / scope | **合格** | §6.6 |
+| ⑤ | 過大主張 | **合格** | §6.7 |
+| ⑥ | 不要な抽象 | **合格** | §6.8 |
+| ⑦ | 要求trace | **条件付き合格**（`V2-014` は未達のまま） | §6.9 |
+
+### 6.3 ① correctness — 修正が「症状隠し」でないことの独立確認
+
+**指摘8（Critical・反映済み）: 比較条件の緩和で通してはならない。**
+
+独立に確認した事実は次の3点である。
+
+1. **比較側を一切変更していない。** `git diff --stat -- src/` の結果は `LongFormComposer.cs` の1ファイルのみであり、比較を行う [StandardArtifactGenerator.cs](../../../src/HubRadio.App/Rendering/StandardArtifactGenerator.cs) の `ValidateCheckpoint`（7条件）と [StandardRenderGraphFactory.cs](../../../src/HubRadio.App/Rendering/StandardRenderGraphFactory.cs) の `Digest<T>` は**1行も変わっていない**。順序依存の比較はそのまま残っている。
+2. **原因側を保存形式に合わせた。** 不一致は「同じ集合が2つの異なる順序で存在すること」であった。保存側 [StandardCompositionEvidenceCodec.cs の `ProvenanceDto.From`](../../../src/HubRadio.App/Compositions/StandardCompositionEvidenceCodec.cs) は以前から `(AssetId, StreamId, Range.Start, Range.End, Id)` で正規化して保存していた。**保存される形は今回の変更でも一切変わらない**（実行中の並びが保存時の並びへ一致しただけ）。よって既存の保存済みcanonical JSONとの後方互換は保たれる。
+3. **回帰試験が修正前に失敗することを実測した。** 修正を一時的に戻して再ビルドし、新規試験は `expected: e92107d5…` / `actual: 7d24af9f…` の**plan digest不一致で失敗**した。修正を戻すと成功する。**この試験は症状ではなく原因を捕捉している。**
+
+**指摘9（Medium・反映済み）: 正規順の定義が2箇所に存在する。** コンストラクタと codec の双方が同じ並び替えを持つため、片方だけが変更されると不一致が再発し得る。**反映:** 新規回帰試験は「実行中のplan」と「復元後のplan」の全体digestを比較するため、**両者の定義が乖離した瞬間に失敗する**。定義の一本化（codec 側の `OrderBy` 削除）は行っていない。理由は、production差分を最小に保つためであり、乖離は上記試験で検出できるからである。
+
+**なぜその順序が正本か（要求・不変条件による説明）。** 保存された証跡（`CompositionEvidenceEnvelope` のcanonical JSON）が唯一の監査対象であり、その並びは以前から codec の正規順である。実行中の並び（文字起こし由来span→全体包絡spanを末尾に追加、[SourceOnlyPipeline.cs:2473](../../../src/HubRadio.App/Projects/SourceOnlyPipeline.cs)）は収集順にすぎず、**要求にも文書にも意味づけがない**。FR-032（追跡性）は各要素の `OriginRef` と区間値で担保されており、**配列順序に依存しない**。よって保存側の順序を正本とするのが整合的である。
+
+**順序非依存性の確認。** `LongFormProvenanceSnapshot.SourceSpans` の全利用箇所を読み、辞書化・`Any`・集合化・再整列のいずれかであって列の並びに依存しないことを確認した（`LongFormComposer.ValidateProvenance`、`StandardCompositionPlan.ValidateLongFormContext` / `ValidateOutputBindings`、`StandardCompositionPlanner.ValidateSourceEvidence`（独自に再整列する）、`SourceOnlyApplicationRuntime`、`SourceOnlyPipeline`）。`PlanDigest` は long-form 側が `span.Id` で整列してから算出するため（[LongFormComposer.cs `ProvenanceProjection`](../../../src/HubRadio.App/Compositions/LongFormComposer.cs)）**順序非依存であり、既存の保存済みdigestは引き続き一致する**。これは §2.4 O-5（`planDigest` が一致していた事実）とも整合する。
+
+### 6.4 ② failure / 復旧
+
+**指摘10（Low・未修正）: `sourceSpans` に `null` 要素があると、コンストラクタで `NullReferenceException` になる。** 従来は後段の `LongFormComposer.ValidateProvenance` が `ContextMismatch` を返していた。
+
+- **未修正とした理由:** 同じ形の `null` は以前から codec の `ProvenanceDto.From` で同様に `NullReferenceException` になる。すなわち**新しい失敗の種類を増やしていない**。`null` を弾く検査を追加すると、既存の `ContextMismatch` 経路との重複や例外種別の変更を招き、要求にない予防的エラーハンドリングになる。
+- **未修正であることを隠していない。** 該当経路を対象にした試験は存在しない（**未確認**）。
+
+**復旧経路は変更していない。** `PreparationNotCheckpointed` / `source_only.reconciliation_required` のゲート自体は残っており、順序以外の不一致は従来どおり検出される。
+
+### 6.5 ③ security / privacy
+
+- 追加した試験・記録に素材本文・文字起こし本文・利用者SID・利用者profile pathは含まれない。記録したのは digest、GUID、件数、時間、リポジトリ相対pathのみである。
+- 実行は隔離rootのみを使用し、実利用者profile・既定アプリケーションディレクトリ・本番DBを変更していない（[initial-pilot.md §3.8](../../../benchmarks/results/initial-pilot.md)）。
+- 権限・承認・公開範囲に関する判定は変更していない。
+
+### 6.6 ④ citation / scope
+
+- §3 の各数値は保全された実行root `approved-media-3d95736adfa048f5a45a6de1fe4209b5` 内の成果物（`checkpoint-diagnosis.txt`、`evaluation-receipt.json`、`generation-evidence.json`、`automatic-decisions.json`、`subtitle-warnings.json`、`used-source-ranges.json`）と、承認済みffprobeによる再測定に基づく。
+- 出力解像度は**推測せず**、承認済みffprobe（SHA-256 `4c2f7309…`）で実測した。
+- 変更ファイルは §6.1 の範囲に限られる。新規 NuGet / npm / pip 依存、新規設定キー、`DefaultSettingsProfile` 版の変更はいずれも**無い**。
+
+### 6.7 ⑤ 過大主張
+
+- **`V2-014` を合格と書いていない。** §3 の見出しは「不合格（FAIL）」であり、停止箇所が変わったことだけを記録している。
+- ASR精度・知覚品質・人手評価・clean OS・署名を `PASS` と書いていない。実ASRの発話数2件は**精度の測定ではない**と明記した。
+- 「V2完了」「製品完成」「一般提供可」とは書いていない。`releaseApproved=false` を維持している。
+- **新たに判明した不具合を隠していない。** `loudness` / `truePeak` の `FAIL` は §3.6 に実測値付きで記録し、**QCの許容値を緩める対処は行わない**と明記した。
+
+### 6.8 ⑥ 不要な抽象
+
+新規のクラス・interface・Strategy/Factory・設定キー・failure code・依存関係はいずれも**追加していない**。production変更は既存コンストラクタ内の1式である。試験は既存ファイルへの1ケース追加である。
+
+### 6.9 ⑦ 要求trace
+
+| 要求 | 状態 |
+|---|---|
+| §18（初期検証シナリオ） | 記録6項目のうち①②④⑤⑥を実測取得。③は表示cueが0件のため**判定不成立**。**シナリオ全体は未達**（納品未到達） |
+| FR-031（出力） | quick start標準成果物のうち長尺・字幕なし版・文字起こし・サムネイル・使用区間一覧が生成された。短尺と字幕は**不成立理由付きで0件**。空の偽物は作られていない |
+| FR-032（追跡性） | `used-source-ranges.json` の `origins`／`sourceDigest` が素材digestと一致。順序変更は追跡性を損なわない（§6.3） |
+| FR-020（音声補正） | **未達。** 出力の loudness / True Peak が -16 LKFS ±1・-1 dBFS以下を満たさない |
+| AC-001〜AC-006 | **いずれも未達のまま。** 納品・再読込へ到達していないため、受入チェックリストは1項目も更新していない |
+
+### 6.10 未解決事項（本追補では解決していない）
+
+1. **`loudness` / `truePeak` の `FAIL`。** 入力素材は許容範囲内であったのに、単一passの `loudnorm` 適用後に範囲外となった（§3.6）。修正方針は**利用者判断**であり未実施。
+2. **指摘10（Low）** の `null` 要素経路。
+3. **納品まで通す統合試験（`P2-20`）** — 本追補の時点で**未実装**。
+4. **Infrastructure の失敗1件**（`MediaImportSecurityTests.NonterminatingTool_IsKilledAtDeadlineWithoutPathDisclosure`）。本変更に起因しないことは、変更を戻した状態で同一に失敗することにより確認済みだが、**原因は未特定**である。
+5. **Web の既定タイムアウトの負荷依存**。負荷のない状態では全件成功するが、負荷下では時間切れがファイル間を移動する。**コードは変更していない**（[品質記録](../quality.md)）。
+6. 人手17項目・`UX-044`・clean OS・署名 — **未実施のまま**。
+
+### 6.11 結論
+
+群Aの production 修正は**原因側の最小修正**であり、比較条件の緩和ではないことを独立に確認した。**ただし `V2-014` は合格していない。** 停止箇所が生成前検査からQCへ移動し、§18の記録項目の多くが初めて実測で取得できた、というのが本追補の到達点である。

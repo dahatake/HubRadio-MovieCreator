@@ -7,6 +7,7 @@ using HubRadio.App.DefaultSettings;
 using HubRadio.App.Media;
 using HubRadio.App.Policy;
 using HubRadio.App.Profiles;
+using HubRadio.App.Rendering;
 using HubRadio.Core.Analysis;
 using HubRadio.Core.Compositions;
 using HubRadio.Core.Identity;
@@ -823,6 +824,56 @@ public sealed class StandardCompositionOrchestratorTests
             StandardCompositionOrchestrator.Apply(service, staleBase));
         Assert.AreEqual(2L, database.CountCompositionVersions());
         Assert.AreEqual(1, store.GetWorkingCopy(fixture.Project.Id)!.Revision);
+    }
+
+    [TestMethod]
+    public void RestoredPlanMatchesTheCheckpointedPlanWhenProvenanceArrivesUnordered()
+    {
+        Fixture fixture = new();
+        using TemporaryDatabase database = new();
+        ProjectStore store = fixture.CreateStored(database.DatabasePath);
+        var service = new VersionService(store);
+        LongFormCompositionRequest baseline = fixture.LongFormRequest;
+        SourceSpan enclosing = baseline.Provenance.SourceSpans.Single();
+        var transcribed = new SourceSpan(
+            Id<SourceSpanIdTag>("45000000-0000-0000-0000-000000000002"),
+            enclosing.AssetId,
+            enclosing.StreamId,
+            Range(10, 20),
+            enclosing.SourceDigest,
+            enclosing.TranscriptRevisionId,
+            [enclosing.TranscriptTokenIds[0]]);
+
+        // The pipeline collects transcript spans first and appends the
+        // whole-source span, which is not the order the evidence is stored in.
+        var provenance = new LongFormProvenanceSnapshot(
+            baseline.Provenance.ProjectId,
+            baseline.Provenance.TranscriptRevisionId,
+            baseline.Provenance.TranscriptRevisionDigest,
+            [transcribed, enclosing],
+            baseline.Provenance.TrustedEditorialRecordIds);
+        StandardCompositionOrchestrationRequest request = fixture.Request(
+            longFormRequest: ReplaceLongFormRequest(baseline, provenance));
+        StandardCompositionPreparation expected =
+            StandardCompositionOrchestrator.Prepare(request);
+        _ = StandardCompositionOrchestrator.Apply(service, request);
+
+        StandardCompositionPreparation restored = new VersionService(
+            new ProjectStore(database.DatabasePath)).GetStandardComposition(
+                expected.Child.Id)!;
+
+        // StandardArtifactGenerator.ValidateCheckpoint compares the whole plan
+        // object, which is order sensitive, not only the order-free plan digest.
+        Assert.AreEqual(
+            StandardRenderGraphFactory.Digest(expected.Plan),
+            StandardRenderGraphFactory.Digest(restored.Plan));
+        CollectionAssert.AreEqual(
+            expected.Plan.LongForm.Provenance.SourceSpans
+                .Select(static span => span.Id)
+                .ToArray(),
+            restored.Plan.LongForm.Provenance.SourceSpans
+                .Select(static span => span.Id)
+                .ToArray());
     }
 
     [TestMethod]
