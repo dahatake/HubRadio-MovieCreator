@@ -107,7 +107,7 @@ SQLite業務store、永続job、worker protocol、編集操作、review/approval
 | `V2-011` | 単一利用者state、export policy、旧review data compatibility。**state・出力許可/非同期消費・store/schema 010と実delivery／再読込を接続済み。今回52単位に関する限定実統合・全回帰は完了。V2全体の受入は別判定**（§0.8.2） | V2-010,S-001/S-002/S-004/S-008/S-011/S-016 | approvalなし社内出力、closed failure block、旧event読取、scope自動拡大なし | FR-029,NFR-004,AC-004 |
 | `V2-012` | 進捗・成果物・評価結果・任意self-review UI。**過去版の一覧（`pipeline.versions`）と、過去版を新しい子版として作り直す復元（`pipeline.restore`）を2026-09-22に実装。現在版・過去版・旧成果物を削除も上書きもしない。検証は自動試験のみで、pipeline E2Eとnative GUI受入は未実施。**[敵対的レビュー](../reviews/v2-012-version-restore-adversarial-review.md)は重大指摘12件を反映後に再試験成功。V2全体の受入は別判定（§0.8.2） | V2-005,V2-006,V2-010,V2-011,U-006/U-012/U-013 | warningから時刻/設定/根拠へ移動、任意修正・再評価、human/proxy表示分離 | §14.2/14.5,FR-026/029/034 |
 | `V2-013` | 実render、delivery、付帯成果物の統合。**付帯成果物の2種（文字起こし `transcript.json`／使用区間一覧 `used-source-ranges.json`）を2026-09-22に接続済み。根拠のない章題・投稿文案・編集指示書・レビュー記録は生成しない。検証は自動試験のみで、実素材pipelineによる観測は未実施。**[敵対的レビュー](../reviews/v2-013-ancillary-artifacts-adversarial-review.md)は重大指摘9件を反映後に再試験成功。V2全体の受入は別判定（§0.8.2） | V2-008〜V2-012,R-019〜R-024,R-026 | profileどおりの全編decode/A-V/subtitle/audio/provenance QC、atomic昇格。付帯metadataは元動画・設定値の根拠必須、根拠なし項目は未生成 | FR-020/025/031/032,NFR-003/008 |
-| `V2-014` | 許可済みsampleを使うsource-only受入、全回帰、package再検証。**未実施。** 2026-09-22時点で実施したのは承認済みffprobeによる素材特性の測定のみ（[benchmarks/results/initial-pilot.md](../../../benchmarks/results/initial-pilot.md)）。既存の実E2Eは4秒合成媒体専用で外部素材パスを受け付けず、外部素材用のopt-inシナリオは未作成。§18の記録6項目は**いずれも未取得**で、`tests/Acceptance` のチェックリストは**一切変更していない** | V2-013,PK-006/PK-007,Q-001/Q-002/Q-004〜Q-013 | Git管理外assetが実在する元worktreeまたは明示設定pathで実行。標準成果物、不成立理由、設定snapshot、自動代理評価、供給網証拠を実測。未実施human/外部/legalをPASSにしない | §18,AC-001〜AC-006 |
+| `V2-014` | 許可済みsampleを使うsource-only受入、全回帰、package再検証。**実施済み・不合格（2026-09-22）。** 承認済み受入素材を受け取るopt-in E2E（[SourceOnlyApprovedMediaPipelineTests](../../../tests/HubRadio.App.Tests/SourceOnlyApprovedMediaPipelineTests.cs)、productionコード変更なし）を追加し実行した。実ingest・実ASR・実構成までは到達したが、**生成段階の事前検査 `StandardArtifactGenerator.ValidateCheckpoint` が `PreparationNotCheckpointed` で停止し、標準成果物は1件も生成されなかった**（`source_only.reconciliation_required`、3回再現）。同一コード・同一機で既存の合成4秒媒体E2Eは**成功**するため実素材固有である。**追試で不一致箇所を同定済み:** 7条件のうち不一致は `Plan` のみで、差分は `LongForm.Provenance.SourceSpans` の**順序のみ**（集合は同一）。順序依存のdigest比較がこれを不一致と判定する。合成媒体は無音でspanが1件のため順序差が生じ得ず成功する。**どちらの順序が正本かは未確定で、修正は未実施。**§18の記録6項目のうち取得できたのは①と②の一部のみで、③〜⑥は**未取得**。`tests/Acceptance` のチェックリストは**実測で成立した項目が無いため一切変更していない**（`Q000Complete`/`Q001Complete` は `false`、人手項目は `PENDING` のまま）。証拠は[benchmarks/results/initial-pilot.md §2](../../../benchmarks/results/initial-pilot.md)、レビューは[敵対的レビュー](../reviews/v2-014-approved-media-acceptance-adversarial-review.md)。**未完了** | V2-013,Q-001/Q-002/Q-004〜Q-013（`PK-006`/`PK-007` は利用者決定D-3および要求§16 Won'tにより**依存から除外**。MSIX作成・署名・配布は本受入の前提としない） | Git管理外assetが実在する元worktreeまたは明示設定pathで実行。標準成果物、不成立理由、設定snapshot、自動代理評価、供給網証拠を実測。未実施human/外部/legalをPASSにしない | §18,AC-001〜AC-006 |
 
 表中の旧task IDは、既存成果物・証拠を入力として再利用する範囲を示す。`変更`に分類した旧taskは未記載の前提taskではなく、次のV2 taskが変更契約と再受入を引き取る。V2 task完了時に対応する旧taskの状態も`要求版0.2で再受入済み`または未完了へ同期する。
 
@@ -730,6 +730,27 @@ PK-006は、公式templateに沿うx64 Windows Application Packaging Projectと`
 ### 5.14 Q — 受入、回帰、リリース判定
 
 `Q-001`は決定的な合成自動契約と専用runnerを実装済みである。候補の明示decision、speaker/topic、長尺planからCompositionへの写像、修正字幕のWebVTT/RenderGraph結合、trace、合成QC/approval/delivery、broken provenance・stale approval・権利未確認の負例を検証する。証拠は実素材、実ASR、S-011 authorization、実FFmpeg/final render、実媒体QC、thumbnail、人手承認を明示的に未実行とし、8項目を`PENDING`、`q001Complete=false`としているため、`Q-001`と`G1-MUST`は未完了のままである。
+
+**追補（2026-09-22、`V2-014` 実施による）。** 既存の記述は変更していない。承認済み受入素材による実素材受入を実施した結果は[benchmarks/results/initial-pilot.md §2](../../../benchmarks/results/initial-pilot.md)のとおり**不合格**で、標準成果物は生成されなかった。したがって `Q-000`/`Q-001` の`PENDING`項目・`q000Complete`・`q001Complete` は**1項目も更新していない**。§18を対象とする `Q-011` も**未着手のまま**である。`Q-001`〜`Q-013` の現在の分類は次のとおり（`実装済み`は当該taskの自動契約が成立していることを指し、受入全体の合格を意味しない）。
+
+| ID | 分類 | 証拠 |
+|---|---|---|
+| `Q-000` | 条件付き（自動契約のみ） | [Must_VerticalManual.cs](../../../tests/Acceptance/Must_VerticalManual.cs)。人手7項目`PENDING`、`Q000Complete=false` |
+| `Q-001` | 条件付き（自動契約のみ） | [AC001_LongForm.cs](../../../tests/Acceptance/AC001_LongForm.cs)。人手8項目`PENDING`、`Q001Complete=false` |
+| `Q-002` | 未着手 | 本書§5.14の当該行。対象ファイル未作成 |
+| `Q-003` | 対象外 | quiz版は要求版0.2のsource-only社内限定sliceの範囲外 |
+| `Q-004` | 未着手 | 対象ファイル未作成 |
+| `Q-005` | 条件付き（自動契約のみ） | [AC005_Traceability.cs](../../../tests/Acceptance/AC005_Traceability.cs) |
+| `Q-006` | 未着手 | `benchmarks/results/stage-1-performance.md` 未作成。性能は**未測定** |
+| `Q-007` | 実装済み | 本書§5.14の当該行の「**完了。**」、`tests/Reliability/` |
+| `Q-008` | 未着手 | `docs/dev/security/test-report.md` 未作成 |
+| `Q-009` | 条件付き | [accessibility/test-report.md](../accessibility/test-report.md)。人手項目は`PENDING` |
+| `Q-010` | 未着手 | release候補のSBOM/CVE検査は未実施 |
+| `Q-011` | **未着手（今回の不合格により前進していない）** | [initial-pilot.md §2](../../../benchmarks/results/initial-pilot.md)。§18の4種類・計6本は**0本** |
+| `Q-012` | 未着手 | `docs/dev/release/readiness-review.md` 未作成。`G-RELEASE`未承認 |
+| `Q-013` | 条件付き | FR-031の成果物種別のうち文字起こし・使用区間一覧は`V2-013`で接続済み。章題・投稿文・編集指示・reviewは**根拠がある場合のみ生成**する方針であり、専用matrix試験は未作成 |
+
+人手・外部公開・legalを要する項目（`Q-008`〜`Q-012` および `Q-000`/`Q-001`/`Q-009` の人手部分）は、今回いずれも**実施しておらず`PASS`にしていない**。`releaseApproved=false` を維持する。
 
 | ID | 目的 / 入力 | 出力・対象ファイル | 依存 / 実行 | 完了条件・試験 | 要求・根拠 | Azure |
 |---|---|---|---|---|---|---|

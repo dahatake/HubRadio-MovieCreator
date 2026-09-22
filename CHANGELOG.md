@@ -4,10 +4,11 @@
 
 ## [Unreleased]
 
-社内限定のsource-only経路に、標準成果物setとして**文字起こしと使用区間一覧**を追加し、**過去版の一覧と復元**（選んだ過去版を新しい子版として作り直す操作）を実装しました。どちらも既存の動画・字幕・サムネイルの生成と納品、および旧版・旧成果物の保全を変更しません。検証は自動試験の範囲であり、実素材によるpipeline E2E、実GUI操作、人手評価は実施していません。
+社内限定のsource-only経路に、標準成果物setとして**文字起こしと使用区間一覧**を追加し、**過去版の一覧と復元**（選んだ過去版を新しい子版として作り直す操作）を実装しました。どちらも既存の動画・字幕・サムネイルの生成と納品、および旧版・旧成果物の保全を変更しません。あわせて承認済み受入素材による受入を実施しましたが、**実素材では標準成果物が生成されず不合格**でした。実GUI操作と人手評価は実施していません。
 
 ### Added
 
+- 承認済み受入素材を外部パスで受け取るopt-inのsource-only受入シナリオ（`SourceOnlyApprovedMediaPipelineTests`）。環境変数未設定時は実行されず、通常の全回帰には影響しません。productionコードは変更していません。
 - 標準成果物setへ文字起こし（`transcript.json`）と使用区間一覧（`used-source-ranges.json`）を追加。社内限定のローカル納品領域へ原子的に昇格し、結果・受領証跡・仕上がり／保存タブへ反映。
 - 付帯成果物を書けなかった場合に、空のファイルを作らず、どの成果物が不成立かを種別ごとに記録する表現（`SourceOnlyResultOmissionRole.Transcript` / `UsedSourceRanges` と `SourceOnlyResultOmissionReason.AncillaryExportFailed`）。
 - 過去版の読取RPC `pipeline.versions`（読取のみ。版ID・digest・親版・実行ID・phase・結果の有無・現在版か否かのみを返す）。
@@ -50,8 +51,10 @@
 
 ### Notes
 
+- **承認済み受入素材によるsource-only受入（`V2-014`）を2026-09-22に実施し、不合格でした。** 実ingest・実ASR・実構成までは到達しましたが、生成段階の事前検査で停止し（`source_only.reconciliation_required`）、**標準成果物は1件も生成されていません**。同一環境で既存の合成4秒媒体のE2Eは成功するため、実素材固有の欠陥です。**原因は同定済みです**: 実行中の構成計画と保存済み構成計画で、使用区間の一覧が**同じ内容のまま並び順だけ異なり**、並び順に依存する照合が不一致と判定していました。合成媒体は文字起こしが空で区間が1件しかないため並び順の差が生じません。**どちらの並びを正本とするかは仕様判断を伴うため、修正は未実施です。** 詳細は[受入記録](benchmarks/results/initial-pilot.md)と[敵対的レビュー](docs/dev/reviews/v2-014-approved-media-acceptance-adversarial-review.md)を参照してください。
+- 上記の受入で§18の記録6項目のうち取得できたのは入力digest・設定profile版・tool/model版と自動候補の一部のみです。字幕判定、codec・同期・loudness・True Peak判定、`OriginRef`、自動代理評価は**未取得**です。受入チェックリストは実測で成立した項目が無いため**変更していません**。
 - 文字起こしは`transcript.json`（構造化JSON）のみを提供します。議事録としてそのまま読める整形済みテキストは提供しません。
-- 付帯成果物と過去版復元の検証は**自動試験のみ**です。承認済み受入素材によるpipeline E2E（`V2-014`）は**未実施**で、ASR精度・知覚品質・実GUI操作は測定していません。
+- 付帯成果物と過去版復元の検証は**自動試験のみ**です。承認済み受入素材によるpipeline E2E（`V2-014`）は**実施しましたが合格していません**。ASR精度・知覚品質・実GUI操作は測定していません。
 - UX-041／UX-043は利用者指定の対象外。未実施の実GUI・人手・実素材品質・clean OS・署名・一般配布は承認済みとはしません。
-- Worker `0.1.0`、Web `0.0.0`、vendor pin、`releaseApproved=false`を維持。PATCH更新はMSIX作成・インストール・一般提供の実施を意味しません。
+- Worker `0.1.0`、Web `0.0.0`、vendor pin、`releaseApproved=false`を維持。PATCH更新はMSIX作成・インストール・一般提供の実施を意味しません。**`V2-014`の追加変更は試験と記録のみでproductionコードを含まないため、`0.1.2.0`から版を再更新していません。**
 - 検証範囲と原本証跡は[詳細実装計画](docs/dev/planning/implementation-plan.md)と[品質記録](docs/dev/quality.md)を参照してください。

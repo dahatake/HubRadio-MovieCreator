@@ -153,6 +153,39 @@
 - 復元が実際に子版と成果物を生成するpipeline E2E — **未実施**
 - native GUI 上での復元操作 — **未実施**（`UX-041`/`UX-043` は対象外）
 
+## 2026-09-22 `V2-014` 実素材受入の実行結果（不合格）
+
+> この節は、下の「2026-09-22 `V2-014`（実素材受入）の状態」（同日・実行前の記録）を**置き換える**。旧節は履歴として保全する。
+
+**結果: 不合格（FAIL）。実施したが合格していない。** 承認済み受入素材 `sample/Copilot  あなたの毎日の AI コンパニオン.mp4`（SHA-256 `07904c1d…` / 9,971,886 bytes）でsource-only pipelineを実行した。
+
+- 外部素材を受け付けるopt-in E2E [SourceOnlyApprovedMediaPipelineTests](../../tests/HubRadio.App.Tests/SourceOnlyApprovedMediaPipelineTests.cs) を新規追加した。**productionコードは1行も変更していない。** 環境変数未設定時は `Inconclusive` となり、`test.ps1` の全回帰には影響しない。
+- 実ingest（60.09秒素材）・実ASR・実構成までは到達したが、生成段階の事前検査 `StandardArtifactGenerator.ValidateCheckpoint` が `PreparationNotCheckpointed` を投げ、pipelineは `source_only.reconciliation_required` で停止した。**標準成果物は1件も生成されず、納品も評価も行われていない。**
+- 3回の試行で同一箇所・同一codeを再現した。**同一コード・同一機で既存の合成4秒媒体E2E（`RealSourceOnlyPipeline_DeliversTheEntireGeneratedSet_AndReopensWithoutRerunning`）は納品・再読込まで成功する**ため、全般的なregressionでも環境不備でもなく**実素材固有**である。
+- 切り分けの実測: 復元（`VersionService.GetStandardComposition`）は成功し**決定的**（2回復元して全digest一致）、`FormatException`・`InvalidOperationException` は未発生、実行中の `planDigest` と保存済み `Plan.PlanDigest` は一致。
+- **不一致箇所を同定した（追試）。** `CompositionReady` が生成器へ渡すのと同一の preparation をテストへ渡すことを利用し、**productionコードを変更せずに** `ValidateCheckpoint` の7条件を再現した。不一致は **`Plan` のみ**で、差分23件はすべて `LongForm.Provenance.SourceSpans` に集中する。各要素を整列して比較すると**両者は同一集合**であり（`sameSetIgnoringOrder=true`）、**順序だけが異なる**。`Digest<T>` は配列順序に依存するため、これだけで生成が拒否される。合成4秒媒体は machine transcript の utterance が**0件**（保全された実行rootの成果物で実測）でspanが全体包絡の1件のみのため順序差が生じ得ず、同一コードでも成功する。異なる案件で2回再現した。
+- **未確定:** 実行中と復元後のどちらの順序が正本かは決めていない。修正はFR-032の並びの意味づけと保存済みcanonical JSON・digestへの影響評価を伴うため、**本作業では実施していない**。
+- 要求§18の記録6項目は①（入力digest・設定profile版・tool/model版）と②の一部のみ取得。**③字幕判定・④codec/同期/loudness/True Peak・⑤`OriginRef`・⑥自動代理評価は未取得**である。詳細は[benchmarks/results/initial-pilot.md §2](../../benchmarks/results/initial-pilot.md)。
+- `tests/Acceptance/AC001_LongForm.cs` と `tests/Acceptance/Must_VerticalManual.cs` は**一切変更していない**。実測で成立した項目が無いため、`Q000Complete`/`Q001Complete` は `false`、人手15項目は `PENDING` のままである。
+- 時間予算は4秒合成媒体の実績からの**推定**であり、本素材での上限は**検証されていない**（機能failureで停止したため）。準備段階の実測は17.5〜47秒だが、初回のcold実行のみ300秒を超過した。
+- 性能・ASR精度・知覚品質・人手評価・native GUI・clean OS・署名・外部公開は**測定も実施もしておらず、`PASS` としない**。人手17項目 `PENDING`、`UX-044` 未測定、**`releaseApproved=false` を維持**する。
+
+### 同日の全回帰（`V2-014` の変更反映後、本機で実測）
+
+`build.ps1 -Configuration Release` は**0警告・0エラー**、`dotnet format --verify-no-changes` は終了コード0、`git diff --check` は0件。
+
+| runner | 合計 | 成功 | skip | 失敗 |
+|---|---:|---:|---:|---:|
+| Architecture | 209 | 209 | 0 | 0 |
+| Core | 732 | 731 | 1 | 0 |
+| Infrastructure | 1362 | 1327 | 34 | **1** |
+| App | 2428 | 2419 | 9 | 0 |
+| Web | 2075 | 2075 | 0 | 0 |
+| Python worker | 170 | 169 | 1 | 0 |
+
+- 同日の前回記録との差分は App の **+1件（合計2427→2428、skip 8→9）** のみで、増加分は新規opt-in受入テストである。環境変数未設定のため `Inconclusive` となりskipに計上される。**skipを成功へ読み替えていない。**
+- Infrastructure の失敗1件は `RunAsync_HostCrashClosesJobAndKillsRootAndInheritedDescendant` で、host crash時のprocess tree終了を検査する**環境依存（Windows Error Reporting設定）の既知failure**である。同日の前回記録と同一であり、今回の変更（`tests/HubRadio.App.Tests/` のテスト追加のみ）とは別assemblyで因果関係がない。**失敗0とは記録しない。**
+
 ## 2026-09-22 `V2-014`（実素材受入）の状態
 
 **未実施。** 承認済み受入素材 `sample/Copilot  あなたの毎日の AI コンパニオン.mp4` によるpipeline E2Eは実行していない。
