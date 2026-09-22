@@ -522,7 +522,7 @@ try {
     if (
         $layout.schemaVersion -cne '1.0.0' -or
         $layout.packageIdentity -cne 'HubRadio.MovieCreator.Development' -or
-        $layout.packageVersion -cne '0.1.1.0' -or
+        $layout.packageVersion -cne '0.1.2.0' -or
         $layout.architecture -cne 'x64' -or
         $layout.signed -ne $false -or
         $layout.releaseApproved -ne $false -or

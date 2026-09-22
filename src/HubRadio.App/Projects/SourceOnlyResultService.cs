@@ -6,6 +6,7 @@ using HubRadio.Core.Compositions;
 using HubRadio.Core.Evaluation;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Layout;
+using HubRadio.Core.Projects;
 using HubRadio.Core.Rendering;
 using HubRadio.Core.Settings;
 using HubRadio.Core.Time;
@@ -16,6 +17,16 @@ using HubRadio.Infrastructure.Files;
 namespace HubRadio.App.Projects;
 
 public sealed record SourceOnlyResultLoadResult(SourceOnlyResult Result, SourceOnlyResultValidation Validation);
+
+/// <summary>
+/// One past composition version of a project. No file path, storage reference or
+/// artifact content crosses this boundary; restoring is a separate operation.
+/// </summary>
+public sealed record SourceOnlyVersionHistoryEntry(
+    EntityId<CompositionVersionIdTag> VersionId, ContentDigest VersionDigest,
+    EntityId<CompositionVersionIdTag>? ParentVersionId,
+    EntityId<SourceOnlyExecutionIdTag> ExecutionId, SourceOnlyExecutionPhase Phase,
+    bool HasResult, bool IsCurrent);
 
 /// <summary>
 /// Reopens durable results using store-owned IDs only. Validation is a snapshot, NOT
@@ -36,6 +47,46 @@ public sealed class SourceOnlyResultService
         _evaluations = evaluations ?? throw new ArgumentNullException(nameof(evaluations));
         _workflows = workflows ?? throw new ArgumentNullException(nameof(workflows));
         _projects = projects ?? throw new ArgumentNullException(nameof(projects));
+    }
+
+    /// <summary>
+    /// Past composition versions of a project, newest execution first. Reading
+    /// this never mutates a version, a working copy or an artifact. It reads the
+    /// version rows directly instead of reconstructing evidence lineages, which
+    /// a list surface does not need.
+    /// </summary>
+    public IReadOnlyList<SourceOnlyVersionHistoryEntry> ListVersionHistory(
+        EntityId<ProjectIdTag> projectId, SourceOnlyExecutionStore executions, int maximumCount = 100)
+    {
+        ArgumentNullException.ThrowIfNull(projectId);
+        ArgumentNullException.ThrowIfNull(executions);
+        // The head of the working copy is the version a restore is measured
+        // against, not merely the newest execution's version.
+        EntityId<CompositionVersionIdTag>? head = new VersionService(_projects)
+            .GetCurrentState(projectId)?.WorkingCopy.BaseVersionId;
+        var seen = new HashSet<EntityId<CompositionVersionIdTag>>();
+        var entries = new List<SourceOnlyVersionHistoryEntry>();
+        foreach (StoredSourceOnlyExecution execution in executions.ListForProject(projectId, maximumCount))
+        {
+            if (execution.VersionId is not EntityId<CompositionVersionIdTag> versionId ||
+                execution.VersionDigest is not ContentDigest versionDigest || !seen.Add(versionId))
+            {
+                continue;
+            }
+
+            StoredCompositionVersion? version = _projects.GetCompositionVersion(versionId);
+            // A missing or disagreeing row means one of two durable records was
+            // altered. Reporting a shorter list would assert a false history.
+            if (version is null || version.ProjectId != projectId || version.ContentDigest != versionDigest)
+            {
+                throw new SourceOnlyResultException(SourceOnlyResultFailureCode.StoredEvidenceInvalid);
+            }
+
+            entries.Add(new SourceOnlyVersionHistoryEntry(versionId, versionDigest, version.ParentVersionId,
+                execution.Request.ExecutionId, execution.Phase, execution.ResultJson is not null, versionId == head));
+        }
+
+        return entries;
     }
 
     /// <summary>Invalid canonical/binding data is rejected; missing/stale resources are returned as per-artifact issues.</summary>
@@ -133,6 +184,19 @@ public sealed class SourceOnlyResultService
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception e) when (SourceOnlyOutputEvaluation.Recoverable(e))
         { failures.Add(new(SourceOnlyResultFailureCode.StoredEvidenceInvalid)); }
+        foreach (SourceOnlyResultEvidenceReference ancillary in result.AncillaryArtifacts)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                await using ValidatedArtifactReadStream stream = await _artifacts
+                    .OpenValidatedReadAsync(ancillary.Artifact.ArtifactId, ct).ConfigureAwait(false);
+                SourceOnlyResultEvidenceStore.RequireSame(stream, ancillary.Artifact, result.Binding.ProjectId);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception e) when (SourceOnlyOutputEvaluation.Recoverable(e))
+            { failures.Add(new(SourceOnlyResultFailureCode.StoredEvidenceInvalid, ancillary.Artifact.ArtifactId)); }
+        }
         foreach (SourceOnlyResultArtifact artifact in result.Artifacts)
         {
             ct.ThrowIfCancellationRequested();

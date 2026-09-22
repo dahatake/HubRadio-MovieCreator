@@ -215,6 +215,205 @@ public sealed class AncillaryArtifactExporterTests
     }
 
     [TestMethod]
+    public async Task ExportAsync_WritesOnlyTheRequestedGroundedSubsetOfKinds()
+    {
+        using Fixture fixture = new();
+        AncillaryArtifactKind[] requested =
+        [
+            AncillaryArtifactKind.Transcript,
+            AncillaryArtifactKind.UsedSourceRanges,
+        ];
+        IReadOnlyDictionary<AncillaryArtifactKind, EntityId<ArtifactIdTag>> ids =
+            requested.ToDictionary(
+                static kind => kind,
+                static _ => EntityId<ArtifactIdTag>.New());
+
+        AncillaryArtifactExportResult result = await fixture.Exporter.ExportAsync(
+            fixture.CreateRequest(artifactIds: ids, kinds: requested));
+
+        Assert.HasCount(2, result.Artifacts);
+        CollectionAssert.AreEqual(
+            requested,
+            result.Artifacts.Select(static artifact => artifact.Kind).ToArray());
+        Assert.HasCount(2, result.DeliveryArtifactEvidence);
+        Assert.HasCount(2, fixture.Store.ListProjectArtifacts(fixture.Project.Id));
+
+        foreach (string excluded in new[]
+        {
+            "chapters.json",
+            "publishing-text.json",
+            "editing-instructions.json",
+            "review-evidence.json",
+        })
+        {
+            Assert.IsEmpty(
+                Directory.GetFiles(
+                    fixture.WorkspacePath,
+                    excluded,
+                    SearchOption.AllDirectories),
+                "An ungrounded ancillary artifact must never reach the workspace.");
+        }
+
+        Assert.HasCount(
+            2,
+            Directory.GetFiles(
+                fixture.WorkspacePath,
+                "*.json",
+                SearchOption.AllDirectories));
+
+        // The review payload is still the envelope binding for every artifact
+        // even though review evidence itself is not delivered.
+        using JsonDocument transcript = fixture.ReadArtifactDocument(
+            GetOutput(result, AncillaryArtifactKind.Transcript));
+        Assert.AreEqual(
+            result.ReviewEvidenceDigest.Hex,
+            transcript.RootElement.GetProperty("reviewEvidenceDigest").GetString());
+    }
+
+    [TestMethod]
+    public async Task ExportAsync_RejectsArtifactIdsThatDoNotMatchTheRequestedKinds()
+    {
+        using Fixture fixture = new();
+        AncillaryArtifactKind[] requested =
+        [
+            AncillaryArtifactKind.Transcript,
+            AncillaryArtifactKind.UsedSourceRanges,
+        ];
+
+        _ = Assert.ThrowsExactly<ArgumentException>(() => fixture.CreateRequest(
+            artifactIds: Fixture.CreateArtifactIds(),
+            kinds: requested));
+        _ = Assert.ThrowsExactly<ArgumentException>(() => fixture.CreateRequest(
+            artifactIds: new Dictionary<AncillaryArtifactKind, EntityId<ArtifactIdTag>>
+            {
+                [AncillaryArtifactKind.Transcript] = EntityId<ArtifactIdTag>.New(),
+            },
+            kinds: requested));
+        _ = Assert.ThrowsExactly<ArgumentException>(() => fixture.CreateRequest(
+            kinds: []));
+        _ = Assert.ThrowsExactly<ArgumentException>(() => fixture.CreateRequest(
+            kinds:
+            [
+                AncillaryArtifactKind.Transcript,
+                AncillaryArtifactKind.Transcript,
+            ]));
+
+        Assert.HasCount(0, fixture.Store.ListProjectArtifacts(fixture.Project.Id));
+        await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Reproduces the actual source-only span universe: the composition element
+    /// originates from a full-source envelope span that carries the transcript
+    /// revision id but is not one of its utterance spans.
+    /// </summary>
+    [TestMethod]
+    public async Task ExportAsync_AcceptsAFullSourceEnvelopeSpanThatTheCompositionOriginatesFrom()
+    {
+        using Fixture fixture = new();
+        SourceSpan envelope = fixture.CreateFullSourceEnvelopeSpan();
+        var element = new CompositionElement(
+            EntityId<CompositionElementIdTag>.New(),
+            new TimeRange(default, envelope.Range.Duration),
+            OriginRef.FromSourceSpan(envelope.Id),
+            sourceRange: envelope.Range);
+        var version = new CompositionVersion(
+            fixture.TargetVersion.Id,
+            fixture.Project.Id,
+            parentVersionId: null,
+            fixture.TargetVersion.CreatedByActorId,
+            fixture.TargetVersion.CreatedAt,
+            "Span the whole original source.",
+            RenderGraphCanonicalEvidence.ComputeCompositionDigest([element]),
+            [element]);
+        AncillaryArtifactKind[] requested =
+        [
+            AncillaryArtifactKind.Transcript,
+            AncillaryArtifactKind.UsedSourceRanges,
+        ];
+
+        AncillaryArtifactExportResult result = await fixture.Exporter.ExportAsync(
+            fixture.CreateRequest(
+                compositionVersion: version,
+                sourceSpans: [.. fixture.SourceSpans, envelope],
+                chapters: [],
+                publishingText: new AncillaryPublishingText(null, null, null, []),
+                omitEditingSourceVersion: true,
+                reviewEvidence: fixture.CreateEmptyReviewEvidence(version),
+                editorialRecordIds: [],
+                artifactIds: requested.ToDictionary(
+                    static kind => kind,
+                    static _ => EntityId<ArtifactIdTag>.New()),
+                kinds: requested));
+
+        Assert.HasCount(2, result.Artifacts);
+        using JsonDocument ranges = fixture.ReadArtifactDocument(
+            GetOutput(result, AncillaryArtifactKind.UsedSourceRanges));
+        JsonElement entries = ranges.RootElement.GetProperty("payload").GetProperty("entries");
+        Assert.AreEqual(1, entries.GetArrayLength());
+        Assert.AreEqual(
+            envelope.Id.ToString(),
+            entries[0].GetProperty("sourceSpan").GetProperty("id").GetString());
+    }
+
+    /// <summary>
+    /// Reproduces a derived candidate span: its range is a SUB-range of the
+    /// utterance it came from, which is what the emphasis/editorial detectors
+    /// produce and what the source-only composition carries.
+    /// </summary>
+    [TestMethod]
+    public async Task ExportAsync_AcceptsACandidateSpanThatCoversOnlyPartOfItsUtterance()
+    {
+        using Fixture fixture = new();
+        SourceSpan candidate = fixture.CreateFirstTokenCandidateSpan();
+        Assert.IsTrue(candidate.Range.Start >= fixture.FirstSourceSpan.Range.Start &&
+            candidate.Range.End <= fixture.FirstSourceSpan.Range.End,
+            "The candidate must be inside its utterance, not around it.");
+        AncillaryArtifactKind[] requested =
+        [
+            AncillaryArtifactKind.Transcript,
+            AncillaryArtifactKind.UsedSourceRanges,
+        ];
+
+        AncillaryArtifactExportResult result = await fixture.Exporter.ExportAsync(
+            fixture.CreateRequest(
+                sourceSpans: [.. fixture.SourceSpans, candidate],
+                chapters: [],
+                publishingText: new AncillaryPublishingText(null, null, null, []),
+                editorialRecordIds: [],
+                artifactIds: requested.ToDictionary(
+                    static kind => kind,
+                    static _ => EntityId<ArtifactIdTag>.New()),
+                kinds: requested));
+
+        Assert.HasCount(2, result.Artifacts);
+    }
+
+    [TestMethod]
+    public async Task ExportAsync_StillRejectsASpanThatInventsTranscriptProvenance()
+    {
+        using Fixture fixture = new();
+        var forged = new SourceSpan(
+            EntityId<SourceSpanIdTag>.New(),
+            fixture.Asset.Id,
+            "audio:1",
+            fixture.CreateFullSourceEnvelopeSpan().Range,
+            fixture.Asset.ContentDigest,
+            fixture.Transcript.Id,
+            [EntityId<TranscriptTokenIdTag>.New()]);
+
+        AncillaryArtifactExportException exception =
+            await Assert.ThrowsExactlyAsync<AncillaryArtifactExportException>(() =>
+                fixture.Exporter.ExportAsync(fixture.CreateRequest(
+                    sourceSpans: [.. fixture.SourceSpans, forged])));
+
+        Assert.AreEqual(
+            AncillaryArtifactExportFailureReason.TranscriptBindingMismatch,
+            exception.Reason);
+        Assert.HasCount(0, fixture.Store.ListProjectArtifacts(fixture.Project.Id));
+    }
+
+    [TestMethod]
     public async Task ExportAsync_IsOrderIndependentAndExactRerunIsIdempotent()
     {
         using Fixture fixture = new();
@@ -1208,6 +1407,43 @@ public sealed class AncillaryArtifactExporterTests
 
         internal StoredVersionEvidence ReviewEvidence { get; }
 
+        /// <summary>
+        /// The whole-source envelope the source-only pipeline composes from: it
+        /// carries the revision id and every token inside its range, but it is
+        /// not an utterance span.
+        /// </summary>
+        internal SourceSpan CreateFullSourceEnvelopeSpan() => new(
+            EntityId<SourceSpanIdTag>.New(),
+            Asset.Id,
+            "audio:1",
+            Range(0, 4),
+            Asset.ContentDigest,
+            Transcript.Id,
+            Transcript.Utterances
+                .SelectMany(static utterance => utterance.Tokens)
+                .Select(static token => token.Id)
+                .ToArray());
+
+        internal StoredVersionEvidence CreateEmptyReviewEvidence(CompositionVersion version) =>
+            new(version.Id, Project.Id, version.ContentDigest, [], [], []);
+
+        /// <summary>
+        /// A derived candidate span whose range covers only the first token of
+        /// the first utterance, exactly as the emphasis/editorial detectors build it.
+        /// </summary>
+        internal SourceSpan CreateFirstTokenCandidateSpan()
+        {
+            Token token = Transcript.Utterances[0].Tokens[0];
+            return new SourceSpan(
+                EntityId<SourceSpanIdTag>.New(),
+                Asset.Id,
+                "audio:1",
+                token.Range!.Value,
+                Asset.ContentDigest,
+                Transcript.Id,
+                [token.Id]);
+        }
+
         internal EntityId<AncillaryArtifactExportIdTag> ExportId { get; }
 
         internal IReadOnlyDictionary<
@@ -1234,7 +1470,8 @@ public sealed class AncillaryArtifactExporterTests
                 AncillaryArtifactKind,
                 EntityId<ArtifactIdTag>>? artifactIds = null,
             string language = "ja-JP",
-            DateTimeOffset? createdAt = null) =>
+            DateTimeOffset? createdAt = null,
+            IReadOnlyList<AncillaryArtifactKind>? kinds = null) =>
             new(
                 exportId ?? ExportId,
                 Project,
@@ -1250,7 +1487,8 @@ public sealed class AncillaryArtifactExporterTests
                 editorialRecordIds ?? EditorialRecordIds,
                 artifactIds ?? ArtifactIds,
                 language,
-                createdAt ?? CreatedAt);
+                createdAt ?? CreatedAt,
+                kinds);
 
         internal AncillaryArtifactExportRequest CreateReverseOrderedRequest()
         {

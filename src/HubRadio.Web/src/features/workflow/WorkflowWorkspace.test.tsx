@@ -593,8 +593,11 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     await h.selectStep('processing')
     expect(h.element('[data-pipeline-phase]').textContent).toBe('解析中')
     await h.selectStep('results'); await h.selectStep('source')
-    expect(h.requests).toEqual(requests)
-    expect(h.requests.filter(request => /pipeline\.(cancel|retry)|jobs\.(cancel|retry)/.test(request.method))).toHaveLength(0)
+    // Switching screens may add the read-only past-version list read, but must
+    // not repeat or accept any other work.
+    expect(h.requests.filter(request => request.method !== 'pipeline.versions')).toEqual(requests)
+    expect(h.requests.filter(request => request.method === 'pipeline.versions').length).toBeLessThanOrEqual(1)
+    expect(h.requests.filter(request => /pipeline\.(cancel|retry|regenerate|restore)|jobs\.(cancel|retry)/.test(request.method))).toHaveLength(0)
     expect(h.container.querySelector('video[src*="source-only"], [data-result-state="generated"]')).toBeNull()
   })
 

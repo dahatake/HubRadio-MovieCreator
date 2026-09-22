@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createHostBridgeClient } from '../../bridge'
 import { createPipelineSession, initialPipelineState, type PipelineBridgeClient, type PipelineSession, type PipelineState } from './pipelineSession'
-import type { PipelineRegenerationParams } from './pipelineProtocol'
+import type { PipelineRegenerationParams, PipelineRestoreParams } from './pipelineProtocol'
 
 interface PipelineContextValue {
   readonly state: PipelineState
@@ -9,6 +9,8 @@ interface PipelineContextValue {
   readonly cancel: () => boolean
   readonly retry: () => boolean
   readonly regenerate: (params: PipelineRegenerationParams) => boolean
+  readonly restore: (params: PipelineRestoreParams) => boolean
+  readonly readVersions: () => boolean
 }
 const Context = createContext<PipelineContextValue | null>(null)
 
@@ -34,11 +36,13 @@ export function PipelineProvider({ children, projectId, createClient = createHos
   const cancel = useCallback(() => session.current?.cancel() ?? false, [])
   const retry = useCallback(() => session.current?.retry() ?? false, [])
   const regenerate = useCallback((params: PipelineRegenerationParams) => session.current?.regenerate(params) ?? false, [])
+  const restore = useCallback((params: PipelineRestoreParams) => session.current?.restore(params) ?? false, [])
+  const readVersions = useCallback(() => session.current?.readVersions() ?? false, [])
   const value = useMemo<PipelineContextValue>(() => ({
     // Do not expose one render of the old project before the layout effect runs.
     state: state.projectId === projectId ? state : { ...initialPipelineState, projectId },
-    refresh, cancel, retry, regenerate,
-  }), [state, projectId, refresh, cancel, retry, regenerate])
+    refresh, cancel, retry, regenerate, restore, readVersions,
+  }), [state, projectId, refresh, cancel, retry, regenerate, restore, readVersions])
   return <Context.Provider value={value}>{children}</Context.Provider>
 }
 export function usePipeline(): PipelineContextValue {

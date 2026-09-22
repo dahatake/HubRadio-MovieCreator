@@ -50,6 +50,104 @@ public sealed class SourceOnlyBridgeTests
     }
 
     [TestMethod]
+    public async Task VersionListReturnsTheRealPastVersionsWithoutAnyPathOrArtifactContent()
+    {
+        using SourceOnlyEvaluationFixture f = await SourceOnlyEvaluationFixture.CreateAsync(includeThumbnail: true);
+        SourceOnlyResult result = await f.EvaluateAsync();
+        StoredSourceOnlyExecution stored = f.PersistResult(result);
+
+        BridgeRequest request = Request("pipeline.versions", new { projectId = stored.Request.ProjectId.ToString() });
+        string raw = await HandlerFor(f).HandleAsync(request);
+        JsonElement payload = Response(request, raw, "available");
+        JsonElement entries = payload.GetProperty("versions");
+
+        Assert.AreEqual(1, entries.GetArrayLength());
+        JsonElement entry = entries[0];
+        Assert.AreEqual(stored.VersionId!.ToString(), entry.GetProperty("versionId").GetString());
+        Assert.AreEqual(stored.VersionDigest!.Hex, entry.GetProperty("versionDigest").GetString());
+        Assert.AreEqual(stored.Request.ExecutionId.ToString(), entry.GetProperty("executionId").GetString());
+        Assert.AreEqual(stored.Phase.ToString(), entry.GetProperty("phase").GetString());
+        Assert.IsTrue(entry.GetProperty("hasResult").GetBoolean());
+        Assert.IsTrue(entry.GetProperty("isCurrent").GetBoolean());
+        Assert.IsGreaterThanOrEqualTo(0, payload.GetProperty("workingCopyRevision").GetInt32());
+
+        Assert.IsFalse(raw.Contains(f.Generation.Root, StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(raw.Contains("storageReference", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(raw.Contains("stagingPath", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(raw.Contains(result.Artifacts[0].ArtifactId.ToString(), StringComparison.OrdinalIgnoreCase));
+
+        // Reading the list is not a mutation.
+        StoredSourceOnlyExecution after = new SourceOnlyExecutionStore(f.Generation.DatabasePath)
+            .Get(stored.Request.ExecutionId)!;
+        Assert.AreEqual(stored.StateDigest, after.StateDigest);
+        Assert.AreEqual(stored.Revision, after.Revision);
+    }
+
+    [TestMethod]
+    public async Task VersionListIsReadOnlyAndCarriesNoPathOrArtifactContent()
+    {
+        using var f = new ControlFixture();
+        SourceOnlyBridgeHandler handler = f.Handler(() =>
+            throw new AssertFailedException("A read must not resolve a pipeline."));
+
+        BridgeRequest empty = Request("pipeline.versions", new { projectId = f.Project.Id.ToString() });
+        string emptyResponse = await handler.HandleAsync(empty);
+        // The fixture execution has no composition version yet.
+        _ = Response(empty, emptyResponse, "notFound");
+
+        BridgeRequest other = Request("pipeline.versions", new { projectId = EntityId<ProjectIdTag>.New().ToString() });
+        _ = Response(other, await handler.HandleAsync(other), "notFound");
+        Assert.AreEqual(f.Execution.StateDigest, f.Executions.Get(f.Execution.Request.ExecutionId)!.StateDigest);
+        Assert.HasCount(1, f.Executions.ListForProject(f.Project.Id));
+        Assert.IsFalse(emptyResponse.Contains(f.DatabasePath, StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(emptyResponse.Contains(@"C:\", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task RestoreWithoutAPipelineIsUnavailableAndNeverMutatesAcceptedWork()
+    {
+        using var f = new ControlFixture();
+        SourceOnlyBridgeHandler handler = f.Handler(() => null);
+
+        BridgeRequest unavailable = Request("pipeline.restore", new
+        {
+            projectId = f.Project.Id.ToString(),
+            targetVersionId = Guid.NewGuid().ToString("D"),
+            targetVersionDigest = new string('a', 64),
+            expectedWorkingCopyRevision = 0,
+            expectedSettingsRevision = 0,
+            expectedSettingsSnapshotDigest = f.Execution.Request.SettingsSnapshot.ContentDigest.Hex,
+        });
+        _ = Response(unavailable, await handler.HandleAsync(unavailable), "unavailable");
+
+        Assert.AreEqual(f.Execution.StateDigest, f.Executions.Get(f.Execution.Request.ExecutionId)!.StateDigest);
+        Assert.HasCount(1, f.Executions.ListForProject(f.Project.Id));
+    }
+
+    [TestMethod]
+    public async Task RestoreIsDeniedForAViewerAndResolvesNoPipeline()
+    {
+        using var f = new ControlFixture();
+        const string viewer = "S-1-5-21-111-222-333-2002";
+        f.Authorization.AssignRole(viewer, AuthorizationRole.Viewer, ControlFixture.Actor, "Read-only fixture actor.");
+        SourceOnlyBridgeHandler handler = f.Handler(
+            () => throw new AssertFailedException("Denied commands must not resolve a pipeline."),
+            () => viewer);
+
+        BridgeRequest restore = Request("pipeline.restore", new
+        {
+            projectId = f.Project.Id.ToString(),
+            targetVersionId = Guid.NewGuid().ToString("D"),
+            targetVersionDigest = new string('a', 64),
+            expectedWorkingCopyRevision = 0,
+            expectedSettingsRevision = 0,
+            expectedSettingsSnapshotDigest = f.Execution.Request.SettingsSnapshot.ContentDigest.Hex,
+        });
+        _ = Response(restore, await handler.HandleAsync(restore), "forbidden");
+        Assert.AreEqual(f.Execution.StateDigest, f.Executions.Get(f.Execution.Request.ExecutionId)!.StateDigest);
+    }
+
+    [TestMethod]
     public async Task MissingPipelineReturnsUnavailableAndNeverMutatesAcceptedWork()
     {
         using var f = new ControlFixture();
@@ -703,7 +801,11 @@ public sealed class SourceOnlyBridgeTests
         Assert.AreEqual(request.RequestId.ToString("D"), root.GetProperty("requestId").GetString());
         Assert.AreEqual(BridgeProtocol.GetMethodName(request.Method), root.GetProperty("method").GetString());
         JsonElement result = root.GetProperty("result");
-        CollectionAssert.AreEqual(new[] { "status", "snapshot" }, result.EnumerateObject().Select(p => p.Name).ToArray());
+        CollectionAssert.AreEqual(
+            request.Method == BridgeMethod.PipelineVersions
+                ? ["status", "workingCopyRevision", "versions"]
+                : new[] { "status", "snapshot" },
+            result.EnumerateObject().Select(p => p.Name).ToArray());
         Assert.AreEqual(status, result.GetProperty("status").GetString());
         foreach (string forbidden in new[] { "nativeReconciliationAttempts", "storageReference", "stagingPath", "actorSid", "requestJson", "private-marker" })
             Assert.IsFalse(json.Contains(forbidden, StringComparison.OrdinalIgnoreCase), forbidden);

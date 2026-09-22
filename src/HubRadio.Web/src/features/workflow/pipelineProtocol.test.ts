@@ -21,7 +21,8 @@ describe('pipeline native v2 protocol (synthetic fixtures only)', () => {
     for (const [name, sample] of Object.entries(samples)) {
       const signature = new RegExp(`record ${name}\\(([\\s\\S]*?)\\);`).exec(native)?.[1]
       expect(signature, name).toBeDefined()
-      const fields = signature!.split(',').map(parameter => parameter.trim().split(/\s+/).at(-1)!)
+      // Strip attributes, generic/array brackets and default values before reading each field name.
+      const fields = signature!.split(',').map(parameter => parameter.replace(/\[[^\]]*\]/g, ' ').split('=')[0]!.trim().split(/\s+/).at(-1)!)
         .map(field => field[0]!.toLowerCase() + field.slice(1)).sort()
       expect(Object.keys(sample as object).sort(), name).toEqual(fields)
     }

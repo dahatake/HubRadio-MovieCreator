@@ -65,7 +65,7 @@ settings系の要求64KiB／応答4MiBの現行上限を維持する。全体・
 |---|---|---|
 | E-START | `ProjectCreationService` → `SourceOnlyApplicationRuntime` → `SourceOnlyPipeline`。`FinalizeSourceOnlyWithExecution`で案件・下書き・実行・jobを原子的に確定し、実Workerを含むpipelineを開始 | ①で実Worker・実ASRから後続処理までPASS。②③で再生成・復旧後の実処理もPASS |
 | E-EVALUATION | `SourceOnlyOutputEvaluation`へ実`OutputQc`を注入。実観測、評価record、出力state/policy、SQLite保存を接続し、結果DTOをUIへ供給 | ①〜③で実出力のQC・評価保存までPASS。④で手修正字幕の実レンダー・QCもPASS。評価engine単体を媒体測定器とは扱わない |
-| E-RESULT | `StandardArtifactGenerator`、`SourceOnlyResultService`、`SourceOnlyDeliveryService.DeliverAsync`を接続。実artifact・評価・社内限定ローカル納品証跡を検証して表示 | ①で7成果物のQC・社内限定ローカル納品・保存／再読込までPASS。②③で再生成・復旧後の結果も検証済み。レンダー到達だけによる成功判定ではない |
+| E-RESULT | `StandardArtifactGenerator`、`SourceOnlyResultService`、`SourceOnlyDeliveryService.DeliverAsync`、`AncillaryArtifactExporter`（文字起こし・使用区間一覧の2種のみを指定して呼ぶ）を接続。実artifact・評価・社内限定ローカル納品証跡を検証して表示 | ①で動画・字幕・サムネイルの7成果物のQC・社内限定ローカル納品・保存／再読込までPASS。②③で再生成・復旧後の結果も検証済み。レンダー到達だけによる成功判定ではない。**付帯成果物2種（`transcript.json`／`used-source-ranges.json`）は2026-09-22の追加であり、①〜④の観測には含まれない。検証範囲は自動試験のみで、実素材pipelineによる観測は未実施** |
 | E-REGENERATE | 保存済み設定snapshotと字幕編集headを受付時に固定し、親版から子版・実job・結果へ接続。旧版・旧ファイルを保持 | ②の再生成、③の復旧・再試行、④の永続保存した手修正字幕の投影・実レンダーがPASS。旧成果物の保持を検証済み |
 
 ### 実測結果と完了範囲
@@ -74,7 +74,7 @@ settings系の要求64KiB／応答4MiBの現行上限を維持する。全体・
 
 | 実測 | 検証範囲 | 観測ID・結果 |
 |---|---|---|
-| ① 初回実処理 | 実ASR→7成果物レンダー→QC→社内限定ローカル納品・保存／再読込 | `observed-e2e-20260909T144834883Z-41b8cdcc`：PASS |
+| ① 初回実処理 | 実ASR→動画・字幕・サムネイルの7成果物レンダー→QC→社内限定ローカル納品・保存／再読込 | `observed-e2e-20260909T144834883Z-41b8cdcc`：PASS |
 | ② 再生成 | 保存済み条件からの子版生成・QC・保存／再読込、旧成果物保持 | `observed-e2e-20260909T145632533Z-ba46a2bd`：PASS |
 | ③ 復旧・再試行 | 復旧後の再試行から実処理・QC・保存／再読込 | `observed-e2e-20260909T145852256Z-bac8df13`：PASS |
 | ④ 手修正字幕 | 字幕編集の永続保存・再読込・投影、実レンダー・QC、旧成果物保持 | `observed-test-20260909T145059046Z-3a086056`：PASS |
@@ -82,6 +82,8 @@ settings系の要求64KiB／応答4MiBの現行上限を維持する。全体・
 ①〜③は限定的な合成媒体で実Worker・実ASRを動かした結合検証であり、**実MOVのASR精度や一般的な映像・音声の品質を測定したものではない**。④は既知の合成字幕Cueを手修正した実レンダー検証で、実ASRの認識精度を示さない。知覚品質・理解・法的判断・GUI／native OS受入の未測定事項は別に保持する。
 
 **履歴:** これらより前の「7成果物レンダー後にQC失敗」は修正前の記録であり、現在の未解決E2E状態ではない。
+
+**2026-09-22の限定追加（`V2-013`）:** 標準成果物setへ文字起こし（`transcript.json`）と使用区間一覧（`used-source-ranges.json`）を追加した。**検証範囲は限定であり、自動試験（exporter・codec・結果DTO・Bridge・Web UI）のみである。** 実素材あるいは①〜④に相当するpipeline E2Eによる観測は**未実施**で、上表の観測IDにこの追加は含まれない。不成立時は空ファイルを作らず、種別ごとに `SourceOnlyResultOmissionRole.Transcript` / `UsedSourceRanges` と `AncillaryExportFailed` を記録する。詳細は[v2-013 敵対的レビュー](../reviews/v2-013-ancillary-artifacts-adversarial-review.md)。
 
 | 回帰検証 | 提示済み結果 |
 |---|---|
@@ -110,6 +112,11 @@ Appの2,410ケースには環境依存4件とopt-in実統合4件の計8 skipを�
 | `pipeline.regenerate` | `projectId`、`expectedVersionId`、`expectedVersionDigest`、`expectedSettingsRevision`、`expectedSettingsSnapshotDigest` | 現行親版・保存設定・整合性を再照合して子版生成を受け付ける。字幕の子版を主レンダー親版へ代用しない |
 | `pipeline.retry` | `projectId`、`executionId`、`expectedRevision` | 最新の失敗・取消済み実行で、結果も版もまだない場合だけ再試行 |
 | `pipeline.cancel` | `projectId`、`executionId`、`expectedRevision` | 対象・revisionを照合し、pipeline所有処理の終了・後始末を待つ。合成した取消成功を保存しない |
+| `pipeline.versions` | `projectId` | **読取のみ。** 当該案件の過去版を新しい順に列挙する（`versionId`／`versionDigest`／`parentVersionId`／`executionId`／`phase`／結果の有無）。成果物本文・pathは返さない |
+| `pipeline.restore` | `projectId`、`targetVersionId`、`targetVersionDigest`、`expectedWorkingCopyRevision`、`expectedSettingsRevision`、`expectedSettingsSnapshotDigest` | **「復元」＝選んだ過去版の構成を新しい子版として作り直し、その子版から成果物を再生成すること**（`VersionService.RollbackAsChild` → `SourceOnlyPipeline.Regenerate`）。現在版・過去版・旧成果物は**一切削除も上書きもしない**。子版の作成に成功した後で再生成の受付に失敗した場合、子版は残るが旧成果物は失われない |
+
+> [!IMPORTANT]
+> 本契約における「復元」は上表 `pipeline.restore` の定義に**一義に**従う。タブや警告の「戻る」、および `pipeline.read` が返す前回親版の結果表示は、**復元ではない**。過去版で現在版を置き換える操作は提供しない。
 
 要求はclosed schemaで検査し、actor・権限・path・設定値・承認をWebから受け取らない。応答statusは`available/notFound/conflict/forbidden/unavailable/invalid`。結果の`none/valid/invalid`を実行phaseや評価PASSと混同しない。`invalid`の診断用参照は媒体利用を許可せず、未取得IDを架空値で埋めない。
 
@@ -129,7 +136,7 @@ Appの2,410ケースには環境依存4件とopt-in実統合4件の計8 skipを�
 
 source-onlyの生成済み字幕workspaceは字幕専用として公開し、**手動layout・画角・keyframe・terop編集／永続化は提供しない**。legacy runtimeのメモリ内機能を字幕journalの永続保存と同一視しない。`ThumbnailApplicationRuntime`の旧承認テンプレートproviderも既定では利用不可のまま。一方、`StandardArtifactGenerator`の**標準自動thumbnailは社内限定で接続済み**であり、旧承認経路とは別。設定の勝手な変更や架空の`BrandApprover`承認で利用可能に見せない。
 
-これは当初UX-035／UX-050で認められた理由付き利用不可表示の境界である。両タスクは52必須タスク内に残り、新しいブロッカー・対象外の追加でも「手動機能実装済み」の主張でもない。過去版復元UI/RPCは引き続きV2-012（R-003再受入）の責務であり、タブや警告の「戻る」をundo・過去版復元とはしない。
+これは当初UX-035／UX-050で認められた理由付き利用不可表示の境界である。両タスクは52必須タスク内に残り、新しいブロッカー・対象外の追加でも「手動機能実装済み」の主張でもない。**過去版復元UI/RPCは2026-09-22に実装した**（`pipeline.versions` / `pipeline.restore` と `VersionHistoryPanel`、上記「実装済みpipeline API」表を参照）。**検証範囲は自動試験のみで、pipeline E2Eおよびnative GUI上の受入は未実施である。** タブや警告の「戻る」をundo・過去版復元とはしない扱いは従来どおり維持する。詳細は[v2-012 敵対的レビュー](../reviews/v2-012-version-restore-adversarial-review.md)。
 
 ### 解析編集の既存境界
 

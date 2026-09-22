@@ -77,6 +77,8 @@ internal enum BridgeMethod
     PipelineRegenerate,
     PipelineRetry,
     PipelineCancel,
+    PipelineVersions,
+    PipelineRestore,
 }
 
 internal sealed class BridgeRequest
@@ -262,6 +264,8 @@ internal static class BridgeProtocol
     internal const string PipelineRegenerateMethod = "pipeline.regenerate";
     internal const string PipelineRetryMethod = "pipeline.retry";
     internal const string PipelineCancelMethod = "pipeline.cancel";
+    internal const string PipelineVersionsMethod = "pipeline.versions";
+    internal const string PipelineRestoreMethod = "pipeline.restore";
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -519,6 +523,8 @@ internal static class BridgeProtocol
             BridgeMethod.PipelineRegenerate => PipelineRegenerateMethod,
             BridgeMethod.PipelineRetry => PipelineRetryMethod,
             BridgeMethod.PipelineCancel => PipelineCancelMethod,
+            BridgeMethod.PipelineVersions => PipelineVersionsMethod,
+            BridgeMethod.PipelineRestore => PipelineRestoreMethod,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(method),
                 method,
@@ -594,7 +600,8 @@ internal static class BridgeProtocol
 
     internal static bool IsSourceOnlyMethod(BridgeMethod method) =>
         method is BridgeMethod.PipelineRead or BridgeMethod.PipelineRegenerate or
-            BridgeMethod.PipelineRetry or BridgeMethod.PipelineCancel;
+            BridgeMethod.PipelineRetry or BridgeMethod.PipelineCancel or
+            BridgeMethod.PipelineVersions or BridgeMethod.PipelineRestore;
 
     internal static bool IsSettingsMethod(BridgeMethod method) =>
         method is
@@ -684,6 +691,8 @@ internal static class BridgeProtocol
             PipelineRegenerateMethod => BridgeMethod.PipelineRegenerate,
             PipelineRetryMethod => BridgeMethod.PipelineRetry,
             PipelineCancelMethod => BridgeMethod.PipelineCancel,
+            PipelineVersionsMethod => BridgeMethod.PipelineVersions,
+            PipelineRestoreMethod => BridgeMethod.PipelineRestore,
             _ => (BridgeMethod)(-1),
         };
         return Enum.IsDefined(parsedMethod);

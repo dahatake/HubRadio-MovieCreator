@@ -96,6 +96,8 @@ public sealed class WebBridgeSchemaTests
                 "pipeline.regenerate",
                 "pipeline.retry",
                 "pipeline.cancel",
+                "pipeline.versions",
+                "pipeline.restore",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -198,10 +200,14 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/pipelineRegenerateRequest",
                 "#/$defs/pipelineRetryRequest",
                 "#/$defs/pipelineCancelRequest",
+                "#/$defs/pipelineVersionsRequest",
+                "#/$defs/pipelineRestoreRequest",
                 "#/$defs/pipelineReadResponse",
                 "#/$defs/pipelineRegenerateResponse",
                 "#/$defs/pipelineRetryResponse",
                 "#/$defs/pipelineCancelResponse",
+                "#/$defs/pipelineVersionsResponse",
+                "#/$defs/pipelineRestoreResponse",
             },
             root.GetProperty("oneOf")
                 .EnumerateArray()
@@ -1862,6 +1868,7 @@ public sealed class WebBridgeSchemaTests
             ("pipelineRegenerate", "pipeline.regenerate", "pipelineRegenerateParams"),
             ("pipelineRetry", "pipeline.retry", "pipelineCommandParams"),
             ("pipelineCancel", "pipeline.cancel", "pipelineCommandParams"),
+            ("pipelineRestore", "pipeline.restore", "pipelineRestoreParams"),
         })
         {
             foreach ((string suffix, string payload, string reference) in new[] { ("Request", "params", parameters), ("Response", "result", "sourceOnlyBridgeResult") })
@@ -1875,6 +1882,31 @@ public sealed class WebBridgeSchemaTests
                 Assert.AreEqual("#/$defs/" + reference, properties.GetProperty(payload).GetProperty("$ref").GetString());
             }
         }
+
+        foreach ((string suffix, string payload, string reference) in new[]
+        {
+            ("Request", "params", "pipelineReadParams"),
+            ("Response", "result", "sourceOnlyVersionsResult"),
+        })
+        {
+            JsonElement envelope = definitions.GetProperty("pipelineVersions" + suffix);
+            AssertClosedProperties(envelope, "version", "requestId", "method", payload);
+            Assert.AreEqual("pipeline.versions",
+                envelope.GetProperty("properties").GetProperty("method").GetProperty("const").GetString());
+            Assert.AreEqual("#/$defs/" + reference,
+                envelope.GetProperty("properties").GetProperty(payload).GetProperty("$ref").GetString());
+        }
+
+        AssertClosedProperties(definitions.GetProperty("pipelineRestoreParams"), "projectId", "targetVersionId",
+            "targetVersionDigest", "expectedWorkingCopyRevision", "expectedSettingsRevision", "expectedSettingsSnapshotDigest");
+        JsonElement versionsResult = definitions.GetProperty("sourceOnlyVersionsResult");
+        AssertClosedProperties(versionsResult, "status", "workingCopyRevision", "versions");
+        CollectionAssert.AreEqual(new[] { "available", "notFound", "conflict", "forbidden", "unavailable", "invalid" },
+            GetStrings(versionsResult.GetProperty("properties").GetProperty("status").GetProperty("enum")));
+        AssertClosedProperties(definitions.GetProperty("sourceOnlyVersionEntry"), "versionId", "versionDigest",
+            "parentVersionId", "executionId", "phase", "hasResult", "isCurrent");
+        CollectionAssert.AreEqual(Enum.GetNames<SourceOnlyExecutionPhase>(), GetStrings(definitions
+            .GetProperty("sourceOnlyVersionEntry").GetProperty("properties").GetProperty("phase").GetProperty("enum")));
         AssertClosedProperties(definitions.GetProperty("pipelineReadParams"), "projectId");
         AssertClosedProperties(definitions.GetProperty("pipelineRegenerateParams"), "projectId", "expectedVersionId", "expectedVersionDigest", "expectedSettingsRevision", "expectedSettingsSnapshotDigest");
         AssertClosedProperties(definitions.GetProperty("pipelineCommandParams"), "projectId", "executionId", "expectedRevision");

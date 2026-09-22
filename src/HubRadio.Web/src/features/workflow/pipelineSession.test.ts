@@ -12,6 +12,7 @@ function harness() {
   let id = 1000
   const client: PipelineBridgeClient = { sendPipeline: request => { requests.push(request) },
     onPipelineResponse: callback => { listener = callback; return () => { listener = null } },
+    sendPipelineVersions: vi.fn(), onPipelineVersionsResponse: () => () => {},
     abandonPipelineRequest: requestId => { abandoned.push(requestId) }, dispose: vi.fn() }
   const changed = vi.fn()
   const session = createPipelineSession(() => client, changed, { createRequestId: () => fixtureId(++id) })

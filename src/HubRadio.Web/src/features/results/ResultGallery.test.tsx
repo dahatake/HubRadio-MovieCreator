@@ -15,7 +15,7 @@ import {
 } from '../delivery/deliveryTestFixture'
 import type { WorkflowWarningTarget } from '../workflow/workflowNavigation'
 import { verifiedPipelineResponse } from '../workflow/pipelineProtocol'
-import { createCompletedPipeline, createPipelineArtifact, pipelineResponse } from '../workflow/pipelineTestFixture'
+import { createCompletedPipeline, createPipelineArtifact, fixtureId, pipelineResponse } from '../workflow/pipelineTestFixture'
 import { ResultGallery, type ResultGalleryProps, type ResultGalleryWarning } from './ResultGallery'
 import { deriveResultPresentation, type ResultKind, type ResultPresentation } from './resultPresentation'
 
@@ -333,6 +333,62 @@ describe('ResultGallery', () => {
     expect(container.textContent).not.toMatch(/PASS|WARNING|FAIL/)
     expect(fetch).not.toHaveBeenCalled()
     expect(postMessage).not.toHaveBeenCalled()
+  })
+
+  it('renders the past-version panel only when the caller supplies a list', () => {
+    const presentation = fullPresentation()
+    renderGallery(presentation)
+    expect(container.querySelector('[data-version-id]')).toBeNull()
+    expect(within(container).queryByRole('heading', { name: '過去版' })).toBeNull()
+
+    const onRestore = vi.fn()
+    renderGallery(presentation, {
+      versionHistory: {
+        versions: [{
+          versionId: fixtureId(21), versionDigest: 'c'.repeat(64), parentVersionId: null,
+          executionId: fixtureId(22), phase: 'Completed', hasResult: true, isCurrent: false,
+        }],
+        onRestore,
+      },
+    })
+    expect(within(container).getByRole('heading', { name: '過去版' })).toBeTruthy()
+    expect(container.querySelectorAll('[data-version-id]')).toHaveLength(1)
+    // The existing result groups are untouched by the added panel.
+    for (const kind of ['videoLong', 'videoShort', 'text', 'thumbnail'] as const) {
+      expect(groupFor(kind).getAttribute('data-result-state')).toBe('generated')
+    }
+    expect(onRestore).not.toHaveBeenCalled()
+  })
+
+  it('shows delivered ancillary artifacts and keeps the rendered outputs visible when they are absent', () => {
+    const snapshot = createCompletedPipeline()
+    snapshot.result!.artifacts.push(createPipelineArtifact(snapshot.result!, 'LandscapeThumbnail', 20))
+    snapshot.result!.ancillaryArtifacts = [
+      { kind: 'Transcript', artifact: { artifactId: fixtureId(91), contentDigest: '1'.repeat(64), byteSize: 128, kind: 'Delivery' } },
+      { kind: 'UsedSourceRanges', artifact: { artifactId: fixtureId(92), contentDigest: '2'.repeat(64), byteSize: 64, kind: 'Delivery' } },
+    ]
+    const pipeline = verifiedPipelineResponse(pipelineResponse(snapshot))!.result.snapshot!
+    renderGallery(deriveResultPresentation({ pipeline }))
+    const section = within(container).getByRole('region', { name: '付帯成果物' })
+    expect(within(section).getByText(/文字起こし（transcript\.json）/)).toBeTruthy()
+    expect(within(section).getByText(/使用区間一覧（used-source-ranges\.json）/)).toBeTruthy()
+    expect(section.textContent).toContain(fixtureId(91))
+
+    const omitted = createCompletedPipeline()
+    omitted.result!.artifacts.push(createPipelineArtifact(omitted.result!, 'LandscapeThumbnail', 20))
+    omitted.result!.omissions = [
+      { role: 'Transcript', reason: 'AncillaryExportFailed', renditionId: null },
+      { role: 'UsedSourceRanges', reason: 'AncillaryExportFailed', renditionId: null },
+    ]
+    const omittedPipeline = verifiedPipelineResponse(pipelineResponse(omitted))!.result.snapshot!
+    renderGallery(deriveResultPresentation({ pipeline: omittedPipeline }))
+    const omittedSection = within(container).getByRole('region', { name: '付帯成果物' })
+    expect(omittedSection.textContent).toContain('文字起こし・使用区間一覧が含まれていません')
+    expect(omittedSection.querySelector('code')).toBeNull()
+    // Both rendered outputs in this fixture stay visible and marked as produced.
+    expect(container.querySelectorAll('[data-artifact-delivered="true"]')).toHaveLength(2)
+    expect(container.textContent).toContain('Transcript: AncillaryExportFailed')
+    expect(container.textContent).toContain('UsedSourceRanges: AncillaryExportFailed')
   })
 
   it('renders only verified source-only video/image URLs with per-artifact evaluation and delivery', () => {

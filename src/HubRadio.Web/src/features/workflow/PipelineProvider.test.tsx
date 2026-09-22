@@ -18,6 +18,7 @@ describe('PipelineProvider stable lifecycle', () => {
     const posted: PipelineRequest[] = []
     let callback: ((response: PipelineResponse) => void) | null = null
     const client: PipelineBridgeClient = { sendPipeline: request => { posted.push(request) }, abandonPipelineRequest: vi.fn(), dispose: vi.fn(),
+      sendPipelineVersions: vi.fn(), onPipelineVersionsResponse: () => () => {},
       onPipelineResponse: listener => { callback = listener; return () => { callback = null } } }
     const factory = vi.fn(() => client)
     let current: () => ReturnType<typeof usePipeline> = () => { throw new Error('Provider is not mounted.') }

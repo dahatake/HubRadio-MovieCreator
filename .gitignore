@@ -21,6 +21,9 @@
 
 # Generated benchmark working data
 /benchmarks/work/
+
+# Temporary task working notes (not part of the delivered documentation)
+/work/
 /benchmarks/cache/
 /benchmarks/logs/
 /benchmarks/models/

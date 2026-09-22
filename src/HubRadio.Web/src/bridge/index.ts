@@ -90,11 +90,15 @@ import {
   type ThumbnailReadResponse,
 } from '../features/thumbnails/thumbnailProtocol'
 import {
+  createPipelineVersionsRequest,
   parsePipelineRequest,
+  parsePipelineVersionsResponse,
   pipelineResponseMatchesRequest,
   verifiedPipelineResponse,
   type PipelineRequest,
   type PipelineResponse,
+  type PipelineVersionsRequest,
+  type PipelineVersionsResponse,
 } from '../features/workflow/pipelineProtocol'
 
 export * from './projectProtocol'
@@ -126,6 +130,7 @@ export interface BridgeTransport {
       | LayoutBridgeRequest
       | SettingsWorkspaceRequest
       | PipelineRequest
+      | PipelineVersionsRequest
       | ThumbnailBridgeRequest,
   ): void
   addEventListener(type: 'message', listener: (event: BridgeMessageEvent) => void): void
@@ -136,6 +141,8 @@ export interface BridgeClient {
   sendPipeline(request: PipelineRequest): void
   abandonPipelineRequest(requestId: string): void
   onPipelineResponse(listener: (response: PipelineResponse) => void): () => void
+  sendPipelineVersions(requestId: string, projectId: string): void
+  onPipelineVersionsResponse(listener: (response: PipelineVersionsResponse, projectId: string) => void): () => void
   sendPing(requestId: string): void
   sendJobStatus(requestId: string, jobId: string): void
   sendJobCancellation(requestId: string, jobId: string, expectedRevision: number): void
@@ -266,7 +273,9 @@ interface PendingSettingsRequest {
 
 export function createBridgeClient(transport: BridgeTransport): BridgeClient {
   const pipelineListeners = new Set<(response: PipelineResponse) => void>()
+  const pipelineVersionListeners = new Set<(response: PipelineVersionsResponse, projectId: string) => void>()
   const pendingPipelineRequests = new Map<string, PipelineRequest>()
+  const pendingVersionRequests = new Map<string, PipelineVersionsRequest>()
   const pingListeners = new Set<(response: BridgePingResponse) => void>()
   const projectListeners = new Set<(response: ProjectBridgeResponse) => void>()
   const jobListeners = new Set<(response: BridgeJobResponse) => void>()
@@ -334,7 +343,19 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       // Other feature clients share this transport; do not decode the large
       // result projection once per idle provider. Unknown pipeline verbs stop here.
       const pipelineResponse = pendingPipelineRequests.size === 0 ? null : verifiedPipelineResponse(data)
-      if (pipelineResponse === null) return
+      if (pipelineResponse === null) {
+        // The past-version list shares the transport but has its own closed
+        // result shape; it never carries a snapshot and never grants media.
+        const versionsResponse = pendingVersionRequests.size === 0 ? null : parsePipelineVersionsResponse(data)
+        if (versionsResponse === null) return
+        const requested = pendingVersionRequests.get(versionsResponse.requestId)
+        // Correlate the method AND the exact requested project, so a response
+        // for another project can never be rendered as this project's history.
+        if (requested === undefined || requested.method !== versionsResponse.method) return
+        pendingVersionRequests.delete(versionsResponse.requestId)
+        for (const listener of pipelineVersionListeners) listener(versionsResponse, requested.params.projectId)
+        return
+      }
       const pending = pendingPipelineRequests.get(pipelineResponse.requestId)
       if (pending === undefined || !pipelineResponseMatchesRequest(pipelineResponse, pending)) return
       pendingPipelineRequests.delete(pipelineResponse.requestId)
@@ -586,11 +607,25 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
     abandonPipelineRequest(requestId: string): void {
       throwIfDisposed(disposed)
       pendingPipelineRequests.delete(requestId)
+      pendingVersionRequests.delete(requestId)
     },
     onPipelineResponse(listener: (response: PipelineResponse) => void): () => void {
       throwIfDisposed(disposed)
       pipelineListeners.add(listener)
       return () => { pipelineListeners.delete(listener) }
+    },
+    sendPipelineVersions(requestId: string, projectId: string): void {
+      throwIfDisposed(disposed)
+      const request = createPipelineVersionsRequest(requestId, projectId)
+      if (pendingVersionRequests.size !== 0) throw new Error('A pipeline version request is already pending.')
+      pendingVersionRequests.set(request.requestId, request)
+      try { transport.postMessage(request) }
+      catch (error: unknown) { pendingVersionRequests.delete(request.requestId); throw error }
+    },
+    onPipelineVersionsResponse(listener: (response: PipelineVersionsResponse, projectId: string) => void): () => void {
+      throwIfDisposed(disposed)
+      pipelineVersionListeners.add(listener)
+      return () => { pipelineVersionListeners.delete(listener) }
     },
     sendPing(requestId: string): void {
       throwIfDisposed(disposed)
@@ -937,6 +972,8 @@ export function createBridgeClient(transport: BridgeTransport): BridgeClient {
       disposed = true
       pipelineListeners.clear()
       pendingPipelineRequests.clear()
+      pipelineVersionListeners.clear()
+      pendingVersionRequests.clear()
       pingListeners.clear()
       projectListeners.clear()
       jobListeners.clear()

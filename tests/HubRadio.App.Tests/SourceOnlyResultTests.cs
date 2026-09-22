@@ -56,6 +56,83 @@ public sealed class SourceOnlyResultTests
     }
 
     [TestMethod]
+    public async Task AncillaryArtifactsRoundTripAndAbsentOnesKeepTheExactLegacyBytes()
+    {
+        using SourceOnlyEvaluationFixture f = await SourceOnlyEvaluationFixture.CreateAsync(includeShort: true);
+        SourceOnlyResult legacy = await f.EvaluateAsync();
+
+        Assert.IsEmpty(legacy.AncillaryArtifacts);
+        Assert.IsFalse(legacy.CanonicalJson.Contains("ancillaryArtifacts", StringComparison.Ordinal),
+            "A result without ancillary artifacts must keep its pre-existing canonical bytes.");
+        SourceOnlyResult reparsed = SourceOnlyResult.ParseCanonical(legacy.CanonicalJson, legacy.CanonicalDigest);
+        Assert.AreEqual(legacy.CanonicalJson, reparsed.CanonicalJson);
+        Assert.AreEqual(legacy.CanonicalDigest, reparsed.CanonicalDigest);
+        Assert.IsEmpty(reparsed.AncillaryArtifacts);
+
+        SourceOnlyResultEvidenceReference[] ancillary =
+        [
+            new(SourceOnlyResultEvidenceKind.Transcript, new SourceOnlyResultArtifactReference(
+                EntityId<ArtifactIdTag>.New(), ContentDigest.Compute("transcript"u8.ToArray()), 42, ArtifactKind.Delivery)),
+            new(SourceOnlyResultEvidenceKind.UsedSourceRanges, new SourceOnlyResultArtifactReference(
+                EntityId<ArtifactIdTag>.New(), ContentDigest.Compute("ranges"u8.ToArray()), 24, ArtifactKind.Delivery)),
+        ];
+        SourceOnlyResult extended = SourceOnlyPipeline.BindAncillaryResult(legacy, ancillary, legacy.Omissions);
+
+        Assert.HasCount(2, extended.AncillaryArtifacts);
+        Assert.AreNotEqual(legacy.CanonicalDigest, extended.CanonicalDigest);
+        SourceOnlyResult extendedParsed = SourceOnlyResult.ParseCanonical(
+            extended.CanonicalJson, extended.CanonicalDigest);
+        Assert.AreEqual(extended.CanonicalJson, extendedParsed.CanonicalJson);
+        CollectionAssert.AreEqual(ancillary, extendedParsed.AncillaryArtifacts.ToArray());
+        Assert.IsFalse(JsonSerializer.Serialize(extendedParsed.ToWebDto())
+            .Contains(f.Generation.Root, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    public async Task AncillaryArtifactOmissionKeepsEveryRenderedOutputInTheResult()
+    {
+        using SourceOnlyEvaluationFixture f = await SourceOnlyEvaluationFixture.CreateAsync(includeShort: true);
+        SourceOnlyResult evaluated = await f.EvaluateAsync();
+
+        SourceOnlyResult omitted = SourceOnlyPipeline.BindAncillaryResult(evaluated, [],
+            [.. evaluated.Omissions, new SourceOnlyResultOmission(SourceOnlyResultOmissionRole.Other,
+                SourceOnlyResultOmissionReason.UnrecognizedOmission)]);
+
+        Assert.HasCount(evaluated.Artifacts.Count, omitted.Artifacts);
+        Assert.IsEmpty(omitted.AncillaryArtifacts);
+        Assert.IsFalse(omitted.HasBlockingFailures);
+        Assert.IsTrue(omitted.HasWarnings);
+        Assert.IsTrue(omitted.Omissions.Any(item =>
+            item.Role == SourceOnlyResultOmissionRole.Other &&
+            item.Reason == SourceOnlyResultOmissionReason.UnrecognizedOmission));
+        Assert.AreEqual(omitted.CanonicalJson,
+            SourceOnlyResult.ParseCanonical(omitted.CanonicalJson, omitted.CanonicalDigest).CanonicalJson);
+    }
+
+    [TestMethod]
+    public async Task DeliveryRoundTripKeepsTheAncillaryArtifactsInsteadOfDroppingThem()
+    {
+        using SourceOnlyEvaluationFixture f = await SourceOnlyEvaluationFixture.CreateAsync(includeShort: true);
+        SourceOnlyResult evaluated = await f.EvaluateAsync();
+        SourceOnlyResultEvidenceReference[] ancillary =
+        [
+            new(SourceOnlyResultEvidenceKind.Transcript, new SourceOnlyResultArtifactReference(
+                EntityId<ArtifactIdTag>.New(), ContentDigest.Compute("transcript"u8.ToArray()), 42, ArtifactKind.Delivery)),
+            new(SourceOnlyResultEvidenceKind.UsedSourceRanges, new SourceOnlyResultArtifactReference(
+                EntityId<ArtifactIdTag>.New(), ContentDigest.Compute("ranges"u8.ToArray()), 24, ArtifactKind.Delivery)),
+        ];
+        SourceOnlyResult basis = SourceOnlyPipeline.BindAncillaryResult(evaluated, ancillary, evaluated.Omissions);
+
+        // WithoutDelivery must be a no-op for an undelivered result.
+        Assert.AreEqual(basis.CanonicalJson, SourceOnlyDeliveryReceipt.WithoutDelivery(basis).CanonicalJson);
+
+        // Reconciliation keeps the references so a manual-resolution result still
+        // names the artifacts that were already promoted.
+        SourceOnlyResult reconciliation = SourceOnlyDeliveryReceipt.Reconciliation(basis, []);
+        CollectionAssert.AreEqual(ancillary, reconciliation.AncillaryArtifacts.ToArray());
+    }
+
+    [TestMethod]
     public async Task ChangedRealOutputRemainsVisibleButFailsRevalidation()
     {
         using SourceOnlyEvaluationFixture f = await SourceOnlyEvaluationFixture.CreateAsync();

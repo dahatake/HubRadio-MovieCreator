@@ -50,6 +50,12 @@ internal static class SourceOnlyBridgeProtocol
         string[] keys = method switch
         {
             BridgeMethod.PipelineRead => ["projectId"],
+            BridgeMethod.PipelineVersions => ["projectId"],
+            BridgeMethod.PipelineRestore =>
+            [
+                "projectId", "targetVersionId", "targetVersionDigest",
+                "expectedWorkingCopyRevision", "expectedSettingsRevision", "expectedSettingsSnapshotDigest",
+            ],
             BridgeMethod.PipelineRegenerate =>
             [
                 "projectId", "expectedVersionId", "expectedVersionDigest",
@@ -68,6 +74,13 @@ internal static class SourceOnlyBridgeProtocol
         return method switch
         {
             BridgeMethod.PipelineRead => true,
+            BridgeMethod.PipelineVersions => true,
+            BridgeMethod.PipelineRestore =>
+                SettingsBridgeProtocol.IsCanonicalId(parameters.GetProperty("targetVersionId")) &&
+                SettingsBridgeProtocol.IsDigest(parameters.GetProperty("targetVersionDigest")) &&
+                IsRevision(parameters.GetProperty("expectedWorkingCopyRevision")) &&
+                IsRevision(parameters.GetProperty("expectedSettingsRevision")) &&
+                SettingsBridgeProtocol.IsDigest(parameters.GetProperty("expectedSettingsSnapshotDigest")),
             BridgeMethod.PipelineRegenerate =>
                 SettingsBridgeProtocol.IsCanonicalId(parameters.GetProperty("expectedVersionId")) &&
                 SettingsBridgeProtocol.IsDigest(parameters.GetProperty("expectedVersionDigest")) &&
@@ -103,6 +116,7 @@ internal sealed class SourceOnlyBridgeHandler
     private readonly SourceOnlyExecutionStore executionStore;
     private readonly DefaultSettingsStore settingsStore;
     private readonly VersionService versions;
+    private readonly SourceOnlyResultService results;
     private readonly SourceOnlyBridgeProjection projection;
     private readonly Func<string> currentActorSid;
     private readonly AuthorizationService authorization;
@@ -128,6 +142,7 @@ internal sealed class SourceOnlyBridgeHandler
         this.executionStore = executionStore ?? throw new ArgumentNullException(nameof(executionStore));
         this.settingsStore = settingsStore ?? throw new ArgumentNullException(nameof(settingsStore));
         versions = new VersionService(projectStore ?? throw new ArgumentNullException(nameof(projectStore)));
+        results = resultService ?? throw new ArgumentNullException(nameof(resultService));
         projection = new SourceOnlyBridgeProjection(executionStore, resultService);
         this.currentActorSid = currentActorSid ?? throw new ArgumentNullException(nameof(currentActorSid));
         this.authorization = authorization ?? throw new ArgumentNullException(nameof(authorization));
@@ -147,13 +162,29 @@ internal sealed class SourceOnlyBridgeHandler
         {
             if (!SourceOnlyBridgeProtocol.HasValidParameters(request.Method, request.Parameters))
             {
-                return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Invalid);
+                return Fail(request, SourceOnlyBridgeStatus.Invalid);
             }
 
             string actor = currentActorSid();
             Demand(actor, request.Method);
             EntityId<ProjectIdTag> projectId = SourceOnlyBridgeProtocol.ReadProjectId(request);
             StoredSourceOnlyExecution? execution;
+            if (request.Method == BridgeMethod.PipelineVersions)
+            {
+                IReadOnlyList<SourceOnlyVersionHistoryEntry> history =
+                    results.ListVersionHistory(projectId, executionStore);
+                int? workingCopyRevision = versions.GetCurrentState(projectId)?.Revision;
+                if (!string.Equals(actor, currentActorSid(), StringComparison.Ordinal))
+                {
+                    return Fail(request, SourceOnlyBridgeStatus.Forbidden);
+                }
+
+                return history.Count == 0 || workingCopyRevision is null
+                    ? Fail(request, SourceOnlyBridgeStatus.NotFound)
+                    : SourceOnlyBridgeJson.WriteVersionsResponse(request, SourceOnlyBridgeStatus.Available,
+                        history, workingCopyRevision.Value);
+            }
+
             if (request.Method == BridgeMethod.PipelineRead)
             {
                 execution = executionStore.GetLatestForProject(projectId);
@@ -163,24 +194,24 @@ internal sealed class SourceOnlyBridgeHandler
                 SourceOnlyPipeline? pipeline = pipelineProvider();
                 if (pipeline is null)
                 {
-                    return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Unavailable);
+                    return Fail(request, SourceOnlyBridgeStatus.Unavailable);
                 }
 
                 execution = executionStore.GetLatestForProject(projectId);
                 if (execution is null)
                 {
-                    return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.NotFound);
+                    return Fail(request, SourceOnlyBridgeStatus.NotFound);
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
-                if (request.Method == BridgeMethod.PipelineRegenerate)
+                if (request.Method is BridgeMethod.PipelineRestore or BridgeMethod.PipelineRegenerate)
                 {
                     // A terminal execution may still own unresolved side effects. Reject
                     // those before accepting a new root, even when no job is busy.
                     if (execution.Phase < SourceOnlyExecutionPhase.Completed ||
                         execution.Phase == SourceOnlyExecutionPhase.ReconciliationRequired)
                     {
-                        return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Conflict);
+                        return Fail(request, SourceOnlyBridgeStatus.Conflict);
                     }
 
                     if (execution.ResultJson is not null)
@@ -189,7 +220,62 @@ internal sealed class SourceOnlyBridgeHandler
                         saved.ValidateBinding(execution);
                         if (saved.StagingCleanupRequired || saved.ReconciliationRequired)
                         {
-                            return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Conflict);
+                            return Fail(request, SourceOnlyBridgeStatus.Conflict);
+                        }
+                    }
+                }
+
+                if (request.Method == BridgeMethod.PipelineRestore)
+                {
+                    JsonElement restoreParameters = request.Parameters;
+                    var targetId = EntityId<CompositionVersionIdTag>.Parse(restoreParameters.GetProperty("targetVersionId").GetString()!);
+                    var targetDigest = new ContentDigest(restoreParameters.GetProperty("targetVersionDigest").GetString()!);
+                    int workingCopyRevision = SourceOnlyBridgeProtocol.ReadRevision(restoreParameters, "expectedWorkingCopyRevision");
+                    int restoreSettingsRevision = SourceOnlyBridgeProtocol.ReadRevision(restoreParameters, "expectedSettingsRevision");
+                    StoredProjectSettings? restoreSettings = settingsStore.GetProjectSettings(projectId).Settings;
+                    if (restoreSettings is null)
+                    {
+                        return Fail(request, SourceOnlyBridgeStatus.Unavailable);
+                    }
+
+                    CompositionVersion? target = versions.GetVersion(targetId);
+                    WorkingCopyState? restoreHead = versions.GetCurrentState(projectId);
+                    if (target is null || target.ProjectId != projectId || target.ContentDigest != targetDigest ||
+                        restoreHead is null || restoreHead.WorkingCopy.ProjectId != projectId ||
+                        restoreHead.Revision != workingCopyRevision ||
+                        restoreHead.WorkingCopy.BaseVersionId == targetId ||
+                        restoreSettings.ProjectId != projectId || restoreSettings.Revision != restoreSettingsRevision ||
+                        restoreSettings.CurrentSnapshot.ContentDigest.Hex !=
+                            restoreParameters.GetProperty("expectedSettingsSnapshotDigest").GetString())
+                    {
+                        return Fail(request, SourceOnlyBridgeStatus.Conflict);
+                    }
+
+                    DemandCurrent(actor, request.Method);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    // An earlier restore may have committed its child version and then
+                    // failed to start generation. Adopt that exact child instead of
+                    // stacking another one, so retrying the same restore recovers.
+                    CompositionVersion? orphan = AdoptRestoredHead(projectId, restoreHead, target);
+                    // Rolling back as a child keeps the current version, every past
+                    // version and every previously delivered artifact untouched.
+                    CompositionVersion child = orphan ?? versions.RollbackAsChild(restoreHead.WorkingCopy, target,
+                        workingCopyRevision, EntityId<CompositionVersionIdTag>.New(), actor,
+                        timeProvider.GetUtcNow().ToUniversalTime(),
+                        "Restore an earlier composition as a new child version.").Version;
+                    execution = Invoke(() => pipeline.Regenerate(projectId, child.Id, child.ContentDigest,
+                        restoreSettings.CurrentSnapshot, restoreSettingsRevision, actor,
+                        timeProvider.GetUtcNow().ToUniversalTime()));
+                }
+                else if (request.Method == BridgeMethod.PipelineRegenerate)
+                {
+                    if (execution.ResultJson is not null)
+                    {
+                        SourceOnlyResult saved = SourceOnlyResult.ParseCanonical(execution.ResultJson, execution.ResultDigest);
+                        saved.ValidateBinding(execution);
+                        if (saved.StagingCleanupRequired || saved.ReconciliationRequired)
+                        {
+                            return Fail(request, SourceOnlyBridgeStatus.Conflict);
                         }
                     }
 
@@ -200,7 +286,7 @@ internal sealed class SourceOnlyBridgeHandler
                     StoredProjectSettings? settings = settingsStore.GetProjectSettings(projectId).Settings;
                     if (settings is null)
                     {
-                        return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Unavailable);
+                        return Fail(request, SourceOnlyBridgeStatus.Unavailable);
                     }
 
                     CompositionVersion? parent = versions.GetVersion(parentId);
@@ -211,7 +297,7 @@ internal sealed class SourceOnlyBridgeHandler
                         head is null || head.WorkingCopy.ProjectId != projectId || head.WorkingCopy.BaseVersionId != parentId ||
                         !head.WorkingCopy.Elements.SequenceEqual(parent.Elements))
                     {
-                        return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Conflict);
+                        return Fail(request, SourceOnlyBridgeStatus.Conflict);
                     }
 
                     // The pipeline must repeat reconciliation and current-parent/settings
@@ -227,13 +313,13 @@ internal sealed class SourceOnlyBridgeHandler
                     StoredSourceOnlyExecution? target = executionStore.Get(executionId);
                     if (target is null || target.Request.ProjectId != projectId)
                     {
-                        return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.NotFound);
+                        return Fail(request, SourceOnlyBridgeStatus.NotFound);
                     }
 
                     int expectedRevision = SourceOnlyBridgeProtocol.ReadRevision(request.Parameters, "expectedRevision");
                     if (target.Request.ExecutionId != execution.Request.ExecutionId || target.Revision != expectedRevision)
                     {
-                        return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Conflict);
+                        return Fail(request, SourceOnlyBridgeStatus.Conflict);
                     }
 
                     if (request.Method == BridgeMethod.PipelineRetry)
@@ -241,7 +327,7 @@ internal sealed class SourceOnlyBridgeHandler
                         if (target.Phase is not (SourceOnlyExecutionPhase.Failed or SourceOnlyExecutionPhase.Canceled) ||
                             target.ResultJson is not null || target.VersionId is not null)
                         {
-                            return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Conflict);
+                            return Fail(request, SourceOnlyBridgeStatus.Conflict);
                         }
 
                         DemandCurrent(actor, request.Method);
@@ -257,7 +343,7 @@ internal sealed class SourceOnlyBridgeHandler
                     {
                         if (target.Phase >= SourceOnlyExecutionPhase.Completed)
                         {
-                            return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Conflict);
+                            return Fail(request, SourceOnlyBridgeStatus.Conflict);
                         }
 
                         // CancelAsync has no revision argument. Check the durable identity/revision
@@ -269,17 +355,17 @@ internal sealed class SourceOnlyBridgeHandler
                         if (beforeCancel is null || beforeCancel.Request.ProjectId != projectId || beforeCancel.Revision != expectedRevision ||
                             executionStore.GetLatestForProject(projectId)?.Request.ExecutionId != executionId)
                         {
-                            return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Conflict);
+                            return Fail(request, SourceOnlyBridgeStatus.Conflict);
                         }
                         SourceOnlyPipelineRun? canceled = await pipeline.CancelAsync(executionId).ConfigureAwait(false);
                         if (canceled is null || canceled.InfrastructureFailureCode is not null || canceled.Execution is null)
                         {
-                            return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Unavailable);
+                            return Fail(request, SourceOnlyBridgeStatus.Unavailable);
                         }
 
                         if (canceled.ExecutionId != executionId || canceled.Execution.Request.ProjectId != projectId)
                         {
-                            return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Invalid);
+                            return Fail(request, SourceOnlyBridgeStatus.Invalid);
                         }
 
                         execution = executionStore.Get(executionId);
@@ -289,19 +375,19 @@ internal sealed class SourceOnlyBridgeHandler
 
             if (execution is null)
             {
-                return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.NotFound);
+                return Fail(request, SourceOnlyBridgeStatus.NotFound);
             }
 
             if (execution.Request.ProjectId != projectId)
             {
-                return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Invalid);
+                return Fail(request, SourceOnlyBridgeStatus.Invalid);
             }
 
             SourceOnlyBridgeSnapshot snapshot = await projection.ReadAsync(execution, cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             if (!string.Equals(actor, currentActorSid(), StringComparison.Ordinal))
             {
-                return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Forbidden);
+                return Fail(request, SourceOnlyBridgeStatus.Forbidden);
             }
 
             Demand(actor, request.Method);
@@ -311,38 +397,66 @@ internal sealed class SourceOnlyBridgeHandler
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (AuthorizationException)
         {
-            return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Forbidden);
+            return Fail(request, SourceOnlyBridgeStatus.Forbidden);
         }
         catch (StoreConcurrencyException)
         {
-            return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Conflict);
+            return Fail(request, SourceOnlyBridgeStatus.Conflict);
         }
         catch (PipelineConflictException)
         {
-            return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Conflict);
+            return Fail(request, SourceOnlyBridgeStatus.Conflict);
         }
         catch (ObjectDisposedException)
         {
-            return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Unavailable);
+            return Fail(request, SourceOnlyBridgeStatus.Unavailable);
         }
         catch (Exception exception) when (exception is ArgumentException or FormatException or JsonException or
             SourceOnlyResultException or InvalidOperationException or KeyNotFoundException or OverflowException)
         {
-            return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Invalid);
+            return Fail(request, SourceOnlyBridgeStatus.Invalid);
         }
         catch (Exception)
         {
-            return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Unavailable);
+            return Fail(request, SourceOnlyBridgeStatus.Unavailable);
         }
     }
+
+    /// <summary>Writes the response shape that belongs to the requested method.</summary>
+    private static string Fail(BridgeRequest request, SourceOnlyBridgeStatus status) =>
+        request.Method == BridgeMethod.PipelineVersions
+            ? SourceOnlyBridgeJson.WriteVersionsResponse(request, status, [], 0)
+            : SourceOnlyBridgeJson.WriteResponse(request, status);
 
     private void Demand(string actor, BridgeMethod method)
     {
         authorization.Demand(actor, AuthorizationOperation.ViewProject);
-        if (method != BridgeMethod.PipelineRead)
+        if (method is not (BridgeMethod.PipelineRead or BridgeMethod.PipelineVersions))
         {
             authorization.DemandAs(actor, AuthorizationRole.Editor, AuthorizationOperation.CreateCompositionVersion);
         }
+    }
+
+    /// <summary>
+    /// The exact child an earlier restore of the same target already committed
+    /// before it failed to start generation. Null when no such head exists.
+    /// </summary>
+    private CompositionVersion? AdoptRestoredHead(EntityId<ProjectIdTag> projectId,
+        WorkingCopyState head, CompositionVersion target)
+    {
+        if (head.WorkingCopy.BaseVersionId is not EntityId<CompositionVersionIdTag> headId ||
+            executionStore.GetLatestForProject(projectId)?.VersionId == headId)
+        {
+            return null;
+        }
+
+        CompositionVersion? headVersion = versions.GetVersion(headId);
+        return headVersion is not null && headVersion.ProjectId == projectId &&
+            headVersion.ParentVersionId is not null &&
+            headVersion.Elements.SequenceEqual(target.Elements) &&
+            head.WorkingCopy.Elements.SequenceEqual(headVersion.Elements)
+            ? headVersion
+            : null;
     }
 
     private void DemandCurrent(string actor, BridgeMethod method)
@@ -470,6 +584,56 @@ internal static class SourceOnlyBridgeJson
             writer.WriteString("status", text);
             writer.WritePropertyName("snapshot");
             JsonSerializer.Serialize(writer, snapshot, Options);
+            writer.WriteEndObject();
+        });
+    }
+
+    /// <summary>
+    /// The read-only past-version list. No file path, storage reference or
+    /// artifact content crosses this boundary.
+    /// </summary>
+    internal static string WriteVersionsResponse(BridgeRequest request, SourceOnlyBridgeStatus status,
+        IReadOnlyList<SourceOnlyVersionHistoryEntry> versions, int workingCopyRevision)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(versions);
+        if (request.Method != BridgeMethod.PipelineVersions || workingCopyRevision < 0 ||
+            (status == SourceOnlyBridgeStatus.Available) != (versions.Count != 0))
+        {
+            throw new ArgumentException("The source-only version response is inconsistent.", nameof(versions));
+        }
+
+        string text = status switch
+        {
+            SourceOnlyBridgeStatus.Available => "available",
+            SourceOnlyBridgeStatus.NotFound => "notFound",
+            SourceOnlyBridgeStatus.Conflict => "conflict",
+            SourceOnlyBridgeStatus.Forbidden => "forbidden",
+            SourceOnlyBridgeStatus.Unavailable => "unavailable",
+            SourceOnlyBridgeStatus.Invalid => "invalid",
+            _ => throw new ArgumentOutOfRangeException(nameof(status)),
+        };
+        return BridgeProtocol.CreateResultResponse(request, writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("status", text);
+            writer.WriteNumber("workingCopyRevision", workingCopyRevision);
+            writer.WriteStartArray("versions");
+            foreach (SourceOnlyVersionHistoryEntry entry in versions)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("versionId", entry.VersionId.ToString());
+                writer.WriteString("versionDigest", entry.VersionDigest.Hex);
+                if (entry.ParentVersionId is null) { writer.WriteNull("parentVersionId"); }
+                else { writer.WriteString("parentVersionId", entry.ParentVersionId.ToString()); }
+                writer.WriteString("executionId", entry.ExecutionId.ToString());
+                writer.WriteString("phase", entry.Phase.ToString());
+                writer.WriteBoolean("hasResult", entry.HasResult);
+                writer.WriteBoolean("isCurrent", entry.IsCurrent);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
             writer.WriteEndObject();
         });
     }

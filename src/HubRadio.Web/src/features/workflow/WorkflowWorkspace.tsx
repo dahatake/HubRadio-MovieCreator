@@ -15,7 +15,7 @@ import { findProxyFrameAtSourceTime, positionMatchesFrame, type PlayerSnapshot }
 import { PreviewModeControls, usePreviewModes } from '../preview-modes'
 import { ProjectWorkspace } from '../projects/ProjectWorkspace'
 import { useProjectState } from '../projects/ProjectStateProvider'
-import { ResultGallery, type ResultGalleryWarning } from '../results/ResultGallery'
+import { ancillaryArtifactLabels, ResultGallery, type ResultGalleryWarning } from '../results/ResultGallery'
 import { deriveResultPresentation } from '../results/resultPresentation'
 import { useReviewState } from '../review'
 import { ReviewPanelView, type ReviewPanelProps } from '../review/ReviewPanel'
@@ -430,6 +430,16 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
     return () => clearTimeout(timer)
   }, [warningOrigin, warningIsCurrent, warningBindingCurrent, pipelineCurrent, navigation.warningVisit?.pending])
 
+  // Read the past-version list once the project's draft is finalized and the
+  // results screen is visible. It is a read; it accepts no work.
+  useEffect(() => {
+    if (!resultsActive || navigation.activeTool !== null || activeProjectId === null ||
+        draft?.isFinalized !== true || pipeline.state.versionsStatus !== 'idle') {
+      return
+    }
+    pipeline.readVersions()
+  }, [resultsActive, navigation.activeTool, activeProjectId, draft?.isFinalized, pipeline])
+
   const regenerationReason = sourceDirty || navigationBlocked ? '未保存の編集があります。保存または取消後に再生成できます。'
     : settings.state.pendingRequest !== null || settings.state.needsRefresh ? '保存済み設定の確認を完了してください。'
       : savedSettings === null ? '設定を開いて、この動画の保存済み設定を確認してください。'
@@ -444,6 +454,22 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
   function regenerate(params: PipelineRegenerationParams): boolean {
     return resultsActive && navigation.activeTool === null && !Object.values(dirtyFlags.current).some(Boolean) &&
       regenerationReason === null && JSON.stringify(params) === JSON.stringify(regenerationParams) && pipeline.regenerate(params)
+  }
+  // Restoring reuses the regeneration preconditions: it accepts a new root and
+  // must not run while the workspace holds unsaved edits or an unconfirmed setting.
+  const restoreReason = regenerationReason !== null ? regenerationReason
+    : savedSettings === null || activeProjectId === null ? '保存済み設定を確認できません。'
+      : pipeline.state.workingCopyRevision === null ? '過去版の一覧を取得してから作り直せます。' : null
+  function restore(targetVersionId: string, targetVersionDigest: string): void {
+    const workingCopyRevision = pipeline.state.workingCopyRevision
+    if (!resultsActive || navigation.activeTool !== null || Object.values(dirtyFlags.current).some(Boolean) ||
+        restoreReason !== null || savedSettings === null || activeProjectId === null || workingCopyRevision === null) return
+    pipeline.restore({
+      projectId: activeProjectId, targetVersionId, targetVersionDigest,
+      expectedWorkingCopyRevision: workingCopyRevision,
+      expectedSettingsRevision: savedSettings.revision,
+      expectedSettingsSnapshotDigest: savedSettings.snapshotDigest,
+    })
   }
 
   useEffect(() => {
@@ -607,6 +633,15 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
                 {summary === null && result === null ? (
                   <div className="workflow-empty"><h2>仕上がり一覧</h2><p>予定の成果物は未取得です。元動画を選ぶと、固定された予定を確認できます。</p><button type="button" onClick={() => selectStep('source')}>元動画を選ぶ画面へ</button></div>
                 ) : <ResultGallery presentation={presentation} warnings={warnings} selectedWarningId={selectedWarningId} onFollowWarning={followWarning}
+                  versionHistory={draft?.isFinalized === true && activeProjectId !== null ? {
+                    versions: pipeline.state.versions,
+                    unavailableReason: pipeline.state.versionsStatus === 'idle' || pipeline.state.versionsStatus === 'loading' ||
+                      pipeline.state.versionsStatus === 'available' || pipeline.state.versionsStatus === 'notFound'
+                      ? null : '過去版を取得できませんでした。もう一度お試しください。',
+                    pending: pipeline.state.pendingMethod !== null,
+                    disabledReason: restoreReason,
+                    onRestore: restore,
+                  } : undefined}
                   onSelectArtifact={artifactId => {
                     const a = result?.artifacts.find(item => item.artifact.artifactId === artifactId)
                     if (!resultsActive || settingsOpen || navigation.activeTool !== null || result === null || a === undefined || sourceOnlyMediaUrl(result, artifactId) === null) return
@@ -665,6 +700,15 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
               : <>
                 <p role="status">{presentation.resultSource === 'previous' ? '前回の親版の保存記録です。' : '今回の成果物の保存記録です。'}外部公開は許可されていません。</p>
                 <ul>{result.artifacts.map(a => <li key={a.artifact.artifactId}>{a.role}: {a.delivered ? '納品済み（実ファイル・受領証跡あり）' : '未納品'}</li>)}</ul>
+                <h3>付帯成果物</h3>
+                {result.ancillaryArtifacts.length === 0
+                  ? <p role="status">文字起こし・使用区間一覧の保存記録はありません。</p>
+                  : <ul>{result.ancillaryArtifacts.map(a => (
+                    <li key={a.artifact.artifactId}>
+                      {ancillaryArtifactLabels[a.kind]}:{' '}
+                      納品済み（実ファイル・受領証跡あり） · <code>{a.artifact.contentDigest}</code>
+                    </li>
+                  ))}</ul>}
               </>}
             <button type="button" onClick={() => selectStep('results')}>仕上がりへ戻る</button>
           </div>

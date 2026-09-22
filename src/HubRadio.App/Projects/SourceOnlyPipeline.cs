@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using HubRadio.App.Analysis;
 using HubRadio.App.Compositions;
+using HubRadio.App.Delivery;
 using HubRadio.App.Jobs;
 using HubRadio.App.Media;
 using HubRadio.App.Models;
@@ -1436,6 +1437,9 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                     }
                     result = BindTranscriptResult(evaluated, new SourceOnlyResultTranscriptReference(analysis.Import.Revision.Id,
                         analysis.Transcript.ContentDigest, completedIngest.Original.Artifact.Id));
+                    result = await ExportAncillaryArtifactsAsync(RequireExecution(execution.Request.ExecutionId),
+                        project, preparation, analysis.Import, composition.Spans, result, runtime.DatabasePath,
+                        stageToken).ConfigureAwait(false);
                     _ = await SaveJsonAsync(execution, StableId<ArtifactIdTag>(execution.Request.ExecutionId.ToString(), "evaluation-receipt"),
                         result.CanonicalJson, "evaluation-receipt", stageToken).ConfigureAwait(false);
                     if (result.ReconciliationRequired || result.StagingCleanupRequired)
@@ -1496,7 +1500,101 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         return new SourceOnlyResult(evaluated.Binding, evaluated.GenerationDisposition,
             evaluated.Artifacts, evaluated.Omissions, evaluated.Failures, evaluated.ReconciliationArtifacts,
             [transcript], evaluated.PrimaryWorkflow, evaluated.StagingCleanupRequired,
-            evaluated.GenerationWarnings, evaluated.NativeReconciliationAttempts);
+            evaluated.GenerationWarnings, evaluated.NativeReconciliationAttempts, evaluated.AncillaryArtifacts);
+    }
+
+    /// <summary>The grounded ancillary artifacts the source-only set delivers.</summary>
+    internal static readonly AncillaryArtifactKind[] AncillaryKinds =
+        [AncillaryArtifactKind.Transcript, AncillaryArtifactKind.UsedSourceRanges];
+
+    internal static SourceOnlyResultEvidenceKind AncillaryEvidenceKind(AncillaryArtifactKind kind) => kind switch
+    {
+        AncillaryArtifactKind.Transcript => SourceOnlyResultEvidenceKind.Transcript,
+        AncillaryArtifactKind.UsedSourceRanges => SourceOnlyResultEvidenceKind.UsedSourceRanges,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    internal static SourceOnlyResultOmissionRole AncillaryOmissionRole(AncillaryArtifactKind kind) => kind switch
+    {
+        AncillaryArtifactKind.Transcript => SourceOnlyResultOmissionRole.Transcript,
+        AncillaryArtifactKind.UsedSourceRanges => SourceOnlyResultOmissionRole.UsedSourceRanges,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    internal static SourceOnlyResult BindAncillaryResult(SourceOnlyResult evaluated,
+        IReadOnlyList<SourceOnlyResultEvidenceReference> ancillary, IReadOnlyList<SourceOnlyResultOmission> omissions) =>
+        new(evaluated.Binding, evaluated.GenerationDisposition, evaluated.Artifacts, omissions,
+            evaluated.Failures, evaluated.ReconciliationArtifacts, evaluated.TranscriptReferences,
+            evaluated.PrimaryWorkflow, evaluated.StagingCleanupRequired, evaluated.GenerationWarnings,
+            evaluated.NativeReconciliationAttempts, ancillary);
+
+    /// <summary>
+    /// Records one omission per ancillary kind that was not written, so the
+    /// manifest names the missing deliverable instead of an empty file.
+    /// </summary>
+    internal static SourceOnlyResult BindAncillaryOmissions(SourceOnlyResult evaluated,
+        IReadOnlyList<SourceOnlyResultEvidenceReference> ancillary) =>
+        BindAncillaryResult(evaluated, ancillary,
+            [.. evaluated.Omissions, .. AncillaryKinds
+                .Where(kind => !ancillary.Any(item => item.Kind == AncillaryEvidenceKind(kind)))
+                .Select(kind => new SourceOnlyResultOmission(AncillaryOmissionRole(kind),
+                    SourceOnlyResultOmissionReason.AncillaryExportFailed))]);
+
+    /// <summary>
+    /// Writes the grounded ancillary artifacts as a step of its own. A content
+    /// failure here is recorded as a named omission so the seven rendered
+    /// outputs stay deliverable instead of discarding a completed render and its
+    /// offline ASR evidence. A failure that left durable state behind is NOT
+    /// downgraded: it escalates to the existing manual-resolution path.
+    /// </summary>
+    private async Task<SourceOnlyResult> ExportAncillaryArtifactsAsync(StoredSourceOnlyExecution execution,
+        Project project, StandardCompositionPreparation preparation, TranscriptImportResult import,
+        IReadOnlyList<SourceSpan> compositionSpans, SourceOnlyResult evaluated, string databasePath,
+        CancellationToken token)
+    {
+        string seed = execution.Request.ExecutionId.ToString();
+        try
+        {
+            CompositionVersion? editingSource = null;
+            if (preparation.Child.ParentVersionId is EntityId<CompositionVersionIdTag> parentId)
+            {
+                StoredCompositionVersion stored = projects.GetCompositionVersion(parentId)
+                    ?? throw new InvalidOperationException("The parent composition version is unavailable.");
+                editingSource = CompositionSnapshotJson.ReadVersion(stored.CanonicalJson);
+            }
+            StoredProjectCreationDraft draft = drafts.GetDraft(execution.Request.DraftId)
+                ?? throw new InvalidOperationException("The accepted project creation draft is unavailable.");
+            using JsonDocument payload = JsonDocument.Parse(draft.CanonicalJson);
+            string language = Text(payload.RootElement, "language");
+            var request = new AncillaryArtifactExportRequest(
+                StableId<AncillaryArtifactExportIdTag>(seed, "ancillary-export"), project, preparation.Child,
+                import.Revision, compositionSpans, [],
+                new AncillaryPublishingText(null, null, null, []), editingSource,
+                new ReviewStore(databasePath).GetVersionEvidence(preparation.Child.Id)
+                    ?? new StoredVersionEvidence(preparation.Child.Id, project.Id,
+                        preparation.Child.ContentDigest, [], [], []),
+                [], AncillaryKinds.ToDictionary(kind => kind,
+                    kind => StableId<ArtifactIdTag>(seed, "ancillary:" + kind.ToString())),
+                language, Now(preparation.Child.CreatedAt), AncillaryKinds);
+            AncillaryArtifactExportResult export = await new AncillaryArtifactExporter(artifacts, workspace)
+                .ExportAsync(request, token).ConfigureAwait(false);
+            return BindAncillaryOmissions(evaluated, export.Artifacts.Select(item => new SourceOnlyResultEvidenceReference(
+                AncillaryEvidenceKind(item.Kind), new SourceOnlyResultArtifactReference(item.ArtifactId,
+                    item.StoredArtifact.ContentDigest, item.StoredArtifact.ByteSize, item.StoredArtifact.Kind))).ToArray());
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (AncillaryArtifactExportException exception) when (exception.ReconciliationRequired)
+        {
+            // Durable rows, files or a staging directory may remain. Reuse the
+            // existing manual-resolution gate rather than reporting a warning.
+            throw new PipelineFailure(SourceOnlyExecutionPhase.ReconciliationRequired,
+                "source_only.ancillary_reconciliation_required", BindAncillaryOmissions(evaluated, []));
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException &&
+            SourceOnlyOutputEvaluation.Recoverable(exception))
+        {
+            return BindAncillaryOmissions(evaluated, []);
+        }
     }
 
     internal static async Task<SourceOnlyResult> DeliverResultAsync(StoredSourceOnlyExecution execution,
@@ -1535,6 +1633,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 !delivered.GenerationWarnings.SequenceEqual(evaluated.GenerationWarnings) ||
                 !delivered.Omissions.SequenceEqual(evaluated.Omissions) ||
                 !delivered.TranscriptReferences.SequenceEqual(evaluated.TranscriptReferences) ||
+                !delivered.AncillaryArtifacts.SequenceEqual(evaluated.AncillaryArtifacts) ||
                 delivered.Artifacts.Count != evaluated.Artifacts.Count ||
                 delivered.Artifacts.Any(item => !item.Delivered || !evaluated.Artifacts.Any(original =>
                     original.Artifact == item.Artifact && original.Role == item.Role && original.RenditionId == item.RenditionId &&
@@ -2454,7 +2553,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             planning, token).ConfigureAwait(false);
         var musicInputs = new StandardMusicRenderInput(catalog, analysis.Import.Revision, assignedCards, tracks);
         await SaveCompositionStageAsync(execution, "composition-checkpoint", standard.Checkpoint, token).ConfigureAwait(false);
-        return new CompositionState(standard.Preparation, musicInputs);
+        return new CompositionState(standard.Preparation, musicInputs, decisionSpans);
     }
 
     private async Task<AutomaticEvidence> MeasureAutomaticEvidenceAsync(StoredSourceOnlyExecution execution,
@@ -3112,7 +3211,8 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
     }
     private sealed record AnalysisState(TranscriptImportResult Import, StoredArtifact Audio,
         StoredArtifact Timeline, StoredArtifact Raw, StoredArtifact Transcript);
-    private sealed record CompositionState(StandardCompositionPreparation Preparation, StandardMusicRenderInput Music);
+    private sealed record CompositionState(StandardCompositionPreparation Preparation, StandardMusicRenderInput Music,
+        IReadOnlyList<SourceSpan> Spans);
     private sealed record AutomaticEvidence(IReadOnlyList<SuggestionCandidate> Candidates, IReadOnlyList<ModelRun> ModelRuns,
         IReadOnlyList<SourceOnlyAutomaticSkip> Skipped);
     private sealed class HeldInputs : IDisposable

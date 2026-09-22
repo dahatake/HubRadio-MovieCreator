@@ -64,11 +64,17 @@ public sealed record SourceOnlyResultFailureDto(string Code, string? ArtifactId,
 public sealed record SourceOnlyResultGenerationWarningDto(string Role, string Code);
 public sealed record SourceOnlyResultTranscriptDto(string RevisionId, string RevisionDigest, string SourceArtifactId);
 public sealed record SourceOnlyResultWorkflowDto(string ArtifactId, int Revision, string CanonicalDigest, string State, string EvaluationId);
+/// <summary>
+/// Canonical persistence omits <c>AncillaryArtifacts</c> entirely when absent so
+/// results stored before ancillary delivery keep their exact bytes and digest.
+/// </summary>
 public sealed record SourceOnlyResultDto(string SchemaVersion, SourceOnlyResultBindingDto Binding,
     string GenerationDisposition, SourceOnlyResultArtifactDto[] Artifacts, SourceOnlyResultOmissionDto[] Omissions,
     SourceOnlyResultFailureDto[] Failures, SourceOnlyResultReferenceDto[] ReconciliationArtifacts,
     SourceOnlyResultTranscriptDto[] TranscriptReferences, SourceOnlyResultWorkflowDto? PrimaryWorkflow,
-    bool StagingCleanupRequired, SourceOnlyResultGenerationWarningDto[] GenerationWarnings);
+    bool StagingCleanupRequired, SourceOnlyResultGenerationWarningDto[] GenerationWarnings,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    SourceOnlyResultEvidenceDto[]? AncillaryArtifacts = null);
 
 public static class SourceOnlyResultCodec
 {
@@ -120,6 +126,10 @@ public static class SourceOnlyResultCodec
             CheckArray(root, "nativeReconciliationAttempts", SourceOnlyResult.MaximumReconciliationCount);
             CheckArray(root, "generationWarnings", SourceOnlyResult.MaximumGenerationWarningCount);
             CheckArray(root, "transcriptReferences", SourceOnlyResult.MaximumTranscriptCount);
+            if (root.TryGetProperty("ancillaryArtifacts", out _))
+            {
+                CheckArray(root, "ancillaryArtifacts", SourceOnlyResult.MaximumAncillaryArtifactCount);
+            }
             foreach (JsonElement artifact in root.GetProperty("artifacts").EnumerateArray())
             {
                 CheckArray(artifact, "evidence", 4);
@@ -148,7 +158,8 @@ public static class SourceOnlyResultCodec
                     Id<AutomatedEvaluationIdTag>(dto.PrimaryWorkflow.EvaluationId)), dto.StagingCleanupRequired,
                 dto.GenerationWarnings.Select(w => new SourceOnlyResultGenerationWarning(w.Role, w.Code)).ToArray(),
                 native.Select(p => new SourceOnlyResultPromotionAttempt(Reference(p.Artifact), Id<ProjectIdTag>(p.ProjectId),
-                    p.StagingPath, p.StorageReference, OptionalEnum<SourceOnlyResultEvidenceKind>(p.EvidenceKind))).ToArray());
+                    p.StagingPath, p.StorageReference, OptionalEnum<SourceOnlyResultEvidenceKind>(p.EvidenceKind))).ToArray(),
+                (dto.AncillaryArtifacts ?? []).Select(Evidence).ToArray());
             Require(result.CanonicalJson == canonicalJson);
             return result;
         }
@@ -160,6 +171,13 @@ public static class SourceOnlyResultCodec
         }
     }
 
+    internal static SourceOnlyResultDto ToWebDto(SourceOnlyResult result) => ToDto(result) with
+    {
+        // Persistence omits the key entirely for results stored before ancillary
+        // delivery; the closed web schema always carries it, empty when absent.
+        AncillaryArtifacts = result.AncillaryArtifacts.Select(EvidenceDto).ToArray(),
+    };
+
     internal static SourceOnlyResultDto ToDto(SourceOnlyResult result) => new(SchemaVersion, BindingDto(result.Binding),
         result.GenerationDisposition.ToString(), result.Artifacts.Select(ArtifactDto).ToArray(),
         result.Omissions.Select(item => new SourceOnlyResultOmissionDto(item.Role.ToString(), item.Reason.ToString(), item.RenditionId?.ToString())).ToArray(),
@@ -170,7 +188,8 @@ public static class SourceOnlyResultCodec
         result.PrimaryWorkflow is null ? null : new SourceOnlyResultWorkflowDto(result.PrimaryWorkflow.ArtifactId.ToString(),
             result.PrimaryWorkflow.Revision, result.PrimaryWorkflow.CanonicalDigest.Hex, result.PrimaryWorkflow.State.ToString(),
             result.PrimaryWorkflow.EvaluationId.ToString()), result.StagingCleanupRequired,
-        result.GenerationWarnings.Select(w => new SourceOnlyResultGenerationWarningDto(w.Role, w.Code)).ToArray());
+        result.GenerationWarnings.Select(w => new SourceOnlyResultGenerationWarningDto(w.Role, w.Code)).ToArray(),
+        result.AncillaryArtifacts.Count == 0 ? null : result.AncillaryArtifacts.Select(EvidenceDto).ToArray());
 
     internal static SourceOnlyResultBindingDto BindingDto(SourceOnlyResultBinding b) =>
         new(b.ProjectId.ToString(), b.ExecutionId.ToString(), b.RootJobId.ToString(), b.SettingsSnapshotDigest.Hex, b.VersionId.ToString(), b.VersionDigest.Hex);
@@ -373,6 +392,15 @@ public static class SourceOnlyResultCodec
         Require(result.TranscriptReferences.Select(t => t.RevisionId).Distinct().Count() == result.TranscriptReferences.Count);
         foreach (SourceOnlyResultTranscriptReference t in result.TranscriptReferences)
             Require(t.RevisionId is not null && t.RevisionDigest is not null && t.SourceArtifactId is not null);
+        Require(result.AncillaryArtifacts.Count <= SourceOnlyResult.MaximumAncillaryArtifactCount &&
+            result.AncillaryArtifacts.Select(e => e.Kind).Distinct().Count() == result.AncillaryArtifacts.Count &&
+            result.AncillaryArtifacts.Select(e => e.Artifact.ArtifactId).Distinct().Count() == result.AncillaryArtifacts.Count);
+        foreach (SourceOnlyResultEvidenceReference e in result.AncillaryArtifacts)
+        {
+            Require(e.Kind is SourceOnlyResultEvidenceKind.Transcript or SourceOnlyResultEvidenceKind.UsedSourceRanges);
+            ValidateReference(e.Artifact, ArtifactKind.Delivery);
+            Require(result.Artifacts.All(a => a.ArtifactId != e.Artifact.ArtifactId));
+        }
         if (result.PrimaryWorkflow is SourceOnlyResultWorkflowReference w)
         {
             SourceOnlyResultArtifact? a = result.Artifacts.SingleOrDefault(a => a.ArtifactId == w.ArtifactId);

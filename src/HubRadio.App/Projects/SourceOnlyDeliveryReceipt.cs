@@ -310,7 +310,7 @@ internal sealed record SourceOnlyDeliveryReceipt(string SchemaVersion, string De
 
     private static SourceOnlyResult CopyResult(SourceOnlyResult r, IReadOnlyList<SourceOnlyResultArtifact> artifacts) => new(
         r.Binding, r.GenerationDisposition, artifacts, r.Omissions, r.Failures, r.ReconciliationArtifacts, r.TranscriptReferences,
-        r.PrimaryWorkflow, r.StagingCleanupRequired, r.GenerationWarnings, r.NativeReconciliationAttempts);
+        r.PrimaryWorkflow, r.StagingCleanupRequired, r.GenerationWarnings, r.NativeReconciliationAttempts, r.AncillaryArtifacts);
 
     internal static SourceOnlyResult Reconciliation(SourceOnlyResult basis, IReadOnlyList<SourceOnlyResultPromotionAttempt> attempts) => new(
         basis.Binding, StandardArtifactGenerationDisposition.ReconciliationRequired,
@@ -318,7 +318,8 @@ internal sealed record SourceOnlyDeliveryReceipt(string SchemaVersion, string De
         basis.Failures.Append(new(SourceOnlyResultFailureCode.DeliveryNotValidated)).Distinct().ToArray(),
         basis.ReconciliationArtifacts.Concat(attempts.Select(a => a.Artifact)).DistinctBy(a => a.ArtifactId).ToArray(),
         basis.TranscriptReferences, basis.PrimaryWorkflow, true, basis.GenerationWarnings,
-        basis.NativeReconciliationAttempts.Concat(attempts).DistinctBy(a => a.Artifact.ArtifactId).ToArray());
+        basis.NativeReconciliationAttempts.Concat(attempts).DistinctBy(a => a.Artifact.ArtifactId).ToArray(),
+        basis.AncillaryArtifacts);
 
     /// <summary>Shape-only transition check, NOT delivery authorization. ValidateAsync verifies every receipt/file.</summary>
     internal static bool IsResultExtension(SourceOnlyResult candidate, string storedJson, ContentDigest? storedDigest)

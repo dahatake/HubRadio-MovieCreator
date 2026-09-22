@@ -96,10 +96,14 @@
     { "$ref": "#/$defs/pipelineRegenerateRequest" },
     { "$ref": "#/$defs/pipelineRetryRequest" },
     { "$ref": "#/$defs/pipelineCancelRequest" },
+    { "$ref": "#/$defs/pipelineVersionsRequest" },
+    { "$ref": "#/$defs/pipelineRestoreRequest" },
     { "$ref": "#/$defs/pipelineReadResponse" },
     { "$ref": "#/$defs/pipelineRegenerateResponse" },
     { "$ref": "#/$defs/pipelineRetryResponse" },
-    { "$ref": "#/$defs/pipelineCancelResponse" }
+    { "$ref": "#/$defs/pipelineCancelResponse" },
+    { "$ref": "#/$defs/pipelineVersionsResponse" },
+    { "$ref": "#/$defs/pipelineRestoreResponse" }
   ],
   "$defs": {
     "sourceOnlyProtocolLimits": {
@@ -199,6 +203,74 @@
         "method": { "const": "pipeline.cancel" }, "result": { "$ref": "#/$defs/sourceOnlyBridgeResult" }
       }
     },
+    "pipelineVersionsRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "pipeline.versions" }, "params": { "$ref": "#/$defs/pipelineReadParams" }
+      }
+    },
+    "pipelineRestoreRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "pipeline.restore" }, "params": { "$ref": "#/$defs/pipelineRestoreParams" }
+      }
+    },
+    "pipelineVersionsResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "pipeline.versions" }, "result": { "$ref": "#/$defs/sourceOnlyVersionsResult" }
+      }
+    },
+    "pipelineRestoreResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "pipeline.restore" }, "result": { "$ref": "#/$defs/sourceOnlyBridgeResult" }
+      }
+    },
+    "pipelineRestoreParams": {
+      "type": "object", "additionalProperties": false,
+      "required": ["projectId", "targetVersionId", "targetVersionDigest", "expectedWorkingCopyRevision", "expectedSettingsRevision", "expectedSettingsSnapshotDigest"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "targetVersionId": { "$ref": "#/$defs/entityId" },
+        "targetVersionDigest": { "$ref": "#/$defs/contentDigest" },
+        "expectedWorkingCopyRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "expectedSettingsRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "expectedSettingsSnapshotDigest": { "$ref": "#/$defs/contentDigest" }
+      }
+    },
+    "sourceOnlyVersionEntry": {
+      "$comment": "One past composition version. No file path, storage reference or artifact content crosses this boundary.",
+      "type": "object", "additionalProperties": false,
+      "required": ["versionId", "versionDigest", "parentVersionId", "executionId", "phase", "hasResult", "isCurrent"],
+      "properties": {
+        "versionId": { "$ref": "#/$defs/entityId" },
+        "versionDigest": { "$ref": "#/$defs/contentDigest" },
+        "parentVersionId": { "$ref": "#/$defs/nullableId" },
+        "executionId": { "$ref": "#/$defs/entityId" },
+        "phase": { "enum": ["Queued", "Ingesting", "Analyzing", "Composing", "Rendering", "Evaluating", "Delivering", "Completed", "Failed", "Canceled", "ReselectionRequired", "ReconciliationRequired"] },
+        "hasResult": { "type": "boolean" },
+        "isCurrent": { "type": "boolean" }
+      }
+    },
+    "sourceOnlyVersionsResult": {
+      "$comment": "Read-only past-version list. Reading it never mutates a version, a working copy or an artifact, and it never authorizes media. workingCopyRevision is the head revision a subsequent pipeline.restore must pin.",
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "workingCopyRevision", "versions"],
+      "properties": {
+        "status": { "enum": ["available", "notFound", "conflict", "forbidden", "unavailable", "invalid"] },
+        "workingCopyRevision": { "$ref": "#/$defs/nonnegativeInt32" },
+        "versions": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/sourceOnlyVersionEntry" } }
+      }
+    },
     "sourceOnlyBridgeResult": {
       "$comment": "available requires a nonnull snapshot with resultStatus=none or valid. invalid permits snapshot=null, or a diagnostic snapshot with resultStatus=invalid and a safe canonical-codec result DTO or null. Consumers retain diagnostic descriptors but revoke previously verified media on invalid; descriptors are never media authorization. notFound/conflict/forbidden/unavailable require snapshot=null. The native media factory independently rejects an invalid result on every GET, including an unchanged artifact in an invalid set.",
       "type": "object", "additionalProperties": false,
@@ -271,6 +343,13 @@
       "properties": {
         "kind": { "enum": ["Graph", "Manifest", "RenderingInputs", "QualityControl", "DeliveryReceipt"] },
         "artifact": { "$ref": "#/$defs/sourceOnlyReference", "properties": { "kind": { "const": "Evidence" } } }
+      }
+    },
+    "sourceOnlyAncillaryArtifact": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "artifact"],
+      "properties": {
+        "kind": { "enum": ["Transcript", "UsedSourceRanges"] },
+        "artifact": { "$ref": "#/$defs/sourceOnlyReference", "properties": { "kind": { "const": "Delivery" } } }
       }
     },
     "sourceOnlyFrame": {
@@ -430,8 +509,8 @@
     "sourceOnlyOmission": {
       "type": "object", "additionalProperties": false, "required": ["role", "reason", "renditionId"],
       "properties": {
-        "role": { "enum": ["ShortForm", "Thumbnail", "LandscapeSubtitles", "VerticalSubtitles", "VerticalCallToAction", "PreRollMargin", "Opening", "ProgramName", "EpisodeNumber", "EpisodeTitle", "PerformerIntroduction", "PublicationScopeIndicator", "Body", "Topic", "Summary", "CallToAction", "Ending", "PostRollMargin", "Other"] },
-        "reason": { "enum": ["NoGroundedCandidate", "NoAdditionalGroundedCandidate", "NoMeasuredSourceFrame", "NoAdditionalMeasuredSourceFrame", "NoDisplayCues", "UntimedPlanMetadataNotRendered", "ThumbnailRendererNotConnected", "CallToActionRendererNotConnected", "UnrecognizedOmission"] },
+        "role": { "enum": ["ShortForm", "Thumbnail", "LandscapeSubtitles", "VerticalSubtitles", "VerticalCallToAction", "PreRollMargin", "Opening", "ProgramName", "EpisodeNumber", "EpisodeTitle", "PerformerIntroduction", "PublicationScopeIndicator", "Body", "Topic", "Summary", "CallToAction", "Ending", "PostRollMargin", "Other", "Transcript", "UsedSourceRanges"] },
+        "reason": { "enum": ["NoGroundedCandidate", "NoAdditionalGroundedCandidate", "NoMeasuredSourceFrame", "NoAdditionalMeasuredSourceFrame", "NoDisplayCues", "UntimedPlanMetadataNotRendered", "ThumbnailRendererNotConnected", "CallToActionRendererNotConnected", "UnrecognizedOmission", "AncillaryExportFailed"] },
         "renditionId": { "$ref": "#/$defs/nullableId" }
       }
     },
@@ -463,7 +542,7 @@
     },
     "sourceOnlyResult": {
       "type": "object", "additionalProperties": false,
-      "required": ["schemaVersion", "binding", "generationDisposition", "artifacts", "omissions", "failures", "reconciliationArtifacts", "transcriptReferences", "primaryWorkflow", "stagingCleanupRequired", "generationWarnings"],
+      "required": ["schemaVersion", "binding", "generationDisposition", "artifacts", "omissions", "failures", "reconciliationArtifacts", "transcriptReferences", "primaryWorkflow", "stagingCleanupRequired", "generationWarnings", "ancillaryArtifacts"],
       "properties": {
         "schemaVersion": { "const": "source-only.result.v2" }, "binding": { "$ref": "#/$defs/sourceOnlyBinding" },
         "generationDisposition": { "enum": ["Completed", "Failed", "Cancelled", "ReconciliationRequired", "GeneratedWithOmissions"] },
@@ -474,7 +553,8 @@
         "transcriptReferences": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/sourceOnlyTranscript" } },
         "primaryWorkflow": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sourceOnlyWorkflow" }] },
         "stagingCleanupRequired": { "type": "boolean" },
-        "generationWarnings": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/sourceOnlyGenerationWarning" } }
+        "generationWarnings": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/sourceOnlyGenerationWarning" } },
+        "ancillaryArtifacts": { "$comment": "Artifacts that were actually written and promoted. A kind the pipeline could not write is reported as an omission entry naming that kind, not as an empty artifact.", "type": "array", "maxItems": 2, "items": { "$ref": "#/$defs/sourceOnlyAncillaryArtifact" } }
       }
     },
     "protocolVersion": { "const": 1 },
@@ -561,7 +641,9 @@
         "pipeline.read",
         "pipeline.regenerate",
         "pipeline.retry",
-        "pipeline.cancel"
+        "pipeline.cancel",
+        "pipeline.versions",
+        "pipeline.restore"
       ]
     },
     "projectMethod": {

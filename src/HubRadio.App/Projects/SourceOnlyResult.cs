@@ -17,7 +17,7 @@ using HubRadio.Infrastructure.Rendering;
 namespace HubRadio.App.Projects;
 
 public enum SourceOnlyResultRole { LandscapeClean, LandscapeBurnIn, VerticalBurnIn, SubRip, WebVtt, LandscapeThumbnail, VerticalThumbnail }
-public enum SourceOnlyResultEvidenceKind { Graph, Manifest, RenderingInputs, QualityControl, DeliveryReceipt }
+public enum SourceOnlyResultEvidenceKind { Graph, Manifest, RenderingInputs, QualityControl, DeliveryReceipt, Transcript, UsedSourceRanges }
 public enum SourceOnlyResultQcApplicability { VideoOutputQc, SubtitleFileOnly, ImageFileOnly }
 public enum SourceOnlyResultFailureCode
 {
@@ -32,12 +32,14 @@ public enum SourceOnlyResultOmissionRole
     ShortForm, Thumbnail, LandscapeSubtitles, VerticalSubtitles, VerticalCallToAction,
     PreRollMargin, Opening, ProgramName, EpisodeNumber, EpisodeTitle, PerformerIntroduction,
     PublicationScopeIndicator, Body, Topic, Summary, CallToAction, Ending, PostRollMargin, Other,
+    Transcript, UsedSourceRanges,
 }
 public enum SourceOnlyResultOmissionReason
 {
     NoGroundedCandidate, NoAdditionalGroundedCandidate, NoMeasuredSourceFrame,
     NoAdditionalMeasuredSourceFrame, NoDisplayCues, UntimedPlanMetadataNotRendered,
     ThumbnailRendererNotConnected, CallToActionRendererNotConnected, UnrecognizedOmission,
+    AncillaryExportFailed,
 }
 
 /// <summary>The six fields required by SourceOnlyExecutionStore.ResultJson.</summary>
@@ -241,6 +243,7 @@ public sealed class SourceOnlyResult
     public const int MaximumOmissionCount = 128;
     public const int MaximumFailureCount = 64;
     public const int MaximumTranscriptCount = 8;
+    public const int MaximumAncillaryArtifactCount = 2;
     public const int MaximumGenerationWarningCount = 256;
     public const int MaximumReconciliationCount = MaximumArtifactCount * 5;
     public const long MaximumSafeInteger = 9_007_199_254_740_991;
@@ -250,12 +253,14 @@ public sealed class SourceOnlyResult
         IReadOnlyList<SourceOnlyResultFailure> failures, IReadOnlyList<SourceOnlyResultArtifactReference> reconciliationArtifacts,
         IReadOnlyList<SourceOnlyResultTranscriptReference> transcripts, SourceOnlyResultWorkflowReference? primaryWorkflow,
         bool stagingCleanupRequired, IReadOnlyList<SourceOnlyResultGenerationWarning>? generationWarnings = null,
-        IReadOnlyList<SourceOnlyResultPromotionAttempt>? nativeReconciliationAttempts = null)
+        IReadOnlyList<SourceOnlyResultPromotionAttempt>? nativeReconciliationAttempts = null,
+        IReadOnlyList<SourceOnlyResultEvidenceReference>? ancillaryArtifacts = null)
     {
         Binding = binding; GenerationDisposition = generationDisposition;
         Artifacts = Array.AsReadOnly(artifacts.ToArray()); Omissions = Array.AsReadOnly(omissions.ToArray());
         Failures = Array.AsReadOnly(failures.ToArray()); ReconciliationArtifacts = Array.AsReadOnly(reconciliationArtifacts.ToArray());
         TranscriptReferences = Array.AsReadOnly(transcripts.ToArray()); PrimaryWorkflow = primaryWorkflow;
+        AncillaryArtifacts = Array.AsReadOnly((ancillaryArtifacts ?? []).ToArray());
         StagingCleanupRequired = stagingCleanupRequired;
         GenerationWarnings = Array.AsReadOnly((generationWarnings ?? []).ToArray());
         NativeReconciliationAttempts = Array.AsReadOnly((nativeReconciliationAttempts ?? []).ToArray());
@@ -273,6 +278,15 @@ public sealed class SourceOnlyResult
     public IReadOnlyList<SourceOnlyResultFailure> Failures { get; }
     public IReadOnlyList<SourceOnlyResultArtifactReference> ReconciliationArtifacts { get; }
     public IReadOnlyList<SourceOnlyResultTranscriptReference> TranscriptReferences { get; }
+
+    /// <summary>
+    /// Delivered ancillary artifacts (transcript, used-source-range list). An
+    /// entry exists only when that artifact was actually written and promoted.
+    /// The pipeline records a named omission for every kind it could not write;
+    /// this type does not by itself enforce that pairing, because an evaluated
+    /// result exists before the ancillary step runs.
+    /// </summary>
+    public IReadOnlyList<SourceOnlyResultEvidenceReference> AncillaryArtifacts { get; }
     public SourceOnlyResultWorkflowReference? PrimaryWorkflow { get; }
     public bool StagingCleanupRequired { get; }
     public IReadOnlyList<SourceOnlyResultGenerationWarning> GenerationWarnings { get; }
@@ -288,7 +302,7 @@ public sealed class SourceOnlyResult
     public bool RequiresSetDeliveryValidation => true;
     [JsonIgnore] public string CanonicalJson { get; }
     public ContentDigest CanonicalDigest { get; }
-    public SourceOnlyResultDto ToWebDto() => SourceOnlyResultCodec.ToDto(this);
+    public SourceOnlyResultDto ToWebDto() => SourceOnlyResultCodec.ToWebDto(this);
     public static SourceOnlyResult ParseCanonical(string canonicalJson, ContentDigest? expectedDigest = null) =>
         SourceOnlyResultCodec.ParseCanonical(canonicalJson, expectedDigest);
 

@@ -1,11 +1,12 @@
 import type { BridgeClient } from '../../bridge'
 import {
-  createPipelineExecutionRequest, createPipelineReadRequest, createPipelineRegenerateRequest,
+  createPipelineExecutionRequest, createPipelineReadRequest, createPipelineRegenerateRequest, createPipelineRestoreRequest,
   isPipelineLive, parsePipelineRequest, pipelineResponseMatchesRequest, revokePipelineMedia, verifiedPipelineResponse,
-  type PipelineMethod, type PipelineRegenerationParams, type PipelineRequest, type PipelineResponse, type PipelineSnapshot,
+  type PipelineMethod, type PipelineRegenerationParams, type PipelineRequest, type PipelineResponse, type PipelineRestoreParams, type PipelineSnapshot,
+  type PipelineVersionEntry, type PipelineVersionsResponse,
 } from './pipelineProtocol'
 
-export type PipelineBridgeClient = Pick<BridgeClient, 'sendPipeline' | 'onPipelineResponse' | 'abandonPipelineRequest' | 'dispose'>
+export type PipelineBridgeClient = Pick<BridgeClient, 'sendPipeline' | 'onPipelineResponse' | 'abandonPipelineRequest' | 'dispose' | 'sendPipelineVersions' | 'onPipelineVersionsResponse'>
 export interface PipelineState {
   readonly projectId: string | null
   readonly snapshot: PipelineSnapshot | null
@@ -14,14 +15,22 @@ export interface PipelineState {
   readonly error: 'timeout' | 'unavailable' | 'invalidResponse' | null
   /** Retained data may be displayed, but cannot authorize another mutation. */
   readonly needsRefresh: boolean
+  /** Null until the past-version list has been read for this project. */
+  readonly versions: readonly PipelineVersionEntry[] | null
+  readonly versionsStatus: 'idle' | 'loading' | PipelineVersionsResponse['result']['status']
+  /** The head revision a restore must pin; null until the list has been read. */
+  readonly workingCopyRevision: number | null
 }
-export const initialPipelineState: PipelineState = Object.freeze({ projectId: null, snapshot: null, status: 'idle', pendingMethod: null, error: null, needsRefresh: false })
+export const initialPipelineState: PipelineState = Object.freeze({ projectId: null, snapshot: null, status: 'idle', pendingMethod: null, error: null, needsRefresh: false, versions: null, versionsStatus: 'idle', workingCopyRevision: null })
 export interface PipelineSession {
   selectProject(projectId: string | null): void
   read(): boolean
   cancel(): boolean
   retry(): boolean
   regenerate(params: PipelineRegenerationParams): boolean
+  restore(params: PipelineRestoreParams): boolean
+  /** Reads the past-version list once. It mutates nothing and grants no media. */
+  readVersions(): boolean
   getState(): PipelineState
   dispose(): void
 }
@@ -163,6 +172,28 @@ export function createPipelineSession(
     try { return send(createPipelineExecutionRequest(newId(), method, { projectId: s.projectId, executionId: s.executionId, expectedRevision: s.revision })) }
     catch { return false }
   }
+  let versionsPending: string | null = null
+  let versionsUnsubscribe: (() => void) | null = null
+  function readVersions(): boolean {
+    const projectId = state.projectId
+    if (projectId === null || disposed || versionsPending !== null || !connect()) return false
+    const requestId = newId()
+    versionsPending = requestId
+    // The listener is installed once; it must compare against the project the
+    // transport actually requested, not one captured by the first call.
+    versionsUnsubscribe ??= client!.onPipelineVersionsResponse((response, requestedProjectId) => {
+      if (disposed || response.requestId !== versionsPending || state.projectId !== requestedProjectId) return
+      versionsPending = null
+      publish({
+        versionsStatus: response.result.status,
+        versions: response.result.versions,
+        workingCopyRevision: response.result.status === 'available' ? response.result.workingCopyRevision : null,
+      })
+    })
+    publish({ versionsStatus: 'loading' })
+    try { client!.sendPipelineVersions(requestId, projectId); return true }
+    catch { versionsPending = null; publish({ versionsStatus: 'unavailable' }); return false }
+  }
   return {
     getState: () => state,
     selectProject(projectId) {
@@ -171,12 +202,14 @@ export function createPipelineSession(
       if (projectId !== null) { try { createPipelineReadRequest(projectId, projectId) } catch { return } }
       revokePipelineMedia(state.snapshot)
       abandon(); uncertainMutation = null
+      versionsPending = null
       const selectedGeneration = ++generation
       state = Object.freeze({ ...initialPipelineState, projectId })
       changed(state)
       if (projectId !== null) queueMicrotask(() => { if (!disposed && generation === selectedGeneration) read() })
     },
     read,
+    readVersions,
     cancel: () => command('pipeline.cancel'),
     retry: () => command('pipeline.retry'),
     regenerate(params) {
@@ -186,13 +219,29 @@ export function createPipelineSession(
           params.projectId !== s.projectId || params.expectedVersionId !== s.versionId || params.expectedVersionDigest !== s.versionDigest) return false
       try { return send(createPipelineRegenerateRequest(newId(), params)) } catch { return false }
     },
+    restore(params) {
+      const s = state.snapshot
+      if (s === null || state.status !== 'available' || state.needsRefresh || uncertainMutation !== null || pending !== null || isPipelineLive(s.phase) ||
+          s.resultStatus === 'invalid' || s.phase === 'ReconciliationRequired' || s.phase === 'ReselectionRequired' ||
+          params.projectId !== s.projectId || params.targetVersionId === s.versionId) return false
+      try {
+        if (!send(createPipelineRestoreRequest(newId(), params))) return false
+        // A restore creates a new version, so the retained list is stale from
+        // this moment. Do not keep showing it as the current history.
+        versionsPending = null
+        publish({ versionsStatus: 'idle', versions: null, workingCopyRevision: null })
+        return true
+      } catch { return false }
+    },
     dispose() {
       if (disposed) return
       disposed = true; generation++
       revokePipelineMedia(state.snapshot)
-      abandon(); uncertainMutation = null
+      abandon(); uncertainMutation = null; versionsPending = null
       try { unsubscribe?.() } catch { /* the transport may already be closed */ }
+      try { versionsUnsubscribe?.() } catch { /* the transport may already be closed */ }
       unsubscribe = null
+      versionsUnsubscribe = null
       try { client?.dispose() } catch { /* never cancel native work on cleanup failure */ }
       client = null
     },
@@ -203,10 +252,16 @@ function snapshotMatchesAttempt(next: PipelineSnapshot, attempt: Pending): boole
   const { baseline: previous, request } = attempt
   if (next.projectId !== request.params.projectId) return false
   if (previous === null) return request.method === 'pipeline.read'
-  if (request.method === 'pipeline.retry' || request.method === 'pipeline.regenerate') {
+  if (request.method === 'pipeline.retry' || request.method === 'pipeline.regenerate' || request.method === 'pipeline.restore') {
     if (next.executionId === previous.executionId || next.rootJobId === previous.rootJobId) return false
     if (request.method === 'pipeline.regenerate') return next.parentVersionId === request.params.expectedVersionId &&
       next.parentDigest === request.params.expectedVersionDigest && next.settingsSnapshotDigest === request.params.expectedSettingsSnapshotDigest &&
+      next.ingestJobId === previous.ingestJobId
+    // Restoring regenerates from a NEW child version, so its parent is neither
+    // the previous head nor the selected past version.
+    if (request.method === 'pipeline.restore') return next.parentVersionId !== null &&
+      next.parentVersionId !== previous.versionId && next.parentVersionId !== request.params.targetVersionId &&
+      next.settingsSnapshotDigest === request.params.expectedSettingsSnapshotDigest &&
       next.ingestJobId === previous.ingestJobId
     return next.parentVersionId === previous.parentVersionId && next.parentDigest === previous.parentDigest &&
       next.settingsSnapshotDigest === previous.settingsSnapshotDigest

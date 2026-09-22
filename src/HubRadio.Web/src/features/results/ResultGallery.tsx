@@ -4,6 +4,7 @@ import { jobStatusLabels } from '../jobs/jobPresentation'
 import type { WorkflowWarningTarget } from '../workflow/workflowNavigation'
 import { sourceOnlyMediaUrl, type SourceOnlyResultArtifact, type SourceOnlyResultDto } from '../workflow/pipelineProtocol'
 import type { ResultCard, ResultKind, ResultPresentation, ResultState } from './resultPresentation'
+import { VersionHistoryPanel, type VersionHistoryPanelProps } from './VersionHistoryPanel'
 import './results.css'
 
 /** Caller-supplied real warning records, not synthesized from job/QC status. */
@@ -23,6 +24,8 @@ export interface ResultGalleryProps {
   readonly selectedWarningId?: string | null
   /** The parent must revalidate before navigating/loading/focusing the destination. */
   readonly onFollowWarning?: (target: WorkflowWarningTarget, warningId: string) => void
+  /** Omitted when the caller does not supply a past-version list. */
+  readonly versionHistory?: VersionHistoryPanelProps
 }
 
 const primaryGroups = [
@@ -49,7 +52,7 @@ const warningTargetLabels: Readonly<Record<WorkflowWarningTarget['kind'], string
 
 /** Display and selection intents only; no bridge reads, rendering or automatic selection. */
 export function ResultGallery({
-  presentation, onSelectArtifact, warnings = [], onFollowWarning, selectedWarningId = null,
+  presentation, onSelectArtifact, warnings = [], onFollowWarning, selectedWarningId = null, versionHistory,
 }: ResultGalleryProps) {
   const headingId = useId()
   // Preserve unclassified records without guessing that a master is a long video
@@ -117,6 +120,26 @@ export function ResultGallery({
         </section>
       )}
       {presentation.pipelineResult !== undefined && (
+        <section className="result-gallery-warnings" aria-label="付帯成果物">
+          <h3>文字起こしと使用区間一覧</h3>
+          {presentation.pipelineResult.ancillaryArtifacts.length === 0 ? (
+            <p role="status">
+              今回の結果には文字起こし・使用区間一覧が含まれていません。動画・字幕・サムネイルの生成状況は上の一覧のとおりです。
+            </p>
+          ) : (
+            <ul role="list">
+              {presentation.pipelineResult.ancillaryArtifacts.map(item => (
+                <li key={item.artifact.artifactId}>
+                  {ancillaryArtifactLabels[item.kind]}:{' '}
+                  <code>{item.artifact.artifactId}</code> · <code>{item.artifact.contentDigest}</code> ·{' '}
+                  {item.artifact.byteSize} バイト
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+      {presentation.pipelineResult !== undefined && (
         <details className="result-gallery-other">
           <summary>生成の省略・失敗・保留の記録</summary>
           <ul>
@@ -128,6 +151,7 @@ export function ResultGallery({
           {presentation.pipelineResult.reconciliationArtifacts.length > 0 && <p>整合性の再確認が必要な成果物があります。</p>}
         </details>
       )}
+      {versionHistory !== undefined && <VersionHistoryPanel {...versionHistory} />}
     </section>
   )
 }
@@ -237,6 +261,10 @@ function ResultWarning({ warning, onFollowWarning, selected }: Readonly<{
 export const pipelineArtifactLabels: Readonly<Record<SourceOnlyResultArtifact['role'], string>> = {
   LandscapeClean: '長尺・クリーン版', LandscapeBurnIn: '長尺・字幕焼き込み版', VerticalBurnIn: '短尺・字幕焼き込み版',
   SubRip: 'SRT 字幕', WebVtt: 'WebVTT 字幕', LandscapeThumbnail: '横長サムネイル', VerticalThumbnail: '縦型サムネイル',
+}
+type AncillaryKind = SourceOnlyResultDto['ancillaryArtifacts'][number]['kind']
+export const ancillaryArtifactLabels: Readonly<Record<AncillaryKind, string>> = {
+  Transcript: '文字起こし（transcript.json）', UsedSourceRanges: '使用区間一覧（used-source-ranges.json）',
 }
 function PipelineArtifact({ result, artifact: a, onSelectArtifact }: Readonly<{
   result: SourceOnlyResultDto

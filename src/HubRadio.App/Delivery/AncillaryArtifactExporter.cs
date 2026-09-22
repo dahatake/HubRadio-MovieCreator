@@ -140,7 +140,8 @@ public sealed class AncillaryArtifactExportRequest
             AncillaryArtifactKind,
             EntityId<ArtifactIdTag>> artifactIds,
         string language,
-        DateTimeOffset createdAt)
+        DateTimeOffset createdAt,
+        IReadOnlyList<AncillaryArtifactKind>? kinds = null)
     {
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(project);
@@ -165,8 +166,9 @@ public sealed class AncillaryArtifactExportRequest
             editorialRecordIds,
             nameof(editorialRecordIds),
             "Editorial record IDs");
+        AncillaryArtifactKind[] copiedKinds = CopyKinds(kinds);
         Dictionary<AncillaryArtifactKind, EntityId<ArtifactIdTag>>
-            copiedArtifactIds = CopyArtifactIds(artifactIds);
+            copiedArtifactIds = CopyArtifactIds(artifactIds, copiedKinds);
 
         Id = id;
         Project = project;
@@ -178,6 +180,7 @@ public sealed class AncillaryArtifactExportRequest
         EditingSourceVersion = editingSourceVersion;
         ReviewEvidence = reviewEvidence;
         EditorialRecordIds = Array.AsReadOnly(copiedEditorialIds);
+        Kinds = Array.AsReadOnly(copiedKinds);
         ArtifactIds = new ReadOnlyDictionary<
             AncillaryArtifactKind,
             EntityId<ArtifactIdTag>>(copiedArtifactIds);
@@ -207,6 +210,12 @@ public sealed class AncillaryArtifactExportRequest
 
     public IReadOnlyList<EntityId<EditorialRecordIdTag>> EditorialRecordIds
     { get; }
+
+    /// <summary>
+    /// The artifact kinds this export writes, in declaration order. Kinds that
+    /// are absent are neither staged, promoted, nor registered.
+    /// </summary>
+    public IReadOnlyList<AncillaryArtifactKind> Kinds { get; }
 
     public IReadOnlyDictionary<
         AncillaryArtifactKind,
@@ -267,12 +276,44 @@ public sealed class AncillaryArtifactExportRequest
         return copied;
     }
 
+    private static AncillaryArtifactKind[] CopyKinds(
+        IReadOnlyList<AncillaryArtifactKind>? kinds)
+    {
+        AncillaryArtifactKind[] declared =
+            Enum.GetValues<AncillaryArtifactKind>();
+        if (kinds is null)
+        {
+            return declared;
+        }
+
+        var requested = new HashSet<AncillaryArtifactKind>();
+        foreach (AncillaryArtifactKind kind in kinds)
+        {
+            if (!Enum.IsDefined(kind) || !requested.Add(kind))
+            {
+                throw new ArgumentException(
+                    "Ancillary artifact kinds must be defined and unique.",
+                    nameof(kinds));
+            }
+        }
+
+        if (requested.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one ancillary artifact kind is required.",
+                nameof(kinds));
+        }
+
+        return declared.Where(requested.Contains).ToArray();
+    }
+
     private static Dictionary<
         AncillaryArtifactKind,
         EntityId<ArtifactIdTag>> CopyArtifactIds(
         IReadOnlyDictionary<
             AncillaryArtifactKind,
-            EntityId<ArtifactIdTag>> artifactIds)
+            EntityId<ArtifactIdTag>> artifactIds,
+        IReadOnlyList<AncillaryArtifactKind> requiredKinds)
     {
         var copied = new Dictionary<
             AncillaryArtifactKind,
@@ -297,13 +338,11 @@ public sealed class AncillaryArtifactExportRequest
             }
         }
 
-        AncillaryArtifactKind[] requiredKinds =
-            Enum.GetValues<AncillaryArtifactKind>();
-        if (copied.Count != requiredKinds.Length ||
+        if (copied.Count != requiredKinds.Count ||
             requiredKinds.Any(kind => !copied.ContainsKey(kind)))
         {
             throw new ArgumentException(
-                "Exactly one artifact ID is required for every ancillary artifact kind.",
+                "Exactly one artifact ID is required for every exported ancillary artifact kind.",
                 nameof(artifactIds));
         }
 
@@ -673,34 +712,33 @@ public sealed class AncillaryArtifactExporter
             byte[] reviewPayload = WriteReviewPayload(review);
             ContentDigest reviewEvidenceDigest = ContentDigest.Compute(
                 reviewPayload);
-            Dictionary<AncillaryArtifactKind, byte[]> payloads = new()
-            {
-                [AncillaryArtifactKind.Transcript] = WriteTranscriptPayload(
-                    transcript),
-                [AncillaryArtifactKind.Chapters] = WriteChaptersPayload(
-                    request.TranscriptRevision.Id,
-                    transcript.Digest,
-                    chapters),
-                [AncillaryArtifactKind.PublishingText] =
-                    WritePublishingPayload(request.PublishingText, hashtags),
-                [AncillaryArtifactKind.EditingInstructions] =
-                    WriteEditingPayload(
-                        request.CompositionVersion,
-                        request.EditingSourceVersion,
-                        editingDiff),
-                [AncillaryArtifactKind.ReviewEvidence] = reviewPayload,
-                [AncillaryArtifactKind.UsedSourceRanges] =
-                    WriteUsedSourceRangesPayload(
-                        request.CompositionVersion,
-                        catalog.SourceSpans),
-            };
-
-            var artifacts = new List<PreparedArtifact>(payloads.Count);
-            foreach (AncillaryArtifactKind kind in
-                Enum.GetValues<AncillaryArtifactKind>())
+            var artifacts = new List<PreparedArtifact>(request.Kinds.Count);
+            foreach (AncillaryArtifactKind kind in request.Kinds)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                byte[] payload = payloads[kind];
+                byte[] payload = kind switch
+                {
+                    AncillaryArtifactKind.Transcript =>
+                        WriteTranscriptPayload(transcript),
+                    AncillaryArtifactKind.Chapters => WriteChaptersPayload(
+                        request.TranscriptRevision.Id,
+                        transcript.Digest,
+                        chapters),
+                    AncillaryArtifactKind.PublishingText =>
+                        WritePublishingPayload(request.PublishingText, hashtags),
+                    AncillaryArtifactKind.EditingInstructions =>
+                        WriteEditingPayload(
+                            request.CompositionVersion,
+                            request.EditingSourceVersion,
+                            editingDiff),
+                    AncillaryArtifactKind.ReviewEvidence => reviewPayload,
+                    AncillaryArtifactKind.UsedSourceRanges =>
+                        WriteUsedSourceRangesPayload(
+                            request.CompositionVersion,
+                            catalog.SourceSpans),
+                    _ => throw Failure(
+                        AncillaryArtifactExportFailureReason.SerializationFailed),
+                };
                 ContentDigest payloadDigest = ContentDigest.Compute(payload);
                 byte[] envelope = WriteEnvelope(
                     request,
@@ -873,9 +911,12 @@ public sealed class AncillaryArtifactExporter
             transcriptSpans[index] = span;
         }
 
+        Dictionary<EntityId<TranscriptTokenIdTag>, TimeRange> tokenRanges =
+            BuildTokenRanges(request.TranscriptRevision);
         if (request.SourceSpans.Any(span =>
                 span.TranscriptRevisionId == request.TranscriptRevision.Id &&
-                !usedIds.Contains(span.Id)))
+                !usedIds.Contains(span.Id) &&
+                !IsTokenGroundedSpan(span, tokenRanges)))
         {
             throw Failure(
                 AncillaryArtifactExportFailureReason.TranscriptBindingMismatch);
@@ -888,6 +929,55 @@ public sealed class AncillaryArtifactExporter
             new ReadOnlyDictionary<
                 EntityId<SourceSpanIdTag>,
                 SourceSpan>(spans));
+    }
+
+    /// <summary>
+    /// A span that is bound to the revision without being one of its utterance
+    /// spans (a source envelope or a derived candidate range) is accepted only
+    /// when every token it claims is a real token of that revision and the time
+    /// range that token is grounded in lies inside the span. This still rejects
+    /// a span that invents transcript provenance.
+    /// </summary>
+    private static bool IsTokenGroundedSpan(
+        SourceSpan span,
+        IReadOnlyDictionary<EntityId<TranscriptTokenIdTag>, TimeRange> tokenRanges)
+    {
+        if (span.TranscriptTokenIds.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (EntityId<TranscriptTokenIdTag> tokenId in span.TranscriptTokenIds)
+        {
+            if (!tokenRanges.TryGetValue(tokenId, out TimeRange grounded) ||
+                grounded.Start < span.Range.Start ||
+                grounded.End > span.Range.End)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The exact range each token is grounded in: its own measured range when
+    /// the recognizer supplied one, otherwise its utterance's range. This is
+    /// the same fallback the candidate producers use when building a span.
+    /// </summary>
+    private static Dictionary<EntityId<TranscriptTokenIdTag>, TimeRange> BuildTokenRanges(
+        TranscriptRevision revision)
+    {
+        var ranges = new Dictionary<EntityId<TranscriptTokenIdTag>, TimeRange>();
+        foreach (Utterance utterance in revision.Utterances)
+        {
+            foreach (Token token in utterance.Tokens)
+            {
+                ranges[token.Id] = token.Range ?? utterance.Range;
+            }
+        }
+
+        return ranges;
     }
 
     private static ValidatedReview ValidateReviewEvidence(

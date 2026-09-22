@@ -28,6 +28,7 @@ export function createPipelineResult(projectId = pipelineProjectId): Mutable<Sou
       versionId: pipelineVersionId, versionDigest: pipelineVersionDigest, settingsSnapshotDigest: pipelineSettingsDigest },
     generationDisposition: 'Completed', artifacts: [], omissions: [], failures: [], reconciliationArtifacts: [],
     transcriptReferences: [], primaryWorkflow: null, stagingCleanupRequired: false, generationWarnings: [],
+    ancillaryArtifacts: [],
   }
   result.artifacts.push(createPipelineArtifact(result, 'LandscapeClean', 10))
   return result

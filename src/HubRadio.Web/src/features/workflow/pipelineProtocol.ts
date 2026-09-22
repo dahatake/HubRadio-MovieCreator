@@ -8,7 +8,8 @@ type Decoded<S extends Shape> = { readonly [K in keyof S]: ReturnType<S[K]> }
 const safe = Number.MAX_SAFE_INTEGER
 const int32 = 2_147_483_647
 export const PIPELINE_MAX_RESPONSE_BYTES = 8 * 1024 * 1024 + 16 * 1024
-export const PIPELINE_METHODS = ['pipeline.read', 'pipeline.regenerate', 'pipeline.retry', 'pipeline.cancel'] as const
+export const PIPELINE_METHODS = ['pipeline.read', 'pipeline.regenerate', 'pipeline.retry', 'pipeline.cancel', 'pipeline.restore'] as const
+export const PIPELINE_VERSIONS_METHOD = 'pipeline.versions' as const
 export const PIPELINE_PHASES = [
   'Queued', 'Ingesting', 'Analyzing', 'Composing', 'Rendering', 'Evaluating', 'Delivering',
   'Completed', 'Failed', 'Canceled', 'ReselectionRequired', 'ReconciliationRequired',
@@ -226,8 +227,8 @@ const resultShape = object({
   generationDisposition: enumeration(['Completed', 'Failed', 'Cancelled', 'ReconciliationRequired', 'GeneratedWithOmissions'] as const),
   artifacts: array(artifact, 16),
   omissions: array(object({
-    role: enumeration(['ShortForm', 'Thumbnail', 'LandscapeSubtitles', 'VerticalSubtitles', 'VerticalCallToAction', 'PreRollMargin', 'Opening', 'ProgramName', 'EpisodeNumber', 'EpisodeTitle', 'PerformerIntroduction', 'PublicationScopeIndicator', 'Body', 'Topic', 'Summary', 'CallToAction', 'Ending', 'PostRollMargin', 'Other'] as const),
-    reason: enumeration(['NoGroundedCandidate', 'NoAdditionalGroundedCandidate', 'NoMeasuredSourceFrame', 'NoAdditionalMeasuredSourceFrame', 'NoDisplayCues', 'UntimedPlanMetadataNotRendered', 'ThumbnailRendererNotConnected', 'CallToActionRendererNotConnected', 'UnrecognizedOmission'] as const), renditionId: nullable(id),
+    role: enumeration(['ShortForm', 'Thumbnail', 'LandscapeSubtitles', 'VerticalSubtitles', 'VerticalCallToAction', 'PreRollMargin', 'Opening', 'ProgramName', 'EpisodeNumber', 'EpisodeTitle', 'PerformerIntroduction', 'PublicationScopeIndicator', 'Body', 'Topic', 'Summary', 'CallToAction', 'Ending', 'PostRollMargin', 'Other', 'Transcript', 'UsedSourceRanges'] as const),
+    reason: enumeration(['NoGroundedCandidate', 'NoAdditionalGroundedCandidate', 'NoMeasuredSourceFrame', 'NoAdditionalMeasuredSourceFrame', 'NoDisplayCues', 'UntimedPlanMetadataNotRendered', 'ThumbnailRendererNotConnected', 'CallToActionRendererNotConnected', 'UnrecognizedOmission', 'AncillaryExportFailed'] as const), renditionId: nullable(id),
   }), 128),
   failures: array(object({ code: enumeration(failureCodes), artifactId: nullable(id), promotionArtifact: nullable(reference), evidenceKind: nullable(enumeration(evidenceKinds)) }), 64),
   reconciliationArtifacts: array(reference, 80),
@@ -235,6 +236,9 @@ const resultShape = object({
   primaryWorkflow: nullable(object({ artifactId: id, revision: integer(1), canonicalDigest: digest, state: enumeration(['Ready', 'ReadyWithWarnings', 'Failed'] as const), evaluationId: id })),
   stagingCleanupRequired: bool,
   generationWarnings: array(object({ role: generationRole, code: generationWarningCode }), 256),
+  ancillaryArtifacts: array(object({
+    kind: enumeration(['Transcript', 'UsedSourceRanges'] as const), artifact: reference,
+  }), 2),
 })
 export type SourceOnlyResultDto = ReturnType<typeof resultShape>
 
@@ -409,9 +413,55 @@ const readParams = object({ projectId: id })
 const executionParams = object({ projectId: id, executionId: id, expectedRevision: integer() })
 const regenerationParams = object({ projectId: id, expectedVersionId: id, expectedVersionDigest: digest, expectedSettingsRevision: integer(), expectedSettingsSnapshotDigest: digest })
 export type PipelineRegenerationParams = ReturnType<typeof regenerationParams>
+const restoreParams = object({
+  projectId: id, targetVersionId: id, targetVersionDigest: digest,
+  expectedWorkingCopyRevision: integer(), expectedSettingsRevision: integer(), expectedSettingsSnapshotDigest: digest,
+})
+export type PipelineRestoreParams = ReturnType<typeof restoreParams>
+const versionEntry = object({
+  versionId: id, versionDigest: digest, parentVersionId: nullable(id), executionId: id,
+  phase: enumeration(PIPELINE_PHASES), hasResult: bool, isCurrent: bool,
+})
+export type PipelineVersionEntry = ReturnType<typeof versionEntry>
+const versionsResponseShape = object({
+  version: enumeration([BRIDGE_PROTOCOL_VERSION] as const), requestId: id,
+  method: enumeration([PIPELINE_VERSIONS_METHOD] as const),
+  result: object({
+    status: enumeration(['available', 'notFound', 'conflict', 'forbidden', 'unavailable', 'invalid'] as const),
+    workingCopyRevision: integer(),
+    versions: array(versionEntry, 100),
+  }),
+})
+export type PipelineVersionsResponse = ReturnType<typeof versionsResponseShape>
+export type PipelineVersionsRequest = Readonly<{
+  version: typeof BRIDGE_PROTOCOL_VERSION
+  requestId: string
+  method: typeof PIPELINE_VERSIONS_METHOD
+  params: ReturnType<typeof readParams>
+}>
+export function createPipelineVersionsRequest(requestId: string, projectId: string): PipelineVersionsRequest {
+  return Object.freeze({ version: BRIDGE_PROTOCOL_VERSION, requestId: id(requestId), method: PIPELINE_VERSIONS_METHOD, params: readParams({ projectId }) })
+}
+export function createPipelineRestoreRequest(requestId: string, params: PipelineRestoreParams): Extract<PipelineRequest, { method: 'pipeline.restore' }> {
+  return Object.freeze({ version: BRIDGE_PROTOCOL_VERSION, requestId: id(requestId), method: 'pipeline.restore', params: restoreParams(params) })
+}
+/** A version list never authorizes media and never carries a file path. */
+export function parsePipelineVersionsResponse(value: unknown): PipelineVersionsResponse | null {
+  try {
+    const parsed = versionsResponseShape(value)
+    const { status, versions } = parsed.result
+    requireValid(status === 'available' ? versions.length > 0 : versions.length === 0)
+    requireValid(parsed.result.workingCopyRevision >= 0)
+    requireValid(new Set(versions.map(entry => entry.versionId)).size === versions.length)
+    requireValid(versions.filter(entry => entry.isCurrent).length <= 1)
+    for (const entry of versions) requireValid(entry.parentVersionId !== entry.versionId)
+    return parsed
+  } catch { return null }
+}
 type Request<M extends PipelineMethod, P> = Readonly<{ version: typeof BRIDGE_PROTOCOL_VERSION; requestId: string; method: M; params: P }>
 export type PipelineRequest = Request<'pipeline.read', ReturnType<typeof readParams>> |
-  Request<'pipeline.retry' | 'pipeline.cancel', ReturnType<typeof executionParams>> | Request<'pipeline.regenerate', PipelineRegenerationParams>
+  Request<'pipeline.retry' | 'pipeline.cancel', ReturnType<typeof executionParams>> | Request<'pipeline.regenerate', PipelineRegenerationParams> |
+  Request<'pipeline.restore', PipelineRestoreParams>
 export function createPipelineReadRequest(requestId: string, projectId: string): Extract<PipelineRequest, { method: 'pipeline.read' }> {
   return Object.freeze({ version: BRIDGE_PROTOCOL_VERSION, requestId: id(requestId), method: 'pipeline.read', params: readParams({ projectId }) })
 }
@@ -427,6 +477,7 @@ export function parsePipelineRequest(value: unknown): PipelineRequest | null {
     const envelope = object({ version: enumeration([BRIDGE_PROTOCOL_VERSION] as const), requestId: id, method: enumeration(PIPELINE_METHODS), params: (v: unknown) => v })(value)
     if (envelope.method === 'pipeline.read') return createPipelineReadRequest(envelope.requestId, readParams(envelope.params).projectId)
     if (envelope.method === 'pipeline.regenerate') return createPipelineRegenerateRequest(envelope.requestId, regenerationParams(envelope.params))
+    if (envelope.method === 'pipeline.restore') return createPipelineRestoreRequest(envelope.requestId, restoreParams(envelope.params))
     return createPipelineExecutionRequest(envelope.requestId, envelope.method, executionParams(envelope.params))
   } catch { return null }
 }
@@ -459,6 +510,12 @@ export function pipelineResponseMatchesRequest(response: PipelineResponse, reque
     s.parentDigest === request.params.expectedVersionDigest && s.settingsSnapshotDigest === request.params.expectedSettingsSnapshotDigest
   if (request.method === 'pipeline.cancel') return s.executionId === request.params.executionId && s.revision >= request.params.expectedRevision
   if (request.method === 'pipeline.retry') return s.executionId !== request.params.executionId
+  // Restoring produces a NEW execution whose parent is the newly created child
+  // version, so the parent must exist and differ from the selected past version.
+  if (request.method === 'pipeline.restore') return s.parentVersionId !== null &&
+    s.parentVersionId !== request.params.targetVersionId &&
+    s.versionId !== request.params.targetVersionId &&
+    s.settingsSnapshotDigest === request.params.expectedSettingsSnapshotDigest
   return true
 }
 export function isPipelineLive(phase: PipelinePhase): boolean { return PIPELINE_PHASES.indexOf(phase) >= 0 && PIPELINE_PHASES.indexOf(phase) < 7 }
