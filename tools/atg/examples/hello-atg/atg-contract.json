@@ -1,0 +1,16 @@
+{
+  "objective": "3ノードの最小タスクグラフで ATG Kit の判定機能を実演する",
+  "non_goals": ["実運用のビルドやデプロイは行わない"],
+  "deliverables": ["parser.py", "formatter.py", "main.py"],
+  "acceptance_command": "python -c \"import pathlib,sys; sys.exit(0 if all(pathlib.Path(p).is_file() for p in ['parser.py','formatter.py','main.py']) else 1)\"",
+  "baseline_policy": "既存の失敗は許容するが、新しい失敗を増やさない",
+  "time_budget": "10m",
+  "execution_envelope": {
+    "code_changes": "allowed_within_write_set",
+    "dependency_additions": "declared_only",
+    "external_network_writes": "deny",
+    "production_deploy": "deny",
+    "secret_read": "declared_refs_only"
+  },
+  "secret_policy": "秘密値は契約・引継ぎ・ログ・成果物へ保存せず、必要時は参照名のみを記録する"
+}

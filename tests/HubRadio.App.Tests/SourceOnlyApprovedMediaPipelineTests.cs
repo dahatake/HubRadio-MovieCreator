@@ -49,10 +49,11 @@ public sealed class SourceOnlyApprovedMediaPipelineTests
 {
     // Budgets are ESTIMATES scaled from the synthetic four-second scenario, not measurements of
     // this medium. SourceOnlyRealPipelineTests uses 120s per process, 150s preparation, 300s
-    // execution and 450s overall for a 4.000s input. The approved medium is 60.093243s
-    // (benchmarks/results/initial-pilot.md section 1.3), a factor of 15.02. Decode, ASR and
-    // encode scale roughly with duration, so the duration-dependent budgets are scaled by 15 and
-    // rounded up for margin.
+    // execution and 450s overall for a 4.000s input. The approved medium is 77.366667s
+    // (requirement-definition.md section 18, measured 2026-09-23), a factor of 19.34. Decode, ASR
+    // and encode scale roughly with duration, so the duration-dependent budgets are scaled and
+    // rounded up for margin. The previous medium was 60.093243s; the budgets below already
+    // exceeded what that run needed by an order of magnitude, so they are left unchanged.
     // PreparationTimeout is NOT an estimate scaled from duration. A first run on 2026-09-22
     // exceeded 300s inside SourceOnlyApplicationResourceLease.VerifyWorkerAsync, which opens,
     // holds and hashes every one of the 2,697 worker-runtime files (268,991,381 bytes) and walks
@@ -68,9 +69,10 @@ public sealed class SourceOnlyApprovedMediaPipelineTests
     private const string ModelId = "asr.faster-whisper-small.cpu-int8";
     private const string ModelManifest = "4e924b13871cadaa18f24bf888a6388e45d15da56e06b0b90141dc27d96e951f";
     private const string FontSha256 = "dff723ba59d57d136764a04b9b2d03205544f7cd785a711442d6d2d085ac5073";
-    // requirement-definition.md section 18 (approved 2026-09-21) and benchmarks/results/initial-pilot.md section 1.2.
-    private const string ApprovedMediaSha256 = "07904c1dd4c482fa495ea8cd3572c98fff4eaf66b41cf89e396e661f3b8c3e9c";
-    private const long ApprovedMediaByteSize = 9_971_886;
+    // requirement-definition.md section 18 (approved 2026-09-23). The 2026-09-21 medium
+    // (07904c1d…, 9,971,886 bytes) is retained there as history and is no longer the target.
+    private const string ApprovedMediaSha256 = "fb8d304f5fec7011fc3dd898cc3a8fcbcbe56ee64d6e97e65a864251b89f5a7b";
+    private const long ApprovedMediaByteSize = 117_030_068;
 
     public TestContext TestContext { get; set; } = null!;
 

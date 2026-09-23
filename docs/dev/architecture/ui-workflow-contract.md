@@ -68,6 +68,9 @@ settings系の要求64KiB／応答4MiBの現行上限を維持する。全体・
 | E-RESULT | `StandardArtifactGenerator`、`SourceOnlyResultService`、`SourceOnlyDeliveryService.DeliverAsync`、`AncillaryArtifactExporter`（文字起こし・使用区間一覧の2種のみを指定して呼ぶ）を接続。実artifact・評価・社内限定ローカル納品証跡を検証して表示 | ①で動画・字幕・サムネイルの7成果物のQC・社内限定ローカル納品・保存／再読込までPASS。②③で再生成・復旧後の結果も検証済み。レンダー到達だけによる成功判定ではない。**付帯成果物2種（`transcript.json`／`used-source-ranges.json`）は2026-09-22の追加であり、①〜④の観測には含まれない。検証範囲は自動試験のみで、実素材pipelineによる観測は未実施** |
 | E-REGENERATE | 保存済み設定snapshotと字幕編集headを受付時に固定し、親版から子版・実job・結果へ接続。旧版・旧ファイルを保持 | ②の再生成、③の復旧・再試行、④の永続保存した手修正字幕の投影・実レンダーがPASS。旧成果物の保持を検証済み |
 
+> [!NOTE]
+> **E-RESULT の付帯成果物の昇格位置（2026-09-23 追記、`P3-40` 案(a)）:** 付帯成果物2種は、納品トランザクションの**前かつ外**で `ArtifactKind.Delivery` として昇格される。昇格を取り消す補償処理は無いため、**納品が失敗しても `Delivery` 種別の付帯成果物は残る**（`deliveries/ancillary/` 配下。2026-09-23の実素材実行で実測）。納品失敗後の残存は人が確認する。これは現行実装を正とした仕様の明記であり、実装は変更していない。出典: [v2-013レビュー §7](../reviews/v2-013-ancillary-artifacts-adversarial-review.md)（`SourceOnlyPipeline.cs` / `AncillaryArtifactExporter.cs` / `SourceOnlyDeliveryService.cs` のコード出典と実測）。
+
 ### 実測結果と完了範囲
 
 以下は2026-09-09に観測・提示された結果であり、この文書更新で再実行したものではない。

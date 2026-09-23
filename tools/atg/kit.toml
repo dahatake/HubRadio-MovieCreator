@@ -1,0 +1,22 @@
+# Distribution kit manifest for ATG (Autonomous Task Graph).
+#
+# ATG is dependency-free and ships no `init_config.py` scaffolder, so
+# kit_setup.py's generate_config() returns early before ever reading
+# `config` from disk. The key below points at ATG's own state file only so
+# the shared kit.toml schema (engine/skill/venv/config) stays satisfied
+# across the setup-kit family — see
+# hve/tests/test_for_other_repo_sync.py::TestKitManifests::
+# test_kit_toml_declares_what_install_py_reads.
+
+[kit]
+engine = "atg"
+skill = "atg"
+venv = ".venv-atg"
+config = ".atg/state.sqlite3"
+config_supports_profile = false
+supports_index = false
+
+base_dependencies = []
+gui_dependencies = []
+watch_dependencies = []
+tokenizer_dependencies = []

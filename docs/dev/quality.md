@@ -120,6 +120,25 @@
 ### package版の更新
 
 今回の修正は**productionコードを含む**ため、開発用App packageを `0.1.2.0` から **`0.1.3.0`** へPATCH更新した（`Package.appxmanifest`、`build-package.ps1`、`verify-package.ps1`、版を固定している `Architecture.Tests.MsixPackagingProjectTests`）。更新後の Architecture runner 209件は全成功である。**版更新後のMSIX作成・インストール・検査は実行していない。**
+
+### 受入素材の変更（2026-09-23 05:55）
+
+**利用者が受入素材を `sample/hubradio-sample.mp4` へ変更した。** 本節の上記の測定・実行結果はすべて**変更前の素材**（`sample/Copilot  あなたの毎日の AI コンパニオン.mp4`）に対するものであり、履歴として保全する。
+
+| 項目 | 変更前 | **変更後** |
+|---|---|---|
+| SHA-256 | `07904c1d…` | **`fb8d304f…`** |
+| byte size | 9,971,886 | **117,030,068** |
+| duration | 60.093243 秒 | **77.366667 秒** |
+| 解像度・向き | 1280×720（16:9 横型） | **1080×1920（9:16 縦型）** |
+| 映像 profile | `High` | **`Main`** |
+| frame rate | 23.976 | **30.000** |
+| 音声 | AAC-LC 44.1 kHz 2ch | **AAC-LC 48 kHz 2ch** |
+| 音量（素材そのもの） | -16.70 LUFS / -1.88 dBTP（**基準内**） | **-21.19 LUFS**（基準外）/ -1.68 dBTP |
+
+**新素材でのpipeline E2Eは未実施である。** 測定のみを[受入記録 §4](../../benchmarks/results/initial-pilot.md)に記録した。**`V2-014` は引き続き不合格**であり、本節の全回帰件数・判定は新素材での結果を含まない。受入harnessの素材digest定数（`SourceOnlyApprovedMediaPipelineTests`）と要求定義書§18は新素材へ更新済みである。
+
+**新素材で判明した重要な差分:** 単一pass・2-passのいずれでも**loudnessは基準内に入るが True Peak が上限 `-1` を超える**（-0.99 / -0.90）。変更前素材と合わせて2素材で、filter段の `TP=-1.00` がAAC符号化後に上振れする同方向の観測を得た。**断定はしない**（2素材の観測であり一般性は未確認）。詳細は[受入記録 §4.4](../../benchmarks/results/initial-pilot.md)。
 ## 2026-09-22 `V2-013` 付帯成果物追加の全回帰
 
 本節は追加のみで、以下の2026-09-09以前の記録は一切変更していない。
