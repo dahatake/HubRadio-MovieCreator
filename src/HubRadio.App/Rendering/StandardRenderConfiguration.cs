@@ -9,6 +9,10 @@ namespace HubRadio.App.Rendering;
 /// <summary>Resolved settings, not an alternative source of editorial metadata.</summary>
 public sealed class StandardRenderConfiguration
 {
+    // QC still enforces audio.truePeakMaximum. AAC encoding measured slightly above the
+    // loudnorm true-peak target, so the filter aims lower (benchmarks/results/initial-pilot.md §5.3.3).
+    private const decimal LoudnormTruePeakHeadroomDb = 0.1m;
+
     private StandardRenderConfiguration(ContentDigest settingsDigest, FfmpegEncoderSettings encoder,
         RationalTime titleDuration, RationalTime endDuration, string callToAction,
         (int Width, int Height) landscapeThumbnail, (int Width, int Height) verticalThumbnail)
@@ -105,7 +109,8 @@ public sealed class StandardRenderConfiguration
                 new FfmpegEncoderSettings(checked((int)Integer(sourceFrameRate > new RationalNumber(30, 1)
                     ? "output.highFrameRateBitrate" : "output.standardFrameRateBitrate")),
                     checked((int)Integer(sourceAudioChannels == 1 ? "output.monoBitrate" : "output.stereoBitrate")),
-                    sourceAudioChannels, new FfmpegLoudnessTarget(Integer("audio.internalOnlineTargetLoudness"), Integer("audio.truePeakMaximum"))),
+                    sourceAudioChannels, new FfmpegLoudnessTarget(Integer("audio.internalOnlineTargetLoudness"),
+                        Integer("audio.truePeakMaximum") - LoudnormTruePeakHeadroomDb)),
                 Duration("editing.shortHookMaximumStart", 5), Duration("output.endScreenDuration", 20),
                 Value("editing.callToActionTexts").TextListValue.Single(),
                 Canvas("thumbnails.landscapeCanvas", 16, 9), Canvas("thumbnails.verticalCanvas", 9, 16));

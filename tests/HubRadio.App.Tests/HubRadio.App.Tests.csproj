@@ -18,6 +18,12 @@
              Link="Acceptance\AC001_LongForm.cs" />
     <Compile Include="..\Acceptance\AC005_Traceability.cs"
              Link="Acceptance\AC005_Traceability.cs" />
+    <Compile Include="..\Acceptance\AC004_Security.UnauthorizedView.cs"
+             Link="Acceptance\AC004_Security.UnauthorizedView.cs" />
+    <Compile Include="..\Acceptance\AC004_Security.ExternalMisoutput.cs"
+             Link="Acceptance\AC004_Security.ExternalMisoutput.cs" />
+    <Compile Include="..\Acceptance\AC004_Security.UnapprovedFinal.cs"
+             Link="Acceptance\AC004_Security.UnapprovedFinal.cs" />
     <Compile Include="..\Acceptance\Must_VerticalManual.cs"
              Link="Acceptance\Must_VerticalManual.cs" />
   </ItemGroup>

@@ -24,6 +24,10 @@ namespace HubRadio.App.Tests;
 [TestClass]
 public sealed class StandardArtifactGeneratorTests
 {
+    // The null-muxer loudness pass writes no media file; only the final pass has an output to fake.
+    private static bool IsLoudnessMeasurement(ProcessRunRequest process) =>
+        process.ArgumentList.Count > 3 && process.ArgumentList[^3] == "null";
+
     [TestMethod]
     public async Task ActualBytesAreMeasuredAfterExecutionAndEveryVideoHasBoundQcRequest()
     {
@@ -32,6 +36,8 @@ public sealed class StandardArtifactGeneratorTests
         var generatedBytes = new Dictionary<string, byte[]>();
         var generator = new StandardArtifactGenerator(fixture.Store, fixture.Versions, fixture.Root, async (process, token) =>
         {
+            if (IsLoudnessMeasurement(process))
+                return new ProcessRunResult(0, "", StandardGenerationFixture.LoudnessReport, false, TimeSpan.Zero);
             // Explicit synthetic output: this test is not an encoder/quality test.
             byte[] bytes = Encoding.UTF8.GetBytes($"encoded fixture output {++calls}");
             generatedBytes.Add(process.ArgumentList[^1], bytes);
@@ -126,7 +132,7 @@ public sealed class StandardArtifactGeneratorTests
         var generator = new StandardArtifactGenerator(fixture.Store, fixture.Versions, fixture.Root, async (process, token) =>
         {
             await File.WriteAllBytesAsync(process.ArgumentList[^1], [1, 2, 3], token);
-            return new ProcessRunResult(++calls == 2 ? 1 : 0, "", StandardGenerationFixture.LoudnessReport + "\nprivate diagnostic", false, TimeSpan.Zero);
+            return new ProcessRunResult(++calls == 4 ? 1 : 0, "", StandardGenerationFixture.LoudnessReport + "\nprivate diagnostic", false, TimeSpan.Zero); // call 4 = second video's final pass
         }, StandardGenerationFixture.CompileAsync, fixture.ProbeGeometryAsync);
         StandardArtifactGenerationResult result = await generator.GenerateAsync(fixture.Request());
         Assert.AreEqual(StandardArtifactGenerationDisposition.Failed, result.Disposition);
@@ -604,13 +610,15 @@ public sealed class StandardArtifactGeneratorTests
             async (process, token) =>
             {
                 string[] args = process.ArgumentList.ToArray();
+                if (IsLoudnessMeasurement(process))
+                    return new ProcessRunResult(0, "", StandardGenerationFixture.LoudnessReport, false, TimeSpan.Zero);
                 Assert.AreEqual("100", args[Array.IndexOf(args, "-profile:v") + 1]);
                 Assert.AreEqual("9000000", args[Array.IndexOf(args, "-b:v") + 1]);
                 Assert.AreEqual("192000", args[Array.IndexOf(args, "-b:a") + 1]);
                 Assert.AreEqual("30/1", args[Array.IndexOf(args, "-r") + 1]);
                 string script = args[Array.IndexOf(args, "-/filter_complex") + 1];
                 string text = await File.ReadAllTextAsync(script, token);
-                StringAssert.Contains(text, "loudnorm=I=-16:TP=-1:LRA=11:linear=false:print_format=json");
+                StringAssert.Contains(text, "loudnorm=I=-16:TP=-1.1:LRA=11:measured_I=-22.00:");
                 StringAssert.Contains(text, "ass=filename=");
                 CollectionAssert.DoesNotContain(args, "-filter_complex");
                 await File.WriteAllBytesAsync(process.ArgumentList[^1], [1, 2, (byte)++calls], token);
@@ -621,6 +629,44 @@ public sealed class StandardArtifactGeneratorTests
         Assert.AreEqual(2, calls);
         Assert.IsTrue(result.Artifacts.Where(static item => item.TypedArtifact.IsVideo).All(item =>
             item.BindingEvidence.Execution!.EncoderSettings!.VideoBitrateBitsPerSecond == 9_000_000));
+    }
+
+    [TestMethod]
+    public async Task LoudnessIsMeasuredFirstThenAppliedLinearlyWithTruePeakHeadroom()
+    {
+        using StandardGenerationFixture fixture = await StandardGenerationFixture.CreateAsync();
+        var scripts = new List<string>();
+        var generator = new StandardArtifactGenerator(fixture.Store, fixture.Versions, fixture.Root,
+            async (process, token) =>
+            {
+                string[] args = process.ArgumentList.ToArray();
+                scripts.Add(await File.ReadAllTextAsync(args[Array.IndexOf(args, "-/filter_complex") + 1], token));
+                await File.WriteAllBytesAsync(args[^1], [1, 2, (byte)scripts.Count], token);
+                return new ProcessRunResult(0, "", StandardGenerationFixture.LoudnessReport, false, TimeSpan.Zero);
+            }, StandardGenerationFixture.CompileAsync, fixture.ProbeGeometryAsync);
+        StandardArtifactGenerationResult result = await generator.GenerateAsync(fixture.Request());
+        Assert.IsTrue(result.IsComplete, $"{result.FailureReason}/{result.CompilerFailureReason}");
+        Assert.HasCount(4, scripts); // measurement + final pass for each of the two videos
+        for (int i = 0; i < scripts.Count; i += 2)
+        {
+            StringAssert.Contains(scripts[i], "loudnorm=I=-16:TP=-1.1:LRA=11:linear=false:print_format=json");
+            Assert.IsFalse(scripts[i].Contains("yadif", StringComparison.Ordinal));
+            StringAssert.Contains(scripts[i + 1], "loudnorm=I=-16:TP=-1.1:LRA=11:measured_I=-22.00:measured_TP=-5.00"
+                + ":measured_LRA=4.00:measured_thresh=-32.00:offset=0.00:linear=true:print_format=json");
+        }
+        foreach (StandardGeneratedArtifact video in result.Artifacts.Where(static item => item.TypedArtifact.IsVideo))
+        {
+            FfmpegLoudnessTarget target = video.BindingEvidence.Execution!.Loudness!.Target;
+            Assert.AreEqual(-1.1m, target.TruePeakDbtp);
+            Assert.AreEqual(-22m, target.MeasuredIntegratedLufs);
+            Assert.AreSame(target, video.BindingEvidence.Execution.EncoderSettings!.Loudness);
+        }
+        StandardArtifactGenerationResult repeat = await generator.GenerateAsync(fixture.Request());
+        Assert.IsTrue(repeat.IsComplete, $"{repeat.FailureReason}/{repeat.CompilerFailureReason}");
+        // Each run stages its ASS file under a fresh run directory, so compare scripts without those paths.
+        static string WithoutRunPaths(string script) =>
+            System.Text.RegularExpressions.Regex.Replace(script, "standard-[0-9a-f]{32}(/[0-9a-f-]{36}\\.ass)?", "run");
+        CollectionAssert.AreEqual(scripts.Take(4).Select(WithoutRunPaths).ToArray(), scripts.Skip(4).Select(WithoutRunPaths).ToArray());
     }
 
     [TestMethod]
@@ -721,9 +767,11 @@ public sealed class StandardArtifactGeneratorTests
               "normalization_type": "linear", "target_offset": "inf"
             }
             """;
+        int silentCalls = 0;
         var generator = new StandardArtifactGenerator(fixture.Store, fixture.Versions, fixture.Root,
             async (process, token) =>
             {
+                silentCalls++;
                 await File.WriteAllBytesAsync(process.ArgumentList[^1], [1, 2, 3], token);
                 return new ProcessRunResult(0, "", silence, false, TimeSpan.Zero);
             }, StandardGenerationFixture.CompileAsync, fixture.ProbeGeometryAsync);
@@ -731,7 +779,9 @@ public sealed class StandardArtifactGeneratorTests
         StandardArtifactGenerationResult result = await generator.GenerateAsync(fixture.Request(subtitles: empty));
         Assert.IsTrue(result.IsComplete, $"{result.FailureReason}/{result.CompilerFailureReason}");
         Assert.HasCount(1, result.Artifacts);
+        Assert.AreEqual(2, silentCalls);
         StandardLoudnessEvidence evidence = result.Artifacts[0].BindingEvidence.Execution!.Loudness!;
+        Assert.IsFalse(evidence.Target.IsMeasured); // unmeasurable silence keeps the single-pass target
         Assert.IsTrue(evidence.Silent);
         Assert.IsNull(evidence.OutputIntegratedLufs);
         Assert.IsNull(evidence.OutputTruePeakDbtp);
@@ -760,6 +810,8 @@ public sealed class StandardArtifactGeneratorTests
             async (process, token) =>
             {
                 string[] args = process.ArgumentList.ToArray();
+                if (IsLoudnessMeasurement(process))
+                    return new ProcessRunResult(0, "", StandardGenerationFixture.LoudnessReport, false, TimeSpan.Zero);
                 string filter = await File.ReadAllTextAsync(args[Array.IndexOf(args, "-/filter_complex") + 1], token);
                 StringAssert.Contains(filter, $"tin={transfer}");
                 StringAssert.Contains(filter, "tonemap=tonemap=hable:desat=0");

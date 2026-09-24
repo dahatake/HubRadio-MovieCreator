@@ -162,6 +162,14 @@ pwsh.exe -NoLogo -NoProfile -File tools\create-test-video.ps1 -SourcePath sample
 - source global metadata はコピーしませんが、muxer／codec の技術タグは残る場合があります。
 - 出力成功は fixture の外部公開許可を意味しません。
 
+## 9. .NET／Web の全回帰を実行するときの運用（2026-09-23 追補）
+
+- **全回帰は runner ごとに逐次実行します。** App・Infrastructure・Web を同時に実行すると、締切（deadline）に依存する試験が広範に時間切れします（2026-09-22〜23 に観測。Web は負荷時に `5000ms` の時間切れがファイル間を移動、Infrastructure の `MediaImportSecurityTests.NonterminatingTool_IsKilledAtDeadlineWithoutPathDisclosure` は全件実行時に失敗し、単独実行では成功）。詳細と実測は[品質管理](quality.md)の 2026-09-22〜23 の節を参照してください。
+- 同じ期間に逐次実行した結果は、Infrastructure 3回すべて失敗0（`DOTNET_PROCESSOR_COUNT=1`）、App 3回すべて失敗0でした。
+- **締切を一括で引き上げる対処は取りません。** 実際に遅くなった退行を見逃しやすくなるためです。
+- App runner は `--progress off` を付け、出力をパイプで受けて実行します（例: `...\HubRadio.App.Tests.exe --progress off 2>&1 | ForEach-Object { $_ }`）。出力をファイルへリダイレクトした実行で終了コード `-1` の異常終了を3回観測した記録がありますが、2026-09-23 23:44以降の再試行（リダイレクト・`Tee-Object` のそれぞれで `--progress off` の有無を変えた4通り）では再現せず、**原因は未特定**です。
+- サンドボックス内でビルドする場合は `dotnet build <project> -c Release -m:1 -nodeReuse:false -p:UseSharedCompilation=false` を使います（プロセス間の名前付きパイプが拒否されると、複数ノードのビルドがエラー0件のまま失敗するため）。
+
 ## 現在作らない設定
 
 Azure は通常の編集経路では既定無効です。[ADR-0008](decisions/ADR-0008-bounded-azure-evaluation.md)に記録された限定評価用resource・region・model deploymentは選定・作成済みですが、利用者向けcloud機能や実コンテンツ送信の完成を意味しません。今回のUI操作にAPI key、`.env`、新しいAzure設定ファイルは不要です。

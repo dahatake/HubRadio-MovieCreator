@@ -727,12 +727,48 @@ public sealed class StandardArtifactGenerator
                 string scriptPath = Path.Combine(staging, id + ".ffscript");
                 ownedFiles.Add(outputPath);
                 ownedFiles.Add(scriptPath);
+                FfmpegEncoderSettings? outputEncoder = image ? null : encoder;
+                FfmpegAssGraphicBinding[] graphics = output.GraphicFiles.Select(static file => file.Binding).ToArray();
+                IReadOnlyList<FfmpegMusicBinding> music = renderMusic ? output.MusicBindings : [];
+                if (outputEncoder?.Loudness is FfmpegLoudnessTarget singlePass)
+                {
+                    // Measurement pass for loudnorm's linear mode (DEC3-1 (f)).
+                    string measurementPath = Path.Combine(staging, id + ".loudness.mp4");
+                    string measurementScriptPath = Path.Combine(staging, id + ".loudness.ffscript");
+                    ownedFiles.Add(measurementPath);
+                    ownedFiles.Add(measurementScriptPath);
+                    using FfmpegCompilation measurement = await _compile(new FfmpegCompileRequest(
+                        output.Graph, output.ValidationContext, request.Tool, bindings, measurementPath, staging,
+                        request.ProcessTimeout, output.VideoGeometry, output.Graph.Fonts.Count == 0 ? [] : [localFont],
+                        outputEncoder, new FfmpegGeneratedScriptTarget(measurementScriptPath), graphics, null, music,
+                        loudnessMeasurement: true), cancellationToken).ConfigureAwait(false);
+                    if (!string.Equals(measurement.OutputPath, measurementPath, StringComparison.Ordinal)
+                        || !string.Equals(measurement.GeneratedScriptPath, measurementScriptPath, StringComparison.Ordinal))
+                    {
+                        throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.BindingMismatch);
+                    }
+
+                    ProcessRunResult measured = await _run(measurement.ProcessRequest, cancellationToken).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (measured.ExitCode != 0 || measured.Truncated)
+                    {
+                        throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.ProcessFailed);
+                    }
+
+                    StandardLoudnessEvidence input = StandardLoudnessReport.Read(measured, singlePass);
+                    // Silence has no finite measurement; it keeps the single-pass target and its warning.
+                    if (!input.Silent)
+                        outputEncoder = new FfmpegEncoderSettings(encoder.VideoBitrateBitsPerSecond, encoder.AudioBitrateBitsPerSecond,
+                            encoder.AudioChannels, singlePass.WithMeasurement(input.InputIntegratedLufs!.Value,
+                                input.InputTruePeakDbtp!.Value, input.InputRangeLu, input.InputThresholdLufs, input.TargetOffsetDb!.Value),
+                            encoder.SourceColor);
+                }
+
                 using FfmpegCompilation compilation = await _compile(new FfmpegCompileRequest(
                     output.Graph, output.ValidationContext, request.Tool, bindings, outputPath, staging,
                     request.ProcessTimeout, output.VideoGeometry, output.Graph.Fonts.Count == 0 ? [] : [localFont],
-                    image ? null : encoder, new FfmpegGeneratedScriptTarget(scriptPath),
-                    output.GraphicFiles.Select(static file => file.Binding).ToArray(), output.FrameExtraction,
-                    renderMusic ? output.MusicBindings : []), cancellationToken).ConfigureAwait(false);
+                    outputEncoder, new FfmpegGeneratedScriptTarget(scriptPath),
+                    graphics, output.FrameExtraction, music), cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(compilation.OutputPath, outputPath, StringComparison.Ordinal)
                     || !string.Equals(compilation.GeneratedScriptPath, scriptPath, StringComparison.Ordinal))
                 {
@@ -748,10 +784,10 @@ public sealed class StandardArtifactGenerator
 
                 (ContentDigest digest, long size) = await MeasureAsync(outputPath, cancellationToken).ConfigureAwait(false);
                 StandardLoudnessEvidence? loudness = image ? null
-                    : StandardLoudnessReport.Read(process, request.Configuration.Encoder.Loudness!);
+                    : StandardLoudnessReport.Read(process, outputEncoder!.Loudness!);
                 if (loudness?.Silent == true)
                     warnings.Add(new StandardGenerationWarning(output.Role, "SilentAudioLoudnessNotMeasurable"));
-                var execution = new StandardRenderExecutionEvidence(image ? null : encoder,
+                var execution = new StandardRenderExecutionEvidence(outputEncoder,
                     compilation.FilterScriptDigest, Encoding.UTF8.GetByteCount(compilation.FilterScript), "compiler-created-file",
                     Array.AsReadOnly(output.GraphicFiles.Select(static file => file.Evidence).ToArray()), loudness, output.ThumbnailEvidence,
                     sourceColor, renderMusic ? output.MusicEvidence : []);

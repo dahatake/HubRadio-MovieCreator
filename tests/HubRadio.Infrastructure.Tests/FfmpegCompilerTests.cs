@@ -103,6 +103,41 @@ public sealed class FfmpegCompilerTests
     }
 
     [TestMethod]
+    public async Task LoudnessMeasurementIsAudioOnlyAndMeasuredTargetNormalizesLinearly()
+    {
+        using Fixture fixture = Fixture.Create();
+        var target = new FfmpegLoudnessTarget(-16m, -1.1m);
+        FfmpegCompilation measurement = await CompileAsync(fixture, fixture.Request(
+            encoderSettings: new FfmpegEncoderSettings(8_000_000, 384_000, 2, target), loudnessMeasurement: true));
+        string[] args = measurement.ProcessRequest.ArgumentList.ToArray();
+        CollectionAssert.AreEqual(new[] { "-map", "[standard_audio]", "-f", "null", "-n", fixture.OutputPath }, args[^6..]);
+        CollectionAssert.DoesNotContain(args, "-c:v");
+        CollectionAssert.Contains(args, "-nostats");
+        StringAssert.Contains(measurement.FilterScript, "loudnorm=I=-16:TP=-1.1:LRA=11:linear=false:print_format=json");
+        Assert.IsFalse(measurement.FilterScript.Contains("yadif", StringComparison.Ordinal));
+
+        FfmpegLoudnessTarget measured = target.WithMeasurement(-22.5m, -5m, 4m, -32.5m, 0.25m);
+        Assert.IsTrue(measured.IsMeasured);
+        Assert.IsFalse(target.IsMeasured);
+        FfmpegCompilation final = await CompileAsync(fixture, fixture.Request(
+            encoderSettings: new FfmpegEncoderSettings(8_000_000, 384_000, 2, measured)));
+        StringAssert.Contains(final.FilterScript,
+            "loudnorm=I=-16:TP=-1.1:LRA=11:measured_I=-22.5:measured_TP=-5:measured_LRA=4:measured_thresh=-32.5:offset=0.25:linear=true:print_format=json");
+        StringAssert.Contains(final.FilterScript, "yadif=");
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => target.WithMeasurement(-100m, -5m, 4m, -32.5m, 0m));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => target.WithMeasurement(-22m, -5m, 4m, 1m, 0m));
+        foreach (FfmpegEncoderSettings invalid in new[]
+        {
+            new FfmpegEncoderSettings(8_000_000, 384_000, 2, measured),
+            new FfmpegEncoderSettings(8_000_000, 384_000, 2),
+        })
+        {
+            await AssertFailureAsync(() => CompileAsync(fixture,
+                fixture.Request(encoderSettings: invalid, loudnessMeasurement: true)), FfmpegCompilerFailureReason.InputBindingMismatch);
+        }
+    }
+
+    [TestMethod]
     public async Task GeneratedScriptIsExactNewLocalFileKeptReadOnlyThroughExecution()
     {
         using Fixture fixture = Fixture.Create();
@@ -1299,7 +1334,8 @@ public sealed class FfmpegCompilerTests
             IReadOnlyList<FfmpegInputBinding>? bindings = null,
             string? outputPath = null,
             FfmpegEncoderSettings? encoderSettings = null,
-            FfmpegGeneratedScriptTarget? generatedScript = null) =>
+            FfmpegGeneratedScriptTarget? generatedScript = null,
+            bool loudnessMeasurement = false) =>
             new(
                 graph ?? Graph,
                 context ?? Context,
@@ -1307,7 +1343,8 @@ public sealed class FfmpegCompilerTests
                 bindings ?? Bindings,
                 outputPath ?? OutputPath,
                 RootPath,
-                TimeSpan.FromMinutes(5), encoderSettings: encoderSettings, generatedScript: generatedScript);
+                TimeSpan.FromMinutes(5), encoderSettings: encoderSettings, generatedScript: generatedScript,
+                loudnessMeasurement: loudnessMeasurement);
 
         internal ManualLayoutPlan ManualPlan(
             ManualLayoutMode mode = ManualLayoutMode.BlurredSourceBackground,

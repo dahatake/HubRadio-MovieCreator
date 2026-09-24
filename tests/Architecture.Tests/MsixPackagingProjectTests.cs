@@ -121,13 +121,13 @@ public sealed class MsixPackagingProjectTests
         XElement identity = manifest.Root!.Element(foundation + "Identity")!;
         Assert.AreEqual("HubRadio.MovieCreator.Development", identity.Attribute("Name")?.Value);
         Assert.AreEqual("CN=HubRadio MovieCreator Development", identity.Attribute("Publisher")?.Value);
-        Assert.AreEqual("0.1.3.0", identity.Attribute("Version")?.Value);
+        Assert.AreEqual("0.1.4.0", identity.Attribute("Version")?.Value);
         Assert.AreEqual("x64", identity.Attribute("ProcessorArchitecture")?.Value);
         string buildScript = File.ReadAllText(Path.Combine(root, PackageDirectory, "build-package.ps1"));
         string verifyScript = File.ReadAllText(Path.Combine(root, PackageDirectory, "verify-package.ps1"));
-        StringAssert.Contains(buildScript, "HubRadio.MovieCreator_0.1.3.0_x64.msix");
-        StringAssert.Contains(buildScript, "packageVersion = '0.1.3.0'");
-        StringAssert.Contains(verifyScript, "$layout.packageVersion -cne '0.1.3.0'");
+        StringAssert.Contains(buildScript, "HubRadio.MovieCreator_0.1.4.0_x64.msix");
+        StringAssert.Contains(buildScript, "packageVersion = '0.1.4.0'");
+        StringAssert.Contains(verifyScript, "$layout.packageVersion -cne '0.1.4.0'");
 
         XElement targetFamily = manifest
             .Descendants(foundation + "TargetDeviceFamily")

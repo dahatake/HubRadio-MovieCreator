@@ -58,7 +58,8 @@ public sealed class FfmpegCompileRequest
         FfmpegGeneratedScriptTarget? generatedScript = null,
         IReadOnlyList<FfmpegAssGraphicBinding>? graphics = null,
         FfmpegFrameExtraction? frameExtraction = null,
-        IReadOnlyList<FfmpegMusicBinding>? music = null)
+        IReadOnlyList<FfmpegMusicBinding>? music = null,
+        bool loudnessMeasurement = false)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(validationContext);
@@ -98,6 +99,7 @@ public sealed class FfmpegCompileRequest
         Graphics = Array.AsReadOnly((graphics ?? []).ToArray());
         FrameExtraction = frameExtraction;
         Music = Array.AsReadOnly((music ?? []).ToArray());
+        LoudnessMeasurement = loudnessMeasurement;
         if (Music.Count > 16 || Music.Any(static item => item is null))
             throw new ArgumentException("Music bindings must be bounded and non-null.", nameof(music));
         if (VideoGeometry.Any(static item => item is null)
@@ -138,6 +140,8 @@ public sealed class FfmpegCompileRequest
     public IReadOnlyList<FfmpegAssGraphicBinding> Graphics { get; }
     public FfmpegFrameExtraction? FrameExtraction { get; }
     public IReadOnlyList<FfmpegMusicBinding> Music { get; }
+    /// <summary>Audio-only loudnorm analysis to the null muxer; no media file is produced.</summary>
+    public bool LoudnessMeasurement { get; }
 }
 
 /// <summary>A verified, non-looping file segment. Editorial eligibility belongs to the plan adapter.</summary>
@@ -207,7 +211,7 @@ public sealed class FfmpegSourceColor
     public bool ToneMapping => Model is FfmpegSourceColorModel.Bt2020Pq or FfmpegSourceColorModel.Bt2020Hlg;
 }
 
-/// <summary>A single dynamic normalization pass; its report is not post-encode QC.</summary>
+/// <summary>A dynamic normalization pass, or a linear pass when a prior measurement pass is attached; its report is not post-encode QC.</summary>
 public sealed class FfmpegLoudnessTarget
 {
     public FfmpegLoudnessTarget(decimal integratedLufs, decimal truePeakDbtp, decimal rangeLu = 11m)
@@ -223,6 +227,31 @@ public sealed class FfmpegLoudnessTarget
     public decimal IntegratedLufs { get; }
     public decimal TruePeakDbtp { get; }
     public decimal RangeLu { get; }
+    public decimal? MeasuredIntegratedLufs { get; private init; }
+    public decimal? MeasuredTruePeakDbtp { get; private init; }
+    public decimal? MeasuredRangeLu { get; private init; }
+    public decimal? MeasuredThresholdLufs { get; private init; }
+    public decimal? MeasuredOffsetDb { get; private init; }
+    public bool IsMeasured => MeasuredIntegratedLufs is not null;
+
+    /// <summary>Bounds are the pinned loudnorm option ranges (measured_I/TP/LRA/thresh, offset).</summary>
+    public FfmpegLoudnessTarget WithMeasurement(decimal integratedLufs, decimal truePeakDbtp, decimal rangeLu,
+        decimal thresholdLufs, decimal offsetDb)
+    {
+        if (integratedLufs is < -99m or > 0m) throw new ArgumentOutOfRangeException(nameof(integratedLufs));
+        if (truePeakDbtp is < -99m or > 99m) throw new ArgumentOutOfRangeException(nameof(truePeakDbtp));
+        if (rangeLu is < 0m or > 99m) throw new ArgumentOutOfRangeException(nameof(rangeLu));
+        if (thresholdLufs is < -99m or > 0m) throw new ArgumentOutOfRangeException(nameof(thresholdLufs));
+        if (offsetDb is < -99m or > 99m) throw new ArgumentOutOfRangeException(nameof(offsetDb));
+        return new FfmpegLoudnessTarget(IntegratedLufs, TruePeakDbtp, RangeLu)
+        {
+            MeasuredIntegratedLufs = integratedLufs,
+            MeasuredTruePeakDbtp = truePeakDbtp,
+            MeasuredRangeLu = rangeLu,
+            MeasuredThresholdLufs = thresholdLufs,
+            MeasuredOffsetDb = offsetDb,
+        };
+    }
 }
 
 /// <summary>Only a new managed destination, NEVER caller-supplied filter contents.</summary>
@@ -466,6 +495,7 @@ public static class FfmpegCompiler
                 request.Graphics,
                 request.FrameExtraction,
                 request.Music,
+                request.LoudnessMeasurement,
                 cancellationToken);
             List<string> arguments = BuildArguments(
                 request.ValidationContext.Profile,
@@ -473,7 +503,8 @@ public static class FfmpegCompiler
                 outputPath,
                 request.EncoderSettings,
                 scriptPath,
-                request.FrameExtraction is not null);
+                request.FrameExtraction is not null,
+                request.LoudnessMeasurement);
             string executable = request.Tool.VerificationRequest.FilePath;
             if (MeasureWindowsCommandLine(executable, arguments)
                 >= MaximumWindowsCommandLineCharacters)
@@ -836,6 +867,8 @@ public static class FfmpegCompiler
         if (request.EncoderSettings?.Loudness is not null
             && !graph.Nodes.Any(static node => node.Kind == RenderNodeKind.Audio))
             throw Failure(FfmpegCompilerFailureReason.UnsupportedAudioShape);
+        if (request.LoudnessMeasurement && request.EncoderSettings?.Loudness is not { IsMeasured: false })
+            throw Failure(FfmpegCompilerFailureReason.InputBindingMismatch);
 
         foreach (FfmpegMusicBinding music in request.Music)
         {
@@ -865,6 +898,7 @@ public static class FfmpegCompiler
         IReadOnlyList<FfmpegAssGraphicBinding> graphics,
         FfmpegFrameExtraction? frameExtraction,
         IReadOnlyList<FfmpegMusicBinding> music,
+        bool loudnessMeasurement,
         CancellationToken cancellationToken)
     {
         Dictionary<EntityId<RenderNodeIdTag>, RenderNode> nodes =
@@ -875,6 +909,13 @@ public static class FfmpegCompiler
             cancellationToken);
         var arguments = new List<string>();
         var filters = new List<string>();
+        // Every input is still declared so input indices match the final pass.
+        var audioFilters = new List<string>();
+        void AddAudioFilter(string filter)
+        {
+            filters.Add(filter);
+            audioFilters.Add(filter);
+        }
         var streamLabels = new Dictionary<EntityId<RenderNodeIdTag>, string>();
         var centeredFitNodes = new HashSet<EntityId<RenderNodeIdTag>>();
         var centeredFitRegions = new HashSet<LayoutRegion>();
@@ -958,7 +999,7 @@ public static class FfmpegCompiler
                         int inputIndex = nextInputIndex++;
                         AddTimedInput(arguments, node, bindings[node.ArtifactInputId!]);
                         string label = string.Concat("a", ordinal.ToString(CultureInfo.InvariantCulture));
-                        filters.Add(string.Concat(
+                        AddAudioFilter(string.Concat(
                             "[", inputIndex.ToString(CultureInfo.InvariantCulture), ":a:0]",
                             "aresample=", OutputAudioSampleRate.ToString(CultureInfo.InvariantCulture), ",",
                             "atrim=duration=", FormatTime(node.OutputRange.Duration),
@@ -1086,7 +1127,7 @@ public static class FfmpegCompiler
             if (audio.Length > 1)
             {
                 audioLabel = "audio_cuts";
-                filters.Add(string.Concat(
+                AddAudioFilter(string.Concat(
                     string.Concat(audio.Select(cut => string.Concat("[", streamLabels[cut.Id], "]"))),
                     "concat=n=", audio.Length.ToString(CultureInfo.InvariantCulture),
                     ":v=0:a=1[", audioLabel, "]"));
@@ -1102,10 +1143,10 @@ public static class FfmpegCompiler
                     arguments.AddRange(["-t", FormatTime(track.OutputRange.Duration), "-i", track.VerificationRequest.FilePath]);
                     string label = FormattableString.Invariant($"card_music_{i}");
                     BigInteger delaySamples = (BigInteger)track.OutputRange.Start.Value * OutputAudioSampleRate / track.OutputRange.Start.Rate;
-                    filters.Add(FormattableString.Invariant($"[{inputIndex}:a:0]aresample=48000,aformat=channel_layouts={(encoderSettings!.AudioChannels == 1 ? "mono" : "stereo")},atrim=duration={FormatTime(track.OutputRange.Duration)},asetpts=PTS-STARTPTS,adelay={delaySamples}S:all=1,apad=whole_dur={FormatTime(outputNode.OutputRange.Duration)},atrim=duration={FormatTime(outputNode.OutputRange.Duration)}[{label}]"));
+                    AddAudioFilter(FormattableString.Invariant($"[{inputIndex}:a:0]aresample=48000,aformat=channel_layouts={(encoderSettings!.AudioChannels == 1 ? "mono" : "stereo")},atrim=duration={FormatTime(track.OutputRange.Duration)},asetpts=PTS-STARTPTS,adelay={delaySamples}S:all=1,apad=whole_dur={FormatTime(outputNode.OutputRange.Duration)},atrim=duration={FormatTime(outputNode.OutputRange.Duration)}[{label}]"));
                     musicLabels.Add(label);
                 }
-                filters.Add(string.Concat("[", audioLabel, "]", string.Concat(musicLabels.Select(static label => "[" + label + "]")),
+                AddAudioFilter(string.Concat("[", audioLabel, "]", string.Concat(musicLabels.Select(static label => "[" + label + "]")),
                     "amix=inputs=", (music.Count + 1).ToString(CultureInfo.InvariantCulture),
                     ":duration=first:dropout_transition=0:normalize=0[card_music_mix]"));
                 audioLabel = "card_music_mix";
@@ -1119,11 +1160,16 @@ public static class FfmpegCompiler
                 if (encoderSettings.Loudness is FfmpegLoudnessTarget loudness)
                 {
                     filter.Append(FormattableString.Invariant(
-                        $",loudnorm=I={loudness.IntegratedLufs}:TP={loudness.TruePeakDbtp}:LRA={loudness.RangeLu}:linear=false:print_format=json"));
+                        $",loudnorm=I={loudness.IntegratedLufs}:TP={loudness.TruePeakDbtp}:LRA={loudness.RangeLu}"));
+                    filter.Append(loudness.IsMeasured
+                        ? FormattableString.Invariant(
+                            $":measured_I={loudness.MeasuredIntegratedLufs}:measured_TP={loudness.MeasuredTruePeakDbtp}:measured_LRA={loudness.MeasuredRangeLu}:measured_thresh={loudness.MeasuredThresholdLufs}:offset={loudness.MeasuredOffsetDb}:linear=true")
+                        : ":linear=false");
+                    filter.Append(":print_format=json");
                 }
                 filter.Append(",aresample=48000,atrim=duration=").Append(FormatTime(outputNode.OutputRange.Duration))
                     .Append(",asetpts=PTS-STARTPTS[").Append(next).Append(']');
-                filters.Add(filter.ToString());
+                AddAudioFilter(filter.ToString());
                 audioLabel = next;
             }
         }
@@ -1141,7 +1187,7 @@ public static class FfmpegCompiler
         }
         return new CompilationState(
             arguments,
-            string.Join(";", filters),
+            string.Join(";", loudnessMeasurement ? audioFilters : filters),
             string.Concat("[", videoLabel, "]"),
             audioLabel is null ? null : string.Concat("[", audioLabel, "]"),
             subtitle is null ? null : streamLabels[subtitle.Id],
@@ -1154,7 +1200,8 @@ public static class FfmpegCompiler
         string outputPath,
         FfmpegEncoderSettings? encoderSettings,
         string? scriptPath,
-        bool extractFrame)
+        bool extractFrame,
+        bool loudnessMeasurement)
     {
         var arguments = new List<string>
         {
@@ -1169,6 +1216,13 @@ public static class FfmpegCompiler
         {
             arguments.Add(scriptPath is null ? "-filter_complex" : "-/filter_complex");
             arguments.Add(scriptPath ?? state.FilterScript);
+        }
+
+        if (loudnessMeasurement)
+        {
+            arguments.AddRange(["-map", state.AudioMap ?? throw Failure(FfmpegCompilerFailureReason.UnsupportedAudioShape),
+                "-f", "null", "-n", outputPath]);
+            return arguments;
         }
 
         arguments.Add("-map");

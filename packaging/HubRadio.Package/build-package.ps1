@@ -54,7 +54,7 @@ $webDependencyManifestPath = Join-Path $repoRoot 'packaging\web\dependency-manif
 $thirdPartyInventoryPath = Join-Path $repoRoot 'docs\dev\licenses\THIRD-PARTY-NOTICES.md'
 
 if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-    $OutputPath = Join-Path $artifactRoot 'HubRadio.MovieCreator_0.1.3.0_x64.msix'
+    $OutputPath = Join-Path $artifactRoot 'HubRadio.MovieCreator_0.1.4.0_x64.msix'
 }
 
 function Get-NormalizedLocalPath {
@@ -637,7 +637,7 @@ try {
     $layoutManifest = [ordered]@{
         schemaVersion = '1.0.0'
         packageIdentity = 'HubRadio.MovieCreator.Development'
-        packageVersion = '0.1.3.0'
+        packageVersion = '0.1.4.0'
         architecture = 'x64'
         signed = $false
         releaseApproved = $false

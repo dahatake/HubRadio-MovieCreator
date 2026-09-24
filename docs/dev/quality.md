@@ -27,6 +27,91 @@
 
 詳細は[Stage 0ベンチマーク](benchmarks/README.md)、[実装進行成果物の敵対的レビュー](reviews/implementation-adversarial-review.md)、[アクセシビリティ評価記録](accessibility/test-report.md)を参照してください。過去のPASSは、そのrunが対象にしたsurfaceだけの証拠である。
 
+## 2026-09-24〜25 第5版計画（第2段）の実行結果
+
+**結論から述べる。`V2-014` は合格していない。** 実素材E2Eは本段の範囲外（SCOPE-P304）で実行しておらず、新素材は解析段の `TimelineProbeFailed` で止まったままである。
+
+### productionコードの変更
+
+- 音量の均一化を2-passにした（測定passの値を本passへ渡し `linear=true` を指定）。loudnorm は線形適用の条件（目標LRA ≥ 元のLRA、利得の変更で目標TPを超えない）を満たさないと dynamic に戻る（FFmpeg `doc/filters.texi` の loudnorm `linear`）。実際の方式は証跡の `NormalizationType` に残り、最終判定は従来どおり自動代理評価。True Peak の目標は `audio.truePeakMaximum` − 0.1 dB（既定 −1.1 dBTP）で、QC上限と設定キーは変えていない。`audio.truePeakMaximum` を −9 にすると目標 −9.1 が範囲外になり `UnsupportedSetting` になる（変更前は受け付けた）
+- SAR 未指定（ffprobe の `sample_aspect_ratio` キー省略、または `-show_optional_fields always` 時の `N/A`）を 1:1 とみなすようにした（`StandardSourceGeometry`）。`0:1`・`1:7` などは従来どおり `SourceMismatch`
+- 開発用App packageを `0.1.3.0` から `0.1.4.0` へPATCH更新した。MSIX の作成・インストール・検査は実行していない
+
+### 試験
+
+- 権限・承認gateの受入試験3件（`AC004_Security.*`：権限外閲覧・外部誤出力・未承認final）を追加し成功。audit閲覧は前提の監査ログ閲覧が未実装のため未作成
+- 合成E2E（`SourceOnlyRealPipelineTests` の3メソッド、1メソッドずつ別ホスト）はすべて成功。ただし同じ機で他の処理が動いており、再実行を要した（1メソッドは描画完了後の全体300秒の時間切れで1回、別の1メソッドは描画より前の段（依存検証・解析）の時間切れで4回）。最後の1回は試験プロセスと子プロセス（ffmpeg・python）の優先度を一時的に `AboveNormal` にして実行した（試験・production・時間制限は不変）
+- セキュリティ試験報告書（[security/test-report.md](security/test-report.md)）を作成した。確認した範囲で Critical 未解決0、残余リスクは責任者の承認待ち
+
+### 回帰（本機実測、逐次実行、2026-09-25 01:32〜02:04）
+
+| runner | 合計 | 成功 | skip | 失敗 |
+|---|---:|---:|---:|---:|
+| Architecture | 209 | 209 | 0 | 0 |
+| Core | 732 | 731 | 1 | 0 |
+| App | **2434** | **2425** | 9 | **0** |
+| Infrastructure | **1363** | **1329** | 34 | **0** |
+| Python worker | 170 | 169 | 1 | 0 |
+
+- App の +4 は `StandardArtifactGeneratorTests` の1件と AC004 の3件、Infrastructure の +1 は `FfmpegCompilerTests` の1件による
+- `MediaImportSecurityTests.NonterminatingTool_IsKilledAtDeadlineWithoutPathDisclosure` と `SourceOnlyDeliveryIntegrationTests` の間欠失敗は今回は発生しなかった。解消したとは扱わない
+- Web は本タスクの対象外とし、実行していない（WEB-EXCL）
+
+### 本節で主張しないこと
+
+- `V2-014` の合格、`Q-011`/`Q-012` の前進、`releaseApproved` の変更はいずれも**していない**
+- 変更後の loudness／True Peak・SAR の扱いが実素材で成立するとは主張しない（実素材では未確認）
+## 2026-09-23（23:44以降）第3版計画 `P3-*` の実行結果
+
+**結論から述べる。`V2-014` は合格していない。** 新素材を指定したベースライン（`P3-00`）は、素材照合より前の依存検証で停止し、新素材は処理されていない。productionコード（`src/`）の差分は0件である。
+
+### 新素材でのベースライン（`P3-00`）
+
+- `approved_media.dependency.Worker` で開始9.2秒後に停止した。実行後の同条件の診断で、サンドボックスが `GetFinalPathNameByHandleW` の既定形式（DOS path）を `ERROR_ACCESS_DENIED` で拒否することを再現した。**迂回はしていない。** 詳細は[受入記録 §5](../../benchmarks/results/initial-pilot.md)。
+- 新素材は `sample_aspect_ratio` が未指定（ffprobe で `N/A`）である。`StandardSourceGeometry.Parse` は未指定SARを拒否し、既存試験がそれを意図した挙動として検査しているため、**依存検証を通っても生成段階で停止する見込み**である。扱いは利用者判断とし、実装は変更していない。
+- loudness／True Peak の修正方針（`P3-02`）は、計画のデフォルトどおり**保留**した（新素材でQCまで到達していないため）。判断材料として、TP目標を変えた符号化後の実測を記録した。
+
+### 納品まで通す統合試験（`P3-20`）
+
+- `SourceOnlyDeliveryIntegrationTests.AncillaryArtifactsSurviveDeliveryAndReloadAndAreBoundByTheReceipt` を追加した。実SQLite・実artifact store・実 `SourceOnlyDeliveryService`・実 `SourceOnlyResultService` を通し、付帯成果物2種の参照が**納品と再読込を越えて保持される**こと、再読込が付帯成果物のbytesを再検証すること（1byte改変で `StoredEvidenceInvalid`）を検査する。**実FFmpeg・実ASRは通らない。** 実媒体受入の代替ではない。
+- 受領証跡は付帯成果物を列挙しない。`BaseResultDigest` が付帯成果物の参照を含む納品前の結果を**digestで束縛している**ことを検査した（受領証跡から付帯成果物を列挙できるわけではない）。
+- **変異試験（実測）:** (1) `SourceOnlyDeliveryReceipt.CopyResult` から `AncillaryArtifacts` の引継ぎを外す（第1版Critical 1件目の再現）と**失敗する**。(2) `SourceOnlyResultService` の付帯成果物の再検証を無効化すると**失敗する**。いずれも戻した後に `src/` の差分が0行であることを確認した。
+- 第1版Critical 2件目（派生候補spanの誤拒否）は本試験の**射程外**である。
+
+### Infrastructure の締切競合（`P3-30`）
+
+- 全件実行（`DOTNET_PROCESSOR_COUNT=1`）を3回逐次実行し、3回とも **1362件／成功1328／skip 34／失敗0** だった。`MediaImportSecurityTests.NonterminatingTool_IsKilledAtDeadlineWithoutPathDisclosure` の失敗は、今回の3回では**再現しなかった（0/3）**。
+- 既定の対処案(a)「PIDファイルの出現を待ってから締切付き要求を出す」は、**現行の `ProcessRunner.RunAsync` をproductionコード変更なしで使うという `P3-30` の範囲では実現できない。** 同メソッドは締切をプロセス起動**前**に開始する（`ProcessRunner.cs:28`、起動は `:199`）ためである。締切の延長は退行の見逃しを招くため採らない。したがって**(c) 現状維持**とし、**未解決の環境依存failureとして記録を継続する。** skip／`Inconclusive` は成功に数えない。
+
+### App runner のリダイレクト時異常終了（`P3-31`）
+
+| # | 実行形式 | 終了コード | 合計／成功／skip／失敗 |
+|---|---|---:|---|
+| A | ファイルへリダイレクト、`--progress off` | 0 | 2430／2421／9／0 |
+| B | ファイルへリダイレクト、`--progress off` なし | 0 | 2430／2421／9／0 |
+| C | `Tee-Object`、`--progress off` | 0 | 2430／2421／9／0 |
+
+以前観測した終了コード `-1` の異常終了は**3通りとも再現せず、原因は未特定**である。推奨する実行形式は、観測したすべての実行で正常終了したパイプ形式＋`--progress off` とする（[開発開始手順 §9](getting-started.md)）。
+
+### 回帰（本機実測、逐次実行）
+
+| runner | 合計 | 成功 | skip | 失敗 |
+|---|---:|---:|---:|---:|
+| Architecture | 209 | 209 | 0 | 0 |
+| App | **2430** | **2421** | 9 | **0** |
+| Infrastructure（3回） | 1362 | 1328 | 34 | **0** |
+
+- App の合計が `2429` から `2430` へ増えたのは `P3-20` の試験を1件追加したためである。
+- Core・Web・Python worker は、変更がそれらに及ばないため今回は再実行していない（前回値は下の 2026-09-23 の節）。
+- ビルドは警告0・エラー0。新規試験ファイルの `dotnet format --verify-no-changes` は終了コード0。
+- **package版は更新していない。** productionコードの変更が無いため（計画 `P3-05`）。
+
+### 本節で主張しないこと
+
+- `V2-014` の合格、`Q-011`/`Q-012` の前進、`releaseApproved` の変更はいずれも**していない**。
+- ASR精度・知覚品質・人手評価・clean OS・署名は**未実施**であり `PASS` としない。
+- `P3-30`・`P3-31` の事象が今後も起きないとは主張しない（今回の試行で再現しなかっただけである）。
+
 ## 2026-09-23 `P2-11`/`P2-12` 生成段階の不一致解消と実素材受入の再実行
 
 **結論から述べる。`V2-014` は合格していない。** 2026-09-22に不合格だった生成前検査は通過するようになり、実素材から標準成果物が実際に生成されたが、自動代理評価の `loudness` と `truePeak` が `FAIL` となり納品へ到達していない。

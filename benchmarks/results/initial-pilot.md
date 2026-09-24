@@ -377,3 +377,99 @@
 - `V2-014` は**引き続き不合格**である。`releaseApproved=false` を維持する。
 - ASR精度・知覚品質・人手評価は**未実施**であり `PASS` としない。新素材の発話量は**未測定**である。
 - 縦型素材から16:9長尺版を作る際の挙動は**未確認**である。
+
+## 5. 新素材でのベースライン実行（P3-00 / 2026-09-23）
+
+> [!IMPORTANT]
+> 本節は `P3-00`（productionコードを変更しないベースライン）の記録である。**pipelineは生成段階へ到達していない。** `V2-014` は引き続き不合格であり、`releaseApproved=false` を維持する。§1〜§4 は1文字も改変していない。
+
+### 5.1 実行と結果
+
+| 項目 | 値 |
+|---|---|
+| 実行root | `artifacts/validation/approved-media-608da8535323473f82053759e15cf2cc`（保全） |
+| ビルド | `dotnet build tests/HubRadio.App.Tests -c Release -m:1 -nodeReuse:false -p:UseSharedCompilation=false`。警告0・エラー0 |
+| 環境変数未設定時 | `Inconclusive`（`approved_media.opt_in_required.HUBRADIO_RUN_LIVE_PIPELINE_TESTS`）。2026-09-23 07:22 に確認済み |
+| 結果 | **失敗**。`approved_media.dependency.Worker`（開始から9.2秒） |
+| 到達した段階 | `acl.created` → `prep.started` → `dependencies.binaries_verified` まで。**`dependencies.verified` に到達していない** |
+| 素材照合（`approved_media.input_is_not_the_approved_medium`） | **未到達**（照合は依存検証より後段） |
+
+### 5.2 停止箇所の同定
+
+停止したのは worker runtime の検証（`SourceOnlyApplicationResourceLease.VerifyWorkerAsync`）である。
+
+| # | 事実 | 出典 |
+|---|---|---|
+| S-01 | 同検証は各fileとその祖先directoryのhandleを開き、`GetFinalPathNameByHandleW(handle, …, flags=0)` で**実pathが要求pathと一致すること**を確認する。下位の例外はすべて捕捉され、`SourceOnlyApplicationDependency.Worker` の1種類に置き換えられる | `src/HubRadio.App/Projects/SourceOnlyResourceManifest.cs`（`OpenDirectory`／`RequireHandlePath`）、`src/HubRadio.App/Projects/SourceOnlyApplicationRuntime.cs`（`VerifyWorkerAsync`） |
+| S-02 | 実行rootの `watchdog.log` が示すのは「`dependencies.binaries_verified` の直後に `Worker` 依存で失敗した」ことまでである。**下位の原因（Win32 error）は記録されない**（S-01の置換による） | 実行rootの `watchdog.log` |
+| S-03 | 実行後に別途、同じAPIを同じ access／share／flags で呼ぶ診断を行った。`C:\`・worker runtime directory・`ffmpeg.exe` のいずれでも **`flags=0` は戻り値0／`GetLastError()=5`（ERROR_ACCESS_DENIED）**、`flags=2`（`VOLUME_NAME_NT`）・`flags=4`（`VOLUME_NAME_NONE`）は成功した | 診断script `work/p3-00-handle-probe.ps1` と生出力 `work/p3-00-handle-probe.txt`（本機実測、2026-09-23） |
+| S-04 | worker runtime の中身は manifest と一致する（manifest記載2,696件＋manifest自身＝実file 2,697件、過不足0、reparse point 0） | 本機実測 |
+| S-05 | 同じ段階は、2026-09-22〜23 00:11 の実行（§2・§3）では**通過していた**（`dependencies.verified` が記録されている） | 各実行rootの `watchdog.log` |
+
+**判定:** 同定できたのは**停止した段階（worker runtime の検証、`Worker` 依存）**までである。S-03 の診断結果から、**実行環境（サンドボックス）が `GetFinalPathNameByHandleW` の既定形式（DOS path）での取得を拒否していること**を有力な仮説とした（原因としては未確認。S-01 のとおり `Worker` への置換は handle path 以外の失敗も含む。2026-09-24 03:3x に本機の別セッションで同じ診断を再実行すると `flags=0` は3件とも成功した）。S-02のとおり、pipeline実行そのものの記録から下位の原因を直接示すことはできない（S-03は同条件での再現による推定）。**素材・productionコードの欠陥を示す証拠は無い。** §2・§3 の実行と今回とで環境の何が異なるかは**未特定**である。検証の省略・flagsの変更による迂回は行っていない。
+
+### 5.3 新素材で生成段階に到達した場合の予測（pipeline外の実測に基づく）
+
+pipelineは到達していないため、以下は**pipeline内の実測ではない**。
+
+#### 5.3.1 映像の表示寸法の取得で停止する見込み ★
+
+| # | 事実 | 出典 |
+|---|---|---|
+| R-01 | source-only pipelineは構成段階で承認済みffprobeに `-show_entries stream=index,width,height,sample_aspect_ratio:stream_side_data=rotation:stream_tags=rotate` を渡し、出力を `StandardSourceGeometry.Parse` で解釈する。失敗は `source_only.source_geometry_unavailable` になる | `src/HubRadio.App/Rendering/StandardSourceGeometry.cs`、`src/HubRadio.App/Projects/SourceOnlyPipeline.cs`（`StandardSourceGeometry.ProbeAsync` の呼出し） |
+| R-02 | `Parse` は `sample_aspect_ratio` が**無い／`N/A`** の場合に拒否する。これは既存試験が**意図した挙動として検査している** | `tests/HubRadio.App.Tests/StandardRenderGraphFactoryTests.cs`（`SourceGeometryUsesSameMediaDimensionsSarAndRotationRatherThanCallerAspect` の invalid 一覧） |
+| R-03 | pipelineと同一hashの承認済みffprobe（`4c2f7309…`）に同一引数を与えると、**新素材の出力には `sample_aspect_ratio` が含まれない**（`-show_optional_fields always` では `"N/A"`）。変更前素材では `"1:1"` が出る | 本機実測 |
+
+**帰結:** 新素材は、依存検証を通過しても**構成段階の表示寸法取得で停止する見込みが高い**。SARが未指定の映像を正方画素として扱うかどうかは要求に規定が無く、**利用者判断事項**である（実装は変更していない）。
+
+#### 5.3.2 縦型→16:9長尺版の配置（P3-13・暫定）
+
+| # | 事実 | 出典 |
+|---|---|---|
+| L-01 | 長尺版の映像regionは全画面（1920×1080）で、長尺版は手動layoutを持たない（`shortForm?.Layout` が `null`）。この場合の配置は `scale=…:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=…:(ow-iw)/2:(oh-ih)/2:color=black` である | `src/HubRadio.Infrastructure/Rendering/FfmpegCompiler.cs`（`BuildGeometryFilter` の非手動layout分岐、コメント "Fit rather than stretch"）、`src/HubRadio.App/Rendering/StandardRenderGraphFactory.cs`、`src/HubRadio.App/Profiles/BundledRenderProfileLoader.cs`（`ReadLayoutRegions`） |
+| L-02 | 同じfilterを承認済みffmpegで新素材の1frameへ単独で適用すると、映像は **608×1080 に縮小され左右に黒帯が付く（pillarbox）**。縦横比は保たれ、歪んだ拡大ではない | 本機実測（pipeline外の1frame抽出） |
+| L-03 | 同じ再現で、縮小後のframeの SAR は `1215/1216` と報告された（608は607.5の偶数丸め）。**最終出力で同じ値になるかは未確認** | 本機実測 |
+
+**判定（暫定）:** コード上の配置は **pillarbox（P3-13 の案(a)）** と予測され、縦横比の破壊は無い。ただし §5.3.1 のとおり新素材はこの描画分岐へ**到達できない見込み**であり、`P3-13` の DoD（pipeline出力の1frameによる判定）は**未達**である。§5.3.1 の判断後に、pipelineが生成したframeで確定させる。これが意図した体験か（画面の約68%が余白）は**利用者判断**である。
+
+#### 5.3.3 音量・True Peak の余裕の実測（P3-02 の判断材料）
+
+承認済みffmpeg（`6099366f…`）で、pipelineと同じ音声符号化parameter（AAC-LC、48 kHz、384 kbps、stereo）を使い、`loudnorm` の `TP` 目標を変えて符号化後を再測定した。**pipelineのfilter graph全体（trim・timestamp処理等）を再現したものではない。** 判定基準はFR-020（-16 LKFS ±1 dB、True Peak -1 dBFS以下）。2-pass は、解析passと適用passで同じ `I`／`TP`／`LRA` を使った。
+
+| 素材 | 方式 | TP目標 | 符号化後 I | 符号化後 TP | 判定 |
+|---|---|---|---:|---:|---|
+| 新 | 単一pass | -1.0 | -15.81 | -0.99 | **TP FAIL** |
+| 新 | 単一pass | -1.1 | -15.83 | -1.04 | 基準内 |
+| 新 | 単一pass | -1.2 | -15.85 | -1.19 | 基準内 |
+| 新 | 2-pass | -1.0 | -15.96 | -0.99 | **TP FAIL** |
+| 新 | 2-pass | -1.1 | -15.95 | -1.08 | 基準内 |
+| 新 | 2-pass | -1.2 | -15.95 | -1.16 | 基準内 |
+| 変更前 | 単一pass | -1.0〜-2.0 | -14.27〜-14.35 | — | **loudness FAIL（全条件）** |
+| 変更前 | 2-pass | -1.0 | -16.02 | -1.25 | 基準内 |
+| 変更前 | 2-pass | -1.1 | -16.02 | -1.25 | 基準内 |
+| 変更前 | 2-pass | -1.2 | -15.98 | -1.20 | 基準内 |
+
+**確定できること（2素材について）:**
+
+1. **本表で測定した TP目標 -1.1・-1.2 では、新素材は単一passでも両規則が基準内になる**（余裕は -1.1 で 0.04 dB、-1.2 で 0.19 dB）。それより低い目標は本表に含めていない。
+2. **変更前素材は、測定した TP目標 -1.0〜-2.0 のいずれでも、単一passではloudnessが基準外**である。本表の2方式・符号化条件の中では、2素材とも通るのは2-pass（TP目標 -1.1・-1.2）だけである。
+3. 本節の新素材 2-pass（TP -1.0）の I は -15.96 で、§4.4 の記録値（-16.22）と異なる。§4.4 の測定コマンドは保存されておらず、**差の原因は未特定**である。
+
+**断定しないこと:** 他の素材・符号化条件での一般性は未確認である。本節はpipeline外の音声のみの測定である。測定scriptは `work/p3-02-headroom/` に保存した。
+
+### 5.4 §18 記録6項目・DoDの取得状況
+
+| 項目 | 状態 |
+|---|---|
+| 停止箇所 | **段階は同定済み、原因は仮説**（§5.2） |
+| True Peak のpipeline内実測 | **未取得**（生成段階へ未到達） |
+| ASRの発話数・検出言語／短尺候補数／字幕cue数 | **未取得**（同上） |
+| 縦型→16:9の扱い | **暫定**（コード出典＋pipeline外の1frame。§5.3.2） |
+| 所要時間・時間予算 | 9.3秒で停止。**時間予算の妥当性は判定できない** |
+| `src/` の差分 | 0件 |
+
+### 5.5 本節で主張しないこと
+
+- 新素材で標準成果物が生成されるとは主張しない。**生成段階に到達していない。**
+- ASR精度・知覚品質・人手評価を `PASS` としない。
+- §5.3 の予測はpipeline内で確認していない。

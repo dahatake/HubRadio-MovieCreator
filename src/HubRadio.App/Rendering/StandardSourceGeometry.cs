@@ -50,7 +50,11 @@ internal static class StandardSourceGeometry
             int height = ReadMathematicalInt32(stream.GetProperty("height"));
             if (ReadMathematicalInt32(stream.GetProperty("index")) != video.Index
                 || width != video.Width || height != video.Height) throw new FormatException();
-            string[] sar = stream.GetProperty("sample_aspect_ratio").GetString()!.Split(':');
+            // ffprobe reports an unspecified SAR by omitting the key or, with -show_optional_fields always, as "N/A".
+            string sarText = stream.TryGetProperty("sample_aspect_ratio", out JsonElement sarValue)
+                ? sarValue.GetString()!
+                : "1:1";
+            string[] sar = (sarText == "N/A" ? "1:1" : sarText).Split(':');
             if (sar.Length != 2
                 || !long.TryParse(sar[0], NumberStyles.None, CultureInfo.InvariantCulture, out long numerator)
                 || !long.TryParse(sar[1], NumberStyles.None, CultureInfo.InvariantCulture, out long denominator)

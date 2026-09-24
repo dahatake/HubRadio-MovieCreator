@@ -313,13 +313,18 @@ public sealed class StandardRenderGraphFactoryTests
         Assert.AreEqual(new SourceDisplayGeometry(1080, 2560), rotated);
         Assert.AreEqual(new SourceDisplayGeometry(1080, 1920), StandardSourceGeometry.Parse(fixture.Original.MediaInfo,
             """{"streams":[{"index":0,"width":1920,"height":1080,"sample_aspect_ratio":"1:1","side_data_list":[{"rotation":-90}],"tags":{"rotate":"270"}}]}"""));
+        Assert.AreEqual(fixture.Geometry, StandardSourceGeometry.Parse(fixture.Original.MediaInfo,
+            """{"streams":[{"index":0,"width":1920,"height":1080}]}"""));
+        Assert.AreEqual(fixture.Geometry, StandardSourceGeometry.Parse(fixture.Original.MediaInfo,
+            """{"streams":[{"index":0,"width":1920,"height":1080,"sample_aspect_ratio":"N/A"}]}"""));
         foreach (string invalid in new[]
         {
             """{"streams":[{"index":1,"width":1920,"height":1080,"sample_aspect_ratio":"1:1"}]}""",
             """{"streams":[{"index":0,"width":1280,"height":720,"sample_aspect_ratio":"1:1"}]}""",
-            """{"streams":[{"index":0,"width":1920,"height":1080}]}""",
-            """{"streams":[{"index":0,"width":1920,"height":1080,"sample_aspect_ratio":"N/A"}]}""",
+            """{"streams":[{"index":0,"width":1920,"height":1080,"sample_aspect_ratio":"0:1"}]}""",
             """{"streams":[{"index":0,"width":1920,"height":1080,"sample_aspect_ratio":"1:7"}]}""",
+            """{"streams":[{"index":0,"width":1920,"height":1080,"sample_aspect_ratio":null}]}""",
+            """{"streams":[{"index":0,"width":1920,"height":1080,"sample_aspect_ratio":1}]}""",
             """{"streams":[{"index":0,"width":1920,"height":1080,"sample_aspect_ratio":"1:1","side_data_list":[{"rotation":45}]}]}""",
             """{"streams":[{"index":0,"width":1920,"height":1080,"sample_aspect_ratio":"1:1","side_data_list":[{"rotation":-90}],"tags":{"rotate":"90"}}]}""",
             """{"streams":[{"index":0,"width":1920,"height":1080,"sample_aspect_ratio":"1:1","tags":{"rotate":"90.5"}}]}""",
