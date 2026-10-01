@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>HubRadio.Stitch</RootNamespace>
+    <AssemblyName>HubRadio.Stitch</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HubRadio.Infrastructure\HubRadio.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

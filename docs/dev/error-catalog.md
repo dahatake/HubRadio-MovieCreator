@@ -26,6 +26,10 @@ U-001 の WebView2 の 2 コードは起動・復旧画面へ表示するだけ�
 
 `webview.runtime_unavailable` は構成対象の Runtime 検出段階だけを表し、Fixed フォルダの不存在も含む。検出後の初期化失敗は `webview.initialization_failed` とする。明示 Fixed path の null・空白・相対 path は引数契約違反として拒否し、これらや他の構成・検証失敗に検出失敗コードを再利用しない。両コードの結果には例外やフォルダ path の詳細を含めない。
 
+## 結合CLIの失敗コード（FR-035）
+
+`stitch.*` コード（`stitch.usage`、`stitch.input_*`、`stitch.output_*`、`stitch.tool_unverified`、`stitch.encode_failed`、`stitch.timeout`、`stitch.output_verification_failed`、`stitch.cancelled`、`stitch.internal_error`）は、結合CLI（`src/HubRadio.Stitch`）が標準エラーへ `error <code>: <説明>` の1行で出す終了時コードである。公開元は `BookendStitchException` / `BookendStitchCommand`。意味と exit code の対応の正本は[要求定義書 FR-035](../requirement-definition.md#fr-035-オープニングクロージング動画の結合)の失敗コード表とし、本書では重複して列挙しない。診断ログには書かないため `StableErrorCodes` の対象外である。説明文には path・ファイル名・ffmpeg の出力を含めず、入力は役割（opening／main／closing）だけで示す。
+
 ## 診断ログ契約
 
 `LocalDiagnosticLog` は UTF-8 BOM なし、LF 終端の JSON Lines を書く。property 順序と severity 表現は固定し、1 record は次の allowlist だけを持つ。

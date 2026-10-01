@@ -47,6 +47,21 @@ HubRadio MovieCreator は、企業向けのトーク、対談、インタビュ�
 
 技術的破損や来歴欠落がない成果物をローカルへ書き出します。変更時は元の版を上書きせず、子版として再評価します。任意のself-reviewも記録できます。
 
+### 6. 必要なときだけOpening／Closing動画を付ける（結合CLI）
+
+書き出した動画（本編）の前後に、用意したOpening／Closing動画を付けた**新しいMP4**をコマンドで作れます（[要求定義書 FR-035](docs/requirement-definition.md#fr-035-オープニングクロージング動画の結合)）。並び順は Opening → 本編 → Closing で、どちらか一方だけでも構いません。現時点ではGUIからは操作できず、portable配布物にも含まれないため、リポジトリと.NET SDKのある環境で実行します。
+
+```powershell
+dotnet run --project src\HubRadio.Stitch -c Release -- `
+  --main <本編.mp4> --opening <opening.mp4> --closing <closing.mp4> --output <新しい名前.mp4> `
+  --ffmpeg artifacts\portable\osl009-payload\Tools\ffmpeg.exe --ffprobe artifacts\portable\osl009-payload\Tools\ffprobe.exe
+```
+
+- 入力は `.mp4` `.m4v` `.mov` `.mkv` `.webm`。出力の画面サイズ・frame rate・音声ch数は本編に合わせ、縦横比の違うOpening／Closingは黒帯付きで縮小・拡大します（切り抜きません）。音量はそろえません。
+- 既存ファイルは上書きしません。入力も変更しません。同じ場所に、入力のSHA-256と各区間の出力時刻を記録した `<新しい名前>.stitch.json` を作ります。字幕ファイル（SRT／VTT）の時刻はずらさないため、本編の時刻には `main` 区間の `outputStartSeconds` を足してください。
+- ffmpeg／ffprobeは同梱の固定版（digest照合）だけを使います。成功時は exit code 0、失敗時は `error stitch.<理由>: ...` と 2〜6 の exit code を返します。
+- Opening／Closingの利用権は確認済みとして扱いません（manifestの `rightsStatus` は `unconfirmed`、`publicationScope` は `internalOnly`）。
+
 ## 大切な原則
 
 - **元動画を変更しない:** 編集で元ファイルを上書きしません。

@@ -12,6 +12,8 @@
 
 ### Added
 
+- 生成済み動画の前後に、指定したOpening／Closing動画を結合した新しいMP4を作る結合CLI（`src/HubRadio.Stitch`、要求FR-035、受入AC-008）。並び順は Opening → 本編 → Closing のhard cutです。出力の画面サイズ・frame rate・音声ch数は本編に合わせ、Opening／Closingは縦横比を保って黒帯を付けます（切り抜きません）。既存ファイルは上書きせず、入力は変更しません。入力digestと各区間の出力時刻を記録する`<名前>.stitch.json`を同時に作ります。quick startの生成・評価・納品と既存成果物は変更しません。GUIからの操作とportable配布物への同梱は未対応です。
+
 - 権限・公開区分・承認gateの受入試験3件（`AC004_Security.UnauthorizedView` / `ExternalMisoutput` / `UnapprovedFinal`）。権限外閲覧、外部誤出力、未承認finalを検査します。audit閲覧の試験は、前提の監査ログ閲覧が未実装のため作成していません。
 - media／bridge／worker／FFmpeg／promptの敵対試験をまとめたセキュリティ試験報告書（`docs/dev/security/test-report.md`）。確認した範囲でCritical未解決は0件、残余リスクは6件で、責任者の承認は未了です。
 - 変更後の受入素材（`sample/hubradio-sample.mp4`）の受入実測記録（`benchmarks/results/approved-media-hubradio-sample.md`）。2026-09-24の再実行の到達段階・停止理由・§18記録6項目の取得状況を記録します。

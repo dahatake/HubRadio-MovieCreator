@@ -14,6 +14,8 @@
 
 **UI/UX要求の追補承認日:** 2026年9月7日（UX-001、第2版方針A01〜A20の既定案と実装を利用者が明示承認。恒久化先は[ADR-0011](dev/decisions/ADR-0011-compact-workflow-and-settings-file.md)）
 
+**オープニング・クロージング結合要求の追補日:** 2026年10月1日（FR-035、AC-008。§0 変更履歴を参照）
+
 **状態:** 要求再baseline済み。`V2-000`〜`V2-009`を実装・レビュー済み。`V2-010`以降の自動代理評価、state、実render／delivery、最終受入は未完了
 
 OS-onlyの1操作起動要求を追加した。この追補は起動実装、クリーンOS検証、署名、一般提供の完了を意味しない。
@@ -23,6 +25,16 @@ UI/UX追補は承認済み要求の追加であり、UI・設定fileの実装／
 **既定値の根拠:** [既定設定調査](dev/research/default-settings-research.md)
 
 **設計判断:** [ADR-0009](dev/decisions/ADR-0009-source-only-defaults-and-automated-evaluation.md)
+
+---
+
+## 0\. 変更履歴
+
+本節は2026-10-01に新設した。それ以前の追補は上記の文書情報（追補日）に記録している。削除した要求IDは再利用しない。
+
+| 日付 | 依頼の要約 | 追加 | 変更 | 削除 |
+| --- | --- | --- | --- | --- |
+| 2026-10-01 | 成果物動画の前後に、利用者が指定する動画（mp4等）をOpening → 生成動画 → Closingの順で結合する機能を追加 | FR-035（FR-035.1〜FR-035.12）、AC-008（AC-008.1〜AC-008.10）、§19.1の仮定A-035-01〜A-035-10 | §4.1（対象への1項目追加）、FR-015（FR-035との関係を追記）、§16 Must（1項目追加） | なし |
 
 ---
 
@@ -124,6 +136,7 @@ YouTube、TikTok、LinkedIn等の仕様は出力profileの参考にするが、�
 - 縦型動画への再構成
 - 字幕と強調テロップの生成
 - オープニング、見出し、エンディングの挿入
+- 生成済み動画の前後へ利用者指定のOpening／Closing動画を結合した別ファイルの作成（FR-035）
 - トランジションの適用
 - BGM、効果音、音量の調整
 - サムネイル候補作成
@@ -505,6 +518,8 @@ quick startは`日本語SDH指向字幕候補`を既定とし、最大7全角文
 
 quick startでは長尺・短尺ともオープニング動画を無効とし、長尺は短いtitle overlay、短尺は元発言から直ちに開始すること。利用者が有効化した場合だけ、許可済みロゴ、title、出演者、ジングルを使うこと。
 
+完成済みのOpening／Closing動画ファイルを成果物動画の前後へ結合する機能はFR-035で別に定義する。FR-035はquick startの生成・評価・納品の流れと`editing.longOpenerEnabled`／`editing.shortOpenerEnabled`の既定値（無効）を変更しない。
+
 ## FR\-016 シーンチェンジ
 
 システムはトピックが変わる位置にシーンチェンジを提案できること。
@@ -834,6 +849,54 @@ quick startの標準成果物は、社内向け16:9長尺1本、最大3本の9:1
 システムは、keyboard event、focus順と可視style、contrast、accessibility tree、字幕の有無・読速・行長・同期・safe zone、全編decode、codec、duration、A/V同期、loudness、True Peak、来歴、設定版を機械判定できること。
 
 評価結果は`PASS`、`WARNING`、`FAIL`、`NOT EVALUATED`を区別し、実行環境、規則版、入力・出力digest、判定詳細を記録すること。人の可読性、理解、自然さ、音質、感情、法的適合を実行したとは主張しないこと。
+
+## FR\-035 オープニング・クロージング動画の結合
+
+出典: 2026-10-01の利用者依頼「成果物の動画のOpeningとClosingに、特定の動画(mp4など)をスティッチングできる機能を追加してください。Opening -> あなたが作成した動画 -> Closing になります。」、[StandardRenderConfiguration.cs](../src/HubRadio.App/Rendering/StandardRenderConfiguration.cs)（既存pipelineはopener設定の有効化を`UnsupportedSetting`で拒否する）、[FfmpegCompiler.cs](../src/HubRadio.Infrastructure/Rendering/FfmpegCompiler.cs)（固定FFmpeg・h264_mf・BT.709の出力契約）、FFmpeg Filters Documentation（<https://ffmpeg.org/ffmpeg-filters.html>、確認日 2026-10-01）。
+
+**目的と境界:** 利用者は、本アプリが生成した動画（以下「本編」）の前に任意のOpening動画、後に任意のClosing動画を結合した**新しい**MP4を作成できる。結合は生成済みファイルに対する明示的な後処理であり、source-only pipelineの生成、自動代理評価、納品、DB登録、既存成果物と証跡を変更しない。利用面は非対話のコマンドライン（以下「結合CLI」）とする（A-035-01）。
+
+| ID | 優先度 | 要求 |
+| --- | --- | --- |
+| FR-035.1 | MUST | **起動と引数。** 結合CLIは次のoptionを受け付ける。`--main <path>`（必須）、`--opening <path>`、`--closing <path>`、`--output <path>`（必須）、`--ffmpeg <path>`、`--ffprobe <path>`、`--timeout-seconds <整数>`、`--help`／`-h`。`--opening`と`--closing`の少なくとも一方が必須。各optionは1回まで、値は次の引数1個。option名は大文字小文字を区別する。相対pathは現在directory基準の絶対pathへ解決する。`--timeout-seconds`は10進整数1〜86400、既定3600で、ffprobe／ffmpeg各processに個別に適用する。`--ffmpeg`／`--ffprobe`の既定は結合CLI実行ファイルと同じdirectoryの`Tools\ffmpeg.exe`／`Tools\ffprobe.exe`とする。 |
+| FR-035.2 | MUST | **結合順序。** 出力の時間軸は、指定されたものだけを Opening → 本編 → Closing の順に、間隔・重なり・トランジションなし（ハードカット）で連結する。Openingだけなら Opening → 本編、Closingだけなら 本編 → Closing。同じファイルをOpeningとClosingの両方に指定してよい。 |
+| FR-035.3 | MUST | **入力検査。** 各入力は、`\\`で始まらないローカルpathの既存通常ファイルで、拡張子（大文字小文字無視）が`.mp4`、`.m4v`、`.mov`、`.mkv`、`.webm`のいずれかであること。固定ffprobeの`format_name`をカンマで分割した要素に`mov`、`mp4`、`matroska`、`webm`のいずれかを含み、`attached_pic`でない映像streamを1本以上持つこと。各入力の素材長Dは、最初の映像streamの`duration`が正の有限値ならその値、そうでなければformatの`duration`とし、どちらも正の有限値でなければ拒否する。 |
+| FR-035.4 | MUST | **出力形式の決定。** 出力の画面サイズ・frame rate・音声は本編から決める。幅＝本編の映像幅×SAR（`n:d`の両方が正のときだけ適用、それ以外は1:1）を切り捨てで偶数化した値、高さ＝本編の映像高を切り捨てで偶数化した値とし、各16〜4096 pxの範囲外なら拒否する。frame rateは本編の`avg_frame_rate`（分子・分母が正の場合）、そうでなければ`r_frame_rate`をそのまま使い、0以下または120 fps超なら拒否する。音声は本編の最初の音声streamが1chなら1ch、それ以外（2ch、3ch以上、音声なし）は2chとする。 |
+| FR-035.5 | MUST | **正規化。** 各入力の映像はSARを1:1へ補正した後、出力サイズへ縦横比を保って収まる最大サイズへ拡大縮小し、余白を黒で中央に埋める（letterbox／pillarbox。切り抜かない）。各区間の長さは素材長Dに揃え、映像が短ければ最終フレームを延長し、長ければ切る。音声は48,000 Hz・出力ch数へ変換し、短ければ無音で埋め、長ければ切る。音声streamがない入力は区間全体を無音にする。音量の正規化は行わない（A-035-05）。 |
+| FR-035.6 | MUST | **エンコード。** 固定FFmpegで、映像H.264（`h264_mf`、High Profile、yuv420p、progressive、BT.709タグ、limited range）、音声AAC-LC 48,000 Hz、MP4（faststart）で出力する。映像bitrateはframe rate＞30 fpsで12,000,000 bps、それ以外で8,000,000 bps、音声bitrateは1chで128,000 bps、2chで384,000 bps（設定profile 1.0.0の`output.*`既定値と同じ）。字幕stream、chapter、元metadataは出力へ複製しない。 |
+| FR-035.7 | MUST | **出力検証。** 書き込み後に固定ffprobeで出力を測定し、映像codec `h264`、幅・高さがFR-035.4の値、音声codec `aac`、48,000 Hz、FR-035.4のch数であり、formatの`duration`と期待長（全区間のDの合計）の差の絶対値が0.2秒以下であることを確認する。1つでも満たさなければ失敗とし、出力を残さない。 |
+| FR-035.8 | MUST | **非破壊と原子性。** 入力ファイルを変更・移動・削除しない。処理中は各入力を共有読取だけ許可して開いたままにする。`--output`の拡張子は`.mp4`（大文字小文字無視）、親directoryは既存、`--output`とmanifest（FR-035.9）はどちらも開始時点で存在しないこと。出力先directory内の一時ファイルへ書き、検証成功後に上書きなしの移動で確定する。失敗・取消・timeoutでは自分が作った一時ファイルと確定済み出力を削除し、既存ファイルを上書き・削除しない。 |
+| FR-035.9 | MUST | **追跡manifest。** 出力`<名前>.mp4`と同じdirectoryに`<名前>.stitch.json`（BOMなしUTF-8、改行LF、インデント付きJSON）を作る。内容は`schemaVersion`=`"1.0.0"`、`kind`=`"hubradio.bookendStitch"`、`createdAtUtc`（UTC ISO 8601、末尾`Z`）、`publicationScope`=`"internalOnly"`、`tool`（`ffmpegSha256`、`ffprobeSha256`）、`output`（`fileName`、`sha256`、`byteSize`、`durationSeconds`、`width`、`height`、`frameRate`、`audioChannels`、`audioSampleRate`）、`segments`配列（出力時間順。各要素は`role`＝`opening`／`main`／`closing`、`fileName`、`sha256`、`byteSize`、`hadAudio`、`sourceDurationSeconds`、`outputStartSeconds`、`outputEndSeconds`、`rightsStatus`=`"unconfirmed"`）。`outputStartSeconds`は先行区間のDの合計、`outputEndSeconds`＝`outputStartSeconds`＋D。秒値は小数第6位で四捨五入（0.5は0から遠い方）したJSON number。sha256は小文字16進64文字。fileNameはdirectoryを含まないファイル名だけとする（利用者名等のpathを残さない）。 |
+| FR-035.10 | MUST | **終了コードと出力。** 成功時はexit code 0で、標準出力へ`output=<出力の絶対path>`と`manifest=<manifestの絶対path>`の2行を出す。失敗時は標準エラーへ`error <code>: <説明>`の1行を出し、下表のexit codeで終了する。説明にはpath・ファイル名・ffmpegの出力を含めず、入力は役割（opening／main／closing）で示す。`--help`／`-h`は使い方を標準出力へ出してexit code 0（他の引数は無視）。 |
+| FR-035.11 | MUST | **安全性。** 固定FFmpeg／ffprobe（FR-031と同じ同梱LGPL build）のSHA-256とbyte sizeが一致しない、または存在しない場合は処理を開始しない。各入力は`-protocol_whitelist file`でローカルファイルとしてだけ読み、network送信を行わない。shellを経由せずに直接process起動する。Opening／Closingの利用権を確認済みとは扱わず、manifestの`rightsStatus`を`unconfirmed`、`publicationScope`を`internalOnly`とする（BR-004）。 |
+| FR-035.12 | MUST | **取消。** Ctrl+C等の取消要求では実行中のprocessを停止し、FR-035.8の後始末を行って`stitch.cancelled`で終了する。 |
+
+**失敗コード（FR-035.10）:**
+
+| exit code | code | 条件 |
+| --- | --- | --- |
+| 2 | `stitch.usage` | 必須option欠落、Opening／Closingの両方なし、未知option、重複option、値欠落、`--timeout-seconds`が範囲外・非整数、空文字のpath |
+| 3 | `stitch.input_path_invalid` | 入力pathが`\\`で始まる、または絶対pathへ解決できない |
+| 3 | `stitch.input_not_found` | 入力が存在しない、またはdirectory |
+| 3 | `stitch.input_unsupported` | 拡張子・`format_name`がFR-035.3の許可外、ffprobeが失敗、映像streamなし |
+| 3 | `stitch.input_invalid_duration` | 素材長Dを正の有限値として得られない |
+| 3 | `stitch.unsupported_geometry` | FR-035.4の出力サイズが16〜4096 pxの範囲外 |
+| 3 | `stitch.unsupported_frame_rate` | FR-035.4のframe rateが0以下、120 fps超、または解析不能 |
+| 4 | `stitch.output_path_invalid` | 出力pathが`\\`で始まる、絶対pathへ解決できない、拡張子が`.mp4`でない |
+| 4 | `stitch.output_directory_missing` | 出力の親directoryが存在しない |
+| 4 | `stitch.output_exists` | 出力またはmanifestが既に存在する（処理開始前、または確定移動時） |
+| 5 | `stitch.tool_unverified` | ffmpeg／ffprobeが存在しない、またはSHA-256／byte sizeが固定値と不一致 |
+| 6 | `stitch.encode_failed` | ffmpegが0以外で終了、出力が上限を超えて切り詰められた |
+| 6 | `stitch.timeout` | process timeout |
+| 6 | `stitch.output_verification_failed` | FR-035.7の検証不一致 |
+| 6 | `stitch.cancelled` | 取消要求 |
+| 1 | `stitch.internal_error` | 上記以外の予期しない例外 |
+
+検査順序は usage → 出力path → 入力path → tool → 入力の内容 → 処理とし、複数の失敗があるときは最初に検出したものを報告する。
+
+**入出力例:** 本編`main.mp4`（1920×1080、30/1 fps、2ch、3.000000秒）、`--opening op.mp4`（1280×720、1ch、1.500000秒）、`--closing cl.mp4`（640×480、25 fps、音声なし、1.000000秒）、`--output final.mp4`のとき、exit code 0で`final.mp4`（1920×1080、30/1 fps、h264、aac 48,000 Hz 2ch、5.5±0.2秒）と`final.stitch.json`を作る。segmentsは`opening` 0〜1.5、`main` 1.5〜4.5、`closing` 4.5〜5.5秒で、OpeningはSAR 1:1のまま1920×1080へ拡大、Closingは1440×1080へ拡大し左右240 pxずつ黒、Closingの音声は無音。`final.mp4`が既に存在すれば、exit code 4、`error stitch.output_exists: ...`で終了し既存ファイルは変わらない。
+
+**対象外（本追補）:** GUIからの操作、quick start／再生成での自動適用、字幕file（SRT／VTT）・chapter・使用区間一覧の時刻ずらし（本編側の時刻は manifestの`main`区間の`outputStartSeconds`を加算して換算する）、区間間のトランジション、Opening／Closingの音量正規化、HDR素材のtone mapping、portable配布物への結合CLIの同梱。
 
 ---
 
@@ -1285,6 +1348,32 @@ UI/UX追補の受入条件（実装・実測の完了記録ではない）:
 
 ローカル技術検証では、評価利用が許される候補のAC-007.1〜8の実結果を記録できる。未署名・policy・環境制約を明記し、未測定・拒否・未設定による保留をPASSにしない。一般提供にはAC-007.9と供給網の条件も必要とする。AC-007の成立だけでAC-001〜006または製品全体を完了扱いにしてはならない。
 
+## AC\-008 オープニング・クロージング動画の結合
+
+**共通の事前条件:** リポジトリルートで.NET SDK（`global.json`の版）が使え、固定FFmpeg／ffprobeが`artifacts\portable\osl009-payload\Tools\`にあること。実FFmpegを使う試験は、この2ファイルがない環境では`Inconclusive`になり、その場合は該当ACをPASSとしない。試験用動画はtest内でFFmpegの`testsrc2`／`sine`から合成し、`sample/`の素材を使わない・変更しない。
+
+**共通の操作:** 次をリポジトリルートで実行する（成功時exit code 0、失敗時0以外）。
+
+```powershell
+dotnet build tests\HubRadio.Infrastructure.Tests\HubRadio.Infrastructure.Tests.csproj -c Release
+tests\HubRadio.Infrastructure.Tests\bin\Release\net10.0\HubRadio.Infrastructure.Tests.exe --progress off --filter "FullyQualifiedName~BookendStitch"
+```
+
+証跡は上記の試験結果（試験名ごとのPassed）とする。試験は`tests/HubRadio.Infrastructure.Tests/BookendStitcherTests.cs`（実FFmpeg）と`tests/HubRadio.Infrastructure.Tests/BookendStitchCommandTests.cs`（引数・終了コード）にある。
+
+| ID | 対応要求 | 期待結果 |
+| --- | --- | --- |
+| AC-008.1 | FR-035.2, FR-035.4, FR-035.5, FR-035.6, FR-035.7, FR-035.9 | FR-035の入出力例と同じ3入力から、exit code 0で出力とmanifestが作られる。出力はh264 High／1920×1080／30/1 fps／aac 48,000 Hz 2chで長さ5.5±0.2秒。manifestの`segments`が`opening`(0〜1.5)、`main`(1.5〜4.5)、`closing`(4.5〜5.5)の順、各`sha256`／`byteSize`が入力の実測値と一致、`output.sha256`が出力の実測値と一致、`rightsStatus`が全て`unconfirmed`、`publicationScope`が`internalOnly`、fileNameにdirectoryを含まない。Opening区間内のフレームの上下端は黒でなく、Closing区間内のフレームの左端・右端は黒（pillarbox）。 |
+| AC-008.2 | FR-035.2 | Openingだけ・Closingだけの各指定で、それぞれ`opening`,`main`／`main`,`closing`の2区間だけが出力され、長さが2区間のDの合計±0.2秒。 |
+| AC-008.3 | FR-035.4, FR-035.5 | 本編が9:16（1080×1920）で音声1chのとき、出力は1080×1920・1ch。16:9のOpeningは上下に黒余白が付き、切り抜かれない。 |
+| AC-008.4 | FR-035.8 | 全ACの成功・失敗の前後で、入力ファイルのSHA-256・byte size・更新日時が変わらない。失敗時に出力・manifest・一時ファイル（出力directory内の新規ファイル）が残らない。既存の出力またはmanifestがあると`stitch.output_exists`（exit code 4）で、既存ファイルのbytesが変わらない。 |
+| AC-008.5 | FR-035.1, FR-035.10 | 引数なし、`--main`欠落、`--output`欠落、Opening／Closingの両方なし、未知option、重複option、値欠落、`--timeout-seconds 0`／`86401`／`abc`がそれぞれ`stitch.usage`（exit code 2）で、標準エラーの1行が`error stitch.usage: `で始まる。`--help`はexit code 0で使い方を出す。 |
+| AC-008.6 | FR-035.3 | 存在しない入力は`stitch.input_not_found`、`.txt`拡張子・映像streamのない音声だけのmp4は`stitch.input_unsupported`、`\\server\share\a.mp4`は`stitch.input_path_invalid`（いずれもexit code 3）。 |
+| AC-008.7 | FR-035.8, FR-035.10 | 出力拡張子`.mov`と`\\`始まりの出力は`stitch.output_path_invalid`、存在しない親directoryは`stitch.output_directory_missing`（exit code 4）。 |
+| AC-008.8 | FR-035.11 | 固定値と一致しないffmpeg（任意内容のファイル）または存在しないffprobeを指定すると`stitch.tool_unverified`（exit code 5）でffmpegを起動しない。実行したffmpegの引数には各`-i`の直前に`-protocol_whitelist file`がある。 |
+| AC-008.9 | FR-035.7, FR-035.8, FR-035.10, FR-035.12 | ffmpegの0以外の終了は`stitch.encode_failed`、timeoutは`stitch.timeout`、測定値の不一致（例: 長さが期待値と0.2秒超ずれる）は`stitch.output_verification_failed`、取消は`stitch.cancelled`（いずれもexit code 6）になり、出力・manifest・一時ファイルが残らない。FR-035.4の範囲外サイズ・frame rateは`stitch.unsupported_geometry`／`stitch.unsupported_frame_rate`（exit code 3）。 |
+| AC-008.10 | FR-035.1, FR-035.10 | 手順: 任意のmp4 3本を用意し、`dotnet run --project src\HubRadio.Stitch -c Release -- --main <本編> --opening <op> --closing <cl> --output <新規path>.mp4 --ffmpeg artifacts\portable\osl009-payload\Tools\ffmpeg.exe --ffprobe artifacts\portable\osl009-payload\Tools\ffprobe.exe`を実行する。期待: exit code 0、標準出力が`output=`行と`manifest=`行の2行、2ファイルが存在。同じコマンドの再実行はexit code 4。 |
+
 ---
 
 # 16\. 優先順位
@@ -1305,6 +1394,7 @@ UI/UX追補の受入条件（実装・実測の完了記録ではない）:
 - 日本語SDH指向字幕候補と通常翻訳字幕profile
 - 強調テロップ
 - ニュートラルtemplateと任意のオープニング、エンディング
+- 生成済み動画へのOpening／Closing動画の結合（FR-035、結合CLI）
 - `Music/`の社内限定BGM
 - 音量測定と版付きloudness profile
 - プレビュー
@@ -1436,6 +1526,23 @@ source-only vertical sliceの最終受入では、利用者が利用を許可し
 - 既存Clipchamp編集プロジェクトとの受け渡しを追加するか
 
 未決事項があることを、source-only社内限定vertical sliceの実装開始を妨げる架空の外部承認gateへ読み替えてはならない。ただし、該当機能または配布を完了した証拠なしにPASSとしてはならない。
+
+## 19.1 FR-035の仮定・未解決事項
+
+| ID | 種別 | 内容 | 根拠 | 影響 | 覆す条件 |
+| --- | --- | --- | --- | --- | --- |
+| A-035-01 | [ASSUMPTION] | 利用面を非対話の結合CLI（`src/HubRadio.Stitch`）とし、GUI操作は本追補の対象外とする | 依頼は利用面を指定していない。既存pipelineはopener設定を`UnsupportedSetting`で拒否し、生成物はrender graph・QC・納品receiptのdigestで結合されているため、生成段へ組み込むと既存証跡（AC-001〜006）を壊す。CLIは既存成果物を変えずに追加でき、受入をコマンドで判定できる | 非開発者はGUIから使えない。portable配布物に含まれないため、現時点ではSDKのある環境で実行する | 利用者がGUI操作または生成時の自動適用を要求した場合。その際は設定profileの新版、bridge、画面、評価への影響を別要求として定義する |
+| A-035-02 | [ASSUMPTION] | 出力の画面サイズ・frame rate・音声ch数は本編に合わせ、Opening／Closingは縦横比を保ったletterbox／pillarboxにする（切り抜かない） | 主役は本編であり、切り抜きは内容（ロゴ・文字）を失う可能性がある。FR-031の出力形式を維持できる | 縦横比の違う素材では黒帯が入る | 利用者が切り抜き（fill）や本編以外の基準を要求した場合 |
+| A-035-03 | [ASSUMPTION] | 入力の許可拡張子を`.mp4/.m4v/.mov/.mkv/.webm`、`format_name`をmov/mp4/matroska/webm系に限る | 依頼の「mp4など」を一般的な動画コンテナに限定し、playlist等による外部参照・network読込を防ぐ（安全側） | 他形式は事前変換が必要 | 必要なコンテナが具体的に示された場合 |
+| A-035-04 | [ASSUMPTION] | 出力長の許容差を0.2秒、各process timeoutの既定を3600秒（1〜86400秒で変更可）とする | 区間長はframe境界とAACフレーム境界で丸められる。実測（2026-10-01、固定FFmpeg）で1.5＋3＋1秒の合成素材は5.500000秒になった | 許容差を超える長尺素材の丸め誤差は失敗扱いになる | 実素材の測定で0.2秒が不適切と判明した場合 |
+| A-035-05 | [ASSUMPTION] | Opening／Closingの音量は正規化せず、本編の音声も再エンコードのみとする | 本編はFR-020の版付きloudness処理済み。Opening／Closingは利用者が完成品として用意する素材であり、意図した音量を変えない | 区間間で音量差が出る場合がある | 利用者が結合後のloudness統一を要求した場合 |
+| A-035-06 | [ASSUMPTION] | 本編に3ch以上の音声がある場合はFFmpeg既定のdownmixで2chにする。音声のない本編の出力は2chとする | 既存`output.audioChannelPolicy`は1ch/2chの保持だけを定義している。本アプリの生成物は1chか2ch | 3ch以上の素材では定義済みmappingでないdownmixになる | 多ch mappingが承認された場合 |
+| A-035-07 | [ASSUMPTION] | 字幕file・chapter・使用区間一覧の時刻は変換しない。manifestの`main`区間`outputStartSeconds`で換算できる | 依頼は動画の結合に限られる。sidecarを書き換えると既存成果物の証跡と食い違う | 字幕なし版に外部字幕を重ねる場合、利用者がoffsetを加算する必要がある | 時刻ずらし済みsidecarの出力が要求された場合 |
+| A-035-08 | [ASSUMPTION] | HDR等のBT.709以外の素材をtone mappingせず、BT.709 SDRとしてタグ付けする | 既存の結合対象は本アプリのSDR BT.709出力。Opening／ClosingのHDR対応は依頼にない | HDRのOpening／Closingは色が不正確になり得る | HDR素材の利用が要求された場合 |
+| A-035-09 | [ASSUMPTION] | 動画の再エンコードによる画質劣化（世代劣化）を許容する | 解像度・frame rate・codec設定の異なる3素材をhard cutで確実に連結するには再エンコードが必要。stream copyは全素材の符号化条件が一致する場合だけ成立する | 本編の画質がわずかに低下する | 無劣化連結が必須と指定された場合 |
+| A-035-10 | [ASSUMPTION] | 2026-10-01の依頼が要求定義書として指定した`docs/requirements-definition.md`は存在しないため、既存の正本である本書`docs/requirement-definition.md`を更新した | 正本を2つに分けると要求が食い違う。本書はREADME等から参照されている | 依頼のpathでは本書が見つからない | 利用者がファイル名の変更を指示した場合（参照元の一括更新を伴う） |
+
+競合: なし（FR-015の「quick startではオープニング動画を無効」とFR-035は、FR-035が生成後の明示的な別操作であり既定の生成内容を変えないため両立する）。TBD／BLOCKED: なし。
 
 ---
 
