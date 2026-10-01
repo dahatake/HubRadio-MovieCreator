@@ -28,7 +28,7 @@ U-001 の WebView2 の 2 コードは起動・復旧画面へ表示するだけ�
 
 ## 結合CLIの失敗コード（FR-035）
 
-`stitch.*` コード（`stitch.usage`、`stitch.input_*`、`stitch.output_*`、`stitch.tool_unverified`、`stitch.encode_failed`、`stitch.timeout`、`stitch.output_verification_failed`、`stitch.cancelled`、`stitch.internal_error`）は、結合CLI（`src/HubRadio.Stitch`）が標準エラーへ `error <code>: <説明>` の1行で出す終了時コードである。公開元は `BookendStitchException` / `BookendStitchCommand`。意味と exit code の対応の正本は[要求定義書 FR-035](../requirement-definition.md#fr-035-オープニングクロージング動画の結合)の失敗コード表とし、本書では重複して列挙しない。診断ログには書かないため `StableErrorCodes` の対象外である。説明文には path・ファイル名・ffmpeg の出力を含めず、入力は役割（opening／main／closing）だけで示す。
+`stitch.*` コード（`stitch.usage`、`stitch.input_*`、`stitch.output_*`、`stitch.tool_unverified`、`stitch.encode_failed`、`stitch.timeout`、`stitch.output_verification_failed`、`stitch.cancelled`、`stitch.internal_error`）は、結合CLI（`src/HubRadio.Stitch`）が標準エラーへ `error <code>: <説明>` の1行で出す終了時コードである。公開元は `BookendStitchException` / `BookendStitchCommand`。意味と exit code の対応の正本は[要求定義書 FR-035](../requirement-definition.md#fr-035-オープニングクロージング動画の結合)の失敗コード表とし、本書では重複して列挙しない。仕上がり画面のbridge `stitch.run`は、同じコード（`stitch.usage`を除く）を`status=failed`の`code`として返し、error envelopeは使わない（GUI応答statusの正本もFR-035）。診断ログには書かないため `StableErrorCodes` の対象外である。説明文には path・ファイル名・ffmpeg の出力を含めず、入力は役割（opening／main／closing）だけで示す。
 
 ## 診断ログ契約
 

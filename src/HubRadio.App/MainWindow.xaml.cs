@@ -189,7 +189,10 @@ public sealed partial class MainWindow : Window
                     bridgeHandlers.GlobalSettings,
                     bridgeHandlers.FileSettings,
                     bridgeHandlers.SourceOnly,
-                    bridgeHandlers.SourceOnlyMedia);
+                    bridgeHandlers.SourceOnlyMedia)
+                {
+                    StitchHandler = bridgeHandlers.Stitch,
+                };
                 // Own the host before awaiting so Closed can detach it before closing the control.
                 webViewHost = host;
                 WebApplicationView.Visibility = Visibility.Visible;

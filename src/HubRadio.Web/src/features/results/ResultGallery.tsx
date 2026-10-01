@@ -1,6 +1,8 @@
 import { useId } from 'react'
 import { AppIcon } from '../../components/AppIcons'
 import { jobStatusLabels } from '../jobs/jobPresentation'
+import { BookendStitchPanel } from '../stitch/BookendStitchPanel'
+import type { BookendStitchService } from '../stitch/stitchProtocol'
 import type { WorkflowWarningTarget } from '../workflow/workflowNavigation'
 import { sourceOnlyMediaUrl, type SourceOnlyResultArtifact, type SourceOnlyResultDto } from '../workflow/pipelineProtocol'
 import type { ResultCard, ResultKind, ResultPresentation, ResultState } from './resultPresentation'
@@ -26,6 +28,8 @@ export interface ResultGalleryProps {
   readonly onFollowWarning?: (target: WorkflowWarningTarget, warningId: string) => void
   /** Omitted when the caller does not supply a past-version list. */
   readonly versionHistory?: VersionHistoryPanelProps
+  /** FR-035 GUI. null/undefined shows the action as unavailable. */
+  readonly bookendStitch?: BookendStitchService | null
 }
 
 const primaryGroups = [
@@ -52,7 +56,7 @@ const warningTargetLabels: Readonly<Record<WorkflowWarningTarget['kind'], string
 
 /** Display and selection intents only; no bridge reads, rendering or automatic selection. */
 export function ResultGallery({
-  presentation, onSelectArtifact, warnings = [], onFollowWarning, selectedWarningId = null, versionHistory,
+  presentation, onSelectArtifact, warnings = [], onFollowWarning, selectedWarningId = null, versionHistory, bookendStitch,
 }: ResultGalleryProps) {
   const headingId = useId()
   // Preserve unclassified records without guessing that a master is a long video
@@ -93,6 +97,7 @@ export function ResultGallery({
               card={presentation.cards.find(card => card.kind === group.kind)}
               onSelectArtifact={onSelectArtifact}
               pipelineResult={presentation.pipelineResult}
+              bookendStitch={bookendStitch}
             />
           </li>
         ))}
@@ -156,12 +161,13 @@ export function ResultGallery({
   )
 }
 
-function ResultGroup({ kind, title, card, onSelectArtifact, pipelineResult }: Readonly<{
+function ResultGroup({ kind, title, card, onSelectArtifact, pipelineResult, bookendStitch }: Readonly<{
   kind: ResultKind
   title: string
   card?: ResultCard
   onSelectArtifact?: ResultGalleryProps['onSelectArtifact']
   pipelineResult?: SourceOnlyResultDto
+  bookendStitch?: BookendStitchService | null
 }>) {
   const headingId = useId()
   const state = card?.state ?? 'unavailable'
@@ -220,7 +226,7 @@ function ResultGroup({ kind, title, card, onSelectArtifact, pipelineResult }: Re
       {pipelineResult !== undefined && pipelineArtifacts.length > 0 && (
         <ul aria-label={`${label}の実成果物`} role="list">
           {pipelineArtifacts.map(a => <li key={a.artifact.artifactId}>
-            <PipelineArtifact result={pipelineResult} artifact={a} onSelectArtifact={onSelectArtifact} />
+            <PipelineArtifact result={pipelineResult} artifact={a} onSelectArtifact={onSelectArtifact} bookendStitch={bookendStitch} />
           </li>)}
         </ul>
       )}
@@ -266,10 +272,11 @@ type AncillaryKind = SourceOnlyResultDto['ancillaryArtifacts'][number]['kind']
 export const ancillaryArtifactLabels: Readonly<Record<AncillaryKind, string>> = {
   Transcript: '文字起こし（transcript.json）', UsedSourceRanges: '使用区間一覧（used-source-ranges.json）',
 }
-function PipelineArtifact({ result, artifact: a, onSelectArtifact }: Readonly<{
+function PipelineArtifact({ result, artifact: a, onSelectArtifact, bookendStitch }: Readonly<{
   result: SourceOnlyResultDto
   artifact: SourceOnlyResultArtifact
   onSelectArtifact?: ResultGalleryProps['onSelectArtifact']
+  bookendStitch?: BookendStitchService | null
 }>) {
   const url = sourceOnlyMediaUrl(result, a.artifact.artifactId)
   const label = pipelineArtifactLabels[a.role]
@@ -284,6 +291,8 @@ function PipelineArtifact({ result, artifact: a, onSelectArtifact }: Readonly<{
       {a.failureCode !== null && <p role="status">失敗: {a.failureCode}</p>}
       {a.measurements !== null && <p>出力予定尺: {a.measurements.expectedDuration.value}/{a.measurements.expectedDuration.rate} 秒</p>}
       <button type="button" disabled={onSelectArtifact === undefined || url === null} onClick={() => onSelectArtifact?.(a.artifact.artifactId)}>{label}をプレビュー</button>
+      {url !== null && a.mediaType === 'video/mp4' &&
+        <BookendStitchPanel service={bookendStitch} result={result} artifact={a} label={label} />}
       <details>
         <summary>この成果物の評価と参照</summary>
         <p>版: <code>{a.versionId}</code> · <code>{a.versionDigest}</code></p>

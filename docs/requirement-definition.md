@@ -35,6 +35,7 @@ UI/UX追補は承認済み要求の追加であり、UI・設定fileの実装／
 | 日付 | 依頼の要約 | 追加 | 変更 | 削除 |
 | --- | --- | --- | --- | --- |
 | 2026-10-01 | 成果物動画の前後に、利用者が指定する動画（mp4等）をOpening → 生成動画 → Closingの順で結合する機能を追加 | FR-035（FR-035.1〜FR-035.12）、AC-008（AC-008.1〜AC-008.10）、§19.1の仮定A-035-01〜A-035-10 | §4.1（対象への1項目追加）、FR-015（FR-035との関係を追記）、§16 Must（1項目追加） | なし |
+| 2026-10-01 | FR-035の結合機能をGUI（仕上がり画面）へ統合 | FR-035.13〜FR-035.21、GUI応答status表、AC-008.11〜AC-008.16、仮定A-035-11〜A-035-13 | FR-035の目的と境界・対象外、A-035-01（GUI対象外→GUIとCLIの両方を提供）、§4.1、§14.2、§16 Must | なし |
 
 ---
 
@@ -136,7 +137,7 @@ YouTube、TikTok、LinkedIn等の仕様は出力profileの参考にするが、�
 - 縦型動画への再構成
 - 字幕と強調テロップの生成
 - オープニング、見出し、エンディングの挿入
-- 生成済み動画の前後へ利用者指定のOpening／Closing動画を結合した別ファイルの作成（FR-035）
+- 生成済み動画の前後へ利用者指定のOpening／Closing動画を結合した別ファイルの作成（FR-035。仕上がり画面と結合CLI）
 - トランジションの適用
 - BGM、効果音、音量の調整
 - サムネイル候補作成
@@ -854,7 +855,7 @@ quick startの標準成果物は、社内向け16:9長尺1本、最大3本の9:1
 
 出典: 2026-10-01の利用者依頼「成果物の動画のOpeningとClosingに、特定の動画(mp4など)をスティッチングできる機能を追加してください。Opening -> あなたが作成した動画 -> Closing になります。」、[StandardRenderConfiguration.cs](../src/HubRadio.App/Rendering/StandardRenderConfiguration.cs)（既存pipelineはopener設定の有効化を`UnsupportedSetting`で拒否する）、[FfmpegCompiler.cs](../src/HubRadio.Infrastructure/Rendering/FfmpegCompiler.cs)（固定FFmpeg・h264_mf・BT.709の出力契約）、FFmpeg Filters Documentation（<https://ffmpeg.org/ffmpeg-filters.html>、確認日 2026-10-01）。
 
-**目的と境界:** 利用者は、本アプリが生成した動画（以下「本編」）の前に任意のOpening動画、後に任意のClosing動画を結合した**新しい**MP4を作成できる。結合は生成済みファイルに対する明示的な後処理であり、source-only pipelineの生成、自動代理評価、納品、DB登録、既存成果物と証跡を変更しない。利用面は非対話のコマンドライン（以下「結合CLI」）とする（A-035-01）。
+**目的と境界:** 利用者は、本アプリが生成した動画（以下「本編」）の前に任意のOpening動画、後に任意のClosing動画を結合した**新しい**MP4を作成できる。結合は生成済みファイルに対する明示的な後処理であり、source-only pipelineの生成、自動代理評価、納品、DB登録、既存成果物と証跡を変更しない。利用面は、仕上がり画面の操作（FR-035.13〜FR-035.21）と非対話のコマンドライン（以下「結合CLI」、FR-035.1、FR-035.10、FR-035.12）の2つとし、どちらも同じ結合処理（FR-035.2〜FR-035.9、FR-035.11）を使う（A-035-01）。
 
 | ID | 優先度 | 要求 |
 | --- | --- | --- |
@@ -896,7 +897,39 @@ quick startの標準成果物は、社内向け16:9長尺1本、最大3本の9:1
 
 **入出力例:** 本編`main.mp4`（1920×1080、30/1 fps、2ch、3.000000秒）、`--opening op.mp4`（1280×720、1ch、1.500000秒）、`--closing cl.mp4`（640×480、25 fps、音声なし、1.000000秒）、`--output final.mp4`のとき、exit code 0で`final.mp4`（1920×1080、30/1 fps、h264、aac 48,000 Hz 2ch、5.5±0.2秒）と`final.stitch.json`を作る。segmentsは`opening` 0〜1.5、`main` 1.5〜4.5、`closing` 4.5〜5.5秒で、OpeningはSAR 1:1のまま1920×1080へ拡大、Closingは1440×1080へ拡大し左右240 pxずつ黒、Closingの音声は無音。`final.mp4`が既に存在すれば、exit code 4、`error stitch.output_exists: ...`で終了し既存ファイルは変わらない。
 
-**対象外（本追補）:** GUIからの操作、quick start／再生成での自動適用、字幕file（SRT／VTT）・chapter・使用区間一覧の時刻ずらし（本編側の時刻は manifestの`main`区間の`outputStartSeconds`を加算して換算する）、区間間のトランジション、Opening／Closingの音量正規化、HDR素材のtone mapping、portable配布物への結合CLIの同梱。
+**GUI（仕上がり画面）:**
+
+| ID | 優先度 | 要求 |
+| --- | --- | --- |
+| FR-035.13 | MUST | **表示位置。** 仕上がり一覧で、メディア参照を検証済みの実行結果（現在または前回の結果）に含まれる`mediaType`=`video/mp4`の各成果物（長尺・クリーン版、長尺・字幕焼き込み版、短尺・字幕焼き込み版）に、折りたたみ領域「オープニング・クロージングを付けて保存」を表示する。画像・字幕fileには表示しない。結合機能のbridgeがない環境では、ボタンを無効にして「この環境では利用できません」と表示する。 |
+| FR-035.14 | MUST | **Opening／Closingの選択。** 「オープニングを選ぶ」「クロージングを選ぶ」はbridge `stitch.pickClip`（params `{}`）でnativeのファイル選択ダイアログを開く。ダイアログの種類filterはFR-035.3の5拡張子。選択したpathはnativeだけが保持し、WebViewへは`clipId`（小文字UUID）とディレクトリを含まない`fileName`（255文字以下）だけを返す。選択済みのfileNameを画面に表示し、「外す」で選択を解除できる。`clipId`はアプリの起動中だけ有効で、nativeは最大32件を保持し、超えたら古いものから破棄する。 |
+| FR-035.15 | MUST | **結合の開始。** 「結合して保存」はOpening／Closingの少なくとも一方が選択済みで、同じ領域の要求が処理中でない時だけ有効。押すとbridge `stitch.run`（params `projectId`、`executionId`、`artifactId`、`artifactDigest`、`openingClipId`、`closingClipId`。後2つはUUIDまたは`null`）を送る。処理中はボタン名を「結合中…」にして無効にする。他の画面操作は妨げない。 |
+| FR-035.16 | MUST | **本編の確定（native）。** nativeは、指定実行の保存済み結果を検証し、その結果に列挙された`ArtifactKind.Render`かつ`video/mp4`でdigestが一致する成果物だけを本編とし、検証済みの読取handleを結合完了まで保持する。WebViewからpath・URL・storage referenceを受け取らない。 |
+| FR-035.17 | MUST | **保存先の選択。** 本編確定後にnativeの保存ダイアログ（種類はMP4のみ）を開く。既定ファイル名は長尺・クリーン版`hubradio-long-clean-bookend.mp4`、長尺・字幕焼き込み版`hubradio-long-subtitled-bookend.mp4`、短尺・字幕焼き込み版`hubradio-short-subtitled-bookend.mp4`。取消時は何も作らない。選ばれたpathが既に存在する場合、0 byteかつ作成時刻がダイアログを開いた時刻の2秒前以降のファイル（ダイアログが作った空ファイル）だけを削除してから処理し、それ以外は上書きせず`stitch.output_exists`とする（A-035-11）。 |
+| FR-035.18 | MUST | **処理。** FR-035.2〜FR-035.9、FR-035.11を、本体同梱の固定ffmpeg／ffprobe、process timeout 3600秒で実行する。同時に実行できる結合は1件とする。DB、成果物、評価、納品、設定は変更しない。 |
+| FR-035.19 | MUST | **権限。** 両method とも、nativeが現在のWindows利用者に`ExportComposition`権限があることを確認し、なければダイアログを開かず`forbidden`を返す。利用者識別子をWebViewから受け取らない。 |
+| FR-035.20 | MUST | **応答と表示。** 応答のstatusは下表のとおりで、画面は`role="status"`の日本語文で結果を示す。path・ffmpegの出力は表示しない。`completed`では出力ファイル名、manifestファイル名、長さ（秒）を表示する。`invalid`では選択を解除する。Web側は`stitch.pickClip`を600秒、`stitch.run`を3660秒待ち、応答がなければ「応答がありません。保存先を確認してください。」と表示する。 |
+| FR-035.21 | MUST | **操作性。** すべてのボタンは常時見える日本語ラベルを持ち、keyboardで操作できる（NFR-001、NFR-005）。 |
+
+**GUI応答status（FR-035.20）:** bridge要求は1024 UTF-8 bytes以下、応答は4096 UTF-8 bytes以下。
+
+| method | status | 他の値 | 条件 | 画面表示 |
+| --- | --- | --- | --- | --- |
+| `stitch.pickClip` | `selected` | `clipId`、`fileName` | 許可拡張子のローカル通常ファイルを選んだ | 選択したファイル名 |
+| `stitch.pickClip` | `cancelled` | null | ダイアログを取り消した | 変更なし |
+| `stitch.pickClip` | `unsupported` | null | 許可外の拡張子、`\\`で始まるpath、通常ファイルでない | 「この形式は選べません（.mp4 .m4v .mov .mkv .webm）。」 |
+| 両方 | `forbidden` | null | FR-035.19 | 「この操作の権限がありません。」 |
+| 両方 | `unavailable` | null | 実行環境・同梱ツールの準備がない、または予期しない失敗 | 「結合機能を利用できません。」 |
+| `stitch.run` | `completed` | `outputFileName`、`manifestFileName`、`durationSeconds` | 成功 | 「保存しました: <出力名>（<秒>秒）。同じ場所に <manifest名> を作成しました。」 |
+| `stitch.run` | `cancelled` | null | 保存ダイアログを取り消した | 「保存を取り消しました。ファイルは作成していません。」 |
+| `stitch.run` | `failed` | `code`（FR-035の失敗コードのうち`stitch.usage`以外） | 結合処理の失敗 | codeごとの日本語文と`code` |
+| `stitch.run` | `notFound` | null | FR-035.16で本編を確定できない | 「この成果物は現在の結果から確認できません。画面を更新してください。」 |
+| `stitch.run` | `invalid` | null | 両clipIdがnull、未知または失効したclipId | 「選んだオープニング・クロージングを確認できません。選び直してください。」 |
+| `stitch.run` | `busy` | null | 別の結合を処理中 | 「別の結合を処理中です。完了後にもう一度お試しください。」 |
+
+`completed`以外の`code`、`outputFileName`、`manifestFileName`、`durationSeconds`は`null`、`failed`以外の`code`は`null`。`durationSeconds`は小数第6位で四捨五入したJSON number。params・応答はどちらも未知・欠落propertyを許さない。
+
+**対象外（本追補）:** quick start／再生成での自動適用、字幕file（SRT／VTT）・chapter・使用区間一覧の時刻ずらし（本編側の時刻は manifestの`main`区間の`outputStartSeconds`を加算して換算する）、区間間のトランジション、Opening／Closingの音量正規化、HDR素材のtone mapping、portable配布物への結合CLIの同梱（GUIは本体に含まれる）、結合結果のアプリ内プレビュー・一覧表示・DB登録。
 
 ---
 
@@ -1211,6 +1244,7 @@ AIで生成または大幅に編集した要素を記録できること。
 - 長尺、短尺、字幕、サムネイル等の成果物一覧
 - 自動代理評価のPASS、WARNING、FAIL、NOT EVALUATED
 - 設定snapshot、元区間、根拠への移動
+- 動画成果物ごとの「オープニング・クロージングを付けて保存」（FR-035.13〜FR-035.21）
 
 UI/UX追補では、作成予定・生成中・生成済み・変更後未生成・不成立／失敗、実ローカル保存、自動評価、人の確認を別の状態として示すこと。未完了V2 backendとの接続は別依存とし、未接続機能は短い理由と利用可能な戻り先を表示すること。予定件数を実成果物数にせず、仮の成功cardや未取得の評価をPASSとして補完しないこと。
 
@@ -1374,6 +1408,25 @@ tests\HubRadio.Infrastructure.Tests\bin\Release\net10.0\HubRadio.Infrastructure.
 | AC-008.9 | FR-035.7, FR-035.8, FR-035.10, FR-035.12 | ffmpegの0以外の終了は`stitch.encode_failed`、timeoutは`stitch.timeout`、測定値の不一致（例: 長さが期待値と0.2秒超ずれる）は`stitch.output_verification_failed`、取消は`stitch.cancelled`（いずれもexit code 6）になり、出力・manifest・一時ファイルが残らない。FR-035.4の範囲外サイズ・frame rateは`stitch.unsupported_geometry`／`stitch.unsupported_frame_rate`（exit code 3）。 |
 | AC-008.10 | FR-035.1, FR-035.10 | 手順: 任意のmp4 3本を用意し、`dotnet run --project src\HubRadio.Stitch -c Release -- --main <本編> --opening <op> --closing <cl> --output <新規path>.mp4 --ffmpeg artifacts\portable\osl009-payload\Tools\ffmpeg.exe --ffprobe artifacts\portable\osl009-payload\Tools\ffprobe.exe`を実行する。期待: exit code 0、標準出力が`output=`行と`manifest=`行の2行、2ファイルが存在。同じコマンドの再実行はexit code 4。 |
 
+**GUI（AC-008.11〜AC-008.16）の操作:** リポジトリルートで次を実行する。nativeの試験は`tests/HubRadio.App.Tests/BookendStitchBridgeTests.cs`、Webの試験は`src/HubRadio.Web/src/features/stitch/`にある。
+
+```powershell
+dotnet build tests\HubRadio.App.Tests\HubRadio.App.Tests.csproj -c Release
+tests\HubRadio.App.Tests\bin\Release\net10.0-windows10.0.26100.0\win-x64\HubRadio.App.Tests.exe --progress off --filter "FullyQualifiedName~BookendStitch"
+pwsh -NoProfile -Command 'Set-Location src/HubRadio.Web; npx vitest run src/features/stitch src/features/results; exit $LASTEXITCODE'
+```
+
+Web試験は既存試験がファイルを`src/HubRadio.Web`基準で読むため、そのdirectoryで実行する。`src/features/workflow/WorkflowWorkspace.test.tsx`には本追補と無関係に、実行環境が遅いと既定の5秒制限で時間切れになる試験がある（2026-10-01に本追補の変更を外した状態でも同様に8件が時間切れ）。全Web試験の判定に`--testTimeout=60000`を付けて実行してよいが、試験内容は変更しない。
+
+| ID | 対応要求 | 期待結果 |
+| --- | --- | --- |
+| AC-008.11 | FR-035.14, FR-035.15, FR-035.20 | `stitch.pickClip`は空params以外、`stitch.run`はFR-035.15の6 property以外（欠落・追加・非正規ID・大文字digest・clipIdの型違い）をbridgeが拒否する。1024 bytes超の要求を拒否する。`schemas/web-bridge.schema.json`が両methodの要求・応答を閉じた形で定義し、method一覧に含む。 |
+| AC-008.12 | FR-035.14, FR-035.19 | 選択ダイアログの結果がpathのとき`selected`、UUIDの`clipId`、ディレクトリを含まない`fileName`を返し、応答にpathを含まない。取消は`cancelled`、`.txt`・`\\`始まりは`unsupported`。権限がなければダイアログを開かず`forbidden`。33件目を選ぶと最初の`clipId`が`invalid`になる。 |
+| AC-008.13 | FR-035.16, FR-035.17, FR-035.18 | 保存済みの検証済み実行結果の動画成果物を指定すると、登録済み成果物fileを本編、選んだclipをOpening／Closing、保存ダイアログのpathを出力として結合処理が1回呼ばれ、`completed`と出力名・manifest名・長さを返す。保存ダイアログの既定名がFR-035.17の値。処理の前後でDBの成果物一覧と成果物fileのdigestが変わらない。 |
+| AC-008.14 | FR-035.16〜FR-035.20 | digest不一致・結果にない成果物・字幕／画像成果物は`notFound`、両clipIdなし・未知clipIdは`invalid`、保存ダイアログ取消は`cancelled`（結合処理を呼ばない）、権限なしは`forbidden`、処理中の2件目は`busy`、結合処理の失敗は`failed`と該当code。保存先の0 byteの新しい空ファイルは削除して処理し、既存の非空ファイルは変更せず`failed`／`stitch.output_exists`。 |
+| AC-008.15 | FR-035.13〜FR-035.15, FR-035.20, FR-035.21 | 検証済みの動画成果物にだけ領域が表示され、画像・字幕にはない。どちらも未選択なら「結合して保存」が無効。選択後に有効になり、処理中は「結合中…」で無効。各statusでFR-035.20の文が`role="status"`で表示され、`invalid`で選択が解除される。応答がなければ待ち時間後に「応答がありません。保存先を確認してください。」。画面にpathが表示されない。bridgeがなければ「この環境では利用できません」。 |
+| AC-008.16 | FR-035.13〜FR-035.18（手動） | 手順: 実アプリで生成済みの案件を開き、仕上がり画面の動画成果物で「オープニングを選ぶ」「クロージングを選ぶ」で任意のmp4を選び、「結合して保存」で新しい名前を指定する。期待: 指定場所にmp4と`.stitch.json`ができ、再生するとOpening→本編→Closingの順になる。証跡: 画面の表示文とmanifest。未実施の場合は`NOT EVALUATED`とし、PASSとしない。 |
+
 ---
 
 # 16\. 優先順位
@@ -1394,7 +1447,7 @@ tests\HubRadio.Infrastructure.Tests\bin\Release\net10.0\HubRadio.Infrastructure.
 - 日本語SDH指向字幕候補と通常翻訳字幕profile
 - 強調テロップ
 - ニュートラルtemplateと任意のオープニング、エンディング
-- 生成済み動画へのOpening／Closing動画の結合（FR-035、結合CLI）
+- 生成済み動画へのOpening／Closing動画の結合（FR-035、仕上がり画面と結合CLI）
 - `Music/`の社内限定BGM
 - 音量測定と版付きloudness profile
 - プレビュー
@@ -1531,7 +1584,7 @@ source-only vertical sliceの最終受入では、利用者が利用を許可し
 
 | ID | 種別 | 内容 | 根拠 | 影響 | 覆す条件 |
 | --- | --- | --- | --- | --- | --- |
-| A-035-01 | [ASSUMPTION] | 利用面を非対話の結合CLI（`src/HubRadio.Stitch`）とし、GUI操作は本追補の対象外とする | 依頼は利用面を指定していない。既存pipelineはopener設定を`UnsupportedSetting`で拒否し、生成物はrender graph・QC・納品receiptのdigestで結合されているため、生成段へ組み込むと既存証跡（AC-001〜006）を壊す。CLIは既存成果物を変えずに追加でき、受入をコマンドで判定できる | 非開発者はGUIから使えない。portable配布物に含まれないため、現時点ではSDKのある環境で実行する | 利用者がGUI操作または生成時の自動適用を要求した場合。その際は設定profileの新版、bridge、画面、評価への影響を別要求として定義する |
+| A-035-01 | [ASSUMPTION] | 利用面は仕上がり画面（GUI）と結合CLIの2つとし、quick start／再生成での自動適用は行わない（2026-10-01のGUI統合依頼で、当初の「CLIのみ」から変更） | 既存pipelineはopener設定を`UnsupportedSetting`で拒否し、生成物はrender graph・QC・納品receiptのdigestで結合されているため、生成段へ組み込むと既存証跡（AC-001〜006）を壊す。生成後の明示操作なら既存成果物を変えずに提供できる | 結合結果はアプリ内の成果物一覧・DBに載らない。CLIはportable配布物に含まれない | 利用者が生成時の自動適用や結合結果の案件内管理を要求した場合。その際は設定profileの新版、評価、納品への影響を別要求として定義する |
 | A-035-02 | [ASSUMPTION] | 出力の画面サイズ・frame rate・音声ch数は本編に合わせ、Opening／Closingは縦横比を保ったletterbox／pillarboxにする（切り抜かない） | 主役は本編であり、切り抜きは内容（ロゴ・文字）を失う可能性がある。FR-031の出力形式を維持できる | 縦横比の違う素材では黒帯が入る | 利用者が切り抜き（fill）や本編以外の基準を要求した場合 |
 | A-035-03 | [ASSUMPTION] | 入力の許可拡張子を`.mp4/.m4v/.mov/.mkv/.webm`、`format_name`をmov/mp4/matroska/webm系に限る | 依頼の「mp4など」を一般的な動画コンテナに限定し、playlist等による外部参照・network読込を防ぐ（安全側） | 他形式は事前変換が必要 | 必要なコンテナが具体的に示された場合 |
 | A-035-04 | [ASSUMPTION] | 出力長の許容差を0.2秒、各process timeoutの既定を3600秒（1〜86400秒で変更可）とする | 区間長はframe境界とAACフレーム境界で丸められる。実測（2026-10-01、固定FFmpeg）で1.5＋3＋1秒の合成素材は5.500000秒になった | 許容差を超える長尺素材の丸め誤差は失敗扱いになる | 実素材の測定で0.2秒が不適切と判明した場合 |
@@ -1541,6 +1594,9 @@ source-only vertical sliceの最終受入では、利用者が利用を許可し
 | A-035-08 | [ASSUMPTION] | HDR等のBT.709以外の素材をtone mappingせず、BT.709 SDRとしてタグ付けする | 既存の結合対象は本アプリのSDR BT.709出力。Opening／ClosingのHDR対応は依頼にない | HDRのOpening／Closingは色が不正確になり得る | HDR素材の利用が要求された場合 |
 | A-035-09 | [ASSUMPTION] | 動画の再エンコードによる画質劣化（世代劣化）を許容する | 解像度・frame rate・codec設定の異なる3素材をhard cutで確実に連結するには再エンコードが必要。stream copyは全素材の符号化条件が一致する場合だけ成立する | 本編の画質がわずかに低下する | 無劣化連結が必須と指定された場合 |
 | A-035-10 | [ASSUMPTION] | 2026-10-01の依頼が要求定義書として指定した`docs/requirements-definition.md`は存在しないため、既存の正本である本書`docs/requirement-definition.md`を更新した | 正本を2つに分けると要求が食い違う。本書はREADME等から参照されている | 依頼のpathでは本書が見つからない | 利用者がファイル名の変更を指示した場合（参照元の一括更新を伴う） |
+| A-035-11 | [ASSUMPTION] | 保存ダイアログが返したpathに、0 byteかつダイアログを開いた時刻の2秒前以降に作られたファイルがあれば、ダイアログが作った空ファイルとみなして削除してから処理する | Windows App SDKの`FileSavePicker.PickSaveFileAsync`は保存するpathを返すと説明されているが、空ファイルを事前に作るかどうかは明記されていない（<https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.windows.storage.pickers.filesavepicker.picksavefileasync>、確認日 2026-10-01）。0 byteのファイルの削除は内容を失わない | ダイアログを開いている間に別の手段で同名の空ファイルを作った場合も削除する | 公式資料でダイアログがファイルを作らないと確認できた場合は、この削除を取りやめる |
+| A-035-12 | [ASSUMPTION] | GUIでは選んだファイル名（ディレクトリを除く）をWebViewへ渡して表示する | 利用者が選択内容を確認するために必要。path・ディレクトリ名は渡さない（既存bridge方針） | ファイル名に含まれる情報が画面に表示される | ファイル名の表示も禁止する方針が示された場合 |
+| A-035-13 | [ASSUMPTION] | GUIの権限は既存の`ExportComposition`とし、同時実行は1件、Web側の待ち時間は`stitch.pickClip`600秒・`stitch.run`3660秒（process timeout 3600秒＋60秒）とする | 結合はローカルへの書き出し操作であり、既存の権限表でEditorに許可されている。複数同時実行はCPU・diskを競合させる | 2件目は`busy`で待つ必要がある | 並行実行や別権限が要求された場合 |
 
 競合: なし（FR-015の「quick startではオープニング動画を無効」とFR-035は、FR-035が生成後の明示的な別操作であり既定の生成内容を変えないため両立する）。TBD／BLOCKED: なし。
 

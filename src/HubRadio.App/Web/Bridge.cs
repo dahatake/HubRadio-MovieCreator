@@ -79,6 +79,8 @@ internal enum BridgeMethod
     PipelineCancel,
     PipelineVersions,
     PipelineRestore,
+    StitchPickClip,
+    StitchRun,
 }
 
 internal sealed class BridgeRequest
@@ -266,6 +268,10 @@ internal static class BridgeProtocol
     internal const string PipelineCancelMethod = "pipeline.cancel";
     internal const string PipelineVersionsMethod = "pipeline.versions";
     internal const string PipelineRestoreMethod = "pipeline.restore";
+    internal const string StitchPickClipMethod = "stitch.pickClip";
+    internal const string StitchRunMethod = "stitch.run";
+    internal const int MaxStitchRequestUtf8Bytes = 1024;
+    internal const int MaxStitchResponseUtf8Bytes = 4096;
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -525,6 +531,8 @@ internal static class BridgeProtocol
             BridgeMethod.PipelineCancel => PipelineCancelMethod,
             BridgeMethod.PipelineVersions => PipelineVersionsMethod,
             BridgeMethod.PipelineRestore => PipelineRestoreMethod,
+            BridgeMethod.StitchPickClip => StitchPickClipMethod,
+            BridgeMethod.StitchRun => StitchRunMethod,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(method),
                 method,
@@ -544,6 +552,7 @@ internal static class BridgeProtocol
             _ when IsLayoutMethod(method) => MaxLayoutResponseUtf8Bytes,
             _ when IsSettingsMethod(method) => MaxLayoutResponseUtf8Bytes,
             _ when IsSourceOnlyMethod(method) => MaxSourceOnlyResponseUtf8Bytes,
+            _ when IsStitchMethod(method) => MaxStitchResponseUtf8Bytes,
             _ when IsLargePayloadMethod(method) => MaxProjectResponseUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewResponseUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonResponseUtf8Bytes,
@@ -603,6 +612,9 @@ internal static class BridgeProtocol
             BridgeMethod.PipelineRetry or BridgeMethod.PipelineCancel or
             BridgeMethod.PipelineVersions or BridgeMethod.PipelineRestore;
 
+    internal static bool IsStitchMethod(BridgeMethod method) =>
+        method is BridgeMethod.StitchPickClip or BridgeMethod.StitchRun;
+
     internal static bool IsSettingsMethod(BridgeMethod method) =>
         method is
             BridgeMethod.SettingsRead or
@@ -629,6 +641,7 @@ internal static class BridgeProtocol
             _ when IsLayoutMethod(method) => MaxLayoutRequestUtf8Bytes,
             _ when IsSettingsMethod(method) => MaxAnalysisRequestUtf8Bytes,
             _ when IsSourceOnlyMethod(method) => MaxSourceOnlyRequestUtf8Bytes,
+            _ when IsStitchMethod(method) => MaxStitchRequestUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewRequestUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonRequestUtf8Bytes,
             BridgeMethod.DeliveryRead => MaxDeliveryRequestUtf8Bytes,
@@ -693,6 +706,8 @@ internal static class BridgeProtocol
             PipelineCancelMethod => BridgeMethod.PipelineCancel,
             PipelineVersionsMethod => BridgeMethod.PipelineVersions,
             PipelineRestoreMethod => BridgeMethod.PipelineRestore,
+            StitchPickClipMethod => BridgeMethod.StitchPickClip,
+            StitchRunMethod => BridgeMethod.StitchRun,
             _ => (BridgeMethod)(-1),
         };
         return Enum.IsDefined(parsedMethod);
@@ -839,6 +854,11 @@ internal static class BridgeProtocol
         if (IsSourceOnlyMethod(method))
         {
             return SourceOnlyBridgeProtocol.HasValidParameters(method, parameters);
+        }
+
+        if (IsStitchMethod(method))
+        {
+            return BookendStitchBridgeProtocol.HasValidParameters(method, parameters);
         }
 
         return false;
@@ -1442,7 +1462,8 @@ internal static class BridgeProtocol
             IsDeliveryMethod(method) ||
             IsLayoutMethod(method) ||
             IsSettingsMethod(method) ||
-            IsSourceOnlyMethod(method))
+            IsSourceOnlyMethod(method) ||
+            IsStitchMethod(method))
         {
             if (!HasValidParameters(method, parameters))
             {
@@ -1796,6 +1817,9 @@ internal sealed class Bridge : IDisposable
     private readonly SettingsFileBridgeRequestHandler? fileSettingsHandler;
     private readonly SourceOnlyBridgeHandler? sourceOnlyHandler;
     private readonly CancellationTokenSource lifetimeCancellation = new();
+
+    /// <summary>FR-035 GUI handler; optional so existing constructor contracts stay unchanged.</summary>
+    internal BookendStitchBridgeHandler? StitchHandler { get; init; }
     private readonly TaskCompletionSource firstPingResponsePosted = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
     private bool isStarted;
@@ -2100,6 +2124,13 @@ internal sealed class Bridge : IDisposable
             return await WebViewHost.HandleSourceOnlyRequestAsync(request, sourceOnlyHandler, cancellationToken);
         }
 
+        if (BridgeProtocol.IsStitchMethod(request.Method))
+        {
+            return StitchHandler is null
+                ? BookendStitchBridgeJson.Unavailable(request)
+                : await StitchHandler.HandleAsync(request, cancellationToken);
+        }
+
         if (BridgeProtocol.IsProjectMethod(request.Method))
         {
             return handleProjectRequestAsync is null
@@ -2222,6 +2253,11 @@ internal sealed class Bridge : IDisposable
         if (BridgeProtocol.IsSourceOnlyMethod(request.Method))
         {
             return SourceOnlyBridgeJson.WriteResponse(request, SourceOnlyBridgeStatus.Unavailable);
+        }
+
+        if (BridgeProtocol.IsStitchMethod(request.Method))
+        {
+            return BookendStitchBridgeJson.Unavailable(request);
         }
 
         if (request.Method == BridgeMethod.PlayerRead)

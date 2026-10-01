@@ -98,6 +98,8 @@ public sealed class WebBridgeSchemaTests
                 "pipeline.cancel",
                 "pipeline.versions",
                 "pipeline.restore",
+                "stitch.pickClip",
+                "stitch.run",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -208,6 +210,10 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/pipelineCancelResponse",
                 "#/$defs/pipelineVersionsResponse",
                 "#/$defs/pipelineRestoreResponse",
+                "#/$defs/stitchPickClipRequest",
+                "#/$defs/stitchRunRequest",
+                "#/$defs/stitchPickClipResponse",
+                "#/$defs/stitchRunResponse",
             },
             root.GetProperty("oneOf")
                 .EnumerateArray()

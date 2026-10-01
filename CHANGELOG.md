@@ -12,7 +12,7 @@
 
 ### Added
 
-- 生成済み動画の前後に、指定したOpening／Closing動画を結合した新しいMP4を作る結合CLI（`src/HubRadio.Stitch`、要求FR-035、受入AC-008）。並び順は Opening → 本編 → Closing のhard cutです。出力の画面サイズ・frame rate・音声ch数は本編に合わせ、Opening／Closingは縦横比を保って黒帯を付けます（切り抜きません）。既存ファイルは上書きせず、入力は変更しません。入力digestと各区間の出力時刻を記録する`<名前>.stitch.json`を同時に作ります。quick startの生成・評価・納品と既存成果物は変更しません。GUIからの操作とportable配布物への同梱は未対応です。
+- 生成済み動画の前後に、指定したOpening／Closing動画を結合した新しいMP4を作る機能（要求FR-035、受入AC-008）。仕上がり一覧の各動画成果物の「オープニング・クロージングを付けて保存」から、動画の選択・保存先の指定・結果表示までを画面で行えます（bridge `stitch.pickClip`／`stitch.run`）。同じ処理を結合CLI（`src/HubRadio.Stitch`）からも実行できます。並び順は Opening → 本編 → Closing のhard cutです。出力の画面サイズ・frame rate・音声ch数は本編に合わせ、Opening／Closingは縦横比を保って黒帯を付けます（切り抜きません）。既存ファイルは上書きせず、入力は変更しません。入力digestと各区間の出力時刻を記録する`<名前>.stitch.json`を同時に作ります。quick startの生成・評価・納品と既存成果物は変更しません。結合CLIはportable配布物には未同梱です。
 
 - 権限・公開区分・承認gateの受入試験3件（`AC004_Security.UnauthorizedView` / `ExternalMisoutput` / `UnapprovedFinal`）。権限外閲覧、外部誤出力、未承認finalを検査します。audit閲覧の試験は、前提の監査ログ閲覧が未実装のため作成していません。
 - media／bridge／worker／FFmpeg／promptの敵対試験をまとめたセキュリティ試験報告書（`docs/dev/security/test-report.md`）。確認した範囲でCritical未解決は0件、残余リスクは6件で、責任者の承認は未了です。

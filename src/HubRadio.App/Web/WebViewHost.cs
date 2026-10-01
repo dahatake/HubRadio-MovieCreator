@@ -35,6 +35,9 @@ internal sealed class WebViewHost : IDisposable
     private readonly SourceOnlyMediaResponseFactory? sourceOnlyMedia;
     private readonly CancellationTokenSource mediaCancellation = new();
     private Bridge? bridge;
+
+    /// <summary>FR-035 GUI handler, forwarded to the bridge at start.</summary>
+    internal BookendStitchBridgeHandler? StitchHandler { get; init; }
     private TaskCompletionSource? initialNavigation;
     private bool isStarted;
     private bool isDisposed;
@@ -299,7 +302,10 @@ internal sealed class WebViewHost : IDisposable
                 settingsHandler,
                 globalSettingsHandler,
                 fileSettingsHandler,
-                sourceOnlyHandler);
+                sourceOnlyHandler)
+            {
+                StitchHandler = StitchHandler,
+            };
             bridge = startedBridge;
             await StartDocumentAsync(
                 startedBridge.Start,

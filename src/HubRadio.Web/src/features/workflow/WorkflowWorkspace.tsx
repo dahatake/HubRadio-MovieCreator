@@ -21,6 +21,7 @@ import { useReviewState } from '../review'
 import { ReviewPanelView, type ReviewPanelProps } from '../review/ReviewPanel'
 import { SettingsPanel, useSettingsWorkspace, type SettingsSnapshot } from '../settings'
 import { SettingsRegenerationAction } from '../settings/SettingsOutcomePreview'
+import { createHostBookendStitchService, type BookendStitchService } from '../stitch/stitchProtocol'
 import { ThumbnailPanel } from '../thumbnails'
 import { TimelineEditor } from '../timeline'
 import type { TimelineSnapshot } from '../timeline/timelineProtocol'
@@ -92,6 +93,13 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
   const settings = useSettingsWorkspace()
   const requestSourceSeek = usePlayerSourceNavigation()
   const [navigation, navigate] = useReducer(workflowNavigationReducer, initialWorkflowNavigation)
+  const [bookendStitch, setBookendStitch] = useState<BookendStitchService | null>(null)
+  useEffect(() => {
+    // FR-035: one stitch transport per mounted workspace; absent outside WebView2.
+    const service = createHostBookendStitchService()
+    setBookendStitch(service)
+    return () => service?.dispose()
+  }, [])
   const [playerPosition, setPlayerPosition] = useState<PlayerTimelinePosition | null>(null)
   const [playerSelection, setPlayerSelection] = useState<PlayerExactFrameSelection | null>(null)
   const [sourceDirty, setSourceDirty] = useState(false)
@@ -633,6 +641,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
                 {summary === null && result === null ? (
                   <div className="workflow-empty"><h2>仕上がり一覧</h2><p>予定の成果物は未取得です。元動画を選ぶと、固定された予定を確認できます。</p><button type="button" onClick={() => selectStep('source')}>元動画を選ぶ画面へ</button></div>
                 ) : <ResultGallery presentation={presentation} warnings={warnings} selectedWarningId={selectedWarningId} onFollowWarning={followWarning}
+                  bookendStitch={bookendStitch}
                   versionHistory={draft?.isFinalized === true && activeProjectId !== null ? {
                     versions: pipeline.state.versions,
                     unavailableReason: pipeline.state.versionsStatus === 'idle' || pipeline.state.versionsStatus === 'loading' ||

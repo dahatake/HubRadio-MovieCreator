@@ -47,9 +47,13 @@ HubRadio MovieCreator は、企業向けのトーク、対談、インタビュ�
 
 技術的破損や来歴欠落がない成果物をローカルへ書き出します。変更時は元の版を上書きせず、子版として再評価します。任意のself-reviewも記録できます。
 
-### 6. 必要なときだけOpening／Closing動画を付ける（結合CLI）
+### 6. 必要なときだけOpening／Closing動画を付ける
 
-書き出した動画（本編）の前後に、用意したOpening／Closing動画を付けた**新しいMP4**をコマンドで作れます（[要求定義書 FR-035](docs/requirement-definition.md#fr-035-オープニングクロージング動画の結合)）。並び順は Opening → 本編 → Closing で、どちらか一方だけでも構いません。現時点ではGUIからは操作できず、portable配布物にも含まれないため、リポジトリと.NET SDKのある環境で実行します。
+書き出した動画（本編）の前後に、用意したOpening／Closing動画を付けた**新しいMP4**を作れます（[要求定義書 FR-035](docs/requirement-definition.md#fr-035-オープニングクロージング動画の結合)）。並び順は Opening → 本編 → Closing で、どちらか一方だけでも構いません。
+
+**画面から:** 仕上がり一覧の動画成果物にある「オープニング・クロージングを付けて保存」を開き、「オープニングを選ぶ」「クロージングを選ぶ」で動画を選んで「結合して保存」を押し、保存先と名前を指定します。結果は同じ領域に表示されます（[画面の使い方](docs/ui-workflow-guide.md)）。
+
+**コマンドから（結合CLI）:** portable配布物には含まれないため、リポジトリと.NET SDKのある環境で実行します。
 
 ```powershell
 dotnet run --project src\HubRadio.Stitch -c Release -- `
@@ -59,7 +63,7 @@ dotnet run --project src\HubRadio.Stitch -c Release -- `
 
 - 入力は `.mp4` `.m4v` `.mov` `.mkv` `.webm`。出力の画面サイズ・frame rate・音声ch数は本編に合わせ、縦横比の違うOpening／Closingは黒帯付きで縮小・拡大します（切り抜きません）。音量はそろえません。
 - 既存ファイルは上書きしません。入力も変更しません。同じ場所に、入力のSHA-256と各区間の出力時刻を記録した `<新しい名前>.stitch.json` を作ります。字幕ファイル（SRT／VTT）の時刻はずらさないため、本編の時刻には `main` 区間の `outputStartSeconds` を足してください。
-- ffmpeg／ffprobeは同梱の固定版（digest照合）だけを使います。成功時は exit code 0、失敗時は `error stitch.<理由>: ...` と 2〜6 の exit code を返します。
+- ffmpeg／ffprobeは同梱の固定版（digest照合）だけを使います。CLIは成功時に exit code 0、失敗時に `error stitch.<理由>: ...` と 2〜6 の exit code を返します。画面では同じ理由を日本語で表示します。
 - Opening／Closingの利用権は確認済みとして扱いません（manifestの `rightsStatus` は `unconfirmed`、`publicationScope` は `internalOnly`）。
 
 ## 大切な原則

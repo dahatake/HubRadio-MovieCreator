@@ -103,10 +103,84 @@
     { "$ref": "#/$defs/pipelineRetryResponse" },
     { "$ref": "#/$defs/pipelineCancelResponse" },
     { "$ref": "#/$defs/pipelineVersionsResponse" },
-    { "$ref": "#/$defs/pipelineRestoreResponse" }
+    { "$ref": "#/$defs/pipelineRestoreResponse" },
+    { "$ref": "#/$defs/stitchPickClipRequest" },
+    { "$ref": "#/$defs/stitchRunRequest" },
+    { "$ref": "#/$defs/stitchPickClipResponse" },
+    { "$ref": "#/$defs/stitchRunResponse" }
   ],
   "$defs": {
-    "sourceOnlyProtocolLimits": {
+    "stitchProtocolLimits": {
+      "$comment": "FR-035 GUI. stitch.pickClip and stitch.run use 1 KiB (1024) request and 4096 response UTF-8 ceilings, including envelopes. Responses always contain a closed result object, never an error envelope. The current native actor must have ExportComposition; denial opens no dialog. Opening/Closing cross this boundary only as opaque process-lifetime clipIds plus a bare fileName without directories; the main video only as the project, execution, artifact and digest of an output listed in a validated stored result. Output paths are chosen in the native save dialog and never sent to the Web. One stitch runs at a time. Nothing is registered, delivered or evaluated.",
+      "x-maxRequestUtf8Bytes": 1024,
+      "x-maxResponseUtf8Bytes": 4096
+    },
+    "stitchPickClipRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "stitch.pickClip" }, "params": { "type": "object", "additionalProperties": false, "maxProperties": 0 }
+      }
+    },
+    "stitchRunRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "stitch.run" }, "params": { "$ref": "#/$defs/stitchRunParams" }
+      }
+    },
+    "stitchPickClipResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "stitch.pickClip" }, "result": { "$ref": "#/$defs/stitchPickClipResult" }
+      }
+    },
+    "stitchRunResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "stitch.run" }, "result": { "$ref": "#/$defs/stitchRunResult" }
+      }
+    },
+    "stitchRunParams": {
+      "type": "object", "additionalProperties": false,
+      "required": ["projectId", "executionId", "artifactId", "artifactDigest", "openingClipId", "closingClipId"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "executionId": { "$ref": "#/$defs/entityId" },
+        "artifactId": { "$ref": "#/$defs/entityId" },
+        "artifactDigest": { "$ref": "#/$defs/contentDigest" },
+        "openingClipId": { "$ref": "#/$defs/nullableId" },
+        "closingClipId": { "$ref": "#/$defs/nullableId" }
+      }
+    },
+    "stitchPickClipResult": {
+      "$comment": "selected requires clipId and fileName (no directory, at most 255 characters); every other status has both null.",
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "clipId", "fileName"],
+      "properties": {
+        "status": { "enum": ["selected", "cancelled", "unsupported", "forbidden", "unavailable"] },
+        "clipId": { "$ref": "#/$defs/nullableId" },
+        "fileName": { "oneOf": [{ "type": "null" }, { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[^\\\\/:]+$(?![\\s\\S])" }] }
+      }
+    },
+    "stitchRunResult": {
+      "$comment": "completed requires outputFileName, manifestFileName (bare file names) and durationSeconds; failed requires a stitch.* code other than stitch.usage; every other field is null.",
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "code", "outputFileName", "manifestFileName", "durationSeconds"],
+      "properties": {
+        "status": { "enum": ["completed", "cancelled", "failed", "notFound", "invalid", "forbidden", "busy", "unavailable"] },
+        "code": { "oneOf": [{ "type": "null" }, { "enum": ["stitch.input_path_invalid", "stitch.input_not_found", "stitch.input_unsupported", "stitch.input_invalid_duration", "stitch.unsupported_geometry", "stitch.unsupported_frame_rate", "stitch.output_path_invalid", "stitch.output_directory_missing", "stitch.output_exists", "stitch.tool_unverified", "stitch.encode_failed", "stitch.timeout", "stitch.output_verification_failed", "stitch.cancelled", "stitch.internal_error"] }] },
+        "outputFileName": { "oneOf": [{ "type": "null" }, { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[^\\\\/:]+$(?![\\s\\S])" }] },
+        "manifestFileName": { "oneOf": [{ "type": "null" }, { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[^\\\\/:]+$(?![\\s\\S])" }] },
+        "durationSeconds": { "oneOf": [{ "type": "null" }, { "type": "number", "exclusiveMinimum": 0 }] }
+      }
+    },    "sourceOnlyProtocolLimits": {
       "$comment": "pipeline.read/regenerate/retry/cancel use exactly 1 KiB (1024) request and 8 MiB (8388608) response UTF-8 ceilings, including envelopes. Responses always contain result {status,snapshot}, never an error envelope. The current native actor must have ViewProject for reads and Editor/CreateCompositionVersion for commands; no renderer-supplied identity or approval exists. Consumers correlate requestId and method and the exact requested project. Retry returns a new execution; regeneration returns a new execution with the exact requested parent. Cancel checks the current execution/revision before signaling and awaits native cleanup. With no pipeline, commands are unavailable; saved snapshots can still be read through the real stores/result service. The entire result is projected through SourceOnlyResult.ToWebDto with camelCase properties; nested evaluation is a JSON object, never a string. Native recovery locators are excluded. previousResult is only an explicitly earlier stored same-project result that passed file/DB validation, not a result inferred from the current working copy. Result validity is not QC success or publication/delivery approval. Invalid descriptors can remain visible with resultStatus=invalid, but cannot authorize media. Generated media uses the separate reserved source-only URL below, GET only, MP4/PNG only, a held validated artifact stream and the existing single-byte-range rules. All malformed source-only URLs are intercepted, never fetched remotely.",
       "x-maxRequestUtf8Bytes": 1024,
       "x-maxResponseUtf8Bytes": 8388608,
@@ -643,7 +717,9 @@
         "pipeline.retry",
         "pipeline.cancel",
         "pipeline.versions",
-        "pipeline.restore"
+        "pipeline.restore",
+        "stitch.pickClip",
+        "stitch.run"
       ]
     },
     "projectMethod": {

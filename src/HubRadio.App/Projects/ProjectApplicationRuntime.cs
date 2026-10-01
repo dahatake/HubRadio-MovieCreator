@@ -31,7 +31,8 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
         SettingsFileBridgeRequestHandler fileSettings,
         SourceOnlyApplicationRuntime? sourceOnlyRuntime = null,
         SourceOnlyBridgeHandler? sourceOnly = null,
-        SourceOnlyMediaResponseFactory? sourceOnlyMedia = null)
+        SourceOnlyMediaResponseFactory? sourceOnlyMedia = null,
+        BookendStitchBridgeHandler? stitch = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
@@ -60,6 +61,7 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
         SourceOnlyRuntime = sourceOnlyRuntime;
         SourceOnly = sourceOnly;
         SourceOnlyMedia = sourceOnlyMedia;
+        Stitch = stitch;
     }
 
     internal ProjectBridgeHandler Project { get; }
@@ -91,6 +93,9 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
     internal SourceOnlyBridgeHandler? SourceOnly { get; }
 
     internal SourceOnlyMediaResponseFactory? SourceOnlyMedia { get; }
+
+    /// <summary>FR-035 GUI handler; null when the bundled tools are absent.</summary>
+    internal BookendStitchBridgeHandler? Stitch { get; }
 
     internal SourceOnlyPipeline? SourceOnlyPipeline => SourceOnlyRuntime?.Pipeline;
 
@@ -150,15 +155,17 @@ internal static class ProjectApplicationRuntime
         var picker = new MediaPicker(owner, registry);
         ProjectCreationCatalog catalog = ProjectCreationCatalog.Load(profilesDirectory);
         var services = new SourceOnlyApplicationServices(databasePath, workspacePath, registry, defaultSettingsStore);
+        SourceOnlyApplicationResources resources = trustedResources ?? SourceOnlyApplicationResources.FromPackage(
+            AppContext.BaseDirectory, profilesDirectory, defaultSettingsProfilesDirectory);
         SourceOnlyApplicationRuntime native = await SourceOnlyApplicationRuntime.CreateAsync(
             services,
-            trustedResources ?? SourceOnlyApplicationResources.FromPackage(
-                AppContext.BaseDirectory, profilesDirectory, defaultSettingsProfilesDirectory),
+            resources,
             cancellationToken).ConfigureAwait(false);
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return CreateHandlers(native, authorization, actorProvider, catalog, picker, applicationRoot, actorSid);
+            return CreateHandlers(native, authorization, actorProvider, catalog, picker, applicationRoot, actorSid,
+                CreateStitchHandler(native.Services, authorization, actorProvider, new BookendStitchFilePicker(owner), resources));
         }
         catch
         {
@@ -174,7 +181,8 @@ internal static class ProjectApplicationRuntime
         ProjectCreationCatalog catalog,
         MediaPicker picker,
         string applicationRoot,
-        string actorSid)
+        string actorSid,
+        BookendStitchBridgeHandler? stitch)
     {
         SourceOnlyApplicationServices services = native.Services;
         var service = new ProjectCreationService(
@@ -265,8 +273,21 @@ internal static class ProjectApplicationRuntime
             settingsHandlers.FileSettings,
             native,
             sourceOnlyHandler,
-            sourceOnlyMedia);
+            sourceOnlyMedia,
+            stitch);
     }
+
+    // FR-035: without both bundled tools the GUI reports unavailable instead of failing later.
+    internal static BookendStitchBridgeHandler? CreateStitchHandler(
+        SourceOnlyApplicationServices services,
+        AuthorizationService authorization,
+        WindowsActorProvider actorProvider,
+        IBookendStitchFilePicker picker,
+        SourceOnlyApplicationResources resources) =>
+        File.Exists(resources.FfmpegPath) && File.Exists(resources.FfprobePath)
+            ? new BookendStitchBridgeHandler(services.Executions, services.Results, services.Artifacts,
+                actorProvider.GetCurrentSid, authorization, picker, resources.FfmpegPath, resources.FfprobePath)
+            : null;
 
     internal static (
         SettingsBridgeRequestHandler Settings,
