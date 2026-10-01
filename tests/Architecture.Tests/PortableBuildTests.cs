@@ -478,10 +478,10 @@ public sealed class PortableBuildTests
         Assert.IsFalse(sources.ContainsKey("coreclr.dll"));
         using JsonDocument result = ReadProbeJson(RunFunctions(["Get-BundleContract"], BundleMetadataScript(sources) + """
 
-            Get-BundleContract $sources '10.0.400' | ConvertTo-Json -Compress
+            Get-BundleContract $sources '10.0.401' | ConvertTo-Json -Compress
         """));
         Assert.AreEqual("integrated-clr", result.RootElement.GetProperty("runtimeKind").GetString());
-        Assert.AreEqual("10.0.11", result.RootElement.GetProperty("runtimeVersion").GetString());
+        Assert.AreEqual("10.0.12", result.RootElement.GetProperty("runtimeVersion").GetString());
         Assert.AreEqual(6, result.RootElement.GetProperty("bundleMajorVersion").GetInt32());
         Assert.AreEqual(0, result.RootElement.GetProperty("bundleMinorVersion").GetInt32());
     }
@@ -514,7 +514,7 @@ public sealed class PortableBuildTests
             $sourceRoots = @('C:\metadata-only', (Join-Path $repoRoot 'src'))
             $stageRoot = {{PowerShellLiteral(Path.Combine(fixture.OutputParent, "candidate.partial"))}}
             $sources = Read-BundleSources {{PowerShellLiteral(report)}}
-            $contract = Get-BundleContract $sources '10.0.400'
+            $contract = Get-BundleContract $sources '10.0.401'
             $records = [Collections.Generic.SortedDictionary[string, object]]::new([StringComparer]::Ordinal)
             foreach ($name in $sources.Keys) {
                 $records.Add($name, [pscustomobject]@{ path = $name; byteSize = 0L; sha256 = '{{emptySha256}}' })
@@ -531,7 +531,7 @@ public sealed class PortableBuildTests
         CollectionAssert.AreEqual(names.Select(name => sources[name]).ToArray(), Strings(root, "sourcePaths"));
         Assert.AreEqual(expectedDigest, root.GetProperty("artifactSetSha256").GetString());
         Assert.AreEqual("integrated-clr", root.GetProperty("contract").GetProperty("runtimeKind").GetString());
-        Assert.AreEqual("10.0.11", root.GetProperty("contract").GetProperty("runtimeVersion").GetString());
+        Assert.AreEqual("10.0.12", root.GetProperty("contract").GetProperty("runtimeVersion").GetString());
         CollectionAssert.AreEqual(originalReport, File.ReadAllBytes(report));
         Assert.IsFalse(Directory.Exists(fixture.OutputParent));
     }
@@ -566,7 +566,7 @@ public sealed class PortableBuildTests
                 $original = $sources[$name]
                 [void]$sources.Remove($name)
                 $reason = ''
-                try { Get-BundleContract $sources '10.0.400' | Out-Null }
+                try { Get-BundleContract $sources '10.0.401' | Out-Null }
                 catch { $reason = $_.Exception.Message }
                 finally { $sources[$name] = $original }
                 [pscustomobject]@{ name = $name; reason = $reason }
@@ -591,12 +591,12 @@ public sealed class PortableBuildTests
             $results = foreach ($scenario in @('apphost', 'host-origin', 'runtime', 'sdk')) {
                 $sources['HubRadio.App.exe'] = $hostSource
                 $sources['System.Private.CoreLib.dll'] = $coreLibSource
-                $sdk = '10.0.400'
+                $sdk = '10.0.401'
                 switch ($scenario) {
                     'apphost' { $sources['HubRadio.App.exe'] = $hostSource.Replace('singlefilehost.exe', 'apphost.exe') }
                     'host-origin' { $sources['HubRadio.App.exe'] = 'C:\unrelated\singlefilehost.exe' }
-                    'runtime' { $sources['System.Private.CoreLib.dll'] = $coreLibSource.Replace('10.0.11', '11.0.0') }
-                    'sdk' { $sdk = '10.0.401' }
+                    'runtime' { $sources['System.Private.CoreLib.dll'] = $coreLibSource.Replace('10.0.12', '11.0.0') }
+                    'sdk' { $sdk = '10.0.400' }
                 }
                 # A loose CLR must not turn an unrecognized host into an accepted one.
                 $sources['coreclr.dll'] = 'C:\metadata-only\coreclr.dll'
@@ -922,7 +922,7 @@ public sealed class PortableBuildTests
         var sources = required.ToDictionary(static name => name, static name => Path.Combine(@"C:\metadata-only", name), StringComparer.Ordinal);
         sources["HubRadio.App.exe"] = Path.Combine(GetRepositoryRoot(),
             "src/HubRadio.App/obj/x64/Release/net10.0-windows10.0.26100.0/win-x64/singlefilehost.exe");
-        sources["System.Private.CoreLib.dll"] = @"C:\metadata-only\microsoft.netcore.app.runtime.win-x64\10.0.11\runtimes\win-x64\lib\net10.0\System.Private.CoreLib.dll";
+        sources["System.Private.CoreLib.dll"] = @"C:\metadata-only\microsoft.netcore.app.runtime.win-x64\10.0.12\runtimes\win-x64\lib\net10.0\System.Private.CoreLib.dll";
         return sources;
     }
 

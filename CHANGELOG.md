@@ -30,6 +30,7 @@
 
 ### Changed
 
+- 開発用 .NET SDK の固定版を `10.0.400` から `10.0.401` へ更新しました（`global.json`）。self-contained 出力に含まれる .NET runtime は `10.0.11` から `10.0.12` になります。portable build が受け付ける SDK・runtime の固定値と、Q007 信頼性 probe の lock file（SDK が暗黙に参照する `Microsoft.NET.ILLink.Tasks`）を同じ版へ揃えました。性能計測用の probe（`benchmarks/probes`）は記録済みの計測結果との対応を保つため `10.0.400` 固定のままです。
 - 音量の均一化を、測定passで得た値を本passへ渡して線形適用（`linear=true`）を指定する2-passにしました。FFmpeg の loudnorm は、線形適用の条件（目標LRAが元のLRA以上、利得の変更で目標TPを超えないこと）を満たさない場合に動的な均一化へ戻ります。実際の方式は証跡の `NormalizationType` に記録され、最終判定は従来どおり自動代理評価です。True Peak の目標は `audio.truePeakMaximum` より0.1 dB低い値（既定 -1.1 dBTP）です。QC上限と設定キーは変えていません。証跡の `FfmpegLoudnessTarget` に測定値が加わります。`audio.truePeakMaximum` を -9 に設定すると目標 -9.1 が範囲外となり `UnsupportedSetting` になります（変更前は受け付けました）。
 - 画素アスペクト比（SAR）が未指定（ffprobe の `sample_aspect_ratio` キー省略、または `N/A`）の素材を1:1とみなすようにしました。`0:1` などの不正な値は従来どおり `SourceMismatch` で停止します。
 - 上記のproductionコード変更に伴い、開発用App packageを`0.1.3.0`から`0.1.4.0`へPATCH更新しました。版更新後のMSIX作成・検査は実行していません。

@@ -361,7 +361,7 @@ function Read-BundleSources([string]$ManifestPath) {
 }
 
 function Get-BundleContract([object]$Sources, [string]$SdkVersion) {
-    if ($SdkVersion -cne '10.0.400') { throw 'OSL012:SDK_VERSION Expected the fixed .NET SDK 10.0.400.' }
+    if ($SdkVersion -cne '10.0.401') { throw 'OSL012:SDK_VERSION Expected the fixed .NET SDK 10.0.401.' }
     # Windows destination lookup only: keep the original names and Ordinal order
     # intact for Contents/evidence hashing. Read-BundleSources rejects case collisions.
     $sourceLookup = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -377,19 +377,19 @@ function Get-BundleContract([object]$Sources, [string]$SdkVersion) {
     )) {
         if (-not $sourceLookup.ContainsKey($required)) { throw "OSL012:BUNDLE_REQUIRED Missing actual bundle input: $required" }
     }
-    # SDK 10.0.400 BundledVersions.props selects runtime/host pack 10.0.11.
+    # SDK 10.0.401 BundledVersions.props selects runtime/host pack 10.0.12.
     # That runtime pack's data/RuntimeList.xml marks coreclr.dll DropFromSingleFile=true:
     # the CLR is integrated into singlefilehost, not a missing loose runtime DLL.
     $expectedHost = Join-Path $repoRoot 'src/HubRadio.App/obj/x64/Release/net10.0-windows10.0.26100.0/win-x64/singlefilehost.exe'
-    $coreLibSuffix = '/microsoft.netcore.app.runtime.win-x64/10.0.11/runtimes/win-x64/lib/net10.0/System.Private.CoreLib.dll'
+    $coreLibSuffix = '/microsoft.netcore.app.runtime.win-x64/10.0.12/runtimes/win-x64/lib/net10.0/System.Private.CoreLib.dll'
     if (-not [StringComparer]::OrdinalIgnoreCase.Equals($sourceLookup['HubRadio.App.exe'].Replace('/', '\'), $expectedHost.Replace('/', '\')) -or
         -not $sourceLookup['System.Private.CoreLib.dll'].Replace('\', '/').EndsWith($coreLibSuffix, [StringComparison]::OrdinalIgnoreCase)) {
-        throw 'OSL012:BUNDLE_RUNTIME Expected the fixed win-x64 singlefilehost input and .NET 10.0.11 CoreLib.'
+        throw 'OSL012:BUNDLE_RUNTIME Expected the fixed win-x64 singlefilehost input and .NET 10.0.12 CoreLib.'
     }
-    # Verified in dotnet/runtime v10.0.11: Bundle/TargetInfo.cs chooses major 6,
+    # Verified in dotnet/runtime v10.0.12: Bundle/TargetInfo.cs chooses major 6,
     # Bundle/Manifest.cs writes minor 0; native corehost/bundle/header.cpp accepts it.
     # The obj host carries App resources, so its product version is NOT the SDK version.
-    return [pscustomobject]@{ runtimeKind = 'integrated-clr'; runtimeVersion = '10.0.11'; bundleMajorVersion = 6; bundleMinorVersion = 0 }
+    return [pscustomobject]@{ runtimeKind = 'integrated-clr'; runtimeVersion = '10.0.12'; bundleMajorVersion = 6; bundleMinorVersion = 0 }
 }
 
 function Assert-ApplicationBuildEvidence([string]$ContentsRoot) {
@@ -607,7 +607,7 @@ try {
     $validationPath = Join-Path $stageRoot 'Evidence/sbom-validation.json'
     $appProjectPath = Join-Path $repoRoot 'src/HubRadio.App/HubRadio.App.csproj'
     $sdkVersion = (Invoke-BuildTool $DotnetPath @('--version') 'dotnet-version').Trim()
-    if ($sdkVersion -cne '10.0.400') { throw 'OSL012:SDK_VERSION Expected the fixed .NET SDK 10.0.400.' }
+    if ($sdkVersion -cne '10.0.401') { throw 'OSL012:SDK_VERSION Expected the fixed .NET SDK 10.0.401.' }
     $toolVersion = (Invoke-BuildTool $SbomToolPath @('--version') 'sbom-version').Trim()
     if ($toolVersion -cnotmatch '(?<![0-9.])4\.1\.5(?:\.0)?(?:\+[0-9A-Za-z.-]+)?(?![0-9.])') { throw 'OSL012:SBOM_VERSION Expected official sbom-tool 4.1.5.' }
     $commitArguments = @('-C', $repoRoot, 'rev-parse', '--verify', 'HEAD')
