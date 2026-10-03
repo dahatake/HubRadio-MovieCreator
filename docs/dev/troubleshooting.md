@@ -113,6 +113,19 @@ pwsh.exe -NoLogo -NoProfile -File benchmarks\setup-python-env.ps1 -PythonExecuta
 
 絶対 path、transcript、raw metadata、認証情報を issue や文書へ転載しません。
 
+## 「編集を開始」で「操作を完了できませんでした」と出て先へ進めない
+
+元動画画面で「編集を開始」を押したときのエラーです。`project.runtime_unavailable` の場合、表示文に原因と対処が書かれています（FR-036）。
+
+アプリは、押された時点で実行基盤の初期化と復旧を自動で再確認・再実行し、回復すれば続けて案件を作成します。回復できないときだけ、次のいずれかの原因が表示されます。
+
+| 表示される原因 | 確認と対処 |
+| --- | --- |
+| 動画処理ツール／動画解析ツール／文字起こしワーカー／文字起こしモデル／字幕用フォント／ビルド証跡が見つからない、または検証に失敗した | アプリの実行フォルダーに `Tools\ffmpeg.exe`、`Tools\ffprobe.exe`、`Worker\python.exe`、`ModelCatalog\catalog.json`、`Fonts`、`Evidence` があるか確認します。**Debug 構成の `bin\Debug` には含まれません。** 配布パッケージ（ポータブル版）を使うか、`-p:HubRadioRuntimePayloadPath=<準備済み payload>` を指定して Release 構成でビルドし直します（payload の準備は `packaging/portable/prepare-payload.ps1`）。ファイルを補ったら、アプリを閉じずに「もう一度試す（自動で再確認）」を押します。 |
+| 編集の準備（初期化または前回の処理の復旧）が完了していない | しばらく待って「もう一度試す」を押します。直らなければアプリを再起動します。 |
+
+ファイルは自動では取得・複製されません（検証済みの配布物だけを使うため）。
+
 ## 動画生成が失敗する
 
 `test/<元ファイル名から拡張子を除いた名前>-problems.md` を確認します。

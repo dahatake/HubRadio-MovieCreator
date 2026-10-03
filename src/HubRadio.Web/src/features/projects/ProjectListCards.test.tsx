@@ -247,15 +247,46 @@ describe('ProjectListCards', () => {
     await act(async () => user.click(openButton('案件 7')))
     expect(onOpen).toHaveBeenCalledExactlyOnceWith(projects[6]!.draftId)
   })
+
+  it('shows one delete button per card only when deletion is offered and reports the exact target', async () => {
+    const projects = projectsOf(3)
+    renderCards(projects)
+    expect(within(container).queryAllByRole('button', { name: /を削除$/ })).toHaveLength(0)
+
+    const onDelete = vi.fn<(draftId: string, name: string) => void>()
+    renderCards(projects, false, undefined, onDelete)
+    expect(within(container).getAllByRole('button', { name: /を削除$/ })).toHaveLength(3)
+    const user = userEvent.setup({ document })
+    await act(async () => user.click(within(container).getByRole('button', { name: '案件 2を削除' })))
+    expect(onDelete).toHaveBeenCalledExactlyOnceWith(projects[1]!.draftId, '案件 2')
+
+    onDelete.mockClear()
+    renderCards(projects, true, undefined, onDelete)
+    const disabledDelete = within(container).getByRole('button', { name: '案件 2を削除' })
+    expect(disabledDelete.hasAttribute('disabled')).toBe(true)
+    await act(async () => user.click(disabledDelete))
+    expect(onDelete).not.toHaveBeenCalled()
+  })
+
+  it('uses the unnamed fallback when deleting a project without a name', async () => {
+    const onDelete = vi.fn<(draftId: string, name: string) => void>()
+    renderCards([projectListItem(0, { contentName: null })], false, undefined, onDelete)
+    const user = userEvent.setup({ document })
+    await act(async () => user.click(within(container).getByRole('button', { name: '名称未入力を削除' })))
+    expect(onDelete).toHaveBeenCalledExactlyOnceWith(expect.any(String), '名称未入力')
+  })
 })
 
 function renderCards(
   projects: readonly ProjectListItem[],
   disabled = false,
   onOpen = vi.fn<(draftId: string) => void>(),
+  onDelete?: (draftId: string, name: string) => void,
 ) {
   act(() => {
-    root.render(<ProjectListCards projects={projects} disabled={disabled} onOpen={onOpen} />)
+    root.render(
+      <ProjectListCards projects={projects} disabled={disabled} onOpen={onOpen} onDelete={onDelete} />,
+    )
   })
   return onOpen
 }

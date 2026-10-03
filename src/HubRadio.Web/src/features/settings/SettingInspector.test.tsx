@@ -69,6 +69,29 @@ const valueCases = [
 ] satisfies readonly { name: string; value: SettingValue; initialValue: SettingValue; draft: SettingValue; currentText: string; initialText: string; inputs: readonly string[] }[]
 
 describe('SettingInspector', () => {
+  it('shows the plain-language explanation of a bundled setting without opening any disclosure', async () => {
+    const definition = makeDefinition(boolean(false), { key: 'output.directPostingEnabled', displayName: 'Direct posting' })
+    const view = await renderInspector({ definition })
+    const help = view.container.querySelector('section.setting-help')!
+
+    expect(help.closest('details')).toBeNull()
+    expect(within(help as HTMLElement).getByRole('heading', { level: 4 }).textContent).toBe('やさしい説明：直接投稿')
+    expect(help.textContent).toContain('これは何の設定？')
+    expect(help.textContent).toContain('YouTubeなどのサービスへ自動で投稿するか')
+    expect(help.textContent).toContain('変えるとどうなる？')
+    expect(help.textContent).toContain('投稿はしません')
+    expect(help.textContent).toContain('初期値のままにしておくのが安全')
+    expect(help.getAttribute('aria-labelledby')).toBe(help.querySelector('h4')!.id)
+  })
+
+  it('states honestly that a setting without a written explanation has none', async () => {
+    const view = await renderInspector({ definition: makeDefinition(boolean(false)) })
+    const help = view.container.querySelector('section.setting-help')!
+
+    expect(help.querySelector('h4')!.textContent).toBe('やさしい説明：テスト設定')
+    expect(help.textContent).toContain('まだ用意されていません')
+  })
+
   it.each(valueCases)('distinguishes current, draft and initial values for $name', async ({ value, initialValue, draft, currentText, initialText, inputs }) => {
     const view = await renderInspector({ definition: makeDefinition(initialValue), value, initialValue, draft })
     expect(summaryValue(view.container, '現在値')).toBe(currentText)

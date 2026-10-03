@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import {
   PROJECT_CREATE_DRAFT_METHOD,
+  PROJECT_DELETE_METHOD,
   PROJECT_FINALIZE_DRAFT_METHOD,
   PROJECT_LIST_METHOD,
   PROJECT_LOAD_DRAFT_METHOD,
   PROJECT_PICK_SOURCE_METHOD,
   PROJECT_SAVE_DRAFT_METHOD,
   createProjectCreateDraftRequest,
+  createProjectDeleteRequest,
   createProjectFinalizeDraftRequest,
   createProjectListRequest,
   createProjectLoadDraftRequest,
@@ -57,6 +59,22 @@ describe('project bridge requests', () => {
         'version',
       ])
     }
+  })
+
+  it('constructs the frozen project.delete request with only a canonical draft ID', () => {
+    const request = createProjectDeleteRequest(requestId, draftId)
+
+    expect(request).toEqual({
+      version: 1,
+      requestId,
+      method: PROJECT_DELETE_METHOD,
+      params: { draftId },
+    })
+    expect(Object.isFrozen(request)).toBe(true)
+    expect(Object.isFrozen(request.params)).toBe(true)
+    expect(() => createProjectDeleteRequest(requestId, draftId.toUpperCase())).toThrow()
+    expect(() => createProjectDeleteRequest(requestId, 'not-an-id')).toThrow()
+    expect(() => createProjectDeleteRequest('bad', draftId)).toThrow()
   })
 
   it('deep-copies and freezes mutation input', () => {
@@ -237,6 +255,40 @@ describe('project bridge responses', () => {
         result: { candidateId, path: 'C:\\private\\source.mov' },
       }),
     ).toBeNull()
+  })
+
+  it('accepts only an exact project.delete result and the delete_blocked error', () => {
+    const response = {
+      version: 1,
+      requestId,
+      method: PROJECT_DELETE_METHOD,
+      result: { deletedDraftId: draftId, filesRemoved: true },
+    }
+    expect(parseProjectBridgeResponse(response)).toEqual(response)
+    expect(parseProjectBridgeResponse({ ...response, result: { ...response.result, filesRemoved: false } })).not.toBeNull()
+    expect(parseProjectBridgeResponse({ ...response, result: { deletedDraftId: draftId } })).toBeNull()
+    expect(parseProjectBridgeResponse({ ...response, result: { ...response.result, filesRemoved: 'yes' } })).toBeNull()
+    expect(parseProjectBridgeResponse({ ...response, result: {} })).toBeNull()
+    expect(
+      parseProjectBridgeResponse({ ...response, result: { ...response.result, path: 'C:\\x' } }),
+    ).toBeNull()
+    expect(
+      parseProjectBridgeResponse({ ...response, result: { ...response.result, deletedDraftId: draftId.toUpperCase() } }),
+    ).toBeNull()
+    expect(
+      parseProjectBridgeResponse({ ...response, method: PROJECT_LOAD_DRAFT_METHOD }),
+    ).toBeNull()
+
+    const blocked = {
+      version: 1,
+      requestId,
+      method: PROJECT_DELETE_METHOD,
+      error: {
+        code: 'project.delete_blocked',
+        message: '処理中のジョブがあるため、この案件は削除できません。',
+      },
+    }
+    expect(parseProjectBridgeResponse(blocked)).toEqual(blocked)
   })
 
   it('rejects extra nested keys, duplicate IDs, wrong casing, and false status claims', () => {

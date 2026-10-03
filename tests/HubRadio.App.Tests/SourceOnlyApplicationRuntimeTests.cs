@@ -106,7 +106,7 @@ public sealed class SourceOnlyApplicationRuntimeTests
             Request(BridgeMethod.FinalizeDraft, new { draftId = draft.DraftId, expectedRevision = draft.Revision, input = Input(draft) }),
             CancellationToken.None);
         using JsonDocument json = JsonDocument.Parse(response);
-        Assert.AreEqual("project.operation_failed", json.RootElement.GetProperty("error").GetProperty("code").GetString());
+        Assert.AreEqual("project.runtime_unavailable", json.RootElement.GetProperty("error").GetProperty("code").GetString());
         Assert.IsFalse(json.RootElement.TryGetProperty("result", out _));
         Assert.IsFalse(response.Contains(fixture.Root, StringComparison.Ordinal));
         Assert.IsFalse(response.Contains(Actor, StringComparison.Ordinal));
@@ -151,6 +151,121 @@ public sealed class SourceOnlyApplicationRuntimeTests
         await ready.RestoreAfterReadAsync(EntityId<ProjectIdTag>.New(), CancellationToken.None);
         Assert.AreEqual(0, coordinator.Recoveries);
         Assert.AreEqual(0, coordinator.Acceptances);
+    }
+
+    [TestMethod]
+    public async Task RepairReinitializesAFailedRuntimeAndRerunsAnUnsuccessfulRecovery()
+    {
+        using var fixture = new Fixture();
+        int attempts = 0;
+        int recoveries = 0;
+        var coordinator = new LifetimeCoordinator
+        {
+            Recover = _ => Task.FromResult(new SourceOnlyRecoveryResult([], false, Interlocked.Increment(ref recoveries) == 1 ? "source_only.recovery_failed" : null)),
+        };
+        await using SourceOnlyApplicationRuntime runtime = await SourceOnlyApplicationRuntime.CreateAsync(fixture.Services, _ =>
+            Interlocked.Increment(ref attempts) == 1
+                ? Task.FromException<SourceOnlyApplicationSession>(new SourceOnlyApplicationDependencyException(SourceOnlyApplicationDependency.Worker))
+                : Task.FromResult(coordinator.Session()));
+        Assert.AreEqual(SourceOnlyApplicationDependency.Worker, runtime.MissingDependency);
+        Assert.IsFalse(runtime.IsAvailable);
+
+        Assert.IsFalse(await runtime.RepairAsync(), "The first recovery is configured to fail.");
+        Assert.IsTrue(runtime.IsAvailable);
+        Assert.IsNull(runtime.MissingDependency);
+        Assert.IsNull(runtime.ReadyPipeline, "A coordinator-only seam has no pipeline, so readiness is observed through Accept.");
+        Assert.IsTrue(await runtime.RepairAsync());
+        Assert.AreEqual(2, attempts);
+        Assert.AreEqual(2, recoveries);
+        Assert.IsTrue(await runtime.RepairAsync(), "A ready runtime is not repaired again.");
+        Assert.AreEqual(2, recoveries);
+        Assert.ThrowsExactly<NotSupportedException>(() => Accept(runtime, fixture.Resolution()));
+    }
+
+    [TestMethod]
+    public async Task RepairKeepsTheRuntimeUnavailableAndReportsTheCurrentDependencyWhenInitializationStillFails()
+    {
+        using var fixture = new Fixture();
+        int attempts = 0;
+        await using SourceOnlyApplicationRuntime runtime = await SourceOnlyApplicationRuntime.CreateAsync(fixture.Services, _ =>
+            Interlocked.Increment(ref attempts) == 1
+                ? Task.FromException<SourceOnlyApplicationSession>(new SourceOnlyApplicationDependencyException(SourceOnlyApplicationDependency.Ffmpeg))
+                : Task.FromException<SourceOnlyApplicationSession>(new IOException(@"C:\private\payload")));
+        Assert.AreEqual(SourceOnlyApplicationDependency.Ffmpeg, runtime.MissingDependency);
+        Assert.IsFalse(await runtime.RepairAsync());
+        Assert.AreEqual(SourceOnlyApplicationDependency.Initialization, runtime.MissingDependency);
+        Assert.IsFalse(runtime.IsAvailable);
+        SourceOnlyApplicationDependencyException failure = Assert.ThrowsExactly<SourceOnlyApplicationDependencyException>(
+            () => Accept(runtime, fixture.Resolution()));
+        Assert.AreEqual(SourceOnlyApplicationDependency.Initialization, failure.Dependency);
+    }
+
+    [TestMethod]
+    public async Task StartRepairsTheRuntimeOnceAndRetriesWithoutDoubleAcceptance()
+    {
+        using var fixture = new Fixture();
+        int attempts = 0;
+        var coordinator = new LifetimeCoordinator();
+        await using SourceOnlyApplicationRuntime runtime = await SourceOnlyApplicationRuntime.CreateAsync(fixture.Services, _ =>
+            Interlocked.Increment(ref attempts) == 1
+                ? Task.FromException<SourceOnlyApplicationSession>(new SourceOnlyApplicationDependencyException(SourceOnlyApplicationDependency.Model))
+                : Task.FromResult(coordinator.Session()));
+        ProjectCreationService service = fixture.Service(runtime);
+        ProjectCreationDraftView draft = await service.CreateSourceOnlyDraftAsync();
+        var handler = new ProjectBridgeHandler(service, null, runtime.RepairAsync);
+
+        string response = await handler.HandleAsync(
+            Request(BridgeMethod.FinalizeDraft, new { draftId = draft.DraftId, expectedRevision = draft.Revision, input = Input(draft) }),
+            CancellationToken.None);
+
+        Assert.AreEqual(2, attempts);
+        Assert.AreEqual(1, coordinator.Acceptances, "The repaired runtime accepts exactly once; the seam then refuses by design.");
+        using JsonDocument json = JsonDocument.Parse(response);
+        Assert.AreEqual("project.operation_failed", json.RootElement.GetProperty("error").GetProperty("code").GetString());
+    }
+
+    [TestMethod]
+    public async Task StartExplainsTheCauseAndTheRemedyWhenRepairCannotRecoverTheRuntime()
+    {
+        using var fixture = new Fixture();
+        await using SourceOnlyApplicationRuntime runtime = await SourceOnlyApplicationRuntime.CreateAsync(
+            fixture.Services, fixture.PackageResources());
+        ProjectCreationService service = fixture.Service(runtime);
+        ProjectCreationDraftView draft = await service.CreateSourceOnlyDraftAsync();
+        string before = fixture.Services.Drafts.GetDraft(EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId))!.CanonicalJson;
+        var handler = new ProjectBridgeHandler(service, null, runtime.RepairAsync);
+
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            string response = await handler.HandleAsync(
+                Request(BridgeMethod.FinalizeDraft, new { draftId = draft.DraftId, expectedRevision = draft.Revision, input = Input(draft) }),
+                CancellationToken.None);
+            using JsonDocument json = JsonDocument.Parse(response);
+            JsonElement error = json.RootElement.GetProperty("error");
+            Assert.AreEqual("project.runtime_unavailable", error.GetProperty("code").GetString());
+            string message = error.GetProperty("message").GetString()!;
+            StringAssert.Contains(message, "ffmpeg.exe");
+            StringAssert.Contains(message, "自動修復");
+            StringAssert.Contains(message, "Release");
+            StringAssert.Contains(message, "もう一度");
+            Assert.IsFalse(response.Contains(fixture.Root, StringComparison.Ordinal));
+        }
+
+        Assert.AreEqual(before, fixture.Services.Drafts.GetDraft(EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId))!.CanonicalJson);
+        Assert.IsFalse(fixture.Services.Drafts.GetDraft(EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId))!.IsFinalized);
+    }
+
+    [TestMethod]
+    public void EveryDependencyHasADistinctCauseAndNeverEmbedsAPath()
+    {
+        var messages = new HashSet<string>();
+        foreach (SourceOnlyApplicationDependency dependency in Enum.GetValues<SourceOnlyApplicationDependency>())
+        {
+            string message = SourceOnlyDependencyGuidance.Describe(dependency, repairAttempted: true);
+            Assert.IsTrue(messages.Add(message), dependency.ToString());
+            Assert.IsFalse(message.Contains(@":\\", StringComparison.Ordinal) && message.Contains("Users", StringComparison.Ordinal));
+        }
+        StringAssert.DoesNotMatch(SourceOnlyDependencyGuidance.Describe(SourceOnlyApplicationDependency.Ffmpeg, repairAttempted: false), new System.Text.RegularExpressions.Regex("自動修復"));
     }
 
     [TestMethod]

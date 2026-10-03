@@ -33,7 +33,7 @@ describe('App', () => {
       expect(within(container).getByRole('tabpanel', { name: '元動画' }).id)
         .toBe('workflow-panel-source')
       expect(within(container).getByRole('heading', { name: '案件一覧' })).toBeTruthy()
-      expect(within(container).getByRole('button', { name: '元動画を選ぶ' })).toBeTruthy()
+      expect(within(container).getByRole('button', { name: '新しい案件を作成' })).toBeTruthy()
       expect(within(container).getByRole('button', { name: '設定' })).toBeTruthy()
       expect(within(container).queryByRole('heading', { name: 'ジョブの進行状況' })).toBeNull()
       expect(within(container).queryByRole('heading', { name: '文字起こし編集' })).toBeNull()

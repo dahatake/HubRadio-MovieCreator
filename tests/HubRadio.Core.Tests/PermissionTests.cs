@@ -26,6 +26,7 @@ public sealed class PermissionTests
                 AuthorizationOperation.StartApprovedRender,
                 AuthorizationOperation.RecordQualityControl,
                 AuthorizationOperation.ExportComposition,
+                AuthorizationOperation.DeleteProject,
             ],
             [AuthorizationRole.PerformerReviewer] =
             [
@@ -101,6 +102,7 @@ public sealed class PermissionTests
                 AuthorizationOperation.ConfigureWorkspaceStorage,
                 AuthorizationOperation.PublishTemplateVersion,
                 AuthorizationOperation.ViewAuditLog,
+                AuthorizationOperation.DeleteProject,
             },
             Enum.GetValues<AuthorizationOperation>());
     }
@@ -137,7 +139,7 @@ public sealed class PermissionTests
             }
         }
 
-        Assert.AreEqual(31, allowedCellCount);
+        Assert.AreEqual(32, allowedCellCount);
     }
 
     [TestMethod]
@@ -146,6 +148,7 @@ public sealed class PermissionTests
         AuthorizationOperation[] denied =
         [
             AuthorizationOperation.CreateProject,
+            AuthorizationOperation.DeleteProject,
             AuthorizationOperation.DecideAnalysisSuggestion,
             AuthorizationOperation.CreateCompositionVersion,
             AuthorizationOperation.SubmitForReview,

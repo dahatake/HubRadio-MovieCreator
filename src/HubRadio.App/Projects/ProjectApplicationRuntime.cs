@@ -199,8 +199,12 @@ internal static class ProjectApplicationRuntime
             },
             // Even a missing resource has a non-null coordinator: Start fails closed
             // rather than finalizing an empty project through the legacy fallback.
-            sourceOnlyCoordinator: native);
-        var projectHandler = new ProjectBridgeHandler(service, native.RestoreAfterReadAsync);
+            sourceOnlyCoordinator: native)
+        {
+            ProjectFilesRemover = projectId =>
+                ProjectWorkspaceFileRemover.Remove(services.WorkspacePath, projectId),
+        };
+        var projectHandler = new ProjectBridgeHandler(service, native.RestoreAfterReadAsync, native.RepairAsync);
         var jobHandler = new JobBridgeRequestHandler(
             services.Coordinator,
             new JobBridgeAuthorization(authorization, actorProvider),

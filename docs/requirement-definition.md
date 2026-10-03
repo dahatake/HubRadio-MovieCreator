@@ -35,6 +35,9 @@ UI/UX追補は承認済み要求の追加であり、UI・設定fileの実装／
 | 日付 | 依頼の要約 | 追加 | 変更 | 削除 |
 | --- | --- | --- | --- | --- |
 | 2026-10-01 | 成果物動画の前後に、利用者が指定する動画（mp4等）をOpening → 生成動画 → Closingの順で結合する機能を追加 | FR-035（FR-035.1〜FR-035.12）、AC-008（AC-008.1〜AC-008.10）、§19.1の仮定A-035-01〜A-035-10 | §4.1（対象への1項目追加）、FR-015（FR-035との関係を追記）、§16 Must（1項目追加） | なし |
+| 2026-10-03 | 「編集を開始」で「操作を完了できませんでした」となり先へ進めない問題の原因調査、原因と対応策の提示、自動修復 | FR-036（FR-036.1〜FR-036.7）、AC-009（AC-009.1〜AC-009.6）、§19.2の仮定A-036-01〜A-036-03 | §16 Must（1項目追加）、エラーcode `project.runtime_unavailable`の追加（`project.finalizeDraft`の依存失敗が返すcodeを`project.operation_failed`から変更） | なし |
+| 2026-10-03 | 案件削除時に、案件のワークスペース内のファイルも削除（FR-037の拡張） | FR-037.10、FR-037.11、AC-010.11〜AC-010.13 | FR-037.3（確認文）、FR-037.4（成功応答に`filesRemoved`）、FR-037.6（論理削除の範囲）、FR-037の対象外、A-037-02（上書き）、AC-010.4、AC-010.8 | なし |
+| 2026-10-03 | 案件一覧画面での案件の新規作成・削除、設定画面の各項目へ初心者向けの詳細説明を表示 | FR-037（FR-037.1〜FR-037.9）、FR-038（FR-038.1〜FR-038.6）、AC-010（AC-010.1〜AC-010.10）、AC-011（AC-011.1〜AC-011.6）、§19.3の仮定A-037-01〜A-037-06、`project.delete`、エラーcode `project.delete_blocked`、DB schema version 13（`project_creation_draft_deletions`）、操作`DeleteProject` | §4.1、§14.1（案件一覧）、§14.4、§16 Must、案件一覧の主ボタン文言（「元動画を選ぶ」→「新しい案件を作成」。操作は従来の`project.createDraft`のまま） | なし |
 | 2026-10-01 | FR-035の結合機能をGUI（仕上がり画面）へ統合 | FR-035.13〜FR-035.21、GUI応答status表、AC-008.11〜AC-008.16、仮定A-035-11〜A-035-13 | FR-035の目的と境界・対象外、A-035-01（GUI対象外→GUIとCLIの両方を提供）、§4.1、§14.2、§16 Must | なし |
 
 ---
@@ -138,6 +141,8 @@ YouTube、TikTok、LinkedIn等の仕様は出力profileの参考にするが、�
 - 字幕と強調テロップの生成
 - オープニング、見出し、エンディングの挿入
 - 生成済み動画の前後へ利用者指定のOpening／Closing動画を結合した別ファイルの作成（FR-035。仕上がり画面と結合CLI）
+- 案件一覧画面からの案件の新規作成と削除（FR-037）
+- 設定画面の各項目に表示する、初心者向けのやさしい説明（FR-038）
 - トランジションの適用
 - BGM、効果音、音量の調整
 - サムネイル候補作成
@@ -933,6 +938,75 @@ quick startの標準成果物は、社内向け16:9長尺1本、最大3本の9:1
 
 ---
 
+## FR\-036 編集開始の失敗の原因提示と自動修復
+
+**背景（調査結果、2026-10-03）:** 元動画画面で「編集を開始」（`project.finalizeDraft`、source-onlyの案件作成）を押すと「操作を完了できませんでした／案件操作を完了できませんでした。」だけが表示され、先へ進めない事象が報告された。原因は、編集の実行基盤（`SourceOnlyApplicationRuntime`）が起動時に1回だけ初期化され、(a)同梱ツール（`Tools\ffmpeg.exe`、`Tools\ffprobe.exe`）、文字起こしワーカー（`Worker\python.exe`）、モデル（`ModelCatalog`）、フォント（`Fonts`）、ビルド証跡（`Evidence`）のいずれかが無い、またはdigest検証に失敗した（例: 同梱物を含まないDebug構成の`bin\Debug`から起動した、配布物を一部だけコピーした、起動時にfileが他プロセスに掴まれていた）、(b)起動後の復旧処理が成功していない、のどちらかだと、その失敗がプロセスの終了まで固定され、`HubRadio.App`が失敗の種類を`project.operation_failed`へ丸めて原因を返さなかったことである。再試行しても同じ結果になり、アプリの再起動以外に復旧手段が無かった。
+
+| ID | 優先度 | 要求 |
+| --- | --- | --- |
+| FR-036.1 | MUST | 実行基盤の依存（ffmpeg／ffprobe／Worker／モデル／フォント／ビルド証跡）が使えない、または起動時の初期化・復旧が完了していないために`project.finalizeDraft`が開始できないとき、bridgeは`project.operation_failed`ではなく新しいエラーcode `project.runtime_unavailable`を返す。応答は既存の`error`形（`code`と非空の`message`のみ）を保ち、`result`を含まない。draftは確定せず、draftの保存内容・設定・jobは変更しない。 |
+| FR-036.2 | MUST | `message`は日本語で、(1)原因（不足または検証失敗した依存の名称。FR-036.5の表）、(2)自動修復を試みたこと（FR-036.3を実行した場合のみ）、(3)利用者が取る対処（FR-036.5の表）をこの順に含む。絶対path、利用者名、SID、例外文、内部の例外型名を含めない。 |
+| FR-036.3 | MUST | `project.finalizeDraft`が実行基盤の依存で失敗したとき、bridgeは応答を返す前に自動修復を1回だけ行う: 実行基盤が未初期化なら検証付き初期化を再実行し、復旧処理が未完了または失敗なら再実行する。修復後に受付可能になった場合は、同じ要求を1回だけ再実行し、利用者へのエラーを出さずに処理を続ける。修復できない場合は再試行せずFR-036.1の応答を返す。自動修復は、保存済みのdraft・案件・job・成果物・設定、元動画、利用者のファイルを書き換えない。 |
+| FR-036.4 | MUST | 自動修復が失敗しても実行基盤の状態は固定しない。利用者が原因を解消したあと、アプリを再起動せずに「編集を開始」をもう一度押すと、FR-036.3が再び実行され、成功すれば先へ進む。複数の「編集を開始」が同時に来ても、初期化・復旧は同時に1つだけ実行する。アプリ終了中は修復を始めず、実行中の修復は取り消す。 |
+| FR-036.5 | MUST | 原因と対処の文は次の表の固定文とする。 |
+| FR-036.6 | MUST | 元動画画面のエラー表示は、`project.runtime_unavailable`のとき`message`をそのまま表示し、「もう一度試す（自動で再確認）」ボタンを出す。ボタンは`project.finalizeDraft`を1回再送し、draftが確定済み、または他の操作の処理中は無効にする。 |
+| FR-036.7 | SHOULD | 利用者向けの手順（原因ごとの確認方法と、開発ビルドでの同梱物の用意）を`docs/dev/troubleshooting.md`と`docs/beginner-guide.md`に記載する。 |
+
+FR-036.5の固定文（`message` = 「編集を開始できません。」＋原因＋（自動修復を試みた場合）「アプリは自動修復（再初期化と復旧の再実行）を試みましたが、回復できませんでした。」＋対処）:
+
+| 依存 | 原因の文 | 対処の文 |
+| --- | --- | --- |
+| ffmpeg | 動画処理ツール（Tools\ffmpeg.exe）が見つからないか、検証に失敗しました。 | 配布パッケージ（ポータブル版）を使用するか、開発ビルドの場合は Release 構成でビルドし直してください（docs/dev/troubleshooting.md）。ファイルを補ったあと、「編集を開始」をもう一度押すと自動で再確認します。 |
+| ffprobe | 動画解析ツール（Tools\ffprobe.exe）が見つからないか、検証に失敗しました。 | ffmpegと同じ |
+| Worker | 文字起こしワーカー（Worker フォルダー）が見つからないか、検証に失敗しました。 | ffmpegと同じ |
+| モデル | 文字起こしモデル（ModelCatalog フォルダー）が見つからないか、検証に失敗しました。 | ffmpegと同じ |
+| フォント | 字幕用フォント（Fonts フォルダー）が見つからないか、検証に失敗しました。 | ffmpegと同じ |
+| ビルド証跡 | アプリのビルド証跡（Evidence フォルダー）が見つからないか、検証に失敗しました。 | ffmpegと同じ |
+| 初期化・復旧 | 編集の準備（初期化または前回の処理の復旧）が完了していません。 | しばらくしてから「編集を開始」をもう一度押してください。直らない場合はアプリを再起動してください。 |
+
+**対象外（本追補）:** 欠けた同梱物（ffmpeg等）をアプリが自動でダウンロード・複製・生成すること（ライセンスと完全性検証の方針に反するため行わない）、検証に失敗したモデルcacheの自動置換（既存方針: 破損cacheは置き換えない）、`project.finalizeDraft`以外の操作の文言変更、起動時の画面全体の診断表示。
+
+---
+
+## FR\-037 案件一覧からの案件の新規作成と削除
+
+**背景（依頼、2026-10-03）:** 案件一覧画面で、案件を新規に作成する機能と、一覧の中の案件を削除する機能が求められた。新規作成は、従来の主ボタン「元動画を選ぶ」（`project.createDraft`。動画選択ダイアログで元動画を1本選ぶと、source-onlyの案件の下書きを作る）が既に担っていたが、ボタンの名前から「案件を作る操作」と分かりにくかった。削除は未実装だった。
+
+| ID | 優先度 | 要求 |
+| --- | --- | --- |
+| FR-037.1 | MUST | 案件一覧の主ボタンの表示文言は「新しい案件を作成」とする（従来は「元動画を選ぶ」）。押すと従来と同じ`project.createDraft`を1回だけ送る（ホストが動画選択ダイアログを開き、元動画を1本選ぶと下書きを作る。キャンセルでは何も作らない）。作成権限が無い（`canCreate=false`）、処理中、画面が非表示、別画面に未保存の変更があるときは無効にし、押しても何も送らない。一覧の説明文に「「新しい案件を作成」を押して動画ファイルを1本選ぶと、新しい案件が作成されます。」を含める。 |
+| FR-037.2 | MUST | 一覧の各案件のカードに「削除」ボタンを置く。アクセシブルネームは「{案件名}を削除」とし、案件名が無い案件は「名称未入力を削除」とする。作成権限がある（`canCreate=true`）ときだけ表示し、処理中、画面が非表示、別画面に未保存の変更があるときは無効にする（無効のボタンを押しても確認も送信も行わない）。 |
+| FR-037.3 | MUST | 「削除」を押すと、先に確認ダイアログ（`window.confirm`）を出す。文言は「案件「{案件名}」を削除しますか？」の次の行に「削除した案件は一覧から消え、アプリから元に戻せません。」の次の行に「この案件の作業ファイルと、アプリの保存領域に書き出したファイルも削除されます。選んだ元の動画ファイルは削除されません。」とする。キャンセルでは何も送らない。OKのときだけ`project.delete`を1回送る。 |
+| FR-037.4 | MUST | bridge method `project.delete`: 要求`params`は`{"draftId": <小文字の正規UUID>}`だけ（余分なキー、大文字、UUID以外、nullは、他のproject methodと同様にホストが入口で拒否する）。成功応答は`result`が`{"deletedDraftId": <削除した下書きのUUID>, "filesRemoved": <真偽値>}`だけ（`filesRemoved`はFR-037.10）。失敗応答は既存の`error`形（`code`と非空の`message`）で、codeは次のとおり: 存在しない、または削除済みの下書き=`project.not_found`、操作の権限が無い=`project.not_authorized`、FR-037.7の実行中job=`project.delete_blocked`、その他=`project.operation_failed`。応答にpath・SID・例外文を含めない。 |
+| FR-037.5 | MUST | 削除の権限は新しい操作`DeleteProject`とし、ロール`Editor`だけに許可する（`CreateProject`と同じ）。他のロール（Viewer等）と、権限の無い利用者は`project.not_authorized`となり、案件は一覧に残る。権限の確認は、案件の存在確認より先に行う。 |
+| FR-037.6 | MUST | 削除は論理削除とする。DB schema version 13（migration `013_project_deletions`）の表`project_creation_draft_deletions`（`draft_id`は主キーで`project_creation_drafts.id`を参照、`deleted_at`はUTCの時刻）へ削除の記録を1行追加する。この行は更新も削除もできない（DBトリガで拒否）。削除済みの下書き／案件は、`project.list`の一覧に出ず、`project.loadDraft`・`project.saveDraft`・`project.finalizeDraft`でも存在しないもの（`project.not_found`）として扱う。既存の下書き・案件・job・成果物・設定・監査記録のDBの行は、変更も削除もしない。ディスク上のファイルはFR-037.10に従う。 |
+| FR-037.7 | MUST | 確定済みの案件に、状態が`running`のjobが1件でもあるときは、削除せず`project.delete_blocked`を返す（`message`は「処理中のジョブがあるため、この案件は削除できません。完了または中止してからもう一度お試しください。」）。この場合、削除の記録は追加しない。`queued`、`succeeded`、`failed`、`cancelled`、`interrupted`のjobは削除を妨げない。まだ確定していない下書きは、常に削除できる。 |
+| FR-037.8 | MUST | 削除に成功したら、一覧から該当の案件だけが消え、他の案件の内容と並び順（更新日時の新しい順）は変わらない。ページ表示（1ページ6件）の件数・ページ数も更新される。失敗したときは一覧を変えず、既存のエラー表示（「操作を完了できませんでした」と`message`）を出す。 |
+| FR-037.9 | MUST | 削除は永続する。アプリを再起動しても、削除済みの案件は一覧に出ない。同じ下書きIDをもう一度削除すると`project.not_found`になる。 |
+| FR-037.10 | MUST | 確定済みの案件の削除が記録された（FR-037.6）あとで、その案件のワークスペース内のディレクトリ`<ワークスペース>\projects\<案件ID>`を、中のファイルごと削除する（作業ファイル、staging、成果物、ローカル納品領域、証跡を含む）。他の案件のディレクトリ、DB、バックアップ、ワークスペースの外のファイル（利用者が選んだ元動画、保存ダイアログで利用者が指定した場所のファイル）は削除しない。そのディレクトリがリンク（シンボリックリンク・ジャンクション）のときは、リンク自体だけを削除し、リンク先は削除しない。ディレクトリが無いとき、およびまだ確定していない下書きは、削除するものが無いので成功として扱う。 |
+| FR-037.11 | MUST | ファイルの削除に失敗した（他のアプリが使用中、権限不足など）場合でも、案件は一覧から消えたままにし（FR-037.6の記録は取り消さない）、成功応答の`filesRemoved`を`false`にする（すべて削除できた場合は`true`）。画面は一覧から案件を取り除いたうえで、「案件は一覧から削除しましたが、一部のファイルを削除できませんでした。ファイルが他のアプリで使用中の可能性があります。」を状態表示（`role="status"`）に出す。この表示は、次の操作を始めると消える。残ったファイルの自動再削除は行わない。 |
+
+**対象外（本追補）:** 削除した案件の復元操作、ワークスペースの外のファイル（元動画を含む）の消去、削除に失敗したファイルの自動再削除・一覧表示、複数案件の一括削除、ごみ箱画面。
+
+---
+
+## FR\-038 設定画面の各項目のやさしい説明
+
+**背景（依頼、2026-10-03）:** 設定画面の項目は、英語の表示名（例: 「Direct posting」）と、英語の「用途」だけでは、専門知識のない利用者が何を設定する項目か、変えるとどうなるかを理解しにくかった。各設定項目に、初心者にも分かる丁寧な説明文を表示することが求められた。
+
+| ID | 優先度 | 要求 |
+| --- | --- | --- |
+| FR-038.1 | MUST | 設定画面で項目を選ぶと、右側の詳細領域に、見出し「やさしい説明：{日本語名}」の枠（`section.setting-help`）を表示する。枠は「初期値・用途・根拠」の開閉（`details`）の外にあり、開閉の操作なしに常時見える。枠は、「これは何の設定？」、「変えるとどうなる？」の2項目と、共通の案内文「迷ったときは、初期値のままにしておくのが安全です。値を変えても、「保存」を押すまでは反映されません。」を含む。「新しい動画の既定値」と「この動画」のどちらの対象でも同じ内容を表示する。 |
+| FR-038.2 | MUST | 同梱の既定設定profile `1.0.0`の全123項目（`src/HubRadio.App/DefaultSettings/Profiles/1.0.0.json`の`settings[].key`）に、項目固有の説明（日本語名、「これは何の設定？」の文、「変えるとどうなる？」の文）が1つずつある。説明を持つキーの集合は、profileのキーの集合と過不足なく一致する。2つの文は、どちらも日本語（ひらがな・カタカナを含む）で、20字以上、前後に空白がなく、句点「。」で終わる。 |
+| FR-038.3 | MUST | 説明の内容は、項目の初期値・単位・最小値・最大値・選択肢・用途（英語の`description`）と矛盾しない。専門用語（LUFS、dB、fps、ビットレート、BT.709、H.264、SDH、クロスフェード等）は、その場で平易な言葉で意味を添える。選べる値が1つだけの項目は、その旨を書く。評価・測定・保証をしていないことを表す項目（`NOT EVALUATED`、`notClaimed`、`unmeasured`、`outOfScope`）は、「評価していない／保証しない」ことを書く。アプリが行わないこと（外部サービスへの投稿、クラウドへの送信、自動削除など）を行うとは書かない。 |
+| FR-038.4 | MUST | 説明を持たないキー（将来追加される項目）では、日本名の代わりに表示名を見出しに使い、「この項目の詳しい説明はまだ用意されていません。」で始まる汎用の文と、値を変えず初期値のままにする案内を表示する。枠を空にしたり、エラーにしたりしない。 |
+| FR-038.5 | MUST | 説明は画面表示だけで、既定設定profile、設定のdigest、保存される値、bridgeの設定プロトコルを変更しない。 |
+| FR-038.6 | MUST | 説明の枠は、値の編集、保存、初期値へ戻す、キーボードのフォーカス順を変えず、操作できる要素（ボタン、入力欄、リンク）を増やさない。 |
+
+**対象外（本追補）:** 設定の一覧の行（項目名と現在値）への説明の追加、説明文の検索対象化、「予定を確認」「設定ファイル」タブの説明、英語など日本語以外の説明、説明文の外部編集。
+
+---
+
 # 9\. 編集ルール
 
 ## 9.1 長尺動画の標準ルール
@@ -1235,6 +1309,8 @@ AIで生成または大幅に編集した要素を記録できること。
 
 元動画以外の入力欄を必須表示してはならない。
 
+案件一覧（FR-037）の表示項目: 案件ごとのカード（案件名、状態、元動画の状態、更新日時（UTC））、各カードの「削除」、「一覧を更新」、「新しい案件を作成」、ページ切替（1ページ6件）。
+
 ## 14.2 進捗・成果物画面
 
 表示項目:
@@ -1282,6 +1358,7 @@ UI/UX追補では「仕上がり」にpreviewを残し、任意editorを1つず�
 - 音声と素材
 - プライバシーと保存
 - 各設定の現在値、初期値、用途、根拠区分、適用profile版
+- 各設定の、初心者向けの「やさしい説明」（FR-038）
 - 個別および全設定を初期値に戻す操作
 
 UI/UX追補:
@@ -1427,6 +1504,70 @@ Web試験は既存試験がファイルを`src/HubRadio.Web`基準で読むた�
 | AC-008.15 | FR-035.13〜FR-035.15, FR-035.20, FR-035.21 | 検証済みの動画成果物にだけ領域が表示され、画像・字幕にはない。どちらも未選択なら「結合して保存」が無効。選択後に有効になり、処理中は「結合中…」で無効。各statusでFR-035.20の文が`role="status"`で表示され、`invalid`で選択が解除される。応答がなければ待ち時間後に「応答がありません。保存先を確認してください。」。画面にpathが表示されない。bridgeがなければ「この環境では利用できません」。 |
 | AC-008.16 | FR-035.13〜FR-035.18（手動） | 手順: 実アプリで生成済みの案件を開き、仕上がり画面の動画成果物で「オープニングを選ぶ」「クロージングを選ぶ」で任意のmp4を選び、「結合して保存」で新しい名前を指定する。期待: 指定場所にmp4と`.stitch.json`ができ、再生するとOpening→本編→Closingの順になる。証跡: 画面の表示文とmanifest。未実施の場合は`NOT EVALUATED`とし、PASSとしない。 |
 
+## AC\-009 編集開始の失敗の原因提示と自動修復
+
+判定コマンド（リポジトリルートから、非対話。失敗時はexit code 0以外）:
+
+```
+dotnet test tests\HubRadio.Infrastructure.Tests -c Release --filter "FullyQualifiedName~DiagnosticErrorCodeTests"
+dotnet test tests\HubRadio.App.Tests -c Release --filter "FullyQualifiedName~SourceOnlyApplicationRuntimeTests"
+pwsh -NoProfile -Command 'Set-Location src/HubRadio.Web; npx vitest run src/features/projects; exit $LASTEXITCODE'
+```
+
+| ID | 対応要求 | 期待結果 |
+| --- | --- | --- |
+| AC-009.1 | FR-036.1, FR-036.2, FR-036.5 | 同梱物の無い環境（存在しないpackage root）で`project.finalizeDraft`を送ると、応答は`error.code`が`project.runtime_unavailable`、`message`が「ffmpeg.exe」「自動修復」「Release」「もう一度」を含み、`result`を持たない。応答にroot pathとSIDを含まない。draftの`CanonicalJson`・`IsFinalized`、job、設定が呼出し前と同一。全依存（7種）のFR-036.5の文が互いに異なる。 |
+| AC-009.2 | FR-036.3 | 初期化が1回目だけ失敗する実行基盤で`project.finalizeDraft`を送ると、初期化が2回呼ばれ、受付（Accept）がちょうど1回行われ、`project.runtime_unavailable`は返らない。 |
+| AC-009.3 | FR-036.3, FR-036.4 | 初期化に失敗した実行基盤で`RepairAsync`を呼ぶと、初期化が再実行され、再び失敗しても`MissingDependency`が最新の原因に更新され、例外のpath文字列を保持しない。初期化後の復旧が1回目に失敗した場合は、2回目の`RepairAsync`で復旧が再実行され、受付可能になる。受付可能な実行基盤では再実行しない。 |
+| AC-009.4 | FR-036.4 | 修復に失敗した後に再度`project.finalizeDraft`を送ると、再び修復を試み、同じ応答の形で失敗する（状態が固定されない）。 |
+| AC-009.5 | FR-036.1 | `DiagnosticErrorCodeTests`の定義済みcode一覧に`project.runtime_unavailable`があり、canonicalで、`project.revision_conflict`の次に並ぶ。Web側`ProjectBridgeErrorCode`も同codeを受理する。 |
+| AC-009.6 | FR-036.6 | Web試験: `project.runtime_unavailable`のエラー表示が`message`を含み、「もう一度試す（自動で再確認）」を押すと`finalizeDraft`が1回呼ばれる。 |
+
+## AC\-010 案件一覧からの案件の新規作成と削除
+
+判定コマンド（リポジトリルートから、非対話。失敗時はexit code 0以外）:
+
+```
+dotnet build tests\HubRadio.Infrastructure.Tests tests\HubRadio.App.Tests tests\HubRadio.Core.Tests -c Release
+tests\HubRadio.Infrastructure.Tests\bin\Release\net10.0\HubRadio.Infrastructure.Tests.exe --filter "FullyQualifiedName~ProjectCreationDraftStoreTests|FullyQualifiedName~DatabaseMigratorTests|FullyQualifiedName~DiagnosticErrorCodeTests"
+tests\HubRadio.Core.Tests\bin\Release\net10.0\HubRadio.Core.Tests.exe --filter "FullyQualifiedName~PermissionTests"
+tests\HubRadio.App.Tests\bin\Release\net10.0-windows10.0.26100.0\win-x64\HubRadio.App.Tests.exe --filter "FullyQualifiedName~ProjectCreationServiceTests|FullyQualifiedName~WebBridgeSchemaTests"
+pwsh -NoProfile -Command 'Set-Location src/HubRadio.Web; npx vitest run src/features/projects src/bridge/projectProtocol.test.ts; exit $LASTEXITCODE'
+```
+
+| ID | 対応要求 | 期待結果 |
+| --- | --- | --- |
+| AC-010.1 | FR-037.1 | Web試験: 案件一覧に「新しい案件を作成」ボタンがあり（「元動画を選ぶ」は無い）、押すと`project.createDraft`が1回だけ送られ（paramsは`{}`）、`project.list`以外の要求は送られない。作成権限なし・処理中・非表示・他画面に未保存の変更があるときは無効で、押しても要求が送られない。案件が0件のときの文は「作成権限がある場合は「新しい案件を作成」から始められます。」。 |
+| AC-010.2 | FR-037.2 | Web試験（ProjectListCards）: `onDelete`を渡さない（作成権限なし）と「削除」ボタンは0個。渡すとカードごとに1個（3件なら3個）で、アクセシブルネームは「案件 2を削除」。案件名が無い案件は「名称未入力を削除」。`disabled`のときは無効で、押しても`onDelete`は呼ばれない。Web試験（ProjectWorkspace）: 処理中・非表示・他画面に未保存の変更があるときは無効、作成権限が無いときはボタンが存在せず、いずれも`confirm`も`deleteProject`も呼ばれない。 |
+| AC-010.3 | FR-037.3 | Web試験: 「削除」を押すと`confirm`が1回呼ばれ、文言が「案件「消す案件」を削除しますか？」と「元に戻せません」を含む。`confirm`がfalseのときは`deleteProject`が呼ばれない。trueのときは`deleteProject`が対象の下書きIDで1回だけ呼ばれ、`createDraft`・`loadDraft`は呼ばれない。 |
+| AC-010.4 | FR-037.4 | 結合試験（ProjectBridgeHandler）: 作成済みの下書きで`project.delete`を送ると、応答は`method`が`project.delete`、`result`が`{"deletedDraftId": <送ったID>, "filesRemoved": true}`だけ。同じIDをもう一度送ると`project.not_found`、存在しないIDも`project.not_found`、削除した下書きに`project.loadDraft`を送っても`project.not_found`。入口の検査（`BridgeProtocol.TryParseRequest`）は、`{"draftId": <正規UUID>}`だけを受理し、`{}`、余分なキー、大文字のUUID、UUIDでない文字列、nullを拒否する。`schemas/web-bridge.schema.json`は`project.delete`の要求・応答と、エラーcode `project.delete_blocked`を含み、`WebBridgeSchemaTests`が通る。Web側`parseProjectBridgeResponse`は、`result`が`{"deletedDraftId": <正規UUID>, "filesRemoved": <真偽値>}`だけの応答を受理し、空・`filesRemoved`の欠落や非真偽値・余分なキー・大文字のIDを拒否する。 |
+| AC-010.5 | FR-037.5 | `PermissionTests`: `Editor`だけが`DeleteProject`を許可され（許可の組合せは合計32）、他の6ロールは拒否される。結合試験: 権限のない利用者の`project.delete`は`project.not_authorized`で、案件は一覧に残る。サービス層は`AuthorizationException`（操作`DeleteProject`）を投げる。 |
+| AC-010.6 | FR-037.6 | `ProjectCreationDraftStoreTests`: 削除した下書きは`ListDrafts`と`GetDraft`から消え、他の下書きは残り、削除済みの下書きへの`SaveDraft`と2回目の`DeleteDraft`は`InvalidOperationException`になる。`project_creation_drafts`の行数は削除前後で同じ。`DELETE FROM project_creation_draft_deletions`と`UPDATE`はSQLiteの例外で失敗する。確定済みの案件を削除しても`projects`の行は残り、一覧には出ない。`DatabaseMigratorTests`: 最新のschema versionは13、表`project_creation_draft_deletions`と2つのトリガが存在し、version 12までの既存DBは既存の行を保ったまま13へ移行する。`ProjectCreationServiceTests`: 削除済みの下書きへの`SaveDraft`は`ProjectCreationException`（`DraftNotFound`）になる。 |
+| AC-010.7 | FR-037.7 | `ProjectCreationDraftStoreTests`: 確定済みの案件に`running`のjobがあると`DeleteDraft`はfalseを返し、削除の記録は0行のままで、下書きは`GetDraft`で読める。`queued`のjobだけの案件は削除できる。結合試験: `running`のjobがある案件の`project.delete`は`project.delete_blocked`（日本語の`message`）を返す。 |
+| AC-010.8 | FR-037.8 | Web試験（projectState）: 対応するリクエストIDの`project.delete`応答だけが、一覧から該当の案件を取り除く。他の案件の並び順は変わらず、別のリクエストIDの応答は状態を変えない。`filesRemoved`が`false`の応答では、案件を取り除いたうえで`notice`に所定の文が入り、`error`は`null`。次の要求を始めると`notice`は`null`に戻る。`project.delete_blocked`の応答では一覧が変わらず、`state.error.code`が`project.delete_blocked`になる。 |
+| AC-010.9 | FR-037.9 | `ProjectCreationDraftStoreTests`: 新しい`ProjectCreationDraftStore`（同じDBファイル）で開き直しても、削除した下書きは一覧に出ない。2回目の削除は`project.not_found`（AC-010.4）。 |
+| AC-010.11 | FR-037.10 | `ProjectWorkspaceFileRemoverTests`: 対象の案件のディレクトリ（入れ子のファイルを含む）が消え、別の案件のディレクトリと`hubradio.db`が残る。ディレクトリが無い案件の削除は成功（true）。対象ディレクトリがリンクのとき、リンクだけが消えてリンク先のファイルが残る（シンボリックリンクを作れない環境ではInconclusive）。`ProjectCreationServiceTests`: 確定済みの案件の削除でだけファイル削除の処理が、その案件のIDで1回呼ばれ、未確定の下書きの削除では呼ばれない。 |
+| AC-010.12 | FR-037.11 | `ProjectWorkspaceFileRemoverTests`: 開いている（共有なしで読み取り中の）ファイルがあるとfalseを返し、閉じたあとの再実行でtrueを返してディレクトリが消える。`ProjectCreationServiceTests`: ファイル削除が失敗（false）でも案件は一覧から消え、`DeleteProject`はfalseを返す。 |
+| AC-010.13 | FR-037.11 | Web試験（ProjectWorkspace）: `notice`があると`.permission-note`に文が表示され、無いと表示されない。確認ダイアログの文言が「作業ファイルと、アプリの保存領域に書き出したファイルも削除されます」と「選んだ元の動画ファイルは削除されません」を含む。 |
+| AC-010.10 | FR-037.1〜FR-037.9（手動） | 手順: 実アプリで案件一覧を開き、「新しい案件を作成」で動画を選んで案件を作る。一覧へ戻り、その案件の「削除」を押して確認で「OK」する。期待: 案件が一覧から消え、アプリを再起動しても出てこない。選んだ元の動画ファイルは消えず、アプリのワークスペースの`projects\<案件ID>`が無くなる。証跡: 操作前後の一覧の画面。未実施の場合は`NOT EVALUATED`とし、PASSとしない。 |
+
+## AC\-011 設定画面の各項目のやさしい説明
+
+判定コマンド（リポジトリルートから、非対話。失敗時はexit code 0以外）:
+
+```
+pwsh -NoProfile -Command 'Set-Location src/HubRadio.Web; npx vitest run src/features/settings; npm run typecheck; exit $LASTEXITCODE'
+```
+
+| ID | 対応要求 | 期待結果 |
+| --- | --- | --- |
+| AC-011.1 | FR-038.1 | `SettingInspector.test.tsx`: `output.directPostingEnabled`を選ぶと、`details`の外に`section.setting-help`があり、レベル4の見出しが「やさしい説明：直接投稿」、「これは何の設定？」「変えるとどうなる？」と共通の案内文を含む。見出しのidが`aria-labelledby`で結ばれている。 |
+| AC-011.2 | FR-038.2 | `settingHelp.test.ts`: `1.0.0.json`の項目数は123で、説明を持つキーの集合がprofileのキーの集合と一致する。123項目それぞれで、日本語名が空でなく、2つの文が20字以上・前後に空白なし・ひらがなまたはカタカナを含む・句点で終わる。 |
+| AC-011.3 | FR-038.3（手動確認を含む） | 手順: `src/HubRadio.Web/src/features/settings/settingHelp*.ts`の説明を、`1.0.0.json`の初期値・単位・最小値・最大値・選択肢・用途と照らし合わせる。期待: 矛盾が無く、専門用語に意味が添えられ、行わないことを行うとは書いていない。証跡: レビュー記録。未実施の場合は`NOT EVALUATED`とし、PASSとしない。 |
+| AC-011.4 | FR-038.4 | `settingHelp.test.ts`と`SettingInspector.test.tsx`: 説明の無いキーでは、表示名の見出しと「まだ用意されていません」を含む汎用の文が出る。`constructor`のような`Object`由来の名前のキーも汎用の文になる。 |
+| AC-011.5 | FR-038.5 | `git diff`が`src/HubRadio.App/DefaultSettings/Profiles/1.0.0.json`、設定のbridgeプロトコル（`settingsProtocol.ts`、`SettingsBridge.cs`）を含まない。既存の設定画面の試験（`npx vitest run src/features/settings`）が全て通る。 |
+| AC-011.6 | FR-038.6 | 既存の設定画面の試験（フォーカス順、キーボード操作、保存・初期値へ戻す）が変更なく全て通り、`section.setting-help`の中に`button`・`input`・`a`が無い。`npm run test:accessibility`が通る。 |
+
 ---
 
 # 16\. 優先順位
@@ -1448,6 +1589,9 @@ Web試験は既存試験がファイルを`src/HubRadio.Web`基準で読むた�
 - 強調テロップ
 - ニュートラルtemplateと任意のオープニング、エンディング
 - 生成済み動画へのOpening／Closing動画の結合（FR-035、仕上がり画面と結合CLI）
+- 編集開始の失敗の原因と対処の提示、および自動修復（FR-036）
+- 案件一覧からの案件の新規作成と削除（FR-037）
+- 設定画面の各項目の、初心者向けのやさしい説明（FR-038）
 - `Music/`の社内限定BGM
 - 音量測定と版付きloudness profile
 - プレビュー
@@ -1599,6 +1743,30 @@ source-only vertical sliceの最終受入では、利用者が利用を許可し
 | A-035-13 | [ASSUMPTION] | GUIの権限は既存の`ExportComposition`とし、同時実行は1件、Web側の待ち時間は`stitch.pickClip`600秒・`stitch.run`3660秒（process timeout 3600秒＋60秒）とする | 結合はローカルへの書き出し操作であり、既存の権限表でEditorに許可されている。複数同時実行はCPU・diskを競合させる | 2件目は`busy`で待つ必要がある | 並行実行や別権限が要求された場合 |
 
 競合: なし（FR-015の「quick startではオープニング動画を無効」とFR-035は、FR-035が生成後の明示的な別操作であり既定の生成内容を変えないため両立する）。TBD／BLOCKED: なし。
+
+## 19.2 FR-036の仮定・未解決事項
+
+| ID | 種別 | 内容 | 根拠 | 影響 | 覆す条件 |
+| --- | --- | --- | --- | --- | --- |
+| A-036-01 | [ASSUMPTION] | 依頼のpath `docs\requirements-definition.md`は存在しないため、既存の正本である本書`docs/requirement-definition.md`を更新した（A-035-10と同じ判断） | 正本を2つに分けると要求が食い違う | 依頼のpathでは本書が見つからない | 利用者がファイル名の変更を指示した場合 |
+| A-036-02 | [ASSUMPTION] | 利用者のスクリーンショットだけからは依存の種別を特定できないため、原因は「同梱の実行基盤が使えない、または初期化・復旧が未完了」の全パターンを区別して提示する。調査時点の`src\HubRadio.App\bin\Debug`には`Tools`・`Worker`・`Fonts`が無く、`bin\Release`にはある（2026-10-03確認）ため、Debug構成からの起動が最有力の原因とみなす | アプリは起動時の診断をログに残しておらず、利用者環境の実行基盤の状態を後から確認できない | 他の原因（例: ファイルの掴み）は同じ表示と自動再確認で扱う | 利用者環境の診断で別の原因が判明した場合は、FR-036.5の表に原因を追加する |
+| A-036-03 | [ASSUMPTION] | 自動修復は1操作につき1回だけ行い、欠けた同梱物の自動取得・複製は行わない | 同梱物はdigestで固定された配布物であり、実行時の取得・生成は完全性とライセンスの検証方針に反する（安全側） | 開発ビルドでは利用者が同梱物を用意する必要がある | 配布方針が変わり、実行時取得が承認された場合 |
+
+競合・TBD・BLOCKED: なし。
+
+## 19.3 FR-037／FR-038の仮定・未解決事項
+
+| ID | 種別 | 内容 | 根拠 | 影響 | 覆す条件 |
+| --- | --- | --- | --- | --- | --- |
+| A-037-01 | [ASSUMPTION] | 依頼のpath `docs\requirements-definition.md`は存在しないため、既存の正本である本書`docs/requirement-definition.md`を更新した（A-035-10、A-036-01と同じ判断） | 正本を2つに分けると要求が食い違う | 依頼のpathでは本書が見つからない | 利用者がファイル名の変更を指示した場合 |
+| A-037-02 | [ASSUMPTION] | DBの行は消さない論理削除とする。ディスク上は、案件のワークスペース内のディレクトリ`projects\<案件ID>`だけを消し、ワークスペースの外（元動画を含む）は消さない（当初は「ファイルは消さない」としたが、2026-10-03の「ファイルまで消したい」依頼で変更） | DBは監査記録・job履歴を外部キーで参照しており、物理削除は履歴を壊す。アプリが作ったファイルは全て`projects\<案件ID>`の下にあり（`ArtifactStore`、納品、staging等）、利用者のファイルは含まれない。元動画は利用者が選んだ場所のファイルであり、アプリのものではない | 削除したファイルは復元できない（確認ダイアログで明示）。DBの行は残るため、DBの容量は減らない | 元動画の消去、DBの行の物理削除、ワークスペースの外の納品先の消去が要求された場合は、別要求として定義する |
+| A-037-06 | [ASSUMPTION] | ファイルの削除に失敗したときは、案件を一覧から消したまま失敗を通知し、再削除は自動では行わない（利用者がファイルを使っているアプリを閉じて、手動で`projects\<案件ID>`を削除する） | 先にDBへ記録して案件を確実に隠し、そのあとでファイルを消す順序にすると、途中で失敗しても「一覧にあるのにファイルが無い」不整合が起きない。再削除の対象を一覧に出す画面は、依頼にない | 失敗時はディスクにファイルが残る | 残ったファイルの自動再削除や一覧表示が要求された場合 |
+| A-037-03 | [ASSUMPTION] | 削除を拒否する条件は、確定済みの案件に状態`running`のjobがあることだけとする | 実行中の処理が、削除済みの案件を読み書きして不整合になることを防ぐ最小の条件。`queued`のjobは、削除後は実行されないまま残る | `queued`のjobは削除後も動く可能性がある | 実行待ちのjobも妨げる、または取り消す方針が示された場合 |
+| A-037-04 | [ASSUMPTION] | 「削除」ボタンの表示は、一覧応答の`canCreate`（作成権限）で決める。権限の最終判断はホストの`DeleteProject`が行う | 一覧応答に削除権限の項目を追加すると、bridgeの応答形を変えることになる。現行の権限表では`CreateProject`と`DeleteProject`は同じロール（Editor）だけに許可する | 将来、権限表で2つが分かれると、表示と実際の可否が食い違う（押すと`project.not_authorized`になる） | 権限表で両者を分ける場合は、一覧応答に`canDelete`を追加する |
+| A-037-05 | [ASSUMPTION] | 主ボタンの文言を「新しい案件を作成」に変え、操作（`project.createDraft`）は変えない。新規作成の別の経路（空の案件を先に作る等）は設けない | 既存の主ボタンが案件の新規作成を担っており、source-onlyの方針（元動画1本の選択だけで始める）を保つ。依頼の「新規に作成する機能」は、名前の分かりやすさの問題と判断した | 画面の文言が変わるため、ガイド（`docs/beginner-guide.md`、`docs/ui-workflow-guide.md`）も更新した | 元動画を選ばずに空の案件を作る機能が要求された場合は、新しい要求として定義する |
+| A-038-01 | [ASSUMPTION] | 説明文はWeb側の静的な表（`settingHelp*.ts`）に置き、profile・digest・bridgeは変更しない。説明の元は、profileの初期値・単位・範囲・英語の用途と、本書の各要求である | profile（`contentDigest`）の変更は版・digest・既存の保存済みsnapshotに影響する。画面の説明だけならWebの変更で済む | 新しい設定項目を追加するときは、説明も追加する（無い場合は汎用の文を表示し、試験が失敗して気づける） | profile内に日本語の説明を持たせる方針が示された場合 |
+
+競合・TBD・BLOCKED: なし。
 
 ---
 

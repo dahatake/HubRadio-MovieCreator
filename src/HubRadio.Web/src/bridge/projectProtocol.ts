@@ -9,6 +9,7 @@ export const PROJECT_LOAD_DRAFT_METHOD = 'project.loadDraft' as const
 export const PROJECT_SAVE_DRAFT_METHOD = 'project.saveDraft' as const
 export const PROJECT_PICK_SOURCE_METHOD = 'project.pickSource' as const
 export const PROJECT_FINALIZE_DRAFT_METHOD = 'project.finalizeDraft' as const
+export const PROJECT_DELETE_METHOD = 'project.delete' as const
 export const MAX_BRIDGE_REQUEST_UTF8_BYTES =
   BRIDGE_MAX_PROJECT_REQUEST_UTF8_BYTES
 
@@ -19,6 +20,7 @@ export type ProjectBridgeMethod =
   | typeof PROJECT_SAVE_DRAFT_METHOD
   | typeof PROJECT_PICK_SOURCE_METHOD
   | typeof PROJECT_FINALIZE_DRAFT_METHOD
+  | typeof PROJECT_DELETE_METHOD
 
 export type PublicationScope =
   | 'internalOnly'
@@ -145,6 +147,10 @@ export type ProjectFinalizeDraftRequest = ProjectRequestBase<
   typeof PROJECT_FINALIZE_DRAFT_METHOD,
   { draftId: string; expectedRevision: number; input: ProjectDraftInput }
 >
+export type ProjectDeleteRequest = ProjectRequestBase<
+  typeof PROJECT_DELETE_METHOD,
+  { draftId: string }
+>
 
 export type ProjectBridgeRequest =
   | ProjectListRequest
@@ -153,6 +159,7 @@ export type ProjectBridgeRequest =
   | ProjectSaveDraftRequest
   | ProjectPickSourceRequest
   | ProjectFinalizeDraftRequest
+  | ProjectDeleteRequest
 
 export interface ProjectListResponse {
   readonly version: typeof BRIDGE_PROTOCOL_VERSION
@@ -185,15 +192,24 @@ export interface ProjectPickSourceResponse {
   readonly result: Readonly<{ candidateId: string | null }>
 }
 
+export interface ProjectDeleteResponse {
+  readonly version: typeof BRIDGE_PROTOCOL_VERSION
+  readonly requestId: string
+  readonly method: typeof PROJECT_DELETE_METHOD
+  readonly result: Readonly<{ deletedDraftId: string; filesRemoved: boolean }>
+}
+
 export type ProjectBridgeErrorCode =
   | 'project.already_finalized'
   | 'project.catalog_unavailable'
+  | 'project.delete_blocked'
   | 'project.incomplete'
   | 'project.invalid_request'
   | 'project.not_authorized'
   | 'project.not_found'
   | 'project.operation_failed'
   | 'project.revision_conflict'
+  | 'project.runtime_unavailable'
   | 'project.settings_mismatch'
   | 'project.settings_unavailable'
   | 'project.source_selection_canceled'
@@ -214,6 +230,7 @@ export type ProjectBridgeResponse =
   | ProjectListResponse
   | ProjectDraftResponse
   | ProjectPickSourceResponse
+  | ProjectDeleteResponse
   | ProjectBridgeErrorResponse
 
 export function createProjectListRequest(requestId: string): ProjectListRequest {
@@ -277,6 +294,20 @@ export function createProjectPickSourceRequest(
 ): ProjectPickSourceRequest {
   requireEntityId(requestId, 'A bridge request ID')
   return createEmptyRequest(requestId, PROJECT_PICK_SOURCE_METHOD)
+}
+
+export function createProjectDeleteRequest(
+  requestId: string,
+  draftId: string,
+): ProjectDeleteRequest {
+  requireEntityId(requestId, 'A bridge request ID')
+  requireEntityId(draftId, 'A project draft ID')
+  return Object.freeze({
+    version: BRIDGE_PROTOCOL_VERSION,
+    requestId,
+    method: PROJECT_DELETE_METHOD,
+    params: Object.freeze({ draftId }),
+  })
 }
 
 export function parseProjectDraftInput(value: unknown): ProjectDraftInput | null {
@@ -368,6 +399,8 @@ export function parseProjectBridgeResponse(value: unknown): ProjectBridgeRespons
       return parseDraftResult(value, value.method)
     case PROJECT_PICK_SOURCE_METHOD:
       return parsePickSourceResult(value)
+    case PROJECT_DELETE_METHOD:
+      return parseDeleteResult(value)
   }
 }
 
@@ -496,6 +529,30 @@ function parsePickSourceResult(
     requestId: value.requestId as string,
     method: PROJECT_PICK_SOURCE_METHOD,
     result: Object.freeze({ candidateId: result.candidateId }),
+  })
+}
+
+function parseDeleteResult(
+  value: Record<string, unknown>,
+): ProjectDeleteResponse | null {
+  const result = value.result
+  if (
+    value.method !== PROJECT_DELETE_METHOD ||
+    !isRecordWithExactKeys(result, ['deletedDraftId', 'filesRemoved']) ||
+    !isEntityId(result.deletedDraftId) ||
+    typeof result.filesRemoved !== 'boolean'
+  ) {
+    return null
+  }
+
+  return Object.freeze({
+    version: BRIDGE_PROTOCOL_VERSION,
+    requestId: value.requestId as string,
+    method: PROJECT_DELETE_METHOD,
+    result: Object.freeze({
+      deletedDraftId: result.deletedDraftId,
+      filesRemoved: result.filesRemoved,
+    }),
   })
 }
 
@@ -889,6 +946,7 @@ const projectBridgeMethods = new Set<ProjectBridgeMethod>([
   PROJECT_SAVE_DRAFT_METHOD,
   PROJECT_PICK_SOURCE_METHOD,
   PROJECT_FINALIZE_DRAFT_METHOD,
+  PROJECT_DELETE_METHOD,
 ])
 
 const publicationScopes = new Set<PublicationScope>([
@@ -922,12 +980,14 @@ const missingFields = new Set<ProjectCreationMissingField>([
 const projectBridgeErrorCodes = new Set<ProjectBridgeErrorCode>([
   'project.already_finalized',
   'project.catalog_unavailable',
+  'project.delete_blocked',
   'project.incomplete',
   'project.invalid_request',
   'project.not_authorized',
   'project.not_found',
   'project.operation_failed',
   'project.revision_conflict',
+  'project.runtime_unavailable',
   'project.settings_mismatch',
   'project.settings_unavailable',
   'project.source_selection_canceled',

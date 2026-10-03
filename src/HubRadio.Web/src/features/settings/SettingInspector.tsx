@@ -1,5 +1,6 @@
 import { useId, type FormEvent } from 'react'
 import { AppIcon } from '../../components/AppIcons'
+import { getSettingHelp, settingHelpAdvice } from './settingHelp'
 import { parseValue, type SettingDefinition, type SettingValue } from './settingsProtocol'
 
 export interface SettingInspectorProps {
@@ -20,6 +21,7 @@ export interface SettingInspectorProps {
 export function SettingInspector({ definition, value, initialValue, draft, scope, profileVersion, disabled, onChange, onSave, onReset }: SettingInspectorProps) {
   const id = `setting-inspector-${useId()}`
   const unit = unitSuffix(definition)
+  const help = getSettingHelp(definition)
   const changed = !sameValue(draft, value)
   const differsFromInitial = !sameValue(value, initialValue)
   const error = validationMessage(definition, draft)
@@ -38,6 +40,14 @@ export function SettingInspector({ definition, value, initialValue, draft, scope
         <h3 id={`${id}-title`}>{definition.displayName}{definition.isAdvanced && <span className="setting-badge">詳細</span>}</h3>
         <p>{scope === 'global' ? '新しい動画の既定値' : 'この動画'}</p>
       </div>
+      <section className="setting-help" aria-labelledby={`${id}-help-title`}>
+        <h4 id={`${id}-help-title`}>やさしい説明：{help.label}</h4>
+        <dl>
+          <div><dt>これは何の設定？</dt><dd>{help.what}</dd></div>
+          <div><dt>変えるとどうなる？</dt><dd>{help.effect}</dd></div>
+        </dl>
+        <p className="setting-help-advice">{settingHelpAdvice}</p>
+      </section>
       <dl className="setting-value-summary setting-current-value" tabIndex={0} aria-label="保存済みの現在値"><div><dt>現在値</dt><dd>{formatValue(value)}{unit}</dd></div></dl>
       <div className="field-group">
         {draft.kind === 'textList'

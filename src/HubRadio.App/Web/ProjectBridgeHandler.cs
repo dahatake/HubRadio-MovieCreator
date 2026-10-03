@@ -13,12 +13,16 @@ internal sealed class ProjectBridgeHandler
     private readonly ProjectCreationService service;
     private readonly Func<EntityId<ProjectIdTag>, CancellationToken, Task>? restoreAfterReadAsync;
 
+    private readonly Func<CancellationToken, Task<bool>>? repairRuntimeAsync;
+
     internal ProjectBridgeHandler(ProjectCreationService service,
-        Func<EntityId<ProjectIdTag>, CancellationToken, Task>? restoreAfterReadAsync = null)
+        Func<EntityId<ProjectIdTag>, CancellationToken, Task>? restoreAfterReadAsync = null,
+        Func<CancellationToken, Task<bool>>? repairRuntimeAsync = null)
     {
         ArgumentNullException.ThrowIfNull(service);
         this.service = service;
         this.restoreAfterReadAsync = restoreAfterReadAsync;
+        this.repairRuntimeAsync = repairRuntimeAsync;
     }
 
     internal async Task<string> HandleAsync(
@@ -47,17 +51,14 @@ internal sealed class ProjectBridgeHandler
                             ReadDraftId(request),
                             ReadExpectedRevision(request),
                             request.Parameters.GetProperty("input"))),
+                BridgeMethod.DeleteProject =>
+                    DeleteProject(request),
                 BridgeMethod.PickSource =>
                     WritePickedSource(
                         request,
                         await service.PickSourceAsync(cancellationToken)),
                 BridgeMethod.FinalizeDraft =>
-                    WriteDraft(
-                        request,
-                        service.FinalizeDraft(
-                            ReadDraftId(request),
-                            ReadExpectedRevision(request),
-                            request.Parameters.GetProperty("input"))),
+                    WriteDraft(request, await FinalizeWithRepairAsync(request, cancellationToken)),
                 _ => BridgeProtocol.CreateErrorResponse(
                     request,
                     StableErrorCodes.ProjectInvalidRequest),
@@ -79,11 +80,17 @@ internal sealed class ProjectBridgeHandler
                 request,
                 StableErrorCodes.ProjectRevisionConflict);
         }
-        catch (SourceOnlyApplicationDependencyException)
+        catch (SourceOnlyApplicationDependencyException exception)
         {
             // Keep the existing response schema: no private paths or dependency
             // exception text, and critically no finalized draft/result on failure.
-            return BridgeProtocol.CreateErrorResponse(request, StableErrorCodes.ProjectOperationFailed);
+            return BridgeProtocol.CreateErrorResponse(
+                request,
+                StableErrorCodes.ProjectRuntimeUnavailable,
+                SourceOnlyDependencyGuidance.Describe(
+                    exception.Dependency,
+                    repairAttempted: repairRuntimeAsync is not null &&
+                        request.Method == BridgeMethod.FinalizeDraft));
         }
         catch (ProjectCreationException exception)
         {
@@ -99,6 +106,8 @@ internal sealed class ProjectBridgeHandler
                         StableErrorCodes.ProjectIncomplete,
                     ProjectCreationFailureReason.SourceReselectionRequired =>
                         StableErrorCodes.ProjectSourceReselectionRequired,
+                    ProjectCreationFailureReason.DeleteBlockedByRunningJob =>
+                        StableErrorCodes.ProjectDeleteBlocked,
                     _ => StableErrorCodes.ProjectOperationFailed,
                 });
         }
@@ -133,6 +142,58 @@ internal sealed class ProjectBridgeHandler
             return BridgeProtocol.CreateErrorResponse(
                 request,
                 StableErrorCodes.ProjectOperationFailed);
+        }
+    }
+
+    private string DeleteProject(BridgeRequest request)
+    {
+        EntityId<ProjectCreationDraftIdTag> draftId = ReadDraftId(request);
+        bool filesRemoved = service.DeleteProject(draftId);
+        return BridgeProtocol.CreateResultResponse(
+            request,
+            writer =>
+            {
+                writer.WriteStartObject();
+                writer.WriteString("deletedDraftId", draftId.ToString());
+                writer.WriteBoolean("filesRemoved", filesRemoved);
+                writer.WriteEndObject();
+            });
+    }
+
+    // Accept fails before any state changes, so one repair-and-retry cannot double-start work.
+    private async Task<ProjectCreationDraftView> FinalizeWithRepairAsync(
+        BridgeRequest request,
+        CancellationToken cancellationToken)
+    {
+        EntityId<ProjectCreationDraftIdTag> draftId = ReadDraftId(request);
+        int expectedRevision = ReadExpectedRevision(request);
+        JsonElement input = request.Parameters.GetProperty("input");
+        try
+        {
+            return service.FinalizeDraft(draftId, expectedRevision, input);
+        }
+        catch (SourceOnlyApplicationDependencyException) when (repairRuntimeAsync is not null)
+        {
+            bool repaired;
+            try
+            {
+                repaired = await repairRuntimeAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                repaired = false;
+            }
+
+            if (!repaired)
+            {
+                throw;
+            }
+
+            return service.FinalizeDraft(draftId, expectedRevision, input);
         }
     }
 

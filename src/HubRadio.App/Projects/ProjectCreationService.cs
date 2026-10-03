@@ -16,6 +16,7 @@ internal enum ProjectCreationFailureReason
     DraftAlreadyFinalized,
     DraftIncomplete,
     SourceReselectionRequired,
+    DeleteBlockedByRunningJob,
 }
 
 internal sealed class ProjectCreationException : InvalidOperationException
@@ -39,6 +40,8 @@ internal sealed class ProjectCreationException : InvalidOperationException
                 "The project creation draft is incomplete.",
             ProjectCreationFailureReason.SourceReselectionRequired =>
                 "The source media must be selected again.",
+            ProjectCreationFailureReason.DeleteBlockedByRunningJob =>
+                "The project cannot be deleted while a job is running.",
             _ => "The project creation operation failed.",
         };
 }
@@ -287,6 +290,28 @@ internal sealed class ProjectCreationService
         StoredProjectCreationDraft stored = GetRequiredDraft(draftId);
         StoredProjectPayload payload = ParseStored(stored);
         return BuildView(stored, payload.Draft, payload.SourceOnly);
+    }
+
+    /// <summary>
+    /// Removes a finalized project's workspace files after the deletion is recorded.
+    /// Returns true when nothing is left; null means the host does not manage files.
+    /// </summary>
+    internal Func<EntityId<ProjectIdTag>, bool>? ProjectFilesRemover { get; set; }
+
+    /// <returns>False when the project is hidden but some of its workspace files could not be removed.</returns>
+    internal bool DeleteProject(
+        EntityId<ProjectCreationDraftIdTag> draftId)
+    {
+        ArgumentNullException.ThrowIfNull(draftId);
+        _ = Demand(AuthorizationOperation.DeleteProject);
+        EntityId<ProjectIdTag>? projectId = GetRequiredDraft(draftId).FinalizedProjectId;
+        if (!draftStore.DeleteDraft(draftId, GetUtcNow()))
+        {
+            throw new ProjectCreationException(
+                ProjectCreationFailureReason.DeleteBlockedByRunningJob);
+        }
+
+        return projectId is null || ProjectFilesRemover is null || ProjectFilesRemover(projectId);
     }
 
     internal ProjectCreationDraftView SaveDraft(

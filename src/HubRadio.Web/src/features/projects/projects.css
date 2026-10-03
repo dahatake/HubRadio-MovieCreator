@@ -168,3 +168,17 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+.project-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.25rem;
+}
+
+.danger-button {
+  min-height: 2.5rem;
+  padding: 0.25rem 0.75rem;
+  color: var(--cp-danger);
+  background: var(--cp-surface);
+  border-color: var(--cp-danger);
+}

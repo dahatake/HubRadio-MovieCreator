@@ -343,7 +343,7 @@ describe('WorkflowWorkspace UX-039A', () => {
   it('uses the confirmed source-only draft for the name and plans without fabricating a job, version, preview or files', async () => {
     const h = await mount()
     await h.reply(h.last('project.list'), listResult())
-    await h.click('元動画を選ぶ')
+    await h.click('新しい案件を作成')
     expect(h.last('project.createDraft').params).toEqual({})
     const draft = sourceOnlyDraft(false)
     await h.reply(h.last('project.createDraft'), { draft })
@@ -385,7 +385,7 @@ describe('WorkflowWorkspace UX-039A', () => {
   it('does not let changed global defaults replace a fixed source-only summary', async () => {
     const h = await mount()
     await h.reply(h.last('project.list'), listResult())
-    await h.click('元動画を選ぶ')
+    await h.click('新しい案件を作成')
     await h.reply(h.last('project.createDraft'), { draft: sourceOnlyDraft(false) })
     await h.selectStep('results')
     const gallery = h.element('.result-gallery')

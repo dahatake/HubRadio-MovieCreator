@@ -32,6 +32,7 @@ public enum AuthorizationOperation
     ConfigureWorkspaceStorage,
     PublishTemplateVersion,
     ViewAuditLog,
+    DeleteProject,
 }
 
 public static class PermissionMatrix
@@ -51,6 +52,7 @@ public static class PermissionMatrix
             (AuthorizationRole.Editor, AuthorizationOperation.ViewProject) => true,
             (AuthorizationRole.Editor, AuthorizationOperation.PreviewProject) => true,
             (AuthorizationRole.Editor, AuthorizationOperation.CreateProject) => true,
+            (AuthorizationRole.Editor, AuthorizationOperation.DeleteProject) => true,
             (AuthorizationRole.Editor, AuthorizationOperation.DecideAnalysisSuggestion) => true,
             (AuthorizationRole.Editor, AuthorizationOperation.CreateCompositionVersion) => true,
             (AuthorizationRole.Editor, AuthorizationOperation.SubmitForReview) => true,

@@ -10,12 +10,14 @@ public static class StableErrorCodes
     public const string ProcessStartFailed = ProcessStartException.StableErrorCode;
     public const string ProjectAlreadyFinalized = "project.already_finalized";
     public const string ProjectCatalogUnavailable = "project.catalog_unavailable";
+    public const string ProjectDeleteBlocked = "project.delete_blocked";
     public const string ProjectIncomplete = "project.incomplete";
     public const string ProjectInvalidRequest = "project.invalid_request";
     public const string ProjectNotAuthorized = "project.not_authorized";
     public const string ProjectNotFound = "project.not_found";
     public const string ProjectOperationFailed = "project.operation_failed";
     public const string ProjectRevisionConflict = "project.revision_conflict";
+    public const string ProjectRuntimeUnavailable = "project.runtime_unavailable";
     public const string ProjectSettingsMismatch = "project.settings_mismatch";
     public const string ProjectSettingsUnavailable = "project.settings_unavailable";
     public const string ProjectSourceSelectionCanceled =
@@ -42,12 +44,14 @@ public static class StableErrorCodes
         ProcessStartFailed,
         ProjectAlreadyFinalized,
         ProjectCatalogUnavailable,
+        ProjectDeleteBlocked,
         ProjectIncomplete,
         ProjectInvalidRequest,
         ProjectNotAuthorized,
         ProjectNotFound,
         ProjectOperationFailed,
         ProjectRevisionConflict,
+        ProjectRuntimeUnavailable,
         ProjectSettingsMismatch,
         ProjectSettingsUnavailable,
         ProjectSourceSelectionCanceled,
@@ -74,12 +78,14 @@ public static class StableErrorCodes
         string.Equals(code, ProcessStartFailed, StringComparison.Ordinal) ||
         string.Equals(code, ProjectAlreadyFinalized, StringComparison.Ordinal) ||
         string.Equals(code, ProjectCatalogUnavailable, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectDeleteBlocked, StringComparison.Ordinal) ||
         string.Equals(code, ProjectIncomplete, StringComparison.Ordinal) ||
         string.Equals(code, ProjectInvalidRequest, StringComparison.Ordinal) ||
         string.Equals(code, ProjectNotAuthorized, StringComparison.Ordinal) ||
         string.Equals(code, ProjectNotFound, StringComparison.Ordinal) ||
         string.Equals(code, ProjectOperationFailed, StringComparison.Ordinal) ||
         string.Equals(code, ProjectRevisionConflict, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectRuntimeUnavailable, StringComparison.Ordinal) ||
         string.Equals(code, ProjectSettingsMismatch, StringComparison.Ordinal) ||
         string.Equals(code, ProjectSettingsUnavailable, StringComparison.Ordinal) ||
         string.Equals(code, ProjectSourceSelectionCanceled, StringComparison.Ordinal) ||

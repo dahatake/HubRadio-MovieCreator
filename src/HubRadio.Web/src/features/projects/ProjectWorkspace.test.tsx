@@ -223,7 +223,7 @@ describe('ProjectWorkspace', () => {
 
     expect(markup).toContain('案件を作成する権限がありません')
     expect(markup).toMatch(
-      /<button[^>]*disabled=""[^>]*>元動画を選ぶ<\/button>/,
+      /<button[^>]*disabled=""[^>]*>新しい案件を作成<\/button>/,
     )
   })
 
@@ -532,6 +532,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
       refresh: vi.fn(),
       createDraft: vi.fn(),
       loadDraft: vi.fn(),
+      deleteProject: vi.fn(),
       updateInput: vi.fn(),
       saveDraft: vi.fn(),
       pickSource: vi.fn(),
@@ -543,7 +544,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
 
   function expectNoOperations(props: ProjectStateContextValue): void {
     for (const name of [
-      'refresh', 'createDraft', 'loadDraft', 'updateInput', 'saveDraft',
+      'refresh', 'createDraft', 'loadDraft', 'deleteProject', 'updateInput', 'saveDraft',
       'pickSource', 'finalizeDraft', 'closeDraft', 'clearError',
     ] as const) {
       expect(props[name]).not.toHaveBeenCalled()
@@ -611,7 +612,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     }
     renderView(props)
     const user = userEvent.setup({ document })
-    for (const name of ['元動画を選ぶ', '案件 1を開く', '次のページ']) {
+    for (const name of ['新しい案件を作成', '案件 1を開く', '次のページ']) {
       expect(button(name).disabled).toBe(true)
       await act(async () => user.click(button(name)))
     }
@@ -624,10 +625,69 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     }
 
     renderView({ ...props, active: true, navigationBlocked: false, state: { ...props.state, pending: null } })
-    expect(button('元動画を選ぶ').disabled).toBe(false)
+    expect(button('新しい案件を作成').disabled).toBe(false)
     expect(button('案件 1を開く').disabled).toBe(false)
     await act(async () => user.click(button('案件 1を開く')))
     expect(props.loadDraft).toHaveBeenCalledExactlyOnceWith(props.state.projects[0]!.draftId)
+  })
+
+  it('deletes a listed project only after the user confirms', async () => {
+    const props = callbacks({
+      ...initialProjectState,
+      canCreate: true,
+      projects: [projectListItem('消す案件'), { ...projectListItem('残す案件'), draftId: '21112222-3333-4444-8555-666677778888' }],
+    })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderView(props)
+    const user = userEvent.setup({ document })
+
+    await act(async () => user.click(button('消す案件を削除')))
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(confirm.mock.calls[0]![0]).toContain('案件「消す案件」を削除しますか？')
+    expect(confirm.mock.calls[0]![0]).toContain('元に戻せません')
+    expect(confirm.mock.calls[0]![0]).toContain('作業ファイルと、アプリの保存領域に書き出したファイルも削除されます')
+    expect(confirm.mock.calls[0]![0]).toContain('選んだ元の動画ファイルは削除されません')
+    expectNoOperations(props)
+
+    confirm.mockReturnValue(true)
+    await act(async () => user.click(button('消す案件を削除')))
+    expect(props.deleteProject).toHaveBeenCalledExactlyOnceWith(draftId)
+    expect(props.createDraft).not.toHaveBeenCalled()
+    expect(props.loadDraft).not.toHaveBeenCalled()
+  })
+
+  it('shows a status notice when the project was deleted but some files remain', () => {
+    renderView(callbacks({ ...initialProjectState, notice: '一部のファイルを削除できませんでした。' }))
+    expect(container.querySelector('.permission-note')?.textContent).toBe('一部のファイルを削除できませんでした。')
+    renderView(callbacks(initialProjectState))
+    expect(container.querySelector('.permission-note')).toBeNull()
+  })
+
+  it.each(['pending', 'other editor dirty', 'inactive', 'no authority'] as const)('offers no working delete while %s', async (reason) => {
+    const props: ProjectWorkspaceViewProps = {
+      ...callbacks({
+        ...initialProjectState,
+        canCreate: reason !== 'no authority',
+        projects: [projectListItem('消す案件')],
+        pending: reason === 'pending'
+          ? { requestId: 'list-request', method: 'project.list' }
+          : null,
+      }),
+      active: reason !== 'inactive',
+      navigationBlocked: reason === 'other editor dirty',
+    }
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderView(props)
+    const user = userEvent.setup({ document })
+
+    if (reason === 'no authority') {
+      expect(within(container).queryByRole('button', { name: '消す案件を削除', hidden: true })).toBeNull()
+    } else {
+      expect(button('消す案件を削除').disabled).toBe(true)
+      await act(async () => user.click(button('消す案件を削除')))
+    }
+    expect(confirm).not.toHaveBeenCalled()
+    expectNoOperations(props)
   })
 
   it.each([
@@ -742,6 +802,20 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     renderView({ ...props, navigationBlocked: false })
     await act(async () => user.click(button('一覧へ戻る')))
     expect(props.closeDraft).toHaveBeenCalledOnce()
+  })
+
+  it('shows the cause and a retry action when the editing runtime is unavailable, and retries finalization', async () => {
+    const saved = draftState(true)
+    const message = '編集を開始できません。動画処理ツール（Tools\\ffmpeg.exe）が見つかりません。'
+    const props = callbacks({
+      ...saved,
+      error: { code: 'project.runtime_unavailable', message },
+    })
+    renderView(props)
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(message)
+    const user = userEvent.setup({ document })
+    await act(async () => user.click(button('もう一度試す（自動で再確認）')))
+    expect(props.finalizeDraft).toHaveBeenCalledOnce()
   })
 
   it.each(['list', 'quick', 'legacy'] as const)('never focuses inactive %s content or its error, and keeps error focus on activation', (kind) => {
@@ -898,7 +972,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     expect(createClient).toHaveBeenCalledOnce()
     expect(requests).toHaveLength(1)
     expect(within(container).getByTestId('parent-project').textContent).toBe('未選択')
-    expect(button('元動画を選ぶ').disabled).toBe(true)
+    expect(button('新しい案件を作成').disabled).toBe(true)
     emit({
       version: 1,
       requestId: requests[0]!.requestId,
@@ -912,15 +986,14 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
         canCreate: true,
       },
     })
-    expect(container.textContent).toContain('「元動画を選ぶ」から始められます')
-    expect(container.textContent).not.toContain('新しい案件')
+    expect(container.textContent).toContain('「新しい案件を作成」から始められます')
     const user = userEvent.setup({ document })
-    await act(async () => user.click(button('元動画を選ぶ')))
+    await act(async () => user.click(button('新しい案件を作成')))
     expect(requests.map((request) => request.method)).toEqual(['project.list', 'project.createDraft'])
     expect(requests[1]!.params).toEqual({})
     expect(container.querySelector('.wizard-panel, .quick-start-panel')).toBeNull()
     expect(container.querySelector('.project-list-panel')).not.toBeNull()
-    expect(button('元動画を選ぶ').disabled).toBe(true)
+    expect(button('新しい案件を作成').disabled).toBe(true)
     renderParent(false)
     renderParent(true)
     expect(requests).toHaveLength(2)
@@ -990,6 +1063,7 @@ function contextFor(state: ProjectState): ProjectStateContextValue {
     refresh: () => undefined,
     createDraft: () => undefined,
     loadDraft: () => undefined,
+    deleteProject: () => undefined,
     updateInput: () => undefined,
     saveDraft: () => undefined,
     pickSource: () => undefined,

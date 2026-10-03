@@ -176,7 +176,7 @@ public sealed class RealProjectedSubtitleRenderTests
             Assert.IsFalse(encoded.Truncated);
 
             string database = Path.Combine(root, "store.db");
-            Assert.AreEqual(12, DatabaseMigrator.Migrate(database, Path.Combine(root, "backups")).SchemaVersion);
+            Assert.AreEqual(13, DatabaseMigrator.Migrate(database, Path.Combine(root, "backups")).SchemaVersion);
             var projects = new ProjectStore(database);
             var versions = new VersionService(projects);
             var store = new ArtifactStore(database, root);

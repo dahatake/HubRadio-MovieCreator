@@ -16,12 +16,15 @@ export interface ProjectListCardsProps {
   readonly projects: readonly ProjectListItem[]
   readonly disabled: boolean
   readonly onOpen: (draftId: string) => void
+  /** Omitted when the actor cannot delete; the native host still enforces authority. */
+  readonly onDelete?: (draftId: string, name: string) => void
 }
 
 export function ProjectListCards({
   projects,
   disabled,
   onOpen,
+  onDelete,
 }: ProjectListCardsProps) {
   const [page, setPage] = useState(0)
   const listId = useId()
@@ -56,7 +59,7 @@ export function ProjectListCards({
       <div className="project-list-cards">
         <div className="empty-state project-list-cards-empty" role="status">
           <strong>案件はまだありません</strong>
-          <p>作成権限がある場合は「新しい案件」から始められます。</p>
+          <p>作成権限がある場合は「新しい案件を作成」から始められます。</p>
         </div>
       </div>
     )
@@ -112,6 +115,19 @@ export function ProjectListCards({
                   </dd>
                 </div>
               </dl>
+              {onDelete !== undefined && (
+                <div className="project-card-actions">
+                  <button
+                    className="danger-button project-card-delete"
+                    type="button"
+                    disabled={disabled}
+                    aria-label={`${name}を削除`}
+                    onClick={() => onDelete(project.draftId, name)}
+                  >
+                    削除
+                  </button>
+                </div>
+              )}
             </li>
           )
         })}

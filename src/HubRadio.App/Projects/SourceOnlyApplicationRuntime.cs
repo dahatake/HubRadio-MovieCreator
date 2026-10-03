@@ -189,7 +189,9 @@ internal sealed class SourceOnlyApplicationRuntime : ISourceOnlyProjectCoordinat
     private readonly object gate = new();
     private readonly CancellationTokenSource lifetime = new();
     private readonly SourceOnlySourceLocator locator;
-    private readonly SourceOnlyApplicationSession? session;
+    private readonly SemaphoreSlim repairGate = new(1, 1);
+    private readonly Func<CancellationToken, Task<SourceOnlyApplicationSession>>? initialize;
+    private SourceOnlyApplicationSession? session;
     private readonly HashSet<Task> operations = [];
     private Task<SourceOnlyRecoveryResult>? recoveryTask;
     private Task? disposalTask;
@@ -197,8 +199,10 @@ internal sealed class SourceOnlyApplicationRuntime : ISourceOnlyProjectCoordinat
     private bool disposed;
 
     private SourceOnlyApplicationRuntime(SourceOnlyApplicationServices services,
-        SourceOnlyApplicationSession? session, SourceOnlyApplicationDependency? missingDependency)
+        SourceOnlyApplicationSession? session, SourceOnlyApplicationDependency? missingDependency,
+        Func<CancellationToken, Task<SourceOnlyApplicationSession>>? initialize = null)
     {
+        this.initialize = initialize;
         Services = services;
         this.session = session;
         MissingDependency = missingDependency;
@@ -212,7 +216,7 @@ internal sealed class SourceOnlyApplicationRuntime : ISourceOnlyProjectCoordinat
         get { lock (gate) { return !disposed && readyForAcceptance ? session?.Pipeline : null; } }
     }
     internal bool IsAvailable => session is not null;
-    internal SourceOnlyApplicationDependency? MissingDependency { get; }
+    internal SourceOnlyApplicationDependency? MissingDependency { get; private set; }
     internal string? ShutdownFailureCode { get; private set; }
 
     internal static Task<SourceOnlyApplicationRuntime> CreateAsync(
@@ -237,7 +241,7 @@ internal sealed class SourceOnlyApplicationRuntime : ISourceOnlyProjectCoordinat
             acquired = await Task.Run(() => initialize(cancellationToken), cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             if (acquired is null) { throw new SourceOnlyApplicationDependencyException(SourceOnlyApplicationDependency.Initialization); }
-            return new(services, acquired, null);
+            return new(services, acquired, null, initialize);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -248,7 +252,7 @@ internal sealed class SourceOnlyApplicationRuntime : ISourceOnlyProjectCoordinat
         {
             if (acquired is not null) { await acquired.DisposeAsync().ConfigureAwait(false); }
             return new(services, null, exception is SourceOnlyApplicationDependencyException dependency
-                ? dependency.Dependency : SourceOnlyApplicationDependency.Initialization);
+                ? dependency.Dependency : SourceOnlyApplicationDependency.Initialization, initialize);
         }
     }
 
@@ -299,6 +303,73 @@ internal sealed class SourceOnlyApplicationRuntime : ISourceOnlyProjectCoordinat
                 catch (Exception) { return new([], false, "source_only.recovery_failed"); }
             }, CancellationToken.None);
         }
+    }
+
+    /// <summary>
+    /// Self-repair for a runtime that is not ready: re-runs the verified initialization when it failed
+    /// (a missing or locked file may have been fixed since startup) and re-runs recovery when it did not
+    /// finish successfully. Returns true only when acceptance is now enabled. Never exposes paths.
+    /// </summary>
+    internal async Task<bool> RepairAsync(CancellationToken cancellationToken = default)
+    {
+        lock (gate)
+        {
+            ThrowIfDisposed();
+            if (readyForAcceptance) { return true; }
+        }
+        await repairGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, lifetime.Token);
+            bool needsSession;
+            lock (gate) { ThrowIfDisposed(); needsSession = session is null; }
+            if (needsSession)
+            {
+                if (initialize is null) { return false; }
+                SourceOnlyApplicationSession? created = null;
+                try
+                {
+                    created = await Task.Run(() => initialize(linked.Token), linked.Token).ConfigureAwait(false);
+                    linked.Token.ThrowIfCancellationRequested();
+                    if (created is null) { throw new SourceOnlyApplicationDependencyException(SourceOnlyApplicationDependency.Initialization); }
+                }
+                catch (OperationCanceledException) when (linked.IsCancellationRequested)
+                {
+                    if (created is not null) { await created.DisposeAsync().ConfigureAwait(false); }
+                    throw;
+                }
+                catch (Exception exception) when (exception is not (OutOfMemoryException or StackOverflowException or AccessViolationException))
+                {
+                    if (created is not null) { await created.DisposeAsync().ConfigureAwait(false); }
+                    lock (gate)
+                    {
+                        MissingDependency = exception is SourceOnlyApplicationDependencyException dependency
+                            ? dependency.Dependency : SourceOnlyApplicationDependency.Initialization;
+                    }
+                    return false;
+                }
+                bool discard;
+                lock (gate)
+                {
+                    discard = disposed;
+                    if (!discard) { session = created; MissingDependency = null; recoveryTask = null; }
+                }
+                if (discard)
+                {
+                    await created.DisposeAsync().ConfigureAwait(false);
+                    return false;
+                }
+            }
+            lock (gate)
+            {
+                if (readyForAcceptance) { return true; }
+                // A pending recovery is awaited as is; a finished unsuccessful one is replaced.
+                if (recoveryTask is { IsCompleted: true }) { recoveryTask = null; }
+            }
+            _ = await RecoverAsync(CancellationToken.None).WaitAsync(linked.Token).ConfigureAwait(false);
+            lock (gate) { return readyForAcceptance; }
+        }
+        finally { _ = repairGate.Release(); }
     }
 
     public Task CaptureSelectionAsync(EntityId<ProjectCreationDraftIdTag> draftId,

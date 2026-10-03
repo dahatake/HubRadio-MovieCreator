@@ -10,6 +10,7 @@
     { "$ref": "#/$defs/saveDraftRequest" },
     { "$ref": "#/$defs/pickSourceRequest" },
     { "$ref": "#/$defs/finalizeDraftRequest" },
+    { "$ref": "#/$defs/deleteProjectRequest" },
     { "$ref": "#/$defs/jobStatusRequest" },
     { "$ref": "#/$defs/jobCancelRequest" },
     { "$ref": "#/$defs/jobRetryRequest" },
@@ -22,6 +23,7 @@
     { "$ref": "#/$defs/listResponse" },
     { "$ref": "#/$defs/draftResponse" },
     { "$ref": "#/$defs/pickSourceResponse" },
+    { "$ref": "#/$defs/deleteProjectResponse" },
     { "$ref": "#/$defs/jobStatusResponse" },
     { "$ref": "#/$defs/jobCancelResponse" },
     { "$ref": "#/$defs/jobRetryResponse" },
@@ -673,6 +675,7 @@
         "project.saveDraft",
         "project.pickSource",
         "project.finalizeDraft",
+        "project.delete",
         "jobs.getStatus",
         "jobs.cancel",
         "jobs.retry",
@@ -729,7 +732,8 @@
         "project.loadDraft",
         "project.saveDraft",
         "project.pickSource",
-        "project.finalizeDraft"
+        "project.finalizeDraft",
+        "project.delete"
       ]
     },
     "jobMethod": {
@@ -990,6 +994,24 @@
         "params": { "$ref": "#/$defs/emptyObject" }
       }
     },
+    "deleteProjectRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "project.delete" },
+        "params": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["draftId"],
+          "properties": {
+            "draftId": { "$ref": "#/$defs/entityId" }
+          }
+        }
+      }
+    },
     "finalizeDraftRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -1246,6 +1268,25 @@
           "required": ["draft"],
           "properties": {
             "draft": { "$ref": "#/$defs/draft" }
+          }
+        }
+      }
+    },
+    "deleteProjectResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "project.delete" },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["deletedDraftId", "filesRemoved"],
+          "properties": {
+            "deletedDraftId": { "$ref": "#/$defs/entityId" },
+            "filesRemoved": { "type": "boolean" }
           }
         }
       }
@@ -2361,12 +2402,14 @@
           "enum": [
             "project.already_finalized",
             "project.catalog_unavailable",
+            "project.delete_blocked",
             "project.incomplete",
             "project.invalid_request",
             "project.not_authorized",
             "project.not_found",
             "project.operation_failed",
             "project.revision_conflict",
+            "project.runtime_unavailable",
             "project.settings_mismatch",
             "project.settings_unavailable",
             "project.source_selection_canceled",

@@ -32,6 +32,7 @@ export function ProjectWorkspaceView({
   refresh,
   createDraft,
   loadDraft,
+  deleteProject,
   updateInput,
   saveDraft,
   pickSource,
@@ -76,6 +77,18 @@ export function ProjectWorkspaceView({
     if (!openDisabled) loadDraft(id)
   }
 
+  const requestDeleteProject = (id: string, name: string): void => {
+    if (openDisabled || !state.canCreate) return
+    if (
+      !window.confirm(
+        `案件「${name}」を削除しますか？\n削除した案件は一覧から消え、アプリから元に戻せません。\nこの案件の作業ファイルと、アプリの保存領域に書き出したファイルも削除されます。選んだ元の動画ファイルは削除されません。`,
+      )
+    ) {
+      return
+    }
+    deleteProject(id)
+  }
+
   const selectNewSource = (): void => {
     if (!openDisabled && state.canCreate && state.draft === null) {
       // The existing native create operation owns the picker and source-only defaults.
@@ -118,6 +131,15 @@ export function ProjectWorkspaceView({
                 最新版を再読み込み
               </button>
             )}
+            {state.error.code === 'project.runtime_unavailable' && (
+              <button
+                type="button"
+                disabled={navigationDisabled || state.draft?.isFinalized !== false}
+                onClick={finalizeCurrentDraft}
+              >
+                もう一度試す（自動で再確認）
+              </button>
+            )}
             {state.error.code === 'project.source_reselection_required' && (
               <button
                 type="button"
@@ -139,6 +161,10 @@ export function ProjectWorkspaceView({
         </div>
       )}
 
+      {state.notice !== null && (
+        <p className="permission-note" role="status">{state.notice}</p>
+      )}
+
       {navigationBlocked && (
         <p className="permission-note" role="status">
           別の画面に未保存の変更があります。保存または破棄してから動画を切り替えてください。
@@ -151,7 +177,7 @@ export function ProjectWorkspaceView({
             <div>
               <p className="section-kicker">Projects</p>
               <h2 id="projects-title">案件一覧</h2>
-              <p>下書きと作成済み案件を、更新が新しい順に表示します。</p>
+              <p>下書きと作成済み案件を、更新が新しい順に表示します。「新しい案件を作成」を押して動画ファイルを1本選ぶと、新しい案件が作成されます。</p>
             </div>
             <div className="section-actions">
               <button
@@ -168,7 +194,7 @@ export function ProjectWorkspaceView({
                 disabled={openDisabled || !state.canCreate}
                 onClick={selectNewSource}
               >
-                元動画を選ぶ
+                新しい案件を作成
               </button>
             </div>
           </div>
@@ -183,7 +209,7 @@ export function ProjectWorkspaceView({
             <div className="project-list-cards">
               <div className="empty-state project-list-cards-empty" role="status">
                 <strong>案件はまだありません</strong>
-                <p>作成権限がある場合は「元動画を選ぶ」から始められます。</p>
+                <p>作成権限がある場合は「新しい案件を作成」から始められます。</p>
               </div>
             </div>
           ) : (
@@ -191,6 +217,7 @@ export function ProjectWorkspaceView({
               projects={state.projects}
               disabled={openDisabled}
               onOpen={openDraft}
+              onDelete={state.canCreate ? requestDeleteProject : undefined}
             />
           )}
         </section>

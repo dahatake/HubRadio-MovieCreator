@@ -34,6 +34,7 @@ internal enum BridgeMethod
     SaveDraft,
     PickSource,
     FinalizeDraft,
+    DeleteProject,
     JobsGetStatus,
     JobsCancel,
     JobsRetry,
@@ -208,6 +209,7 @@ internal static class BridgeProtocol
     internal const string SaveDraftMethod = "project.saveDraft";
     internal const string PickSourceMethod = "project.pickSource";
     internal const string FinalizeDraftMethod = "project.finalizeDraft";
+    internal const string DeleteProjectMethod = "project.delete";
 
     private static readonly string[] DraftInputProperties =
     [
@@ -455,9 +457,16 @@ internal static class BridgeProtocol
 
     internal static string CreateErrorResponse(
         BridgeRequest request,
-        string code)
+        string code) =>
+        CreateErrorResponse(request, code, GetErrorMessage(code));
+
+    internal static string CreateErrorResponse(
+        BridgeRequest request,
+        string code,
+        string message)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrEmpty(message);
         StableErrorCodes.Validate(code);
 
         return WriteBoundedResponse(
@@ -469,7 +478,7 @@ internal static class BridgeProtocol
                 writer.WriteString("method", GetMethodName(request.Method));
                 writer.WriteStartObject("error");
                 writer.WriteString("code", code);
-                writer.WriteString("message", GetErrorMessage(code));
+                writer.WriteString("message", message);
                 writer.WriteEndObject();
                 writer.WriteEndObject();
             },
@@ -486,6 +495,7 @@ internal static class BridgeProtocol
             BridgeMethod.SaveDraft => SaveDraftMethod,
             BridgeMethod.PickSource => PickSourceMethod,
             BridgeMethod.FinalizeDraft => FinalizeDraftMethod,
+            BridgeMethod.DeleteProject => DeleteProjectMethod,
             BridgeMethod.JobsGetStatus => JobsGetStatusMethod,
             BridgeMethod.JobsCancel => JobsCancelMethod,
             BridgeMethod.JobsRetry => JobsRetryMethod,
@@ -567,7 +577,8 @@ internal static class BridgeProtocol
             BridgeMethod.LoadDraft or
             BridgeMethod.SaveDraft or
             BridgeMethod.PickSource or
-            BridgeMethod.FinalizeDraft;
+            BridgeMethod.FinalizeDraft or
+            BridgeMethod.DeleteProject;
 
     internal static bool IsTranscriptMethod(BridgeMethod method) =>
         method is
@@ -661,6 +672,7 @@ internal static class BridgeProtocol
             SaveDraftMethod => BridgeMethod.SaveDraft,
             PickSourceMethod => BridgeMethod.PickSource,
             FinalizeDraftMethod => BridgeMethod.FinalizeDraft,
+            DeleteProjectMethod => BridgeMethod.DeleteProject,
             JobsGetStatusMethod => BridgeMethod.JobsGetStatus,
             JobsCancelMethod => BridgeMethod.JobsCancel,
             JobsRetryMethod => BridgeMethod.JobsRetry,
@@ -740,7 +752,7 @@ internal static class BridgeProtocol
             return parameters.EnumerateObject().Any() is false;
         }
 
-        if (method == BridgeMethod.LoadDraft)
+        if (method is BridgeMethod.LoadDraft or BridgeMethod.DeleteProject)
         {
             return HasExactProperties(parameters, ["draftId"]) &&
                 IsCanonicalEntityId(parameters.GetProperty("draftId"));
@@ -1420,6 +1432,8 @@ internal static class BridgeProtocol
     {
         StableErrorCodes.ProjectAlreadyFinalized =>
             "この案件はすでに作成済みです。",
+        StableErrorCodes.ProjectDeleteBlocked =>
+            "処理中のジョブがあるため、この案件は削除できません。完了または中止してからもう一度お試しください。",
         StableErrorCodes.ProjectIncomplete =>
             "必須入力をすべて完了してください。",
         StableErrorCodes.ProjectInvalidRequest =>
@@ -1430,6 +1444,8 @@ internal static class BridgeProtocol
             "指定された下書きが見つかりません。",
         StableErrorCodes.ProjectRevisionConflict =>
             "下書きが別の操作で更新されました。再読み込みしてください。",
+        StableErrorCodes.ProjectRuntimeUnavailable =>
+            "編集の準備ができていません。アプリを再起動してからもう一度お試しください。",
         StableErrorCodes.ProjectSourceReselectionRequired =>
             "元動画をもう一度選択してください。",
         StableErrorCodes.ReviewConflict =>

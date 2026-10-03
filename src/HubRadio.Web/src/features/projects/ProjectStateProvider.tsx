@@ -12,6 +12,7 @@ import {
 import {
   createHostBridgeClient,
   createProjectCreateDraftRequest,
+  createProjectDeleteRequest,
   createProjectFinalizeDraftRequest,
   createProjectListRequest,
   createProjectLoadDraftRequest,
@@ -42,6 +43,7 @@ export interface ProjectStateContextValue {
   readonly refresh: () => void
   readonly createDraft: () => void
   readonly loadDraft: (draftId: string) => void
+  readonly deleteProject: (draftId: string) => void
   readonly updateInput: (input: ProjectDraftInput) => void
   readonly saveDraft: () => void
   readonly pickSource: () => void
@@ -100,6 +102,13 @@ export function ProjectStateProvider({
   const loadDraft = useCallback(
     (draftId: string) => {
       send(createProjectLoadDraftRequest(createRequestId(), draftId))
+    },
+    [send],
+  )
+
+  const deleteProject = useCallback(
+    (draftId: string) => {
+      send(createProjectDeleteRequest(createRequestId(), draftId))
     },
     [send],
   )
@@ -164,6 +173,7 @@ export function ProjectStateProvider({
       refresh,
       createDraft,
       loadDraft,
+      deleteProject,
       updateInput,
       saveDraft,
       pickSource,
@@ -175,6 +185,7 @@ export function ProjectStateProvider({
       clearError,
       closeDraft,
       createDraft,
+      deleteProject,
       finalizeDraft,
       loadDraft,
       pickSource,

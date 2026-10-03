@@ -463,6 +463,132 @@ public sealed class ProjectCreationServiceTests
     }
 
     [TestMethod]
+    public async Task DeleteProjectRemovesOnlyTheTargetFromTheListAndRejectsRepeatsAndUnknownIds()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        var handler = new ProjectBridgeHandler(fixture.Service);
+        ProjectCreationDraftView kept = fixture.Service.CreateDraft();
+        ProjectCreationDraftView removed = fixture.Service.CreateDraft();
+        BridgeRequest request = CreateBridgeRequest(
+            BridgeMethod.DeleteProject,
+            new JsonObject { ["draftId"] = removed.DraftId });
+
+        string json = await handler.HandleAsync(request, CancellationToken.None);
+
+        using (JsonDocument response = JsonDocument.Parse(json))
+        {
+            Assert.AreEqual("project.delete", response.RootElement.GetProperty("method").GetString());
+            JsonElement result = response.RootElement.GetProperty("result");
+            CollectionAssert.AreEqual(
+                new[] { "deletedDraftId", "filesRemoved" },
+                result.EnumerateObject().Select(static property => property.Name).ToArray());
+            Assert.AreEqual(removed.DraftId, result.GetProperty("deletedDraftId").GetString());
+            Assert.IsTrue(result.GetProperty("filesRemoved").GetBoolean());
+        }
+
+        CollectionAssert.AreEqual(
+            new[] { kept.DraftId },
+            fixture.Service.ListProjects().Projects.Select(static project => project.DraftId).ToArray());
+        ProjectCreationException saveAfterDelete = Assert.ThrowsExactly<ProjectCreationException>(() =>
+            fixture.Service.SaveDraft(
+                EntityId<ProjectCreationDraftIdTag>.Parse(removed.DraftId),
+                expectedRevision: 0,
+                ParseElement(CreateInput(fixture.Catalog))));
+        Assert.AreEqual(ProjectCreationFailureReason.DraftNotFound, saveAfterDelete.Reason);
+        AssertBridgeError(
+            await handler.HandleAsync(request, CancellationToken.None),
+            "project.not_found");
+        AssertBridgeError(
+            await handler.HandleAsync(
+                CreateBridgeRequest(
+                    BridgeMethod.DeleteProject,
+                    new JsonObject { ["draftId"] = EntityId<ProjectCreationDraftIdTag>.New().ToString() }),
+                CancellationToken.None),
+            "project.not_found");
+        AssertBridgeError(
+            await handler.HandleAsync(
+                CreateBridgeRequest(
+                    BridgeMethod.LoadDraft,
+                    new JsonObject { ["draftId"] = removed.DraftId }),
+                CancellationToken.None),
+            "project.not_found");
+    }
+
+    [TestMethod]
+    public void DeleteProjectRemovesWorkspaceFilesOnlyForAFinalizedProjectAndReportsFailure()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        var removed = new List<EntityId<ProjectIdTag>>();
+        bool succeed = true;
+        fixture.Service.ProjectFilesRemover = projectId =>
+        {
+            removed.Add(projectId);
+            return succeed;
+        };
+        ProjectCreationDraftView plain = fixture.Service.CreateDraft();
+        ProjectCreationDraftView toFinalize = fixture.Service.CreateDraft();
+        EntityId<AssetIdTag> candidate = fixture.Registry.RegisterSelection(fixture.PickerSourcePath)
+            ?? throw new AssertFailedException("A source selection must create an opaque candidate.");
+        ProjectCreationDraftView finalized = fixture.Service.FinalizeDraft(
+            EntityId<ProjectCreationDraftIdTag>.Parse(toFinalize.DraftId),
+            toFinalize.Revision,
+            ParseElement(CreateCompleteInput(fixture.Catalog, candidate)));
+
+        Assert.IsTrue(fixture.Service.DeleteProject(EntityId<ProjectCreationDraftIdTag>.Parse(plain.DraftId)));
+        Assert.HasCount(0, removed);
+
+        succeed = false;
+        Assert.IsFalse(fixture.Service.DeleteProject(EntityId<ProjectCreationDraftIdTag>.Parse(finalized.DraftId)));
+        CollectionAssert.AreEqual(
+            new[] { EntityId<ProjectIdTag>.Parse(finalized.ProjectId!) },
+            removed);
+        Assert.HasCount(0, fixture.Service.ListProjects().Projects);
+    }
+
+    [TestMethod]
+    public async Task DeleteProjectIsDeniedWithoutEditorAuthorityAndLeavesTheProjectListed()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        ProjectCreationDraftView created = fixture.Service.CreateDraft();
+        ProjectCreationService unauthorized = fixture.CreateService(fixture.Registry, UnauthorizedSid);
+        var handler = new ProjectBridgeHandler(unauthorized);
+
+        AssertAuthorizationDenied(() => unauthorized.DeleteProject(
+            EntityId<ProjectCreationDraftIdTag>.Parse(created.DraftId)));
+        AssertBridgeError(
+            await handler.HandleAsync(
+                CreateBridgeRequest(
+                    BridgeMethod.DeleteProject,
+                    new JsonObject { ["draftId"] = created.DraftId }),
+                CancellationToken.None),
+            "project.not_authorized");
+        Assert.HasCount(1, fixture.Service.ListProjects().Projects);
+    }
+
+    [TestMethod]
+    public void DeleteBridgeRequestAcceptsOnlyAnExactCanonicalDraftId()
+    {
+        string Source = WebViewHost.EntryPoint;
+        string id = EntityId<ProjectCreationDraftIdTag>.New().ToString();
+        string Build(string parameters) =>
+            "{\"version\":1,\"requestId\":\"00112233-4455-6677-8899-aabbccddeeff\",\"method\":\"project.delete\",\"params\":" + parameters + "}";
+
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(Source, Build("{\"draftId\":\"" + id + "\"}"), out BridgeRequest? parsed, out _));
+        Assert.AreEqual(BridgeMethod.DeleteProject, parsed!.Method);
+        foreach (string invalid in new[]
+        {
+            "{}",
+            "{\"draftId\":\"" + id + "\",\"extra\":1}",
+            "{\"draftId\":\"" + id.ToUpperInvariant() + "\"}",
+            "{\"draftId\":\"not-an-id\"}",
+            "{\"draftId\":null}",
+        })
+        {
+            Assert.IsFalse(BridgeProtocol.TryParseRequest(Source, Build(invalid), out _, out _), invalid);
+        }
+    }
+
+    [TestMethod]
     public async Task BridgeCreateDraftReturnsSourceOnlySummaryAndTypedCancellationWithoutPath()
     {
         using ProjectCreationFixture fixture = new(AuthorizedSid);
@@ -1173,7 +1299,8 @@ public sealed class ProjectCreationServiceTests
         AuthorizationException exception =
             Assert.ThrowsExactly<AuthorizationException>(action);
         Assert.IsTrue(exception.Operation is
-            AuthorizationOperation.ViewProject or AuthorizationOperation.CreateProject);
+            AuthorizationOperation.ViewProject or AuthorizationOperation.CreateProject
+            or AuthorizationOperation.DeleteProject);
     }
 
     private static ProjectCreationDraft ParseInput(

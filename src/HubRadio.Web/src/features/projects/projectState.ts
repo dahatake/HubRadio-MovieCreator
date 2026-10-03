@@ -1,5 +1,6 @@
 import {
   PROJECT_CREATE_DRAFT_METHOD,
+  PROJECT_DELETE_METHOD,
   PROJECT_FINALIZE_DRAFT_METHOD,
   PROJECT_LIST_METHOD,
   PROJECT_LOAD_DRAFT_METHOD,
@@ -36,6 +37,8 @@ export interface ProjectState {
   readonly input: ProjectDraftInput
   readonly pending: PendingProjectRequest | null
   readonly error: ProjectUiError | null
+  /** A completed operation that needs the user's attention (not an error). */
+  readonly notice: string | null
   readonly sourcePickerCanceled: boolean
 }
 
@@ -50,6 +53,9 @@ export type ProjectAction =
   | Readonly<{ type: 'inputChanged'; input: ProjectDraftInput }>
   | Readonly<{ type: 'draftClosed' }>
   | Readonly<{ type: 'errorCleared' }>
+
+export const filesNotRemovedNotice =
+  '案件は一覧から削除しましたが、一部のファイルを削除できませんでした。ファイルが他のアプリで使用中の可能性があります。'
 
 export const emptyProjectInput: ProjectDraftInput = Object.freeze({
   sourceCandidateId: null,
@@ -77,6 +83,7 @@ export const initialProjectState: ProjectState = Object.freeze({
   input: emptyProjectInput,
   pending: null,
   error: null,
+  notice: null,
   sourcePickerCanceled: false,
 })
 
@@ -120,6 +127,7 @@ export function projectStateReducer(
           method: action.method,
         },
         error: null,
+        notice: null,
         sourcePickerCanceled: false,
       }
 
@@ -166,6 +174,18 @@ export function projectStateReducer(
             input: inputFromDraft(draft),
             pending: null,
             error: null,
+            sourcePickerCanceled: false,
+          }
+        }
+
+        case PROJECT_DELETE_METHOD: {
+          const deletedDraftId = response.result.deletedDraftId
+          return {
+            ...state,
+            projects: state.projects.filter((project) => project.draftId !== deletedDraftId),
+            pending: null,
+            error: null,
+            notice: response.result.filesRemoved ? null : filesNotRemovedNotice,
             sourcePickerCanceled: false,
           }
         }

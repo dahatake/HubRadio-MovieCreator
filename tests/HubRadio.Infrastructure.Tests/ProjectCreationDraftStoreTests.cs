@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using HubRadio.Core.Identity;
+using HubRadio.Core.Jobs;
 using HubRadio.Core.Layout;
 using HubRadio.Core.Projects;
 using HubRadio.Core.Provenance;
@@ -54,6 +55,89 @@ public sealed class ProjectCreationDraftStoreTests
             listed.Select(static draft => draft.Id).ToArray());
         Assert.ThrowsExactly<NotSupportedException>(
             () => ((IList<StoredProjectCreationDraft>)listed).Clear());
+    }
+
+    [TestMethod]
+    public void DeleteDraftHidesOnlyTheTargetFromListGetAndMutationsAndIsPermanent()
+    {
+        using StoreTestDatabase database = new();
+        var store = new ProjectCreationDraftStore(database.DatabasePath);
+        ProjectCreationDraft kept = CreateDraft();
+        ProjectCreationDraft removed = CreateDraft();
+        store.CreateDraft(kept, "{\"value\":1}", InitialTime);
+        store.CreateDraft(removed, "{\"value\":2}", InitialTime.AddMinutes(1));
+
+        Assert.IsTrue(store.DeleteDraft(removed.Id, InitialTime.AddMinutes(2)));
+
+        Assert.IsNull(store.GetDraft(removed.Id));
+        CollectionAssert.AreEqual(
+            new[] { kept.Id },
+            store.ListDrafts().Select(static draft => draft.Id).ToArray());
+        Assert.IsNotNull(store.GetDraft(kept.Id));
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => store.SaveDraft(removed, "{\"value\":3}", 0, InitialTime.AddMinutes(3)));
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => store.DeleteDraft(removed.Id, InitialTime.AddMinutes(3)));
+        Assert.AreEqual(
+            2L,
+            database.ExecuteScalarInt64("SELECT COUNT(*) FROM project_creation_drafts;"));
+        Assert.ThrowsExactly<SqliteException>(
+            () => database.ExecuteNonQuery("DELETE FROM project_creation_draft_deletions;"));
+        Assert.ThrowsExactly<SqliteException>(
+            () => database.ExecuteNonQuery("UPDATE project_creation_draft_deletions SET deleted_at = 'x';"));
+    }
+
+    [TestMethod]
+    public void DeleteDraftHidesFinalizedProjectButKeepsStoredRows()
+    {
+        using StoreTestDatabase database = new();
+        var store = new ProjectCreationDraftStore(database.DatabasePath);
+        ProjectCreationDraft draft = CreateDraft();
+        Project project = CreateProjectFromDraft(draft);
+        store.CreateDraft(draft, "{\"state\":\"draft\"}", InitialTime);
+        store.FinalizeDraft(draft, project, "{\"state\":\"complete\"}", 0, InitialTime.AddMinutes(1));
+
+        Assert.IsTrue(store.DeleteDraft(draft.Id, InitialTime.AddMinutes(2)));
+
+        Assert.IsNull(store.GetDraft(draft.Id));
+        Assert.AreEqual(0, store.ListDrafts().Count);
+        Assert.AreEqual(1L, database.ExecuteScalarInt64("SELECT COUNT(*) FROM projects;"));
+        Assert.AreEqual(
+            1L,
+            database.ExecuteScalarInt64("SELECT COUNT(*) FROM project_creation_draft_deletions;"));
+    }
+
+    [TestMethod]
+    public void DeleteDraftIsRefusedWhileAJobIsRunningButNotForQueuedJobs()
+    {
+        using StoreTestDatabase database = new();
+        var store = new ProjectCreationDraftStore(database.DatabasePath);
+        var jobs = new JobStore(database.DatabasePath);
+        ProjectCreationDraft draft = CreateDraft();
+        Project project = CreateProjectFromDraft(draft);
+        store.CreateDraft(draft, "{\"state\":\"draft\"}", InitialTime);
+        store.FinalizeDraft(draft, project, "{\"state\":\"complete\"}", 0, InitialTime.AddMinutes(1));
+        DateTimeOffset createdAt = InitialTime.AddMinutes(2);
+        var queued = new Job(
+            EntityId<JobIdTag>.New(), project.Id, "render", JobState.Queued, createdAt, createdAt, 0);
+        var running = new Job(
+            EntityId<JobIdTag>.New(), project.Id, "render", JobState.Queued, createdAt, createdAt, 0);
+        jobs.CreateJob(queued);
+        jobs.CreateJob(running);
+        DateTimeOffset startedAt = createdAt.AddSeconds(1);
+        jobs.StartAttempt(
+            running.Id,
+            0,
+            new JobAttempt(
+                EntityId<JobAttemptIdTag>.New(), running.Id, 1, JobState.Running,
+                createdAt, startedAt, completedAt: null, errorCode: null),
+            startedAt);
+
+        Assert.IsFalse(store.DeleteDraft(draft.Id, InitialTime.AddMinutes(3)));
+        Assert.IsNotNull(store.GetDraft(draft.Id));
+        Assert.AreEqual(
+            0L,
+            database.ExecuteScalarInt64("SELECT COUNT(*) FROM project_creation_draft_deletions;"));
     }
 
     [TestMethod]

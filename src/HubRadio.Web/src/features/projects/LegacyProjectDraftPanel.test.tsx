@@ -149,6 +149,7 @@ function contextFor(state: ProjectState): ProjectStateContextValue {
     refresh: () => undefined,
     createDraft: () => undefined,
     loadDraft: () => undefined,
+    deleteProject: () => undefined,
     updateInput: () => undefined,
     saveDraft: () => undefined,
     pickSource: () => undefined,

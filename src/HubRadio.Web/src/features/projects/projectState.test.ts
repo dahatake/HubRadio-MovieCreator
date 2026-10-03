@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   PROJECT_CREATE_DRAFT_METHOD,
+  PROJECT_DELETE_METHOD,
   PROJECT_FINALIZE_DRAFT_METHOD,
   PROJECT_LIST_METHOD,
   PROJECT_LOAD_DRAFT_METHOD,
@@ -15,6 +16,7 @@ import {
 } from '../../bridge'
 import {
   emptyProjectInput,
+  filesNotRemovedNotice,
   getMissingProjectFields,
   getProjectInputSourceStatus,
   initialProjectState,
@@ -52,6 +54,7 @@ describe('project state reducer', () => {
       input: emptyProjectInput,
       pending: null,
       error: null,
+      notice: null,
       sourcePickerCanceled: false,
     })
     expect(getMissingProjectFields(emptyProjectInput)).toEqual([
@@ -78,6 +81,74 @@ describe('project state reducer', () => {
     expect(Object.keys(state).sort()).toEqual(
       Object.keys(initialProjectState).sort(),
     )
+  })
+
+  it('removes only the deleted project when the correlated delete response arrives', () => {
+    const listed = reduce(
+      projectRequestStarted(requestId, PROJECT_LIST_METHOD),
+      projectResponseReceived(listResponse(requestId)),
+      projectRequestStarted(requestId, PROJECT_DELETE_METHOD),
+    )
+    expect(listed.projects.map((project) => project.draftId)).toEqual([otherDraftId, draftId])
+
+    const stale = projectStateReducer(
+      listed,
+      projectResponseReceived({
+        version: 1,
+        requestId: staleRequestId,
+        method: PROJECT_DELETE_METHOD,
+        result: { deletedDraftId: draftId, filesRemoved: true },
+      }),
+    )
+    expect(stale).toBe(listed)
+
+    const deleted = projectStateReducer(
+      listed,
+      projectResponseReceived({
+        version: 1,
+        requestId,
+        method: PROJECT_DELETE_METHOD,
+        result: { deletedDraftId: draftId, filesRemoved: true },
+      }),
+    )
+    expect(deleted.projects.map((project) => project.draftId)).toEqual([otherDraftId])
+    expect(deleted.pending).toBeNull()
+    expect(deleted.error).toBeNull()
+  })
+
+  it('removes the project but shows a notice when some files could not be removed, then clears it', () => {
+    const listed = reduce(
+      projectRequestStarted(requestId, PROJECT_LIST_METHOD),
+      projectResponseReceived(listResponse(requestId)),
+      projectRequestStarted(requestId, PROJECT_DELETE_METHOD),
+    )
+    const deleted = projectStateReducer(
+      listed,
+      projectResponseReceived({
+        version: 1,
+        requestId,
+        method: PROJECT_DELETE_METHOD,
+        result: { deletedDraftId: draftId, filesRemoved: false },
+      }),
+    )
+
+    expect(deleted.projects.map((project) => project.draftId)).toEqual([otherDraftId])
+    expect(deleted.notice).toBe(filesNotRemovedNotice)
+    expect(deleted.error).toBeNull()
+    expect(projectStateReducer(deleted, projectRequestStarted(staleRequestId, PROJECT_LIST_METHOD)).notice).toBeNull()
+  })
+
+  it('keeps the list and surfaces a delete failure', () => {
+    const state = reduce(
+      projectRequestStarted(requestId, PROJECT_LIST_METHOD),
+      projectResponseReceived(listResponse(requestId)),
+      projectRequestStarted(requestId, PROJECT_DELETE_METHOD),
+      projectResponseReceived(errorResponse(PROJECT_DELETE_METHOD, 'project.delete_blocked')),
+    )
+
+    expect(state.projects).toHaveLength(2)
+    expect(state.pending).toBeNull()
+    expect(state.error?.code).toBe('project.delete_blocked')
   })
 
   it('requires a live source token for finalization and accepts a fresh replacement', () => {
@@ -403,12 +474,14 @@ function errorResponse(
   const messages: Record<ProjectBridgeErrorResponse['error']['code'], string> = {
     'project.already_finalized': 'この案件はすでに作成済みです。',
     'project.catalog_unavailable': '必要なプロファイルを読み込めませんでした。',
+    'project.delete_blocked': '処理中のジョブがあるため、この案件は削除できません。',
     'project.incomplete': '必須入力をすべて完了してください。',
     'project.invalid_request': '入力内容を確認してください。',
     'project.not_authorized': 'この操作を実行する権限がありません。',
     'project.not_found': '指定された下書きが見つかりません。',
     'project.operation_failed': '案件操作を完了できませんでした。',
     'project.revision_conflict': '下書きが別の操作で更新されました。再読み込みしてください。',
+    'project.runtime_unavailable': '編集の準備ができていません。',
     'project.settings_mismatch': '既定設定の整合性を確認できませんでした。',
     'project.settings_unavailable': '既定設定を読み込めませんでした。',
     'project.source_selection_canceled': '元動画の選択をキャンセルしました。',

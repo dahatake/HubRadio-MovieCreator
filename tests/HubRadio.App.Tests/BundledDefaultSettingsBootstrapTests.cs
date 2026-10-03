@@ -262,7 +262,7 @@ public sealed class BundledDefaultSettingsBootstrapTests
             InitialTime);
 
         Assert.IsTrue(migration.Applied);
-        Assert.AreEqual(12, migration.SchemaVersion);
+        Assert.AreEqual(13, migration.SchemaVersion);
         Assert.AreEqual(DefaultSettingsBootstrapState.Initialized, result.State);
         ProjectSettingsResult projectSettings = upgradedStore.GetProjectSettings(projectId);
         Assert.AreEqual(ProjectSettingsBindingState.Unbound, projectSettings.BindingState);
@@ -462,6 +462,9 @@ public sealed class BundledDefaultSettingsBootstrapTests
         {
             ExecuteNonQuery(
                 """
+                DROP TRIGGER trg_project_creation_draft_deletions_update;
+                DROP TRIGGER trg_project_creation_draft_deletions_delete;
+                DROP TABLE project_creation_draft_deletions;
                 DROP TRIGGER trg_subtitle_edits_version_insert;
                 DROP TRIGGER trg_subtitle_edits_version_update;
                 DROP TRIGGER trg_subtitle_edits_version_delete;

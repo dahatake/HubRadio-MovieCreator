@@ -117,6 +117,9 @@ public sealed class ProjectCreationDraftStore
             SqliteOpenMode.ReadOnly);
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = SelectColumns + """
+            WHERE NOT EXISTS (
+                SELECT 1 FROM project_creation_draft_deletions AS deleted
+                WHERE deleted.draft_id = project_creation_drafts.id)
             ORDER BY updated_at DESC, id ASC;
             """;
         using SqliteDataReader reader = command.ExecuteReader();
@@ -127,6 +130,63 @@ public sealed class ProjectCreationDraftStore
         }
 
         return Array.AsReadOnly(drafts.ToArray());
+    }
+
+    /// <summary>
+    /// Hides the draft (and its finalized project) from every read by recording a
+    /// permanent tombstone. Stored rows, jobs and audit history are kept.
+    /// </summary>
+    /// <returns>False when a finalized project still has a running job.</returns>
+    public bool DeleteDraft(
+        EntityId<ProjectCreationDraftIdTag> draftId,
+        DateTimeOffset deletedAt)
+    {
+        ArgumentNullException.ThrowIfNull(draftId);
+        string storedDeletedAt = SqliteStoreSupport.FormatTimestamp(
+            deletedAt,
+            nameof(deletedAt));
+
+        using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        StoredProjectCreationDraft current = ReadRequiredDraft(
+            connection,
+            transaction,
+            draftId);
+
+        if (current.FinalizedProjectId is not null)
+        {
+            using SqliteCommand running = connection.CreateCommand();
+            running.Transaction = transaction;
+            running.CommandText = """
+                SELECT EXISTS (
+                    SELECT 1 FROM jobs
+                    WHERE project_id = $project_id AND state = 'running');
+                """;
+            SqliteStoreSupport.AddText(
+                running,
+                "$project_id",
+                current.FinalizedProjectId.ToString()!);
+            if (Convert.ToInt64(running.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture) != 0)
+            {
+                return false;
+            }
+        }
+
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO project_creation_draft_deletions (draft_id, deleted_at)
+            VALUES ($id, $deleted_at);
+            """;
+        SqliteStoreSupport.AddText(command, "$id", draftId.ToString());
+        SqliteStoreSupport.AddText(command, "$deleted_at", storedDeletedAt);
+        if (command.ExecuteNonQuery() != 1)
+        {
+            throw new InvalidOperationException("The project deletion was not recorded.");
+        }
+
+        transaction.Commit();
+        return true;
     }
 
     public StoredProjectCreationDraft SaveDraft(
@@ -571,7 +631,10 @@ public sealed class ProjectCreationDraftStore
         using SqliteCommand command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = SelectColumns + """
-            WHERE id = $id;
+            WHERE id = $id
+              AND NOT EXISTS (
+                SELECT 1 FROM project_creation_draft_deletions AS deleted
+                WHERE deleted.draft_id = project_creation_drafts.id);
             """;
         SqliteStoreSupport.AddText(command, "$id", draftId.ToString());
         using SqliteDataReader reader = command.ExecuteReader();
