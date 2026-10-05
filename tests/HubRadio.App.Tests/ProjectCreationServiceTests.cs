@@ -462,6 +462,69 @@ public sealed class ProjectCreationServiceTests
         Assert.IsFalse(pickedJson.Contains("C:\\", StringComparison.Ordinal));
     }
 
+    // FR-045 AC-020.4
+    [TestMethod]
+    public async Task ListProjectsReportsTheThumbnailOnlyForAFinalizedProjectAndTheBridgeKeepsItClosed()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        var thumbnail = new ProjectThumbnailReference(
+            Guid.NewGuid().ToString(),
+            Guid.NewGuid().ToString(),
+            new string('d', 64));
+        var resolved = new List<EntityId<ProjectIdTag>>();
+        fixture.Service.ThumbnailResolver = projectId =>
+        {
+            resolved.Add(projectId);
+            return thumbnail;
+        };
+        ProjectCreationDraftView draft = fixture.Service.CreateDraft();
+        ProjectCreationDraftView toFinalize = fixture.Service.CreateDraft();
+        EntityId<AssetIdTag> candidate = fixture.Registry.RegisterSelection(fixture.PickerSourcePath)
+            ?? throw new AssertFailedException("A source selection must create an opaque candidate.");
+        ProjectCreationDraftView finalized = fixture.Service.FinalizeDraft(
+            EntityId<ProjectCreationDraftIdTag>.Parse(toFinalize.DraftId),
+            toFinalize.Revision,
+            ParseElement(CreateCompleteInput(fixture.Catalog, candidate)));
+
+        string json = await new ProjectBridgeHandler(fixture.Service).HandleAsync(
+            CreateBridgeRequest(BridgeMethod.ListProjects, new JsonObject()),
+            CancellationToken.None);
+
+        CollectionAssert.AreEqual(
+            new[] { EntityId<ProjectIdTag>.Parse(finalized.ProjectId!) },
+            resolved.Distinct().ToArray());
+        using JsonDocument document = JsonDocument.Parse(json);
+        foreach (JsonElement item in document.RootElement.GetProperty("result").GetProperty("projects").EnumerateArray())
+        {
+            JsonElement wire = item.GetProperty("thumbnail");
+            if (item.GetProperty("draftId").GetString() == draft.DraftId)
+            {
+                Assert.AreEqual(JsonValueKind.Null, wire.ValueKind);
+                continue;
+            }
+
+            CollectionAssert.AreEquivalent(
+                new[] { "executionId", "artifactId", "contentDigest" },
+                wire.EnumerateObject().Select(static property => property.Name).ToArray());
+            Assert.AreEqual(thumbnail.ExecutionId, wire.GetProperty("executionId").GetString());
+            Assert.AreEqual(thumbnail.ArtifactId, wire.GetProperty("artifactId").GetString());
+            Assert.AreEqual(thumbnail.ContentDigest, wire.GetProperty("contentDigest").GetString());
+        }
+
+        Assert.IsFalse(json.Contains("C:\\", StringComparison.Ordinal));
+    }
+
+    // FR-045 AC-020.5
+    [TestMethod]
+    public void ThumbnailResolverReturnsNothingForAProjectWithoutAnExecutionResult()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        var resolver = new ProjectThumbnailResolver(new SourceOnlyExecutionStore(fixture.DatabasePath));
+
+        Assert.IsNull(resolver.Resolve(EntityId<ProjectIdTag>.New()));
+        Assert.IsNull(fixture.Service.ListProjects().Projects.FirstOrDefault()?.Thumbnail);
+    }
+
     [TestMethod]
     public async Task DeleteProjectRemovesOnlyTheTargetFromTheListAndRejectsRepeatsAndUnknownIds()
     {

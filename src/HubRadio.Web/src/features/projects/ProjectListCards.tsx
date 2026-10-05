@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 
 import type { ProjectListItem, SourceStatus } from '../../bridge'
+import { projectThumbnailUrl } from '../../bridge'
 import { AppIcon } from '../../components/AppIcons'
 import { getProjectDisplayName } from './projectState'
 import './projects.css'
@@ -81,6 +82,7 @@ export function ProjectListCards({
           const name = getProjectDisplayName(project) ?? '名称未入力'
           return (
             <li className="project-card" key={project.draftId}>
+              <ProjectCardThumbnail project={project} name={name} />
               <div className="project-card-header">
                 <h3 className="project-card-heading">
                   <button
@@ -158,6 +160,38 @@ export function ProjectListCards({
           </button>
         </div>
       </nav>
+    </div>
+  )
+}
+
+function ProjectCardThumbnail({
+  project,
+  name,
+}: Readonly<{ project: ProjectListItem; name: string }>) {
+  const url =
+    project.projectId !== null && project.thumbnail != null
+      ? projectThumbnailUrl(project.projectId, project.thumbnail)
+      : null
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
+
+  if (url === null || failedUrl === url) {
+    return (
+      <div className="project-card-thumbnail project-card-thumbnail-empty">
+        サムネイルなし
+      </div>
+    )
+  }
+
+  return (
+    <div className="project-card-thumbnail">
+      <img
+        src={url}
+        alt={`${name}のサムネイル`}
+        loading="lazy"
+        decoding="async"
+        draggable={false}
+        onError={() => setFailedUrl(url)}
+      />
     </div>
   )
 }

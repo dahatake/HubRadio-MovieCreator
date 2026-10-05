@@ -257,6 +257,19 @@ internal sealed class ProjectBridgeHandler
 
                     writer.WriteEndArray();
                     writer.WriteString("updatedAt", item.UpdatedAt);
+                    if (item.Thumbnail is { } thumbnail)
+                    {
+                        writer.WriteStartObject("thumbnail");
+                        writer.WriteString("executionId", thumbnail.ExecutionId);
+                        writer.WriteString("artifactId", thumbnail.ArtifactId);
+                        writer.WriteString("contentDigest", thumbnail.ContentDigest);
+                        writer.WriteEndObject();
+                    }
+                    else
+                    {
+                        writer.WriteNull("thumbnail");
+                    }
+
                     writer.WriteEndObject();
                 }
 

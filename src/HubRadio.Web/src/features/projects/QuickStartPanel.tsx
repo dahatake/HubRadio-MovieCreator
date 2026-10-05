@@ -26,7 +26,6 @@ export interface QuickStartPanelProps {
   /** Omitted when the actor cannot edit; the native host still enforces authority. */
   readonly renameProject?: (displayName: string) => void
   readonly finalizeDraft: () => void
-  readonly closeDraft: () => void
   readonly pickSource: () => void
 }
 
@@ -43,7 +42,6 @@ export function QuickStartPanel({
   active = true,
   renameProject,
   finalizeDraft,
-  closeDraft,
   pickSource,
 }: QuickStartPanelProps) {
   const headingRef = useRef<HTMLHeadingElement>(null)
@@ -129,13 +127,7 @@ export function QuickStartPanel({
         </dl>
       </details>
 
-      {draft.isFinalized ? (
-        <div className="quick-start-actions">
-          <button className="quiet-button" type="button" onClick={closeDraft}>
-            一覧へ戻る
-          </button>
-        </div>
-      ) : (
+      {draft.isFinalized ? null : (
         <form
           className="quick-start-actions"
           aria-describedby="quick-start-rights"
@@ -146,14 +138,6 @@ export function QuickStartPanel({
             }
           }}
         >
-          <button
-            className="quiet-button"
-            type="button"
-            disabled={isPending}
-            onClick={closeDraft}
-          >
-            取消
-          </button>
           <button
             className="primary-button"
             type="submit"

@@ -34,7 +34,7 @@ import type { ProjectStateContextValue } from './ProjectStateProvider'
 
 export type LegacyProjectDraftPanelProps = Pick<
   ProjectStateContextValue,
-  'state' | 'updateInput' | 'saveDraft' | 'pickSource' | 'finalizeDraft' | 'closeDraft'
+  'state' | 'updateInput' | 'saveDraft' | 'pickSource' | 'finalizeDraft'
 > & {
   readonly active?: boolean
 }
@@ -152,7 +152,6 @@ export function LegacyProjectDraftPanel({
   saveDraft,
   pickSource,
   finalizeDraft,
-  closeDraft,
   active = true,
 }: LegacyProjectDraftPanelProps) {
   const [wizardStep, setWizardStep] = useState(0)
@@ -566,14 +565,6 @@ export function LegacyProjectDraftPanel({
         </div>
 
         <div className="wizard-actions">
-          <button
-            className="quiet-button"
-            type="button"
-            disabled={pending}
-            onClick={closeDraft}
-          >
-            {dirty ? '変更を破棄して一覧へ' : '一覧へ戻る'}
-          </button>
           <div className="wizard-navigation">
             <button
               className="secondary-button"

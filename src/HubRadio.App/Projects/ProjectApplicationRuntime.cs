@@ -203,6 +203,7 @@ internal static class ProjectApplicationRuntime
         {
             ProjectFilesRemover = projectId =>
                 ProjectWorkspaceFileRemover.Remove(services.WorkspacePath, projectId),
+            ThumbnailResolver = new ProjectThumbnailResolver(services.Executions).Resolve,
         };
         var projectHandler = new ProjectBridgeHandler(service, native.RestoreAfterReadAsync, native.RepairAsync);
         var jobHandler = new JobBridgeRequestHandler(

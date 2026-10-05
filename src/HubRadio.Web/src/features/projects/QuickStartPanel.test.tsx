@@ -98,7 +98,7 @@ describe('QuickStartPanel', () => {
     expect(container.querySelector('input, textarea, select, fieldset, .wizard-progress')).toBeNull()
     expect(container.querySelector('img, video, canvas')).toBeNull()
     expect([...container.querySelectorAll('button')].map(button => button.textContent)).toEqual([
-      '取消', '編集を開始',
+      '編集を開始',
     ])
     expect(actionButton('編集を開始').disabled).toBe(false)
   })
@@ -184,7 +184,7 @@ describe('QuickStartPanel', () => {
     )).toThrow('Quick start requires a source-only project summary.')
   })
 
-  it('focuses by default and invokes only the existing start and cancel callbacks', async () => {
+  it('focuses by default and invokes only the existing start callback', async () => {
     const props = panelProps()
     renderPanel(props)
     const user = userEvent.setup({ document })
@@ -194,13 +194,10 @@ describe('QuickStartPanel', () => {
     act(() => actionButton('編集を開始').focus())
     await act(async () => user.keyboard('[Enter]'))
     expect(props.finalizeDraft).toHaveBeenCalledExactlyOnceWith()
-    expect(props.closeDraft).not.toHaveBeenCalled()
     expect(props.pickSource).not.toHaveBeenCalled()
     expect(status().textContent).toBe('この内容で案件を作成できます。')
     expect(container.textContent).not.toContain('案件を作成しました。')
 
-    await act(async () => user.click(actionButton('取消')))
-    expect(props.closeDraft).toHaveBeenCalledOnce()
     expect(props.finalizeDraft).toHaveBeenCalledOnce()
     expect(props.pickSource).not.toHaveBeenCalled()
   })
@@ -219,13 +216,11 @@ describe('QuickStartPanel', () => {
     }
     submitDirectly()
     expect(props.finalizeDraft).not.toHaveBeenCalled()
-    expect(props.closeDraft).not.toHaveBeenCalled()
     expect(props.pickSource).not.toHaveBeenCalled()
     expect(status().textContent).toBe('操作を処理しています。')
     expect(container.textContent).not.toMatch(/生成中|生成済み/)
 
     renderPanel({ ...props, pending: null })
-    expect(actionButton('取消').disabled).toBe(false)
     expect(actionButton('編集を開始').disabled).toBe(sourceStatus !== 'available')
   })
 
@@ -264,7 +259,6 @@ describe('QuickStartPanel', () => {
     expect(actionButton('編集を開始').disabled).toBe(false)
     await act(async () => user.click(actionButton('編集を開始')))
     expect(props.finalizeDraft).toHaveBeenCalledExactlyOnceWith()
-    expect(props.closeDraft).not.toHaveBeenCalled()
     expect(container.innerHTML).not.toContain(reselectedCandidateId)
   })
 
@@ -285,18 +279,15 @@ describe('QuickStartPanel', () => {
       draft: { ...draft, sourceStatus, isFinalized: true, projectId: 'abcdef01-2222-4333-8444-555566667777' },
     })
     renderPanel(props)
-    const user = userEvent.setup({ document })
 
     expect(within(container).getByRole('heading', { name: '案件の内容' })).toBeTruthy()
     expect(container.querySelector('.state-badge.finalized')?.textContent).toBe('作成済み')
     expect(status().textContent).toBe('案件を作成しました。自動編集画面で処理状況を確認できます。')
     expect(status().getAttribute('aria-live')).toBe('polite')
-    expect([...container.querySelectorAll('button')].map(button => button.textContent)).toEqual(['一覧へ戻る'])
+    expect([...container.querySelectorAll('button')].map(button => button.textContent)).toEqual([])
     expect(container.querySelector('form, progress, img, video, canvas')).toBeNull()
     expect(container.textContent).not.toMatch(/生成中|生成済み|処理を開始しました/)
     expect(container.textContent).toContain('生成・保存状況：未確認')
-    await act(async () => user.click(actionButton('一覧へ戻る')))
-    expect(props.closeDraft).toHaveBeenCalledOnce()
     expect(props.finalizeDraft).not.toHaveBeenCalled()
     expect(props.pickSource).not.toHaveBeenCalled()
   })
@@ -355,7 +346,6 @@ describe('QuickStartPanel', () => {
     expect(disclosure()).toBe(details)
     expect(details.open).toBe(true)
     expect(JSON.stringify({ draft: props.draft, input: props.input })).toBe(before)
-    expect(props.closeDraft).not.toHaveBeenCalled()
     expect(props.finalizeDraft).not.toHaveBeenCalled()
     expect(props.pickSource).not.toHaveBeenCalled()
   })
@@ -367,7 +357,6 @@ function panelProps(overrides: Partial<QuickStartPanelProps> = {}): QuickStartPa
     input,
     pending: null,
     finalizeDraft: vi.fn(),
-    closeDraft: vi.fn(),
     pickSource: vi.fn(),
     ...overrides,
   }

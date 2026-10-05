@@ -201,9 +201,13 @@ export function projectStateReducer(
 
         case PROJECT_DELETE_METHOD: {
           const deletedDraftId = response.result.deletedDraftId
+          const openDraftDeleted = state.draft?.draftId === deletedDraftId
           return {
             ...state,
             projects: state.projects.filter((project) => project.draftId !== deletedDraftId),
+            // Deleting the open project returns to the list instead of leaving a dead detail screen.
+            draft: openDraftDeleted ? null : state.draft,
+            input: openDraftDeleted ? emptyProjectInput : state.input,
             pending: null,
             error: null,
             notice: response.result.filesRemoved ? null : filesNotRemovedNotice,
@@ -399,6 +403,7 @@ function upsertProject(
   const namesById = new Map(
     catalog.outputProfiles.map((option) => [option.id, option.name] as const),
   )
+  const previous = projects.find((project) => project.draftId === draft.draftId)
   const item: ProjectListItem = {
     draftId: draft.draftId,
     projectId: draft.projectId,
@@ -416,6 +421,7 @@ function upsertProject(
       return name === undefined ? [] : [name]
     }),
     updatedAt: draft.updatedAt,
+    ...(previous?.thumbnail === undefined ? {} : { thumbnail: previous.thumbnail }),
   }
   const withoutCurrent = projects.filter((project) => project.draftId !== draft.draftId)
   return sortProjects([...withoutCurrent, item])

@@ -84,7 +84,7 @@ export function WorkflowWorkspace({ connectionStatus }: Readonly<{ connectionSta
 
 function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus?: ReactNode }>) {
   const { state: previewModes } = usePreviewModes()
-  const { state: projectState } = useProjectState()
+  const { state: projectState, closeDraft } = useProjectState()
   const pipeline = usePipeline()
   const layout = useLayoutState()
   useComparisonState()
@@ -504,6 +504,15 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
     navigate({ type: 'selectStep', step })
   }
 
+  // The single path back to the project list; it closes the open draft.
+  const returnToProjectList = projectState.draft !== null && !settingsOpen && projectState.pending === null && !navigationBlocked
+  function requestProjectList(): void {
+    if (!returnToProjectList) return
+    if (sourceDirty && !window.confirm('未保存の変更があります。変更を破棄して一覧へ戻りますか？')) return
+    closeDraft()
+    selectStep('source')
+  }
+
   // FR-042: a successful 「編集を開始」 (project.finalizeDraft) moves to 自動編集 once.
   const finalizeRequested = useRef(false)
   useEffect(() => {
@@ -574,7 +583,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
         <div className="workflow-header-controls">
           {connectionStatus}
           <div className="workflow-header-actions" hidden={settingsOpen} inert={settingsOpen}>
-            <button type="button" onClick={() => selectStep('source')} aria-controls="workflow-panel-source">動画の切替</button>
+            <button type="button" disabled={!returnToProjectList} onClick={requestProjectList} aria-controls="workflow-panel-source">案件一覧へ戻る</button>
             <button id="workflow-open-settings" type="button" onClick={event => openSettings(event.currentTarget)} aria-controls="workflow-settings">
               <AppIcon name="settings" />設定
             </button>

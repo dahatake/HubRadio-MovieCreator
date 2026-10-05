@@ -1103,7 +1103,8 @@
         "editState",
         "reviewState",
         "outputFormats",
-        "updatedAt"
+        "updatedAt",
+        "thumbnail"
       ],
       "properties": {
         "draftId": { "$ref": "#/$defs/entityId" },
@@ -1121,7 +1122,22 @@
           "type": "array",
           "items": { "type": "string" }
         },
-        "updatedAt": { "$ref": "#/$defs/timestamp" }
+        "updatedAt": { "$ref": "#/$defs/timestamp" },
+        "thumbnail": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["executionId", "artifactId", "contentDigest"],
+              "properties": {
+                "executionId": { "$ref": "#/$defs/entityId" },
+                "artifactId": { "$ref": "#/$defs/entityId" },
+                "contentDigest": { "$ref": "#/$defs/contentDigest" }
+              }
+            }
+          ]
+        }
       }
     },
     "draft": {

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 
-import { isProjectInputDirty } from './projectState'
+import { getProjectDisplayName, isProjectInputDirty } from './projectState'
 import { LegacyProjectDraftPanel } from './LegacyProjectDraftPanel'
 import { ProjectListCards } from './ProjectListCards'
 import {
@@ -38,7 +38,6 @@ export function ProjectWorkspaceView({
   saveDraft,
   pickSource,
   finalizeDraft,
-  closeDraft,
   clearError,
   active = true,
   onProjectChange,
@@ -78,8 +77,7 @@ export function ProjectWorkspaceView({
     if (!openDisabled) loadDraft(id)
   }
 
-  const requestDeleteProject = (id: string, name: string): void => {
-    if (openDisabled || !state.canCreate) return
+  const confirmAndDelete = (id: string, name: string): void => {
     if (
       !window.confirm(
         `案件「${name}」を削除しますか？\n削除した案件は一覧から消え、アプリから元に戻せません。\nこの案件の作業ファイルと、アプリの保存領域に書き出したファイルも削除されます。選んだ元の動画ファイルは削除されません。`,
@@ -88,6 +86,19 @@ export function ProjectWorkspaceView({
       return
     }
     deleteProject(id)
+  }
+
+  const requestDeleteProject = (id: string, name: string): void => {
+    if (openDisabled || !state.canCreate) return
+    confirmAndDelete(id, name)
+  }
+
+  const requestDeleteOpenProject = (): void => {
+    if (state.draft === null || navigationDisabled || !state.canCreate) return
+    confirmAndDelete(
+      state.draft.draftId,
+      getProjectDisplayName(state.draft) ?? state.input.contentName ?? '名称未入力',
+    )
   }
 
   const requestRenameProject = (displayName: string): void => {
@@ -101,14 +112,6 @@ export function ProjectWorkspaceView({
       // The existing native create operation owns the picker and source-only defaults.
       createDraft()
     }
-  }
-
-  const requestCloseDraft = (): void => {
-    if (navigationDisabled || state.draft === null) return
-    if (dirty && !window.confirm('未保存の変更があります。変更を破棄して一覧へ戻りますか？')) {
-      return
-    }
-    closeDraft()
   }
 
   const selectSource = (): void => {
@@ -230,16 +233,6 @@ export function ProjectWorkspaceView({
         </section>
       ) : (
         <>
-          <div className="section-actions">
-            <button
-              className="secondary-button"
-              type="button"
-              disabled={navigationDisabled}
-              onClick={requestCloseDraft}
-            >
-              別の動画を選ぶ
-            </button>
-          </div>
           {state.draft.sourceOnly !== null ? (
             <QuickStartPanel
               draft={state.draft}
@@ -248,7 +241,6 @@ export function ProjectWorkspaceView({
               active={active}
               renameProject={state.canCreate ? requestRenameProject : undefined}
               finalizeDraft={finalizeCurrentDraft}
-              closeDraft={requestCloseDraft}
               pickSource={selectSource}
             />
           ) : (
@@ -259,8 +251,19 @@ export function ProjectWorkspaceView({
               saveDraft={() => { if (active && !pending) saveDraft() }}
               pickSource={selectSource}
               finalizeDraft={finalizeCurrentDraft}
-              closeDraft={requestCloseDraft}
             />
+          )}
+          {state.canCreate && (
+            <div className="project-detail-actions">
+              <button
+                className="danger-button"
+                type="button"
+                disabled={navigationDisabled}
+                onClick={requestDeleteOpenProject}
+              >
+                案件削除
+              </button>
+            </div>
           )}
         </>
       )}

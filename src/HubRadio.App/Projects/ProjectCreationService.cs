@@ -55,7 +55,8 @@ internal sealed record ProjectListItem(
     string? PublicationScope,
     IReadOnlyList<string> OutputFormats,
     string UpdatedAt,
-    string? DisplayName = null);
+    string? DisplayName = null,
+    ProjectThumbnailReference? Thumbnail = null);
 
 internal sealed record ProjectCreationOverview(
     IReadOnlyList<ProjectListItem> Projects,
@@ -300,6 +301,9 @@ internal sealed class ProjectCreationService
     /// </summary>
     internal Func<EntityId<ProjectIdTag>, bool>? ProjectFilesRemover { get; set; }
 
+    /// <summary>FR-045: supplies the thumbnail shown for a finalized project in the list; null when the host has none.</summary>
+    internal Func<EntityId<ProjectIdTag>, ProjectThumbnailReference?>? ThumbnailResolver { get; set; }
+
     /// <returns>False when the project is hidden but some of its workspace files could not be removed.</returns>
     internal bool DeleteProject(
         EntityId<ProjectCreationDraftIdTag> draftId)
@@ -526,7 +530,8 @@ internal sealed class ProjectCreationService
                 .Select(static profile => profile.Name)
                 .ToArray()),
             ProjectCreationPayloadCodec.FormatTimestamp(stored.UpdatedAt),
-            stored.DisplayName);
+            stored.DisplayName,
+            stored.FinalizedProjectId is { } projectId ? ThumbnailResolver?.Invoke(projectId) : null);
     }
 
     private ProjectCreationDraftView BuildView(

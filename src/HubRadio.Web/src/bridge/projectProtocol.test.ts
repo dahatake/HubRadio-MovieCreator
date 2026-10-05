@@ -197,6 +197,34 @@ describe('project bridge requests', () => {
 })
 
 describe('project bridge responses', () => {
+  // FR-045 AC-020.3
+  it('accepts a closed list thumbnail reference and rejects forged ones', () => {
+    const base = listResponse()
+    const finalized = { ...base.result.projects[0], state: 'finalized', projectId: draftId }
+    const thumbnail = { executionId: draftId, artifactId: profileId, contentDigest: 'c'.repeat(64) }
+    const withThumbnail = (value: unknown, project: object = finalized) => ({
+      ...base,
+      result: { ...base.result, projects: [{ ...project, thumbnail: value }] },
+    })
+
+    const accepted = withThumbnail(thumbnail)
+    expect(parseProjectBridgeResponse(accepted)).toEqual(accepted)
+    expect(parseProjectBridgeResponse(withThumbnail(null))).not.toBeNull()
+    expect(parseProjectBridgeResponse(base)).not.toBeNull()
+    for (const forged of [
+      { ...thumbnail, extra: 1 },
+      { ...thumbnail, contentDigest: 'C'.repeat(64) },
+      { ...thumbnail, contentDigest: 'c'.repeat(63) },
+      { ...thumbnail, artifactId: draftId.toUpperCase() },
+      { executionId: draftId, artifactId: profileId },
+      'https://player-media.appassets.example/x',
+      undefined,
+    ]) {
+      expect(parseProjectBridgeResponse(withThumbnail(forged))).toBeNull()
+    }
+    expect(parseProjectBridgeResponse(withThumbnail(thumbnail, base.result.projects[0]))).toBeNull()
+  })
+
   it('accepts an exact truthful list and keeps unknown columns null', () => {
     const response = listResponse()
     const parsed = parseProjectBridgeResponse(response)

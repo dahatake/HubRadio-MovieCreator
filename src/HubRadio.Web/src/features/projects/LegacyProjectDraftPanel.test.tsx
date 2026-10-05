@@ -97,7 +97,6 @@ describe('LegacyProjectDraftPanel', () => {
       saveDraft: vi.fn(),
       pickSource: vi.fn(),
       finalizeDraft: vi.fn(),
-      closeDraft: vi.fn(),
     }
     act(() => root.render(<LegacyProjectDraftPanel {...props} />))
 

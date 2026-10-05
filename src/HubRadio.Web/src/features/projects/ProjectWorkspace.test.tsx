@@ -310,7 +310,7 @@ describe('ProjectWorkspace', () => {
     expect(markup).toMatch(
       /<button[^>]*class="primary-button"[^>]*type="submit"[^>]*>編集を開始<\/button>/,
     )
-    expect(markup).toContain('>取消</button>')
+    expect(markup).not.toContain('>取消</button>')
     expect(markup).not.toContain('wizard-progress')
     expect(markup).not.toContain('<fieldset')
     expect(markup).not.toContain('コンテンツ名')
@@ -326,14 +326,13 @@ describe('ProjectWorkspace', () => {
     expect(container.innerHTML).not.toContain(snapshotDigest)
   })
 
-  it('focuses quick start and activates only its start and cancel actions', async () => {
+  it('focuses quick start and activates only its start action', async () => {
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
       .IS_REACT_ACT_ENVIRONMENT = true
     const container = document.createElement('div')
     document.body.append(container)
     const root = createRoot(container)
     const finalizeDraft = vi.fn()
-    const closeDraft = vi.fn()
     const input = completeInput()
     const state: ProjectState = {
       ...initialProjectState,
@@ -348,7 +347,6 @@ describe('ProjectWorkspace', () => {
           <ProjectWorkspaceView
             {...contextFor(state)}
             finalizeDraft={finalizeDraft}
-            closeDraft={closeDraft}
           />,
         )
       })
@@ -358,17 +356,13 @@ describe('ProjectWorkspace', () => {
       const user = userEvent.setup({ document })
       const start = [...container.querySelectorAll<HTMLButtonElement>('button')]
         .find((button) => button.textContent?.trim() === '編集を開始')
-      const cancel = [...container.querySelectorAll<HTMLButtonElement>('button')]
-        .find((button) => button.textContent?.trim() === '取消')
-      if (start === undefined || cancel === undefined) {
+      if (start === undefined) {
         throw new Error('Expected quick-start actions.')
       }
 
       act(() => start.focus())
       await act(async () => user.keyboard('[Enter]'))
       expect(finalizeDraft).toHaveBeenCalledOnce()
-      await act(async () => user.click(cancel))
-      expect(closeDraft).toHaveBeenCalledOnce()
     } finally {
       act(() => root.unmount())
       container.remove()
@@ -390,9 +384,6 @@ describe('ProjectWorkspace', () => {
       },
     })
 
-    expect(markup).toMatch(
-      /<button[^>]*class="quiet-button"[^>]*disabled=""[^>]*>取消<\/button>/,
-    )
     expect(markup).toMatch(
       /<button[^>]*class="primary-button"[^>]*type="submit"[^>]*disabled=""[^>]*>編集を開始<\/button>/,
     )
@@ -657,6 +648,50 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     expect(props.loadDraft).not.toHaveBeenCalled()
   })
 
+  // FR-046 AC-021
+  it('deletes the open project from the detail screen only after confirmation', async () => {
+    const props = callbacks(draftState(true))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderView(props)
+    const user = userEvent.setup({ document })
+
+    await act(async () => user.click(button('案件削除')))
+    expect(confirm).toHaveBeenCalledOnce()
+    expect(confirm.mock.calls[0]![0]).toContain('案件「Hubらじお」を削除しますか？')
+    expect(confirm.mock.calls[0]![0]).toContain('元に戻せません')
+    expect(confirm.mock.calls[0]![0]).toContain('選んだ元の動画ファイルは削除されません')
+    expectNoOperations(props)
+
+    confirm.mockReturnValue(true)
+    await act(async () => user.click(button('案件削除')))
+    expect(props.deleteProject).toHaveBeenCalledExactlyOnceWith(draftId)
+    expect(props.finalizeDraft).not.toHaveBeenCalled()
+  })
+
+  // FR-046 AC-021
+  it.each([true, false])('shows the detail delete button on the %s source-only detail screen', (sourceOnly) => {
+    renderView(callbacks(draftState(sourceOnly)))
+    expect(container.querySelectorAll('.project-detail-actions button')).toHaveLength(1)
+    expect(button('案件削除').disabled).toBe(false)
+  })
+
+  // FR-046 AC-021
+  it('hides the detail delete button without permission and disables it while pending', async () => {
+    renderView(callbacks({ ...draftState(true), canCreate: false }))
+    expect(within(container).queryByRole('button', { name: '案件削除', hidden: true })).toBeNull()
+
+    const props = callbacks({
+      ...draftState(true),
+      pending: { requestId: 'r', method: 'project.finalizeDraft' },
+    })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderView(props)
+    expect(button('案件削除').disabled).toBe(true)
+    await act(async () => userEvent.setup({ document }).click(button('案件削除')))
+    expect(confirm).not.toHaveBeenCalled()
+    expectNoOperations(props)
+  })
+
   // FR-040 AC-013
   it('renames the open project through the name editor and keeps the card name in sync', async () => {
     const props = callbacks(draftState(true))
@@ -777,56 +812,6 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     expectNoOperations(props)
   })
 
-  it.each([
-    [true, '別の動画を選ぶ'],
-    [true, '取消'],
-    [false, '一覧へ戻る'],
-  ] as const)('closes a clean draft without confirmation (sourceOnly=%s, action=%s)', async (sourceOnly, action) => {
-    const props = callbacks(draftState(sourceOnly))
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    renderView(props)
-    const user = userEvent.setup({ document })
-    await act(async () => user.click(button(action)))
-    expect(confirm).not.toHaveBeenCalled()
-    expect(props.closeDraft).toHaveBeenCalledExactlyOnceWith()
-    expect(props.createDraft).not.toHaveBeenCalled()
-    expect(props.loadDraft).not.toHaveBeenCalled()
-    expect(props.pickSource).not.toHaveBeenCalled()
-  })
-
-  it.each([true, false])('keeps dirty input when departure is canceled, then discards only on confirmation (sourceOnly=%s)', async (sourceOnly) => {
-    const saved = draftState(sourceOnly)
-    const input: ProjectDraftInput = sourceOnly
-      ? { ...saved.input, sourceCandidateId: '11110000-aaaa-4bbb-8ccc-ddddeeeeffff' }
-      : { ...saved.input, contentName: '未保存の名前' }
-    const props = callbacks({ ...saved, input })
-    const onDirtyChange = vi.fn()
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    renderView({ ...props, onDirtyChange })
-    expect(onDirtyChange.mock.calls).toEqual([[true]])
-    expect(container.querySelector('.project-list-panel')).toBeNull()
-    const panel = container.querySelector(sourceOnly ? '.quick-start-panel' : '.wizard-panel')
-    const user = userEvent.setup({ document })
-
-    await act(async () => user.click(button('別の動画を選ぶ')))
-    await act(async () => user.click(button(sourceOnly ? '取消' : '変更を破棄して一覧へ')))
-    expect(confirm).toHaveBeenCalledTimes(2)
-    expect(confirm).toHaveBeenLastCalledWith('未保存の変更があります。変更を破棄して一覧へ戻りますか？')
-    expectNoOperations(props)
-    expect(props.state.input).toBe(input)
-    expect(container.querySelector(sourceOnly ? '.quick-start-panel' : '.wizard-panel')).toBe(panel)
-    expect(onDirtyChange.mock.calls).toEqual([[true]])
-
-    confirm.mockReturnValue(true)
-    await act(async () => user.click(button('別の動画を選ぶ')))
-    expect(props.closeDraft).toHaveBeenCalledExactlyOnceWith()
-    expect(props.createDraft).not.toHaveBeenCalled()
-    expect(props.saveDraft).not.toHaveBeenCalled()
-    renderView({ ...props, state: { ...initialProjectState, projects: saved.projects }, onDirtyChange })
-    expect(onDirtyChange.mock.calls).toEqual([[true], [false]])
-    expect(container.querySelector('.project-list-panel')).not.toBeNull()
-  })
-
   it('blocks destructive OCC reload while its own draft input is dirty', async () => {
     const saved = draftState(false)
     const props = callbacks({
@@ -862,9 +847,8 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     }
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderView(props)
-    expect(button('別の動画を選ぶ').disabled).toBe(true)
     const user = userEvent.setup({ document })
-    for (const name of ['別の動画を選ぶ', '取消', '元動画を選び直す']) {
+    for (const name of ['元動画を選び直す']) {
       await act(async () => user.click(button(name)))
     }
     // A synthetic submit bypasses button disabled state, but not the workspace guard.
@@ -874,21 +858,6 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     ))
     expect(confirm).not.toHaveBeenCalled()
     expectNoOperations(props)
-  })
-
-  it('guards the finalized quick-start return action when another editor has unsaved work', async () => {
-    const saved = draftState(true)
-    const props = callbacks({
-      ...saved,
-      draft: { ...saved.draft!, isFinalized: true, projectId: finalizedProjectId },
-    })
-    renderView({ ...props, navigationBlocked: true })
-    const user = userEvent.setup({ document })
-    await act(async () => user.click(button('一覧へ戻る')))
-    expectNoOperations(props)
-    renderView({ ...props, navigationBlocked: false })
-    await act(async () => user.click(button('一覧へ戻る')))
-    expect(props.closeDraft).toHaveBeenCalledOnce()
   })
 
   it('shows the cause and a retry action when the editing runtime is unavailable, and retries finalization', async () => {
@@ -1121,14 +1090,8 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     expect(within(container).getByTestId('parent-project').textContent).toBe(finalizedProjectId)
     expect(document.activeElement?.id).toBe('quick-start-title')
     expect(requests).toHaveLength(3)
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    await act(async () => user.click(button('別の動画を選ぶ')))
-    expect(confirm).not.toHaveBeenCalled()
-    expect(container.querySelector('.quick-start-panel, .wizard-panel')).toBeNull()
-    expect(container.querySelectorAll('.project-card')).toHaveLength(1)
-    expect(container.querySelector('.project-card .state-badge')?.textContent).toBe('作成済み')
-    expect(within(container).getByTestId('parent-project').textContent).toBe('未選択')
-    expect(onProjectChange.mock.calls).toEqual([[null], [finalizedProjectId], [null]])
+    expect(within(container).queryByRole('button', { name: '別の動画を選ぶ' })).toBeNull()
+    expect(onProjectChange.mock.calls).toEqual([[null], [finalizedProjectId]])
     // Native finalization accepts/schedules the real pipeline. This transport
     // fixture verifies no additional frontend job-start request, not native execution.
     expect(requests.map((request) => request.method)).toEqual([

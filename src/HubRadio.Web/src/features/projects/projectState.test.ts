@@ -140,6 +140,41 @@ describe('project state reducer', () => {
     expect(projectStateReducer(deleted, projectRequestStarted(staleRequestId, PROJECT_LIST_METHOD)).notice).toBeNull()
   })
 
+  // FR-046 AC-021
+  it('closes the open project when it is deleted but keeps it when another project is deleted', () => {
+    const open = reduce(
+      projectRequestStarted(requestId, PROJECT_LIST_METHOD),
+      projectResponseReceived(listResponse(requestId)),
+      projectRequestStarted(requestId, PROJECT_LOAD_DRAFT_METHOD),
+      projectResponseReceived({
+        version: 1,
+        requestId,
+        method: PROJECT_LOAD_DRAFT_METHOD,
+        result: { draft: draft() },
+      }),
+      projectRequestStarted(requestId, PROJECT_DELETE_METHOD),
+    )
+    expect(open.draft?.draftId).toBe(draftId)
+    const respond = (state: ProjectState, deletedDraftId: string) =>
+      projectStateReducer(
+        state,
+        projectResponseReceived({
+          version: 1,
+          requestId,
+          method: PROJECT_DELETE_METHOD,
+          result: { deletedDraftId, filesRemoved: true },
+        }),
+      )
+
+    const other = respond(open, otherDraftId)
+    expect(other.draft?.draftId).toBe(draftId)
+
+    const closed = respond(open, draftId)
+    expect(closed.draft).toBeNull()
+    expect(closed.input).toBe(emptyProjectInput)
+    expect(closed.projects.map((project) => project.draftId)).toEqual([otherDraftId])
+  })
+
   it('keeps the list and surfaces a delete failure', () => {
     const state = reduce(
       projectRequestStarted(requestId, PROJECT_LIST_METHOD),
@@ -434,6 +469,37 @@ describe('project rename', () => {
 function reduce(...actions: readonly ProjectAction[]): ProjectState {
   return actions.reduce<ProjectState>(projectStateReducer, initialProjectState)
 }
+
+// FR-046 AC-021.3
+describe('project list thumbnail', () => {
+  it('keeps the known thumbnail of a project when a response updates that project', () => {
+    const thumbnail = {
+      executionId: '33334444-5555-4666-8777-888899990000',
+      artifactId: '44445555-6666-4777-8888-999900001111',
+      contentDigest: 'e'.repeat(64),
+    }
+    const listed = listResponse(requestId)
+    if (!('result' in listed)) throw new Error('Expected a list response.')
+    const withThumbnail: ProjectListResponse = {
+      ...listed,
+      result: {
+        ...listed.result,
+        projects: listed.result.projects.map((project) =>
+          project.draftId === draftId ? { ...project, thumbnail } : project,
+        ),
+      },
+    }
+    const state = reduce(
+      projectRequestStarted(requestId, PROJECT_LIST_METHOD),
+      projectResponseReceived(withThumbnail),
+      projectRequestStarted(requestId, PROJECT_SAVE_DRAFT_METHOD),
+      projectResponseReceived(draftResponse(PROJECT_SAVE_DRAFT_METHOD, draft())),
+    )
+
+    expect(state.projects.find((project) => project.draftId === draftId)?.thumbnail).toEqual(thumbnail)
+    expect(state.projects.find((project) => project.draftId === otherDraftId)?.thumbnail).toBeUndefined()
+  })
+})
 
 function completeInput(): ProjectDraftInput {
   return {

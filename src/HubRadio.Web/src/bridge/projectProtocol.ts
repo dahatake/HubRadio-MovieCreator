@@ -76,6 +76,12 @@ export interface ProjectCatalog {
   readonly brandTemplates: readonly ProjectCatalogOption[]
 }
 
+export interface ProjectThumbnailReference {
+  readonly executionId: string
+  readonly artifactId: string
+  readonly contentDigest: string
+}
+
 export interface ProjectListItem {
   readonly draftId: string
   readonly projectId: string | null
@@ -90,6 +96,16 @@ export interface ProjectListItem {
   readonly reviewState: null
   readonly outputFormats: readonly string[]
   readonly updatedAt: string
+  /** Generated landscape thumbnail; omitted by hosts that predate FR-045. */
+  readonly thumbnail?: ProjectThumbnailReference | null
+}
+
+/** The host serves only artifacts of a stored execution that it revalidates on every read. */
+export function projectThumbnailUrl(
+  projectId: string,
+  thumbnail: ProjectThumbnailReference,
+): string {
+  return `https://player-media.appassets.example/source-only/${projectId}/${thumbnail.executionId}/${thumbnail.artifactId}/${thumbnail.contentDigest}`
 }
 
 export interface SourceOnlyProjectSummary {
@@ -638,8 +654,12 @@ function parseErrorResponse(
 }
 
 function parseProjectListItem(value: unknown): ProjectListItem | null {
+  const optionalKeys = [
+    ...(isRecord(value) && 'displayName' in value ? ['displayName'] : []),
+    ...(isRecord(value) && 'thumbnail' in value ? ['thumbnail'] : []),
+  ]
   if (
-    !isRecordWithExactKeys(value, withOptionalDisplayName(value, [
+    !isRecordWithExactKeys(value, [
       'draftId',
       'projectId',
       'state',
@@ -652,7 +672,8 @@ function parseProjectListItem(value: unknown): ProjectListItem | null {
       'reviewState',
       'outputFormats',
       'updatedAt',
-    ])) ||
+      ...optionalKeys,
+    ]) ||
     !isEntityId(value.draftId) ||
     !isNullOrEntityId(value.projectId) ||
     (value.state !== 'draft' && value.state !== 'finalized') ||
@@ -672,6 +693,17 @@ function parseProjectListItem(value: unknown): ProjectListItem | null {
     return null
   }
 
+  let thumbnail: ProjectThumbnailReference | null = null
+  if ('thumbnail' in value) {
+    thumbnail = parseProjectThumbnail(value.thumbnail)
+    if (
+      (value.thumbnail !== null && thumbnail === null) ||
+      (thumbnail !== null && value.projectId === null)
+    ) {
+      return null
+    }
+  }
+
   return Object.freeze({
     draftId: value.draftId,
     projectId: value.projectId,
@@ -686,6 +718,24 @@ function parseProjectListItem(value: unknown): ProjectListItem | null {
     reviewState: null,
     outputFormats: Object.freeze([...value.outputFormats]),
     updatedAt: value.updatedAt,
+    ...('thumbnail' in value ? { thumbnail } : {}),
+  })
+}
+
+function parseProjectThumbnail(value: unknown): ProjectThumbnailReference | null {
+  if (
+    !isRecordWithExactKeys(value, ['executionId', 'artifactId', 'contentDigest']) ||
+    !isEntityId(value.executionId) ||
+    !isEntityId(value.artifactId) ||
+    !isContentDigest(value.contentDigest)
+  ) {
+    return null
+  }
+
+  return Object.freeze({
+    executionId: value.executionId,
+    artifactId: value.artifactId,
+    contentDigest: value.contentDigest,
   })
 }
 

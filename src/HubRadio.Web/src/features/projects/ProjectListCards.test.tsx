@@ -275,6 +275,50 @@ describe('ProjectListCards', () => {
     await act(async () => user.click(within(container).getByRole('button', { name: '名称未入力を削除' })))
     expect(onDelete).toHaveBeenCalledExactlyOnceWith(expect.any(String), '名称未入力')
   })
+
+  // FR-045 AC-020.1
+  it('shows the generated thumbnail of a project from the media origin and a placeholder when there is none', () => {
+    const thumbnail = {
+      executionId: '11111111-1111-4111-8111-111111111111',
+      artifactId: '22222222-2222-4222-8222-222222222222',
+      contentDigest: 'a'.repeat(64),
+    }
+    renderCards([
+      projectListItem(0, { state: 'finalized', projectId: finalizedProjectId, thumbnail }),
+      projectListItem(1, { state: 'finalized', projectId: finalizedProjectId, thumbnail: null }),
+      projectListItem(2),
+    ])
+
+    const images = container.querySelectorAll('img')
+    expect(images).toHaveLength(1)
+    expect(images[0]!.getAttribute('src')).toBe(
+      `https://player-media.appassets.example/source-only/${finalizedProjectId}/${thumbnail.executionId}/${thumbnail.artifactId}/${thumbnail.contentDigest}`,
+    )
+    expect(images[0]!.getAttribute('alt')).toBe('案件 1のサムネイル')
+    expect(container.querySelectorAll('.project-card-thumbnail-empty')).toHaveLength(2)
+    expect(container.querySelectorAll('.project-card-thumbnail-empty')[0]!.textContent).toBe('サムネイルなし')
+  })
+
+  // FR-045 AC-020.2
+  it('falls back to the placeholder when the thumbnail cannot be loaded and keeps the card operable', () => {
+    const thumbnail = {
+      executionId: '11111111-1111-4111-8111-111111111111',
+      artifactId: '22222222-2222-4222-8222-222222222222',
+      contentDigest: 'b'.repeat(64),
+    }
+    const onOpen = renderCards([
+      projectListItem(0, { state: 'finalized', projectId: finalizedProjectId, thumbnail }),
+    ])
+
+    act(() => {
+      container.querySelector('img')!.dispatchEvent(new Event('error'))
+    })
+
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('.project-card-thumbnail-empty')).not.toBeNull()
+    expect(openButton('案件 1').hasAttribute('disabled')).toBe(false)
+    expect(onOpen).not.toHaveBeenCalled()
+  })
 })
 
 function renderCards(
