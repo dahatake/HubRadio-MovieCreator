@@ -15,7 +15,7 @@
 | `src/HubRadio.Worker/requirements-test.lock` | runtime lockをincludeし、pytestとtest固有transitive wheel 4件を追加 |
 | `src/HubRadio.Worker/wheel-matrix.json` | 29 wheelのfile name、byte size、SHA-256、target、採否、残gate |
 
-`pyproject.toml`はCPython 3.12系だけを許可し、直接runtime依存、test依存、setuptools build backendをexact versionで宣言する。lockは`--require-hashes`と`--only-binary=:all:`を必須にし、sdist buildやresolverによるsilent updateを許可しない。canonical `build.ps1`はtest overlayから全29 wheelを復元した後、local workerだけを`--no-deps --no-build-isolation`でeditable installし、`pip check`を実行する。build時にlockを再生成しない。
+`pyproject.toml`はCPython 3.12系だけを許可し、直接runtime依存、test依存、setuptools build backendをexact versionで宣言する。lockは`--require-hashes`と`--only-binary=:all:`を必須にし、sdist buildやresolverによるsilent updateを許可しない。canonical `scripts/build.ps1`はtest overlayから全29 wheelを復元した後、local workerだけを`--no-deps --no-build-isolation`でeditable installし、`pip check`を実行する。build時にlockを再生成しない。
 
 ## 実測したartifact集合
 

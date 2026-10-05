@@ -98,7 +98,7 @@ describe('SettingsList', () => {
 
   it('reaches all 123 shipped keys exactly once through five groups and bounded six-row pages', async () => {
     type InventoryEntry = Pick<SettingDefinition, 'key' | 'group' | 'displayName' | 'description' | 'isAdvanced'>
-    const shippedProfileJson = readFileSync(resolve(process.cwd(), '../HubRadio.App/DefaultSettings/Profiles/1.0.0.json'), 'utf8')
+    const shippedProfileJson = readFileSync(resolve(process.cwd(), '../HubRadio.App/DefaultSettings/Profiles/1.1.0.json'), 'utf8')
     const profile = JSON.parse(shippedProfileJson) as { settings: readonly InventoryEntry[] }
     // Use the shipped inventory, not a generated set of 123 keys. Wire-value formatting is tested separately.
     const definitions = profile.settings.map(item => definition(item.key, {

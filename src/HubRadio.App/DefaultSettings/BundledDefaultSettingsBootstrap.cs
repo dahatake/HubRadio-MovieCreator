@@ -53,9 +53,10 @@ internal sealed class BundledDefaultSettingsBootstrap
             BundledDefaultSettingsProfileCatalog.Load(trustedProfilesDirectory);
         DefaultSettingsProfile bundledProfile = catalog.Current;
         StoredGlobalSettings? existingGlobal = store.GetGlobalSettings();
+        DefaultSettingsProfile? existingProfile = null;
         if (existingGlobal is not null)
         {
-            _ = catalog.Resolve(
+            existingProfile = catalog.Resolve(
                 existingGlobal.Snapshot.ProfileId,
                 existingGlobal.Snapshot.ProfileVersion,
                 existingGlobal.Snapshot.ProfileDigest);
@@ -71,7 +72,7 @@ internal sealed class BundledDefaultSettingsBootstrap
             return new DefaultSettingsBootstrapResult(
                 DefaultSettingsBootstrapState.Existing,
                 storedProfile,
-                existingGlobal);
+                MigrateGlobalSettings(existingGlobal, existingProfile!, storedProfile, initializedAt));
         }
 
         StoredGlobalSettings initializedGlobal = store.InitializeGlobalSettings(
@@ -81,5 +82,32 @@ internal sealed class BundledDefaultSettingsBootstrap
             DefaultSettingsBootstrapState.Initialized,
             storedProfile,
             initializedGlobal);
+    }
+
+    // New projects must be offered the current profile's choices. The global defaults move to the
+    // current version only when every saved value stays valid there; project snapshots never move.
+    private StoredGlobalSettings MigrateGlobalSettings(
+        StoredGlobalSettings existing,
+        DefaultSettingsProfile existingProfile,
+        DefaultSettingsProfile currentProfile,
+        DateTimeOffset migratedAt)
+    {
+        if (existingProfile.Version == currentProfile.Version)
+        {
+            return existing;
+        }
+
+        DefaultSettingsSnapshot carried;
+        try
+        {
+            carried = currentProfile.CreateSnapshot(existing.Snapshot.Values);
+        }
+        catch (ArgumentException)
+        {
+            return existing;
+        }
+
+        DateTimeOffset at = migratedAt < existing.UpdatedAt ? existing.UpdatedAt : migratedAt;
+        return store.UpdateGlobalSettings(carried, existing.Revision, at);
     }
 }

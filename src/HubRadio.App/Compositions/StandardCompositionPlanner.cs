@@ -709,7 +709,6 @@ public sealed class StandardThumbnailEvidence
 
 public static class StandardCompositionPlanner
 {
-    private const int RequiredShortCount = 3;
     private const string RequiredVideoCodec = "h264";
     private const string RequiredAudioCodec = "aac";
     private const string RequiredHookPolicy =
@@ -823,9 +822,13 @@ public static class StandardCompositionPlanner
         EntityId<StandardCompositionPlanIdTag> planId =
             StandardCompositionCanonical.DeterministicId<
                 StandardCompositionPlanIdTag>(inputDigest, "plan");
+        int shortLimit = ReadCount(
+            request,
+            "project.verticalShortCandidateCount");
         StandardThumbnailPlan[] thumbnails = CreateThumbnails(
             request,
-            inputDigest);
+            inputDigest,
+            ReadCount(request, "thumbnails.candidateCount"));
 
         var selected = new List<SelectedCandidate>();
         var exclusions = new List<StandardShortCandidateExclusion>();
@@ -896,7 +899,7 @@ public static class StandardCompositionPlanner
                 continue;
             }
 
-            if (selected.Count == StandardCompositionPlan.MaximumShortFormCount)
+            if (selected.Count >= shortLimit)
             {
                 exclusions.Add(new StandardShortCandidateExclusion(
                     candidate.Id,
@@ -985,7 +988,7 @@ public static class StandardCompositionPlanner
         }
 
         var omissions = new List<StandardArtifactOmission>(2);
-        if (shorts.Count < RequiredShortCount)
+        if (shorts.Count < StandardCompositionPlan.MaximumShortFormCount)
         {
             omissions.Add(new StandardArtifactOmission(
                 StandardCompositionArtifactKind.ShortForm,
@@ -1122,18 +1125,23 @@ public static class StandardCompositionPlanner
         if (!HasText(values, "project.publicationScope", "internalOnly")
             || !HasText(values, "output.landscapeResolution", "1920x1080")
             || !HasText(values, "output.verticalResolution", "1080x1920")
-            || !HasInteger(
+            || !HasIntegerInRange(
                 values,
                 "project.verticalShortCandidateCount",
-                RequiredShortCount)
+                0,
+                StandardCompositionPlan.MaximumShortFormCount)
             || !HasText(
                 values,
                 "editing.shortHookPolicy",
                 RequiredHookPolicy)
-            || !HasInteger(values, "editing.shortHookMaximumStart", 3)
+            || !HasIntegerInRange(values, "editing.shortHookMaximumStart", 1, 5)
             || !HasInteger(values, "output.shortTargetDuration", 30)
             || !HasShortDurationPolicy(request.SettingsProfile)
-            || !HasInteger(values, "thumbnails.candidateCount", 3)
+            || !HasIntegerInRange(
+                values,
+                "thumbnails.candidateCount",
+                1,
+                StandardCompositionPlan.MaximumThumbnailCount)
             || !HasBoolean(values, "thumbnails.sourceFrameOnly", true)
             || !HasBoolean(values, "thumbnails.generatedFaceEnabled", false)
             || !HasBoolean(values, "thumbnails.generatedSceneEnabled", false))
@@ -1299,14 +1307,15 @@ public static class StandardCompositionPlanner
 
     private static StandardThumbnailPlan[] CreateThumbnails(
         StandardCompositionPlanningRequest request,
-        ContentDigest inputDigest)
+        ContentDigest inputDigest,
+        int limit)
     {
         if (request.ThumbnailEvidence is not StandardThumbnailEvidence evidence)
         {
             return [];
         }
 
-        return evidence.Frames.Select(frame => new StandardThumbnailPlan(
+        return SpreadFrames(evidence.Frames, limit).Select(frame => new StandardThumbnailPlan(
                 StandardCompositionCanonical.DeterministicId<
                     StandardThumbnailPlanIdTag>(
                     inputDigest,
@@ -1318,6 +1327,30 @@ public static class StandardCompositionPlanner
                 frame.SourceFrameSequence,
                 frame.SourcePresentationTime))
             .ToArray();
+    }
+
+    private static IReadOnlyList<StandardThumbnailFrameEvidence> SpreadFrames(
+        IReadOnlyList<StandardThumbnailFrameEvidence> frames,
+        int limit)
+    {
+        if (frames.Count <= limit)
+        {
+            return frames;
+        }
+
+        if (limit == 1)
+        {
+            return [frames[frames.Count / 2]];
+        }
+
+        var spread = new StandardThumbnailFrameEvidence[limit];
+        for (int index = 0; index < limit; index++)
+        {
+            spread[index] = frames[checked((int)(
+                (long)index * (frames.Count - 1) / (limit - 1)))];
+        }
+
+        return spread;
     }
 
     private static Dictionary<
@@ -1801,6 +1834,26 @@ public static class StandardCompositionPlanner
         values.TryGetValue(key, out DefaultSettingValue? value)
         && value.Kind == DefaultSettingValueKind.Integer
         && value.IntegerValue == expected;
+
+    private static bool HasIntegerInRange(
+        IReadOnlyDictionary<string, DefaultSettingValue> values,
+        string key,
+        long minimum,
+        long maximum) =>
+        values.TryGetValue(key, out DefaultSettingValue? value)
+        && value.Kind == DefaultSettingValueKind.Integer
+        && value.IntegerValue >= minimum
+        && value.IntegerValue <= maximum;
+
+    private static int ReadCount(
+        StandardCompositionPlanningRequest request,
+        string key) =>
+        checked((int)request.Settings.Values
+            .Single(selection => string.Equals(
+                selection.Key,
+                key,
+                StringComparison.Ordinal))
+            .Value.IntegerValue!.Value);
 
     private static bool HasBoolean(
         IReadOnlyDictionary<string, DefaultSettingValue> values,

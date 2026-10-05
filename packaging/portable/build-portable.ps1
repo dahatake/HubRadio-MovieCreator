@@ -2,7 +2,7 @@
 
 <#
 OSL-012: one-shot LOCAL CANDIDATE build, not a general release pipeline.
-Prerequisites: acquire the SDK/tools first (git.exe must be on PATH), run build.ps1 for
+Prerequisites: acquire the SDK/tools first (git.exe must be on PATH), run scripts/build.ps1 for
 restore/build (including Web dist), and run prepare-payload.ps1 separately.
 Use the latest installed Windows x64 pwsh, -NoLogo -NoProfile -File, with all five
 parameters. The four paths must be absolute local paths; Version is a SemVer
@@ -93,7 +93,7 @@ function Assert-SafePath([string]$Path, [switch]$File, [switch]$AllowMissing) {
         try { $item = Get-Item -LiteralPath $current -Force -ErrorAction Stop }
         catch [Management.Automation.ItemNotFoundException] {
             if ($AllowMissing) { continue }
-            throw 'OSL012:MISSING A required input is missing; prepare the payload and run build.ps1 first.'
+            throw 'OSL012:MISSING A required input is missing; prepare the payload and run scripts/build.ps1 first.'
         }
         if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
             throw 'OSL012:REPARSE A path chain contains a reparse point.'
@@ -568,7 +568,7 @@ $appContentTrees = [ordered]@{
 }
 foreach ($root in $appContentTrees.Keys) {
     $files = Get-TreeRecords (Join-Path $repoRoot $appContentTrees[$root])
-    if ($files.Count -eq 0) { throw 'OSL012:PREREQUISITE Web assets and App profiles must exist; run build.ps1 first.' }
+    if ($files.Count -eq 0) { throw 'OSL012:PREREQUISITE Web assets and App profiles must exist; run scripts/build.ps1 first.' }
     foreach ($file in $files.Values) {
         if (($root -eq 'WebAssets' -and $file.path.EndsWith('.partial')) -or
             ($root -ne 'WebAssets' -and [IO.Path]::GetExtension($file.path) -ine '.json')) { continue }

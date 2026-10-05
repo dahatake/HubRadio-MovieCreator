@@ -13,7 +13,7 @@ if ($PSVersionTable.PSEdition -ne 'Core') {
     throw 'PowerShell 7+ (PSEdition Core) is required.'
 }
 
-$repoRoot = $PSScriptRoot
+$repoRoot = Split-Path -Parent $PSScriptRoot
 $webRoot = Join-Path $repoRoot 'src\HubRadio.Web'
 $workerRoot = Join-Path $repoRoot 'src\HubRadio.Worker'
 $workerPython = Join-Path $workerRoot '.venv\Scripts\python.exe'
@@ -64,7 +64,7 @@ function Invoke-CheckedCommand {
     }
 }
 
-& (Join-Path $repoRoot 'build.ps1') -Configuration $Configuration
+& (Join-Path $PSScriptRoot 'build.ps1') -Configuration $Configuration
 
 $npm = Get-RequiredCommandPath -Name 'npm.cmd'
 

@@ -17,7 +17,7 @@ if ($PSVersionTable.PSEdition -ne 'Core') {
     throw 'PowerShell 7+ (PSEdition Core) is required.'
 }
 
-$repoRoot = $PSScriptRoot
+$repoRoot = Split-Path -Parent $PSScriptRoot
 $solutionPath = Join-Path $repoRoot 'HubRadio.slnx'
 $webRoot = Join-Path $repoRoot 'src\HubRadio.Web'
 $workerRoot = Join-Path $repoRoot 'src\HubRadio.Worker'
@@ -104,10 +104,17 @@ function Test-PowerShellSource {
         throw 'Unable to enumerate tracked PowerShell files.'
     }
 
+    # Stage 0 scripts are immutable benchmark evidence. Parse all tracked scripts,
+    # but apply current analyzer policy only to the active orchestrators.
+    $lintPaths = @(
+        Join-Path $PSScriptRoot 'build.ps1'
+        Join-Path $PSScriptRoot 'test.ps1'
+        Join-Path $PSScriptRoot 'run.ps1'
+    )
+
     $trackedPaths = @(
         $tracked | ForEach-Object { Join-Path $repoRoot $_ }
-        Join-Path $repoRoot 'build.ps1'
-        Join-Path $repoRoot 'test.ps1'
+        $lintPaths
     ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Sort-Object -Unique
 
     $parseErrors = @(
@@ -128,12 +135,6 @@ function Test-PowerShellSource {
         throw "PowerShell parsing failed:$([Environment]::NewLine)$($messages -join [Environment]::NewLine)"
     }
 
-    # Stage 0 scripts are immutable benchmark evidence. Parse all tracked scripts,
-    # but apply current analyzer policy only to the active root orchestrators.
-    $lintPaths = @(
-        Join-Path $repoRoot 'build.ps1'
-        Join-Path $repoRoot 'test.ps1'
-    )
     $diagnostics = @(
         foreach ($path in $lintPaths) {
             Invoke-ScriptAnalyzer -Path $path -Severity Error, Warning

@@ -57,7 +57,7 @@ public sealed class RuntimeResourceBuildContractTests
         XElement models = Load("src/HubRadio.App/HubRadio.App.csproj").Descendants("Content").Single(element =>
             element.Attribute("Include")?.Value == @"..\..\packaging\models\Bundles\**\*");
         StringAssert.Contains(models.Attribute("Condition")!.Value, "HubRadioRuntimePayloadPath");
-        string script = Read("build.ps1");
+        string script = Read("scripts/build.ps1");
         StringAssert.Contains(script, "[string]$RuntimePayloadPath");
         StringAssert.Contains(script, "-p:HubRadioRuntimePayloadPath=$RuntimePayloadPath");
         StringAssert.Contains(Read("packaging/portable/verify-runtime-payload.ps1"), "RUNTIME:COPY_SET");

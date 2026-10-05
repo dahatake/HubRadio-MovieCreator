@@ -16,6 +16,8 @@ public sealed class BundledDefaultSettingsProfileTests
 {
     private const string RelativeProfilePath =
         "src/HubRadio.App/DefaultSettings/Profiles/1.0.0.json";
+    private const string CurrentRelativeProfilePath =
+        "src/HubRadio.App/DefaultSettings/Profiles/1.1.0.json";
     private const string ExpectedId = "8d75a1fe-d10e-4aa7-87c5-3ac2d06d1f9b";
     private const string ExpectedDigest =
         "5ffedbd56f43f9142b92c16e36abfd289da45cd34feea897da82101164a7414c";
@@ -241,7 +243,7 @@ public sealed class BundledDefaultSettingsProfileTests
                 "A different approved-looking description.");
         StringAssert.Contains(
             driftException.Message,
-            "differs from the approved 1.0.0 content");
+            "differs from the approved content for its version");
 
         JsonException identityException = AssertMutationRejected(
             root => root["id"] = "11111111-1111-4111-8111-111111111111",
@@ -300,7 +302,7 @@ public sealed class BundledDefaultSettingsProfileTests
     }
 
     [TestMethod]
-    public void CatalogLoadsAndResolvesOnlyThePinnedCurrentProfile()
+    public void CatalogLoadsAndResolvesOnlyThePinnedProfiles()
     {
         string sourceDirectory = ResolveRepositoryPath(
             "src/HubRadio.App/DefaultSettings/Profiles",
@@ -308,8 +310,17 @@ public sealed class BundledDefaultSettingsProfileTests
         BundledDefaultSettingsProfileCatalog catalog =
             BundledDefaultSettingsProfileCatalog.Load(sourceDirectory);
 
-        Assert.AreEqual(1, catalog.Profiles.Count);
-        Assert.AreSame(catalog.Current, catalog.Profiles[0]);
+        Assert.AreEqual(2, catalog.Profiles.Count);
+        CollectionAssert.AreEqual(
+            new[] { "1.0.0", "1.1.0" },
+            catalog.Profiles.Select(static profile => profile.Version.ToString()).ToArray());
+        Assert.AreSame(catalog.Current, catalog.Profiles[1]);
+        Assert.AreSame(
+            catalog.Profiles[0],
+            catalog.Resolve(
+                catalog.Profiles[0].Id,
+                catalog.Profiles[0].Version,
+                catalog.Profiles[0].ContentDigest));
         Assert.AreSame(
             catalog.Current,
             catalog.Resolve(
@@ -335,8 +346,12 @@ public sealed class BundledDefaultSettingsProfileTests
             BundledDefaultSettingsProfileCatalog.Load(missingPath));
 
         using TemporaryDirectory temporary = new();
-        string approvedPath = Path.Combine(temporary.Path, "1.0.0.json");
-        File.WriteAllBytes(approvedPath, ReadSourceBytes());
+        File.WriteAllBytes(Path.Combine(temporary.Path, "1.0.0.json"), ReadSourceBytes());
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            BundledDefaultSettingsProfileCatalog.Load(temporary.Path));
+        File.WriteAllBytes(
+            Path.Combine(temporary.Path, "1.1.0.json"),
+            File.ReadAllBytes(ResolveRepositoryPath(CurrentRelativeProfilePath)));
         _ = BundledDefaultSettingsProfileCatalog.Load(temporary.Path);
 
         File.WriteAllBytes(
@@ -344,6 +359,46 @@ public sealed class BundledDefaultSettingsProfileTests
             ReadSourceBytes());
         Assert.ThrowsExactly<InvalidOperationException>(() =>
             BundledDefaultSettingsProfileCatalog.Load(temporary.Path));
+    }
+
+    [TestMethod]
+    public void CurrentProfileKeepsEveryDefaultAndOnlyWidensTheHonoredRanges()
+    {
+        DefaultSettingsProfile previous = LoadSource();
+        DefaultSettingsProfile current = BundledDefaultSettingsProfileLoader.Load(
+            File.ReadAllBytes(ResolveRepositoryPath(CurrentRelativeProfilePath)));
+
+        Assert.AreEqual("1.1.0", current.Version.ToString());
+        Assert.AreEqual(previous.Id, current.Id);
+        Assert.AreEqual(previous.Definitions.Count, current.Definitions.Count);
+        string[] changed = current.Definitions
+            .Where(definition =>
+            {
+                DefaultSettingDefinition before = previous.GetDefinition(definition.Key);
+                return definition.Description != before.Description
+                    || !Equals(definition.Minimum, before.Minimum)
+                    || !Equals(definition.Maximum, before.Maximum);
+            })
+            .Select(static definition => definition.Key)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        CollectionAssert.AreEqual(
+            new[] { "editing.shortHookMaximumStart", "thumbnails.candidateCount" },
+            changed);
+        foreach (DefaultSettingDefinition definition in current.Definitions)
+        {
+            Assert.AreEqual(
+                previous.GetDefinition(definition.Key).DefaultValue,
+                definition.DefaultValue,
+                definition.Key);
+        }
+
+        Assert.AreEqual(1, current.GetDefinition("thumbnails.candidateCount").Minimum!.IntegerValue);
+        Assert.AreEqual(3, current.GetDefinition("thumbnails.candidateCount").Maximum!.IntegerValue);
+        Assert.AreEqual(1, current.GetDefinition("editing.shortHookMaximumStart").Minimum!.IntegerValue);
+        Assert.AreEqual(5, current.GetDefinition("editing.shortHookMaximumStart").Maximum!.IntegerValue);
+        Assert.IsTrue(BundledDefaultSettingsProfileLoader.IsApprovedProfile(previous));
+        Assert.IsTrue(BundledDefaultSettingsProfileLoader.IsApprovedProfile(current));
     }
 
     [TestMethod]

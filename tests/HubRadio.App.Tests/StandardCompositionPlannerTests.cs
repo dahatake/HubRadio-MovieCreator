@@ -583,6 +583,88 @@ public sealed class StandardCompositionPlannerTests
     }
 
     [TestMethod]
+    public void ChosenShortCandidateCountLimitsTheSelectedShorts()
+    {
+        Fixture fixture = new();
+        EmphasisSuggestionCandidate[] candidates =
+        [
+            fixture.CreateCandidate(1, 0, 15, 1),
+            fixture.CreateCandidate(2, 20, 15, 2),
+            fixture.CreateCandidate(3, 40, 15, 3),
+        ];
+        HighlightSuggestionAdoptionResult[] adoptions = candidates
+            .Select(fixture.Adopt)
+            .ToArray();
+
+        StandardCompositionPlan two = StandardCompositionPlanner.Create(
+            fixture.CreateRequest(
+                candidates,
+                adoptions,
+                settings: fixture.WithSetting(
+                    "project.verticalShortCandidateCount",
+                    DefaultSettingValue.FromInteger(2))));
+        StandardCompositionPlan none = StandardCompositionPlanner.Create(
+            fixture.CreateRequest(
+                candidates,
+                adoptions,
+                settings: fixture.WithSetting(
+                    "project.verticalShortCandidateCount",
+                    DefaultSettingValue.FromInteger(0))));
+
+        CollectionAssert.AreEqual(
+            new[] { candidates[0].Id, candidates[1].Id },
+            two.ShortForms.Select(static item =>
+                item.SelectedHighlight.SuggestionId).ToArray());
+        Assert.AreEqual(
+            StandardShortCandidateExclusionCode.CandidateLimitApplied,
+            two.ShortCandidateExclusions.Single().Code);
+        Assert.AreEqual(
+            StandardCompositionOmissionCode.NoAdditionalGroundedCandidate,
+            two.Omissions.Single(static omission => omission.ArtifactKind
+                == StandardCompositionArtifactKind.ShortForm).Code);
+        Assert.IsEmpty(none.ShortForms);
+        Assert.HasCount(3, none.ShortCandidateExclusions);
+        Assert.AreEqual(
+            StandardCompositionOmissionCode.NoGroundedCandidate,
+            none.Omissions.Single(static omission => omission.ArtifactKind
+                == StandardCompositionArtifactKind.ShortForm).Code);
+    }
+
+    [TestMethod]
+    public void ChosenThumbnailCountLimitsTheSelectedFrames()
+    {
+        Fixture fixture = new();
+        StandardThumbnailEvidence evidence = fixture.CreateThumbnailEvidence(4);
+
+        StandardCompositionPlan one = StandardCompositionPlanner.Create(
+            fixture.CreateRequest(
+                [],
+                [],
+                settings: fixture.WithSetting(
+                    "thumbnails.candidateCount",
+                    DefaultSettingValue.FromInteger(1)),
+                thumbnailEvidence: evidence));
+        StandardCompositionPlan two = StandardCompositionPlanner.Create(
+            fixture.CreateRequest(
+                [],
+                [],
+                settings: fixture.WithSetting(
+                    "thumbnails.candidateCount",
+                    DefaultSettingValue.FromInteger(2)),
+                thumbnailEvidence: evidence));
+
+        Assert.HasCount(1, one.Thumbnails);
+        Assert.HasCount(2, two.Thumbnails);
+        CollectionAssert.AreEqual(
+            new[] { 0, 3 },
+            two.Thumbnails.Select(static item => item.SourceFrameSequence).ToArray());
+        Assert.AreEqual(
+            StandardCompositionOmissionCode.NoAdditionalMeasuredSourceFrame,
+            two.Omissions.Single(static omission => omission.ArtifactKind
+                == StandardCompositionArtifactKind.Thumbnail).Code);
+    }
+
+    [TestMethod]
     public void LayoutFallsBackToBlurredOrFixedWithoutClaimingSubjectOrPlatformMeasurement()
     {
         Fixture fixture = new();
@@ -742,8 +824,8 @@ public sealed class StandardCompositionPlannerTests
                 "73000000-0000-0000-0000-000000000099"),
             fixture.TimelineMap.Entries);
         DefaultSettingsSnapshot wrongSettings = fixture.WithSetting(
-            "project.verticalShortCandidateCount",
-            DefaultSettingValue.FromInteger(2));
+            "output.shortTargetDuration",
+            DefaultSettingValue.FromInteger(31));
         BundledRenderProfileDefinition wrongProfile =
             fixture.CreateInvalidVerticalProfileWithoutBurnIn();
 
@@ -963,7 +1045,7 @@ public sealed class StandardCompositionPlannerTests
                 Parent);
             SettingsProfile = BundledDefaultSettingsProfileLoader.Load(
                 File.ReadAllBytes(ResolveRepositoryPath(
-                    "src/HubRadio.App/DefaultSettings/Profiles/1.0.0.json")));
+                    "src/HubRadio.App/DefaultSettings/Profiles/1.1.0.json")));
             Settings = SettingsProfile.CreateSnapshot();
             ProjectStoreState = new StandardProjectStoreState(
                 revision: 0,

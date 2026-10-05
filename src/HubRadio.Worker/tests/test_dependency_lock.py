@@ -87,7 +87,7 @@ def test_python_direct_dependencies_and_build_backend_are_exact() -> None:
 
 
 def test_canonical_build_consumes_the_lock_without_dependency_or_index_fallback() -> None:
-    build_script = (REPO_ROOT / "build.ps1").read_text(encoding="utf-8")
+    build_script = (REPO_ROOT / "scripts" / "build.ps1").read_text(encoding="utf-8")
 
     assert "'--require-hashes', '--only-binary=:all:'" in build_script
     assert "'-r', $workerTestLock" in build_script

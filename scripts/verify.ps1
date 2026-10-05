@@ -10,7 +10,7 @@ Builds, runs static checks and runs every automated test; exits non-zero on any 
    automated test file (comment or name), so a requirement ID can be traced to its tests.
    FR-036 to FR-038 predate this check and their tests carry no IDs yet, so they are not
    listed by default.
-2. Runs test.ps1, which builds the solution and the Web UI (TypeScript type check included)
+2. Runs scripts/test.ps1, which builds the solution and the Web UI (TypeScript type check included)
    and runs the .NET, Web, accessibility and worker tests.
 #>
 [CmdletBinding()]
@@ -54,7 +54,7 @@ function Test-RequirementTraceability {
 
 Test-RequirementTraceability
 
-& (Join-Path $repoRoot 'test.ps1') -Configuration $Configuration
+& (Join-Path $PSScriptRoot 'test.ps1') -Configuration $Configuration
 if ($LASTEXITCODE -ne 0) {
     throw "test.ps1 failed with exit code $LASTEXITCODE."
 }

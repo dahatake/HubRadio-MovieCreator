@@ -756,7 +756,7 @@ public sealed class WebViewHostTests
             _ = DatabaseMigrator.Migrate(DatabasePath, Path.Combine(workspace, "backups"));
             Store = new DefaultSettingsStore(DatabasePath);
             var profile = Store.RegisterProfile(File.ReadAllBytes(
-                ResolveRepositoryPath("src/HubRadio.App/DefaultSettings/Profiles/1.0.0.json")));
+                ResolveRepositoryPath("src/HubRadio.App/DefaultSettings/Profiles/1.1.0.json")));
             DateTimeOffset now = new(2026, 9, 7, 0, 0, 0, TimeSpan.Zero);
             _ = Store.InitializeGlobalSettings(profile.CreateSnapshot(), now);
             ProjectId = EntityId<ProjectIdTag>.New();

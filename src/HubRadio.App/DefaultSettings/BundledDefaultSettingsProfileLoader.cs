@@ -10,9 +10,12 @@ public static class BundledDefaultSettingsProfileLoader
     private const int MaximumUtf8JsonBytes = 64 * 1024;
     private const string ExpectedId = "8d75a1fe-d10e-4aa7-87c5-3ac2d06d1f9b";
     private const string ExpectedName = "hubradio-production-defaults";
-    private const string ExpectedVersion = "1.0.0";
-    private const string ExpectedContentDigest =
-        "5ffedbd56f43f9142b92c16e36abfd289da45cd34feea897da82101164a7414c";
+    private static readonly IReadOnlyDictionary<string, string> ApprovedDigestsByVersion =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["1.0.0"] = "5ffedbd56f43f9142b92c16e36abfd289da45cd34feea897da82101164a7414c",
+            ["1.1.0"] = "6f0bde7c863572d9e41b6b18e9f2a223a9864f80255334d35fa10f9d1fa3ee31",
+        };
     private const string CallToActionDescription =
         "A short uses the single text 本編を見る only when a corresponding long-form version exists; otherwise it has no call to action. No URL or other action is inferred.";
 
@@ -147,6 +150,14 @@ public static class BundledDefaultSettingsProfileLoader
         "thumbnails.verticalCanvas",
     ];
 
+    internal static bool IsApprovedProfile(DefaultSettingsProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        return ApprovedDigestsByVersion.TryGetValue(profile.Version.ToString(), out string? digest) &&
+            string.Equals(profile.ContentDigest.Hex, digest, StringComparison.Ordinal) &&
+            string.Equals(profile.Id.ToString(), ExpectedId, StringComparison.Ordinal);
+    }
+
     public static DefaultSettingsProfile Load(ReadOnlySpan<byte> utf8Json)
     {
         if (utf8Json.IsEmpty)
@@ -188,13 +199,16 @@ public static class BundledDefaultSettingsProfileLoader
         ValidateInventory(profile);
         ValidateEvidence(profile);
         ValidateCriticalSemantics(profile);
-        if (!string.Equals(
+        if (!ApprovedDigestsByVersion.TryGetValue(
+                profile.Version.ToString(),
+                out string? approvedDigest) ||
+            !string.Equals(
                 profile.ContentDigest.Hex,
-                ExpectedContentDigest,
+                approvedDigest,
                 StringComparison.Ordinal))
         {
             throw new JsonException(
-                "The bundled default-settings profile differs from the approved 1.0.0 content.");
+                "The bundled default-settings profile differs from the approved content for its version.");
         }
 
         return profile;
@@ -204,7 +218,7 @@ public static class BundledDefaultSettingsProfileLoader
     {
         if (!string.Equals(profile.Id.ToString(), ExpectedId, StringComparison.Ordinal) ||
             !string.Equals(profile.Name, ExpectedName, StringComparison.Ordinal) ||
-            !string.Equals(profile.Version.ToString(), ExpectedVersion, StringComparison.Ordinal))
+            !ApprovedDigestsByVersion.ContainsKey(profile.Version.ToString()))
         {
             throw new JsonException(
                 "The bundled default-settings profile identity is not approved.");

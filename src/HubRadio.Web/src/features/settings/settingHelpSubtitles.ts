@@ -158,8 +158,8 @@ export const subtitlesAndThumbnailsHelp: Readonly<Record<string, SettingHelpEntr
   ],
   'thumbnails.candidateCount': [
     'サムネイル候補の数',
-    'サムネイル（動画の表紙になる画像）の候補を、いくつ作るかです。初期値は3で、最小値・最大値がどちらも3です。',
-    '3つの候補が作られ、その中から選べます。3以外の値にはできません。',
+    'サムネイル（動画の表紙になる画像）の候補を、いくつまで作るかです。1〜3の範囲で指定でき、初期値は3です。',
+    '数を増やすと選べる表紙が増えます。1にすると、動画の中ほどの1枚だけが作られます。設定の版が1.0.0の古い案件では、3で固定です。',
   ],
   'thumbnails.generatedFaceEnabled': [
     'AIが作った顔のサムネイル',

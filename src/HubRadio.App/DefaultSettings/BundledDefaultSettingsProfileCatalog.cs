@@ -6,12 +6,12 @@ namespace HubRadio.App.DefaultSettings;
 
 internal sealed class BundledDefaultSettingsProfileCatalog
 {
-    private const string CurrentProfileFileName = "1.0.0.json";
+    private static readonly string[] ApprovedProfileFileNames = ["1.0.0.json", "1.1.0.json"];
 
-    private BundledDefaultSettingsProfileCatalog(DefaultSettingsProfile current)
+    private BundledDefaultSettingsProfileCatalog(IReadOnlyList<DefaultSettingsProfile> profiles)
     {
-        Current = current;
-        Profiles = Array.AsReadOnly([current]);
+        Profiles = profiles;
+        Current = profiles[^1];
     }
 
     internal DefaultSettingsProfile Current { get; }
@@ -34,17 +34,18 @@ internal sealed class BundledDefaultSettingsProfileCatalog
             .OrderBy(static path => path, StringComparer.Ordinal)
             .ToArray();
         if (!relativeJsonPaths.SequenceEqual(
-                new[] { CurrentProfileFileName },
+                ApprovedProfileFileNames,
                 StringComparer.Ordinal))
         {
             throw new InvalidOperationException(
-                "The bundled default-settings catalog must contain exactly the approved 1.0.0 profile.");
+                "The bundled default-settings catalog must contain exactly the approved profiles (1.0.0 and 1.1.0).");
         }
 
-        string profilePath = Path.Combine(root, CurrentProfileFileName);
-        DefaultSettingsProfile profile = BundledDefaultSettingsProfileLoader.Load(
-            File.ReadAllBytes(profilePath));
-        return new BundledDefaultSettingsProfileCatalog(profile);
+        DefaultSettingsProfile[] profiles = ApprovedProfileFileNames
+            .Select(fileName => BundledDefaultSettingsProfileLoader.Load(
+                File.ReadAllBytes(Path.Combine(root, fileName))))
+            .ToArray();
+        return new BundledDefaultSettingsProfileCatalog(Array.AsReadOnly(profiles));
     }
 
     internal DefaultSettingsProfile Resolve(
@@ -56,11 +57,11 @@ internal sealed class BundledDefaultSettingsProfileCatalog
         ArgumentNullException.ThrowIfNull(profileVersion);
         ArgumentNullException.ThrowIfNull(profileDigest);
 
-        return profileId == Current.Id &&
-            profileVersion == Current.Version &&
-            profileDigest == Current.ContentDigest
-            ? Current
-            : throw new InvalidOperationException(
+        return Profiles.FirstOrDefault(profile =>
+            profileId == profile.Id &&
+            profileVersion == profile.Version &&
+            profileDigest == profile.ContentDigest)
+            ?? throw new InvalidOperationException(
                 "The requested default-settings profile is not in the bundled catalog.");
     }
 }

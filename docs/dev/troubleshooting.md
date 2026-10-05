@@ -80,7 +80,7 @@ fixture を入手できない場合、実素材を必要とする stage を成�
 
 ## Python 3.12 が見つからない
 
-**原因:** 製品workerの`build.ps1`が`py.exe -3.12`でWindows x64版CPython 3.12を選択できないか、`benchmarks/setup-python-env.ps1`の既定pathにStage 0用Python 3.12がありません。
+**原因:** 製品workerの`scripts/build.ps1`が`py.exe -3.12`でWindows x64版CPython 3.12を選択できないか、`benchmarks/setup-python-env.ps1`の既定pathにStage 0用Python 3.12がありません。
 
 **対処:** Windows x64版CPython 3.12を用意します。Stage 0 benchmarkだけを再実行する場合は、実在するPython 3.12の絶対pathを`-PythonExecutable`に指定できます。別implementation、32-bit、別major/minor versionを無理に使用しません。
 

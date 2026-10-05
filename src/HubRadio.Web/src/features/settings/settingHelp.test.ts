@@ -12,7 +12,7 @@ interface ProfileSetting {
 
 const profilePath = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  '../../../../HubRadio.App/DefaultSettings/Profiles/1.0.0.json',
+  '../../../../HubRadio.App/DefaultSettings/Profiles/1.1.0.json',
 )
 const settings = (JSON.parse(readFileSync(profilePath, 'utf8')) as { settings: ProfileSetting[] }).settings
 

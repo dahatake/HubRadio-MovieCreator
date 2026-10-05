@@ -625,7 +625,7 @@ public sealed class GlobalSettingsServiceTests
             DatabasePath = Path.Combine(root, "settings.db");
             _ = DatabaseMigrator.Migrate(DatabasePath, Path.Combine(root, "backups"));
             Store = new DefaultSettingsStore(DatabasePath);
-            byte[] profileBytes = File.ReadAllBytes(ResolveRepositoryPath(ProfilesDirectory + "/1.0.0.json"));
+            byte[] profileBytes = File.ReadAllBytes(ResolveRepositoryPath(ProfilesDirectory + "/1.1.0.json"));
             Profile = BundledDefaultSettingsProfileLoader.Load(profileBytes);
             if (initializeGlobal)
             {

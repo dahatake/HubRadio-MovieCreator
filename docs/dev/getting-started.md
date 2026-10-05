@@ -28,8 +28,23 @@ OS-onlyの1操作起動候補は、[portable distribution runbook](packaging/por
 Foundation全体の依存復元、静的解析、build、testはrepository rootで次を実行します。
 
 ```powershell
-pwsh.exe -NoLogo -NoProfile -File .\test.ps1 -Configuration Release
+pwsh.exe -NoLogo -NoProfile -File .\scripts\test.ps1 -Configuration Release
 ```
+
+最新の作業treeをRelease buildしてAppを起動する場合は次を実行します。既に同じRelease出力から起動中の`HubRadio.App`は、build前に終了します。`-SkipBuild`で既存のRelease出力をそのまま起動し、`-Wait`でApp終了まで待ってその終了コードを返します。
+
+```powershell
+pwsh.exe -NoLogo -NoProfile -File .\scripts\run.ps1
+```
+
+build・test・起動用のscriptは`scripts/`にまとめています。
+
+| script | 用途 |
+|---|---|
+| `scripts/build.ps1` | 依存復元、Web build、.NET build、静的解析 |
+| `scripts/test.ps1` | `build.ps1`の後に.NET・Web・Python workerの全testを実行 |
+| `scripts/verify.ps1` | 要求IDの追跡性検査の後に`test.ps1`を実行（CI） |
+| `scripts/run.ps1` | Release buildの後に`HubRadio.App.exe`を起動 |
 
 ## 前提条件
 
@@ -40,7 +55,7 @@ pwsh.exe -NoLogo -NoProfile -File .\test.ps1 -Configuration Release
 | source 管理 | Git |
 | fixture | 利用許可を確認した固定動画 |
 | media 検証 | WinGet の `BtbN.FFmpeg.LGPL.8.1` version `8.1.2-20260731` |
-| 製品worker | Windows x64版CPython 3.12。`build.ps1`がPK-001 hash lockから隔離環境を作る |
+| 製品worker | Windows x64版CPython 3.12。`scripts/build.ps1`がPK-001 hash lockから隔離環境を作る |
 | Stage 0 ML検証 | Python 3.12 と `benchmarks/setup-python-env.ps1` が作る別の隔離環境 |
 | fixture 動画生成 | `h264_nvenc` を利用できる NVIDIA GPU と十分なローカル空き容量 |
 
@@ -101,7 +116,7 @@ winget install --id BtbN.FFmpeg.LGPL.8.1 --exact --version 8.1.2-20260731 --acce
 
 ## 5. Python環境を作る
 
-製品workerはrepository rootの`build.ps1`または`test.ps1`から構築する。`src/HubRadio.Worker/requirements.lock`と`requirements-test.lock`がWindows x64 / CPython 3.12用wheelをSHA-256で固定し、buildはbinary-only・hash必須で復元する。手動の`pip freeze`や`pip install -e .[test]`でlockを上書きしない。詳細は[Python依存lock](packaging/python-dependency-lock.md)を参照する。
+製品workerは`scripts/build.ps1`または`scripts/test.ps1`から構築する。`src/HubRadio.Worker/requirements.lock`と`requirements-test.lock`がWindows x64 / CPython 3.12用wheelをSHA-256で固定し、buildはbinary-only・hash必須で復元する。手動の`pip freeze`や`pip install -e .[test]`でlockを上書きしない。詳細は[Python依存lock](packaging/python-dependency-lock.md)を参照する。
 
 Stage 0 benchmarkを再実行する場合だけ、製品workerとは別の固定環境を作る。
 

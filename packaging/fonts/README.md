@@ -47,7 +47,7 @@ Fonts は `NotoSansJP-Regular.otf`, `LICENSE`, `font-manifest.json` の3ファ�
 - Worker: `pwsh.exe -NoLogo -NoProfile -File packaging/python/build-runtime.ps1 -RuntimeArchivePath "<official-zip>" -WheelhousePath "<locked-wheels>" -BuildPythonPath "<build-python.exe>" -OutputPath "<new-runtime-under-artifacts/python>"`
 - 準備: `pwsh.exe -NoLogo -NoProfile -File packaging/portable/prepare-payload.ps1 -PythonRuntimePath "<new-runtime>" -FfmpegPath "<ffmpeg.exe>" -FfprobePath "<ffprobe.exe>" -FfmpegLicensePath "<license>" -ModelBundlePath "<model-bundle>" -WebView2RuntimePath "<fixed-runtime>" -WebView2LicensePath "<license-snapshot>" -FontPath "artifacts/inputs/fonts/verified-2.004-7388bda58dd8/NotoSansJP-Regular.otf" -FontLicensePath "artifacts/inputs/fonts/verified-2.004-7388bda58dd8/LICENSE" -OutputPath "<new-payload-under-artifacts/portable>"`
 - データのみ検証: `pwsh.exe -NoLogo -NoProfile -File packaging/portable/verify-runtime-payload.ps1 -PayloadPath "<new-payload>"`
-- 通常ビルド opt-in: `pwsh.exe -NoLogo -NoProfile -File build.ps1 -Configuration Release -RuntimePayloadPath "<new-payload>"`
+- 通常ビルド opt-in: `pwsh.exe -NoLogo -NoProfile -File scripts\build.ps1 -Configuration Release -RuntimePayloadPath "<new-payload>"`
 - App のみ（Web dist/restore 済み）: `dotnet build src/HubRadio.App/HubRadio.App.csproj -c Release --no-restore -p:Platform=x64 -p:HubRadioRuntimePayloadPath="<new-payload>"`
 - Portable: `pwsh.exe -NoLogo -NoProfile -File packaging/portable/build-portable.ps1 -DotnetPath "<dotnet.exe>" -SbomToolPath "<pinned-sbom-tool.exe>" -PayloadPath "<new-payload>" -Version "<existing-version>" -OutputPath "<new-candidate-under-artifacts/portable>"`
 - 最終候補: `pwsh.exe -NoLogo -NoProfile -File packaging/portable/verify-portable.ps1 -CandidatePath "<new-candidate>"`

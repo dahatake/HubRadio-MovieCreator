@@ -191,7 +191,7 @@ describe('SettingsPanel UX-025', () => {
 
   it('reaches all 123 shipped keys once through five groups and six-row pages', async () => {
     type InventoryEntry = Pick<SettingDefinition, 'key' | 'group' | 'displayName' | 'description' | 'isAdvanced'>
-    const profile = JSON.parse(readFileSync(resolve(process.cwd(), '../HubRadio.App/DefaultSettings/Profiles/1.0.0.json'), 'utf8')) as { settings: readonly InventoryEntry[] }
+    const profile = JSON.parse(readFileSync(resolve(process.cwd(), '../HubRadio.App/DefaultSettings/Profiles/1.1.0.json'), 'utf8')) as { settings: readonly InventoryEntry[] }
     // Real shipped key inventory; deliberately synthetic values are not render evidence.
     const inventory = profile.settings.map(item => definition(item.key, {
       group: item.group, displayName: item.displayName, description: item.description, isAdvanced: item.isAdvanced,

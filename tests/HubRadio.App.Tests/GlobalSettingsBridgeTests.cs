@@ -756,7 +756,7 @@ public sealed class GlobalSettingsBridgeTests
             _ = DatabaseMigrator.Migrate(DatabasePath, Path.Combine(root, "backups"));
             Store = new DefaultSettingsStore(DatabasePath);
             byte[] profileBytes = profile is null
-                ? File.ReadAllBytes(ResolveRepositoryPath("src/HubRadio.App/DefaultSettings/Profiles/1.0.0.json"))
+                ? File.ReadAllBytes(ResolveRepositoryPath("src/HubRadio.App/DefaultSettings/Profiles/1.1.0.json"))
                 : Encoding.UTF8.GetBytes(profile.CanonicalJson);
             Profile = Store.RegisterProfile(profileBytes);
             if (initializeGlobal)

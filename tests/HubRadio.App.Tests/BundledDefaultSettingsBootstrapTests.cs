@@ -14,6 +14,8 @@ namespace HubRadio.App.Tests;
 public sealed class BundledDefaultSettingsBootstrapTests
 {
     private const string RelativeProfilePath =
+        "src/HubRadio.App/DefaultSettings/Profiles/1.1.0.json";
+    private const string RelativePreviousProfilePath =
         "src/HubRadio.App/DefaultSettings/Profiles/1.0.0.json";
     private const string RelativeProfilesDirectory =
         "src/HubRadio.App/DefaultSettings/Profiles";
@@ -35,7 +37,7 @@ public sealed class BundledDefaultSettingsBootstrapTests
             InitialTime);
 
         Assert.AreEqual(DefaultSettingsBootstrapState.Initialized, result.State);
-        Assert.AreEqual("1.0.0", result.Profile.Version.ToString());
+        Assert.AreEqual("1.1.0", result.Profile.Version.ToString());
         Assert.AreEqual(0, result.GlobalSettings.Revision);
         Assert.AreEqual(InitialTime, result.GlobalSettings.UpdatedAt);
         AssertSnapshotEqual(
@@ -95,6 +97,36 @@ public sealed class BundledDefaultSettingsBootstrapTests
         AssertSnapshotEqual(customized, existing.GlobalSettings.Snapshot);
         Assert.AreEqual(1L, fixture.CountRows("default_settings_profiles"));
         Assert.AreEqual(1L, fixture.CountRows("default_settings_global"));
+    }
+
+    [TestMethod]
+    public void GlobalSettingsOnThePreviousProfileMoveToTheCurrentProfileKeepingEditedValues()
+    {
+        using BootstrapFixture fixture = new();
+        DefaultSettingsProfile previous = BundledDefaultSettingsProfileLoader.Load(
+            File.ReadAllBytes(ResolveRepositoryPath(RelativePreviousProfilePath)));
+        _ = fixture.Store.RegisterProfile(Encoding.UTF8.GetBytes(previous.CanonicalJson));
+        DefaultSettingsSnapshot edited = ReplaceValue(
+            previous,
+            previous.CreateSnapshot(),
+            "editing.crossfadeEnabled",
+            DefaultSettingValue.FromBoolean(true));
+        _ = fixture.Store.InitializeGlobalSettings(edited, InitialTime);
+
+        DefaultSettingsBootstrapResult result = new BundledDefaultSettingsBootstrap(fixture.Store)
+            .Initialize(
+                ResolveRepositoryPath(RelativeProfilesDirectory, expectDirectory: true),
+                InitialTime.AddMinutes(1));
+
+        Assert.AreEqual(DefaultSettingsBootstrapState.Existing, result.State);
+        Assert.AreEqual("1.1.0", result.GlobalSettings.Snapshot.ProfileVersion.ToString());
+        Assert.AreEqual(1, result.GlobalSettings.Revision);
+        Assert.AreEqual(
+            true,
+            result.GlobalSettings.Snapshot.Values
+                .Single(static value => value.Key == "editing.crossfadeEnabled")
+                .Value.BooleanValue);
+        Assert.AreEqual(2L, fixture.CountRows("default_settings_profiles"));
     }
 
     [TestMethod]
@@ -184,7 +216,7 @@ public sealed class BundledDefaultSettingsBootstrapTests
             InitialTime));
         StringAssert.Contains(
             drift.Message,
-            "differs from the approved 1.0.0 content");
+            "differs from the approved content for its version");
         Assert.AreEqual(0L, fixture.CountRows("default_settings_profiles"));
         Assert.AreEqual(0L, fixture.CountRows("default_settings_global"));
 
@@ -496,7 +528,10 @@ public sealed class BundledDefaultSettingsBootstrapTests
         {
             string path = Path.Combine(RootPath, name);
             Directory.CreateDirectory(path);
-            File.WriteAllBytes(Path.Combine(path, "1.0.0.json"), profileBytes);
+            File.WriteAllBytes(
+                Path.Combine(path, "1.0.0.json"),
+                File.ReadAllBytes(ResolveRepositoryPath(RelativePreviousProfilePath)));
+            File.WriteAllBytes(Path.Combine(path, "1.1.0.json"), profileBytes);
             return path;
         }
 

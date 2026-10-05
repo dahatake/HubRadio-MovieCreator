@@ -27,7 +27,7 @@ const sourceOnly: SourceOnlyProjectSummary = Object.freeze({
 })
 
 const bundledSettings = (JSON.parse(readFileSync(new NodeURL(
-  '../../../../HubRadio.App/DefaultSettings/Profiles/1.0.0.json', import.meta.url,
+  '../../../../HubRadio.App/DefaultSettings/Profiles/1.1.0.json', import.meta.url,
 ), 'utf8')) as { settings: { key: string; minimum: unknown; maximum: unknown; allowedTextValues: readonly string[] }[] }).settings
 
 // Bundled keys/count bounds, with test-only resolution options to exercise changes.

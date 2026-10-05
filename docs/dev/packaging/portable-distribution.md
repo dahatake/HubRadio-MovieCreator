@@ -31,7 +31,7 @@ OSL-013の公開検証では、候補EXE、3,794-fileのContents、payload manif
 
 | 区分 | 前提・作業 |
 | --- | --- |
-| build担当者 | Windows x64 上の PowerShell 7+、固定.NET SDK、SBOM tool、Git、事前に実行した `build.ps1` と `prepare-payload.ps1`、固定済みのPython/FFmpeg/model/WebView2入力を使用する。これらは候補を組み立て・検査するための開発前提である。 |
+| build担当者 | Windows x64 上の PowerShell 7+、固定.NET SDK、SBOM tool、Git、事前に実行した `scripts/build.ps1` と `prepare-payload.ps1`、固定済みのPython/FFmpeg/model/WebView2入力を使用する。これらは候補を組み立て・検査するための開発前提である。 |
 | 利用者 | 承認済みの取得経路から得た候補EXEをローカルディスクへ保存し、1回起動する想定である。SDK、Git、Node.js、Python、pip、PowerShell 7、FFmpeg、追加Runtime、管理者昇格、環境変数設定を起動前提にしない。 |
 
 候補は自己完結型の実行依存を内包する設計であり、Fixed WebView2、Python runtime、FFmpeg/ffprobe、採用CPU/int8 ASR model、Web asset、profileとその証拠を監査対象に含めます。利用者データは実行依存の展開場所と分離します。起動後にSDKが展開するため、必要な空き容量・初回待ち時間の正式な許容値はまだ確定していません。
