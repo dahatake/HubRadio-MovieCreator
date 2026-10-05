@@ -612,8 +612,8 @@ describe('SettingsPanel UX-025', () => {
     expect(within(h.container).getByRole('tab', { name: '字幕とグラフィック' }).getAttribute('aria-selected')).toBe('true')
     expect((within(h.container).getByRole('checkbox', { name: '詳細設定を表示' }) as HTMLInputElement).checked).toBe(true)
     expect(document.activeElement).toBe(editor(h))
-    expect(editor(h).tagName).toBe('SELECT')
-    await change(h, 'true')
+    expect(editor(h).getAttribute('type')).toBe('radio')
+    await act(async () => { within(h.container).getByRole('radio', { name: '有効' }).click() })
     const focused = editor(h)
     await h.render({ onClose: () => undefined })
     expect(document.activeElement).toBe(focused)
@@ -873,6 +873,7 @@ describe('SettingsPanel UX-025', () => {
     expect(css).toContain('.settings-panel .settings-list-groups { display: none; }')
     expect(css).toMatch(/\.settings-detail-pane\s*\{[^}]*overflow: auto/s)
     expect(css).toContain('max-block-size: none; overflow: visible;')
+    expect(css).toContain('.settings-panel .setting-choice-group')
     expect(css).toContain('white-space: pre-wrap')
     // This checks CSS intent only; actual viewport/reflow acceptance belongs to UX-041.
   })

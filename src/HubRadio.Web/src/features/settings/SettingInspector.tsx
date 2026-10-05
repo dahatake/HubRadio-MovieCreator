@@ -50,7 +50,7 @@ export function SettingInspector({ definition, value, initialValue, draft, scope
       </section>
       <dl className="setting-value-summary setting-current-value" tabIndex={0} aria-label="保存済みの現在値"><div><dt>現在値</dt><dd>{formatValue(value)}{unit}</dd></div></dl>
       <div className="field-group">
-        {draft.kind === 'textList'
+        {usesChoiceGroup(definition, draft)
           ? <span id={`${id}-label`}>{definition.displayName}{unit}：未保存の値</span>
           : <label htmlFor={id}>{definition.displayName}{unit}：未保存の値</label>}
         <ValueControl id={id} definition={definition} value={draft} disabled={disabled} describedBy={describedBy} invalid={error !== null} onChange={onChange} />
@@ -129,10 +129,10 @@ function compareNumeric(left: SettingValue, right: SettingValue): bigint {
 function ValueControl({ id, definition, value, disabled, describedBy, invalid, onChange }: { id: string; definition: SettingDefinition; value: SettingValue; disabled: boolean; describedBy: string; invalid: boolean; onChange: (value: SettingValue) => void }) {
   const attributes = { disabled, 'aria-describedby': describedBy, 'aria-invalid': invalid }
   const unit = unitSuffix(definition)
-  if (value.kind === 'boolean') return <select {...attributes} id={id} value={String(value.booleanValue)} onChange={(event) => onChange({ kind: 'boolean', booleanValue: event.currentTarget.value === 'true' })}><option value="true">有効</option><option value="false">無効</option></select>
+  if (value.kind === 'boolean') return <ChoiceGroup id={id} attributes={attributes} selected={String(value.booleanValue)} options={[{ value: 'true', label: '有効' }, { value: 'false', label: '無効' }]} onSelect={(next) => onChange({ kind: 'boolean', booleanValue: next === 'true' })} />
   if (value.kind === 'integer') return <input {...attributes} id={id} type="text" inputMode="numeric" required value={value.integerValue} onChange={(event) => onChange({ kind: 'integer', integerValue: event.currentTarget.value })} />
   if (value.kind === 'rational') return <span className="rational-input"><input {...attributes} id={id} type="text" inputMode="numeric" required aria-label={`${definition.displayName} 分子${unit}：未保存の値`} value={value.numerator} onChange={(event) => onChange({ ...value, numerator: event.currentTarget.value })} /><span aria-hidden="true">/</span><input {...attributes} id={`${id}-denominator`} type="text" inputMode="numeric" required aria-label={`${definition.displayName} 分母：未保存の値`} value={value.denominator} onChange={(event) => onChange({ ...value, denominator: event.currentTarget.value })} /></span>
-  if (value.kind === 'text' && definition.allowedTextValues.length > 0) return <select {...attributes} id={id} required value={value.textValue} onChange={(event) => onChange({ kind: 'text', textValue: event.currentTarget.value })}>{!definition.allowedTextValues.includes(value.textValue) && <option value={value.textValue} disabled>{value.textValue || '選択してください'}</option>}{definition.allowedTextValues.map((item) => <option key={item} value={item}>{item}</option>)}</select>
+  if (value.kind === 'text' && definition.allowedTextValues.length > 0) return <ChoiceGroup id={id} attributes={attributes} selected={value.textValue} options={[...(definition.allowedTextValues.includes(value.textValue) ? [] : [{ value: value.textValue, label: value.textValue || '選択してください', invalid: true }]), ...definition.allowedTextValues.map((item) => ({ value: item, label: item }))]} onSelect={(next) => onChange({ kind: 'text', textValue: next })} />
   if (value.kind === 'text') return <textarea {...attributes} id={id} rows={3} required value={value.textValue} onChange={(event) => onChange({ kind: 'text', textValue: event.currentTarget.value })} />
   // Newlines belong to entries; keep each draft string intact.
   return (
@@ -148,6 +148,26 @@ function ValueControl({ id, definition, value, disabled, describedBy, invalid, o
         </div>
       ))}
       <button type="button" disabled={disabled || value.textListValue.length >= 64} onClick={() => onChange({ kind: 'textList', textListValue: [...value.textListValue, ''] })}>項目を追加</button>
+    </div>
+  )
+}
+
+/** Choices are shown inline next to the label, so no native pop-up list can open away from the control. */
+function usesChoiceGroup(definition: SettingDefinition, value: SettingValue): boolean {
+  return value.kind === 'textList' || value.kind === 'boolean' || (value.kind === 'text' && definition.allowedTextValues.length > 0)
+}
+
+interface ChoiceOption { readonly value: string; readonly label: string; readonly invalid?: boolean }
+
+function ChoiceGroup({ id, attributes, selected, options, onSelect }: { id: string; attributes: { disabled: boolean; 'aria-describedby': string; 'aria-invalid': boolean }; selected: string; options: readonly ChoiceOption[]; onSelect: (value: string) => void }) {
+  return (
+    <div id={id} className="setting-choice-group" role="radiogroup" aria-labelledby={`${id}-label`} aria-describedby={attributes['aria-describedby']} aria-invalid={attributes['aria-invalid']}>
+      {options.map((option) => (
+        <label key={option.value} className={`setting-choice${option.value === selected ? ' selected' : ''}`}>
+          <input type="radio" name={id} value={option.value} checked={option.value === selected} disabled={attributes.disabled || option.invalid === true} onChange={() => onSelect(option.value)} />
+          <span>{option.label}</span>
+        </label>
+      ))}
     </div>
   )
 }

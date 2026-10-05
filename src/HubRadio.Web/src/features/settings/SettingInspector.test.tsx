@@ -61,7 +61,7 @@ function summaryValue(container: HTMLElement, label: string) {
 }
 
 const valueCases = [
-  { name: 'boolean', value: boolean(true), initialValue: boolean(false), draft: boolean(false), currentText: '有効', initialText: '無効', inputs: ['false'] },
+  { name: 'boolean', value: boolean(true), initialValue: boolean(false), draft: boolean(false), currentText: '有効', initialText: '無効', inputs: ['true', 'false'] },
   { name: 'integer', value: integer('20'), initialValue: integer('10'), draft: integer('30'), currentText: '20', initialText: '10', inputs: ['30'] },
   { name: 'rational', value: rational('30000', '1001'), initialValue: rational('24', '1'), draft: rational('30', '1'), currentText: '30000/1001', initialText: '24/1', inputs: ['30', '1'] },
   { name: 'text', value: text('現在の日本語'), initialValue: text('初期の日本語'), draft: text('編集中の日本語'), currentText: '現在の日本語', initialText: '初期の日本語', inputs: ['編集中の日本語'] },
@@ -100,8 +100,12 @@ describe('SettingInspector', () => {
     const controls = Array.from(view.container.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input,select,textarea'))
     expect(controls.map(control => control.value)).toEqual(inputs)
     for (const control of controls) {
-      expect(control.getAttribute('aria-invalid')).toBe('false')
-      expect(control.getAttribute('aria-label') ?? control.labels?.[0]?.textContent).toContain('未保存の値')
+      const group = control.closest('[role="radiogroup"]')
+      expect((group ?? control).getAttribute('aria-invalid')).toBe('false')
+      const name = group === null
+        ? control.getAttribute('aria-label') ?? control.labels?.[0]?.textContent
+        : document.getElementById(group.getAttribute('aria-labelledby')!)?.textContent
+      expect(name).toContain('未保存の値')
     }
     expect(view.queries.getByRole('status').textContent).toBe('未保存の変更があります。')
     expect(view.queries.getByRole<HTMLButtonElement>('button', { name: '保存' }).disabled).toBe(false)
@@ -148,14 +152,17 @@ describe('SettingInspector', () => {
     expect(view.queries.queryByText('プロファイル版', { selector: 'dt' })).toBeNull()
     expect(view.queries.queryByText('最小値', { selector: 'dt' })).toBeNull()
     expect(view.queries.queryByText('最大値', { selector: 'dt' })).toBeNull()
-    expect(view.queries.getByRole('combobox').textContent).not.toContain('none')
+    expect(view.queries.getByRole('radiogroup').textContent).not.toContain('none')
   })
 
   it('changes a boolean accessibly and saves only on explicit submit, without claiming persistence', async () => {
     const view = await renderInspector()
-    const control = view.queries.getByRole<HTMLSelectElement>('combobox', { name: 'テスト設定：未保存の値' })
-    expect(Array.from(control.options).map(option => [option.value, option.textContent])).toEqual([['true', '有効'], ['false', '無効']])
-    await act(async () => { await view.user.selectOptions(control, 'true'); await view.user.tab() })
+    // FR-041 AC-013
+    const group = view.queries.getByRole('radiogroup', { name: 'テスト設定：未保存の値' })
+    expect(group.querySelector('select')).toBeNull()
+    expect(Array.from(group.querySelectorAll<HTMLInputElement>('input[type="radio"]')).map(option => [option.value, option.parentElement?.textContent])).toEqual([['true', '有効'], ['false', '無効']])
+    expect(view.queries.getByRole<HTMLInputElement>('radio', { name: '無効' }).checked).toBe(true)
+    await act(async () => { await view.user.click(view.queries.getByRole('radio', { name: '有効' })); await view.user.tab() })
     expect(view.onChange).toHaveBeenCalledExactlyOnceWith(boolean(true))
     expect(view.onSave).not.toHaveBeenCalled()
     expect(summaryValue(view.container, '現在値')).toBe('無効')
@@ -227,14 +234,17 @@ describe('SettingInspector', () => {
 
   it('uses only allowed text options and rejects an invalid external draft', async () => {
     const view = await renderInspector({ definition: makeDefinition(text('標準'), { allowedTextValues: ['標準', '高品質'] }) })
-    const control = view.queries.getByRole<HTMLSelectElement>('combobox', { name: 'テスト設定：未保存の値' })
-    expect(Array.from(control.options).map(option => option.value)).toEqual(['標準', '高品質'])
-    await act(async () => { await view.user.selectOptions(control, '高品質') })
+    // FR-041 AC-013
+    const group = view.queries.getByRole('radiogroup', { name: 'テスト設定：未保存の値' })
+    const options = () => Array.from(group.querySelectorAll<HTMLInputElement>('input[type="radio"]'))
+    expect(options().map(option => option.value)).toEqual(['標準', '高品質'])
+    await act(async () => { await view.user.click(view.queries.getByRole('radio', { name: '高品質' })) })
     expect(view.onChange).toHaveBeenCalledExactlyOnceWith(text('高品質'))
     expect(view.onSave).not.toHaveBeenCalled()
     await view.rerender({ draft: text('候補にない値') })
-    expect(control.value).toBe('候補にない値')
-    expect(control.selectedOptions[0]!.disabled).toBe(true)
+    const invalid = options().find(option => option.checked)!
+    expect(invalid.value).toBe('候補にない値')
+    expect(invalid.disabled).toBe(true)
     expect(view.queries.getByRole('alert').textContent).toBe('候補から値を選択してください。')
     expect(view.queries.getByRole<HTMLButtonElement>('button', { name: '保存' }).disabled).toBe(true)
   })
@@ -556,7 +566,7 @@ describe('SettingInspector', () => {
     await act(async () => { fireEvent.keyDown(details, { key: 'Escape' }) })
     expect(details.open).toBe(false)
     expect(document.activeElement).toBe(summary)
-    expect(view.queries.getByRole<HTMLSelectElement>('combobox').value).toBe('true')
+    expect(view.queries.getByRole<HTMLInputElement>('radio', { name: '有効' }).checked).toBe(true)
     expect(view.onChange).not.toHaveBeenCalled()
     expect(view.onSave).not.toHaveBeenCalled()
     expect(view.onReset).not.toHaveBeenCalled()
