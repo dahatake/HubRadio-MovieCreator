@@ -7,6 +7,7 @@ import type {
   SourceStatus,
 } from '../../bridge'
 import { SettingsOutcomePreview } from '../settings/SettingsOutcomePreview'
+import { ProjectActivityNotice } from './ProjectActivityNotice'
 import {
   getProjectInputSourceStatus,
   isProjectInputFinalizable,
@@ -159,6 +160,9 @@ export function QuickStartPanel({
                 : '案件の作成に必要な情報を確認してください。'
           : '操作を処理しています。'}
       </p>
+      {pending !== null && (
+        <ProjectActivityNotice key={pending.requestId} method={pending.method} />
+      )}
     </section>
   )
 }

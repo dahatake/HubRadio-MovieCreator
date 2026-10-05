@@ -229,6 +229,16 @@ describe('QuickStartPanel', () => {
     expect(actionButton('編集を開始').disabled).toBe(sourceStatus !== 'available')
   })
 
+  // FR-039.1 FR-039.5 AC-012.4
+  it('shows the activity notice only while a request is pending and keeps the status text', () => {
+    renderPanel(panelProps({ pending: { requestId: 'r1', method: 'project.finalizeDraft' } }))
+    expect(container.querySelector('.operation-activity h3')!.textContent).toBe('いま行っていること：編集の受付')
+    expect(status().textContent).toBe('操作を処理しています。')
+
+    renderPanel(panelProps({ pending: null }))
+    expect(container.querySelector('.operation-activity')).toBeNull()
+  })
+
   it.each(['notSelected', 'reselectionRequired'] as const)('requires native reselection before starting with source %s', async sourceStatus => {
     const sourceCandidateId = sourceStatus === 'notSelected' ? null : candidateId
     const props = panelProps({
