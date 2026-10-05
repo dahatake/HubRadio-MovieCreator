@@ -15,7 +15,8 @@ public sealed class StoredProjectCreationDraft
         string canonicalJson,
         DateTimeOffset updatedAt,
         EntityId<ProjectIdTag>? finalizedProjectId,
-        DateTimeOffset? finalizedAt)
+        DateTimeOffset? finalizedAt,
+        string? displayName = null)
     {
         Id = id;
         Revision = revision;
@@ -23,6 +24,7 @@ public sealed class StoredProjectCreationDraft
         UpdatedAt = updatedAt;
         FinalizedProjectId = finalizedProjectId;
         FinalizedAt = finalizedAt;
+        DisplayName = displayName;
     }
 
     public EntityId<ProjectCreationDraftIdTag> Id { get; }
@@ -36,6 +38,9 @@ public sealed class StoredProjectCreationDraft
     public EntityId<ProjectIdTag>? FinalizedProjectId { get; }
 
     public DateTimeOffset? FinalizedAt { get; }
+
+    /// <summary>The presentation-only name set by the user; null until one is set.</summary>
+    public string? DisplayName { get; }
 
     public bool IsFinalized => FinalizedProjectId is not null;
 }
@@ -187,6 +192,46 @@ public sealed class ProjectCreationDraftStore
 
         transaction.Commit();
         return true;
+    }
+
+    /// <summary>
+    /// Sets the presentation-only display name of a draft or finalized project.
+    /// The stored draft payload, its revision and the project snapshot are not changed.
+    /// </summary>
+    public StoredProjectCreationDraft SetDisplayName(
+        EntityId<ProjectCreationDraftIdTag> draftId,
+        string displayName,
+        DateTimeOffset updatedAt)
+    {
+        ArgumentNullException.ThrowIfNull(draftId);
+        ArgumentNullException.ThrowIfNull(displayName);
+        string storedUpdatedAt = SqliteStoreSupport.FormatTimestamp(
+            updatedAt,
+            nameof(updatedAt));
+
+        using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
+        using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
+        _ = ReadRequiredDraft(connection, transaction, draftId);
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            INSERT INTO project_display_names (draft_id, display_name, updated_at)
+            VALUES ($id, $name, $updated_at)
+            ON CONFLICT (draft_id) DO UPDATE
+            SET display_name = excluded.display_name,
+                updated_at = excluded.updated_at;
+            """;
+        SqliteStoreSupport.AddText(command, "$id", draftId.ToString());
+        SqliteStoreSupport.AddText(command, "$name", displayName);
+        SqliteStoreSupport.AddText(command, "$updated_at", storedUpdatedAt);
+        if (command.ExecuteNonQuery() != 1)
+        {
+            throw new InvalidOperationException("The project display name was not stored.");
+        }
+
+        StoredProjectCreationDraft stored = ReadRequiredDraft(connection, transaction, draftId);
+        transaction.Commit();
+        return stored;
     }
 
     public StoredProjectCreationDraft SaveDraft(
@@ -689,7 +734,8 @@ public sealed class ProjectCreationDraftStore
             canonicalJson,
             updatedAt,
             finalizedProjectId,
-            finalizedAt);
+            finalizedAt,
+            SqliteStoreSupport.ReadNullableString(reader, 7, EntityKind));
     }
 
     private static byte[] CanonicalizeBoundedPayload(
@@ -760,7 +806,9 @@ public sealed class ProjectCreationDraftStore
             CAST(payload AS BLOB),
             updated_at,
             finalized_project_id,
-            finalized_at
+            finalized_at,
+            (SELECT display_name FROM project_display_names AS names
+                WHERE names.draft_id = project_creation_drafts.id)
         FROM project_creation_drafts
         """ + "\n";
 

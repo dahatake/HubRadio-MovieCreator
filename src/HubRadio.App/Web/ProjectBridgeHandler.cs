@@ -53,6 +53,12 @@ internal sealed class ProjectBridgeHandler
                             request.Parameters.GetProperty("input"))),
                 BridgeMethod.DeleteProject =>
                     DeleteProject(request),
+                BridgeMethod.RenameProject =>
+                    WriteDraft(
+                        request,
+                        service.RenameProject(
+                            ReadDraftId(request),
+                            request.Parameters.GetProperty("displayName").GetString()!)),
                 BridgeMethod.PickSource =>
                     WritePickedSource(
                         request,
@@ -233,6 +239,7 @@ internal sealed class ProjectBridgeHandler
                     WriteNullableString(writer, "projectId", item.ProjectId);
                     writer.WriteString("state", item.State);
                     WriteNullableString(writer, "contentName", item.ContentName);
+                    WriteNullableString(writer, "displayName", item.DisplayName);
                     writer.WriteNull("episodeNumber");
                     writer.WriteString("sourceStatus", item.SourceStatus);
                     writer.WriteNull("owner");
@@ -287,6 +294,7 @@ internal sealed class ProjectBridgeHandler
                     draft.SourceCandidateId);
                 writer.WriteString("sourceStatus", draft.SourceStatus);
                 WriteNullableString(writer, "contentName", draft.ContentName);
+                WriteNullableString(writer, "displayName", draft.DisplayName);
                 WriteNullableString(writer, "purpose", draft.Purpose);
                 WriteNullableString(writer, "audience", draft.Audience);
                 WriteNullableString(

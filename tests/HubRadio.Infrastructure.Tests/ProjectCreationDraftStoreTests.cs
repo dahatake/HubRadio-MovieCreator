@@ -107,6 +107,76 @@ public sealed class ProjectCreationDraftStoreTests
             database.ExecuteScalarInt64("SELECT COUNT(*) FROM project_creation_draft_deletions;"));
     }
 
+    // FR-040 AC-013
+    [TestMethod]
+    public void SetDisplayNameKeepsPayloadAndRevisionAndIsHiddenWithTheDeletedDraft()
+    {
+        using StoreTestDatabase database = new();
+        var store = new ProjectCreationDraftStore(database.DatabasePath);
+        ProjectCreationDraft draft = CreateDraft();
+        ProjectCreationDraft other = CreateDraft();
+        StoredProjectCreationDraft created = store.CreateDraft(draft, "{\"value\":1}", InitialTime);
+        store.CreateDraft(other, "{\"value\":2}", InitialTime.AddMinutes(1));
+        Assert.IsNull(created.DisplayName);
+
+        StoredProjectCreationDraft renamed = store.SetDisplayName(draft.Id, "名前A", InitialTime.AddMinutes(2));
+        StoredProjectCreationDraft renamedAgain = store.SetDisplayName(draft.Id, "名前B", InitialTime.AddMinutes(3));
+
+        Assert.AreEqual("名前A", renamed.DisplayName);
+        Assert.AreEqual("名前B", renamedAgain.DisplayName);
+        Assert.AreEqual(created.Revision, renamedAgain.Revision);
+        Assert.AreEqual(created.CanonicalJson, renamedAgain.CanonicalJson);
+        Assert.AreEqual(created.UpdatedAt, renamedAgain.UpdatedAt);
+        Assert.AreEqual("名前B", store.GetDraft(draft.Id)!.DisplayName);
+        Assert.IsNull(store.GetDraft(other.Id)!.DisplayName);
+        CollectionAssert.AreEquivalent(
+            new string?[] { "名前B", null },
+            store.ListDrafts().Select(static item => item.DisplayName).ToArray());
+        StoredProjectCreationDraft saved = store.SaveDraft(draft, "{\"value\":3}", 0, InitialTime.AddMinutes(4));
+        Assert.AreEqual("名前B", saved.DisplayName);
+
+        Assert.ThrowsExactly<SqliteException>(
+            () => database.ExecuteNonQuery("DELETE FROM project_display_names;"));
+        Assert.ThrowsExactly<SqliteException>(
+            () => database.ExecuteNonQuery("UPDATE project_display_names SET display_name = ' x';"));
+        Assert.ThrowsExactly<SqliteException>(
+            () => database.ExecuteNonQuery("UPDATE project_display_names SET display_name = '';"));
+
+        Assert.IsTrue(store.DeleteDraft(draft.Id, InitialTime.AddMinutes(5)));
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => store.SetDisplayName(draft.Id, "削除後", InitialTime.AddMinutes(6)));
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => store.SetDisplayName(EntityId<ProjectCreationDraftIdTag>.New(), "未知", InitialTime.AddMinutes(6)));
+    }
+
+    // FR-040 AC-013
+    [TestMethod]
+    public void SetDisplayNameDoesNotChangeAFinalizedProjectOrItsSnapshot()
+    {
+        using StoreTestDatabase database = new();
+        var store = new ProjectCreationDraftStore(database.DatabasePath);
+        ProjectCreationDraft draft = CreateDraft();
+        Project project = CreateProjectFromDraft(draft);
+        store.CreateDraft(draft, "{\"state\":\"draft\"}", InitialTime);
+        StoredProjectCreationDraft finalized = store.FinalizeDraft(
+            draft, project, "{\"state\":\"complete\"}", 0, InitialTime.AddMinutes(1));
+        string ReadProjectPayload()
+        {
+            using SqliteConnection connection = database.OpenConnection(SqliteOpenMode.ReadOnly);
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "SELECT hex(payload) FROM projects;";
+            return (string)command.ExecuteScalar()!;
+        }
+
+        string before = ReadProjectPayload();
+
+        StoredProjectCreationDraft renamed = store.SetDisplayName(draft.Id, "公開用でない名前", InitialTime.AddMinutes(2));
+
+        Assert.AreEqual("公開用でない名前", renamed.DisplayName);
+        Assert.IsTrue(renamed.IsFinalized);
+        Assert.AreEqual(finalized.Revision, renamed.Revision);
+        Assert.AreEqual(before, ReadProjectPayload());
+    }
     [TestMethod]
     public void DeleteDraftIsRefusedWhileAJobIsRunningButNotForQueuedJobs()
     {

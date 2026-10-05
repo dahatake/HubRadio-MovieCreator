@@ -59,7 +59,7 @@ public sealed class DatabaseMigratorTests
             timeProvider);
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(13, result.SchemaVersion);
+        Assert.AreEqual(14, result.SchemaVersion);
         Assert.AreEqual(64, result.SchemaDigest.Hex.Length);
         Assert.AreEqual(result.SchemaDigest.Hex, result.SchemaDigest.Hex.ToLowerInvariant());
         Assert.IsTrue(typeof(DatabaseMigrationResult).IsSealed);
@@ -75,7 +75,7 @@ public sealed class DatabaseMigratorTests
         Assert.IsTrue(
             Regex.IsMatch(
                 Path.GetFileName(backupPath),
-                "^hubradio-before-schema-013-20300102T0304056789012Z-[0-9a-f]{32}\\.db$",
+                "^hubradio-before-schema-014-20300102T0304056789012Z-[0-9a-f]{32}\\.db$",
                 RegexOptions.CultureInvariant));
         Assert.AreEqual(1, GetBackupFiles(temporary).Length);
 
@@ -105,6 +105,7 @@ public sealed class DatabaseMigratorTests
             "project_creation_draft_deletions",
             "project_creation_drafts",
             "project_default_settings",
+            "project_display_names",
             "projects",
             "quick_start_state_events",
             "quick_start_workflows",
@@ -117,7 +118,7 @@ public sealed class DatabaseMigratorTests
             "term_entries",
             "working_copies",
         ];
-        Assert.AreEqual(28, expectedTables.Length);
+        Assert.AreEqual(29, expectedTables.Length);
         CollectionAssert.AreEqual(expectedTables, GetUserTableNames(connection));
 
         Dictionary<string, string[]> expectedColumns = new(StringComparer.Ordinal)
@@ -624,6 +625,7 @@ public sealed class DatabaseMigratorTests
                 "trg_automated_evaluation_rule_target_update",
                 "trg_project_creation_draft_deletions_delete",
                 "trg_project_creation_draft_deletions_update",
+                "trg_project_display_names_delete",
                 "trg_quick_start_evaluation_immutable_update",
                 "trg_quick_start_evaluation_rule_immutable_delete",
                 "trg_quick_start_evaluation_rule_immutable_insert",
@@ -668,6 +670,7 @@ public sealed class DatabaseMigratorTests
                      "default_settings_profiles",
                      "default_settings_global",
                      "project_default_settings",
+                     "project_display_names",
                      "quick_start_state_events",
                      "quick_start_workflows",
                      "source_only_executions",
@@ -707,6 +710,7 @@ public sealed class DatabaseMigratorTests
                 (11, "011_source_only_executions", ReadEmbeddedMigrationDigest("011_source_only_executions")),
                 (12, "012_subtitle_edits", ReadEmbeddedMigrationDigest("012_subtitle_edits")),
                 (13, "013_project_deletions", ReadEmbeddedMigrationDigest("013_project_deletions")),
+                (14, "014_project_display_names", ReadEmbeddedMigrationDigest("014_project_display_names")),
             ];
             foreach ((long version, string name, ContentDigest digest) in expectedMigrations)
             {
@@ -752,7 +756,7 @@ public sealed class DatabaseMigratorTests
             before = tables.ToDictionary(table => table, table => SnapshotRows(connection, table));
         }
         DatabaseMigrationResult upgraded = DatabaseMigrator.Migrate(database.DatabasePath, database.BackupDirectory);
-        Assert.AreEqual(13, upgraded.SchemaVersion);
+        Assert.AreEqual(14, upgraded.SchemaVersion);
         Assert.IsTrue(upgraded.Applied);
         using (SqliteConnection connection = database.OpenConnection())
         {
@@ -822,7 +826,7 @@ public sealed class DatabaseMigratorTests
 
         DatabaseMigrationResult result = DatabaseMigrator.Migrate(temporary.DatabasePath, temporary.BackupDirectory);
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(13, result.SchemaVersion);
+        Assert.AreEqual(14, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
         using (SqliteConnection backup = OpenConnection(result.BackupPath!, SqliteOpenMode.ReadOnly))
         {
@@ -836,9 +840,9 @@ public sealed class DatabaseMigratorTests
         }
         using (SqliteConnection upgraded = OpenConnection(temporary.DatabasePath))
         {
-            CollectionAssert.AreEquivalent(before.Keys.Append("subtitle_edits").Append("project_creation_draft_deletions").ToArray(), GetUserTableNames(upgraded));
-            Assert.AreEqual(28, GetUserTableNames(upgraded).Length);
-            Assert.AreEqual(13L, ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
+            CollectionAssert.AreEquivalent(before.Keys.Append("subtitle_edits").Append("project_creation_draft_deletions").Append("project_display_names").ToArray(), GetUserTableNames(upgraded));
+            Assert.AreEqual(29, GetUserTableNames(upgraded).Length);
+            Assert.AreEqual(14L, ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
             Assert.AreEqual(0L, ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM subtitle_edits;"));
             foreach ((string table, string rows) in before.Where(pair => pair.Key != "schema_migrations"))
             {
@@ -862,6 +866,9 @@ public sealed class DatabaseMigratorTests
     private static void RemoveMigration012(StoreTestDatabase database)
     {
         database.ExecuteNonQuery("""
+            DROP TRIGGER trg_project_display_names_delete;
+            DROP TABLE project_display_names;
+            DELETE FROM schema_migrations WHERE version = 14;
             DROP TRIGGER trg_project_creation_draft_deletions_update;
             DROP TRIGGER trg_project_creation_draft_deletions_delete;
             DROP TABLE project_creation_draft_deletions;
@@ -1151,7 +1158,7 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(1)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(13, result.SchemaVersion);
+        Assert.AreEqual(14, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
 
         string backupPath = result.BackupPath
@@ -1203,6 +1210,7 @@ public sealed class DatabaseMigratorTests
                 "project_creation_draft_deletions",
                 "project_creation_drafts",
                 "project_default_settings",
+                "project_display_names",
                 "quick_start_state_events",
                 "quick_start_workflows",
                 "source_only_executions",
@@ -1247,7 +1255,7 @@ public sealed class DatabaseMigratorTests
             1L,
             ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM projects;"));
         Assert.AreEqual(
-            13L,
+            14L,
             ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
         Assert.AreEqual(
             "001_initial",
@@ -2718,7 +2726,7 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(3)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(13, result.SchemaVersion);
+        Assert.AreEqual(14, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
         string backupPath = result.BackupPath
             ?? throw new AssertFailedException("The 003 to 012 upgrade must create a backup.");
@@ -2748,7 +2756,7 @@ public sealed class DatabaseMigratorTests
         using (SqliteConnection upgraded = OpenConnection(temporary.DatabasePath))
         {
             Assert.AreEqual(
-                13L,
+                14L,
                 ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
             Assert.AreEqual(
                 1L,
@@ -2786,7 +2794,7 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(4)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(13, result.SchemaVersion);
+        Assert.AreEqual(14, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
         string backupPath = result.BackupPath
             ?? throw new AssertFailedException("The 004 to 012 upgrade must create a backup.");
@@ -2811,7 +2819,7 @@ public sealed class DatabaseMigratorTests
         using (SqliteConnection upgraded = OpenConnection(temporary.DatabasePath))
         {
             Assert.AreEqual(
-                13L,
+                14L,
                 ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
             Assert.AreEqual(
                 1L,
@@ -2844,7 +2852,7 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(5)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(13, result.SchemaVersion);
+        Assert.AreEqual(14, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
         string backupPath = result.BackupPath
             ?? throw new AssertFailedException("The 005 to 012 upgrade must create a backup.");
@@ -2864,7 +2872,7 @@ public sealed class DatabaseMigratorTests
         using (SqliteConnection upgraded = OpenConnection(temporary.DatabasePath))
         {
             Assert.AreEqual(
-                13L,
+                14L,
                 ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
             Assert.AreEqual(
                 1L,
@@ -2902,7 +2910,7 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(6)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(13, result.SchemaVersion);
+        Assert.AreEqual(14, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
         string backupPath = result.BackupPath
             ?? throw new AssertFailedException("The 006 to 012 upgrade must create a backup.");
@@ -2922,7 +2930,7 @@ public sealed class DatabaseMigratorTests
         using (SqliteConnection upgraded = OpenConnection(temporary.DatabasePath))
         {
             Assert.AreEqual(
-                13L,
+                14L,
                 ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
             Assert.AreEqual(
                 1L,
@@ -2955,7 +2963,7 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(7)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(13, result.SchemaVersion);
+        Assert.AreEqual(14, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
         string backupPath = result.BackupPath
             ?? throw new AssertFailedException("The 007 to 012 upgrade must create a backup.");
@@ -2978,9 +2986,9 @@ public sealed class DatabaseMigratorTests
 
         using (SqliteConnection upgraded = OpenConnection(temporary.DatabasePath))
         {
-            Assert.AreEqual(28, GetUserTableNames(upgraded).Length);
+            Assert.AreEqual(29, GetUserTableNames(upgraded).Length);
             Assert.AreEqual(
-                13L,
+                14L,
                 ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
             Assert.AreEqual(
                 "008_default_settings",
@@ -3072,12 +3080,12 @@ public sealed class DatabaseMigratorTests
             temporary.BackupDirectory,
             new FixedTimeProvider(FixedUtcNow.AddMinutes(1)));
         Assert.IsTrue(retry.Applied);
-        Assert.AreEqual(13, retry.SchemaVersion);
+        Assert.AreEqual(14, retry.SchemaVersion);
         Assert.AreEqual(2, GetBackupFiles(temporary).Length);
         using SqliteConnection migrated = OpenConnection(temporary.DatabasePath);
-        Assert.AreEqual(28, GetUserTableNames(migrated).Length);
+        Assert.AreEqual(29, GetUserTableNames(migrated).Length);
         Assert.AreEqual(
-            13L,
+            14L,
             ExecuteScalarInt64(migrated, "SELECT COUNT(*) FROM schema_migrations;"));
         AssertDatabaseChecksPass(migrated);
     }
@@ -3094,13 +3102,13 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(8)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(13, result.SchemaVersion);
+        Assert.AreEqual(14, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
         string backupPath = result.BackupPath
             ?? throw new AssertFailedException("The 008 to 012 upgrade must create a backup.");
         Assert.IsTrue(Regex.IsMatch(
             Path.GetFileName(backupPath),
-            "^hubradio-before-schema-013-[0-9]{8}T[0-9]{13}Z-[0-9a-f]{32}\\.db$",
+            "^hubradio-before-schema-014-[0-9]{8}T[0-9]{13}Z-[0-9a-f]{32}\\.db$",
             RegexOptions.CultureInvariant));
         using (SqliteConnection backup = OpenConnection(backupPath, SqliteOpenMode.ReadOnly))
         {
@@ -3118,9 +3126,9 @@ public sealed class DatabaseMigratorTests
 
         using (SqliteConnection upgraded = OpenConnection(temporary.DatabasePath))
         {
-            Assert.AreEqual(28, GetUserTableNames(upgraded).Length);
+            Assert.AreEqual(29, GetUserTableNames(upgraded).Length);
             Assert.AreEqual(
-                13L,
+                14L,
                 ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
             Assert.AreEqual(
                 "009_automated_evaluation",
@@ -3196,7 +3204,7 @@ public sealed class DatabaseMigratorTests
             new FixedTimeProvider(FixedUtcNow.AddMinutes(9)));
 
         Assert.IsTrue(result.Applied);
-        Assert.AreEqual(13, result.SchemaVersion);
+        Assert.AreEqual(14, result.SchemaVersion);
         Assert.AreEqual(ComputeExpectedSchemaDigest(), result.SchemaDigest);
         string backupPath = result.BackupPath
             ?? throw new AssertFailedException("The 009 to 012 upgrade must create a backup.");
@@ -3219,9 +3227,9 @@ public sealed class DatabaseMigratorTests
         }
 
         using SqliteConnection upgraded = OpenConnection(temporary.DatabasePath);
-        Assert.AreEqual(28, GetUserTableNames(upgraded).Length);
+        Assert.AreEqual(29, GetUserTableNames(upgraded).Length);
         Assert.AreEqual(
-            13L,
+            14L,
             ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM schema_migrations;"));
         Assert.AreEqual(1L, ExecuteScalarInt64(upgraded, "SELECT COUNT(*) FROM approvals;"));
         Assert.AreEqual(
@@ -3693,7 +3701,7 @@ public sealed class DatabaseMigratorTests
 
         Assert.IsFalse(second.Applied);
         Assert.IsNull(second.BackupPath);
-        Assert.AreEqual(13, second.SchemaVersion);
+        Assert.AreEqual(14, second.SchemaVersion);
         Assert.AreEqual(first.SchemaDigest, second.SchemaDigest);
         CollectionAssert.AreEqual(originalBackups, GetBackupFiles(temporary));
 
@@ -4031,7 +4039,7 @@ public sealed class DatabaseMigratorTests
                                 content_digest,
                                 applied_at
                             )
-                            VALUES (14, '014_unknown', $digest, $applied_at);
+                            VALUES (15, '015_unknown', $digest, $applied_at);
                             """,
                         ("$digest", DigestA),
                         ("$applied_at", Timestamp));
@@ -4243,7 +4251,7 @@ public sealed class DatabaseMigratorTests
         Assert.IsTrue(retry.Applied);
         Assert.AreEqual(2, GetBackupFiles(temporary).Length);
         using SqliteConnection migrated = OpenConnection(temporary.DatabasePath);
-        Assert.AreEqual(28, GetUserTableNames(migrated).Length);
+        Assert.AreEqual(29, GetUserTableNames(migrated).Length);
         AssertDatabaseChecksPass(migrated);
     }
 
@@ -4264,9 +4272,9 @@ public sealed class DatabaseMigratorTests
             0L,
             ExecuteScalarInt64(connection, "SELECT COUNT(*) FROM projects;"));
         Assert.AreEqual(
-            13L,
+            14L,
             ExecuteScalarInt64(connection, "SELECT COUNT(*) FROM schema_migrations;"));
-        Assert.AreEqual(28, GetUserTableNames(connection).Length);
+        Assert.AreEqual(29, GetUserTableNames(connection).Length);
         AssertDatabaseChecksPass(connection);
     }
 
@@ -6104,6 +6112,7 @@ public sealed class DatabaseMigratorTests
             (11, "011_source_only_executions", ReadEmbeddedMigrationDigest("011_source_only_executions")),
             (12, "012_subtitle_edits", ReadEmbeddedMigrationDigest("012_subtitle_edits")),
             (13, "013_project_deletions", ReadEmbeddedMigrationDigest("013_project_deletions")),
+            (14, "014_project_display_names", ReadEmbeddedMigrationDigest("014_project_display_names")),
         ];
 
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);

@@ -54,7 +54,8 @@ internal sealed record ProjectListItem(
     string SourceStatus,
     string? PublicationScope,
     IReadOnlyList<string> OutputFormats,
-    string UpdatedAt);
+    string UpdatedAt,
+    string? DisplayName = null);
 
 internal sealed record ProjectCreationOverview(
     IReadOnlyList<ProjectListItem> Projects,
@@ -81,7 +82,8 @@ internal sealed record ProjectCreationDraftView(
     string? BrandTemplateId,
     IReadOnlyList<string> MissingFields,
     string UpdatedAt,
-    SourceOnlyProjectSummary? SourceOnly);
+    SourceOnlyProjectSummary? SourceOnly,
+    string? DisplayName = null);
 
 internal sealed record SourceOnlyProjectSummary(
     string ProfileId,
@@ -314,6 +316,75 @@ internal sealed class ProjectCreationService
         return projectId is null || ProjectFilesRemover is null || ProjectFilesRemover(projectId);
     }
 
+    internal const int MaxDisplayNameCodePoints = 100;
+
+    /// <summary>
+    /// Changes only the presentation name of a draft or finalized project. The stored
+    /// content name, draft revision and project snapshot are unchanged, so work bound to
+    /// the original name keeps running.
+    /// </summary>
+    internal ProjectCreationDraftView RenameProject(
+        EntityId<ProjectCreationDraftIdTag> draftId,
+        string displayName)
+    {
+        ArgumentNullException.ThrowIfNull(draftId);
+        _ = Demand(AuthorizationOperation.CreateProject);
+        string normalized = NormalizeDisplayName(displayName);
+        _ = GetRequiredDraft(draftId);
+        StoredProjectCreationDraft stored = draftStore.SetDisplayName(
+            draftId,
+            normalized,
+            GetUtcNow());
+        StoredProjectPayload payload = ParseStored(stored);
+        return BuildView(stored, payload.Draft, payload.SourceOnly);
+    }
+
+    private static readonly System.Text.UTF8Encoding StrictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
+
+    private static string NormalizeDisplayName(string displayName)
+    {
+        ArgumentNullException.ThrowIfNull(displayName);
+        string normalized;
+        try
+        {
+            _ = StrictUtf8.GetByteCount(displayName);
+            normalized = displayName.Trim().Normalize(System.Text.NormalizationForm.FormC);
+        }
+        catch (Exception exception) when (exception is ArgumentException)
+        {
+            throw new ArgumentException(
+                "The display name must be valid Unicode text.",
+                nameof(displayName),
+                exception);
+        }
+
+        if (normalized.Length == 0 ||
+            normalized.EnumerateRunes().Count() > MaxDisplayNameCodePoints)
+        {
+            throw new ArgumentException(
+                "The display name must be 1 to 100 characters.",
+                nameof(displayName));
+        }
+
+        // Control, line-separator and bidirectional override characters could hide or
+        // reorder the name that is shown in the project list.
+        if (normalized.Any(character =>
+                char.IsControl(character) ||
+                char.GetUnicodeCategory(character) is
+                    System.Globalization.UnicodeCategory.LineSeparator or
+                    System.Globalization.UnicodeCategory.ParagraphSeparator ||
+                character is >= '\u202A' and <= '\u202E' ||
+                character is >= '\u2066' and <= '\u2069'))
+        {
+            throw new ArgumentException(
+                "The display name contains characters that are not allowed.",
+                nameof(displayName));
+        }
+
+        return normalized;
+    }
     internal ProjectCreationDraftView SaveDraft(
         EntityId<ProjectCreationDraftIdTag> draftId,
         int expectedRevision,
@@ -454,7 +525,8 @@ internal sealed class ProjectCreationService
             Array.AsReadOnly(draft.OutputProfiles
                 .Select(static profile => profile.Name)
                 .ToArray()),
-            ProjectCreationPayloadCodec.FormatTimestamp(stored.UpdatedAt));
+            ProjectCreationPayloadCodec.FormatTimestamp(stored.UpdatedAt),
+            stored.DisplayName);
     }
 
     private ProjectCreationDraftView BuildView(
@@ -501,7 +573,8 @@ internal sealed class ProjectCreationService
                 ? null
                 : CreateSourceOnlySummary(
                     sourceOnly.SettingsSnapshot,
-                    sourceOnly.ArtifactSet));
+                    sourceOnly.ArtifactSet),
+            stored.DisplayName);
     }
 
     private StoredProjectPayload ParseStored(StoredProjectCreationDraft stored)

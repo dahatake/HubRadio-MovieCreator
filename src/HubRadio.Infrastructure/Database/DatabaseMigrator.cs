@@ -34,7 +34,7 @@ public sealed class DatabaseMigrationResult
 
 public static class DatabaseMigrator
 {
-    private const int LatestSchemaVersion = 13;
+    private const int LatestSchemaVersion = 14;
     private const int DefaultTimeoutSeconds = 5;
     private const string SchemaDigestDomain =
         "HubRadio.MovieCreator.DatabaseMigrationSet/v1";
@@ -99,6 +99,10 @@ public static class DatabaseMigrator
             13,
             "013_project_deletions",
             "HubRadio.Infrastructure.Database.Migrations.013_project_deletions.sql"),
+        new(
+            14,
+            "014_project_display_names",
+            "HubRadio.Infrastructure.Database.Migrations.014_project_display_names.sql"),
     ];
 
     public static DatabaseMigrationResult Migrate(

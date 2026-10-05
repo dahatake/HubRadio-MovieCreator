@@ -11,6 +11,7 @@
     { "$ref": "#/$defs/pickSourceRequest" },
     { "$ref": "#/$defs/finalizeDraftRequest" },
     { "$ref": "#/$defs/deleteProjectRequest" },
+    { "$ref": "#/$defs/renameProjectRequest" },
     { "$ref": "#/$defs/jobStatusRequest" },
     { "$ref": "#/$defs/jobCancelRequest" },
     { "$ref": "#/$defs/jobRetryRequest" },
@@ -676,6 +677,7 @@
         "project.pickSource",
         "project.finalizeDraft",
         "project.delete",
+        "project.rename",
         "jobs.getStatus",
         "jobs.cancel",
         "jobs.retry",
@@ -733,7 +735,8 @@
         "project.saveDraft",
         "project.pickSource",
         "project.finalizeDraft",
-        "project.delete"
+        "project.delete",
+        "project.rename"
       ]
     },
     "jobMethod": {
@@ -1012,6 +1015,25 @@
         }
       }
     },
+    "renameProjectRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" },
+        "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "project.rename" },
+        "params": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["draftId", "displayName"],
+          "properties": {
+            "draftId": { "$ref": "#/$defs/entityId" },
+            "displayName": { "type": "string", "minLength": 1, "maxLength": 200 }
+          }
+        }
+      }
+    },
     "finalizeDraftRequest": {
       "type": "object",
       "additionalProperties": false,
@@ -1073,6 +1095,7 @@
         "projectId",
         "state",
         "contentName",
+        "displayName",
         "episodeNumber",
         "sourceStatus",
         "owner",
@@ -1087,6 +1110,7 @@
         "projectId": { "$ref": "#/$defs/optionalEntityId" },
         "state": { "enum": ["draft", "finalized"] },
         "contentName": { "$ref": "#/$defs/optionalString" },
+        "displayName": { "$ref": "#/$defs/optionalString" },
         "episodeNumber": { "type": "null" },
         "sourceStatus": { "$ref": "#/$defs/sourceStatus" },
         "owner": { "type": "null" },
@@ -1111,6 +1135,7 @@
         "sourceCandidateId",
         "sourceStatus",
         "contentName",
+        "displayName",
         "purpose",
         "audience",
         "publicationScope",
@@ -1135,6 +1160,7 @@
         "sourceCandidateId": { "$ref": "#/$defs/optionalEntityId" },
         "sourceStatus": { "$ref": "#/$defs/sourceStatus" },
         "contentName": { "$ref": "#/$defs/optionalString" },
+        "displayName": { "$ref": "#/$defs/optionalString" },
         "purpose": { "$ref": "#/$defs/optionalString" },
         "audience": { "$ref": "#/$defs/optionalString" },
         "publicationScope": { "$ref": "#/$defs/optionalPublicationScope" },
@@ -1259,7 +1285,8 @@
             "project.createDraft",
             "project.loadDraft",
             "project.saveDraft",
-            "project.finalizeDraft"
+            "project.finalizeDraft",
+            "project.rename"
           ]
         },
         "result": {

@@ -41,7 +41,7 @@ export function SettingInspector({ definition, value, initialValue, draft, scope
         <p>{scope === 'global' ? '新しい動画の既定値' : 'この動画'}</p>
       </div>
       <section className="setting-help" aria-labelledby={`${id}-help-title`}>
-        <h4 id={`${id}-help-title`}>やさしい説明：{help.label}</h4>
+        <h4 id={`${id}-help-title`}>{help.label}</h4>
         <dl>
           <div><dt>これは何の設定？</dt><dd>{help.what}</dd></div>
           <div><dt>変えるとどうなる？</dt><dd>{help.effect}</dd></div>

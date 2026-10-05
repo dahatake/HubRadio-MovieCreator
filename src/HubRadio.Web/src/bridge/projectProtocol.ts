@@ -77,6 +77,7 @@ export interface ProjectListItem {
   readonly projectId: string | null
   readonly state: 'draft' | 'finalized'
   readonly contentName: string | null
+  readonly displayName?: string | null
   readonly episodeNumber: null
   readonly sourceStatus: SourceStatus
   readonly owner: null
@@ -103,6 +104,7 @@ export interface ProjectDraft {
   readonly sourceCandidateId: string | null
   readonly sourceStatus: SourceStatus
   readonly contentName: string | null
+  readonly displayName?: string | null
   readonly purpose: string | null
   readonly audience: string | null
   readonly publicationScope: PublicationScope | null
@@ -579,7 +581,7 @@ function parseErrorResponse(
 
 function parseProjectListItem(value: unknown): ProjectListItem | null {
   if (
-    !isRecordWithExactKeys(value, [
+    !isRecordWithExactKeys(value, withOptionalDisplayName(value, [
       'draftId',
       'projectId',
       'state',
@@ -592,11 +594,12 @@ function parseProjectListItem(value: unknown): ProjectListItem | null {
       'reviewState',
       'outputFormats',
       'updatedAt',
-    ]) ||
+    ])) ||
     !isEntityId(value.draftId) ||
     !isNullOrEntityId(value.projectId) ||
     (value.state !== 'draft' && value.state !== 'finalized') ||
     !isNullOrString(value.contentName) ||
+    !isOptionalDisplayName(value) ||
     value.episodeNumber !== null ||
     !isSourceStatus(value.sourceStatus) ||
     value.owner !== null ||
@@ -616,6 +619,7 @@ function parseProjectListItem(value: unknown): ProjectListItem | null {
     projectId: value.projectId,
     state: value.state,
     contentName: value.contentName,
+    ...('displayName' in value ? { displayName: value.displayName as string | null } : {}),
     episodeNumber: null,
     sourceStatus: value.sourceStatus,
     owner: null,
@@ -665,7 +669,7 @@ function parseCatalogOptions(value: unknown): readonly ProjectCatalogOption[] | 
 
 function parseProjectDraft(value: unknown): ProjectDraft | null {
   if (
-    !isRecordWithExactKeys(value, [
+    !isRecordWithExactKeys(value, withOptionalDisplayName(value, [
       'draftId',
       'revision',
       'isFinalized',
@@ -684,7 +688,7 @@ function parseProjectDraft(value: unknown): ProjectDraft | null {
       'missingFields',
       'updatedAt',
       'sourceOnly',
-    ]) ||
+    ])) ||
     !isEntityId(value.draftId) ||
     !isNonnegativeInt32(value.revision) ||
     typeof value.isFinalized !== 'boolean' ||
@@ -692,6 +696,7 @@ function parseProjectDraft(value: unknown): ProjectDraft | null {
     !isNullOrEntityId(value.sourceCandidateId) ||
     !isSourceStatus(value.sourceStatus) ||
     !isNullOrString(value.contentName) ||
+    !isOptionalDisplayName(value) ||
     !isNullOrString(value.purpose) ||
     !isNullOrString(value.audience) ||
     !isNullOrPublicationScope(value.publicationScope) ||
@@ -717,6 +722,7 @@ function parseProjectDraft(value: unknown): ProjectDraft | null {
     sourceCandidateId: value.sourceCandidateId,
     sourceStatus: value.sourceStatus,
     contentName: value.contentName,
+    ...('displayName' in value ? { displayName: value.displayName as string | null } : {}),
     purpose: value.purpose,
     audience: value.audience,
     publicationScope: value.publicationScope,
@@ -813,6 +819,15 @@ function isNativeTimestamp(value: unknown): value is string {
     nativeTimestampPattern.test(value) &&
     Number.isFinite(Date.parse(value))
   )
+}
+
+// Hosts that rename projects send displayName; older payloads omit it.
+function withOptionalDisplayName(value: unknown, keys: readonly string[]): readonly string[] {
+  return isRecord(value) && 'displayName' in value ? [...keys, 'displayName'] : keys
+}
+
+function isOptionalDisplayName(value: Record<string, unknown>): boolean {
+  return !('displayName' in value) || isNullOrString(value.displayName)
 }
 
 function isRecordWithExactKeys(

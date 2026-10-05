@@ -54,6 +54,7 @@ public sealed class WebBridgeSchemaTests
                 "project.pickSource",
                 "project.finalizeDraft",
                 "project.delete",
+                "project.rename",
                 "jobs.getStatus",
                 "jobs.cancel",
                 "jobs.retry",

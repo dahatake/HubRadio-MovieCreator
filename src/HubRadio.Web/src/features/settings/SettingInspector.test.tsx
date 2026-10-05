@@ -75,7 +75,7 @@ describe('SettingInspector', () => {
     const help = view.container.querySelector('section.setting-help')!
 
     expect(help.closest('details')).toBeNull()
-    expect(within(help as HTMLElement).getByRole('heading', { level: 4 }).textContent).toBe('やさしい説明：直接投稿')
+    expect(within(help as HTMLElement).getByRole('heading', { level: 4 }).textContent).toBe('直接投稿')
     expect(help.textContent).toContain('これは何の設定？')
     expect(help.textContent).toContain('YouTubeなどのサービスへ自動で投稿するか')
     expect(help.textContent).toContain('変えるとどうなる？')
@@ -88,7 +88,7 @@ describe('SettingInspector', () => {
     const view = await renderInspector({ definition: makeDefinition(boolean(false)) })
     const help = view.container.querySelector('section.setting-help')!
 
-    expect(help.querySelector('h4')!.textContent).toBe('やさしい説明：テスト設定')
+    expect(help.querySelector('h4')!.textContent).toBe('テスト設定')
     expect(help.textContent).toContain('まだ用意されていません')
   })
 

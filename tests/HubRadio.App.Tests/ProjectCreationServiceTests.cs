@@ -588,6 +588,153 @@ public sealed class ProjectCreationServiceTests
         }
     }
 
+    // FR-040 AC-013
+    [TestMethod]
+    public async Task RenameProjectChangesOnlyTheDisplayNameOfADraftAndAFinalizedProject()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        var handler = new ProjectBridgeHandler(fixture.Service);
+        ProjectCreationDraftView draft = fixture.Service.CreateDraft();
+        ProjectCreationDraftView toFinalize = fixture.Service.CreateDraft();
+        EntityId<AssetIdTag> candidate = fixture.Registry.RegisterSelection(fixture.PickerSourcePath)
+            ?? throw new AssertFailedException("A source selection must create an opaque candidate.");
+        ProjectCreationDraftView finalized = fixture.Service.FinalizeDraft(
+            EntityId<ProjectCreationDraftIdTag>.Parse(toFinalize.DraftId),
+            toFinalize.Revision,
+            ParseElement(CreateCompleteInput(fixture.Catalog, candidate)));
+        Assert.IsNull(finalized.DisplayName);
+
+        foreach (ProjectCreationDraftView target in new[] { draft, finalized })
+        {
+            string json = await handler.HandleAsync(
+                CreateBridgeRequest(
+                    BridgeMethod.RenameProject,
+                    new JsonObject { ["draftId"] = target.DraftId, ["displayName"] = "  社内向け 第1回  " }),
+                CancellationToken.None);
+            using JsonDocument response = JsonDocument.Parse(json);
+            Assert.AreEqual("project.rename", response.RootElement.GetProperty("method").GetString());
+            JsonElement renamed = response.RootElement.GetProperty("result").GetProperty("draft");
+            Assert.AreEqual("社内向け 第1回", renamed.GetProperty("displayName").GetString());
+            Assert.AreEqual(target.Revision, renamed.GetProperty("revision").GetInt32());
+            Assert.AreEqual(target.IsFinalized, renamed.GetProperty("isFinalized").GetBoolean());
+            Assert.AreEqual(target.ContentName, renamed.GetProperty("contentName").GetString());
+        }
+
+        ProjectListItem[] listed = fixture.Service.ListProjects().Projects.ToArray();
+        Assert.HasCount(2, listed);
+        Assert.IsTrue(listed.All(static item => item.DisplayName == "社内向け 第1回"));
+        Assert.AreEqual(
+            finalized.ContentName,
+            listed.Single(item => item.DraftId == finalized.DraftId).ContentName);
+        ProjectCreationDraftView reloaded = fixture.Service.LoadDraft(
+            EntityId<ProjectCreationDraftIdTag>.Parse(finalized.DraftId));
+        Assert.AreEqual("社内向け 第1回", reloaded.DisplayName);
+        Assert.AreEqual(finalized.Revision, reloaded.Revision);
+
+        ProjectCreationDraftView again = fixture.Service.RenameProject(
+            EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId),
+            "別の名前");
+        Assert.AreEqual("別の名前", again.DisplayName);
+    }
+
+    // FR-040 AC-013
+    [TestMethod]
+    public void RenameProjectKeepsTheDraftFinalizableAfterTheNameChanged()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        ProjectCreationDraftView draft = fixture.Service.CreateDraft();
+        _ = fixture.Service.RenameProject(EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId), "表示名");
+        EntityId<AssetIdTag> candidate = fixture.Registry.RegisterSelection(fixture.PickerSourcePath)
+            ?? throw new AssertFailedException("A source selection must create an opaque candidate.");
+
+        ProjectCreationDraftView finalized = fixture.Service.FinalizeDraft(
+            EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId),
+            draft.Revision,
+            ParseElement(CreateCompleteInput(fixture.Catalog, candidate)));
+
+        Assert.IsTrue(finalized.IsFinalized);
+        Assert.AreEqual("表示名", finalized.DisplayName);
+    }
+
+    // FR-040 AC-014
+    [TestMethod]
+    public async Task RenameProjectRejectsInvalidNamesUnknownIdsAndMissingAuthority()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        var handler = new ProjectBridgeHandler(fixture.Service);
+        ProjectCreationDraftView draft = fixture.Service.CreateDraft();
+        EntityId<ProjectCreationDraftIdTag> id = EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId);
+
+        foreach (string invalid in new[]
+        {
+            string.Empty,
+            "   ",
+            new string('a', 101),
+            "改\u0000行",
+            "改\n行",
+            "反転\u202E名",
+        })
+        {
+            Assert.ThrowsExactly<ArgumentException>(() => fixture.Service.RenameProject(id, invalid), invalid);
+            AssertBridgeError(
+                await handler.HandleAsync(
+                    CreateBridgeRequest(
+                        BridgeMethod.RenameProject,
+                        new JsonObject { ["draftId"] = draft.DraftId, ["displayName"] = invalid }),
+                    CancellationToken.None),
+                "project.invalid_request");
+        }
+
+        Assert.ThrowsExactly<ArgumentException>(() => fixture.Service.RenameProject(id, "\ud800"));
+        Assert.AreEqual(new string('あ', 100), fixture.Service.RenameProject(id, new string('あ', 100)).DisplayName);
+        Assert.AreEqual(new string('あ', 100), fixture.Service.ListProjects().Projects.Single().DisplayName);
+        AssertBridgeError(
+            await handler.HandleAsync(
+                CreateBridgeRequest(
+                    BridgeMethod.RenameProject,
+                    new JsonObject { ["draftId"] = EntityId<ProjectCreationDraftIdTag>.New().ToString(), ["displayName"] = "名前" }),
+                CancellationToken.None),
+            "project.not_found");
+
+        ProjectCreationService unauthorized = fixture.CreateService(fixture.Registry, UnauthorizedSid);
+        AssertAuthorizationDenied(() => unauthorized.RenameProject(id, "拒否される名前"));
+        Assert.AreEqual(new string('あ', 100), fixture.Service.LoadDraft(id).DisplayName);
+
+        fixture.Service.DeleteProject(id);
+        AssertBridgeError(
+            await handler.HandleAsync(
+                CreateBridgeRequest(
+                    BridgeMethod.RenameProject,
+                    new JsonObject { ["draftId"] = draft.DraftId, ["displayName"] = "削除後" }),
+                CancellationToken.None),
+            "project.not_found");
+    }
+
+    // FR-040 AC-014
+    [TestMethod]
+    public void RenameBridgeRequestAcceptsOnlyAnExactDraftIdAndStringName()
+    {
+        string source = WebViewHost.EntryPoint;
+        string id = EntityId<ProjectCreationDraftIdTag>.New().ToString();
+        string Build(string parameters) =>
+            "{\"version\":1,\"requestId\":\"00112233-4455-6677-8899-aabbccddeeff\",\"method\":\"project.rename\",\"params\":" + parameters + "}";
+
+        Assert.IsTrue(BridgeProtocol.TryParseRequest(source, Build("{\"draftId\":\"" + id + "\",\"displayName\":\"名前\"}"), out BridgeRequest? parsed, out _));
+        Assert.AreEqual(BridgeMethod.RenameProject, parsed!.Method);
+        foreach (string invalid in new[]
+        {
+            "{}",
+            "{\"draftId\":\"" + id + "\"}",
+            "{\"displayName\":\"名前\"}",
+            "{\"draftId\":\"" + id + "\",\"displayName\":null}",
+            "{\"draftId\":\"" + id + "\",\"displayName\":1}",
+            "{\"draftId\":\"" + id + "\",\"displayName\":\"名前\",\"extra\":1}",
+            "{\"draftId\":\"" + id.ToUpperInvariant() + "\",\"displayName\":\"名前\"}",
+        })
+        {
+            Assert.IsFalse(BridgeProtocol.TryParseRequest(source, Build(invalid), out _, out _), invalid);
+        }
+    }
     [TestMethod]
     public async Task BridgeCreateDraftReturnsSourceOnlySummaryAndTypedCancellationWithoutPath()
     {

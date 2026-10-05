@@ -32,5 +32,7 @@
           LogicalName="HubRadio.Infrastructure.Database.Migrations.012_subtitle_edits.sql" />
     <EmbeddedResource Include="Database\Migrations\013_project_deletions.sql"
                       LogicalName="HubRadio.Infrastructure.Database.Migrations.013_project_deletions.sql" />
+    <EmbeddedResource Include="Database\Migrations\014_project_display_names.sql"
+                      LogicalName="HubRadio.Infrastructure.Database.Migrations.014_project_display_names.sql" />
   </ItemGroup>
 </Project>

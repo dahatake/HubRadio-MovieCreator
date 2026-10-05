@@ -35,6 +35,7 @@ internal enum BridgeMethod
     PickSource,
     FinalizeDraft,
     DeleteProject,
+    RenameProject,
     JobsGetStatus,
     JobsCancel,
     JobsRetry,
@@ -210,6 +211,7 @@ internal static class BridgeProtocol
     internal const string PickSourceMethod = "project.pickSource";
     internal const string FinalizeDraftMethod = "project.finalizeDraft";
     internal const string DeleteProjectMethod = "project.delete";
+    internal const string RenameProjectMethod = "project.rename";
 
     private static readonly string[] DraftInputProperties =
     [
@@ -496,6 +498,7 @@ internal static class BridgeProtocol
             BridgeMethod.PickSource => PickSourceMethod,
             BridgeMethod.FinalizeDraft => FinalizeDraftMethod,
             BridgeMethod.DeleteProject => DeleteProjectMethod,
+            BridgeMethod.RenameProject => RenameProjectMethod,
             BridgeMethod.JobsGetStatus => JobsGetStatusMethod,
             BridgeMethod.JobsCancel => JobsCancelMethod,
             BridgeMethod.JobsRetry => JobsRetryMethod,
@@ -578,7 +581,8 @@ internal static class BridgeProtocol
             BridgeMethod.SaveDraft or
             BridgeMethod.PickSource or
             BridgeMethod.FinalizeDraft or
-            BridgeMethod.DeleteProject;
+            BridgeMethod.DeleteProject or
+            BridgeMethod.RenameProject;
 
     internal static bool IsTranscriptMethod(BridgeMethod method) =>
         method is
@@ -673,6 +677,7 @@ internal static class BridgeProtocol
             PickSourceMethod => BridgeMethod.PickSource,
             FinalizeDraftMethod => BridgeMethod.FinalizeDraft,
             DeleteProjectMethod => BridgeMethod.DeleteProject,
+            RenameProjectMethod => BridgeMethod.RenameProject,
             JobsGetStatusMethod => BridgeMethod.JobsGetStatus,
             JobsCancelMethod => BridgeMethod.JobsCancel,
             JobsRetryMethod => BridgeMethod.JobsRetry,
@@ -756,6 +761,13 @@ internal static class BridgeProtocol
         {
             return HasExactProperties(parameters, ["draftId"]) &&
                 IsCanonicalEntityId(parameters.GetProperty("draftId"));
+        }
+
+        if (method == BridgeMethod.RenameProject)
+        {
+            return HasExactProperties(parameters, ["draftId", "displayName"]) &&
+                IsCanonicalEntityId(parameters.GetProperty("draftId")) &&
+                parameters.GetProperty("displayName").ValueKind == JsonValueKind.String;
         }
 
         if (method is BridgeMethod.SaveDraft or BridgeMethod.FinalizeDraft)
