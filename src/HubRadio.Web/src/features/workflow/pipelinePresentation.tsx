@@ -11,6 +11,26 @@ export const pipelinePhaseLabels: Readonly<Record<PipelinePhase, string>> = {
   ReselectionRequired: '元動画の再選択が必要', ReconciliationRequired: '整合性の再確認が必要',
 }
 
+const pipelineStages = ['Queued', 'Ingesting', 'Analyzing', 'Composing', 'Rendering', 'Evaluating', 'Delivering', 'Completed'] as const satisfies readonly PipelinePhase[]
+
+/** FR-042: where the run is, by phase only; no percentage is invented. */
+function PipelineStages({ phase }: Readonly<{ phase: PipelinePhase }>) {
+  const index = pipelineStages.findIndex(stage => stage === phase)
+  if (index < 0) return null
+  const total = pipelineStages.length
+  return <>
+    <p className="pipeline-stage-summary" role="status">進み具合：{index + 1} / {total} 段階（{pipelinePhaseLabels[phase]}）</p>
+    <ol className="pipeline-stages" aria-label="自動編集の段階">
+      {pipelineStages.map((stage, i) => {
+        const state = phase === 'Completed' || i < index ? 'done' : i === index ? 'current' : 'pending'
+        return <li key={stage} data-stage-state={state} aria-current={state === 'current' ? 'step' : undefined}>
+          {pipelinePhaseLabels[stage]}：{state === 'done' ? '完了' : state === 'current' ? '実行中' : '未着手'}
+        </li>
+      })}
+    </ol>
+  </>
+}
+
 /** The legacy job widget operates jobs.retry in place; pipeline retry instead
  * creates a new execution/root. Share monitoring, never those command buttons.
  */
@@ -42,6 +62,7 @@ export function PipelineProgress({ active = true }: Readonly<{ active?: boolean 
     <p role="status" data-pipeline-phase={s?.phase ?? 'none'}>{s === null
       ? pipeline.state.projectId === null ? '確定済みの案件を選択してください。' : pipeline.state.pendingMethod !== null ? '自動編集の状態を確認しています。' : '編集処理の開始は確認できていません。'
       : pipelinePhaseLabels[s.phase]}</p>
+    {s !== null && <PipelineStages phase={s.phase} />}
     {live && <progress aria-label="自動編集の進行状況" max={1} value={job?.progressRatio ?? undefined} />}
     {s?.failureCode != null && <p role="status">{s.failureCode}</p>}
     {pipeline.state.error !== null && <p role="alert">{pipeline.state.error === 'timeout'

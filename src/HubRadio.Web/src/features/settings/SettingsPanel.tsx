@@ -295,7 +295,7 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, onClose
           </div>
           {onClose !== undefined && <button type="button" className="settings-close" disabled={!isActive || busy} onClick={requestClose}>設定を閉じて戻る</button>}
         </header>
-        <p className="settings-scope-note">編集中：{scopeName}。{activeTarget === null && (activeProjectId === null ? '動画の作成前も既定値を編集できます。' : 'この動画の設定先を確認できません。')}設定の保存だけでは動画・既存の成果物を更新しません。</p>
+        <p className="settings-scope-note">編集中：{scopeName}。{activeTarget === null && (activeProjectId === null ? '「この動画」は、「編集を開始」で案件を作成すると選べます。作成前は既定値を編集できます。' : 'この動画の設定先を確認できません。')}設定の保存だけでは動画・既存の成果物を更新しません。</p>
         {oldProject && <div className="settings-context-warning" role="status">切替前の動画の設定を保持しています。個別に保存するか、対象を切り替えてください。</div>}
         <div className="settings-toolbar">
           <div className="settings-view-switch" role="group" aria-label="設定の表示">

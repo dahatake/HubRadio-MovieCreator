@@ -383,7 +383,10 @@ public sealed class BookendStitcher
         {
             return new FileStream(path, new FileStreamOptions
             {
-                Mode = FileMode.Open, Access = FileAccess.Read, Share = FileShare.Read, Options = FileOptions.SequentialScan,
+                Mode = FileMode.Open,
+                Access = FileAccess.Read,
+                Share = FileShare.Read,
+                Options = FileOptions.SequentialScan,
             });
         }
         catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)

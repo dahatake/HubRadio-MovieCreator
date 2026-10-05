@@ -157,7 +157,7 @@ describe('SettingInspector', () => {
 
   it('changes a boolean accessibly and saves only on explicit submit, without claiming persistence', async () => {
     const view = await renderInspector()
-    // FR-041 AC-013
+    // FR-041.1 FR-041.2 FR-041.3 AC-016.1
     const group = view.queries.getByRole('radiogroup', { name: 'テスト設定：未保存の値' })
     expect(group.querySelector('select')).toBeNull()
     expect(Array.from(group.querySelectorAll<HTMLInputElement>('input[type="radio"]')).map(option => [option.value, option.parentElement?.textContent])).toEqual([['true', '有効'], ['false', '無効']])
@@ -234,7 +234,7 @@ describe('SettingInspector', () => {
 
   it('uses only allowed text options and rejects an invalid external draft', async () => {
     const view = await renderInspector({ definition: makeDefinition(text('標準'), { allowedTextValues: ['標準', '高品質'] }) })
-    // FR-041 AC-013
+    // FR-041.1 FR-041.2 FR-041.3 AC-016.1
     const group = view.queries.getByRole('radiogroup', { name: 'テスト設定：未保存の値' })
     const options = () => Array.from(group.querySelectorAll<HTMLInputElement>('input[type="radio"]'))
     expect(options().map(option => option.value)).toEqual(['標準', '高品質'])

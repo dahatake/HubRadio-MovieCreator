@@ -604,6 +604,7 @@ describe('SettingsPanel UX-025', () => {
     expect(document.activeElement).toBe(destination)
   })
 
+  // FR-041.4 AC-016.2
   it('reveals an advanced initialSettingKey only after visible data arrives and respects missing keys', async () => {
     const h = await mount({ isActive: false, initialSettingKey: advancedKey })
     expect(h.client.sendSettingsWorkspace).not.toHaveBeenCalled()

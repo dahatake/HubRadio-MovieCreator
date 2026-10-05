@@ -238,7 +238,7 @@ public sealed class AudioExtractionTests
         CollectionAssert.AreEqual(
             new[]
             {
-                "-v", "error", "-select_streams", "4", "-read_intervals", "%+#2",
+                "-v", "error", "-select_streams", "4", "-read_intervals", "%+#16",
                 "-show_frames", "-show_entries",
                 "frame=stream_index,best_effort_timestamp,nb_samples",
                 "-of", "compact=p=0:nk=0:escape=none:s=|",

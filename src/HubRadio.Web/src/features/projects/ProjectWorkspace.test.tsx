@@ -560,7 +560,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
 
     renderView(callbacks(quick))
     expect(container.querySelectorAll('.quick-start-panel')).toHaveLength(1)
-    expect(container.querySelectorAll('button[type="submit"]')).toHaveLength(1)
+    expect(container.querySelectorAll('.quick-start-actions button[type="submit"]')).toHaveLength(1)
     expect(container.querySelector('.project-list-panel, .project-card, .wizard-panel')).toBeNull()
     expect(container.textContent).not.toContain('保存済みの案件')
 
@@ -655,6 +655,92 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     expect(props.deleteProject).toHaveBeenCalledExactlyOnceWith(draftId)
     expect(props.createDraft).not.toHaveBeenCalled()
     expect(props.loadDraft).not.toHaveBeenCalled()
+  })
+
+  // FR-040 AC-013
+  it('renames the open project through the name editor and keeps the card name in sync', async () => {
+    const props = callbacks(draftState(true))
+    renderView(props)
+    const user = userEvent.setup({ document })
+    const input = within(container).getByLabelText<HTMLInputElement>('案件名（この画面と一覧に表示される名前）')
+
+    expect(input.value).toBe('Hubらじお')
+    expect(button('案件名を保存').disabled).toBe(true)
+    await act(async () => { await user.clear(input); await user.type(input, '  社内向け 第1回 ') })
+    expect(button('案件名を保存').disabled).toBe(false)
+    await act(async () => user.click(button('案件名を保存')))
+
+    expect(props.renameProject).toHaveBeenCalledExactlyOnceWith(draftId, '社内向け 第1回')
+    expect(props.finalizeDraft).not.toHaveBeenCalled()
+    expect(props.saveDraft).not.toHaveBeenCalled()
+  })
+
+  // FR-040 AC-013
+  it('shows the renamed display name in the project card and the quick start while the source name is kept', () => {
+    const state = draftState(true)
+    renderView(callbacks({ ...state, draft: { ...state.draft!, displayName: '表示名' } }))
+    expect(container.querySelector('.quick-start-content-name')?.textContent).toBe('表示名')
+    expect(within(container).getByLabelText<HTMLInputElement>('案件名（この画面と一覧に表示される名前）').value).toBe('表示名')
+    expect(container.textContent).toContain('元の名前：Hubらじお')
+
+    renderView(callbacks({
+      ...initialProjectState,
+      canCreate: true,
+      projects: [{ ...projectListItem('元の名前'), displayName: '一覧の表示名' }],
+    }))
+    expect(container.querySelector('.project-card-name')?.textContent).toBe('一覧の表示名')
+    expect(button('一覧の表示名を開く')).toBeDefined()
+  })
+
+  // FR-040 AC-014
+  it.each(['pending', 'inactive', 'no authority'] as const)('offers no working rename while %s', async (reason) => {
+    const state = draftState(true)
+    const props: ProjectWorkspaceViewProps = {
+      ...callbacks({
+        ...state,
+        canCreate: reason !== 'no authority',
+        pending: reason === 'pending' ? { requestId: 'r1', method: 'project.saveDraft' } : null,
+      }),
+      active: reason !== 'inactive',
+    }
+    renderView(props)
+
+    if (reason === 'no authority') {
+      expect(container.querySelector('.project-name-editor')).toBeNull()
+    } else {
+      expect(within(container).getByLabelText<HTMLInputElement>('案件名（この画面と一覧に表示される名前）').disabled).toBe(reason === 'pending')
+      expect(within(container).getByRole<HTMLButtonElement>('button', { name: '案件名を保存', hidden: true }).disabled).toBe(true)
+    }
+    expect(props.renameProject).not.toHaveBeenCalled()
+  })
+
+  // FR-040 AC-014
+  it('blocks an invalid name in the editor and explains why without calling the host', async () => {
+    const props = callbacks(draftState(true))
+    renderView(props)
+    const user = userEvent.setup({ document })
+    const input = within(container).getByLabelText<HTMLInputElement>('案件名（この画面と一覧に表示される名前）')
+
+    await act(async () => user.clear(input))
+    expect(within(container).getByRole('alert').textContent).toContain('1〜100 文字')
+    expect(input.getAttribute('aria-invalid')).toBe('true')
+    expect(button('案件名を保存').disabled).toBe(true)
+    await act(async () => user.type(input, '{Enter}'))
+    await act(async () => { await user.clear(input); await user.type(input, 'あ'.repeat(101)) })
+    expect(button('案件名を保存').disabled).toBe(true)
+    expect(props.renameProject).not.toHaveBeenCalled()
+  })
+
+  // FR-040 AC-015
+  it('states that the publication scope is fixed and how the pending state changes', () => {
+    renderView(callbacks(draftState(true)))
+    const note = container.querySelector('.project-status-note')!
+    expect(note.textContent).toContain('公開範囲は「社内限定」で固定されており、変更できません')
+    expect(note.textContent).toContain('「編集を開始」を押すと「作成済み」に変わります')
+
+    const state = draftState(true)
+    renderView(callbacks({ ...state, draft: { ...state.draft!, isFinalized: true, projectId: '22223333-4444-4555-8666-777788889999' } }))
+    expect(container.querySelector('.project-status-note')!.textContent).toContain('「確認待ち」に戻すことはできません')
   })
 
   it('shows a status notice when the project was deleted but some files remain', () => {

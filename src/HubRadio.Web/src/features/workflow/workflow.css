@@ -329,3 +329,7 @@
   .workflow-tools { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .workflow-preview .preview-toggle-options, .workflow-shell .quick-start-compact .settings-outcome-preview .review-list { grid-template-columns: minmax(0, 1fr); }
 }
+.workflow-shell .pipeline-stage-summary { margin: 0.5rem 0 0; font-weight: 600; }
+.workflow-shell .pipeline-stages { margin: 0.5rem 0; padding-left: 1.25rem; }
+.workflow-shell .pipeline-stages li[data-stage-state='current'] { font-weight: 700; }
+.workflow-shell .pipeline-stages li[data-stage-state='pending'] { opacity: 0.7; }

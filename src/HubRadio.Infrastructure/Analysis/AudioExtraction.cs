@@ -665,7 +665,7 @@ public sealed class AudioExtraction
         "frame=stream_index,best_effort_timestamp,nb_samples";
     internal const string CompactOutputFormat =
         "compact=p=0:nk=0:escape=none:s=|";
-    internal const string DecodedFrameReadInterval = "%+#2";
+    internal const string DecodedFrameReadInterval = "%+#16";
 
     private const int FileBufferSize = 64 * 1024;
     private const string FfmpegComponentIdentity =

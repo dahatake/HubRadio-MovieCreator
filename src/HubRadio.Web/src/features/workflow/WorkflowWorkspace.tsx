@@ -504,6 +504,15 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
     navigate({ type: 'selectStep', step })
   }
 
+  // FR-042: a successful 「編集を開始」 (project.finalizeDraft) moves to 自動編集 once.
+  const finalizeRequested = useRef(false)
+  useEffect(() => {
+    if (projectState.pending?.method === 'project.finalizeDraft') { finalizeRequested.current = true; return }
+    if (!finalizeRequested.current) return
+    finalizeRequested.current = false
+    if (projectState.error === null && draft?.isFinalized === true && navigation.step !== 'processing') selectStep('processing')
+  })
+
   function selectTool(tool: WorkflowTool | null): void {
     if (settingsOpen) return
     if (tool === 'layout') {

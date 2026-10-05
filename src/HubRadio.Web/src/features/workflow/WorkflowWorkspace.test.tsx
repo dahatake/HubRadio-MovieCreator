@@ -340,6 +340,23 @@ describe('WorkflowWorkspace UX-039A', () => {
     expect(h.requests.filter(request => request.method === 'analysis.read')).toHaveLength(1)
   })
 
+  // FR-040 AC-013
+  it('renames the open project from the source screen and shows the new name in the header', async () => {
+    const h = await mount()
+    await h.reply(h.last('project.list'), listResult())
+    await h.click('新しい案件を作成')
+    const draft = sourceOnlyDraft(false)
+    await h.reply(h.last('project.createDraft'), { draft })
+    const input = within(h.container).getByLabelText<HTMLInputElement>('案件名（この画面と一覧に表示される名前）')
+    await act(async () => { fireEvent.change(input, { target: { value: '  見出しの名前 ' } }) })
+    await h.click('案件名を保存')
+
+    expect(h.last('project.rename').params).toEqual({ draftId: draft.draftId, displayName: '見出しの名前' })
+    await h.reply(h.last('project.rename'), { draft: { ...draft, displayName: '見出しの名前' } })
+    expect(h.element('.workflow-project-name').textContent).toBe('見出しの名前')
+    expect(h.project().state.draft?.contentName).toBe(draft.contentName)
+  })
+
   it('uses the confirmed source-only draft for the name and plans without fabricating a job, version, preview or files', async () => {
     const h = await mount()
     await h.reply(h.last('project.list'), listResult())
@@ -380,6 +397,25 @@ describe('WorkflowWorkspace UX-039A', () => {
     await h.click('設定')
     expect(h.last('settings.read').params).toEqual({ projectId })
     expect(h.requests.filter(request => request.method === 'settings.global.read')).toHaveLength(0)
+  })
+
+  // FR-042 AC-017
+  it('moves to the 自動編集 screen by itself after a successful 編集を開始, and stays put on failure', async () => {
+    const h = await mount()
+    await h.reply(h.last('project.list'), listResult())
+    await h.click('新しい案件を作成')
+    const draft = sourceOnlyDraft(false)
+    await h.reply(h.last('project.createDraft'), { draft })
+    await h.click('編集を開始')
+    expectScreen(h, 'source')
+    await h.reply(h.last('project.finalizeDraft'), { error: { code: 'project.operation_failed', message: '失敗' } })
+    expectScreen(h, 'source')
+    await h.click('編集を開始')
+    await h.reply(h.last('project.finalizeDraft'), { draft: { ...draft, revision: draft.revision + 1, isFinalized: true, projectId } })
+    expectScreen(h, 'processing')
+    expect(document.activeElement).toBe(h.tab('processing'))
+    await h.selectStep('source')
+    expectScreen(h, 'source')
   })
 
   it('does not let changed global defaults replace a fixed source-only summary', async () => {

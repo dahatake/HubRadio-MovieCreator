@@ -7,6 +7,7 @@ import {
   PROJECT_LIST_METHOD,
   PROJECT_LOAD_DRAFT_METHOD,
   PROJECT_PICK_SOURCE_METHOD,
+  PROJECT_RENAME_METHOD,
   PROJECT_SAVE_DRAFT_METHOD,
   createProjectCreateDraftRequest,
   createProjectDeleteRequest,
@@ -14,8 +15,10 @@ import {
   createProjectListRequest,
   createProjectLoadDraftRequest,
   createProjectPickSourceRequest,
+  createProjectRenameRequest,
   createProjectSaveDraftRequest,
   isProjectDraftInputWithinRequestLimit,
+  normalizeProjectDisplayName,
   parseProjectBridgeResponse,
   parseProjectDraftInput,
   type ProjectDraftInput,
@@ -75,6 +78,47 @@ describe('project bridge requests', () => {
     expect(() => createProjectDeleteRequest(requestId, draftId.toUpperCase())).toThrow()
     expect(() => createProjectDeleteRequest(requestId, 'not-an-id')).toThrow()
     expect(() => createProjectDeleteRequest('bad', draftId)).toThrow()
+  })
+
+  // FR-040 AC-013
+  it('constructs the frozen project.rename request with the trimmed display name', () => {
+    const request = createProjectRenameRequest(requestId, draftId, '  社内向け 第1回  ')
+
+    expect(request).toEqual({
+      version: 1,
+      requestId,
+      method: PROJECT_RENAME_METHOD,
+      params: { draftId, displayName: '社内向け 第1回' },
+    })
+    expect(Object.isFrozen(request)).toBe(true)
+    expect(Object.isFrozen(request.params)).toBe(true)
+    expect(() => createProjectRenameRequest(requestId, draftId.toUpperCase(), '名前')).toThrow()
+    expect(() => createProjectRenameRequest('bad', draftId, '名前')).toThrow()
+    expect(() => createProjectRenameRequest(requestId, draftId, '   ')).toThrow()
+  })
+
+  // FR-040 AC-014
+  it('normalizes display names like the host: 1 to 100 code points, no control or bidirectional characters', () => {
+    expect(normalizeProjectDisplayName(' a ')).toBe('a')
+    expect(normalizeProjectDisplayName('あ'.repeat(100))).toBe('あ'.repeat(100))
+    expect(normalizeProjectDisplayName('😀'.repeat(100))).toBe('😀'.repeat(100))
+    expect(normalizeProjectDisplayName('e\u0301')).toBe('\u00e9')
+    for (const invalid of ['', '   ', 'あ'.repeat(101), '😀'.repeat(101), 'a\nb', 'a\u0000b', 'a\u202Eb', 'a\u2066b', 'a\u2028b', 'a\u007fb', '\ud800']) {
+      expect(normalizeProjectDisplayName(invalid)).toBeNull()
+    }
+  })
+
+  // FR-040 AC-013
+  it('accepts a project.rename draft result with a display name and rejects extra keys', () => {
+    const response = draftResponse(PROJECT_RENAME_METHOD)
+    const renamed = {
+      ...response,
+      result: { draft: { ...response.result.draft, displayName: '別の名前' } },
+    }
+    expect(parseProjectBridgeResponse(renamed)).toEqual(renamed)
+    expect(parseProjectBridgeResponse({ ...renamed, result: { draft: { ...renamed.result.draft, displayName: null } } })).not.toBeNull()
+    expect(parseProjectBridgeResponse({ ...renamed, result: { draft: { ...renamed.result.draft, displayName: 1 } } })).toBeNull()
+    expect(parseProjectBridgeResponse({ ...renamed, result: { draft: { ...renamed.result.draft, extra: 1 } } })).toBeNull()
   })
 
   it('deep-copies and freezes mutation input', () => {

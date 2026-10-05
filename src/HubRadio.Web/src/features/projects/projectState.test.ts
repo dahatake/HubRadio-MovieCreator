@@ -7,6 +7,7 @@ import {
   PROJECT_LIST_METHOD,
   PROJECT_LOAD_DRAFT_METHOD,
   PROJECT_PICK_SOURCE_METHOD,
+  PROJECT_RENAME_METHOD,
   PROJECT_SAVE_DRAFT_METHOD,
   type ProjectBridgeErrorResponse,
   type ProjectBridgeResponse,
@@ -18,6 +19,7 @@ import {
   emptyProjectInput,
   filesNotRemovedNotice,
   getMissingProjectFields,
+  getProjectDisplayName,
   getProjectInputSourceStatus,
   initialProjectState,
   isProjectInputComplete,
@@ -370,6 +372,62 @@ describe('project state reducer', () => {
     )
     expect(replaced.input.sourceCandidateId).toBe(replacementCandidateId)
     expect(JSON.stringify(replaced)).not.toContain('source.mov')
+  })
+})
+
+// FR-040 AC-013
+describe('project rename', () => {
+  it('shows the renamed draft everywhere while keeping unsaved input edits', () => {
+    const loaded = reduce(
+      projectRequestStarted(requestId, PROJECT_LOAD_DRAFT_METHOD),
+      projectResponseReceived(draftResponse(PROJECT_LOAD_DRAFT_METHOD, draft())),
+    )
+    const edited = projectStateReducer(loaded, projectInputChanged({ ...loaded.input, purpose: 'unsaved edit' }))
+    const pending = projectStateReducer(edited, projectRequestStarted(requestId, PROJECT_RENAME_METHOD))
+    const renamed = projectStateReducer(
+      pending,
+      projectResponseReceived({
+        version: 1,
+        requestId,
+        method: PROJECT_RENAME_METHOD,
+        result: { draft: { ...draft(), displayName: '新しい名前' } },
+      }),
+    )
+
+    expect(renamed.pending).toBeNull()
+    expect(renamed.error).toBeNull()
+    expect(renamed.draft?.displayName).toBe('新しい名前')
+    expect(renamed.input.purpose).toBe('unsaved edit')
+    expect(renamed.projects.map((project) => getProjectDisplayName(project))).toEqual(['新しい名前'])
+    expect(renamed.projects[0]!.contentName).toBe('Hubらじお')
+    expect(getProjectDisplayName({ contentName: 'Hubらじお' })).toBe('Hubらじお')
+    expect(getProjectDisplayName({ contentName: null, displayName: null })).toBeNull()
+  })
+
+  it('ignores an uncorrelated rename response and reports a rename error without changing the draft', () => {
+    const loaded = reduce(
+      projectRequestStarted(requestId, PROJECT_LOAD_DRAFT_METHOD),
+      projectResponseReceived(draftResponse(PROJECT_LOAD_DRAFT_METHOD, draft())),
+      projectRequestStarted(requestId, PROJECT_RENAME_METHOD),
+    )
+    const stale = projectStateReducer(
+      loaded,
+      projectResponseReceived({
+        version: 1,
+        requestId: staleRequestId,
+        method: PROJECT_RENAME_METHOD,
+        result: { draft: { ...draft(), displayName: '古い応答' } },
+      }),
+    )
+    expect(stale).toBe(loaded)
+
+    const failed = projectStateReducer(
+      loaded,
+      projectResponseReceived(errorResponse(PROJECT_RENAME_METHOD, 'project.invalid_request')),
+    )
+    expect(failed.error?.code).toBe('project.invalid_request')
+    expect(failed.draft).toBe(loaded.draft)
+    expect(failed.pending).toBeNull()
   })
 })
 

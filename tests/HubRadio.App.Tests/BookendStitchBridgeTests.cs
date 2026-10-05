@@ -326,8 +326,12 @@ public sealed class BookendStitchBridgeTests
     {
         BridgeRequest request = Request(BridgeMethod.StitchRun, new
         {
-            projectId = project.ToString("D"), executionId = execution.ToString("D"), artifactId = artifact.ToString("D"),
-            artifactDigest = digest, openingClipId = opening?.ToString("D"), closingClipId = closing?.ToString("D"),
+            projectId = project.ToString("D"),
+            executionId = execution.ToString("D"),
+            artifactId = artifact.ToString("D"),
+            artifactDigest = digest,
+            openingClipId = opening?.ToString("D"),
+            closingClipId = closing?.ToString("D"),
         });
         Assert.IsTrue(BookendStitchBridgeProtocol.HasValidParameters(request.Method, request.Parameters));
         return request;
