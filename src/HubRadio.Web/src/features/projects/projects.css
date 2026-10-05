@@ -182,3 +182,30 @@
   background: var(--cp-surface);
   border-color: var(--cp-danger);
 }
+
+.project-name-editor {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--cp-border);
+  border-radius: 0.5rem;
+  background: var(--cp-surface);
+}
+
+.project-name-editor h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.project-name-editor input[type='text'] {
+  inline-size: 100%;
+  max-inline-size: 36rem;
+}
+
+.project-name-note,
+.project-status-note {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--cp-text-muted);
+  overflow-wrap: anywhere;
+}

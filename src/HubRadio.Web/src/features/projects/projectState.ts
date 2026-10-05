@@ -5,6 +5,7 @@ import {
   PROJECT_LIST_METHOD,
   PROJECT_LOAD_DRAFT_METHOD,
   PROJECT_PICK_SOURCE_METHOD,
+  PROJECT_RENAME_METHOD,
   PROJECT_SAVE_DRAFT_METHOD,
   type ProjectBridgeErrorCode,
   type ProjectBridgeMethod,
@@ -114,6 +115,13 @@ export function projectErrorCleared(): ProjectAction {
   return { type: 'errorCleared' }
 }
 
+/** The name shown to the user: the renamed display name, else the name derived from the source. */
+export function getProjectDisplayName(
+  project: Readonly<{ displayName?: string | null; contentName: string | null }>,
+): string | null {
+  return project.displayName ?? project.contentName
+}
+
 export function projectStateReducer(
   state: ProjectState,
   action: ProjectAction,
@@ -172,6 +180,19 @@ export function projectStateReducer(
             projects: upsertProject(state.projects, state.catalog, draft),
             draft,
             input: inputFromDraft(draft),
+            pending: null,
+            error: null,
+            sourcePickerCanceled: false,
+          }
+        }
+
+        // Only the display name changes, so unsaved input edits stay as they are.
+        case PROJECT_RENAME_METHOD: {
+          const draft = response.result.draft
+          return {
+            ...state,
+            projects: upsertProject(state.projects, state.catalog, draft),
+            draft: state.draft?.draftId === draft.draftId ? draft : state.draft,
             pending: null,
             error: null,
             sourcePickerCanceled: false,
@@ -383,6 +404,7 @@ function upsertProject(
     projectId: draft.projectId,
     state: draft.isFinalized ? 'finalized' : 'draft',
     contentName: draft.contentName,
+    displayName: draft.displayName ?? null,
     episodeNumber: null,
     sourceStatus: draft.sourceStatus,
     owner: null,

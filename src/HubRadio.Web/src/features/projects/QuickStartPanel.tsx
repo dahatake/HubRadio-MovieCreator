@@ -8,7 +8,9 @@ import type {
 } from '../../bridge'
 import { SettingsOutcomePreview } from '../settings/SettingsOutcomePreview'
 import { ProjectActivityNotice } from './ProjectActivityNotice'
+import { ProjectNameEditor } from './ProjectNameEditor'
 import {
+  getProjectDisplayName,
   getProjectInputSourceStatus,
   isProjectInputFinalizable,
   type PendingProjectRequest,
@@ -21,6 +23,8 @@ export interface QuickStartPanelProps {
   readonly pending: PendingProjectRequest | null
   /** The owner controls visibility; inactive panels stay mounted without taking focus. */
   readonly active?: boolean
+  /** Omitted when the actor cannot edit; the native host still enforces authority. */
+  readonly renameProject?: (displayName: string) => void
   readonly finalizeDraft: () => void
   readonly closeDraft: () => void
   readonly pickSource: () => void
@@ -37,6 +41,7 @@ export function QuickStartPanel({
   input,
   pending,
   active = true,
+  renameProject,
   finalizeDraft,
   closeDraft,
   pickSource,
@@ -47,7 +52,7 @@ export function QuickStartPanel({
   const isPending = pending !== null
   const canStart = !draft.isFinalized && isProjectInputFinalizable(input, draft)
   const warningCount = sourceStatus === 'available' ? 0 : 1
-  const contentName = input.contentName ?? draft.contentName ?? '名称未入力'
+  const contentName = getProjectDisplayName(draft) ?? input.contentName ?? '名称未入力'
 
   useEffect(() => {
     if (active) {
@@ -94,6 +99,17 @@ export function QuickStartPanel({
           )}
         </div>
       </div>
+
+      {renameProject !== undefined && (
+        <ProjectNameEditor draft={draft} disabled={isPending} onRename={renameProject} />
+      )}
+
+      <p className="project-status-note">
+        公開範囲は「社内限定」で固定されており、変更できません（外部公開は許可されません）。
+        {draft.isFinalized
+          ? '案件は作成済みです。作成済みの案件を「確認待ち」に戻すことはできません。'
+          : '「確認待ち」は、「編集を開始」を押すと「作成済み」に変わります。'}
+      </p>
 
       {sourceStatus !== 'available' && !draft.isFinalized && (
         <p className="field-warning" role="status">

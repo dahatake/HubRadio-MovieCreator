@@ -119,6 +119,7 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/pickSourceRequest",
                 "#/$defs/finalizeDraftRequest",
                 "#/$defs/deleteProjectRequest",
+                "#/$defs/renameProjectRequest",
                 "#/$defs/jobStatusRequest",
                 "#/$defs/jobCancelRequest",
                 "#/$defs/jobRetryRequest",

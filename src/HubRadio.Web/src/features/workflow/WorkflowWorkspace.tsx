@@ -556,7 +556,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
           <div><p className="eyebrow">Hubらじお</p><h1 id="app-title">Movie Creator</h1></div>
         </div>
         <div className="workflow-current-project">
-          <p className="workflow-project-name" aria-label="現在の動画">{draft?.contentName ?? '元動画を選択してください'}</p>
+          <p className="workflow-project-name" aria-label="現在の動画">{draft?.displayName ?? draft?.contentName ?? '元動画を選択してください'}</p>
           <p className="workflow-project-state">
             {draft === null ? '未選択' : draft.isFinalized ? '案件作成済み' : '確認待ち'}
             {(sourceDirty || navigationBlocked) && ' · 未保存の入力あり'}

@@ -13,6 +13,7 @@ import {
   PROJECT_LOAD_DRAFT_METHOD,
   PROJECT_DELETE_METHOD,
   PROJECT_PICK_SOURCE_METHOD,
+  PROJECT_RENAME_METHOD,
   PROJECT_SAVE_DRAFT_METHOD,
   isProjectDraftInputWithinRequestLimit,
   type ProjectBridgeMethod,
@@ -141,6 +142,7 @@ const requestLabels: Readonly<Record<ProjectBridgeMethod, string>> = {
   [PROJECT_SAVE_DRAFT_METHOD]: '下書きを保存',
   [PROJECT_PICK_SOURCE_METHOD]: '元動画を選択',
   [PROJECT_DELETE_METHOD]: '案件を削除',
+  [PROJECT_RENAME_METHOD]: '案件名を変更',
   [PROJECT_FINALIZE_DRAFT_METHOD]: '案件を作成',
 }
 

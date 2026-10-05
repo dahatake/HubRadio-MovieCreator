@@ -10,6 +10,9 @@ export const PROJECT_SAVE_DRAFT_METHOD = 'project.saveDraft' as const
 export const PROJECT_PICK_SOURCE_METHOD = 'project.pickSource' as const
 export const PROJECT_FINALIZE_DRAFT_METHOD = 'project.finalizeDraft' as const
 export const PROJECT_DELETE_METHOD = 'project.delete' as const
+export const PROJECT_RENAME_METHOD = 'project.rename' as const
+/** Longest display name (in Unicode code points) the host accepts. */
+export const PROJECT_DISPLAY_NAME_MAX_LENGTH = 100
 export const MAX_BRIDGE_REQUEST_UTF8_BYTES =
   BRIDGE_MAX_PROJECT_REQUEST_UTF8_BYTES
 
@@ -21,6 +24,7 @@ export type ProjectBridgeMethod =
   | typeof PROJECT_PICK_SOURCE_METHOD
   | typeof PROJECT_FINALIZE_DRAFT_METHOD
   | typeof PROJECT_DELETE_METHOD
+  | typeof PROJECT_RENAME_METHOD
 
 export type PublicationScope =
   | 'internalOnly'
@@ -154,6 +158,11 @@ export type ProjectDeleteRequest = ProjectRequestBase<
   { draftId: string }
 >
 
+export type ProjectRenameRequest = ProjectRequestBase<
+  typeof PROJECT_RENAME_METHOD,
+  { draftId: string; displayName: string }
+>
+
 export type ProjectBridgeRequest =
   | ProjectListRequest
   | ProjectCreateDraftRequest
@@ -162,6 +171,7 @@ export type ProjectBridgeRequest =
   | ProjectPickSourceRequest
   | ProjectFinalizeDraftRequest
   | ProjectDeleteRequest
+  | ProjectRenameRequest
 
 export interface ProjectListResponse {
   readonly version: typeof BRIDGE_PROTOCOL_VERSION
@@ -179,6 +189,7 @@ export type DraftResponseMethod =
   | typeof PROJECT_LOAD_DRAFT_METHOD
   | typeof PROJECT_SAVE_DRAFT_METHOD
   | typeof PROJECT_FINALIZE_DRAFT_METHOD
+  | typeof PROJECT_RENAME_METHOD
 
 export interface ProjectDraftResponse {
   readonly version: typeof BRIDGE_PROTOCOL_VERSION
@@ -312,6 +323,52 @@ export function createProjectDeleteRequest(
   })
 }
 
+/** Returns the name as the host stores it (trimmed), or null when the host would reject it. */
+export function normalizeProjectDisplayName(value: string): string | null {
+  const name = value.trim().normalize('NFC')
+  const length = Array.from(name).length
+  if (length === 0 || length > PROJECT_DISPLAY_NAME_MAX_LENGTH) {
+    return null
+  }
+
+  for (const character of name) {
+    const codePoint = character.codePointAt(0)!
+    if (
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x2028 ||
+      codePoint === 0x2029 ||
+      (codePoint >= 0x202a && codePoint <= 0x202e) ||
+      (codePoint >= 0x2066 && codePoint <= 0x2069) ||
+      (codePoint >= 0xd800 && codePoint <= 0xdfff)
+    ) {
+      return null
+    }
+  }
+
+  return name
+}
+
+export function createProjectRenameRequest(
+  requestId: string,
+  draftId: string,
+  displayName: string,
+): ProjectRenameRequest {
+  requireEntityId(requestId, 'A bridge request ID')
+  requireEntityId(draftId, 'A project draft ID')
+  const normalized = normalizeProjectDisplayName(displayName)
+  if (normalized === null) {
+    throw new Error('A project display name must be 1 to 100 printable characters.')
+  }
+
+  return Object.freeze({
+    version: BRIDGE_PROTOCOL_VERSION,
+    requestId,
+    method: PROJECT_RENAME_METHOD,
+    params: Object.freeze({ draftId, displayName: normalized }),
+  })
+}
+
 export function parseProjectDraftInput(value: unknown): ProjectDraftInput | null {
   if (
     !isRecordWithExactKeys(value, [
@@ -398,6 +455,7 @@ export function parseProjectBridgeResponse(value: unknown): ProjectBridgeRespons
     case PROJECT_LOAD_DRAFT_METHOD:
     case PROJECT_SAVE_DRAFT_METHOD:
     case PROJECT_FINALIZE_DRAFT_METHOD:
+    case PROJECT_RENAME_METHOD:
       return parseDraftResult(value, value.method)
     case PROJECT_PICK_SOURCE_METHOD:
       return parsePickSourceResult(value)
@@ -962,6 +1020,7 @@ const projectBridgeMethods = new Set<ProjectBridgeMethod>([
   PROJECT_PICK_SOURCE_METHOD,
   PROJECT_FINALIZE_DRAFT_METHOD,
   PROJECT_DELETE_METHOD,
+  PROJECT_RENAME_METHOD,
 ])
 
 const publicationScopes = new Set<PublicationScope>([

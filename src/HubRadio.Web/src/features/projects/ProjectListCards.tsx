@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 
 import type { ProjectListItem, SourceStatus } from '../../bridge'
 import { AppIcon } from '../../components/AppIcons'
+import { getProjectDisplayName } from './projectState'
 import './projects.css'
 
 const pageSize = 6
@@ -77,7 +78,7 @@ export function ProjectListCards({
         aria-label="閲覧を許可された案件の一覧"
       >
         {visibleProjects.map((project, index) => {
-          const name = project.contentName ?? '名称未入力'
+          const name = getProjectDisplayName(project) ?? '名称未入力'
           return (
             <li className="project-card" key={project.draftId}>
               <div className="project-card-header">

@@ -33,6 +33,7 @@ export function ProjectWorkspaceView({
   createDraft,
   loadDraft,
   deleteProject,
+  renameProject,
   updateInput,
   saveDraft,
   pickSource,
@@ -87,6 +88,12 @@ export function ProjectWorkspaceView({
       return
     }
     deleteProject(id)
+  }
+
+  const requestRenameProject = (displayName: string): void => {
+    if (!navigationDisabled && state.canCreate && state.draft !== null) {
+      renameProject(state.draft.draftId, displayName)
+    }
   }
 
   const selectNewSource = (): void => {
@@ -239,6 +246,7 @@ export function ProjectWorkspaceView({
               input={state.input}
               pending={state.pending}
               active={active}
+              renameProject={state.canCreate ? requestRenameProject : undefined}
               finalizeDraft={finalizeCurrentDraft}
               closeDraft={requestCloseDraft}
               pickSource={selectSource}

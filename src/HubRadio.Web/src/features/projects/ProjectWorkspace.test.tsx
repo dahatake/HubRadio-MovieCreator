@@ -533,6 +533,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
       createDraft: vi.fn(),
       loadDraft: vi.fn(),
       deleteProject: vi.fn(),
+      renameProject: vi.fn(),
       updateInput: vi.fn(),
       saveDraft: vi.fn(),
       pickSource: vi.fn(),
@@ -544,7 +545,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
 
   function expectNoOperations(props: ProjectStateContextValue): void {
     for (const name of [
-      'refresh', 'createDraft', 'loadDraft', 'deleteProject', 'updateInput', 'saveDraft',
+      'refresh', 'createDraft', 'loadDraft', 'deleteProject', 'renameProject', 'updateInput', 'saveDraft',
       'pickSource', 'finalizeDraft', 'closeDraft', 'clearError',
     ] as const) {
       expect(props[name]).not.toHaveBeenCalled()
@@ -1064,6 +1065,7 @@ function contextFor(state: ProjectState): ProjectStateContextValue {
     createDraft: () => undefined,
     loadDraft: () => undefined,
     deleteProject: () => undefined,
+    renameProject: () => undefined,
     updateInput: () => undefined,
     saveDraft: () => undefined,
     pickSource: () => undefined,

@@ -17,6 +17,7 @@ import {
   createProjectListRequest,
   createProjectLoadDraftRequest,
   createProjectPickSourceRequest,
+  createProjectRenameRequest,
   createProjectSaveDraftRequest,
   type BridgeClient,
   type ProjectBridgeRequest,
@@ -44,6 +45,7 @@ export interface ProjectStateContextValue {
   readonly createDraft: () => void
   readonly loadDraft: (draftId: string) => void
   readonly deleteProject: (draftId: string) => void
+  readonly renameProject: (draftId: string, displayName: string) => void
   readonly updateInput: (input: ProjectDraftInput) => void
   readonly saveDraft: () => void
   readonly pickSource: () => void
@@ -113,6 +115,13 @@ export function ProjectStateProvider({
     [send],
   )
 
+  const renameProject = useCallback(
+    (draftId: string, displayName: string) => {
+      send(createProjectRenameRequest(createRequestId(), draftId, displayName))
+    },
+    [send],
+  )
+
   const updateInput = useCallback((input: ProjectDraftInput) => {
     dispatch(projectInputChanged(input))
   }, [])
@@ -174,6 +183,7 @@ export function ProjectStateProvider({
       createDraft,
       loadDraft,
       deleteProject,
+      renameProject,
       updateInput,
       saveDraft,
       pickSource,
@@ -190,6 +200,7 @@ export function ProjectStateProvider({
       loadDraft,
       pickSource,
       refresh,
+      renameProject,
       saveDraft,
       state,
       updateInput,
