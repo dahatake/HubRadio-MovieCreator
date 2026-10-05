@@ -128,6 +128,10 @@ pwsh.exe -NoLogo -NoProfile -File benchmarks\setup-python-env.ps1 -PythonExecuta
 
 ## 動画生成が失敗する
 
+「自動編集」画面の「エラーの内容」に、失敗codeごとの原因と対応策が出ます（FR-047、固定文は`src/HubRadio.Web/src/features/workflow/pipelineFailureGuide.ts`）。
+
+- `source_only.unsupported_source_timing`: 元動画が、映像1本・音声1本、開始0秒、固定フレームレート、フレームの連続、の条件を満たしません。音声が映像より0.25秒（`SourceAudioTailPolicy.MaximumShortfall`）以内で早く終わる場合は失敗にせず、末尾を無音で埋めます。ffprobe（`-show_entries stream=codec_type,r_frame_rate,avg_frame_rate,start_time,duration`）で各streamの開始と長さを確認し、条件を満たすMP4に書き出し直します。
+
 `test/<元ファイル名から拡張子を除いた名前>-problems.md` を確認します。
 
 - staging は終了時に清掃されます。

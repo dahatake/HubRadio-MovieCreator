@@ -619,6 +619,43 @@ public sealed class SourceOnlyPipelineTests
         Assert.IsFalse(SourceOnlyPipeline.IsExactSourceRange(new TimeRange(new RationalTime(1, 100), new RationalTime(1, 1)), f.Index, f.Render.Profile, 48000));
     }
 
+    // FR-047.1 AC-022.1: a source audio stream (or its analysis audio) that ends at most
+    // 250 ms before the last video frame passes the preflight; a longer shortfall does not.
+    [TestMethod]
+    [DataRow(23L, 750L, true)]
+    [DataRow(1L, 4L, true)]
+    [DataRow(251L, 1000L, false)]
+    public void SourcePreflightAcceptsOnlyABoundedShortAudioTail(long shortfallValue, long shortfallRate, bool accepted)
+    {
+        var f = new AutomaticFixture();
+        RationalTime audioEnd = f.Index.PresentationEnd - new RationalTime(shortfallValue, shortfallRate);
+        AnalysisAudioTimeline original = f.Import.AudioTimeline;
+        var shortAnalysis = new AnalysisAudioTimeline(original.ProjectId, original.AnalysisJobId, original.SourceAssetId,
+            original.SourceContentDigest, original.SourceByteSize, original.SourceOriginalArtifactId, original.SourceVideoPtsIndexDigest,
+            original.SourceVideoStreamIndex, original.SourceAudioStreamIndex, original.SourceAudioTimeBase, original.ProbeReportedAudioStart,
+            original.FirstDecodedAudioFrameTimestamp, original.FirstDecodedAudioFrameSampleCount, original.AnalysisAudioArtifactId,
+            original.AnalysisAudioDigest, original.AnalysisAudioByteSize,
+            audioEnd.Value * AnalysisAudioTimeline.FixedSampleRate / audioEnd.Rate, original.TimelineArtifactId);
+        Assert.IsTrue(shortAnalysis.AnalysisDuration <= audioEnd &&
+            shortAnalysis.AnalysisDuration > audioEnd - new RationalTime(1, AnalysisAudioTimeline.FixedSampleRate));
+        foreach ((MediaInfo media, AnalysisAudioTimeline analysis) in new[]
+        {
+            (f.Media(audioEnd), original),
+            (f.Media(), shortAnalysis),
+        })
+        {
+            if (accepted)
+            {
+                SourceOnlyPipeline.ValidateSourceTiming(media, f.Index, f.Render.Profile, analysis);
+            }
+            else
+            {
+                Assert.AreEqual("source_only.unsupported_source_timing", Assert.ThrowsExactly<SourceOnlyPipeline.PipelineFailure>(() =>
+                    SourceOnlyPipeline.ValidateSourceTiming(media, f.Index, f.Render.Profile, analysis)).Code);
+            }
+        }
+    }
+
     [TestMethod]
     public async Task NonblockingWarningsReachAwaitedDeliveryUnchangedButNoCallbackNeverMeansDelivered()
     {
@@ -1225,12 +1262,18 @@ public sealed class SourceOnlyPipelineTests
             return SuggestionService.Register(payload, new Suggestion(EntityId<SuggestionIdTag>.New(), Model.Id, SuggestionKind.DeleteRange,
                 SuggestionStatus.Proposed, OriginRef.FromSourceSpan(utterance.SourceSpanId), payload.Reason, null, null, null), []);
         }
-        internal MediaInfo Media() => new(Index.CandidateId, Index.ProjectId, Index.JobId, Index.SourceFileName, Index.ContentDigest, Index.ByteSize,
+        internal MediaInfo Media(RationalTime? audioDuration = null) => new(Index.CandidateId, Index.ProjectId, Index.JobId, Index.SourceFileName, Index.ContentDigest, Index.ByteSize,
             MediaContainerClassification.IsoBaseMediaFtyp, ["mov"], null, new RationalTime(20, 1),
             [new MediaStreamInfo(0, MediaStreamType.Video, "h264", null, 1920, 1080, "yuv420p", new RationalNumber(30, 1), new RationalNumber(30, 1),
                 new RationalTime(1, 30), default(RationalTime), new RationalTime(20, 1), null, null, null),
              new MediaStreamInfo(1, MediaStreamType.Audio, "aac", null, null, null, null, null, null, new RationalTime(1, 48000),
-                default(RationalTime), new RationalTime(20, 1), 48000, 2, "stereo")], null, null, []);
+                default(RationalTime), audioDuration ?? new RationalTime(20, 1), 48000, 2, "stereo")], null, null,
+             audioDuration is RationalTime differing && differing != new RationalTime(20, 1)
+                ? [new MediaInfoWarning(MediaInfoWarningCode.DurationFieldsDiffer, new DurationFieldsDifferWarningEvidence(
+                    [new(MediaDurationFieldKind.FormatDuration, null, new RationalTime(20, 1)),
+                     new(MediaDurationFieldKind.StreamEndOffset, 0, new RationalTime(20, 1)),
+                     new(MediaDurationFieldKind.StreamEndOffset, 1, differing)]))]
+                : []);
         internal LongFormElementPlan Card(LongFormElementKind kind, TimeRange? range) => new(EntityId<LongFormElementIdTag>.New(), kind,
             LongFormElementState.Included, "Fixture card", range, [OriginRef.FromSourceSpan(Full.Id)], [], null, null);
         internal LongFormCompositionPlan LongForm(IReadOnlyList<LongFormElementPlan> elements)

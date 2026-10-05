@@ -44,6 +44,7 @@ UI/UX追補は承認済み要求の追加であり、UI・設定fileの実装／
 | 2026-10-05 | 「案件一覧へ戻る」を画面上部の1か所（旧「動画の切替」、表示名「案件一覧へ戻る」）に一元化し、重複するボタンを削除 | FR-044（FR-044.1〜FR-044.3）、AC-019 | FR-037/FR-040の画面内の「一覧へ戻る」「別の動画を選ぶ」「取消」（削除） | なし |
 | 2026-10-05 | 案件一覧の各案件に、動画のサムネイルを表示 | FR-045（FR-045.1〜FR-045.6）、AC-020（AC-020.1〜AC-020.5）、`project.list`の各案件の`thumbnail`、§19.7の仮定A-045-01〜A-045-04 | §16 Must（1項目追加） | なし |
 | 2026-10-05 | 案件の詳細画面に、開いている案件自身を削除する「案件削除」ボタンと削除機能を追加（機能追加。削除は既存の`project.delete`を再利用） | FR-046（FR-046.1〜FR-046.4）、AC-021（AC-021.1〜AC-021.4）、§19.8の仮定A-046-01〜A-046-03 | §16 Must（1項目追加）、削除成功時に開いている案件を閉じる反映（`projectState.ts`） | なし |
+| 2026-10-05 | 「自動編集」が`source_only.unsupported_source_timing`で失敗する不具合（承認素材`hubradio-sample.mp4`で発生）の修正と、自動編集の失敗時に原因と対応策を画面に表示する（不具合修正＋機能追加） | FR-047（FR-047.1〜FR-047.4）、AC-022（AC-022.1〜AC-022.5）、§19.9の仮定A-047-01〜A-047-03 | §16 Must（1項目追加）、ジョブの進行状況の失敗code表示（codeだけの表示→説明・原因・対応策・codeの表示）、各音声区間のffmpeg filter（`apad`の追加） | なし |
 | 2026-10-01 | FR-035の結合機能をGUI（仕上がり画面）へ統合 | FR-035.13〜FR-035.21、GUI応答status表、AC-008.11〜AC-008.16、仮定A-035-11〜A-035-13 | FR-035の目的と境界・対象外、A-035-01（GUI対象外→GUIとCLIの両方を提供）、§4.1、§14.2、§16 Must | なし |
 
 ---
@@ -1130,6 +1131,19 @@ FR-036.5の固定文（`message` = 「編集を開始できません。」＋原
 
 **対象外（本追補）:** 削除の取り消し・復元、削除前の未保存の変更の保存、元動画ファイルの削除（FR-037の対象外と同じ）。
 
+## FR\-047 自動編集の音声末尾の許容と、失敗時の原因・対応策の表示
+
+**背景（調査結果、2026-10-05）:** 承認素材`sample/hubradio-sample.mp4`（SHA-256 `fb8d304f…a5f7b`）で「自動編集」が「失敗」になり、画面に`source_only.unsupported_source_timing`だけが表示された。決定状態: 承認済み（依頼 2026-10-05）。ffprobeの実測では、映像は2321フレーム・30fps固定で77.366667秒、音声（AAC 48kHz）は77.336000秒で、音声が映像より23/750秒（30.67ms、AAC約1.4フレーム分）早く終わる。解析音声（16kHz）も49507/640秒＝77.3547秒で映像より短い。source-onlyの事前検査（`SourceOnlyPipeline.ValidateSourceTiming`）と生成の検査（`StandardArtifactGenerator`）が「音声の長さ ≥ 映像の終わり」を厳密に要求していたため、AACの符号化で一般的に生じる末尾の短さだけで失敗していた。さらに画面は失敗codeだけを表示し、利用者は原因も対処も分からなかった。
+
+| ID | 優先度 | 要求 |
+| --- | --- | --- |
+| FR-047.1 | MUST | 元動画の音声stream（ffprobeの`duration`）と解析音声（`AnalysisDuration`）が、最後の映像フレームの終わり（`PtsIndex.PresentationEnd`）より早く終わる場合、その差が0.25秒（`SourceAudioTailPolicy.MaximumShortfall` = 1/4秒）以下なら、事前検査と生成の検査を通す。差が0.25秒を超える場合は、従来どおり`source_only.unsupported_source_timing`（生成では`UnsupportedSourceTiming`）で失敗する。比較は有理数の時刻で厳密に行い、丸めない。その他の条件（映像・音声が各1本、開始0秒、固定フレームレート、フレームの連続、出力gridとsample gridへの整列）は変更しない。 |
+| FR-047.2 | MUST | 描画の各音声区間（`RenderNodeKind.Audio`）は、`aresample=48000,apad=whole_dur={区間の長さ},atrim=duration={区間の長さ}`の順で処理し、元の音声が区間の終わりより早く終わる部分を無音で埋めて、音声区間の長さを映像区間と同じにする。音声の速度変更・時刻の付け替え（retiming）はしない。元の音声が区間を満たす場合、出力は従来と同じ音声になる。 |
+| FR-047.3 | MUST | 「自動編集」画面のジョブの進行状況で、実行が失敗（`Failed`）、元動画の再選択が必要（`ReselectionRequired`）、または整合性の再確認が必要（`ReconciliationRequired`）のとき、`role="alert"`の枠に、見出し「エラーの内容：{題名}」、「原因」、「対応策」（番号付きの手順、1件以上）、「エラーコード」（失敗codeがあるとき、codeをそのまま）をこの順に表示する。待機中・実行中・完了・取消済みでは表示しない。説明は`pipelineFailureGuide.ts`の固定文とし、次の順で決める: (1) `ReconciliationRequired`は常に「保存状態の確認が必要です」、(2) codeの個別の説明、(3) codeの分類（元動画のファイル、同梱の部品、文字起こし、解析、設定、音量、字幕、処理の記録の整合）、(4) `ReselectionRequired`は「元動画の選び直しが必要です」、(5) それ以外は「自動編集を完了できませんでした」と再試行・問い合わせの手順。説明には、絶対path、利用者名、SID、例外文を含めない。 |
+| FR-047.4 | MUST | `source_only.unsupported_source_timing`の説明は、原因に「可変フレームレート」「映像と音声の開始が0秒でない」「音声が映像より0.25秒を超えて早く終わる」「映像または音声が2本以上」「フレームの間隔の欠け」を挙げ、対応策に「映像1本・音声1本、固定フレームレート、開始0秒のMP4（H.264／AAC）に書き出し直す」と「新しい案件を作成して選び直す」を含める。 |
+
+**対象外（本追補）:** 可変フレームレートや開始時刻のずれた動画の自動変換、0.25秒を超える音声の欠けの補完、bridgeの応答形式・失敗codeの変更、ほかの画面のエラー表示の変更。
+
 ---
 # 9\. 編集ルール
 
@@ -1775,6 +1789,22 @@ pwsh -NoProfile -Command 'Set-Location src/HubRadio.Web; npx vitest run src/feat
 | AC-017.3 | FR-042.3、FR-042.4（手動確認） | 手順: アプリで元動画を選んで「編集を開始」を押す。期待: 自動で「自動編集」画面になり、段階の一覧で現在の段階が強調され、段階が進むと「実行中」の印が次へ移り、前の段階が「完了」になる。失敗・取消では一覧が出ない。証跡: 画面の記録。未実施の場合は`NOT EVALUATED`とし、PASSとしない。 |
 | AC-018.1 | FR-043.1、FR-043.3 | 同ファイルの「lets a created project switch settings to この動画」: 作成済みの案件で「設定」を開くと`settings.read`が`{projectId}`で送られ、読み込み後に「この動画」が押せて`aria-pressed`が`true`、「新しい動画の既定値」が`false`。項目を変えて「保存」を押すと`settings.update`が同じ`projectId`で送られる。 |
 | AC-018.2 | FR-043.2 | 同ファイルの「opens global settings without a project」: 案件がないとき「この動画」は無効で、`.settings-scope-note`に「「この動画」は、「編集を開始」で案件を作成すると選べます。」を含む。`settings.read`は送られない。 |
+### AC-022（FR-047）
+
+判定コマンド（リポジトリルートから、非対話。失敗時はexit code 0以外）:
+
+```
+dotnet test tests\HubRadio.App.Tests -c Release --filter "FullyQualifiedName~SourcePreflight|FullyQualifiedName~ShortSourceAudioTail|FullyQualifiedName~FactoryUsesEveryActualCut"
+pwsh -NoProfile -Command 'Set-Location src/HubRadio.Web; npx vitest run src/features/workflow/pipelineFailureGuide.test.tsx; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm run typecheck; exit $LASTEXITCODE'
+```
+
+| ID | 対応要求 | 事前条件、操作、期待結果、証跡 |
+| --- | --- | --- |
+| AC-022.1 | FR-047.1 | `SourceOnlyPipelineTests.SourcePreflightAcceptsOnlyABoundedShortAudioTail`: 映像20秒の元動画で、音声streamまたは解析音声の終わりが23/750秒（実素材と同じ差）または1/4秒早い場合は`ValidateSourceTiming`が例外を出さず、251/1000秒早い場合は`source_only.unsupported_source_timing`になる。`StandardArtifactGeneratorTests.ShortSourceAudioTailIsAcceptedOnlyWithinTheBoundedShortfall`: 最後の区間が70秒で終わる生成要求で、音声が23/750秒・1/4秒短い場合は要求を作成でき、251/1000秒・1秒短い場合は`UnsupportedSourceTiming`になる。既存の`SourcePreflightAcceptsDefaultGeometryAndExactEndAndRejectsFractionalFrameEnd`と`NonFrameAlignedSourceStartOrDurationIsRejectedWithoutChangingTheTimeline`も成功する。 |
+| AC-022.2 | FR-047.2 | `StandardRenderGraphFactoryTests.FactoryUsesEveryActualCutForVideoAndAudioAndCompilesBothChains`: 30秒の音声区間のfilterに`aresample=48000,apad=whole_dur=30,atrim=duration=30,`が含まれる。 |
+| AC-022.3 | FR-047.3、FR-047.4 | `pipelineFailureGuide.test.tsx`の`describePipelineFailure`: hostが返す代表的な失敗code（31件）それぞれに、空でない題名・原因・1件以上の対応策があり、題名が汎用の説明と異なる。`source_only.unsupported_source_timing`の原因が「可変フレームレート」「0.25秒」を、対応策が「固定フレームレート」「新しい案件を作成」を含む。未知のcodeは「自動編集を完了できませんでした」。codeなしの`Analyzing`・`Completed`・`Canceled`と、codeありの`Canceled`は`null`。`ReconciliationRequired`は「保存状態の確認が必要です」、codeなしの`ReselectionRequired`は「元動画の選び直しが必要です」。 |
+| AC-022.4 | FR-047.3 | 同ファイルの`PipelineFailureDetails`: `role="alert"`の枠の見出しが「エラーの内容：元動画の映像と音声の時間情報を扱えません」、`dt`が順に「原因」「対応策」「エラーコード」、`ol > li`が2件以上、`code`が`source_only.unsupported_source_timing`。実行中（`Rendering`、codeなし）は何も表示しない。 |
+| AC-022.5 | FR-047.1、FR-047.2（実素材、任意実行） | 手順: `HUBRADIO_RUN_LIVE_PIPELINE_TESTS=1`、`HUBRADIO_LIVE_PIPELINE_SINGLE_TEST=ApprovedMediaSourceOnlyPipeline_GeneratesTheStandardSet_AndRecordsTheAcceptanceMeasurements`、`HUBRADIO_APPROVED_MEDIA_PATH=<リポジトリ>\sample\hubradio-sample.mp4`を設定し、`dotnet test tests\HubRadio.App.Tests -c Debug --filter "FullyQualifiedName~ApprovedMediaSourceOnlyPipeline"`を実行する。期待: exit code 0、`acceptance-record.json`の`status.hasBlockingFailures=false`・`allArtifactsDelivered=true`、生成した横長動画（`LandscapeClean`）の音声の長さと映像の長さの差（ffprobeの`duration`）が0.001秒未満（実測 2026-10-05: 映像77.366667秒、音声77.366000秒。元の音声は77.336000秒）。同梱物と承認素材が必要なため、検証スクリプトには含めない。未実施の場合は`NOT EVALUATED`とし、PASSとしない。 |
 ---
 
 # 16\. 優先順位
@@ -1804,6 +1834,7 @@ pwsh -NoProfile -Command 'Set-Location src/HubRadio.Web; npx vitest run src/feat
 - 設定画面の選択肢を、操作している場所のすぐ近くで選ぶこと（FR-041）
 - 案件一覧での、各案件のサムネイルの表示（FR-045）
 - 案件の詳細画面での、開いている案件自身の削除（FR-046）
+- 音声が映像より最大0.25秒早く終わる元動画の自動編集と、自動編集の失敗時の原因・対応策の表示（FR-047）
 - `Music/`の社内限定BGM
 - 音量測定と版付きloudness profile
 - プレビュー
@@ -2050,5 +2081,15 @@ production実装、実素材render、human evaluation、外部公開、cross-acc
 | A-046-01 | [ASSUMPTION] | 依頼の「案件の詳細の画面」は、案件を開いたときの画面（かんたん編集／作成済みの案件の画面と、従来の下書き画面）と解釈した。依頼のpath `docs\requirements-definition.md`は存在しないため、既存の正本である本書`docs/requirement-definition.md`を更新した（A-037-01と同じ判断）。ボタンの表示名は依頼の「案件削除」とした | 本書に別の「詳細画面」はない。正本を2つに分けると要求が食い違う | 別の画面（成果物・設定など）には置かない | 別の画面への配置が要求された場合 |
 | A-046-02 | [ASSUMPTION] | 削除はFR-037の`project.delete`をそのまま使い、権限（`DeleteProject`・Editor）、論理削除、実行中jobの拒否、ファイル削除を共通にする。新しい権限・method・DB変更は追加しない。画面の表示は一覧応答の`canCreate`で決める（A-037-04と同じ） | 依頼は画面の追加であり、削除の仕様は既に承認済みで、データ消失に関わる規則を二重に持たない | 一覧と詳細で挙動が常に一致する | 詳細画面だけ別の規則が要求された場合 |
 | A-046-03 | [ASSUMPTION] | 画面の入力に未保存の変更があっても削除できる。削除成功後は、未保存の入力を破棄して一覧へ戻る | 削除する案件の未保存の変更は保存する意味がなく、確認ダイアログで削除の意思を確認している | 未保存の入力は復元されない | 未保存の変更の追加の確認が要求された場合 |
+
+競合・TBD・BLOCKED: なし。
+
+## 19.9 FR-047の仮定・未解決事項
+
+| ID | 種別 | 内容 | 根拠 | 影響 | 覆す条件 |
+| --- | --- | --- | --- | --- | --- |
+| A-047-01 | [ASSUMPTION] | 音声の末尾の不足として許す上限を0.25秒（1/4秒）とした。超える場合は従来どおり失敗にする | 実素材の差は30.67msで、AACの符号化遅延・末尾処理による差は通常フレーム数個（1フレーム21.3ms）である。0.25秒は30fpsで7.5フレーム、AACで約11フレームに当たり、通常の差を含みつつ、音声が途中で欠けた素材は拒否できる。値は`SourceAudioTailPolicy.MaximumShortfall`の1か所で変えられる | 末尾の最大0.25秒が無音になる。0.25秒を超えて音声が短い素材は、書き出し直しが必要 | 0.25秒を超える差の実素材が業務上必要と分かった場合、または末尾の無音が許されない場合 |
+| A-047-02 | [ASSUMPTION] | 依頼の「エラーについて詳細な説明」は、自動編集の失敗時に「エラーの内容（題名）」「原因」「対応策」と失敗codeを、ジョブの進行状況の中に表示することと解釈した。説明はWeb側の固定文で、bridgeの応答と失敗codeは変えない | 失敗codeは安定した識別子として既にbridgeの契約（`pipelineProtocol.ts`）にあり、変えると互換性が崩れる。固定文なら秘密情報や例外文が出ない | 新しい失敗codeが追加されると、分類に当たらない限り汎用の説明になる | hostから利用者向けの文を返すことが要求された場合 |
+| A-047-03 | [ASSUMPTION] | 依頼のpath `docs\requirements-definition.md`は存在しないため、既存の正本である本書`docs/requirement-definition.md`を更新した（A-037-01と同じ判断） | 正本を2つに分けると要求が食い違う | なし | 正本の移動が決まった場合 |
 
 競合・TBD・BLOCKED: なし。

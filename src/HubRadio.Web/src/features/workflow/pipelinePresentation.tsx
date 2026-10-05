@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppState } from '../../state'
 import { pipelineArtifactLabels } from '../results/ResultGallery'
+import { describePipelineFailure } from './pipelineFailureGuide'
 import { usePipeline } from './PipelineProvider'
 import { isPipelineLive, sameResultBinding, sourceOnlyMediaUrl, type PipelinePhase, type SourceOnlyResultArtifact, type SourceOnlyResultBinding, type SourceOnlyResultDto, type SourceOnlyResultTarget } from './pipelineProtocol'
 import type { WorkflowWarningTarget } from './workflowNavigation'
@@ -29,6 +30,22 @@ function PipelineStages({ phase }: Readonly<{ phase: PipelinePhase }>) {
       })}
     </ol>
   </>
+}
+
+/** FR-047.3: explain an auto-edit failure (title, cause, remedies) and keep its stable code. */
+export function PipelineFailureDetails({ code, phase }: Readonly<{ code: string | null, phase: PipelinePhase }>) {
+  const guide = describePipelineFailure(code, phase)
+  if (guide === null) return null
+  return <div className="pipeline-failure" role="alert" aria-labelledby="pipeline-failure-title">
+    <h3 id="pipeline-failure-title">エラーの内容：{guide.title}</h3>
+    <dl>
+      <dt>原因</dt>
+      <dd>{guide.cause}</dd>
+      <dt>対応策</dt>
+      <dd><ol>{guide.remedies.map(remedy => <li key={remedy}>{remedy}</li>)}</ol></dd>
+      {code !== null && <><dt>エラーコード</dt><dd><code>{code}</code></dd></>}
+    </dl>
+  </div>
 }
 
 /** The legacy job widget operates jobs.retry in place; pipeline retry instead
@@ -64,7 +81,7 @@ export function PipelineProgress({ active = true }: Readonly<{ active?: boolean 
       : pipelinePhaseLabels[s.phase]}</p>
     {s !== null && <PipelineStages phase={s.phase} />}
     {live && <progress aria-label="自動編集の進行状況" max={1} value={job?.progressRatio ?? undefined} />}
-    {s?.failureCode != null && <p role="status">{s.failureCode}</p>}
+    {s !== null && <PipelineFailureDetails code={s.failureCode ?? null} phase={s.phase} />}
     {pipeline.state.error !== null && <p role="alert">{pipeline.state.error === 'timeout'
       ? '応答が時間内に届きませんでした。処理を停止したとは判断しません。'
       : pipeline.state.error === 'invalidResponse' ? '実行・版の対応が異なる応答を拒否しました。' : 'ホストの処理状況を取得できません。'}</p>}

@@ -18,7 +18,7 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
 
-    [string[]]$RequirementFamilies = @('FR-039', 'FR-040', 'FR-041', 'FR-042', 'FR-043', 'FR-045', 'FR-046')
+    [string[]]$RequirementFamilies = @('FR-039', 'FR-040', 'FR-041', 'FR-042', 'FR-043', 'FR-045', 'FR-046', 'FR-047')
 )
 
 Set-StrictMode -Version Latest

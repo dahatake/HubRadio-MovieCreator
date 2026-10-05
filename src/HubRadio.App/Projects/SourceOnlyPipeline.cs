@@ -1323,7 +1323,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                         execution.Request.SettingsSnapshot.ProfileVersion)
                         ?? throw new InvalidOperationException("The accepted settings profile is unavailable.");
                     if (profile.ContentDigest != execution.Request.SettingsSnapshot.ProfileDigest ||
-                        profile.ContentDigest != runtime.BundledSettingsProfile.ContentDigest)
+                        !HubRadio.App.DefaultSettings.BundledDefaultSettingsProfileLoader.IsApprovedProfile(profile))
                     {
                         throw new PipelineFailure(SourceOnlyExecutionPhase.Failed, "source_only.settings_profile_mismatch");
                     }
@@ -2781,10 +2781,11 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         MediaStreamInfo[] audioStreams = media.Streams.Where(item => item.Kind == MediaStreamType.Audio).ToArray();
         if (videoStreams.Length != 1 || audioStreams.Length != 1 || videoStreams[0].Start != default(RationalTime) ||
             audioStreams[0].Start != default(RationalTime) || audioStreams[0].SampleRate is not int sampleRate ||
-            audioStreams[0].Duration is not RationalTime duration || duration < index.PresentationEnd ||
+            audioStreams[0].Duration is not RationalTime duration ||
+            !SourceAudioTailPolicy.Covers(duration, index.PresentationEnd) ||
             index.PresentationStart != default(RationalTime) || videoStreams[0].NominalFrameRate != profile.FrameRate ||
             audio.FirstDecodedAudioFramePresentationTime != default(RationalTime) ||
-            audio.AnalysisDuration < index.PresentationEnd || audio.SourceAssetId != index.CandidateId ||
+            !SourceAudioTailPolicy.Covers(audio.AnalysisDuration, index.PresentationEnd) || audio.SourceAssetId != index.CandidateId ||
             audio.SourceContentDigest != index.ContentDigest || index.StreamIndex != videoStreams[0].Index ||
             !IsExactSourceRange(index.PresentationRange, index, profile, sampleRate))
         {

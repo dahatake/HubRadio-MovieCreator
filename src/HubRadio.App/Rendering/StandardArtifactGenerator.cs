@@ -249,7 +249,7 @@ public sealed class StandardArtifactGenerationRequest
         {
             if (range.Start < default(RationalTime) || range.Duration <= default(RationalTime)
                 || range.End > SourcePtsIndex.PresentationEnd
-                || range.End > audio[0].Duration!.Value
+                || !SourceAudioTailPolicy.Covers(audio[0].Duration!.Value, range.End)
                 || !FfmpegCompiler.IsOnOutputGrid(range.Start, Plan.LongForm.Profile.Profile)
                 || !FfmpegCompiler.IsOnOutputGrid(range.Duration, Plan.LongForm.Profile.Profile)
                 || !FfmpegCompiler.IsOnSampleGrid(range.Start, audio[0].SampleRate!.Value)

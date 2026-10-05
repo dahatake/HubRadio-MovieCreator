@@ -333,3 +333,9 @@
 .workflow-shell .pipeline-stages { margin: 0.5rem 0; padding-left: 1.25rem; }
 .workflow-shell .pipeline-stages li[data-stage-state='current'] { font-weight: 700; }
 .workflow-shell .pipeline-stages li[data-stage-state='pending'] { opacity: 0.7; }
+.workflow-shell .pipeline-failure { margin: 0.75rem 0; padding: 0.75rem 1rem; background: var(--cp-accent-soft); border: 1px solid var(--cp-accent); border-radius: 0.625rem; line-height: 1.6; }
+.workflow-shell .pipeline-failure h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.workflow-shell .pipeline-failure dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0; }
+.workflow-shell .pipeline-failure dt { font-weight: 700; }
+.workflow-shell .pipeline-failure dd { margin: 0; }
+.workflow-shell .pipeline-failure ol { margin: 0; padding-left: 1.25rem; }

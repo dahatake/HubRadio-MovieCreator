@@ -1002,6 +1002,9 @@ public static class FfmpegCompiler
                         AddAudioFilter(string.Concat(
                             "[", inputIndex.ToString(CultureInfo.InvariantCulture), ":a:0]",
                             "aresample=", OutputAudioSampleRate.ToString(CultureInfo.InvariantCulture), ",",
+                            // A source whose audio ends just before its last video frame gets
+                            // trailing silence, so every segment keeps its exact video length.
+                            "apad=whole_dur=", FormatTime(node.OutputRange.Duration), ",",
                             "atrim=duration=", FormatTime(node.OutputRange.Duration),
                             ",asetpts=PTS-STARTPTS[", label, "]"));
                         streamLabels[node.Id] = label;

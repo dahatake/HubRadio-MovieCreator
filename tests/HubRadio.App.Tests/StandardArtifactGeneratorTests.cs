@@ -399,6 +399,29 @@ public sealed class StandardArtifactGeneratorTests
         Assert.IsFalse(result.StagingCleanupRequired);
     }
 
+    // FR-047.1 AC-022.1: hubradio-sample.mp4 ends its AAC audio 23/750 s (30.67 ms) before
+    // the last video frame. Up to 250 ms is padded with silence; anything longer is rejected.
+    [TestMethod]
+    [DataRow(23L, 750L, true)]
+    [DataRow(1L, 4L, true)]
+    [DataRow(251L, 1000L, false)]
+    [DataRow(1L, 1L, false)]
+    public async Task ShortSourceAudioTailIsAcceptedOnlyWithinTheBoundedShortfall(long shortfallValue, long shortfallRate, bool accepted)
+    {
+        // The fixture's last kept cut ends at 70 s.
+        using StandardGenerationFixture fixture = await StandardGenerationFixture.CreateAsync(
+            sourceAudioDuration: new RationalTime(70, 1) - new RationalTime(shortfallValue, shortfallRate));
+        if (accepted)
+        {
+            Assert.IsNotNull(fixture.Request());
+        }
+        else
+        {
+            Assert.AreEqual(StandardGenerationFailureReason.UnsupportedSourceTiming,
+                Assert.ThrowsExactly<StandardGenerationException>(() => fixture.Request()).Reason);
+        }
+    }
+
     [TestMethod]
     public async Task AssignedMusicAndNonzeroSourceClockAreExplicitlyUnsupported()
     {

@@ -61,7 +61,8 @@ public sealed class StandardRenderGraphFactoryTests
         string[] arguments = compiled.ProcessRequest.ArgumentList.ToArray();
         Assert.AreEqual("48000", arguments[Array.IndexOf(arguments, "-ar") + 1]);
         Assert.AreEqual("aac_low", arguments[Array.IndexOf(arguments, "-profile:a") + 1]);
-        StringAssert.Contains(compiled.FilterScript, "aresample=48000,atrim=");
+        // FR-047.2 AC-022.2: every source audio segment is padded to its exact video length.
+        StringAssert.Contains(compiled.FilterScript, "aresample=48000,apad=whole_dur=30,atrim=duration=30,");
         CollectionAssert.Contains(compiled.ProcessRequest.ArgumentList.ToArray(), "-n");
     }
 
@@ -470,14 +471,16 @@ internal sealed class StandardGenerationFixture : IDisposable
         IReadOnlyList<DefaultSettingSelection>? settingsOverrides = null,
         bool includeCardMusic = false, bool musicSpeechOverlap = false, bool includeTimedEnding = false,
         IReadOnlyList<PtsIndexEntry>? sourceFrames = null, RationalTime? sourceTimeBase = null,
-        string fontName = "Fixture Sans", RationalTime? secondTokenDuration = null, string topicTitle = "Topic")
+        string fontName = "Fixture Sans", RationalTime? secondTokenDuration = null, string topicTitle = "Topic",
+        RationalTime? sourceAudioDuration = null)
     {
         var fixture = new StandardGenerationFixture();
         Directory.CreateDirectory(fixture.Root);
         _ = DatabaseMigrator.Migrate(fixture.DatabasePath, Path.Combine(fixture.Root, "backups"));
         await fixture.InitializeAsync(includeShort, persistPreparation, firstCutStart, firstCutDuration,
             sourceClockStart, musicPlanning, sourceSampleRate, includeUntimedEnding, includeThumbnail, sourceFileName, settingsOverrides,
-            includeCardMusic, musicSpeechOverlap, includeTimedEnding, sourceFrames, sourceTimeBase, fontName, secondTokenDuration, topicTitle);
+            includeCardMusic, musicSpeechOverlap, includeTimedEnding, sourceFrames, sourceTimeBase, fontName, secondTokenDuration, topicTitle,
+            sourceAudioDuration);
         return fixture;
     }
 
@@ -487,7 +490,7 @@ internal sealed class StandardGenerationFixture : IDisposable
         bool includeThumbnail, string sourceFileName, IReadOnlyList<DefaultSettingSelection>? settingsOverrides,
         bool includeCardMusic, bool musicSpeechOverlap, bool includeTimedEnding,
         IReadOnlyList<PtsIndexEntry>? sourceFrames, RationalTime? sourceTimeBase,
-        string fontName, RationalTime? secondTokenDuration, string topicTitle)
+        string fontName, RationalTime? secondTokenDuration, string topicTitle, RationalTime? sourceAudioDuration)
     {
         byte[] sourceBytes = Encoding.UTF8.GetBytes("actual test source bytes, not an encoded video");
         Asset = new Asset(EntityId<AssetIdTag>.New(), sourceFileName, "video/mp4", ContentDigest.Compute(sourceBytes),
@@ -516,7 +519,7 @@ internal sealed class StandardGenerationFixture : IDisposable
         [
             new(MediaDurationFieldKind.FormatDuration, null, formatDuration),
             new(MediaDurationFieldKind.StreamEndOffset, 0, sourceClockStart + Index.PresentationRange.Duration),
-            new(MediaDurationFieldKind.StreamEndOffset, 1, sourceClockStart + new RationalTime(80, 1)),
+            new(MediaDurationFieldKind.StreamEndOffset, 1, sourceClockStart + (sourceAudioDuration ?? new RationalTime(80, 1))),
         ];
         MediaInfoWarning[] mediaWarnings = durationFields.Any(field => field.Value != formatDuration)
             ? [new MediaInfoWarning(MediaInfoWarningCode.DurationFieldsDiffer, new DurationFieldsDifferWarningEvidence(durationFields))]
@@ -526,7 +529,7 @@ internal sealed class StandardGenerationFixture : IDisposable
             [new MediaStreamInfo(0, MediaStreamType.Video, "h264", null, 1920, 1080, "yuv420p",
                 new RationalNumber(30, 1), new RationalNumber(30, 1), Index.TimeBase, sourceClockStart, Index.PresentationRange.Duration, null, null, null),
              new MediaStreamInfo(1, MediaStreamType.Audio, "aac", null, null, null, null, null, null,
-                new RationalTime(1, sourceSampleRate), sourceClockStart, new RationalTime(80, 1), sourceSampleRate, 2, "stereo")], null, null, mediaWarnings);
+                new RationalTime(1, sourceSampleRate), sourceClockStart, sourceAudioDuration ?? new RationalTime(80, 1), sourceSampleRate, 2, "stereo")], null, null, mediaWarnings);
         Original = new ImportedOriginal(Asset, stored, media, new DecodeValidationResult(Asset.Id, Project.Id, job,
             Asset.FileName, Asset.ContentDigest, Asset.ByteSize, 0, 1, TimeSpan.Zero, 0, Hash(""), Index.PresentationStart,
             Index.PresentationEnd, Index.Entries.Count), OriginalIntegrityStatus.Verified);
