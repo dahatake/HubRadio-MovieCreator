@@ -28,7 +28,7 @@ export function getSettingHelp(definition: Pick<SettingDefinition, 'key' | 'disp
 
   return {
     label: definition.displayName,
-    what: 'この項目の詳しい説明はまだ用意されていません。「初期値・用途・根拠」を開くと、用途（英語）と初期値を確認できます。',
+    what: 'この項目の詳しい説明はまだ用意されていません。「初期値・用途」を開くと、用途（英語）と初期値を確認できます。',
     effect: '内容が分からないときは、値を変えずに初期値のままにしてください。',
     generic: true,
   }

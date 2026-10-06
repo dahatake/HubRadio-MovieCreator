@@ -25,6 +25,32 @@ public sealed class StandardSubtitleBuilderTests
     private const string Actor = "S-1-5-21-100-200-300-1001";
     private static readonly DateTimeOffset Created = new(2044, 9, 8, 1, 2, 3, TimeSpan.Zero);
 
+    // FR-050.7 AC-025.5: every subtitle value offered by the settings screen builds placed cues in both orientations.
+    [TestMethod]
+    public void SettingEditorCatalogSubtitleChoicesBuildInBothOrientations()
+    {
+        TokenInput[] tokens = Enumerable.Range(0, 10).Select(index => new TokenInput(
+            $"字幕{index:D2}。", Range(index * 30, index == 9 ? 30 : 29, 10))).ToArray();
+        int built = 0;
+        foreach (bool vertical in new[] { false, true })
+        {
+            var fixture = new Fixture([new UtteranceInput(Range(0, 30), tokens)], vertical: vertical);
+            foreach ((string key, DefaultSettingValue value) in SettingEditorCatalogTests.OfferedChoices(fixture.Profile)
+                .Where(static item => item.Key.StartsWith("subtitles.", StringComparison.Ordinal)))
+            {
+                DefaultSettingsSnapshot settings = fixture.WithSettings((key, value));
+                StandardSubtitleBuildResult result = fixture.Result(settings: settings);
+                string label = $"{(vertical ? "vertical" : "landscape")} {key}={SettingEditorCatalogTests.Describe(value)}\n{Describe(result)}";
+                Assert.AreEqual(settings.ContentDigest, result.SettingsDigest, label);
+                Assert.IsFalse(result.HasUnresolvedCues, label);
+                Assert.IsNotEmpty(result.Subtitles.Revisions, label);
+                built++;
+            }
+        }
+
+        Assert.IsGreaterThan(70, built);
+    }
+
     [TestMethod]
     public void ThirtySecondMachineRootProducesBoundedInitialSourceCuesWithActualDefaults()
     {

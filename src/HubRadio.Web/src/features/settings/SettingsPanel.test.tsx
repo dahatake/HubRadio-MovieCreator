@@ -16,18 +16,21 @@ import { parseSettingsWorkspaceResponse, type AnySettingsSnapshot, type GlobalSe
 const projectId = '11112222-3333-4444-8555-666677778888'
 const otherProjectId = '22223333-4444-4555-8666-777788889999'
 const titleKey = 'project.title'
-const countKey = 'project.verticalShortCandidateCount'
-const advancedKey = 'subtitles.enabled'
+const countKey = 'project.candidateLimit'
+const shortCountKey = 'project.verticalShortCandidateCount'
+const advancedKey = 'subtitles.platformUiMaskWarningRequired'
 const fileSha256 = 'd'.repeat(64)
 const groupNames = ['案件と出力', '編集', '字幕とグラフィック', '音声と素材', 'プライバシーと保存'] as const
 const definitions: readonly SettingDefinition[] = [
   definition(titleKey, { displayName: 'タイトル', defaultValue: text('プロファイルのタイトル') }),
   definition(countKey, { displayName: '短尺候補数', defaultValue: integer('3') }),
-  definition('output.landscapeResolution', { displayName: '横長の予定サイズ', defaultValue: text('1280x720') }),
+  // FR-050: a fixed (single-value) shipped key that the list must not show.
+  definition('output.landscapeResolution', { displayName: '横長の予定サイズ', defaultValue: text('1280x720'), allowedTextValues: ['1280x720'] }),
   definition('output.frameRate', { displayName: 'フレームレート', defaultValue: { kind: 'rational', numerator: '30000', denominator: '1001' } }),
   ...Array.from({ length: 4 }, (_, index) => definition(`project.extra${index + 1}`, { displayName: `追加項目 ${index + 1}` })),
+  definition(shortCountKey, { displayName: '縦型ショートの本数', defaultValue: integer('3'), minimum: integer('0'), maximum: integer('3'), unit: 'count' }),
   definition('editing.cutCount', { group: 'editing', displayName: 'カット数', defaultValue: integer('0') }),
-  definition(advancedKey, { group: 'subtitlesAndGraphics', displayName: '字幕を付ける', isAdvanced: true }),
+  definition(advancedKey, { group: 'subtitlesAndGraphics', displayName: '画面表示の範囲の警告', isAdvanced: true }),
   definition('audio.searchTerms', { group: 'audioAndAssets', displayName: '素材の検索語', defaultValue: { kind: 'textList', textListValue: ['声', '音楽'] } }),
   definition('privacy.retention', { group: 'privacyAndStorage', displayName: '保存期間', defaultValue: integer('30') }),
 ]
@@ -189,9 +192,11 @@ describe('SettingsPanel UX-025', () => {
     expect(h.client.sendSettingsWorkspace).toHaveBeenCalledOnce()
   })
 
-  it('reaches all 123 shipped keys once through five groups and six-row pages', async () => {
+  // FR-050 AC-025.1, AC-025.2: only the changeable shipped keys are reachable; fixed keys and empty groups are not shown.
+  it('reaches every changeable shipped key once and no fixed key through the visible groups', async () => {
     type InventoryEntry = Pick<SettingDefinition, 'key' | 'group' | 'displayName' | 'description' | 'isAdvanced'>
     const profile = JSON.parse(readFileSync(resolve(process.cwd(), '../HubRadio.App/DefaultSettings/Profiles/1.1.0.json'), 'utf8')) as { settings: readonly InventoryEntry[] }
+    const catalog = JSON.parse(readFileSync(resolve(process.cwd(), 'src/features/settings/settingEditorCatalog.json'), 'utf8')) as { fixed: Record<string, string>; editors: Record<string, unknown> }
     // Real shipped key inventory; deliberately synthetic values are not render evidence.
     const inventory = profile.settings.map(item => definition(item.key, {
       group: item.group, displayName: item.displayName, description: item.description, isAdvanced: item.isAdvanced,
@@ -202,8 +207,9 @@ describe('SettingsPanel UX-025', () => {
     expect(inventory).toHaveLength(123)
     const h = await mount()
     await respond(h, fixture)
+    expect(within(h.container).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['案件と出力', '編集', '字幕とグラフィック', '音声と素材'])
     const visited: string[] = []
-    for (const name of groupNames) {
+    for (const name of groupNames.filter(group => group !== 'プライバシーと保存')) {
       await selectGroup(h, name)
       const advanced = within(h.container).getByRole('checkbox', { name: '詳細設定を表示' }) as HTMLInputElement
       // Toggling on also starts this group's complete inventory at page one.
@@ -218,10 +224,26 @@ describe('SettingsPanel UX-025', () => {
         await click(h, '次のページ')
       } while (visited.length <= inventory.length)
     }
-    expect(visited).toHaveLength(123)
-    expect(new Set(visited).size).toBe(123)
-    expect([...visited].sort()).toEqual(inventory.map(item => item.key).sort())
+    expect(visited).toHaveLength(22)
+    expect([...visited].sort()).toEqual(Object.keys(catalog.editors).sort())
+    expect(visited.filter(key => Object.hasOwn(catalog.fixed, key))).toEqual([])
     expect(h.client.sendSettingsWorkspace).toHaveBeenCalledOnce()
+  })
+
+  // FR-050 AC-025.2: a warning that targets a fixed key explains it instead of offering choices.
+  it('explains a fixed initialSettingKey without selecting it or offering choices', async () => {
+    const fixedKey = 'subtitles.platformCompliance'
+    const fixed = definition(fixedKey, { group: 'subtitlesAndGraphics', displayName: 'Subtitle platform compliance', defaultValue: text('notClaimed'), allowedTextValues: ['notClaimed'] })
+    const snapshot: GlobalSettingsSnapshot = { ...globalSnapshot, definitionCount: definitions.length + 1, definitions: [...definitions, fixed],
+      initialValues: [...globalSnapshot.initialValues, { key: fixedKey, value: text('notClaimed') }],
+      values: [...globalSnapshot.values, { key: fixedKey, value: text('notClaimed') }] }
+    const h = await mount({ initialSettingKey: fixedKey })
+    await respond(h, snapshot)
+    const region = within(h.container).getByRole('region', { name: '選択した設定の詳細' })
+    expect(region.textContent).toContain('この設定（subtitles.platformCompliance）は変更できない固定の値のため、設定画面には表示していません。')
+    expect(region.querySelector('input[type="radio"]')).toBeNull()
+    expect(listRows(h).map(row => row.querySelector('code')!.textContent)).not.toContain(fixedKey)
+    expect(listRows(h).map(row => row.querySelector('code')!.textContent)).not.toContain('output.landscapeResolution')
   })
 
   it('keeps a selected draft through search, a partial last page, group changes and details navigation', async () => {
@@ -268,7 +290,7 @@ describe('SettingsPanel UX-025', () => {
     expect(details.textContent).toContain(snapshot.projectId === null ? '復元先（プロファイル初期値）' : '復元先（案件開始時の初期値）')
     expect(details.textContent).toContain(snapshot.projectId === null ? 'プロファイルのタイトル' : 'この動画の初期タイトル')
     expect(details.textContent).toContain('プロファイル既定値')
-    expect(details.textContent).toContain('productDecision')
+    expect(details.textContent).not.toContain('productDecision')
     expect(h.read().state.snapshot?.initialValues).toEqual(snapshot.initialValues)
     await click(h, '保存')
     expect(h.lastRequest().params).toMatchObject({ expectedRevision: snapshot.revision + 1, key: titleKey })
@@ -759,7 +781,10 @@ describe('SettingsPanel UX-025', () => {
     expect(document.activeElement).toBe(summary)
     expect(onClose).not.toHaveBeenCalled()
     expect(evidence.textContent).toContain('この動画の初期タイトル')
-    expect(evidence.textContent).toContain('productDecision')
+    // FR-050 AC-025.6: the settings screen no longer shows evidence (根拠).
+    expect(evidence.querySelector('summary')!.textContent).toBe('初期値・用途')
+    expect(evidence.textContent).not.toContain('根拠')
+    expect(evidence.textContent).not.toContain('productDecision')
     const provenance = h.container.querySelector<HTMLDetailsElement>('.settings-provenance')!
     expect(provenance.textContent).toContain(projectSnapshot.initialSnapshotDigest)
     const provenanceSummary = provenance.querySelector('summary')!
@@ -836,12 +861,16 @@ describe('SettingsPanel UX-025', () => {
   it('shows planned saved-versus-draft outcomes without generating or claiming applied video settings', async () => {
     const h = await mount()
     await respond(h, globalSnapshot)
-    await selectRow(h, '短尺候補数')
-    await change(h, '4')
+    await click(h, '次のページ')
+    await selectRow(h, '縦型ショートの本数')
+    // FR-050 AC-025.3: a ranged count is picked from radios, never typed.
+    expect(within(h.container).getAllByRole('radio').map(radio => radio.closest('label')!.textContent)).toEqual(['0', '1', '2', '3'])
+    await act(async () => { within(h.container).getByRole('radio', { name: '2' }).click() })
+    expect(h.read().state.draftValues).toEqual({ [shortCountKey]: integer('2') })
     await click(h, '予定を確認')
     const preview = h.container.querySelector('.settings-outcome-preview')!
     expect(preview.textContent).toContain('3 本（目標）')
-    expect(preview.textContent).toContain('4 本（目標）')
+    expect(preview.textContent).toContain('2 本（目標）')
     expect(preview.textContent).toContain('1280 × 720 px')
     expect(preview.textContent).toContain('未評価（NOT EVALUATED）')
     expect(preview.textContent).toContain('実際の出力は未更新')

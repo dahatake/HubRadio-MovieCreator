@@ -141,6 +141,24 @@ pwsh.exe -NoLogo -NoProfile -File benchmarks\setup-python-env.ps1 -PythonExecuta
 
 問題レポートの候補原因を、確認済みの根本原因と読み替えないでください。
 
+## 実行ジョブの履歴（jobフォルダ）を確認する・サポートへ送る
+
+アプリは、実行ジョブ（自動編集`source-only.pipeline.v1`、取り込み`media.ingest.v1`、プレビュー・書き出しなど）の状態が変わるたびに、履歴を次のフォルダへ保存します（FR-049）。
+
+```
+%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\job\
+```
+
+- 1ジョブにつき1ファイル `job-{作成日時UTC}-{ジョブID}.json` です。ファイル名の順が作成の順です（新しいものが後ろ）。最新の1000件だけを残し、古いものから自動で削除します。
+- 見る項目:
+  - `job.state` — ジョブの今の状態（`Queued` 待機、`Running` 実行中、`Succeeded` 成功、`Failed` 失敗、`Cancelled` 取消、`Interrupted` アプリの終了などで中断）。
+  - `attempts[].errorCode` — 失敗の理由のcode。`source_only.*`は「自動編集」画面の「エラーの内容」と同じcodeです（上の「動画生成が失敗する」）。`job.execution_failed`は処理中の予期しない例外で、`exceptionType`に例外の型名（例: `IOException`）が入ります。`job.app_restarted`は、実行中にアプリが終了し、次の起動で中断として記録されたものです。
+  - `attempts[].lastProgress.phase` — 失敗・中断の直前にどの段階まで進んだか（例: `source_only.analysis`、`source_only.rendering`）。
+  - `attempts[].durationMilliseconds`、`heartbeatCount`、`lastHeartbeatAt` — どれだけ動いていたか。`Running`のまま`lastHeartbeatAt`が古い場合は、アプリが強制終了した可能性があります。
+- サポートへ送るとき: 問題が起きた日時に近いファイル（ファイル名の日時はUTC。日本時間から9時間を引く）を選び、そのファイルだけを送ります。`job`フォルダごと送る必要はありません。
+- 履歴には、ファイルのpath・元動画のファイル名・利用者名・案件名・例外のメッセージ・字幕などの内容は含まれません（ID、状態、日時、code、段階だけ）。
+- 履歴の保存に失敗しても（権限、ディスク不足、`job`がリンク）、編集処理には影響しません。その場合ファイルが無い・古いことがあります。DB（`hubradio.db`）の記録が正本です。
+
 ## backup restore が `ReconciliationRequired=true` で失敗する
 
 `.hubradio.restore-*` や `.hubradio.previous-*` をExplorerから直接削除・改名しません。

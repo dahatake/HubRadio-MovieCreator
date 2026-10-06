@@ -48,8 +48,8 @@ const definitions: readonly SettingDefinition[] = [
   },
   {
     key: countKey, displayName: '短尺候補数', description: '統合試験用の候補数', group: 'projectAndOutput',
-    isAdvanced: false, unit: 'none', defaultValue: { kind: 'integer', integerValue: '3' },
-    minimum: null, maximum: null, allowedTextValues: [], evidence: [{ kind: 'productDecision', sourceId: 'productDecision' }],
+    isAdvanced: false, unit: 'count', defaultValue: { kind: 'integer', integerValue: '3' },
+    minimum: { kind: 'integer', integerValue: '0' }, maximum: { kind: 'integer', integerValue: '3' }, allowedTextValues: [], evidence: [{ kind: 'productDecision', sourceId: 'productDecision' }],
   },
 ]
 const globalSnapshot: GlobalSettingsSnapshot = {
@@ -131,7 +131,7 @@ describe('WorkflowWorkspace UX-039A', () => {
     // FR-043 AC-018
     expect(h.element('.settings-scope-note').textContent).toContain('「この動画」は、「編集を開始」で案件を作成すると選べます。')
     await h.click('短尺候補数')
-    const setting = h.element<HTMLInputElement>('.setting-inspector input')
+    const setting = h.element<HTMLInputElement>('.setting-inspector input:checked')
     expect(setting.value).toBe('3')
     await h.click('設定を閉じて戻る')
     expectScreen(h, 'results')
@@ -139,7 +139,7 @@ describe('WorkflowWorkspace UX-039A', () => {
     expect(h.tool('transcript').getAttribute('aria-pressed')).toBe('true')
     expect(h.element('.transcript-panel')).toBe(transcript)
     await h.click('設定')
-    expect(h.element('.setting-inspector input')).toBe(setting)
+    expect(h.element('.setting-inspector input:checked')).toBe(setting)
     expect(setting.value).toBe('3')
     expect(h.requests.filter(request => request.method === 'settings.global.read')).toHaveLength(1)
     expect(h.settings().state.projectId).toBeNull()
@@ -437,9 +437,9 @@ describe('WorkflowWorkspace UX-039A', () => {
     expect(h.button('この動画').getAttribute('aria-pressed')).toBe('true')
     expect(h.button('新しい動画の既定値').getAttribute('aria-pressed')).toBe('false')
     await h.click('短尺候補数')
-    await h.change('.setting-inspector input', '9')
+    await act(async () => { h.element<HTMLInputElement>('.setting-inspector input[value="1"]').click() })
     await h.click('保存')
-    expect(h.last('settings.update').params).toMatchObject({ projectId, key: countKey, value: { kind: 'integer', integerValue: '9' } })
+    expect(h.last('settings.update').params).toMatchObject({ projectId, key: countKey, value: { kind: 'integer', integerValue: '1' } })
     expect(h.element('.settings-scope-note').textContent).toContain('編集中：この動画。')
   })
 
@@ -454,12 +454,12 @@ describe('WorkflowWorkspace UX-039A', () => {
     await h.click('設定')
     await h.reply(h.last('settings.global.read'), { status: 'available', snapshot: globalSnapshot })
     await h.click('短尺候補数')
-    await h.change('.setting-inspector input', '19')
+    await act(async () => { h.element<HTMLInputElement>('.setting-inspector input[value="1"]').click() })
     await h.click('保存')
-    expect(h.last('settings.global.update').params).toMatchObject({ key: countKey, value: { kind: 'integer', integerValue: '19' } })
+    expect(h.last('settings.global.update').params).toMatchObject({ key: countKey, value: { kind: 'integer', integerValue: '1' } })
     await h.reply(h.last('settings.global.update'), { status: 'available', snapshot: {
       ...globalSnapshot, revision: 1, snapshotDigest: 'c'.repeat(64),
-      values: globalSnapshot.values.map(item => item.key === countKey ? { key: countKey, value: { kind: 'integer', integerValue: '19' } } : item),
+      values: globalSnapshot.values.map(item => item.key === countKey ? { key: countKey, value: { kind: 'integer', integerValue: '1' } } : item),
     } })
     await h.click('設定を閉じて戻る')
     expect(h.element('.result-gallery')).toBe(gallery)

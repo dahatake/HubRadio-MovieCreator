@@ -28,7 +28,7 @@ export const subtitlesAndThumbnailsHelp: Readonly<Record<string, SettingHelpEntr
   ],
   'subtitles.cueMinimumDuration': [
     '字幕1つの最短の表示時間',
-    '字幕1つ（1回の表示）を、最低でも何秒は出し続けるかです。単位は秒で、初期値は6分の5秒（約0.83秒）です。分子と分母の2つの数で入力します。',
+    '字幕1つ（1回の表示）を、最低でも何秒は出し続けるかです。単位は秒で、初期値は6分の5秒（約0.83秒）です。2分の1秒から1秒までの、一覧に並んだ値から選びます。',
     '大きくすると、短い字幕も長めに表示されて読みやすくなり、小さくすると、読む前に消えてしまうことがあります。',
   ],
   'subtitles.foregroundColor': [
@@ -43,7 +43,7 @@ export const subtitlesAndThumbnailsHelp: Readonly<Record<string, SettingHelpEntr
   ],
   'subtitles.landscapeLineHeight': [
     '横長の字幕の行の高さ',
-    '横長の動画で、字幕の1行の高さを、画面の高さに対する割合（％）で表したものです。初期値は2分の15、つまり7.5％です。分子と分母の2つの数で入力します。',
+    '横長の動画で、字幕の1行の高さを、画面の高さに対する割合（％）で表したものです。初期値は2分の15、つまり7.5％です。6％から7.5％までの、一覧に並んだ値から選びます。',
     '大きくすると文字が大きくなって読みやすくなりますが、画面を多く覆います。小さくすると文字が小さくなります。',
   ],
   'subtitles.landscapeRegion': [
@@ -143,7 +143,7 @@ export const subtitlesAndThumbnailsHelp: Readonly<Record<string, SettingHelpEntr
   ],
   'subtitles.verticalLineHeight': [
     '縦長の字幕の行の高さ',
-    '縦長の動画で、字幕の1行の高さを、画面の高さに対する割合（％）で表したものです。初期値は5分の21、つまり4.2％です。分子と分母の2つの数で入力します。',
+    '縦長の動画で、字幕の1行の高さを、画面の高さに対する割合（％）で表したものです。初期値は5分の21、つまり4.2％です。3.6％から4.2％までの、一覧に並んだ値から選びます。',
     '大きくすると文字が大きくなって読みやすくなりますが、画面を多く覆います。小さくすると文字が小さくなります。',
   ],
   'subtitles.verticalLineLengthMaximum': [

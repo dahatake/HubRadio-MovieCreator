@@ -3,6 +3,7 @@ import { SettingInspector } from './SettingInspector'
 import { SettingsFileActions } from './SettingsFileActions'
 import { SettingsList } from './SettingsList'
 import { SettingsOutcomePreview } from './SettingsOutcomePreview'
+import { isSettingEditable } from './settingEditors'
 import { useSettingsWorkspace } from './SettingsStateProvider'
 import { createSettingsReadRequest, type AnySettingsSnapshot, type SettingsGroup, type SettingsWorkspaceMethod } from './settingsProtocol'
 import type { WorkspaceSettingsDraftValues, WorkspaceSettingsError } from './settingsState'
@@ -82,16 +83,22 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, onClose
   const focusTarget = useRef<HTMLElement | 'editor' | null>(null)
   const [focusRevision, setFocusRevision] = useState(0)
   const [revealRevision, setRevealRevision] = useState(0)
-  const [activeGroup, setActiveGroup] = useState<SettingsGroup>('projectAndOutput')
+  const [activeGroupState, setActiveGroup] = useState<SettingsGroup>('projectAndOutput')
   const [focusedGroup, setFocusedGroup] = useState<SettingsGroup | null>(null)
   const [selectedKeys, setSelectedKeys] = useState<Partial<Record<SettingsGroup, string>>>({})
   const [missingKey, setMissingKey] = useState<string | null>(null)
   const [detailView, setDetailView] = useState<DetailView>('setting')
   // Keep confirmation intent here; values stay in provider state.
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
-  const definitions = useMemo(() => snapshot?.definitions.filter(item => item.group === activeGroup) ?? [], [snapshot?.definitions, activeGroup])
+  // FR-050.1: only settings the user can actually change are listed; groups without any are not shown.
+  const editableDefinitions = useMemo(() => snapshot?.definitions.filter(isSettingEditable) ?? [], [snapshot?.definitions])
+  const visibleGroups = useMemo(() => snapshot === null ? groups : groups.filter(group => editableDefinitions.some(item => item.group === group)),
+    [snapshot, editableDefinitions])
+  const activeGroup = visibleGroups.includes(activeGroupState) ? activeGroupState : visibleGroups[0] ?? activeGroupState
+  const definitions = useMemo(() => editableDefinitions.filter(item => item.group === activeGroup), [editableDefinitions, activeGroup])
   const selectedKey = missingKey ?? selectedKeys[activeGroup] ?? definitions.find(item => !item.isAdvanced)?.key ?? definitions[0]?.key ?? null
-  const definition = snapshot?.definitions.find(item => item.key === selectedKey)
+  const definition = editableDefinitions.find(item => item.key === selectedKey)
+  const fixedTarget = missingKey === null ? undefined : snapshot?.definitions.find(item => item.key === missingKey)
   const current = snapshot?.values.find(item => item.key === selectedKey)?.value
   const initial = snapshot?.initialValues.find(item => item.key === selectedKey)?.value
   const changedKeys = Object.keys(draftValues)
@@ -186,7 +193,7 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, onClose
   }, [isActive, activeTarget, initialSettingKey, pendingRequest, requestScope])
 
   const revealSetting = useCallback((key: string, focus: boolean) => {
-    const target = snapshot?.definitions.find(item => item.key === key)
+    const target = editableDefinitions.find(item => item.key === key)
     setMissingKey(target === undefined ? key : null)
     if (target !== undefined) {
       setActiveGroup(target.group)
@@ -195,7 +202,7 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, onClose
     }
     setDetailView('setting')
     if (focus) queueFocus('editor')
-  }, [snapshot, queueFocus])
+  }, [editableDefinitions, queueFocus])
   useEffect(() => {
     if (!isActive || initialSettingKey === null) { revealed.current = null; return }
     if (snapshot === null || snapshot.projectId !== activeTarget) return
@@ -261,13 +268,13 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, onClose
   }
   function moveGroup(event: KeyboardEvent<HTMLButtonElement>, group: SettingsGroup) {
     if (!isActive || confirmation !== null) return
-    const index = groups.indexOf(group)
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? groups.length - 1
-      : event.key === 'ArrowLeft' ? (index + groups.length - 1) % groups.length
-      : event.key === 'ArrowRight' ? (index + 1) % groups.length : -1
+    const index = visibleGroups.indexOf(group)
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? visibleGroups.length - 1
+      : event.key === 'ArrowLeft' ? (index + visibleGroups.length - 1) % visibleGroups.length
+      : event.key === 'ArrowRight' ? (index + 1) % visibleGroups.length : -1
     if (next < 0) return
     event.preventDefault()
-    tabs.current[groups[next]!]?.focus()
+    tabs.current[visibleGroups[next]!]?.focus()
     // Enter/Space use native button activation; Up/Down remain native scroll keys.
   }
 
@@ -319,7 +326,7 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, onClose
           <>
             <div className="settings-group-tabs" role="tablist" aria-label="設定グループ" aria-orientation="horizontal"
               onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocusedGroup(null) }}>
-              {groups.map(group => <button id={`${id}-tab-${group}`} key={group} ref={element => { tabs.current[group] = element }}
+              {visibleGroups.map(group => <button id={`${id}-tab-${group}`} key={group} ref={element => { tabs.current[group] = element }}
                 type="button" role="tab" aria-selected={activeGroup === group} aria-controls={`${id}-panel-${group}`}
                 tabIndex={(focusedGroup ?? activeGroup) === group ? 0 : -1} disabled={!isActive}
                 onFocus={() => setFocusedGroup(group)} onClick={() => { setActiveGroup(group); setMissingKey(null); setDetailView('setting') }}
@@ -327,7 +334,8 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, onClose
             </div>
             <div className="settings-workspace">
               <div className="settings-list-pane">
-                {groups.map(group => <div id={`${id}-panel-${group}`} key={group} role="tabpanel" aria-labelledby={`${id}-tab-${group}`} hidden={activeGroup !== group} tabIndex={0}>
+                {visibleGroups.length === 0 && <p>変更できる設定はありません。</p>}
+                {visibleGroups.map(group => <div id={`${id}-panel-${group}`} key={group} role="tabpanel" aria-labelledby={`${id}-tab-${group}`} hidden={activeGroup !== group} tabIndex={0}>
                   {activeGroup === group && (definitions.length === 0 ? <p>この分類に設定はありません。</p> : (
                     <SettingsList key={`${state.projectId ?? 'global'}:${group}:${revealRevision}`} definitions={definitions} values={snapshot.values}
                       selectedKey={selectedKey} changedKeys={changedKeys} disabled={!isActive}
@@ -343,7 +351,9 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, onClose
                       scope={state.scope} profileVersion={snapshot.profileVersion} disabled={blocked}
                       onChange={value => workspace.changeDraft(definition.key, value)} onSave={() => send(() => workspace.save(definition.key))}
                       onReset={() => { if (blocked) return; if (Object.hasOwn(draftValues, definition.key)) ask({ kind: 'reset', key: definition.key }); else send(() => workspace.reset(definition.key)) }} />
-                  ) : <p>指定された設定項目はこの一覧にありません。設定一覧から項目を選択してください。</p>}
+                  ) : fixedTarget !== undefined
+                    ? <p>この設定（{fixedTarget.key}）は変更できない固定の値のため、設定画面には表示していません。</p>
+                    : <p>指定された設定項目はこの一覧にありません。設定一覧から項目を選択してください。</p>}
                   <details className="settings-provenance">
                     <summary>{snapshot.profileName} v{snapshot.profileVersion} · {snapshot.definitionCount} 項目 · 保存状態の詳細</summary>
                     <dl>

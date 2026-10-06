@@ -140,7 +140,12 @@ describe('SettingInspector', () => {
     expect(summaryValue(view.container, 'プロファイル版')).toBe('v1.2.3')
     expect(summaryValue(view.container, '用途')).toBe(definition.description)
     expect(summaryValue(view.container, '設定キー')).toBe(definition.key)
-    expect(Array.from(details.querySelectorAll('li')).map(item => item.textContent)).toEqual(['R01 · specification', 'productDecision · productDecision'])
+    // FR-050.8 AC-025.6: no evidence (根拠) in the settings screen.
+    expect(details.querySelector('summary')!.textContent).toBe('初期値・用途')
+    expect(view.queries.queryByText('根拠', { selector: 'dt' })).toBeNull()
+    expect(details.querySelectorAll('li')).toHaveLength(0)
+    expect(view.container.textContent).not.toContain('R01')
+    expect(view.container.textContent).not.toContain('productDecision')
     await act(async () => { await view.user.click(view.queries.getByRole('button', { name: resetLabel })) })
     expect(view.onReset).toHaveBeenCalledExactlyOnceWith()
     expect(view.onChange).not.toHaveBeenCalled()
@@ -191,7 +196,7 @@ describe('SettingInspector', () => {
   })
 
   it('retains a partial minus through parent rerenders before completing an integer', async () => {
-    const view = await renderInspector({ definition: makeDefinition(integer('0'), { minimum: integer('-10'), maximum: integer('10') }) })
+    const view = await renderInspector({ definition: makeDefinition(integer('0'), { minimum: integer('-1000'), maximum: integer('1000') }) })
     const control = view.queries.getByRole<HTMLInputElement>('textbox', { name: 'テスト設定：未保存の値' })
     const save = view.queries.getByRole<HTMLButtonElement>('button', { name: '保存' })
     expect(control.type).toBe('text')
@@ -406,9 +411,10 @@ describe('SettingInspector', () => {
   })
 
   it.each([
-    { name: 'integer', minimum: integer('10'), maximum: integer('20'), below: integer('9'), above: integer('21'), unit: 'count' },
-    { name: 'int64 precision', minimum: integer('9007199254740992'), maximum: integer('9007199254740993'), below: integer('9007199254740991'), above: integer('9007199254740994'), unit: 'count' },
-    { name: 'negative integer', minimum: integer('-10'), maximum: integer('-5'), below: integer('-11'), above: integer('-4'), unit: 'decibels' },
+    // FR-050.6: ranges of more than 31 integers keep the input, so exact bounds are still validated here.
+    { name: 'integer', minimum: integer('10'), maximum: integer('200'), below: integer('9'), above: integer('201'), unit: 'count' },
+    { name: 'int64 precision', minimum: integer('9007199254740992'), maximum: integer('9007199254741992'), below: integer('9007199254740991'), above: integer('9007199254741993'), unit: 'count' },
+    { name: 'negative integer', minimum: integer('-100'), maximum: integer('-5'), below: integer('-101'), above: integer('-4'), unit: 'decibels' },
     { name: 'rational', minimum: rational('1', '3'), maximum: rational('2', '3'), below: rational('1', '4'), above: rational('3', '4'), unit: 'seconds' },
     { name: 'rational precision', minimum: rational('1', '2'), maximum: rational('9007199254740992', '9007199254740993'), below: rational('1', '3'), above: rational('1', '1'), unit: 'seconds' },
     { name: 'negative rational', minimum: rational('-3', '2'), maximum: rational('-1', '2'), below: rational('-2', '1'), above: rational('0', '1'), unit: 'decibels' },
@@ -583,5 +589,86 @@ describe('SettingInspector', () => {
         for (const reference of input.getAttribute('aria-describedby')!.split(' ')) expect(ownIds.has(reference)).toBe(true)
       }
     }
+  })
+
+  describe('FR-050 choices instead of typing', () => {
+    function optionLabels(container: HTMLElement): (string | undefined)[] {
+      return Array.from(container.querySelectorAll<HTMLInputElement>('input[type="radio"], input[type="checkbox"]')).map(input => input.parentElement?.textContent ?? undefined)
+    }
+    function expectNoTyping(container: HTMLElement) {
+      expect(container.querySelector('input[type="text"], textarea, select')).toBeNull()
+    }
+
+    // FR-050.4 AC-025.3
+    it('offers listed bitrates as radios in catalog order and changes the draft by selection', async () => {
+      const definition = makeDefinition(integer('8000000'), { key: 'output.standardFrameRateBitrate', group: 'projectAndOutput', displayName: 'Standard bitrate', unit: 'bitsPerSecond' })
+      const view = await renderInspector({ definition })
+      expectNoTyping(view.container)
+      const group = view.queries.getByRole('radiogroup', { name: 'Standard bitrate (bitsPerSecond)：未保存の値' })
+      expect(optionLabels(group)).toEqual(['4 Mbps', '6 Mbps', '8 Mbps', '10 Mbps', '12 Mbps'])
+      expect(view.queries.getByRole<HTMLInputElement>('radio', { name: '8 Mbps' }).checked).toBe(true)
+      await act(async () => { await view.user.click(view.queries.getByRole('radio', { name: '10 Mbps' })) })
+      expect(view.onChange).toHaveBeenLastCalledWith(integer('10000000'))
+      expect(view.queries.queryByRole('alert')).toBeNull()
+      expect(view.queries.getByRole<HTMLButtonElement>('button', { name: '保存' }).disabled).toBe(false)
+    })
+
+    // FR-050.4 AC-025.3
+    it('offers every integer of a catalog range and the listed fractions as radios', async () => {
+      const count = await renderInspector({ definition: makeDefinition(integer('3'), { key: 'project.verticalShortCandidateCount', unit: 'count', minimum: integer('0'), maximum: integer('3') }) })
+      expectNoTyping(count.container)
+      expect(optionLabels(count.container)).toEqual(['0', '1', '2', '3'])
+      const fraction = await renderInspector({ definition: makeDefinition(rational('5', '6'), { key: 'subtitles.cueMinimumDuration', unit: 'seconds' }) })
+      expectNoTyping(fraction.container)
+      expect(optionLabels(fraction.container)).toEqual(['0.5 秒（1/2）', '約0.67 秒（2/3）', '約0.83 秒（5/6）', '1 秒'])
+      expect(fraction.queries.getByRole<HTMLInputElement>('radio', { name: '約0.83 秒（5/6）' }).checked).toBe(true)
+      await act(async () => { await fraction.user.click(fraction.queries.getByRole('radio', { name: '0.5 秒（1/2）' })) })
+      expect(fraction.onChange).toHaveBeenLastCalledWith(rational('1', '2'))
+    })
+
+    // FR-050.4 AC-025.3
+    it('offers music sections as checkboxes and keeps the catalog order', async () => {
+      const definition = makeDefinition(textList('titleCard', 'topicCard', 'endCard'), { key: 'assets.musicEligibleSections', displayName: 'Music sections' })
+      const view = await renderInspector({ definition })
+      expectNoTyping(view.container)
+      const group = view.queries.getByRole('group', { name: 'Music sections：未保存の値' })
+      expect(optionLabels(group)).toEqual(['タイトルカード（titleCard）', '話題カード（topicCard）', 'エンドカード（endCard）'])
+      await act(async () => { await view.user.click(view.queries.getByRole('checkbox', { name: 'エンドカード（endCard）' })) })
+      expect(view.onChange).toHaveBeenLastCalledWith(textList('titleCard', 'topicCard'))
+      await act(async () => { await view.user.click(view.queries.getByRole('checkbox', { name: 'タイトルカード（titleCard）' })) })
+      expect(view.onChange).toHaveBeenLastCalledWith(textList('topicCard'))
+      await act(async () => { await view.user.click(view.queries.getByRole('checkbox', { name: 'エンドカード（endCard）' })) })
+      await act(async () => { await view.user.click(view.queries.getByRole('checkbox', { name: 'タイトルカード（titleCard）' })) })
+      expect(view.onChange).toHaveBeenLastCalledWith(textList('titleCard', 'topicCard', 'endCard'))
+      await act(async () => { await view.user.click(view.queries.getByRole('checkbox', { name: 'タイトルカード（titleCard）' })) })
+      await act(async () => { await view.user.click(view.queries.getByRole('checkbox', { name: '話題カード（topicCard）' })) })
+      await act(async () => { await view.user.click(view.queries.getByRole('checkbox', { name: 'エンドカード（endCard）' })) })
+      expect(view.onChange).toHaveBeenLastCalledWith(textList())
+      expect(view.queries.queryByRole('alert')).toBeNull()
+    })
+
+    // FR-050.5 AC-025.4
+    it('keeps an unlisted saved number as a disabled selected choice and blocks saving', async () => {
+      const definition = makeDefinition(integer('8000000'), { key: 'output.standardFrameRateBitrate', unit: 'bitsPerSecond' })
+      const view = await renderInspector({ definition, value: integer('7000000'), draft: integer('7000000') })
+      const radios = view.queries.getAllByRole<HTMLInputElement>('radio')
+      expect(radios[0]!.parentElement?.textContent).toBe('7 Mbps')
+      expect(radios[0]!.checked).toBe(true)
+      expect(radios[0]!.disabled).toBe(true)
+      expect(view.queries.getByRole('alert').textContent).toBe('候補から値を選択してください。')
+      expect(view.queries.getByRole<HTMLButtonElement>('button', { name: '保存' }).disabled).toBe(true)
+    })
+
+    // FR-050.5 AC-025.4
+    it('lets an unlisted music section be removed but not re-added', async () => {
+      const definition = makeDefinition(textList('titleCard', 'topicCard', 'endCard'), { key: 'assets.musicEligibleSections', displayName: 'Music sections' })
+      const view = await renderInspector({ definition, draft: textList('titleCard', 'custom') })
+      expect(view.queries.getByRole('alert').textContent).toBe('候補から値を選択してください。')
+      expect(view.queries.getByRole<HTMLButtonElement>('button', { name: '保存' }).disabled).toBe(true)
+      await act(async () => { await view.user.click(view.queries.getByRole('checkbox', { name: 'custom' })) })
+      expect(view.onChange).toHaveBeenLastCalledWith(textList('titleCard'))
+      expect(view.queries.queryByRole('checkbox', { name: 'custom' })).toBeNull()
+      expect(view.queries.queryByRole('alert')).toBeNull()
+    })
   })
 })

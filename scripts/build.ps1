@@ -97,8 +97,6 @@ function Test-PowerShellSource {
         throw 'PSScriptAnalyzer 1.25.0 or later is required for repository linting.'
     }
 
-    Import-Module PSScriptAnalyzer -MinimumVersion 1.25.0 -ErrorAction Stop
-
     $tracked = @(& $GitPath -C $repoRoot ls-files -- '*.ps1' '*.psm1' '*.psd1')
     if ($LASTEXITCODE -ne 0) {
         throw 'Unable to enumerate tracked PowerShell files.'
@@ -135,15 +133,25 @@ function Test-PowerShellSource {
         throw "PowerShell parsing failed:$([Environment]::NewLine)$($messages -join [Environment]::NewLine)"
     }
 
-    $diagnostics = @(
-        foreach ($path in $lintPaths) {
-            Invoke-ScriptAnalyzer -Path $path -Severity Error, Warning
-        }
-    )
-    if ($diagnostics.Count -ne 0) {
-        $messages = $diagnostics | ForEach-Object {
+    # Analyze in a clean child process: the calling session (for example the VS Code
+    # PowerShell console) may already hold another copy of the analyzer assembly,
+    # which makes an in-process Import-Module fail with "Assembly with same name is already loaded".
+    $analyzerScript = {
+        param([string[]]$Paths)
+        $ErrorActionPreference = 'Stop'
+        Import-Module PSScriptAnalyzer -MinimumVersion 1.25.0
+        $results = @(foreach ($path in $Paths) { Invoke-ScriptAnalyzer -Path $path -Severity Error, Warning })
+        $results | ForEach-Object {
             '{0}:{1}:{2}: {3}: {4}' -f $_.ScriptPath, $_.Line, $_.Column, $_.RuleName, $_.Message
         }
+    }
+    $pwsh = Join-Path $PSHOME 'pwsh.exe'
+    $output = & $pwsh -NoLogo -NoProfile -NonInteractive -Command $analyzerScript -args (, $lintPaths)
+    if ($LASTEXITCODE -ne 0) {
+        throw "PowerShell lint could not run (exit code $LASTEXITCODE).$([Environment]::NewLine)$($output -join [Environment]::NewLine)"
+    }
+    $messages = @($output)
+    if ($messages.Count -ne 0) {
         throw "PowerShell lint failed:$([Environment]::NewLine)$($messages -join [Environment]::NewLine)"
     }
 }

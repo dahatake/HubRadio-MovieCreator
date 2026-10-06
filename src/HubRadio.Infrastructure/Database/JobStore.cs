@@ -1,6 +1,7 @@
 using System.Globalization;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Jobs;
+using HubRadio.Infrastructure.Diagnostics;
 using Microsoft.Data.Sqlite;
 
 namespace HubRadio.Infrastructure.Database;
@@ -50,9 +51,18 @@ public sealed class JobStore
     private readonly string _databasePath;
 
     public JobStore(string databasePath)
+        : this(databasePath, history: null)
+    {
+    }
+
+    public JobStore(string databasePath, JobHistoryLog? history)
     {
         _databasePath = SqliteStoreSupport.Initialize(databasePath);
+        History = history;
     }
+
+    /// <summary>FR-049: receives every committed job transition made through this store.</summary>
+    public JobHistoryLog? History { get; }
 
     public void CreateJob(Job job)
     {
@@ -61,6 +71,12 @@ public sealed class JobStore
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
         CreateJob(connection, transaction, job);
         transaction.Commit();
+        RecordHistory(job.Id);
+    }
+
+    private void RecordHistory(EntityId<JobIdTag> jobId)
+    {
+        _ = History?.Record(() => GetJobAggregate(jobId));
     }
 
     internal static void CreateJob(
@@ -261,6 +277,7 @@ public sealed class JobStore
             nextAttemptNumber,
             updatedAt);
         transaction.Commit();
+        RecordHistory(jobId);
         return updated;
     }
 
@@ -369,6 +386,7 @@ public sealed class JobStore
             current.Job.CurrentAttemptNumber,
             updatedAt);
         transaction.Commit();
+        RecordHistory(jobId);
         return updated;
     }
 
@@ -410,6 +428,7 @@ public sealed class JobStore
             current.Job.CurrentAttemptNumber,
             storedUpdatedAt);
         transaction.Commit();
+        RecordHistory(jobId);
         return newRevision;
     }
 
@@ -454,6 +473,7 @@ public sealed class JobStore
             current.Job.CurrentAttemptNumber,
             storedUpdatedAt);
         transaction.Commit();
+        RecordHistory(jobId);
         return newRevision;
     }
 

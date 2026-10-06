@@ -43,4 +43,25 @@ describe('setting help', () => {
     expect(getSettingHelp({ key: 'constructor', displayName: 'Inherited name' }).generic).toBe(true)
     expect(settingHelpAdvice).toContain('初期値のままにしておくのが安全')
   })
+
+  // FR-050.8 AC-025.6
+  it('points generic guidance to the disclosure without evidence', () => {
+    const help = getSettingHelp({ key: 'future.unknownSetting', displayName: 'Future setting' })
+    expect(help.what).toContain('「初期値・用途」を開くと')
+    expect(help.what).not.toContain('根拠')
+  })
+
+  // FR-050.9 AC-025.7
+  it('never asks to type values for settings that are picked from choices', () => {
+    const editable = Object.keys((JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'settingEditorCatalog.json'), 'utf8')) as { editors: Record<string, unknown> }).editors)
+    expect(editable).toHaveLength(22)
+    for (const key of editable) {
+      const help = getSettingHelp({ key, displayName: key })
+      expect(help.generic).toBe(false)
+      for (const text of [help.what, help.effect]) {
+        expect(text).not.toContain('分子と分母')
+        expect(text).not.toContain('入力します')
+      }
+    }
+  })
 })

@@ -23,6 +23,7 @@ using HubRadio.Core.Terms;
 using HubRadio.Core.Time;
 using HubRadio.Core.Transcripts;
 using HubRadio.Infrastructure.Database;
+using HubRadio.Infrastructure.Diagnostics;
 using HubRadio.Infrastructure.Files;
 using HubRadio.Infrastructure.Integrity;
 using HubRadio.Infrastructure.Media;
@@ -106,7 +107,11 @@ internal sealed class SourceOnlyApplicationServices
         WorkspacePath = SourceOnlySourceLocator.RequirePath(workspacePath, directory: true);
         Candidates = candidates ?? throw new ArgumentNullException(nameof(candidates));
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        Jobs = new JobStore(databasePath);
+        Jobs = new JobStore(
+            databasePath,
+            JobHistoryLog.ForWorkspace(
+                WorkspacePath,
+                typeof(SourceOnlyApplicationServices).Assembly.GetName().Version?.ToString()));
         Coordinator = new JobCoordinator(Jobs, new LocalJobRunner(Jobs));
         Drafts = new ProjectCreationDraftStore(databasePath);
         Projects = new ProjectStore(databasePath);

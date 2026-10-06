@@ -46,6 +46,8 @@ UI/UX追補は承認済み要求の追加であり、UI・設定fileの実装／
 | 2026-10-05 | 案件の詳細画面に、開いている案件自身を削除する「案件削除」ボタンと削除機能を追加（機能追加。削除は既存の`project.delete`を再利用） | FR-046（FR-046.1〜FR-046.4）、AC-021（AC-021.1〜AC-021.4）、§19.8の仮定A-046-01〜A-046-03 | §16 Must（1項目追加）、削除成功時に開いている案件を閉じる反映（`projectState.ts`） | なし |
 | 2026-10-05 | 「自動編集」が`source_only.unsupported_source_timing`で失敗する不具合（承認素材`hubradio-sample.mp4`で発生）の修正と、自動編集の失敗時に原因と対応策を画面に表示する（不具合修正＋機能追加） | FR-047（FR-047.1〜FR-047.4）、AC-022（AC-022.1〜AC-022.5）、§19.9の仮定A-047-01〜A-047-03 | §16 Must（1項目追加）、ジョブの進行状況の失敗code表示（codeだけの表示→説明・原因・対応策・codeの表示）、各音声区間のffmpeg filter（`apad`の追加） | なし |
 | 2026-10-05 | 設定の初期値を動画に合わせて最適にしたい、選べる項目を選べるようにしたい（既定設定profile 1.1.0の追加、縦型ショートの本数・サムネイル候補の数・つかみの開始を生成処理が守る） | FR-048（FR-048.1〜FR-048.5）、AC-023（AC-023.1〜AC-023.5）、既定設定profile 1.1.0、§19.10の仮定A-048-01〜A-048-04、AI提案P-048-01〜P-048-02 | §16 Must（1項目追加）、globalの既定値を起動時に1.1.0へ移す、合成計画の設定検査（本数・候補数・つかみの範囲） | なし |
+| 2026-10-06 | アプリケーションの実行ジョブの履歴を`/job/`に保存する（デバッグ・エラー時のサポート用。機能追加） | FR-049（FR-049.1〜FR-049.10）、AC-024（AC-024.1〜AC-024.9）、§19.11の仮定A-049-01〜A-049-05、AI提案P-049-01〜P-049-02、ファイル形式`hubradio.job-history.v1` | §16 Must（1項目追加） | なし |
+| 2026-10-06 | 設定画面で、変えられない項目を除外し、変えられる項目は選択肢から選べるようにする。設定画面から「根拠」を除外する（変更＋削除） | FR-050（FR-050.1〜FR-050.9）、AC-025（AC-025.1〜AC-025.8）、分類表`settingEditorCatalog.json`（`hubradio.setting-editor-catalog.v1`）、§19.12の仮定A-050-01〜A-050-07、競合C-050-01、AI提案P-050-01〜P-050-03 | §16 Must（1項目追加）。§6.4・FR-033・§14.4・AC-006の「全設定」「根拠区分」の画面表示と、FR-038.1の開閉の名前「初期値・用途・根拠」は、FR-050で上書き（承認済みの文面は変更しない。C-050-01）。FR-038.4の汎用の文、FR-038.2の説明3項目の文 | 設定画面の「根拠」の表示（要求IDの削除は無し） |
 | 2026-10-01 | FR-035の結合機能をGUI（仕上がり画面）へ統合 | FR-035.13〜FR-035.21、GUI応答status表、AC-008.11〜AC-008.16、仮定A-035-11〜A-035-13 | FR-035の目的と境界・対象外、A-035-01（GUI対象外→GUIとCLIの両方を提供）、§4.1、§14.2、§16 Must | なし |
 
 ---
@@ -1161,6 +1163,139 @@ FR-036.5の固定文（`message` = 「編集を開始できません。」＋原
 
 **対象外（本追補）:** 動画の解析結果に応じて案件ごとの初期値を書き換えること（P-048-01）、選べる値が1つの項目へ新しい選択肢を追加すること（P-048-02）、1.0.0の案件の設定の版の引き上げ。
 
+## FR\-049 実行ジョブの履歴の`job`フォルダへの保存
+
+**背景（依頼、2026-10-06）:** 「アプリケーションの実行ジョブの履歴は'/job/'に保存をする機能を追加してください。デバッグやエラー発生時のサポートに必要です。」決定状態: 承認済み（依頼 2026-10-06）。
+
+**調査結果（2026-10-06）:** 実行ジョブ（自動編集の`source-only` root job・ingest job、プレビュー・書き出しなど）は、DB（`<ワークスペース>\hubradio.db`の`jobs`・`job_attempts`・`job_progress`・`job_heartbeats`）にだけ記録され、状態の変更はすべて`JobStore`（`src/HubRadio.Infrastructure/Database/JobStore.cs`）を通る。本番では`SourceOnlyApplicationServices.Jobs`の1つのインスタンスが、自動編集・`JobCoordinator`・`LocalJobRunner`・起動時の`JobRecovery`に共有されている。利用者や保守担当者がDBを開かずに読めるジョブの記録はなかった。`<ワークスペース>`は`%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace`で、現在のWindowsユーザーだけが読み書きできるACLが付く（NFR-004）。
+
+| ID | 優先度 | 要求 |
+| --- | --- | --- |
+| FR-049.1 | MUST | 保存先は`<ワークスペース>\job\`（本番では`%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\job\`）とする。フォルダが無いときは最初の書き込みで作る。`job`フォルダ、またはワークスペースから`job`までの途中がリンク（シンボリックリンク・ジャンクションなどのreparse point）のときは書き込まない（FR-049.6の失敗として扱う）。 |
+| FR-049.2 | MUST | 履歴を書く契機は、`JobStore`の次の操作がDBへ確定（commit）した直後とする: `CreateJob`（インスタンスのメソッド）、`StartAttempt`（実行開始）、`CompleteAttempt`（成功・失敗・取消・中断）、`QueueRetry`（再試行の待機）、`CancelQueued`（待機中の取消）。起動時の`JobRecovery`が実行中のジョブを中断（`Interrupted`）にした場合も、`CompleteAttempt`を通るので記録される。`AppendProgress`・`AppendHeartbeat`だけでは書かない（その値は次の契機の書き込みに含める）。他のstoreのtransaction内で作られたジョブ（`SourceOnlyExecutionStore`の`JobStore.CreateJob(connection, …)`）は、最初の状態変更で記録される。操作が例外で失敗した（commitしなかった）場合は書かない。 |
+| FR-049.3 | MUST | 1ジョブにつき1ファイルとし、ファイル名は`job-{作成日時UTC:yyyyMMdd'T'HHmmss'Z'}-{ジョブID}.json`（例: `job-20261006T013000Z-0f8c2c1e-6a51-4c3e-9a77-2c1f3b0d5e10.json`。ジョブIDは小文字のGUID D形式）とする。契機のたびに、DBから読み直した最新の状態で、同じファイルを丸ごと書き直す。ファイル名の昇順が作成日時の昇順になる。 |
+| FR-049.4 | MUST | 内容はUTF-8（BOMなし）、改行LF、インデント2空白のJSONで、次の項目をこの順に持つ。`schema`: 固定値`"hubradio.job-history.v1"`。`recordedAt`: 書き込んだ日時。`applicationVersion`: アプリのassemblyの版（不明なら`null`）。`job`: `id`、`projectId`、`kind`、`state`、`createdAt`、`updatedAt`、`revision`、`currentAttemptNumber`。`attempts`: 実行の試行の配列（`sequenceNumber`の昇順）で、各要素は`sequenceNumber`、`id`、`state`、`queuedAt`、`startedAt`、`completedAt`、`durationMilliseconds`、`errorCode`、`exceptionType`、`lastProgress`、`progressCount`、`heartbeatCount`、`lastHeartbeatAt`。`lastProgress`は、その試行の進捗のうち`recordedAt`が最も新しいもの（同時刻ならDBの読み出し順で後のもの）の`completedUnits`、`totalUnits`、`phase`、`recordedAt`（進捗が無ければ`null`）。`lastHeartbeatAt`は、その試行のheartbeatの`recordedAt`の最大値（無ければ`null`）。`state`はC#の列挙名（`Queued`、`Running`、`Succeeded`、`Failed`、`Cancelled`、`Interrupted`）。日時はすべてUTCの`yyyy-MM-ddTHH:mm:ss.fffffffZ`。`durationMilliseconds`は`startedAt`と`completedAt`の両方があるとき、その差のミリ秒の小数点以下切り捨て、それ以外は`null`。値が無い項目は省略せず`null`を書く。 |
+| FR-049.5 | MUST | 個人情報・秘密情報を書かない。書かないもの: 絶対path・ファイル名（元動画を含む）、Windowsの利用者名・SID、例外のmessage・stack trace・inner exception、進捗の`message`、案件名、文字起こし・字幕などの内容。`exceptionType`は、`LocalJobRunner`が実行中の例外で試行を失敗（`job.execution_failed`、`job.execution_timed_out`）にしたときだけ、例外の型の短い名前（namespaceなし。例: `IOException`）を、既存の診断記録と同じ規則（`DiagnosticTextSanitizer.SanitizeExceptionType`、最大192 byte、path・秘密らしい文字列は置換）で整えて書く。それ以外の試行、およびアプリの再起動をまたいだ書き直しでは`null`とする。 |
+| FR-049.6 | MUST | 履歴の書き込みに失敗しても（権限不足、ディスク不足、他のアプリによるロック、リンクの検出など）、ジョブの状態、`JobStore`の各操作の戻り値・例外、画面の表示は、履歴の機能が無い場合と同じにする（失敗は利用者に通知せず、再試行もしない）。次の契機では改めて書き込む。 |
+| FR-049.7 | MUST | 書き込みは、同じフォルダの一時ファイル`{ファイル名}.tmp`へ書いてから置き換える方式とし、途中で止まっても既存のファイルが壊れた内容にならないようにする。同時に複数の契機が起きた場合も、書き込みを1つずつ行い、各書き込みは順番を得たあとでDBから読み直すため、ファイルは最後に確定したDBの状態を表す。 |
+| FR-049.8 | MUST | `job`フォルダの`job-*.json`が1000件を超えたら、書き込みの直後に、ファイル名の昇順（古いジョブから）で削除して1000件にする。直前に書いたファイルは削除しない。名前の形式が違うファイルは数えず、削除もしない。案件の削除（FR-037.10）では履歴を削除しない。 |
+| FR-049.9 | MUST | 本番のアプリ（`ProjectApplicationRuntime`が作る`SourceOnlyApplicationServices`）の`JobStore`は、FR-049.1の保存先へ書く。読み取りだけの`JobStore`（プレイヤー・サムネイル・字幕の証跡の読み取り）は書かない。 |
+| FR-049.10 | MUST | 利用者向けの手順書（`docs/dev/troubleshooting.md`）に、保存先、ファイルの見方（`state`・`errorCode`・`lastProgress.phase`）、サポートへ送るファイルの選び方を書く。 |
+
+**例（自動編集のroot jobが元動画の時間情報の検査で失敗した場合）:**
+
+```json
+{
+  "schema": "hubradio.job-history.v1",
+  "recordedAt": "2026-10-06T01:30:12.0000000Z",
+  "applicationVersion": "1.0.0.0",
+  "job": {
+    "id": "0f8c2c1e-6a51-4c3e-9a77-2c1f3b0d5e10",
+    "projectId": "5b0e7d0a-1d7e-4a8e-bb6a-0c0f1c9f2a11",
+    "kind": "source-only.pipeline.v1",
+    "state": "Failed",
+    "createdAt": "2026-10-06T01:30:00.0000000Z",
+    "updatedAt": "2026-10-06T01:30:12.0000000Z",
+    "revision": 2,
+    "currentAttemptNumber": 1
+  },
+  "attempts": [
+    {
+      "sequenceNumber": 1,
+      "id": "9e1d0c3b-2a8f-4f0e-8d55-7b6a5c4d3e21",
+      "state": "Failed",
+      "queuedAt": "2026-10-06T01:30:00.0000000Z",
+      "startedAt": "2026-10-06T01:30:01.0000000Z",
+      "completedAt": "2026-10-06T01:30:12.0000000Z",
+      "durationMilliseconds": 11000,
+      "errorCode": "source_only.unsupported_source_timing",
+      "exceptionType": null,
+      "lastProgress": { "completedUnits": 1, "totalUnits": 6, "phase": "source_only.analysis", "recordedAt": "2026-10-06T01:30:05.0000000Z" },
+      "progressCount": 1,
+      "heartbeatCount": 3,
+      "lastHeartbeatAt": "2026-10-06T01:30:11.0000000Z"
+    }
+  ]
+}
+```
+
+（`kind`は実装の定数。自動編集のroot jobは`source-only.pipeline.v1`、取り込みは`media.ingest.v1`。ID・日時は説明用。）
+
+**対象外（本追補）:** 画面からの履歴の閲覧・フォルダを開くボタン・書き出し（P-049-01）、ffmpeg・workerの出力（stderr）の保存（P-049-02）、外部への自動送信、DBのジョブ記録の変更・削除、既存のジョブの履歴の遡及作成（機能の追加前に終わったジョブは、次の状態変更が無い限り書かれない）。
+
+---
+
+## FR\-050 設定画面からの、変えられない項目と「根拠」の除外と、選択肢による値の選択
+
+**背景（依頼、2026-10-06）:** 「[設定]画面の各項目の編集で、幾つか選択肢があるはずのものが、実際には選択ができないものがあります。もし設定を変える事ができないのであれば、設定から削除してください。設定を変える事ができるものは選択肢を提示して、私が全て文字を入力するのではない画面コンポーネントを選択してください。もちろん、文字を入力すべきものは、入力用の画面コンポーネントにします。」「[設定]画面から`根拠`は除外してください。」（例として、選択肢が「notClaimed」1つだけの「Subtitle platform compliance」の画面が示された。）決定状態: 承認済み（依頼 2026-10-06）。
+
+**調査結果（2026-10-06）:** 既定設定profile 1.1.0の123項目のうち、値を変えて自動編集の結果に反映できるのは22項目だけだった（表FR-050-T1）。残る101項目は、次のどれかに当たる。
+
+- `singleValue`（56項目）: profileの定義で選べる値が1つ（候補が1つの文字列、最小値＝最大値の数値）。例: `subtitles.platformCompliance`（`notClaimed`のみ）。
+- `runtimeFixed`（22項目）: 生成処理が既定値以外を拒否し、変えると自動編集が失敗する。`StandardRenderConfiguration`（`UnsupportedSetting`）、`StandardRenderProfileFactory`、`StandardCompositionPlanner`・`AutoDecisionOrchestrator`（`SettingsMismatch`）が検査する。例: `subtitles.enabled`を「無効」、`editing.crossfadeEnabled`を「有効」、`output.shortTargetDuration`を30以外にすると失敗する。
+- `noEffect`（23項目）: どの処理も値を読まず、変えても結果が変わらない。例: `output.directPostingEnabled`、`privacy.cloudTextSuggestionEnabled`、`subtitles.translation*`。`subtitles.backgroundOpaque`は、背景が常に透明で、値は警告の有無だけを変える。
+
+項目ごとの分類は、同梱の分類表`src/HubRadio.Web/src/features/settings/settingEditorCatalog.json`（形式`hubradio.setting-editor-catalog.v1`）を正本とする。分類表は`fixed`（キー→理由）と`editors`（キー→部品）を持つ。
+
+| ID | 優先度 | 要求 |
+| --- | --- | --- |
+| FR-050.1 | MUST | 設定画面の「項目を編集」の一覧（`SettingsList`）と詳細領域には、変更できる項目だけを表示する。変更できない項目は、(1) 分類表の`fixed`に載る項目と、(2) 分類表に載らない項目、または`editors`で`range`の項目のうち、選べる値が1つ以下のもの（候補が1つの文字列、最小値＝最大値の整数、`range`で最小値・最大値の無い整数）とする。変更できない項目は、一覧、件数（「n件」）、検索の対象から除く。変更できる項目が1つも無い分類は、分類のタブを表示しない（profile 1.1.0では「プライバシーと保存」）。表示中の分類が無くなった場合は、残る最初の分類を表示する。 |
+| FR-050.2 | MUST | 除外は画面の表示だけで、既定設定profile、digest、保存される値、設定のbridgeプロトコル、設定ファイル（`setting.txt`、FR-033）の出力・読込を変えない。除外した項目は保存済みの値（新規ではprofileの既定値）のまま自動編集に使われる。「初期値へすべて戻す」は従来どおり全項目を戻す。「予定を確認」「設定ファイル」の表示は変えない。 |
+| FR-050.3 | MUST | 警告などから変更できない項目へ移動しようとした場合（`initialSettingKey`）は、その項目を選ばず、詳細領域に「この設定（{キー}）は変更できない固定の値のため、設定画面には表示していません。」を表示し、選択肢を表示しない。 |
+| FR-050.4 | MUST | 変更できる項目の値は、選択肢から選ぶ部品で変え、文字を入力する欄を表示しない。(1) 真偽値: 「有効」「無効」の`role="radiogroup"`（FR-041）。(2) 候補が2つ以上の文字列: 候補の`radiogroup`（FR-041）。(3) `editors`で`range`の整数: 最小値から最大値までのすべての整数を小さい順に並べた`radiogroup`。(4) `editors`で`choices`の整数・分数: 分類表の値を分類表の順に並べた`radiogroup`。(5) `editors`で`multiple`の一覧: 分類表の候補を分類表の順に並べたcheckboxの`role="group"`。値は、選んだ候補を分類表の順に並べた一覧とし、0個も選べる。いずれも、ラベル「{表示名}{単位}：未保存の値」の直下に並べ、`aria-labelledby`でラベルと結び、選択中の選択肢を強調し、キーボードで操作でき、「保存」を押すまで保存しない（FR-041.1〜FR-041.4と同じ）。選択肢の文言は表FR-050-T2の書式とする。 |
+| FR-050.5 | MUST | 現在の未保存の値が選択肢に無い場合（設定ファイルから読み込んだ値など）は、FR-041.3と同じく、その値を選べない選択済みの選択肢として先頭に残し、「候補から値を選択してください。」を`role="alert"`で表示し、「保存」を押せなくする。`multiple`では、候補に無い項目を、チェックを外せる（外すと一覧から消え、付け直せない）選択肢として候補の後に表示し、同じ警告を表示する。 |
+| FR-050.6 | MUST | 分類表に載らない項目（将来追加される項目）は、型から部品を決める。真偽値と候補2つ以上の文字列は`radiogroup`、最小値・最大値のある整数で値の数が2以上31以下のものは(3)と同じ`radiogroup`、それ以外（範囲の無い数値・32以上の値の数・分数・候補の無い文字列・一覧）は従来の入力欄（文字を入力すべき項目）とする。説明（FR-038.4）は従来どおり汎用の文を表示する。 |
+| FR-050.7 | MUST | 分類表の`choices`の値は、profile 1.1.0の定義（型・単位・最小値・最大値）で有効で、生成処理（`StandardRenderConfiguration.FromSettings`、`StandardRenderProfileFactory`、`StandardSubtitleBuilder`）が横長・縦型の両方で受け付ける値に限る。字幕の行の長さ・行数・行の高さの選択肢は初期値以下に限る（字幕が画面の字幕領域に収まらなくなるのを防ぐ）。字幕の間隔の最小値（`subtitles.cueGapMinimum`）の選択肢も初期値以下に限る（話の切れ目より広い間隔を求めると字幕を置けなくなるのを防ぐ）。分類表は、profile 1.0.0と1.1.0の全キーを、`fixed`か`editors`のどちらか一方だけに、過不足なく持つ。 |
+| FR-050.8 | MUST | 設定画面の詳細領域から「根拠」（根拠区分・出典ID、`definition.evidence`）の表示を除く。開閉の見出しは「初期値・用途・根拠」から「初期値・用途」に変える。開閉の中は、復元先、プロファイル既定値、プロファイル版、最小値、最大値、用途、設定キーを従来どおり表示する。FR-038.4の汎用の説明文の「「初期値・用途・根拠」を開くと」は「「初期値・用途」を開くと」に変える。 |
+| FR-050.9 | MUST | 説明（FR-038）のうち、選択肢で選ぶ項目で「分子と分母の2つの数で入力します。」と書いている項目（`subtitles.cueMinimumDuration`、`subtitles.landscapeLineHeight`、`subtitles.verticalLineHeight`）は、一覧から選ぶことを書く文に改める（FR-038.2の文の条件は守る）。 |
+
+**表FR-050-T1 変更できる項目（profile 1.1.0、22項目）:**
+
+| 分類 | キー | 部品 | 選択肢（初期値は太字） |
+| --- | --- | --- | --- |
+| 案件と出力 | `project.verticalShortCandidateCount` | range | 0、1、2、**3** |
+| 案件と出力 | `output.endScreenDuration` | range | **5**〜20秒の16個 |
+| 案件と出力 | `output.standardFrameRateBitrate` | choices | 4、6、**8**、10、12 Mbps |
+| 案件と出力 | `output.highFrameRateBitrate` | choices | 8、10、**12**、16、20 Mbps |
+| 案件と出力 | `output.monoBitrate` | choices | 64、96、**128**、192 kbps |
+| 案件と出力 | `output.stereoBitrate` | choices | 128、192、256、320、**384** kbps |
+| 編集 | `editing.shortHookMaximumStart` | range | 1、2、**3**、4、5秒 |
+| 字幕とグラフィック | `thumbnails.candidateCount` | range | 1、2、**3** |
+| 字幕とグラフィック | `subtitles.platformUiMaskWarningRequired` | 真偽値 | **有効**、無効 |
+| 字幕とグラフィック | `subtitles.horizontalLineLengthMaximum` | choices | 12、13、14、15、**16**（全角文字） |
+| 字幕とグラフィック | `subtitles.verticalLineLengthMaximum` | choices | 8、9、10、**11**（全角文字） |
+| 字幕とグラフィック | `subtitles.lineCountMaximum` | choices | 1、**2** |
+| 字幕とグラフィック | `subtitles.readingSpeedMaximum` | choices | 5、6、**7**、8、9、10（1秒あたりの全角文字） |
+| 字幕とグラフィック | `subtitles.cueMinimumDuration` | choices | 1/2、2/3、**5/6**、1秒 |
+| 字幕とグラフィック | `subtitles.cueMaximumDuration` | choices | 5、6、**7**、8、10秒 |
+| 字幕とグラフィック | `subtitles.cueGapMinimum` | choices | 0、1、**2**フレーム |
+| 字幕とグラフィック | `subtitles.landscapeLineHeight` | choices | 6、13/2、7、**15/2**％ |
+| 字幕とグラフィック | `subtitles.verticalLineHeight` | choices | 18/5、19/5、4、**21/5**％ |
+| 音声と素材 | `assets.musicEligibleSections` | multiple | **titleCard**、**topicCard**、**endCard**（0〜3個） |
+| 音声と素材 | `audio.internalOnlineTargetLoudness` | choices | -24、-23、-20、-18、**-16** LUFS |
+| 音声と素材 | `audio.truePeakMaximum` | choices | -3、-2、**-1** dBFS |
+| 音声と素材 | `audio.internalOnlineLoudnessTolerance` | choices | **1**、2 dB |
+
+profile 1.0.0の案件では、`thumbnails.candidateCount`（3〜3）と`editing.shortHookMaximumStart`（範囲なし）が選べる値1つ以下となり、表示しない（FR-048.5の「1.0.0では3で固定」と一致）。
+
+**表FR-050-T2 選択肢の文言:**
+
+| 値の単位（`unit`） | 文言の書式 | 例 |
+| --- | --- | --- |
+| `bitsPerSecond` | 1,000,000で割り切れる値は「{値÷1,000,000} Mbps」、それ以外は「{値÷1,000} kbps」 | 8000000 → 「8 Mbps」、128000 → 「128 kbps」 |
+| `seconds` | 「{値} 秒」 | 「5 秒」 |
+| `frames` | 「{値} フレーム」 | 「2 フレーム」 |
+| `fullWidthCharacters` | 「全角 {値} 文字」 | 「全角 16 文字」 |
+| `charactersPerSecond` | 「1秒に {値} 文字」 | 「1秒に 7 文字」 |
+| `loudnessUnitsFullScale`、`decibelsFullScale`、`decibels`、`percent` | 「{値} LUFS」「{値} dBFS」「{値} dB」「{値} %」 | 「-16 LUFS」 |
+| `count`、`none` | 「{値}」 | 「3」 |
+| 分数（分母が1以外） | 「{小数}{単位}（{分子}/{分母}）」。小数は小数第2位までで、割り切れない場合は「約」を付ける | 5/6秒 → 「約0.83 秒（5/6）」、15/2％ → 「7.5 %（15/2）」 |
+| `multiple`の候補 | 分類表の`label`の「{label}（{値}）」 | 「タイトルカード（titleCard）」 |
+
+**例（「字幕とグラフィック」、profile 1.1.0、詳細設定を表示しない場合）:** 一覧は「Platform UI mask warning」「Thumbnail candidate count」の2件。「Subtitle platform compliance」「Subtitles enabled」「Landscape subtitle variants」「Platform UI mask status」「Primary subtitle profile」は表示されない。「Platform UI mask warning」を選ぶと「有効」「無効」のradioが出る。開閉「初期値・用途」の中に「根拠」は無い。
+
+**対象外（本追補）:** 固定の項目を選べるようにする生成処理の実装（P-050-02）、設定ファイルの読込・`settings.update`での固定の項目の拒否（P-050-01）、「予定を確認」「設定ファイル」の画面の変更、既定設定profileの変更、設定画面以外の画面。
+
 ---
 # 9\. 編集ルール
 
@@ -1840,6 +1975,45 @@ pwsh -NoProfile -Command 'dotnet build tests\HubRadio.App.Tests -c Debug --nolog
 | AC-023.4 | FR-048.5 | `npx vitest run src/features/settings`: 1.1.0の全項目に説明があり、全テストが成功する。 |
 | AC-023.5 | FR-048.1〜FR-048.3（手動確認） | 手順: 新しい案件を作り、設定の「この動画」で「サムネイル候補の数」を1、「縦型ショートの候補の数」を2にして保存し、「編集を開始」する。期待: 完了後、サムネイル候補が1枚、縦型ショートが最大2本になる。証跡: 画面の記録と成果物の一覧。未実施の場合は`NOT EVALUATED`とし、PASSとしない。 |
 
+### AC-024（FR-049）
+
+判定コマンド（リポジトリルートから、非対話。失敗時はexit code 0以外）:
+
+```
+pwsh -NoProfile -Command 'dotnet build tests\HubRadio.Infrastructure.Tests -c Debug --nologo; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & tests\HubRadio.Infrastructure.Tests\bin\Debug\net10.0\HubRadio.Infrastructure.Tests.exe --filter "FullyQualifiedName~JobHistoryLogTests" --progress off; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; dotnet build tests\HubRadio.App.Tests -c Debug --nologo; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & tests\HubRadio.App.Tests\bin\Debug\net10.0-windows10.0.26100.0\win-x64\HubRadio.App.Tests.exe --filter "FullyQualifiedName~JobHistoryIntegrationTests" --progress off; exit $LASTEXITCODE'
+```
+
+| ID | 対応要求 | 事前条件、操作、期待結果、証跡 |
+| --- | --- | --- |
+| AC-024.1 | FR-049.2、FR-049.3 | `JobHistoryLogTests.EachCommittedTransitionRewritesTheJobFile`: 一時フォルダのDBと`<一時フォルダ>\job`の履歴を持つ`JobStore`で、`CreateJob`の後にファイル`job-20310203T040506Z-{ID}.json`が1件でき`job.state`が`Queued`・`attempts`が空。`StartAttempt`後は`Running`、`CompleteAttempt`（`Failed`、`job.execution_failed`）後は`Failed`・`errorCode`が一致、`QueueRetry`後は`Queued`・試行1件、`CancelQueued`後は`Cancelled`。ファイルは1件のまま、`revision`がDBと一致する。`AppendProgress`・`AppendHeartbeat`だけではファイルの内容（`recordedAt`を含む）が変わらない。 |
+| AC-024.2 | FR-049.4 | `JobHistoryLogTests.FileUsesTheDocumentedJsonContract`: 試行1件（開始から12.3456秒後に成功、進捗2件、heartbeat 1件）のファイルが、BOMなし・CRなし・インデント2空白で、最上位の項目が順に`schema`,`recordedAt`,`applicationVersion`,`job`,`attempts`、`schema`が`hubradio.job-history.v1`、`applicationVersion`が指定値、試行の項目が文書の順で、`durationMilliseconds`が12345、`lastProgress`が2件目の値、`progressCount`が2、`heartbeatCount`が1、`errorCode`・`exceptionType`が`null`、日時が`yyyy-MM-ddTHH:mm:ss.fffffffZ`形式。 |
+| AC-024.3 | FR-049.5 | `JobHistoryLogTests.FileNeverContainsProgressMessagesPathsOrExceptionText`: 進捗の`message`に`C:\Users\someone\secret.mp4`を含めても、ファイルに`message`・`C:\`・`someone`が現れない。`JobHistoryIntegrationTests.LocalJobRunnerRecordsOnlyTheSanitizedExceptionType`: 実行中に`IOException("C:\Users\someone\video.mp4 is locked")`が出た試行のファイルの`exceptionType`が`IOException`、`errorCode`が`job.execution_failed`で、ファイルに`someone`・`locked`が現れない。成功した試行の`exceptionType`は`null`。`JobHistoryLogTests.ExceptionTypeIsWrittenOnlyForRunnerFailureCodes`: 例外の型を記録した試行でも、`job.app_restarted`で中断（`Interrupted`）になった場合の`exceptionType`は`null`。 |
+| AC-024.4 | FR-049.6 | `JobHistoryLogTests.WriteFailuresNeverChangeJobOperations`: `job`の位置に同名のファイルを置いた状態で、作成・開始・完了がすべて成功し、DBの状態が`Succeeded`になる。revisionの不一致で`StartAttempt`が失敗した場合は、例外が従来どおりで、ファイルの`job.state`は`Queued`のまま。 |
+| AC-024.5 | FR-049.7 | `JobHistoryLogTests.ConcurrentJobsEachEndWithTheirCommittedStateAndNoTemporaryFiles`: 8件のジョブを並行に作成・開始・完了し、8件のファイルそれぞれの`job.state`がDBと一致し、`*.tmp`が残らない。 |
+| AC-024.6 | FR-049.8 | `JobHistoryLogTests.RetentionDeletesTheOldestFilesAndKeepsUnrelatedFiles`: 保持件数3で、作成日時の異なる5件のジョブを作ると、新しい3件のファイルだけが残る。`job`フォルダの`notes.txt`は残る。既定の保持件数が1000。 |
+| AC-024.7 | FR-049.1 | `JobHistoryLogTests.HistoryIsNotWrittenThroughALinkedFolder`: `job`が別フォルダへのシンボリックリンクのとき、ジョブ操作は成功し、リンク先にファイルができない（シンボリックリンクを作れない環境ではInconclusive）。`JobHistoryIntegrationTests.ProductionServicesWriteUnderTheWorkspaceJobFolder`: `SourceOnlyApplicationServices`の`Jobs`で作ったジョブの履歴が`<ワークスペース>\job`に書かれ、`applicationVersion`がHubRadio.Appのassemblyの版。 |
+| AC-024.8 | FR-049.2 | `JobHistoryIntegrationTests.RecoveryInterruptionIsRecorded`: 実行中のジョブを`JobRecovery`が中断にすると、ファイルの`job.state`が`Interrupted`（または再試行の待機で`Queued`）、試行の`state`が`Interrupted`、`errorCode`が`job.app_restarted`になる。 |
+| AC-024.9 | FR-049.10（文書） | 手順: `docs/dev/troubleshooting.md`を開く。期待: 保存先`%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\job\`、`state`・`errorCode`・`lastProgress.phase`の見方、送るファイルの選び方が書かれている。証跡: 文書の該当節。 |
+
+### AC-025（FR-050）
+
+判定コマンド（リポジトリルートから、非対話。失敗時はexit code 0以外）:
+
+```
+pwsh -NoProfile -Command 'dotnet build tests\HubRadio.App.Tests -c Debug --nologo; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; & tests\HubRadio.App.Tests\bin\Debug\net10.0-windows10.0.26100.0\win-x64\HubRadio.App.Tests.exe --filter "FullyQualifiedName~SettingEditorCatalog" --progress off; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Set-Location src/HubRadio.Web; npx vitest run src/features/settings; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm run typecheck; exit $LASTEXITCODE'
+```
+
+| ID | 対応要求 | 事前条件、操作、期待結果、証跡 |
+| --- | --- | --- |
+| AC-025.1 | FR-050.1、FR-050.6 | `settingEditors.test.ts`: `1.1.0.json`の定義で変更できる項目のキーの集合が表FR-050-T1の22キーと一致し、`1.0.0.json`では`thumbnails.candidateCount`と`editing.shortHookMaximumStart`を除く20キーと一致する。分類表に無いキーでは、候補1つの文字列・最小値＝最大値の整数が変更できない項目、真偽値・候補2つの文字列・範囲（0〜3）の整数がradio、範囲の無い整数・分数・候補の無い文字列・一覧・値の数が32以上の整数が入力欄になる。 |
+| AC-025.2 | FR-050.1〜FR-050.3 | `SettingsPanel.test.tsx`: 固定の項目（`subtitles.platformCompliance`）と変更できる項目（`subtitles.platformUiMaskWarningRequired`）を持つ設定では、一覧に変更できる項目だけが出て、件数が1件。固定の項目だけの分類（`privacyAndStorage`）のタブが無い。`initialSettingKey`に固定の項目を渡すと、詳細領域に「この設定（subtitles.platformCompliance）は変更できない固定の値のため、設定画面には表示していません。」が出て、radioが無い。「初期値へすべて戻す」の確認で`settings.resetAll`が送られる（既存の試験）。 |
+| AC-025.3 | FR-050.4 | `SettingInspector.test.tsx`: `output.standardFrameRateBitrate`（choices）、`project.verticalShortCandidateCount`（range 0〜3）、`subtitles.cueMinimumDuration`（分数のchoices）、`assets.musicEligibleSections`（multiple）で、`input[type="text"]`・`textarea`・`select`が無く、radio（または checkbox）の文言が表FR-050-T2の書式（「4 Mbps」〜「12 Mbps」、「0」〜「3」、「0.5 秒（1/2）」「約0.67 秒（2/3）」「約0.83 秒（5/6）」「1 秒」、「タイトルカード（titleCard）」等）で分類表の順に並ぶ。「10 Mbps」を選ぶと`onChange`に`integer('10000000')`、「エンドカード」を外すと`textList('titleCard','topicCard')`、付け直すと分類表の順の一覧が渡る。`radiogroup`／`group`は`aria-labelledby`で「…：未保存の値」と結ばれる。 |
+| AC-025.4 | FR-050.5 | 同上: 未保存の値が候補に無い整数（`integer('7000000')`）では、選べない選択済みの選択肢「7 Mbps」が先頭にあり、`role="alert"`が「候補から値を選択してください。」、「保存」が無効。`multiple`で候補に無い`custom`を含む場合は警告が出て「保存」が無効、`custom`のチェックを外すと一覧から消え、警告が消える。 |
+| AC-025.5 | FR-050.7 | `SettingEditorCatalogTests`: 分類表の`fixed`と`editors`のキーが重ならず、和集合がprofile 1.0.0と1.1.0の全123キーと一致し、`fixed`の理由が`singleValue`・`runtimeFixed`・`noEffect`のどれか。`singleValue`の項目はprofile 1.1.0で選べる値が1つ。`choices`の各値がprofile 1.1.0の`CreateSnapshot`で受け付けられ、`StandardRenderConfiguration.FromSettings`（30fps・2ch と 60fps・1ch）、`StandardRenderProfileFactory.CreateLandscape`／`CreateVerticalShort`が例外を出さない。`StandardSubtitleBuilderTests.SettingEditorCatalogSubtitleChoicesBuildInBothOrientations`: 字幕の各選択値で、横長と縦型の字幕が未解決なく作られる。ビットレートと音量の選択値は、符号化の設定（`Encoder`）にそのまま反映される。字幕の行の長さ・行数・行の高さ・間隔の最小値の選択肢が初期値以下。`runtimeFixed`のうち`StandardRenderConfiguration`が検査する真偽値は、既定値以外で`UnsupportedSetting`になる。 |
+| AC-025.6 | FR-050.8 | `SettingInspector.test.tsx`: 詳細領域に「根拠」と出典ID（`R01`、`productDecision`）が無く、開閉の見出しが「初期値・用途」で、中に復元先・プロファイル既定値・用途・設定キーがある。`settingHelp.test.ts`: 説明の無いキーの汎用の文が「「初期値・用途」を開くと」を含み「根拠」を含まない。 |
+| AC-025.7 | FR-050.9、FR-038.2 | `settingHelp.test.ts`: 変更できる項目の説明に「分子と分母」「入力します」が現れない。123項目の説明の文の条件（FR-038.2）を引き続き満たす。 |
+| AC-025.8 | FR-050.1、FR-050.4（手動確認） | 手順: アプリで案件を開き「設定」→「この動画」→「字幕とグラフィック」を開く。期待: 「Subtitle platform compliance」「Subtitles enabled」「Landscape subtitle variants」「Platform UI mask status」「Primary subtitle profile」が一覧に無い。「詳細設定を表示」を入れると「Subtitle reading speed maximum」等が出て、選ぶと選択肢が並び、文字の入力欄が無い。「プライバシーと保存」のタブが無い。開閉「初期値・用途」に「根拠」が無い。証跡: 画面の記録。未実施の場合は`NOT EVALUATED`とし、PASSとしない。 |
+
 ---
 
 # 16\. 優先順位
@@ -1871,6 +2045,8 @@ pwsh -NoProfile -Command 'dotnet build tests\HubRadio.App.Tests -c Debug --nolog
 - 案件の詳細画面での、開いている案件自身の削除（FR-046）
 - 音声が映像より最大0.25秒早く終わる元動画の自動編集と、自動編集の失敗時の原因・対応策の表示（FR-047）
 - 設定の選択肢の拡張（既定設定profile 1.1.0）と、初期値の方針（FR-048）
+- 実行ジョブの履歴の`<ワークスペース>\job\`への保存（FR-049）
+- 設定画面からの変えられない項目と「根拠」の除外、変えられる項目の選択肢による選択（FR-050）
 - `Music/`の社内限定BGM
 - 音量測定と版付きloudness profile
 - プレビュー
@@ -2147,3 +2323,50 @@ production実装、実素材render、human evaluation、外部公開、cross-acc
 | P-048-02 | 字幕の色、縦型ショートの長さ、トランジションなど、見た目の違いが分かる項目へ選択肢を足し、生成処理で守る | 各項目に編集・描画の実装と検証が必要 |
 
 競合・TBD・BLOCKED: なし。
+
+## 19.11 FR-049の仮定・未解決事項
+
+| ID | 種別 | 内容 | 根拠 | 影響 | 覆す条件 |
+| --- | --- | --- | --- | --- | --- |
+| A-049-01 | [ASSUMPTION] | 依頼の`/job/`は、アプリのper-userワークスペースの直下の`job`フォルダ（`%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\job\`）と解釈した。依頼のpath `docs\requirements-definition.md`は存在しないため、既存の正本である本書`docs/requirement-definition.md`を更新した（A-037-01と同じ判断） | アプリのデータはすべてワークスペースにあり、インストール先は読み取り専用の場合がある。ワークスペースは現在の利用者だけが読めるACLで守られる（NFR-004）。ドライブ直下の`\job\`は他の利用者から読め、権限も無いことがある | 履歴は利用者のプロファイルの中にでき、サポートへは利用者がファイルを選んで渡す | 別の保存先（共有フォルダ、インストール先など）が指定された場合。保存先は`SourceOnlyApplicationServices`の1か所で変えられる |
+| A-049-02 | [ASSUMPTION] | 「実行ジョブ」は、DBの`jobs`表のジョブ（`JobStore`で状態が変わるもの）とした。bridgeの個々の操作（案件の作成・設定の保存など）は含めない | 依頼の「実行ジョブ」に最も近い既存の概念で、失敗codeと進捗の段階を持つ。操作の履歴は監査記録（NFR-006）が別にある | 画面の操作の失敗は、ジョブにならない限り記録されない | bridgeの操作も記録することが要求された場合 |
+| A-049-03 | [ASSUMPTION] | 記録する内容はID・状態・日時・失敗code・例外の型名・進捗の段階に限り、例外のmessage・path・利用者名・進捗のmessageは書かない | NFR-004、FR-047.3と同じく、利用者がサポートへそのまま渡せるファイルにするため。例外のmessageにはpathや利用者名が入り得る | 例外の詳しい理由はファイルから分からない場合がある。失敗codeと段階と型名で切り分ける | 秘密情報を除いた詳細の記録方式が承認された場合（P-049-02） |
+| A-049-04 | [ASSUMPTION] | 保持件数を1000ジョブとし、超えた分は古いものから削除する。案件の削除では履歴を消さない | 1ファイルは数KBで、1000件でも数MBに収まる。履歴には案件の内容が無く、削除後の問い合わせにも使える | 1000件より古いジョブの履歴は残らない | 保持期間・件数の業務上の指定があった場合 |
+| A-049-05 | [ASSUMPTION] | 書き込みの失敗は利用者に通知しない（ジョブの結果を優先する） | 履歴は補助の記録であり、記録の失敗で編集が止まると依頼の目的（サポート）に反する | 履歴が欠ける場合がある（次の状態変更で書き直される） | 失敗の通知が要求された場合 |
+
+**AI提案／承認待ち（実装しない）:**
+
+| ID | 内容 | 理由 |
+| --- | --- | --- |
+| P-049-01 | 画面（「自動編集」の失敗表示など）に「ジョブの記録を開く」ボタンを置き、`job`フォルダを開く、または該当ファイルを選んだ状態にする | 新しいUIとbridge操作が必要で、承認が必要 |
+| P-049-02 | ffmpeg・workerの出力（stderr）を、pathと利用者名を置換したうえで、ジョブごとに保存する | 個人情報の除去規則と保存量の上限の決定が必要 |
+
+競合・TBD・BLOCKED: なし。
+
+## 19.12 FR-050の仮定・未解決事項
+
+| ID | 種別 | 内容 | 根拠 | 影響 | 覆す条件 |
+| --- | --- | --- | --- | --- | --- |
+| A-050-01 | [ASSUMPTION] | 「設定を変える事ができない」項目を、`singleValue`（選べる値が1つ）、`runtimeFixed`（生成処理が既定値以外を拒否）、`noEffect`（どの処理も値を読まない）の3つとした。`noEffect`も、変えても結果が変わらないため「変えられない」に含めた | 調査結果（FR-050）。`src/HubRadio.App`のコードで各キーの読み取り箇所を確認した（2026-10-06）。`runtimeFixed`の項目は、選ぶと自動編集が失敗する | 101項目が画面から消える | 生成処理が新しい値を扱えるようになった場合は、分類表の`fixed`から`editors`へ移す（P-050-02） |
+| A-050-02 | [ASSUMPTION] | 「設定から削除」は、設定画面の表示から除くことと解釈した。既定設定profile、保存される値、設定ファイルからは削除しない | profileの内容digestは承認済みの値に固定され（FR-048.1）、既存案件のsnapshotの検証（§6.4）に使われる。キーを消すと既存案件が開けなくなる | 設定ファイル（`setting.txt`）には全123項目が引き続き出力される | profileからの削除（新しい版の追加と既存案件の移行）が承認された場合 |
+| A-050-03 | [ASSUMPTION] | profileに範囲の無い数値（ビットレート、音量、字幕の上限など）の選択肢の値は、表FR-050-T1のとおり、初期値を含む少数の値とした。ビットレートは符号化の受付範囲（映像100k〜100M bps、音声32k〜512k bps、`FfmpegEncoderSettings`）、音量は`FfmpegLoudnessTarget`の範囲（-70〜-5 LUFS、-9〜0 dBTP）の内側。音量の目標は、大きくするとピークの上限に当たりやすいため-16 LUFSを上限とした | 依頼の「選択肢を提示して」。値は分類表の1か所で変えられる | 表に無い値は画面から選べない（設定ファイルで読み込んだ値は、FR-050.5の警告になる） | 業務上必要な値の一覧が示された場合 |
+| A-050-04 | [ASSUMPTION] | 字幕の行の長さ・行数・行の高さ・間隔の最小値の選択肢は、初期値以下に限った | 字幕の配置（`StandardSubtitleBuilder.CreatePlacements`）は、文字の大きさ×行の長さが字幕領域の幅（横長1440px、縦型972px）に収まることを要する。初期値を超えると収まらない組み合わせがある。間隔の最小値を話の切れ目より広くすると、字幕を置けない（未解決で除かれる）ことを試験で確認した（4フレーム、2026-10-06） | 字幕を大きく・長くする方向、間隔を広げる方向には変えられない | 字幕領域を超えない組み合わせの検査（項目間の検査）が実装された場合 |
+| A-050-05 | [ASSUMPTION] | 変更できる項目が無い分類（「プライバシーと保存」）は、タブごと表示しない | 依頼の「削除」。空の分類を残すと、選べる項目があるように見える | 公開範囲・保存先などの固定の値は設定画面から見えない（設定ファイルとかんたん編集画面の注記で分かる） | 固定の値を一覧で見せる画面が要求された場合 |
+| A-050-06 | [ASSUMPTION] | `subtitles.platformUiMaskWarningRequired`は、生成処理の警告の有無が変わるため、変更できる項目とした。`subtitles.backgroundOpaque`は、背景が常に透明で、値は警告の有無だけを変え設定どおりにならないため`noEffect`とした | `StandardSubtitleBuilder.Configure`の実装（2026-10-06） | 前者は画面に残る | 不透明の背景が実装された場合 |
+| A-050-07 | [ASSUMPTION] | 依頼のpath `docs\requirements-definition.md`は存在しないため、既存の正本である本書`docs/requirement-definition.md`を更新した（A-037-01と同じ判断） | 正本を2つに分けると要求が食い違う | なし | 正本の移動が決まった場合 |
+
+**競合:**
+
+| ID | 内容 | 解決 |
+| --- | --- | --- |
+| C-050-01 | 承認済みの§6.4「各設定は現在値、初期値、用途、根拠区分…を持つこと」、FR-033「全設定の現在値、初期値、用途、根拠区分、設定profile版を専用画面に表示すること」、§14.4「各設定の現在値、初期値、用途、根拠区分…」、AC-006「専用設定画面で全設定の…根拠区分…を確認できる」「123項目・5分類…へ欠落／重複なく到達し」と、本依頼（変えられない項目と「根拠」を設定画面から除く）が食い違う | 利用者の明示の依頼（2026-10-06）を優先する（依頼原文 > 既存の契約）。承認済みの文面は変えず、FR-050の範囲で上書きする。設定画面では変更できる項目だけを、根拠区分なしで表示する。全123項目の値は設定ファイルの出力（FR-033）で引き続き確認できる。AC-006の該当行は、FR-050の範囲ではAC-025で判定する（BLOCKEDにはしない） |
+
+**AI提案／承認待ち（実装しない）:**
+
+| ID | 内容 | 理由 |
+| --- | --- | --- |
+| P-050-01 | 設定ファイルの読込（FR-033）と`settings.update`で、`runtimeFixed`・`singleValue`の項目の既定値以外の値を拒否する（現在は保存でき、自動編集で失敗する） | bridgeとhostの検査の変更で、承認が必要 |
+| P-050-02 | 字幕の表示の有無、クロスフェード、縦型ショートの長さなど、`runtimeFixed`の項目を生成処理で扱えるようにし、選択肢を足す（P-048-02と同じ方向） | 各項目に編集・描画の実装と検証が必要 |
+| P-050-03 | 「予定を確認」の画面で、固定の項目をまとめて表示し、変更できる項目と区別する | 画面の仕様の追加で、承認が必要 |
+
+TBD・BLOCKED: なし。

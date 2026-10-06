@@ -85,10 +85,11 @@ public sealed class LocalJobRunner
                     CancellationToken.None).Unwrap();
                 await operationTask.ConfigureAwait(false);
             }
-            catch (TimeoutException)
+            catch (TimeoutException exception)
             {
                 terminalState = JobState.Failed;
                 errorCode = ExecutionTimedOutErrorCode;
+                _jobStore.History?.NoteExceptionType(runningAttempt.Id, exception);
             }
             catch (OperationCanceledException exception)
             {
@@ -103,12 +104,14 @@ public sealed class LocalJobRunner
                 {
                     terminalState = JobState.Failed;
                     errorCode = ExecutionFailedErrorCode;
+                    _jobStore.History?.NoteExceptionType(runningAttempt.Id, exception);
                 }
             }
-            catch (Exception)
+            catch (Exception exception)
             {
                 terminalState = JobState.Failed;
                 errorCode = ExecutionFailedErrorCode;
+                _jobStore.History?.NoteExceptionType(runningAttempt.Id, exception);
             }
 
             DateTimeOffset? latestRecordedAt = context.Seal();

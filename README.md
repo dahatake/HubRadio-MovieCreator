@@ -45,7 +45,7 @@ HubRadio MovieCreator は、企業向けのトーク、対談、インタビュ�
 
 ### 4. 必要なときだけ直す
 
-警告から対応する設定・根拠・時刻へ移動し、**対象の道具が利用可能な場合だけ**修正します。現行source-onlyで永続保存・再生成へ反映できる手動編集は字幕Cueです。手動画角・layout／keyframe等と旧承認テンプレートによる手動サムネイルは利用不可です。設定画面では全項目の初期値と現在値を確認し、個別または全体を初期値へ戻せます。
+警告から対応する設定・根拠・時刻へ移動し、**対象の道具が利用可能な場合だけ**修正します。現行source-onlyで永続保存・再生成へ反映できる手動編集は字幕Cueです。手動画角・layout／keyframe等と旧承認テンプレートによる手動サムネイルは利用不可です。設定画面では、値を変えて結果に反映できる項目の現在値と初期値を確認して選択肢から変更し、個別または全体を初期値へ戻せます（全項目の値は設定ファイルの書き出しで確認できます）。
 
 ### 5. 社内限定で書き出す
 
@@ -134,6 +134,7 @@ production-channel のクリーンな Windows、別の標準ユーザー、offli
 
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\hubradio.db` — 案件のSQLite DB
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\backups` — DB backup
+- `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\job` — 実行ジョブの履歴（1ジョブ1つのJSON、最新1000件。FR-049。見方は[トラブルシューティング](docs/dev/troubleshooting.md#実行ジョブの履歴jobフォルダを確認するサポートへ送る)）
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\WebView2` — WebView2 profile
 
 起動できない場合は、[トラブルシューティング](docs/dev/troubleshooting.md#限定ローカル技術評価候補を起動できない)を参照してください。
