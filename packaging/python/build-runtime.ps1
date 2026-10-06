@@ -218,7 +218,8 @@ function Move-GeneratedTreeWithRetry {
         [string]$DestinationPath
     )
 
-    $maximumAttempts = 6
+    # Real-time scanners can hold freshly written native files for several seconds.
+    $maximumAttempts = 40
     for ($attempt = 1; $attempt -le $maximumAttempts; $attempt++) {
         try {
             [IO.Directory]::Move($SourcePath, $DestinationPath)
@@ -232,7 +233,7 @@ function Move-GeneratedTreeWithRetry {
                 throw
             }
 
-            $delayMilliseconds = [Math]::Min(25 * [Math]::Pow(2, $attempt - 1), 200)
+            $delayMilliseconds = [Math]::Min(25 * [Math]::Pow(2, $attempt - 1), 1000)
             [Threading.Tasks.Task]::Delay([int]$delayMilliseconds).GetAwaiter().GetResult()
         }
     }

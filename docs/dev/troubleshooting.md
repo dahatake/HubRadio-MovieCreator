@@ -121,10 +121,10 @@ pwsh.exe -NoLogo -NoProfile -File benchmarks\setup-python-env.ps1 -PythonExecuta
 
 | 表示される原因 | 確認と対処 |
 | --- | --- |
-| 動画処理ツール／動画解析ツール／文字起こしワーカー／文字起こしモデル／字幕用フォント／ビルド証跡が見つからない、または検証に失敗した | アプリの実行フォルダーに `Tools\ffmpeg.exe`、`Tools\ffprobe.exe`、`Worker\python.exe`、`ModelCatalog\catalog.json`、`Fonts`、`Evidence` があるか確認します。**Debug 構成の `bin\Debug` には含まれません。** 配布パッケージ（ポータブル版）を使うか、`-p:HubRadioRuntimePayloadPath=<準備済み payload>` を指定して Release 構成でビルドし直します（payload の準備は `packaging/portable/prepare-payload.ps1`）。ファイルを補ったら、アプリを閉じずに「もう一度試す（自動で再確認）」を押します。 |
+| 動画処理ツール／動画解析ツール／文字起こしワーカー／文字起こしモデル／字幕用フォント／ビルド証跡が見つからない、または検証に失敗した | アプリの実行フォルダーに `Tools\ffmpeg.exe`、`Tools\ffprobe.exe`、`Worker\python.exe`、`ModelCatalog\catalog.json`、`Fonts`、`Evidence` があるか確認します。**ペイロードを指定しない通常のソースビルド（`bin\Debug`・`bin\Release`）には含まれません。** 開発ビルドでは、リポジトリ直下で `pwsh -NoLogo -NoProfile -File .\install.ps1`（Debug 出力なら `-Configuration Debug`）を実行すると、固定版の FFmpeg・Python ワーカー・モデル・フォントを取得し、manifest の byte size／SHA-256 を照合してから実行フォルダーへ配置します（取得物は `artifacts\inputs\install` にキャッシュ）。配布パッケージ（ポータブル版）を使うか、`-p:HubRadioRuntimePayloadPath=<準備済み payload>` を指定して Release 構成でビルドし直す方法もあります（payload の準備は `packaging/portable/prepare-payload.ps1`）。ファイルを補ったら、アプリを閉じずに「もう一度試す（自動で再確認）」を押します。 |
 | 編集の準備（初期化または前回の処理の復旧）が完了していない | しばらく待って「もう一度試す」を押します。直らなければアプリを再起動します。 |
 
-ファイルは自動では取得・複製されません（検証済みの配布物だけを使うため）。
+アプリ自身はファイルを自動では取得・複製しません（検証済みの配布物だけを使うため）。`install.ps1` は固定値と一致しないファイルを配置せずに中止します。
 
 ## 動画生成が失敗する
 
