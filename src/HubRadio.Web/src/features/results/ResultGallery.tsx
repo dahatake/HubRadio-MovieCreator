@@ -5,8 +5,8 @@ import { BookendStitchPanel } from '../stitch/BookendStitchPanel'
 import type { BookendStitchService } from '../stitch/stitchProtocol'
 import type { WorkflowWarningTarget } from '../workflow/workflowNavigation'
 import { sourceOnlyMediaUrl, type SourceOnlyResultArtifact, type SourceOnlyResultDto } from '../workflow/pipelineProtocol'
+import { evaluationRuleLabel, evaluationStatusLabel, failureCodeLabel, formatByteSize, formatDuration, generationRoleLabel, summarizeGenerationNotes } from './humanReadable'
 import type { ResultCard, ResultKind, ResultPresentation, ResultState } from './resultPresentation'
-import { VersionHistoryPanel, type VersionHistoryPanelProps } from './VersionHistoryPanel'
 import './results.css'
 
 /** Caller-supplied real warning records, not synthesized from job/QC status. */
@@ -26,8 +26,6 @@ export interface ResultGalleryProps {
   readonly selectedWarningId?: string | null
   /** The parent must revalidate before navigating/loading/focusing the destination. */
   readonly onFollowWarning?: (target: WorkflowWarningTarget, warningId: string) => void
-  /** Omitted when the caller does not supply a past-version list. */
-  readonly versionHistory?: VersionHistoryPanelProps
   /** FR-035 GUI. null/undefined shows the action as unavailable. */
   readonly bookendStitch?: BookendStitchService | null
 }
@@ -56,7 +54,7 @@ const warningTargetLabels: Readonly<Record<WorkflowWarningTarget['kind'], string
 
 /** Display and selection intents only; no bridge reads, rendering or automatic selection. */
 export function ResultGallery({
-  presentation, onSelectArtifact, warnings = [], onFollowWarning, selectedWarningId = null, versionHistory, bookendStitch,
+  presentation, onSelectArtifact, warnings = [], onFollowWarning, selectedWarningId = null, bookendStitch,
 }: ResultGalleryProps) {
   const headingId = useId()
   // Preserve unclassified records without guessing that a master is a long video
@@ -68,7 +66,7 @@ export function ResultGallery({
       <header className="result-gallery-header">
         <h2 id={headingId}><AppIcon name="play" />仕上がり一覧</h2>
         <p className="result-gallery-evaluation">
-          自動評価 <strong data-evaluation={presentation.evaluation}>{presentation.evaluation}</strong>
+          自動評価 <strong data-evaluation={presentation.evaluation}>{evaluationStatusLabel(presentation.evaluation)}</strong>
         </p>
       </header>
       {presentation.pipelineResult !== undefined && (
@@ -135,9 +133,7 @@ export function ResultGallery({
             <ul role="list">
               {presentation.pipelineResult.ancillaryArtifacts.map(item => (
                 <li key={item.artifact.artifactId}>
-                  {ancillaryArtifactLabels[item.kind]}:{' '}
-                  <code>{item.artifact.artifactId}</code> · <code>{item.artifact.contentDigest}</code> ·{' '}
-                  {item.artifact.byteSize} バイト
+                  {ancillaryArtifactLabels[item.kind]}（{formatByteSize(item.artifact.byteSize)}）
                 </li>
               ))}
             </ul>
@@ -148,15 +144,15 @@ export function ResultGallery({
         <details className="result-gallery-other">
           <summary>生成の省略・失敗・保留の記録</summary>
           <ul>
-            {presentation.pipelineResult.omissions.map((item, index) => <li key={`omission-${index}`}>{item.role}: {item.reason}</li>)}
-            {presentation.pipelineResult.failures.map((item, index) => <li key={`failure-${index}`}>失敗: {item.code}</li>)}
-            {presentation.pipelineResult.generationWarnings.map((item, index) => <li key={`generation-${index}`}>{item.role}: {item.code}</li>)}
+            {presentation.pipelineResult.omissions.map((item, index) => <li key={`omission-${index}`}>{generationRoleLabel(item.role)}: 今回は作成しませんでした</li>)}
+            {presentation.pipelineResult.failures.map((item, index) => <li key={`failure-${index}`}>失敗: {failureCodeLabel(item.code)}</li>)}
+            {summarizeGenerationNotes(presentation.pipelineResult.generationWarnings).map(note =>
+              <li key={`generation-${note.text}`}>{note.text}{note.count > 1 ? `（${note.count}件）` : ''}</li>)}
           </ul>
           {presentation.pipelineResult.stagingCleanupRequired && <p>一時ファイルの整理が必要です。画面側から削除はしません。</p>}
           {presentation.pipelineResult.reconciliationArtifacts.length > 0 && <p>整合性の再確認が必要な成果物があります。</p>}
         </details>
       )}
-      {versionHistory !== undefined && <VersionHistoryPanel {...versionHistory} />}
     </section>
   )
 }
@@ -216,8 +212,7 @@ function ResultGroup({ kind, title, card, onSelectArtifact, pipelineResult, book
                 >
                   {label}{kind === 'thumbnail' ? '候補' : ''} {index + 1}を選択
                 </button>
-                <span className="result-artifact-reference">{artifact.artifactType} · {artifact.mediaType}</span>
-                <code className="result-artifact-reference">{artifact.artifactId}</code>
+                <span className="result-artifact-reference">{artifact.mediaType.startsWith('image/') ? '画像' : artifact.mediaType.startsWith('video/') ? '動画' : 'ファイル'}</span>
               </li>
             ))}
           </ul>
@@ -270,7 +265,7 @@ export const pipelineArtifactLabels: Readonly<Record<SourceOnlyResultArtifact['r
 }
 type AncillaryKind = SourceOnlyResultDto['ancillaryArtifacts'][number]['kind']
 export const ancillaryArtifactLabels: Readonly<Record<AncillaryKind, string>> = {
-  Transcript: '文字起こし（transcript.json）', UsedSourceRanges: '使用区間一覧（used-source-ranges.json）',
+  Transcript: '文字起こし', UsedSourceRanges: '元動画のどこを使ったかの一覧',
 }
 function PipelineArtifact({ result, artifact: a, onSelectArtifact, bookendStitch }: Readonly<{
   result: SourceOnlyResultDto
@@ -286,19 +281,18 @@ function PipelineArtifact({ result, artifact: a, onSelectArtifact, bookendStitch
       {url !== null && (a.mediaType === 'image/png'
         ? <img src={url} alt={label} loading="lazy" style={{ maxWidth: '100%' }} />
         : <video src={url} controls preload="metadata" playsInline aria-label={label} style={{ maxWidth: '100%' }} />)}
-      <p>自動評価: <strong data-artifact-evaluation={a.evaluation?.aggregateStatus ?? 'NOT EVALUATED'}>{a.evaluation?.aggregateStatus ?? 'NOT EVALUATED'}</strong></p>
-      <p data-artifact-delivered={a.delivered}>社内用の保存: {a.delivered ? '納品済み（実ファイル・受領証跡あり）' : '未納品'}</p>
-      {a.failureCode !== null && <p role="status">失敗: {a.failureCode}</p>}
-      {a.measurements !== null && <p>出力予定尺: {a.measurements.expectedDuration.value}/{a.measurements.expectedDuration.rate} 秒</p>}
+      <p>自動評価: <strong data-artifact-evaluation={a.evaluation?.aggregateStatus ?? 'NOT EVALUATED'}>{evaluationStatusLabel(a.evaluation?.aggregateStatus)}</strong></p>
+      <p data-artifact-delivered={a.delivered}>保存: {a.delivered ? '保存済み（ファイルを確認済み）' : '未保存'}</p>
+      {a.failureCode !== null && <p role="status">失敗: {failureCodeLabel(a.failureCode)}</p>}
+      {a.measurements !== null && <p>長さ: {formatDuration(a.measurements.expectedDuration.value, a.measurements.expectedDuration.rate)}</p>}
       <button type="button" disabled={onSelectArtifact === undefined || url === null} onClick={() => onSelectArtifact?.(a.artifact.artifactId)}>{label}をプレビュー</button>
       {url !== null && a.mediaType === 'video/mp4' &&
         <BookendStitchPanel service={bookendStitch} result={result} artifact={a} label={label} />}
       <details>
-        <summary>この成果物の評価と参照</summary>
-        <p>版: <code>{a.versionId}</code> · <code>{a.versionDigest}</code></p>
-        <p>成果物: <code>{a.artifact.artifactId}</code> · <code>{a.artifact.contentDigest}</code></p>
+        <summary>この成果物の自動チェック結果</summary>
+        <p>ファイルの大きさ: {formatByteSize(a.artifact.byteSize)}</p>
         {a.evaluation === null ? <p>評価結果はありません。</p> : <ul>{[...a.evaluation.rules, ...a.evaluation.limitations].map(rule =>
-          <li key={rule.ruleId}>{rule.ruleId}: <strong>{rule.status}</strong> · {rule.reasonCode}</li>)}</ul>}
+          <li key={rule.ruleId} data-rule-id={rule.ruleId} data-rule-status={rule.status}>{evaluationRuleLabel(rule.ruleId)}: <strong>{evaluationStatusLabel(rule.status)}</strong></li>)}</ul>}
       </details>
     </article>
   )

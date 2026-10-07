@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppIcon, type AppIconName } from '../../components/AppIcons'
 import { WorkflowTabs } from './WorkflowTabs'
-import { workflowStepLabels, workflowSteps, type WorkflowStep } from './workflowNavigation'
+import { getWorkflowTabFocusStep, projectListStepLabels, projectListSteps, visibleWorkflowStep, workflowStepLabels, workflowSteps, type WorkflowStep } from './workflowNavigation'
 import workflowCss from './workflow.css?inline'
 
 const iconNames: Readonly<Record<WorkflowStep, AppIconName>> = {
@@ -369,4 +369,41 @@ describe('WorkflowTabs', () => {
     act(() => { tabFor(step).dispatchEvent(event) })
     return event
   }
+})
+// FR-061 AC-036.1
+describe('WorkflowTabs project list (FR-061.1)', () => {
+  it('shows only the given steps with label overrides and moves focus among them', async () => {
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    const container = document.createElement('div')
+    document.body.append(container)
+    const root = createRoot(container)
+    const onSelect = vi.fn<(step: WorkflowStep) => void>()
+    try {
+      await act(async () => root.render(<WorkflowTabs selectedStep="source" onSelect={onSelect} steps={projectListSteps} labels={projectListStepLabels} />))
+      const tabs = within(container).getAllByRole('tab')
+      expect(tabs.map(tab => tab.textContent)).toEqual(['Project一覧', 'ジョブの状態の確認'])
+      expect(container.querySelector('#workflow-tab-results, #workflow-tab-delivery')).toBeNull()
+      const user = userEvent.setup({ document })
+      await act(async () => { tabs[0]!.focus(); await user.keyboard('{End}') })
+      expect(document.activeElement).toBe(tabs[1])
+      await act(async () => { await user.keyboard('{ArrowRight}') })
+      expect(document.activeElement).toBe(tabs[0])
+      await act(async () => { await user.keyboard('{ArrowLeft}{Enter}') })
+      expect(onSelect).toHaveBeenCalledWith('processing')
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+    }
+  })
+
+  it('keeps the four project tabs, and maps hidden project-only steps back to the list', () => {
+    expect(getWorkflowTabFocusStep('processing', 'ArrowRight', projectListSteps)).toBe('source')
+    expect(getWorkflowTabFocusStep('results', 'ArrowRight', projectListSteps)).toBeNull()
+    expect(getWorkflowTabFocusStep('delivery', 'Home')).toBe('source')
+    expect(visibleWorkflowStep('results', false)).toBe('source')
+    expect(visibleWorkflowStep('delivery', false)).toBe('source')
+    expect(visibleWorkflowStep('processing', false)).toBe('processing')
+    expect(visibleWorkflowStep('results', true)).toBe('results')
+    expect(renderToStaticMarkup(<WorkflowTabs selectedStep="source" onSelect={() => undefined} />).match(/role="tab"/g)).toHaveLength(workflowSteps.length)
+  })
 })

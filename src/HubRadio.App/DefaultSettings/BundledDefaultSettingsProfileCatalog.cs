@@ -6,7 +6,7 @@ namespace HubRadio.App.DefaultSettings;
 
 internal sealed class BundledDefaultSettingsProfileCatalog
 {
-    private static readonly string[] ApprovedProfileFileNames = ["1.0.0.json", "1.1.0.json"];
+    private static readonly string[] ApprovedProfileFileNames = ["1.0.0.json", "1.1.0.json", "1.2.0.json"];
 
     private BundledDefaultSettingsProfileCatalog(IReadOnlyList<DefaultSettingsProfile> profiles)
     {
@@ -38,7 +38,7 @@ internal sealed class BundledDefaultSettingsProfileCatalog
                 StringComparer.Ordinal))
         {
             throw new InvalidOperationException(
-                "The bundled default-settings catalog must contain exactly the approved profiles (1.0.0 and 1.1.0).");
+                "The bundled default-settings catalog must contain exactly the approved profiles (1.0.0, 1.1.0 and 1.2.0).");
         }
 
         DefaultSettingsProfile[] profiles = ApprovedProfileFileNames

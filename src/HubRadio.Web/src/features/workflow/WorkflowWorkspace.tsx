@@ -13,9 +13,14 @@ import { PlayerPanel, type PlayerExactFrameSelection, type PlayerTimelinePositio
 import { usePlayerSourceNavigation } from '../player/PlayerNavigationProvider'
 import { findProxyFrameAtSourceTime, positionMatchesFrame, type PlayerSnapshot } from '../player/playerProtocol'
 import { PreviewModeControls, usePreviewModes } from '../preview-modes'
+import { AllProjectJobsPanel } from '../jobs/AllProjectJobsPanel'
+import { JobCreationAction } from '../jobs/JobCreationAction'
+import { ProjectJobList } from '../jobs/ProjectJobList'
+import { editableJobSettings } from '../results/jobSettings'
 import { ProjectWorkspace } from '../projects/ProjectWorkspace'
 import { useProjectState } from '../projects/ProjectStateProvider'
 import { ancillaryArtifactLabels, ResultGallery, type ResultGalleryWarning } from '../results/ResultGallery'
+import { JobResultsBrowser, type JobResultsView } from '../results/JobResultsBrowser'
 import { deriveResultPresentation } from '../results/resultPresentation'
 import { useReviewState } from '../review'
 import { ReviewPanelView, type ReviewPanelProps } from '../review/ReviewPanel'
@@ -28,6 +33,10 @@ import type { TimelineSnapshot } from '../timeline/timelineProtocol'
 import { TranscriptPanel } from '../transcript/TranscriptPanel'
 import {
   initialWorkflowNavigation,
+  projectListStepLabels,
+  projectListSteps,
+  visibleWorkflowStep,
+  workflowSteps,
   selectWorkflowScreen,
   workflowNavigationReducer,
   workflowTools,
@@ -39,7 +48,7 @@ import {
 } from './workflowNavigation'
 import { PipelineProvider, usePipeline } from './PipelineProvider'
 import { GeneratedResultPreview, PipelineProgress, toWorkflowWarningTarget, type GeneratedPreviewSeek } from './pipelinePresentation'
-import { isPipelineLive, pipelineRegistrationRefreshKey, sameResultBinding, sourceOnlyMediaUrl, type PipelineRegenerationParams, type SourceOnlyResultBinding, type SourceOnlyResultWarning } from './pipelineProtocol'
+import { isPipelineLive, pipelineRegistrationRefreshKey, sameResultBinding, sourceOnlyMediaUrl, type PipelineRegenerationParams, type PipelineVersionEntry, type SourceOnlyResultBinding, type SourceOnlyResultWarning } from './pipelineProtocol'
 // Import the shell after feature components so its local layout rules win.
 import { WorkflowTabs } from './WorkflowTabs'
 import './workflow.css'
@@ -84,7 +93,7 @@ export function WorkflowWorkspace({ connectionStatus }: Readonly<{ connectionSta
 
 function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus?: ReactNode }>) {
   const { state: previewModes } = usePreviewModes()
-  const { state: projectState, closeDraft } = useProjectState()
+  const { state: projectState, closeDraft, loadDraft } = useProjectState()
   const pipeline = usePipeline()
   const layout = useLayoutState()
   useComparisonState()
@@ -125,6 +134,8 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
   const [sourceSeekAck, setSourceSeekAck] = useState<Readonly<{ origin: WarningOrigin; error: string | null }> | null>(null)
   const [artifactSelection, setArtifactSelection] = useState<Readonly<{ binding: SourceOnlyResultBinding; artifactId: string; digest: string }> | null>(null)
   const [sourcePreview, setSourcePreview] = useState(false)
+  const [resultView, setResultView] = useState<JobResultsView>('job')
+  const [resultViewProjectId, setResultViewProjectId] = useState<string | null>(null)
   const [warningOrigin, setWarningOrigin] = useState<WarningOrigin | null>(null)
   const [warningNotice, setWarningNotice] = useState<string | null>(null)
   const [selectedWarningId, setSelectedWarningId] = useState<string | null>(null)
@@ -135,7 +146,11 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
   const settingsOpener = useRef<HTMLElement | null>(null)
   const pendingFocus = useRef<HTMLElement | string | null>(null)
   const workspace = useRef<HTMLElement>(null)
-  const screen = selectWorkflowScreen(navigation)
+  const projectOpen = projectState.draft !== null
+  const selectedScreen = selectWorkflowScreen(navigation)
+  // FR-061.1: the project list has no results/delivery tab; it shows the list instead.
+  const screen = selectedScreen === 'settings' ? selectedScreen : visibleWorkflowStep(selectedScreen, projectOpen)
+  const shownStep = visibleWorkflowStep(navigation.step, projectOpen)
   const settingsOpen = screen === 'settings'
   const resultsActive = screen === 'results'
   const draft = projectState.draft
@@ -189,6 +204,14 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
       ? { warningId: warningOrigin.warning.id, target: warningOrigin.warning.target } : null,
   [warningIsCurrent, navigation.warningVisit?.pending, warningOrigin])
   const showGenerated = !sourcePreview && selectedArtifact !== null && result !== null
+  // FR-063.1: the Job browser needs a created Project; the comparison uses the whole width.
+  // FR-063.1: the results start in the per-Job view for every Project that is opened.
+  if (resultViewProjectId !== activeProjectId) {
+    setResultViewProjectId(activeProjectId)
+    setResultView('job')
+  }
+  const jobBrowserShown = draft?.isFinalized === true && activeProjectId !== null
+  const comparing = jobBrowserShown && resultsActive && navigation.activeTool === null && resultView === 'compare'
   const inputs = useRef({ activeProjectId, ingestJobId: ingestContext.jobId, editorVersion, warningOrigin, warningIsCurrent })
   inputs.current = { activeProjectId, ingestJobId: ingestContext.jobId, editorVersion, warningOrigin, warningIsCurrent }
 
@@ -291,7 +314,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
     if (w.target.kind !== 'Preview' && snapshot !== null && isPipelineLive(snapshot.phase)) return '処理中は旧成果物の編集先を変更しません。完了後に確認してください。'
     if (w.target.kind === 'Settings' && settings.isDirty && settings.state.projectId !== activeProjectId) return '別の対象の未保存設定を保持しています。先に設定画面で確認してください。'
     if (w.target.kind === 'Settings' && savedSettings !== null && !settings.state.needsRefresh &&
-      !savedSettings.definitions.some(d => d.key === w.target.settingKey)) return '指定された設定は、この案件の設定一覧にありません。別の項目は選択しません。'
+      !savedSettings.definitions.some(d => d.key === w.target.settingKey)) return '指定された設定は、このProjectの設定一覧にありません。別の項目は選択しません。'
     const a = result?.artifacts.find(item => item.artifact.artifactId === w.target.artifactId && item.artifact.contentDigest === w.target.artifactDigest)
     if (a === undefined) return '警告に一致する成果物がありません。'
     if (w.target.kind === 'Preview' && (a.mediaType !== 'video/mp4' || sourceOnlyMediaUrl(result!, a.artifact.artifactId) === null ||
@@ -367,7 +390,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
     if (!warningIsCurrent || warningOrigin === null) return
     if (warningOrigin.waitingForSettings && settings.state.pendingRequest === null) {
       if (savedSettings === null || settings.state.needsRefresh || !savedSettings.definitions.some(d => d.key === warningOrigin.warning.target.settingKey)) {
-        failWarning(warningOrigin, 'この案件の対象設定を提供できません。別の設定は選択しません。')
+        failWarning(warningOrigin, 'このProjectの対象設定を提供できません。別の設定は選択しません。')
         return
       }
       const origin = { ...warningOrigin, waitingForSettings: false, settingsDigest: savedSettings.snapshotDigest }
@@ -450,7 +473,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
 
   const regenerationReason = sourceDirty || navigationBlocked ? '未保存の編集があります。保存または取消後に再生成できます。'
     : settings.state.pendingRequest !== null || settings.state.needsRefresh ? '保存済み設定の確認を完了してください。'
-      : savedSettings === null ? '設定を開いて、この動画の保存済み設定を確認してください。'
+      : savedSettings === null ? '設定を開いて、次に作成するJobの保存済み設定を確認してください。'
         : !pipelineCurrent || snapshot === null || snapshot.versionId === null || snapshot.versionDigest === null ? '再生成の親版を確認できません。'
           : isPipelineLive(snapshot.phase) ? '自動編集の完了後に再生成できます。'
             : snapshot.phase === 'ReconciliationRequired' || snapshot.phase === 'ReselectionRequired' ? '先に処理の整合性・元動画を確認してください。' : null
@@ -468,6 +491,86 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
   const restoreReason = regenerationReason !== null ? regenerationReason
     : savedSettings === null || activeProjectId === null ? '保存済み設定を確認できません。'
       : pipeline.state.workingCopyRevision === null ? '過去版の一覧を取得してから作り直せます。' : null
+  // FR-061.8: the same preconditions as regeneration, in Job wording. A running first Job has
+  // no version yet, but its state is known, so it reports the running reason (AC-036.7).
+  const jobCreationReason = sourceDirty || navigationBlocked ? '未保存の編集があります。保存または取消後にJobを作成できます。'
+    : settings.state.pendingRequest !== null || settings.state.needsRefresh ? '設定の確認を完了してください。'
+      : savedSettings === null ? '「次に作成するJobの設定を開く」で設定を確認すると、Jobを作成できます。'
+        : !pipelineCurrent || snapshot === null ? '最新のJobの状態を確認できません。「ジョブの状態の確認」で状態を確認してください。'
+          : isPipelineLive(snapshot.phase) ? '実行中のJobが終わると、新しいJobを作成できます（Jobは1つずつ順番に実行します）。'
+            : snapshot.versionId === null || snapshot.versionDigest === null ? '最新のJobの状態を確認できません。「ジョブの状態の確認」で状態を確認してください。'
+              : snapshot.phase === 'ReconciliationRequired' || snapshot.phase === 'ReselectionRequired' ? '先に最新のJobの整合性・元動画を確認してください。' : null
+  // FR-061.7: a new Job is a regeneration from the latest Job, sent from the source screen.
+  function createJob(params: PipelineRegenerationParams): boolean {
+    return screen === 'source' && draft?.isFinalized === true && !Object.values(dirtyFlags.current).some(Boolean) &&
+      jobCreationReason === null && regenerationReason === null && JSON.stringify(params) === JSON.stringify(regenerationParams) && pipeline.regenerate(params)
+  }
+  const jobs = pipeline.state.versionsStatus === 'available' ? pipeline.state.versions : null
+
+  // FR-061.13: copy one Job's varying settings into 「次に作成するJob」 by saving them one by one.
+  const [settingsCopy, setSettingsCopy] = useState<Readonly<{
+    jobNumber: number; keys: readonly string[]; index: number; sentKey: string | null
+  }> | null>(null)
+  const [settingsCopyStatus, setSettingsCopyStatus] = useState<string | null>(null)
+  const settingsCopyReason = sourceDirty || dirtyTools.some(item => item.dirty) || layoutBusy ? '未保存の編集があります。保存または取消後に写せます。'
+    : settings.isDirty ? '未保存の設定があります。保存または破棄してから写してください。'
+      : settings.state.pendingRequest !== null || settings.state.needsRefresh || settings.state.error !== null ? '設定の確認を完了してください。'
+        : savedSettings === null ? '「次に作成するJobの設定を開く」で設定を確認すると、Jobの設定を写せます。' : null
+  function copyJobSettings(entry: PipelineVersionEntry, jobNumber: number): void {
+    if (settingsCopy !== null || settingsCopyReason !== null || savedSettings === null) return
+    const changed = editableJobSettings(entry).filter(item => {
+      const saved = savedSettings.values.find(value => value.key === item.key)?.value
+      return saved !== undefined && JSON.stringify(saved) !== JSON.stringify(item.value)
+    })
+    if (changed.length === 0) { setSettingsCopyStatus(`Job ${jobNumber}の設定は、すでに「次に作成するJob」と同じです。`); return }
+    for (const item of changed) settings.changeDraft(item.key, item.value)
+    setSettingsCopyStatus(null)
+    setSettingsCopy({ jobNumber, keys: changed.map(item => item.key), index: 0, sentKey: null })
+  }
+  useEffect(() => {
+    const run = settingsCopy
+    if (run === null || settings.state.pendingRequest !== null) return
+    const finish = (status: string) => { setSettingsCopy(null); setSettingsCopyStatus(status) }
+    if (run.sentKey !== null) {
+      if (settings.state.error !== null || Object.hasOwn(settings.state.draftValues, run.sentKey)) {
+        settings.discardDrafts()
+        finish(`Job ${run.jobNumber}の設定を写せませんでした（${run.index} / ${run.keys.length}項目を保存済み）。設定を開いて確認してください。`)
+        return
+      }
+      const index = run.index + 1
+      if (index >= run.keys.length) { finish(`Job ${run.jobNumber}の設定を「次に作成するJob」に保存しました（${run.keys.length}項目）。`); return }
+      setSettingsCopy({ ...run, index, sentKey: null })
+      return
+    }
+    const key = run.keys[run.index]!
+    if (!settings.save(key)) {
+      settings.discardDrafts()
+      finish(`Job ${run.jobNumber}の設定を写せませんでした（${run.index} / ${run.keys.length}項目を保存済み）。設定を開いて確認してください。`)
+      return
+    }
+    setSettingsCopy({ ...run, sentKey: key })
+  }, [settingsCopy, settings])
+  useEffect(() => { setSettingsCopyStatus(null) }, [activeProjectId])
+  const jobSettingsCopy = draft?.isFinalized === true ? {
+    disabledReason: settingsCopy !== null ? null : settingsCopyReason,
+    busy: settingsCopy !== null,
+    status: settingsCopy !== null ? `Job ${settingsCopy.jobNumber}の設定を保存しています（${settingsCopy.index} / ${settingsCopy.keys.length}項目）。` : settingsCopyStatus,
+    onCopy: copyJobSettings,
+  } : undefined
+  const nextJobNumber = jobs === null ? null : jobs.length + 1
+
+  // FR-061.5: re-read this project's Jobs when the source or job tab is shown and
+  // whenever the latest Job changes; one read per (screen, execution, phase).
+  const jobListKey = useRef<string | null>(null)
+  const jobsVisible = (screen === 'source' || screen === 'processing') && draft?.isFinalized === true && activeProjectId !== null
+  useEffect(() => {
+    if (!jobsVisible) { jobListKey.current = null; return }
+    const key = `${activeProjectId}:${screen}:${snapshot?.executionId ?? 'none'}:${snapshot?.phase ?? 'none'}`
+    // Wait for the first state of the latest Job, so the list is read once, not twice.
+    if (snapshot === null && (pipeline.state.status === 'idle' || pipeline.state.status === 'loading')) return
+    if (jobListKey.current === key || pipeline.state.versionsStatus === 'loading') return
+    if (pipeline.readVersions()) jobListKey.current = key
+  }, [jobsVisible, activeProjectId, screen, snapshot?.executionId, snapshot?.phase, pipeline])
   function restore(targetVersionId: string, targetVersionDigest: string): void {
     const workingCopyRevision = pipeline.state.workingCopyRevision
     if (!resultsActive || navigation.activeTool !== null || Object.values(dirtyFlags.current).some(Boolean) ||
@@ -512,6 +615,11 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
     closeDraft()
     selectStep('source')
   }
+
+  // FR-061.1: closing or deleting the open project from a project-only tab shows the list.
+  useEffect(() => {
+    if (navigation.returnToStep === null && navigation.step !== shownStep) navigate({ type: 'selectStep', step: shownStep })
+  }, [navigation.returnToStep, navigation.step, shownStep])
 
   // FR-042: a successful 「編集を開始」 (project.finalizeDraft) moves to 自動編集 once.
   const finalizeRequested = useRef(false)
@@ -576,14 +684,14 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
         <div className="workflow-current-project">
           <p className="workflow-project-name" aria-label="現在の動画">{draft?.displayName ?? draft?.contentName ?? '元動画を選択してください'}</p>
           <p className="workflow-project-state">
-            {draft === null ? '未選択' : draft.isFinalized ? '案件作成済み' : '確認待ち'}
+            {draft === null ? '未選択' : draft.isFinalized ? 'Project作成済み' : '確認待ち'}
             {(sourceDirty || navigationBlocked) && ' · 未保存の入力あり'}
           </p>
         </div>
         <div className="workflow-header-controls">
           {connectionStatus}
           <div className="workflow-header-actions" hidden={settingsOpen} inert={settingsOpen}>
-            <button type="button" disabled={!returnToProjectList} onClick={requestProjectList} aria-controls="workflow-panel-source">案件一覧へ戻る</button>
+            <button type="button" disabled={!returnToProjectList} onClick={requestProjectList} aria-controls="workflow-panel-source">Project一覧へ戻る</button>
             <button id="workflow-open-settings" type="button" onClick={event => openSettings(event.currentTarget)} aria-controls="workflow-settings">
               <AppIcon name="settings" />設定
             </button>
@@ -592,7 +700,8 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
       </header>
 
       <div className="workflow-navigation" hidden={settingsOpen} inert={settingsOpen}>
-        <WorkflowTabs selectedStep={navigation.step} onSelect={selectStep} />
+        <WorkflowTabs selectedStep={shownStep} onSelect={selectStep}
+          steps={projectOpen ? workflowSteps : projectListSteps} labels={projectOpen ? undefined : projectListStepLabels} />
       </div>
 
       <div id="project-content" className="workflow-body" tabIndex={-1}>
@@ -611,69 +720,90 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
             </div>
           )}
           <ProjectWorkspace active={screen === 'source'} onDirtyChange={reportDirty.source} navigationBlocked={navigationBlocked} />
+          {draft?.isFinalized === true && <div className="workflow-project-jobs">
+            <JobCreationAction nextJobNumber={nextJobNumber} params={regenerationParams} disabledReason={jobCreationReason}
+              pending={pipeline.state.pendingMethod !== null} active={screen === 'source'}
+              onOpenSettings={() => {
+                const opener = workspace.current?.querySelector<HTMLElement>('#workflow-open-settings')
+                if (opener) openSettings(opener)
+              }}
+              onConfirm={createJob} />
+            <ProjectJobList versions={jobs} status={pipeline.state.versionsStatus} copy={jobSettingsCopy} />
+          </div>}
         </WorkflowSurface>
 
         <WorkflowSurface id="workflow-panel-processing" labelledBy="workflow-tab-processing" role="tabpanel" className="workflow-screen" active={screen === 'processing'}>
+          {!projectOpen && <AllProjectJobsPanel active={screen === 'processing'} projects={projectState.projects}
+            onOpenJob={draftId => { if (projectState.pending === null) loadDraft(draftId) }}
+            openDisabledReason={projectState.pending !== null ? 'Projectの操作を処理しています。完了後に開けます。' : null} />}
+          <div hidden={!projectOpen}>
           {/* Visibility belongs to the surface; monitoring must not stop on tab changes. */}
-          <PipelineProgress active={screen === 'processing'} />
-          {snapshot === null && <p className="workflow-boundary-note" role="status">
+          <PipelineProgress active={screen === 'processing' && projectOpen} />
+          {projectOpen && snapshot === null && <p className="workflow-boundary-note" role="status">
             {draft?.isFinalized
-              ? '案件は作成済みですが、編集処理の開始は確認できていません。ホストの状態を確認してください。'
+              ? 'Projectは作成済みですが、編集処理の開始は確認できていません。ホストの状態を確認してください。'
               : '元動画を選択して開始を確認すると、自動編集の状態を取得します。'}
           </p>}
-          <div className="workflow-return"><button type="button" onClick={() => selectStep('source')}>元動画へ戻る</button></div>
+          {draft?.isFinalized === true && <ProjectJobList versions={jobs} status={pipeline.state.versionsStatus} copy={jobSettingsCopy} />}
+          {projectOpen && <div className="workflow-return"><button type="button" onClick={() => selectStep('source')}>元動画へ戻る</button></div>}
+          </div>
         </WorkflowSurface>
 
         <WorkflowSurface id="workflow-panel-results" labelledBy="workflow-tab-results" role="tabpanel" className="workflow-screen workflow-results-screen" active={resultsActive}>
           {pipeline.state.status === 'invalid' && <p className="workflow-boundary-note" role="status">成果物の検証に失敗しました（invalid）。保持された参照は診断用です。再確認が成功するまで媒体プレビュー・再生成は利用できません。</p>}
           {result === null && <p className="workflow-boundary-note" role="status">実成果物は未取得です。作成予定や処理完了だけでは生成済み・保存済みとは表示しません。</p>}
           {result !== null && pipeline.state.needsRefresh && <p className="workflow-boundary-note" role="status">
-            最新状態を確認できないため、直前に検証済みの結果を保持表示しています。変更操作の前に自動編集画面で状態を再確認してください。
+            最新状態を確認できないため、直前に検証済みの結果を保持表示しています。変更操作の前に「ジョブの状態の確認」画面で状態を再確認してください。
           </p>}
           <div className="workflow-tools" role="group" aria-label="仕上がりの道具">
-            <button id="workflow-tool-overview" type="button" aria-pressed={navigation.activeTool === null} aria-controls="workflow-tool-panel-overview" onClick={() => selectTool(null)}>成果物一覧</button>
+            <button id="workflow-tool-overview" type="button" aria-pressed={navigation.activeTool === null} aria-controls="workflow-tool-panel-overview" onClick={() => selectTool(null)}>Jobの仕上がり</button>
             {workflowTools.map(tool => (
               <button id={`workflow-tool-${tool}`} key={tool} type="button" aria-pressed={navigation.activeTool === tool} aria-controls={`workflow-tool-panel-${tool}`} onClick={() => selectTool(tool)}>{toolLabels[tool]}</button>
             ))}
           </div>
-          <div className="workflow-results-content">
-            <div className="workflow-preview">
+          <div className={`workflow-results-content${comparing ? ' is-comparing' : ''}`}>
+            <div className="workflow-preview" hidden={comparing}>
               {result !== null && selectedArtifact !== null && <>
                 <div role="group" aria-label="プレビューの対象">
                   <button type="button" aria-pressed={!sourcePreview} onClick={() => setSourcePreview(false)}>生成された成果物</button>
                   <button type="button" aria-pressed={sourcePreview} onClick={() => setSourcePreview(true)}>元動画（代理）</button>
                 </div>
-                <WorkflowSurface id="workflow-generated-preview" className="workflow-generated-preview" active={resultsActive && showGenerated}>
-                  <GeneratedResultPreview result={result} artifact={selectedArtifact} active={resultsActive && showGenerated} seek={generatedSeek}
+                <WorkflowSurface id="workflow-generated-preview" className="workflow-generated-preview" active={resultsActive && showGenerated && !comparing}>
+                  <GeneratedResultPreview result={result} artifact={selectedArtifact} active={resultsActive && showGenerated && !comparing} seek={generatedSeek}
                     onHandled={(intent, error) => { if (intent === generatedSeek && warningIsCurrent) finishWarning(error) }} />
                 </WorkflowSurface>
               </>}
-              <PlayerPanel createClient={createPlayerClient} context={ingestContext} active={resultsActive && !showGenerated} previewModes={previewModes} onPositionChange={setPlayerPosition} onSelectionChange={setPlayerSelection} />
+              <PlayerPanel createClient={createPlayerClient} context={ingestContext} active={resultsActive && !showGenerated && !comparing} previewModes={previewModes} onPositionChange={setPlayerPosition} onSelectionChange={setPlayerSelection} />
               <details className="workflow-preview-options" hidden={showGenerated} inert={showGenerated}>
                 <summary>表示モード</summary>
-                <PreviewModeControls context={ingestContext} active={resultsActive && !showGenerated} selection={selection} />
+                <PreviewModeControls context={ingestContext} active={resultsActive && !showGenerated && !comparing} selection={selection} />
               </details>
             </div>
             <div className="workflow-tool-panels">
               <WorkflowSurface id="workflow-tool-panel-overview" labelledBy="workflow-tool-overview" role="region" className="workflow-tool-panel" active={resultsActive && navigation.activeTool === null}>
                 {summary === null && result === null ? (
                   <div className="workflow-empty"><h2>仕上がり一覧</h2><p>予定の成果物は未取得です。元動画を選ぶと、固定された予定を確認できます。</p><button type="button" onClick={() => selectStep('source')}>元動画を選ぶ画面へ</button></div>
-                ) : <ResultGallery presentation={presentation} warnings={warnings} selectedWarningId={selectedWarningId} onFollowWarning={followWarning}
-                  bookendStitch={bookendStitch}
-                  versionHistory={draft?.isFinalized === true && activeProjectId !== null ? {
-                    versions: pipeline.state.versions,
-                    unavailableReason: pipeline.state.versionsStatus === 'idle' || pipeline.state.versionsStatus === 'loading' ||
+                ) : (() => {
+                  const gallery = <ResultGallery presentation={presentation} warnings={warnings} selectedWarningId={selectedWarningId} onFollowWarning={followWarning}
+                    bookendStitch={bookendStitch}
+                    onSelectArtifact={artifactId => {
+                      const a = result?.artifacts.find(item => item.artifact.artifactId === artifactId)
+                      if (!resultsActive || settingsOpen || navigation.activeTool !== null || result === null || a === undefined || sourceOnlyMediaUrl(result, artifactId) === null) return
+                      setArtifactSelection({ binding: result.binding, artifactId, digest: a.artifact.contentDigest }); setSourcePreview(false)
+                    }} />
+                  return jobBrowserShown ? <JobResultsBrowser
+                    versions={pipeline.state.versionsStatus === 'notFound' ? [] : pipeline.state.versions}
+                    unavailableReason={pipeline.state.versionsStatus === 'idle' || pipeline.state.versionsStatus === 'loading' ||
                       pipeline.state.versionsStatus === 'available' || pipeline.state.versionsStatus === 'notFound'
-                      ? null : '過去版を取得できませんでした。もう一度お試しください。',
-                    pending: pipeline.state.pendingMethod !== null,
-                    disabledReason: restoreReason,
-                    onRestore: restore,
-                  } : undefined}
-                  onSelectArtifact={artifactId => {
-                    const a = result?.artifacts.find(item => item.artifact.artifactId === artifactId)
-                    if (!resultsActive || settingsOpen || navigation.activeTool !== null || result === null || a === undefined || sourceOnlyMediaUrl(result, artifactId) === null) return
-                    setArtifactSelection({ binding: result.binding, artifactId, digest: a.artifact.contentDigest }); setSourcePreview(false)
-                  }} />}
+                      ? null : 'Jobの一覧を取得できませんでした。もう一度お試しください。'}
+                    projectId={activeProjectId}
+                    pending={pipeline.state.pendingMethod !== null}
+                    disabledReason={restoreReason}
+                    onRestore={restore}
+                    view={resultView}
+                    onViewChange={setResultView}
+                    currentResults={gallery} /> : gallery
+                })()}
                 {draft?.isFinalized && <SettingsRegenerationAction params={regenerationParams} disabledReason={regenerationReason}
                   active={resultsActive && navigation.activeTool === null} pending={pipeline.state.pendingMethod !== null} onConfirm={regenerate} />}
               </WorkflowSurface>
@@ -742,7 +872,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
         </WorkflowSurface>
 
         <WorkflowSurface id="workflow-settings" className="workflow-screen workflow-settings-screen" active={settingsOpen}>
-          <SettingsPanel isActive={settingsOpen} activeProjectId={activeProjectId} onClose={closeSettings} onDirtyChange={reportDirty.settings}
+          <SettingsPanel isActive={settingsOpen} activeProjectId={activeProjectId} projectOpen={projectOpen} onClose={closeSettings} onDirtyChange={reportDirty.settings}
             initialSettingKey={warningIsCurrent && warningOrigin?.target.kind === 'settings' && !warningOrigin.waitingForSettings ? warningOrigin.target.key : null} />
         </WorkflowSurface>
       </div>
@@ -847,7 +977,7 @@ function BoundLayoutPanel({ projectId, intent, onRead, ...props }: LayoutPanelPr
     ? { ...api.state, snapshot: retained, target: binding, projectIdInput: binding?.projectId ?? api.state.projectIdInput,
       status: retained === null ? 'unavailable' : 'invalid', lastCompletedMethod: null } : api.state
   return <>
-    {props.active && !active && <p role="status">選択中の案件と編集元が異なるため、旧案件の入力を保持して操作を停止しています。対象の成果物を選び直してください。</p>}
+    {props.active && !active && <p role="status">選択中のProjectと編集元が異なるため、旧Projectの入力を保持して操作を停止しています。対象の成果物を選び直してください。</p>}
     {binding !== null && (mismatch || missingCues) && <p role={props.active ? 'status' : undefined}>対象版・digest と字幕 cue を確認できません。入力を保持し、適用を停止しています。</p>}
     <LayoutPanelView {...api} {...props} active={active} context={context} state={state} onDirtyChange={onDirtyChange}
       loadSnapshot={ignoreLayoutAutoload} changeProjectId={ignoreLayoutAutoload} invalidatePendingContext={ignoreLayoutAutoload}

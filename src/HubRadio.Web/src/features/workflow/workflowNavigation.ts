@@ -15,7 +15,7 @@ export const workflowSteps = Object.freeze([
 export type WorkflowStep = (typeof workflowSteps)[number]
 export const workflowStepLabels: Readonly<Record<WorkflowStep, string>> = Object.freeze({
   source: '元動画',
-  processing: '自動編集',
+  processing: 'ジョブの状態の確認',
   results: '仕上がり',
   delivery: '保存',
 })
@@ -54,12 +54,12 @@ export type WorkflowWarningBlockReason =
 
 export const workflowWarningReasonLabels: Readonly<Record<WorkflowWarningBlockReason, string>> = Object.freeze({
   invalidTarget: '移動先の参照が不足しているか、不正です。',
-  missingContext: '現在の案件・版を確認できません。',
-  projectMismatch: '警告の対象案件が現在の案件と一致しません。',
+  missingContext: '現在のProject・版を確認できません。',
+  projectMismatch: '警告の対象Projectが現在のProjectと一致しません。',
   versionMismatch: '警告の対象版が現在の版と一致しません。',
   digestMismatch: '警告の対象内容が現在の版と一致しません。',
   artifactUnavailable: '対象の成果物を確認できません。',
-  settingUnavailable: 'この案件の対象設定を確認できません。',
+  settingUnavailable: 'このProjectの対象設定を確認できません。',
   unavailable: '移動先の機能は未接続または利用できません。',
 })
 
@@ -234,16 +234,32 @@ export function isWorkflowStep(value: unknown): value is WorkflowStep {
 }
 
 /** Horizontal manual tabs: move focus only; UX-018 owns DOM focus and activation. */
-export function getWorkflowTabFocusStep(step: WorkflowStep, key: string): WorkflowStep | null {
-  if (!isWorkflowStep(step)) return null
-  const index = workflowSteps.indexOf(step)
+export function getWorkflowTabFocusStep(
+  step: WorkflowStep,
+  key: string,
+  steps: readonly WorkflowStep[] = workflowSteps,
+): WorkflowStep | null {
+  if (!isWorkflowStep(step) || !steps.includes(step)) return null
+  const index = steps.indexOf(step)
   switch (key) {
-    case 'ArrowLeft': return workflowSteps[(index + workflowSteps.length - 1) % workflowSteps.length]!
-    case 'ArrowRight': return workflowSteps[(index + 1) % workflowSteps.length]!
-    case 'Home': return workflowSteps[0]
-    case 'End': return workflowSteps[workflowSteps.length - 1]!
+    case 'ArrowLeft': return steps[(index + steps.length - 1) % steps.length]!
+    case 'ArrowRight': return steps[(index + 1) % steps.length]!
+    case 'Home': return steps[0]!
+    case 'End': return steps[steps.length - 1]!
     default: return null
   }
+}
+
+/** FR-061.1: the project list shows only these tabs; a project shows all four workflowSteps. */
+export const projectListSteps = Object.freeze(['source', 'processing'] as const satisfies readonly WorkflowStep[])
+export const projectListStepLabels: Readonly<Record<(typeof projectListSteps)[number], string>> = Object.freeze({
+  source: 'Project一覧',
+  processing: 'ジョブの状態の確認',
+})
+
+/** FR-061.1: the tab shown for a step when the tab set changes (a closed project falls back to the list). */
+export function visibleWorkflowStep(step: WorkflowStep, projectOpen: boolean): WorkflowStep {
+  return projectOpen || (projectListSteps as readonly WorkflowStep[]).includes(step) ? step : 'source'
 }
 
 export function isWorkflowTabActivationKey(key: string): boolean {

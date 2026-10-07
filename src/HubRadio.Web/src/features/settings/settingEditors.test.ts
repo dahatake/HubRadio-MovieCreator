@@ -38,6 +38,8 @@ const changeable = [
   'subtitles.readingSpeedMaximum', 'subtitles.cueMinimumDuration', 'subtitles.cueMaximumDuration', 'subtitles.cueGapMinimum', 'subtitles.landscapeLineHeight', 'subtitles.verticalLineHeight',
   'assets.musicEligibleSections', 'audio.internalOnlineTargetLoudness', 'audio.truePeakMaximum', 'audio.internalOnlineLoudnessTolerance',
 ]
+// FR-057〜FR-060: settings that only profile 1.2.0 defines.
+const addedIn120 = ['editing.pauseTightening', 'output.longFormOrientation', 'subtitles.emphasisTelopAmount', 'audio.soundEffectsEnabled']
 
 function unknown(defaultValue: SettingValue, overrides: Partial<SettingDefinition> = {}): SettingDefinition {
   return { key: 'future.setting', group: 'editing', isAdvanced: false, displayName: 'Future', description: 'Future setting.', unit: 'none',
@@ -47,10 +49,10 @@ const integer = (integerValue: string): SettingValue => ({ kind: 'integer', inte
 
 describe('FR-050 setting editors', () => {
   // FR-050.1 AC-025.1
-  it('shows exactly the 22 changeable settings of profile 1.1.0', () => {
-    const profile = loadProfile('1.1.0')
-    expect(profile).toHaveLength(123)
-    expect(profile.filter(isSettingEditable).map(item => item.key).sort()).toEqual([...changeable].sort())
+  it.each([['1.1.0', 123, changeable], ['1.2.0', 127, [...changeable, ...addedIn120]]] as const)('shows exactly the changeable settings of profile %s', (version, count, keys) => {
+    const profile = loadProfile(version)
+    expect(profile).toHaveLength(count)
+    expect(profile.filter(isSettingEditable).map(item => item.key).sort()).toEqual([...keys].sort())
     expect(new Set(profile.filter(isSettingEditable).map(item => item.group))).toEqual(new Set(['projectAndOutput', 'editing', 'subtitlesAndGraphics', 'audioAndAssets']))
     for (const item of profile.filter(isSettingEditable)) {
       const editor = getSettingEditor(item)!
@@ -67,10 +69,24 @@ describe('FR-050 setting editors', () => {
       .toEqual(changeable.filter(key => key !== 'thumbnails.candidateCount' && key !== 'editing.shortHookMaximumStart').sort())
   })
 
+  // FR-057 FR-058 FR-060: the new text settings are picked from labelled choices, never typed.
+  it('offers the profile 1.2.0 text settings as labelled choices', () => {
+    const profile = loadProfile('1.2.0')
+    const labels = (key: string) => {
+      const editor = getSettingEditor(profile.find(item => item.key === key)!)
+      return editor?.kind === 'choices' ? editor.choices.map(choice => [choice.id, choice.label]) : null
+    }
+    expect(labels('editing.pauseTightening')).toEqual([['weak', '弱め（2秒以上の間を詰める）'], ['standard', '標準（0.7秒以上の間を詰める）'], ['strong', '強め（0.4秒以上の間を詰める）']])
+    expect(labels('output.longFormOrientation')).toEqual([['followSource', '元動画の向きに合わせる'], ['landscape', '常に横長（16:9）']])
+    expect(labels('subtitles.emphasisTelopAmount')).toEqual([['few', '少なめ'], ['standard', '標準'], ['many', '多め']])
+    expect(labels('audio.soundEffectsEnabled')).toEqual([['true', '有効'], ['false', '無効']])
+  })
+
   // FR-050.7
   it('classifies every shipped key exactly once', () => {
-    const keys = loadProfile('1.1.0').map(item => item.key).sort()
-    expect(loadProfile('1.0.0').map(item => item.key).sort()).toEqual(keys)
+    const keys = loadProfile('1.2.0').map(item => item.key).sort()
+    expect([...loadProfile('1.0.0').map(item => item.key), ...addedIn120].sort()).toEqual(keys)
+    expect([...loadProfile('1.1.0').map(item => item.key), ...addedIn120].sort()).toEqual(keys)
     const fixed = [...settingEditorCatalog.fixed.keys()]
     const editors = [...settingEditorCatalog.editors.keys()]
     expect([...fixed, ...editors].sort()).toEqual(keys)

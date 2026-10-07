@@ -19,7 +19,8 @@ import { SettingsWorkspaceStateProvider } from './features/settings'
 import { AppStateProvider } from './state'
 
 describe('App', () => {
-  it('renders a compact host status and one of four workflow screens without raw ID forms', () => {
+  // FR-061 AC-036: without an open project only the list tabs are shown.
+  it('renders a compact host status and one of the project-list screens without raw ID forms', () => {
     const markup = renderToStaticMarkup(appTree())
     const container = document.createElement('div')
     container.innerHTML = markup
@@ -28,12 +29,12 @@ describe('App', () => {
       expect(markup).toContain('Movie Creator')
       expect(markup).toContain('ホスト接続は未確認です')
       expect(within(container).getAllByRole('tab').map(tab => tab.textContent))
-        .toEqual(['元動画', '自動編集', '仕上がり', '保存'])
+        .toEqual(['Project一覧', 'ジョブの状態の確認'])
       expect(within(container).getAllByRole('tabpanel')).toHaveLength(1)
-      expect(within(container).getByRole('tabpanel', { name: '元動画' }).id)
+      expect(within(container).getByRole('tabpanel', { name: 'Project一覧' }).id)
         .toBe('workflow-panel-source')
-      expect(within(container).getByRole('heading', { name: '案件一覧' })).toBeTruthy()
-      expect(within(container).getByRole('button', { name: '新しい案件を作成' })).toBeTruthy()
+      expect(within(container).getByRole('heading', { name: 'Project一覧' })).toBeTruthy()
+      expect(within(container).getByRole('button', { name: '新しいProjectを作成' })).toBeTruthy()
       expect(within(container).getByRole('button', { name: '設定' })).toBeTruthy()
       expect(within(container).queryByRole('heading', { name: 'ジョブの進行状況' })).toBeNull()
       expect(within(container).queryByRole('heading', { name: '文字起こし編集' })).toBeNull()

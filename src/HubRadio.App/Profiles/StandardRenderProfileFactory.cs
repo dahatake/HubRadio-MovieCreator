@@ -123,6 +123,77 @@ public static class StandardRenderProfileFactory
             subtitleBurnIn: true,
             variant: "vertical-short");
 
+    /// <summary>FR-058: the long-form profile name used when a portrait source keeps its orientation.</summary>
+    public const string PortraitLongFormName = "standard-portrait-long-form-1080x1920-burned-in";
+
+    internal const string LongFormOrientationKey = "output.longFormOrientation";
+
+    /// <summary>
+    /// FR-058: the long-form profile for this source. A portrait source keeps a portrait 1080x1920
+    /// long form only when the accepted settings say <c>followSource</c>; settings without the key
+    /// (profiles before 1.2.0) always build the 1920x1080 landscape long form, so saved results replay.
+    /// </summary>
+    public static BundledRenderProfileDefinition CreateLongForm(
+        DefaultSettingsProfile settingsProfile,
+        DefaultSettingsSnapshot settings,
+        BundledRenderProfileDefinition measuredLandscapeReference,
+        BundledRenderProfileDefinition measuredVerticalReference,
+        RationalNumber sourceFrameRate,
+        SourceDisplayGeometry sourceGeometry) =>
+        UsesPortraitLongForm(settings, sourceGeometry)
+            ? CreatePortraitLongForm(settingsProfile, settings, measuredLandscapeReference,
+                measuredVerticalReference, sourceFrameRate)
+            : CreateLandscape(settingsProfile, settings, measuredLandscapeReference, sourceFrameRate);
+
+    public static bool UsesPortraitLongForm(DefaultSettingsSnapshot settings, SourceDisplayGeometry sourceGeometry)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(sourceGeometry);
+        return sourceGeometry.Height > sourceGeometry.Width && settings.Values.Any(static item =>
+            item.Key == LongFormOrientationKey &&
+            item.Value.Kind == DefaultSettingValueKind.Text &&
+            item.Value.TextValue == "followSource");
+    }
+
+    /// <summary>FR-058: true for the portrait long-form profile produced by <see cref="CreateLongForm"/>.</summary>
+    public static bool IsPortraitLongForm(BundledRenderProfileDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        return string.Equals(definition.Profile.Name, PortraitLongFormName, StringComparison.Ordinal)
+            && definition.Profile.Width == 1080
+            && definition.Profile.Height == 1920
+            && definition.Layout.OutputAspectWidth == 9
+            && definition.Layout.OutputAspectHeight == 16;
+    }
+
+    /// <summary>
+    /// FR-058: the measured 9:16 layout and neutral template of the vertical reference, rendered as a
+    /// long form. The long-form element capabilities (chapters, topic display, end-card margin) are
+    /// taken from the measured landscape long-form reference, which is validated as well.
+    /// </summary>
+    internal static BundledRenderProfileDefinition CreatePortraitLongForm(
+        DefaultSettingsProfile settingsProfile,
+        DefaultSettingsSnapshot settings,
+        BundledRenderProfileDefinition measuredLandscapeReference,
+        BundledRenderProfileDefinition measuredVerticalReference,
+        RationalNumber sourceFrameRate)
+    {
+        ArgumentNullException.ThrowIfNull(measuredLandscapeReference);
+        ValidateReference(measuredLandscapeReference, LandscapeReference);
+        return Create(
+            settingsProfile,
+            settings,
+            measuredVerticalReference,
+            sourceFrameRate,
+            VerticalReference,
+            PortraitLongFormName,
+            width: 1080,
+            height: 1920,
+            subtitleBurnIn: true,
+            variant: "portrait-long-form",
+            capabilities: measuredLandscapeReference.Capabilities);
+    }
+
     private static BundledRenderProfileDefinition Create(
         DefaultSettingsProfile settingsProfile,
         DefaultSettingsSnapshot settings,
@@ -133,7 +204,8 @@ public static class StandardRenderProfileFactory
         int width,
         int height,
         bool subtitleBurnIn,
-        string variant)
+        string variant,
+        IReadOnlyList<string>? capabilities = null)
     {
         ArgumentNullException.ThrowIfNull(settingsProfile);
         ArgumentNullException.ThrowIfNull(settings);
@@ -214,7 +286,7 @@ public static class StandardRenderProfileFactory
             measuredReference.LayoutDigest,
             measuredReference.TemplateReference,
             measuredReference.PixelFormatEvidence,
-            measuredReference.Capabilities,
+            capabilities ?? measuredReference.Capabilities,
             false,
             evidenceSource,
             measuredReference.TemplateStatus,

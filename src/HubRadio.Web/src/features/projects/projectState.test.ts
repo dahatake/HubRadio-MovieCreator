@@ -499,6 +499,31 @@ describe('project list thumbnail', () => {
     expect(state.projects.find((project) => project.draftId === draftId)?.thumbnail).toEqual(thumbnail)
     expect(state.projects.find((project) => project.draftId === otherDraftId)?.thumbnail).toBeUndefined()
   })
+
+  // FR-053 AC-028.5: the poster frame survives in-place updates of the list, like the thumbnail.
+  it('keeps the known poster of a project when a response updates that project', () => {
+    const poster = { contentDigest: 'f'.repeat(64) }
+    const listed = listResponse(requestId)
+    if (!('result' in listed)) throw new Error('Expected a list response.')
+    const withPoster: ProjectListResponse = {
+      ...listed,
+      result: {
+        ...listed.result,
+        projects: listed.result.projects.map((project) =>
+          project.draftId === draftId ? { ...project, poster } : project,
+        ),
+      },
+    }
+    const state = reduce(
+      projectRequestStarted(requestId, PROJECT_LIST_METHOD),
+      projectResponseReceived(withPoster),
+      projectRequestStarted(requestId, PROJECT_SAVE_DRAFT_METHOD),
+      projectResponseReceived(draftResponse(PROJECT_SAVE_DRAFT_METHOD, draft())),
+    )
+
+    expect(state.projects.find((project) => project.draftId === draftId)?.poster).toEqual(poster)
+    expect(state.projects.find((project) => project.draftId === otherDraftId)?.poster).toBeUndefined()
+  })
 })
 
 function completeInput(): ProjectDraftInput {
@@ -596,21 +621,21 @@ function errorResponse(
   code: ProjectBridgeErrorResponse['error']['code'],
 ): ProjectBridgeErrorResponse {
   const messages: Record<ProjectBridgeErrorResponse['error']['code'], string> = {
-    'project.already_finalized': 'この案件はすでに作成済みです。',
+    'project.already_finalized': 'このProjectはすでに作成済みです。',
     'project.catalog_unavailable': '必要なプロファイルを読み込めませんでした。',
-    'project.delete_blocked': '処理中のジョブがあるため、この案件は削除できません。',
+    'project.delete_blocked': '処理中のジョブがあるため、このProjectは削除できません。',
     'project.incomplete': '必須入力をすべて完了してください。',
     'project.invalid_request': '入力内容を確認してください。',
     'project.not_authorized': 'この操作を実行する権限がありません。',
     'project.not_found': '指定された下書きが見つかりません。',
-    'project.operation_failed': '案件操作を完了できませんでした。',
+    'project.operation_failed': 'Project操作を完了できませんでした。',
     'project.revision_conflict': '下書きが別の操作で更新されました。再読み込みしてください。',
     'project.runtime_unavailable': '編集の準備ができていません。',
     'project.settings_mismatch': '既定設定の整合性を確認できませんでした。',
     'project.settings_unavailable': '既定設定を読み込めませんでした。',
     'project.source_selection_canceled': '元動画の選択をキャンセルしました。',
     'project.source_reselection_required': '元動画をもう一度選択してください。',
-    'project.unsafe_source_name': '元動画のファイル名を案件名として使用できません。',
+    'project.unsafe_source_name': '元動画のファイル名をProject名として使用できません。',
   }
   return {
     version: 1,

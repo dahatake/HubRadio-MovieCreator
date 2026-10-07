@@ -15,7 +15,7 @@ export interface ProjectNameEditorProps {
 }
 
 const invalidNameMessage =
-  `案件名は 1〜${PROJECT_DISPLAY_NAME_MAX_LENGTH} 文字で入力してください。改行などの制御文字と、文字の向きを変える記号は使えません。`
+  `Project名は 1〜${PROJECT_DISPLAY_NAME_MAX_LENGTH} 文字で入力してください。改行などの制御文字と、文字の向きを変える記号は使えません。`
 
 /** Edits only the name shown in the app; the source file and generated files keep their names. */
 export function ProjectNameEditor({ draft, disabled, onRename }: ProjectNameEditorProps) {
@@ -42,9 +42,9 @@ export function ProjectNameEditor({ draft, disabled, onRename }: ProjectNameEdit
 
   return (
     <form className="project-name-editor" aria-labelledby={`${id}-title`} onSubmit={submit} noValidate>
-      <h3 id={`${id}-title`}>案件名</h3>
+      <h3 id={`${id}-title`}>Project名</h3>
       <div className="field-group">
-        <label htmlFor={`${id}-input`}>案件名（この画面と一覧に表示される名前）</label>
+        <label htmlFor={`${id}-input`}>Project名（この画面と一覧に表示される名前）</label>
         <input
           id={`${id}-input`}
           type="text"
@@ -63,7 +63,7 @@ export function ProjectNameEditor({ draft, disabled, onRename }: ProjectNameEdit
       </div>
       <div className="section-actions">
         <button className="secondary-button" type="submit" disabled={disabled || invalid || !changed}>
-          案件名を保存
+          Project名を保存
         </button>
         {canRestore && originalName !== null && (
           <button

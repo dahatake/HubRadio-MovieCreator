@@ -745,6 +745,55 @@ public sealed class BundledRenderProfileTests
                 measuredVertical.Profile.FrameRate));
     }
 
+    // FR-058 AC-033.1: a portrait source keeps a portrait 1080x1920 long form only when the settings say followSource;
+    // settings without the key (profiles before 1.2.0) and landscape sources keep the 1920x1080 long form.
+    [TestMethod]
+    [TestCategory("FR-058")]
+    public void LongFormFollowsAPortraitSourceOnlyWithTheOrientationSetting()
+    {
+        DefaultSettingsProfile latest = BundledDefaultSettingsProfileLoader.Load(File.ReadAllBytes(
+            ResolveRepositoryPath("src/HubRadio.App/DefaultSettings/Profiles/1.2.0.json")));
+        DefaultSettingsProfile previous = LoadSettingsProfile();
+        BundledRenderProfileDefinition measuredLandscape = LoadSource("16x9/long-form.json");
+        BundledRenderProfileDefinition measuredVertical = LoadSource("9x16/vertical-short.json");
+        var rate = new RationalNumber(30, 1);
+        var portrait = new SourceDisplayGeometry(1080, 1920);
+        var landscapeSource = new SourceDisplayGeometry(1920, 1080);
+
+        BundledRenderProfileDefinition followed = StandardRenderProfileFactory.CreateLongForm(
+            latest, latest.CreateSnapshot(), measuredLandscape, measuredVertical, rate, portrait);
+        Assert.IsTrue(StandardRenderProfileFactory.IsPortraitLongForm(followed));
+        Assert.AreEqual(StandardRenderProfileFactory.PortraitLongFormName, followed.Profile.Name);
+        Assert.AreEqual(1080, followed.Profile.Width);
+        Assert.AreEqual(1920, followed.Profile.Height);
+        Assert.IsTrue(followed.Profile.SubtitleBurnIn);
+        Assert.AreSame(measuredVertical.Layout, followed.Layout);
+        CollectionAssert.AreEqual(measuredLandscape.Capabilities.ToArray(), followed.Capabilities.ToArray());
+        Assert.AreEqual(followed.Profile.ProfileDigest, StandardRenderProfileFactory.CreateLongForm(
+            latest, latest.CreateSnapshot(), measuredLandscape, measuredVertical, rate, portrait).Profile.ProfileDigest);
+
+        DefaultSettingsSnapshot alwaysLandscape = latest.CreateSnapshot(latest.CreateSnapshot().Values.Select(item =>
+            item.Key == "output.longFormOrientation" ? new DefaultSettingSelection(item.Key, DefaultSettingValue.FromText("landscape")) : item).ToArray());
+        foreach (BundledRenderProfileDefinition landscape in new[]
+        {
+            StandardRenderProfileFactory.CreateLongForm(latest, latest.CreateSnapshot(), measuredLandscape, measuredVertical, rate, landscapeSource),
+            StandardRenderProfileFactory.CreateLongForm(latest, alwaysLandscape, measuredLandscape, measuredVertical, rate, portrait),
+            StandardRenderProfileFactory.CreateLongForm(previous, previous.CreateSnapshot(), measuredLandscape, measuredVertical, rate, portrait),
+        })
+        {
+            Assert.IsFalse(StandardRenderProfileFactory.IsPortraitLongForm(landscape));
+            Assert.AreEqual(1920, landscape.Profile.Width);
+            Assert.AreEqual(1080, landscape.Profile.Height);
+        }
+
+        // The pre-1.2.0 long form is byte-for-byte the profile CreateLandscape always produced.
+        Assert.AreEqual(
+            StandardRenderProfileFactory.CreateLandscape(previous, previous.CreateSnapshot(), measuredLandscape, rate).Profile.ProfileDigest,
+            StandardRenderProfileFactory.CreateLongForm(previous, previous.CreateSnapshot(), measuredLandscape, measuredVertical, rate, portrait).Profile.ProfileDigest);
+        Assert.ThrowsExactly<ArgumentException>(() => StandardRenderProfileFactory.CreateLongForm(
+            latest, latest.CreateSnapshot(), measuredVertical, measuredVertical, rate, portrait));
+    }
+
     private static BundledRenderProfileDefinition LoadSource(string relativePath) =>
         BundledRenderProfileLoader.Load(ReadSourceBytes(relativePath));
 

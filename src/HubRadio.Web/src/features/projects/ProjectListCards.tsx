@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 
 import type { ProjectListItem, SourceStatus } from '../../bridge'
-import { projectThumbnailUrl } from '../../bridge'
+import { projectPosterUrl, projectThumbnailUrl } from '../../bridge'
 import { AppIcon } from '../../components/AppIcons'
 import { getProjectDisplayName } from './projectState'
 import './projects.css'
@@ -60,8 +60,8 @@ export function ProjectListCards({
     return (
       <div className="project-list-cards">
         <div className="empty-state project-list-cards-empty" role="status">
-          <strong>案件はまだありません</strong>
-          <p>作成権限がある場合は「新しい案件を作成」から始められます。</p>
+          <strong>Projectはまだありません</strong>
+          <p>作成権限がある場合は「新しいProjectを作成」から始められます。</p>
         </div>
       </div>
     )
@@ -76,7 +76,7 @@ export function ProjectListCards({
         className="project-list-cards-grid"
         id={listId}
         role="list"
-        aria-label="閲覧を許可された案件の一覧"
+        aria-label="閲覧を許可されたProjectの一覧"
       >
         {visibleProjects.map((project, index) => {
           const name = getProjectDisplayName(project) ?? '名称未入力'
@@ -135,7 +135,7 @@ export function ProjectListCards({
           )
         })}
       </ul>
-      <nav className="project-list-pagination" aria-label="案件一覧のページ切替">
+      <nav className="project-list-pagination" aria-label="Project一覧のページ切替">
         <p className="project-list-page-status" role="status" aria-live="polite" aria-atomic="true">
           {`${currentPage + 1} / ${pageCount} ページ（${start + 1}–${start + visibleProjects.length} / ${projects.length} 件）`}
         </p>
@@ -168,13 +168,17 @@ function ProjectCardThumbnail({
   project,
   name,
 }: Readonly<{ project: ProjectListItem; name: string }>) {
-  const url =
+  // FR-053: the generated thumbnail first, then the poster frame of the source video.
+  const candidates = [
     project.projectId !== null && project.thumbnail != null
       ? projectThumbnailUrl(project.projectId, project.thumbnail)
-      : null
-  const [failedUrl, setFailedUrl] = useState<string | null>(null)
+      : null,
+    project.poster != null ? projectPosterUrl(project.draftId, project.poster) : null,
+  ].filter((value): value is string => value !== null)
+  const [failedUrls, setFailedUrls] = useState<readonly string[]>([])
+  const url = candidates.find(candidate => !failedUrls.includes(candidate)) ?? null
 
-  if (url === null || failedUrl === url) {
+  if (url === null) {
     return (
       <div className="project-card-thumbnail project-card-thumbnail-empty">
         サムネイルなし
@@ -190,7 +194,7 @@ function ProjectCardThumbnail({
         loading="lazy"
         decoding="async"
         draggable={false}
-        onError={() => setFailedUrl(url)}
+        onError={() => setFailedUrls(current => current.includes(url) ? current : [...current, url])}
       />
     </div>
   )

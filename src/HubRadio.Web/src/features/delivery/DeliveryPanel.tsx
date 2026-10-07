@@ -1,4 +1,6 @@
 import {
+  createContext,
+  useContext,
   useEffect,
   useRef,
   useState,
@@ -200,6 +202,7 @@ export function DeliveryPanelView({
     }
   }
   const workspace = snapshot === null ? null : (
+    <TechnicalIdentifiersVisible.Provider value={!workflow}>
     <DeliveryWorkspace
       key={snapshot.versionId}
       snapshot={snapshot}
@@ -212,6 +215,7 @@ export function DeliveryPanelView({
       changeTraceRate={changeTraceRate}
       lookupTrace={lookupTrace}
     />
+    </TechnicalIdentifiersVisible.Provider>
   )
 
   return (
@@ -361,7 +365,7 @@ export function DeliveryPanelView({
                 }
               }}
             >
-              保存証跡の詳細（完全 hash・旧承認・QC・時刻由来）
+              保存した動画の確認記録の詳細（承認・品質確認・元動画との対応）
             </summary>
             {workspace}
           </details>
@@ -609,6 +613,14 @@ function PublicationNotice({ snapshot }: Readonly<{ snapshot: DeliverySnapshot }
 }
 
 function IdentityEvidence({ snapshot }: Readonly<{ snapshot: DeliverySnapshot }>) {
+  if (!useContext(TechnicalIdentifiersVisible)) {
+    return (
+      <section className="delivery-card" aria-labelledby="delivery-identity-title">
+        <h3 id="delivery-identity-title">保存した動画の記録</h3>
+        <p>この動画は、作成したときの元動画・設定・確認の記録と照合済みです。</p>
+      </section>
+    )
+  }
   return (
     <section className="delivery-card" aria-labelledby="delivery-identity-title">
       <p className="section-kicker">Pinned identity and digests</p>
@@ -630,11 +642,12 @@ function IdentityEvidence({ snapshot }: Readonly<{ snapshot: DeliverySnapshot }>
 }
 
 function ArtifactEvidence({ snapshot, active }: Readonly<{ snapshot: DeliverySnapshot; active: boolean }>) {
+  const technical = useContext(TechnicalIdentifiersVisible)
   return (
     <section className="delivery-card" aria-labelledby="delivery-artifacts-title">
       <div className="delivery-card-heading">
         <div>
-          <p className="section-kicker">Complete manifest bindings</p>
+          <p className="section-kicker">保存したファイル</p>
           <h3 id="delivery-artifacts-title">成果物 hash</h3>
         </div>
         <span>{snapshot.artifacts.length} 件</span>
@@ -644,23 +657,23 @@ function ArtifactEvidence({ snapshot, active }: Readonly<{ snapshot: DeliverySna
           <caption className="visually-hidden">配信 manifest の成果物と完全 SHA-256</caption>
           <thead>
             <tr>
-              <th scope="col">Artifact ID</th>
+              {technical && <th scope="col">Artifact ID</th>}
               <th scope="col">種類</th>
               <th scope="col">Media type</th>
               <th scope="col">言語</th>
               <th scope="col">Bytes</th>
-              <th scope="col">SHA-256（完全値）</th>
+              {technical && <th scope="col">SHA-256（完全値）</th>}
             </tr>
           </thead>
           <tbody>
             {snapshot.artifacts.map((artifact) => (
               <tr key={artifact.artifactId}>
-                <td><code>{artifact.artifactId}</code></td>
+                {technical && <td><code>{artifact.artifactId}</code></td>}
                 <td>{artifact.artifactType}</td>
                 <td>{artifact.mediaType}</td>
                 <td>{artifact.language ?? 'なし'}</td>
                 <td>{formatInteger(artifact.byteSize)}</td>
-                <td><code>{artifact.sha256}</code></td>
+                {technical && <td><code>{artifact.sha256}</code></td>}
               </tr>
             ))}
           </tbody>
@@ -673,7 +686,7 @@ function ArtifactEvidence({ snapshot, active }: Readonly<{ snapshot: DeliverySna
 function ReviewEvidence({ snapshot }: Readonly<{ snapshot: DeliverySnapshot }>) {
   return (
     <section className="delivery-card" aria-labelledby="delivery-review-title">
-      <p className="section-kicker">Version-bound records</p>
+      <p className="section-kicker">確認の記録</p>
       <h3 id="delivery-review-title">レビュー・承認根拠</h3>
       <div className="delivery-review-grid">
         <div>
@@ -687,7 +700,7 @@ function ReviewEvidence({ snapshot }: Readonly<{ snapshot: DeliverySnapshot }>) 
                   <strong>{reviewStateLabels[record.state]}</strong>
                   <span>{roleLabels[record.actorRole]}</span>
                   <time dateTime={record.recordedAt}>{formatUtc(record.recordedAt)}</time>
-                  <code>{record.reviewRecordId}</code>
+                  <TechnicalCode value={record.reviewRecordId} />
                 </li>
               ))}
             </ol>
@@ -714,15 +727,16 @@ function ApprovalRecord({ approval }: Readonly<{ approval: DeliveryApproval }>) 
     <li>
       <strong>{roleLabels[approval.actorRole]}</strong>
       <time dateTime={approval.approvedAt}>{formatUtc(approval.approvedAt)}</time>
-      <code>{approval.approvalId}</code>
+      <TechnicalCode value={approval.approvalId} />
     </li>
   )
 }
 
 function RightsEvidence({ snapshot, active }: Readonly<{ snapshot: DeliverySnapshot; active: boolean }>) {
+  const technical = useContext(TechnicalIdentifiersVisible)
   return (
     <section className="delivery-card" aria-labelledby="delivery-rights-title">
-      <p className="section-kicker">Per-asset evidence</p>
+      <p className="section-kicker">素材の権利</p>
       <h3 id="delivery-rights-title">素材権利とプロジェクト公開範囲</h3>
       <p className="delivery-evidence-note">
         プロジェクト公開範囲は「{publicationScopeLabels[snapshot.publicationScope]}」です。これは各素材の外部公開許可とは別に評価します。
@@ -735,8 +749,8 @@ function RightsEvidence({ snapshot, active }: Readonly<{ snapshot: DeliverySnaps
             <caption className="visually-hidden">使用素材ごとの権利証跡</caption>
             <thead>
               <tr>
-                <th scope="col">Asset ID</th>
-                <th scope="col">Source digest</th>
+                {technical && <th scope="col">Asset ID</th>}
+                {technical && <th scope="col">Source digest</th>}
                 <th scope="col">権利状態</th>
                 <th scope="col">根拠記録</th>
                 <th scope="col">許可用途</th>
@@ -746,8 +760,8 @@ function RightsEvidence({ snapshot, active }: Readonly<{ snapshot: DeliverySnaps
             <tbody>
               {snapshot.rights.map((rights) => (
                 <tr key={rights.assetId}>
-                  <td><code>{rights.assetId}</code></td>
-                  <td><code>{rights.sourceDigest}</code></td>
+                  {technical && <td><code>{rights.assetId}</code></td>}
+                  {technical && <td><code>{rights.sourceDigest}</code></td>}
                   <td>{rightsStatusLabels[rights.status]}</td>
                   <td>{formatBoolean(rights.evidenceRecorded)}</td>
                   <td>{rights.allowedUse}</td>
@@ -767,7 +781,7 @@ function QualityControlEvidence({
 }: Readonly<{ qualityControl: DeliveryQualityControl }>) {
   return (
     <section className="delivery-card" aria-labelledby="delivery-qc-title">
-      <p className="section-kicker">Machine evidence with human gate</p>
+      <p className="section-kicker">自動の品質確認</p>
       <h3 id="delivery-qc-title">品質確認 evidence と制約</h3>
       <div className="delivery-qc-warning" role="note">
         <strong>機械チェック通過は配信許可ではありません</strong>
@@ -848,7 +862,7 @@ function QualityControlEvidence({
             <li key={`${tool.name}-${tool.executableDigest}`}>
               <strong>{tool.name} {tool.version}</strong>
               <span>{formatInteger(tool.executableByteSize)} bytes</span>
-              <code>{tool.executableDigest}</code>
+              <TechnicalCode value={tool.executableDigest} />
             </li>
           ))}
         </ol>
@@ -910,7 +924,7 @@ function TraceEvidence({
   }
   return (
     <section className="delivery-card" aria-labelledby="delivery-trace-title">
-      <p className="section-kicker">Exact reverse lookup</p>
+      <p className="section-kicker">元動画との対応</p>
       <h3 id="delivery-trace-title">任意の出力時刻から由来を照合</h3>
       <form className="delivery-trace-form" onSubmit={submit}>
         <fieldset disabled={pending || !active}>
@@ -996,17 +1010,27 @@ function TraceResult({ trace }: Readonly<{ trace: Exclude<DeliveryTrace, { statu
   )
 }
 
+// FR-052: inside the workflow (仕上がり) IDs and digests are not shown; the standalone evidence view keeps them.
+const TechnicalIdentifiersVisible = createContext(true)
+
 function EvidenceField({
   label,
   value,
   wide = false,
 }: Readonly<{ label: string; value: string; wide?: boolean }>) {
+  if (!useContext(TechnicalIdentifiersVisible)) {
+    return null
+  }
   return (
     <div className={wide ? 'wide' : undefined}>
       <dt>{label}</dt>
       <dd><code>{value}</code></dd>
     </div>
   )
+}
+
+function TechnicalCode({ value }: Readonly<{ value: string }>) {
+  return useContext(TechnicalIdentifiersVisible) ? <code>{value}</code> : null
 }
 
 function PlainField({ label, value }: Readonly<{ label: string; value: string }>) {

@@ -265,7 +265,7 @@ describe('LayoutPanel workflow integration', () => {
       loadAvailable({ onDirtyChange })
       const workspace = element<HTMLElement>('.layout-workspace')
       const text = element<HTMLTextAreaElement>('.subtitle-editor-grid > section:first-child textarea')
-      setValue(text, '別案件へ持ち込まない入力')
+      setValue(text, '別Projectへ持ち込まない入力')
 
       renderPanel({ context: { projectId }, onDirtyChange })
       flushAutoLoad()
@@ -281,7 +281,7 @@ describe('LayoutPanel workflow integration', () => {
       flushAutoLoad()
       expect(container.querySelector('.layout-target-guard')).toBeNull()
       expect(element('.layout-workspace')).toBe(workspace)
-      expect(text.value).toBe('別案件へ持ち込まない入力')
+      expect(text.value).toBe('別Projectへ持ち込まない入力')
       expect(client.sent).toHaveLength(1)
       expect(button('最新版を再読み込み').disabled).toBe(true)
 
@@ -413,7 +413,8 @@ describe('LayoutPanel workflow integration', () => {
     expect(element<HTMLInputElement>('#keyframe-0-0-destination-x').value).toBe('1/4')
     expect(element('[data-keyframe-slot="singleSubject"]').getAttribute('x')).toBe('405')
     expect(profile.checked).toBe(true)
-    expect(container.textContent).toContain('revision 4・未永続化')
+    // FR-052: the revision badge is shown as a plain-language change count.
+    expect(container.textContent).toContain('4回目の変更・未永続化')
     expect(container.querySelector('.layout-draft-guard')).toBeNull()
     expect(element('.layout-panel').getAttribute('data-layout-dirty')).toBe('true')
     expect(dirtyChanges).toEqual([false, true])
@@ -996,7 +997,8 @@ describe('LayoutPanel workflow integration', () => {
       const recoveryStatus = failure === 'bridgeUnavailable' ? 'invalid' : failure
       expectRetainedInputs()
       expect(element('.layout-panel').getAttribute('data-layout-status')).toBe(recoveryStatus)
-      expect(container.textContent).toContain('revision 4・旧根拠（再確認が必要）・未永続化')
+      // FR-052: the revision badge is shown as a plain-language change count.
+      expect(container.textContent).toContain('4回目の変更・旧根拠（再確認が必要）・未永続化')
       expect(container.querySelector('.layout-draft-guard details')).toBeNull()
       submit(form)
       // An otherwise unchanged sibling must also stay gated until fresh evidence.
@@ -1131,7 +1133,8 @@ describe('LayoutPanel workflow integration', () => {
       expect(reason.value).toBe('失敗しても残す理由')
       expect(element('[name="terop-text"]')).toBe(terop)
       expect(terop.value).toBe('失敗しても残すテロップ')
-      expect(container.textContent).toContain('revision 3・旧根拠（再確認が必要）・未永続化')
+      // FR-052: the revision badge is shown as a plain-language change count.
+      expect(container.textContent).toContain('3回目の変更・旧根拠（再確認が必要）・未永続化')
       expect(container.textContent).toContain('現在の revision は未確認')
       expect(dirtyChanges).toEqual([false, true])
       setValue(text, '失敗後も編集できる本文')
@@ -1274,8 +1277,8 @@ describe('LayoutPanel workflow integration', () => {
       loadAvailable()
       const workspace = element<HTMLElement>('.layout-workspace')
       const text = element<HTMLTextAreaElement>('[name="subtitle-text"]')
-      setValue(text, '元案件だけの本文')
-      setValue(element<HTMLInputElement>('[name="subtitle-reason"]'), '元案件だけの理由')
+      setValue(text, '元Projectだけの本文')
+      setValue(element<HTMLInputElement>('[name="subtitle-reason"]'), '元Projectだけの理由')
       submit(element<HTMLFormElement>('.subtitle-editor-grid > section:first-child .cue-edit-form'))
       complete(createLayoutFailureValue('conflict', request(1).requestId, 'layout.apply'))
       renderPanel({ context: { projectId } })
@@ -1294,7 +1297,7 @@ describe('LayoutPanel workflow integration', () => {
       expect(client.sent).toHaveLength(2)
       renderPanel({ context: { projectId: layoutProjectId } })
       expect(element('[name="subtitle-text"]')).toBe(text)
-      expect(text.value).toBe('元案件だけの本文')
+      expect(text.value).toBe('元Projectだけの本文')
       expect(element('.layout-draft-guard')).not.toBeNull()
     },
   )

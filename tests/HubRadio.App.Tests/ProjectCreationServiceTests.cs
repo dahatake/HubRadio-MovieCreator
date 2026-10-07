@@ -11,6 +11,7 @@ using HubRadio.Core.Projects;
 using HubRadio.Core.Provenance;
 using HubRadio.Core.Security;
 using HubRadio.Core.Serialization;
+using HubRadio.Core.Settings;
 using HubRadio.Infrastructure.Database;
 using HubRadio.Infrastructure.Media;
 using Microsoft.Data.Sqlite;
@@ -514,6 +515,114 @@ public sealed class ProjectCreationServiceTests
         Assert.IsFalse(json.Contains("C:\\", StringComparison.Ordinal));
     }
 
+    // FR-053 AC-028.4: every listed Project carries its poster digest (or null and a background request), and
+    // deleting a Project removes its poster.
+    [TestMethod]
+    public async Task ListProjectsReportsThePosterForDraftsAndProjectsAndDeleteRemovesIt()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        ProjectCreationDraftView withPoster = fixture.Service.CreateDraft();
+        ProjectCreationDraftView withoutPoster = fixture.Service.CreateDraft();
+        string digest = new('e', 64);
+        var requested = new List<string>();
+        var removed = new List<string>();
+        fixture.Service.PosterResolver = draftId => draftId.ToString() == withPoster.DraftId ? digest : null;
+        fixture.Service.PosterRequester = draftId => requested.Add(draftId.ToString());
+        fixture.Service.PosterRemover = draftId => removed.Add(draftId.ToString());
+
+        string json = await new ProjectBridgeHandler(fixture.Service).HandleAsync(
+            CreateBridgeRequest(BridgeMethod.ListProjects, new JsonObject()),
+            CancellationToken.None);
+
+        using (JsonDocument document = JsonDocument.Parse(json))
+        {
+            foreach (JsonElement item in document.RootElement.GetProperty("result").GetProperty("projects").EnumerateArray())
+            {
+                JsonElement poster = item.GetProperty("poster");
+                if (item.GetProperty("draftId").GetString() == withPoster.DraftId)
+                {
+                    CollectionAssert.AreEqual(new[] { "contentDigest" },
+                        poster.EnumerateObject().Select(static property => property.Name).ToArray());
+                    Assert.AreEqual(digest, poster.GetProperty("contentDigest").GetString());
+                }
+                else
+                {
+                    Assert.AreEqual(JsonValueKind.Null, poster.ValueKind);
+                }
+            }
+        }
+
+        CollectionAssert.AreEqual(new[] { withoutPoster.DraftId }, requested.Distinct().ToArray());
+        Assert.IsTrue(fixture.Service.DeleteProject(EntityId<ProjectCreationDraftIdTag>.Parse(withPoster.DraftId)));
+        CollectionAssert.AreEqual(new[] { withPoster.DraftId }, removed);
+        Assert.IsFalse(json.Contains("posters", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // FR-054 AC-029.3: a new Project is tuned to its video by the built-in preset, values the user changed globally
+    // are kept, and the decision is recorded and shown with the draft.
+    [TestMethod]
+    public async Task SourceOnlyCreationTunesTheSnapshotToTheVideoAndKeepsUserChangedValues()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        StoredGlobalSettings global = fixture.SettingsStore.GetGlobalSettings()!;
+        DefaultSettingsProfile profile = fixture.SettingsStore.GetProfile(global.Snapshot.ProfileId, global.Snapshot.ProfileVersion)!;
+        // The user already chose 1 s for the hook start globally; the preset must not overwrite it.
+        _ = new GlobalSettingsService(fixture.SettingsStore).Update("editing.shortHookMaximumStart",
+            DefaultSettingValue.FromInteger(1), global.Revision);
+        var coordinator = new FactsCoordinator(new SourceMediaFacts(77.4, 1080, 1920));
+        var recorded = new List<(string DraftId, SourceMediaFacts Facts, string[] Keys)>();
+        ProjectCreationService service = fixture.CreateService(fixture.Registry, coordinator: coordinator);
+        service.AutoSettingsRecorder = (draftId, facts, applied) =>
+            recorded.Add((draftId.ToString(), facts, applied.Select(static item => item.Key).ToArray()));
+        service.AutoSettingsReader = _ => [new AutoSettingNote("project.verticalShortCandidateCount", "縦型ショートの本数", "3本", "理由")];
+
+        ProjectCreationDraftView created = await service.CreateSourceOnlyDraftAsync();
+
+        StoredSourceOnlyProjectCreation stored = SourceOnlyProjectCreationContract.ParseStored(
+            fixture.DraftStore.GetDraft(EntityId<ProjectCreationDraftIdTag>.Parse(created.DraftId))!.CanonicalJson,
+            fixture.Catalog, fixture.SettingsStore);
+        var values = stored.SettingsSnapshot.Values.ToDictionary(static item => item.Key, static item => item.Value);
+        Assert.AreEqual(1L, values["editing.shortHookMaximumStart"].IntegerValue);
+        Assert.AreEqual(9L, values["subtitles.verticalLineLengthMaximum"].IntegerValue);
+        Assert.AreEqual(stored.SettingsSnapshot.ContentDigest.Hex, created.SourceOnly!.SettingsSnapshotDigest);
+        Assert.AreEqual(profile.ContentDigest, stored.SettingsSnapshot.ProfileDigest);
+        Assert.HasCount(1, recorded);
+        Assert.AreEqual(created.DraftId, recorded[0].DraftId);
+        CollectionAssert.DoesNotContain(recorded[0].Keys, "editing.shortHookMaximumStart");
+        CollectionAssert.Contains(recorded[0].Keys, "subtitles.verticalLineLengthMaximum");
+        Assert.AreEqual("縦型ショートの本数", created.AutoSettings!.Single().Label);
+        Assert.AreEqual(fixture.PickerSourcePath, coordinator.ProbedPath);
+
+        // Without facts (e.g. the video cannot be read) the global snapshot is used unchanged and nothing is recorded.
+        ProjectCreationService plain = fixture.CreateService(fixture.Registry, coordinator: new FactsCoordinator(null));
+        plain.AutoSettingsRecorder = (_, _, _) => Assert.Fail("Nothing must be recorded without facts.");
+        ProjectCreationDraftView untouched = await plain.CreateSourceOnlyDraftAsync();
+        Assert.AreEqual(fixture.SettingsStore.GetGlobalSettings()!.Snapshot.ContentDigest.Hex,
+            untouched.SourceOnly!.SettingsSnapshotDigest);
+    }
+
+    private sealed class FactsCoordinator(SourceMediaFacts? facts) : ISourceOnlyProjectCoordinator
+    {
+        internal string? ProbedPath { get; private set; }
+
+        public Task CaptureSelectionAsync(EntityId<ProjectCreationDraftIdTag> draftId, EntityId<AssetIdTag> candidateId,
+            string path, string actorSid, DateTimeOffset selectedAt, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public void ForgetSelection(EntityId<ProjectCreationDraftIdTag> draftId)
+        {
+        }
+
+        public Task<SourceMediaFacts?> ProbeSourceAsync(string sourcePath, CancellationToken cancellationToken)
+        {
+            ProbedPath = sourcePath;
+            return Task.FromResult(facts);
+        }
+
+        public StoredProjectCreationDraft Accept(ProjectCreationDraft draft, DefaultSettingsSnapshot settings,
+            string payloadJson, int expectedRevision, string actorSid, DateTimeOffset acceptedAt) =>
+            throw new NotSupportedException();
+    }
+
     // FR-045 AC-020.5
     [TestMethod]
     public void ThumbnailResolverReturnsNothingForAProjectWithoutAnExecutionResult()
@@ -813,7 +922,7 @@ public sealed class ProjectCreationServiceTests
             JsonElement draft = created.RootElement.GetProperty("result").GetProperty("draft");
             Assert.AreEqual("picked-source", draft.GetProperty("contentName").GetString());
             Assert.AreEqual("internalOnly", draft.GetProperty("publicationScope").GetString());
-            Assert.AreEqual("1.1.0", draft.GetProperty("sourceOnly")
+            Assert.AreEqual("1.2.0", draft.GetProperty("sourceOnly")
                 .GetProperty("profileVersion").GetString());
             Assert.IsGreaterThan(0, draft.GetProperty("sourceOnly")
                 .GetProperty("artifactSet").GetArrayLength());

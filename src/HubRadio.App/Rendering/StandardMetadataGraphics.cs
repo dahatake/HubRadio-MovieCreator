@@ -16,6 +16,8 @@ public enum StandardTextProvenanceKind
     SourceAssetMetadata,
     PlannedMetadata,
     SettingsCallToAction,
+    /// <summary>FR-059: verbatim text of a displayed subtitle cue (emphasis caption).</summary>
+    OriginalTranscript,
 }
 
 public sealed record StandardTextOverlayEvidence(
@@ -33,7 +35,8 @@ internal static class StandardMetadataGraphics
     internal static IReadOnlyList<StandardGraphicRenderFile> Create(StandardCompositionPlan plan,
         StandardShortFormPlan? shortForm, EntityId<RenderNodeIdTag> target,
         RenderProfile profile, RationalTime duration, RationalTime firstCutDuration,
-        RenderFontEvidence font, StandardRenderConfiguration? configuration)
+        RenderFontEvidence font, StandardRenderConfiguration? configuration,
+        IReadOnlyList<StandardEmphasisTelop>? telops = null)
     {
         var files = new List<StandardGraphicRenderFile>();
         RationalTime titleMaximum = configuration?.TitleMaximumDuration ?? new RationalTime(3, 1);
@@ -78,11 +81,21 @@ internal static class StandardMetadataGraphics
                 new TimeRange(duration - length, length), "last-min(endScreenDuration,shortDuration)",
                 StandardTextProvenanceKind.SettingsCallToAction, true);
         }
+
+        // FR-059: verbatim emphasis captions in their own band between the title and end-screen bands.
+        foreach (StandardEmphasisTelop telop in telops ?? [])
+        {
+            if (telop.OutputRange.Start < default(RationalTime) || telop.OutputRange.End > duration)
+                throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedPlanElement);
+            Add("EmphasisTelop", telop.Text, [telop.Origin], null, telop.OutputRange, telop.Rule,
+                StandardTextProvenanceKind.OriginalTranscript, tail: false, emphasis: true);
+        }
+
         return files.AsReadOnly();
 
         void Add(string role, string text, IReadOnlyList<OriginRef> origins,
             EntityId<LongFormElementIdTag>? elementId, TimeRange range, string timing,
-            StandardTextProvenanceKind provenance, bool tail)
+            StandardTextProvenanceKind provenance, bool tail, bool emphasis = false)
         {
             if (files.Count >= 64 || Encoding.UTF8.GetByteCount(text) > 2048)
                 throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.ResourceLimit);
@@ -93,13 +106,14 @@ internal static class StandardMetadataGraphics
             int top = profile.Height / 10;
             int bottom = profile.Height * 3 / 10;
             if (tail) { top = profile.Height * 6 / 10; bottom = profile.Height * 3 / 4; }
+            if (emphasis) { left = profile.Width / 20; right = profile.Width - left; top = profile.Height * 32 / 100; bottom = profile.Height * 46 / 100; }
             if (files.Any(file => file.Evidence.OutputRange.Start < range.End && range.Start < file.Evidence.OutputRange.End
                 && left < file.Evidence.Right && file.Evidence.Left < right && top < file.Evidence.Bottom && file.Evidence.Top < bottom))
                 throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedPlanElement);
             // Reject literal ASS controls before wrapping could split the sequence.
             SubtitleWriterContract.ValidateAssText(text);
             string[] glyphs = TextElements(text);
-            int size = Math.Min(profile.Width >= 1920 ? 64 : 48,
+            int size = Math.Min(emphasis ? 128 : profile.Width >= 1920 ? 64 : 48,
                 Math.Min((bottom - top - 12) / 2, (right - left - 24) * 2 / Math.Max(1, glyphs.Length)));
             if (size < 20) throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedPlanElement);
             int perLine = Math.Max(1, (right - left - 24) / size);
@@ -110,10 +124,12 @@ internal static class StandardMetadataGraphics
                 rendered, SubtitleFileCueStyle.Normal);
             var white = new AssColor(0, 255, 255, 255);
             var black = new AssColor(0, 0, 0, 0);
+            // Emphasis captions: bold yellow lettering with a thick black outline, no box.
+            var fill = emphasis ? new AssColor(0, 255, 221, 0) : white;
             var ass = new AssSubtitleProfile(profile.Width, profile.Height, Enum.GetValues<SubtitleFileCueStyle>()
-                .Select(style => new AssStyleDefinition(style, font.Name, size, white, white, black, black,
-                    true, false, false, false, 100, 100, 0, 0, AssBorderStyle.OpaqueBox, 3, 0,
-                    AssAlignment.MiddleCenter, new AssMargins(12, 12, 12), 1)).ToArray());
+                .Select(style => new AssStyleDefinition(style, font.Name, size, fill, fill, black, black,
+                    true, false, false, false, 100, 100, 0, 0, emphasis ? AssBorderStyle.OutlineAndShadow : AssBorderStyle.OpaqueBox,
+                    emphasis ? 6 : 3, 0, AssAlignment.MiddleCenter, new AssMargins(12, 12, 12), 1)).ToArray());
             SubtitleExportFile file = StandardSubtitlePlacement.WriteAtBounds(cue, ass, left, top, right, bottom);
             var input = new RenderGraphInput(EntityId<RenderInputIdTag>.New(), RenderInputKind.Graphic,
                 file.ContentDigest, file.ByteSize, origins[0]);

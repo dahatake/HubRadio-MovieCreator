@@ -85,9 +85,13 @@ describe('ComparisonStateProvider integration', () => {
       '#comparison-result-title',
     )
     expect(document.activeElement).toBe(resultTitle)
-    expect(container.textContent).toContain(comparisonLeftDigest)
-    expect(container.textContent).toContain(comparisonRightDigest)
-    expect(container.textContent).toContain('9/2 秒')
+    // FR-052: durations are plain seconds and raw version IDs/digests are not shown.
+    expect(container.textContent).not.toContain(comparisonLeftDigest)
+    expect(container.textContent).not.toContain(comparisonRightDigest)
+    expect(container.textContent).not.toContain(comparisonLeftVersionId)
+    expect(container.textContent).not.toContain(comparisonRightVersionId)
+    expect(container.textContent).toContain('4.5秒')
+    expect(container.textContent).not.toContain('9/2 秒')
     expect(container.textContent).toContain(hostileComparisonReason)
     expect(container.querySelector('img')).toBeNull()
     expect(container.innerHTML).toContain('&lt;img')
@@ -127,7 +131,9 @@ describe('ComparisonStateProvider integration', () => {
     expect(document.activeElement).toBe(tabs[1])
     expect(requiredElement<HTMLElement>('#comparison-panel-ranges').hidden)
       .toBe(false)
-    expect(container.textContent).toContain('開始 21/2 秒')
+    // FR-052: source ranges read as a playback position plus a plain duration.
+    expect(container.textContent).toContain('0:10.5 から 2秒')
+    expect(container.textContent).not.toContain('21/2')
 
     act(() => {
       tabs[1]!.dispatchEvent(new KeyboardEvent('keydown', {
@@ -200,8 +206,9 @@ describe('ComparisonStateProvider integration', () => {
 
     act(() => client.emit(response))
     expect(container.textContent).toContain('同一版')
-    expect(container.textContent).toContain('要素の変更はありません。')
-    expect(container.textContent).toContain('Suggestion 採用の変更はありません。')
+    // FR-052: the empty change lists use plain-language wording.
+    expect(container.textContent).toContain('場面の変更はありません。')
+    expect(container.textContent).toContain('採用した提案の変更はありません。')
   })
 
   it('rejects invalid local targets and shows only fixed native failure text', () => {
@@ -244,7 +251,7 @@ describe('ComparisonStateProvider integration', () => {
     act(() => client.emit(failure))
 
     const alert = requiredElement<HTMLElement>('.comparison-error[role="alert"]')
-    expect(alert.textContent).toContain('異なる案件の構成版は比較できません。')
+    expect(alert.textContent).toContain('異なるProjectの構成版は比較できません。')
     expect(alert.textContent).not.toContain('projectId')
     expect(alert.textContent).not.toContain('C:\\')
     expect(alert.textContent).not.toContain('exception')
@@ -379,8 +386,9 @@ describe('ComparePanel workflow context', () => {
     expect(container.querySelector('input')).toBeNull()
     expect(requiredElement<HTMLButtonElement>('.comparison-submit-row button').disabled)
       .toBe(true)
+    // FR-052: the unselected pair prompt is plain language.
     expect(requiredElement<HTMLElement>('[role="status"]').textContent)
-      .toBe('比較する2版が未選択です。')
+      .toBe('比較する2つの編集版を選んでください。')
     expect(container.textContent).not.toContain('UUID')
     expect(container.textContent).not.toContain('指定してください')
     expect(client.sent).toHaveLength(0)
@@ -506,8 +514,9 @@ describe('ComparePanel workflow context', () => {
     expect(state.comparison?.right.versionId).toBe(comparisonRightVersionId)
     expect(container.querySelector('#comparison-result-title')).toBeNull()
     expect(container.querySelector('form')).toBeNull()
+    // FR-052: a cleared side shows the plain-language selection prompt.
     expect(requiredElement<HTMLElement>('[role="status"]').textContent)
-      .toContain('未選択')
+      .toContain('比較する2つの編集版を選んでください')
     expect(requiredElement<HTMLButtonElement>('.comparison-submit-row button').disabled)
       .toBe(true)
     expect(document.activeElement).toBe(outside)

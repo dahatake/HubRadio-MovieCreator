@@ -59,7 +59,8 @@ public sealed class FfmpegCompileRequest
         IReadOnlyList<FfmpegAssGraphicBinding>? graphics = null,
         FfmpegFrameExtraction? frameExtraction = null,
         IReadOnlyList<FfmpegMusicBinding>? music = null,
-        bool loudnessMeasurement = false)
+        bool loudnessMeasurement = false,
+        IReadOnlyList<FfmpegSoundEffectBinding>? soundEffects = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(validationContext);
@@ -100,8 +101,11 @@ public sealed class FfmpegCompileRequest
         FrameExtraction = frameExtraction;
         Music = Array.AsReadOnly((music ?? []).ToArray());
         LoudnessMeasurement = loudnessMeasurement;
+        SoundEffects = Array.AsReadOnly((soundEffects ?? []).ToArray());
         if (Music.Count > 16 || Music.Any(static item => item is null))
             throw new ArgumentException("Music bindings must be bounded and non-null.", nameof(music));
+        if (SoundEffects.Count > MaximumSoundEffects || SoundEffects.Any(static item => item is null))
+            throw new ArgumentException("Sound-effect bindings must be bounded and non-null.", nameof(soundEffects));
         if (VideoGeometry.Any(static item => item is null)
             || VideoGeometry.Select(static item => item.NodeId).Distinct().Count() != VideoGeometry.Count
             || Fonts.Any(static item => item is null)
@@ -142,6 +146,34 @@ public sealed class FfmpegCompileRequest
     public IReadOnlyList<FfmpegMusicBinding> Music { get; }
     /// <summary>Audio-only loudnorm analysis to the null muxer; no media file is produced.</summary>
     public bool LoudnessMeasurement { get; }
+    /// <summary>FR-060: short verified WAV effects mixed at a fixed gain before loudness normalization.</summary>
+    public IReadOnlyList<FfmpegSoundEffectBinding> SoundEffects { get; }
+
+    public const int MaximumSoundEffects = 32;
+}
+
+/// <summary>FR-060: a verified short WAV file played once from <see cref="OutputStart"/> at <see cref="GainDecibels"/>.</summary>
+public sealed class FfmpegSoundEffectBinding
+{
+    public FfmpegSoundEffectBinding(BinaryVerificationRequest verificationRequest, RationalTime outputStart,
+        RationalTime duration, int gainDecibels)
+    {
+        VerificationRequest = verificationRequest ?? throw new ArgumentNullException(nameof(verificationRequest));
+        if (outputStart <= default(RationalTime))
+            throw new ArgumentOutOfRangeException(nameof(outputStart));
+        if (duration <= default(RationalTime) || duration > new RationalTime(2, 1))
+            throw new ArgumentOutOfRangeException(nameof(duration));
+        if (gainDecibels is < -40 or > 0)
+            throw new ArgumentOutOfRangeException(nameof(gainDecibels));
+        OutputStart = outputStart;
+        Duration = duration;
+        GainDecibels = gainDecibels;
+    }
+
+    public BinaryVerificationRequest VerificationRequest { get; }
+    public RationalTime OutputStart { get; }
+    public RationalTime Duration { get; }
+    public int GainDecibels { get; }
 }
 
 /// <summary>A verified, non-looping file segment. Editorial eligibility belongs to the plan adapter.</summary>
@@ -496,6 +528,7 @@ public static class FfmpegCompiler
                 request.FrameExtraction,
                 request.Music,
                 request.LoudnessMeasurement,
+                request.SoundEffects,
                 cancellationToken);
             List<string> arguments = BuildArguments(
                 request.ValidationContext.Profile,
@@ -554,6 +587,9 @@ public static class FfmpegCompiler
 
             foreach (FfmpegMusicBinding music in request.Music)
                 await VerifyExactAsync(music.VerificationRequest, verifyAsync,
+                    FfmpegCompilerFailureReason.InputNotVerified, cancellationToken).ConfigureAwait(false);
+            foreach (FfmpegSoundEffectBinding effect in request.SoundEffects)
+                await VerifyExactAsync(effect.VerificationRequest, verifyAsync,
                     FfmpegCompilerFailureReason.InputNotVerified, cancellationToken).ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -886,6 +922,17 @@ public static class FfmpegCompiler
         for (int i = 1; i < orderedMusic.Length; i++)
             if (orderedMusic[i].OutputRange.Start < orderedMusic[i - 1].OutputRange.End)
                 throw Failure(FfmpegCompilerFailureReason.UnsupportedAudioShape);
+        foreach (FfmpegSoundEffectBinding effect in request.SoundEffects)
+        {
+            if (request.EncoderSettings is null || request.FrameExtraction is not null
+                || !graph.Nodes.Any(static node => node.Kind == RenderNodeKind.Audio)
+                || effect.OutputStart + effect.Duration > output.OutputRange.End
+                // Effects follow subtitle cue starts, which need not be frame aligned; the delay is floored to samples.
+                || !IsSafeProcessPathText(effect.VerificationRequest.FilePath)
+                || !Path.IsPathFullyQualified(effect.VerificationRequest.FilePath)
+                || !string.Equals(Path.GetExtension(effect.VerificationRequest.FilePath), ".wav", StringComparison.OrdinalIgnoreCase))
+                throw Failure(FfmpegCompilerFailureReason.InputBindingMismatch);
+        }
     }
 
     private static CompilationState CompileGraph(
@@ -899,6 +946,7 @@ public static class FfmpegCompiler
         FfmpegFrameExtraction? frameExtraction,
         IReadOnlyList<FfmpegMusicBinding> music,
         bool loudnessMeasurement,
+        IReadOnlyList<FfmpegSoundEffectBinding> soundEffects,
         CancellationToken cancellationToken)
     {
         Dictionary<EntityId<RenderNodeIdTag>, RenderNode> nodes =
@@ -1153,6 +1201,25 @@ public static class FfmpegCompiler
                     "amix=inputs=", (music.Count + 1).ToString(CultureInfo.InvariantCulture),
                     ":duration=first:dropout_transition=0:normalize=0[card_music_mix]"));
                 audioLabel = "card_music_mix";
+            }
+
+            if (soundEffects.Count > 0)
+            {
+                var effectLabels = new List<string>();
+                for (int i = 0; i < soundEffects.Count; i++)
+                {
+                    FfmpegSoundEffectBinding effect = soundEffects[i];
+                    int inputIndex = nextInputIndex++;
+                    arguments.AddRange(["-i", effect.VerificationRequest.FilePath]);
+                    string label = FormattableString.Invariant($"sound_effect_{i}");
+                    BigInteger delaySamples = (BigInteger)effect.OutputStart.Value * OutputAudioSampleRate / effect.OutputStart.Rate;
+                    AddAudioFilter(FormattableString.Invariant($"[{inputIndex}:a:0]aresample=48000,aformat=channel_layouts={(encoderSettings!.AudioChannels == 1 ? "mono" : "stereo")},volume={effect.GainDecibels}dB,atrim=duration={FormatTime(effect.Duration)},asetpts=PTS-STARTPTS,adelay={delaySamples}S:all=1,apad=whole_dur={FormatTime(outputNode.OutputRange.Duration)},atrim=duration={FormatTime(outputNode.OutputRange.Duration)}[{label}]"));
+                    effectLabels.Add(label);
+                }
+                AddAudioFilter(string.Concat("[", audioLabel, "]", string.Concat(effectLabels.Select(static label => "[" + label + "]")),
+                    "amix=inputs=", (soundEffects.Count + 1).ToString(CultureInfo.InvariantCulture),
+                    ":duration=first:dropout_transition=0:normalize=0[sound_effect_mix]"));
+                audioLabel = "sound_effect_mix";
             }
 
             if (encoderSettings is not null)

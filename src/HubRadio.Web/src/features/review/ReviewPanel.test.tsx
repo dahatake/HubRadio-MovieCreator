@@ -43,23 +43,27 @@ const otherVersionId = '81112222-3333-4444-8555-666677778888'
 const otherVersionDigest = 'c'.repeat(64)
 
 describe('ReviewPanel', () => {
+  // FR-052: the pinned target, comment time, approvals and diff are shown in plain language without IDs/digests.
   it('renders the exact target, full digest, exact comment time, approvals, and direct-parent diff', () => {
     const markup = renderSnapshot(snapshot())
+    // The standalone load form keeps the user-entered version ID as its input value; only displayed content is checked here.
+    const displayed = markup.replace(/<input[^>]*>/g, '')
 
-    expect(markup).toContain(reviewVersionId)
-    expect(markup).toContain(reviewVersionDigest)
+    for (const identifier of [
+      reviewVersionId, reviewVersionDigest, reviewSourceSpanId, reviewParentVersionId, reviewParentDigest, reviewElementId,
+    ]) {
+      expect(displayed).not.toContain(identifier)
+    }
     expect(markup).not.toContain(`${reviewVersionDigest.slice(0, 12)}…`)
     expect(markup).toContain('内容レビュー')
-    expect(markup).toContain('出力 1/2')
-    expect(markup).toContain(reviewSourceSpanId)
+    expect(markup).toContain('動画の 0:00.5 の位置')
+    expect(markup).not.toContain('1/2')
     expect(markup).toContain('字幕の語尾を確認してください。')
     expect(markup).toContain('有効')
     expect(markup).toContain('失効')
-    expect(markup).toContain(reviewParentVersionId)
-    expect(markup).toContain(reviewParentDigest)
+    expect(markup).toContain('<dt>直接の親版</dt><dd>あり</dd>')
     expect(markup).toContain('失効した承認は別の構成版に固定された履歴です。')
     expect(markup).toContain('直接の親版との差分 1 件を表示')
-    expect(markup).toContain(reviewElementId)
     expect(markup).toContain('位置 0 → 0')
   })
 
@@ -249,7 +253,8 @@ describe('ReviewPanel UX037 with the actual ReviewStateProvider', () => {
     await renderPanel({ context: { versionId: reviewVersionId }, active: true })
     await renderPanel({ context: { versionId: reviewVersionId } })
     expect(client.sent).toHaveLength(1)
-    expect(container.textContent).toContain(reviewVersionDigest)
+    // FR-052: the loaded version is recognised by its content, not by its digest.
+    expectReviewVersionShown()
 
     await renderPanel({ context: { versionId: otherVersionId } })
     expect(client.sent).toHaveLength(2)
@@ -257,7 +262,8 @@ describe('ReviewPanel UX037 with the actual ReviewStateProvider', () => {
     expect(container.textContent).not.toContain(reviewVersionDigest)
     expect(container.querySelector('#review-comment-text')).toBeNull()
     await complete(sent(1))
-    expect(container.textContent).toContain(otherVersionDigest)
+    // FR-052: the loaded version is recognised by its content, not by its digest.
+    expectOtherVersionShown()
   })
 
   it('waits until active and survives StrictMode without sending to an uninstalled session', async () => {
@@ -284,7 +290,8 @@ describe('ReviewPanel UX037 with the actual ReviewStateProvider', () => {
     expect(sent(0).params).toEqual({ versionId: reviewVersionId })
     await complete(sent(0))
     expect(container.querySelector('.review-error')).toBeNull()
-    expect(container.textContent).toContain(reviewVersionDigest)
+    // FR-052: the loaded version is recognised by its content, not by its digest.
+    expectReviewVersionShown()
   })
 
   it.each([
@@ -312,7 +319,8 @@ describe('ReviewPanel UX037 with the actual ReviewStateProvider', () => {
     expect(client.sent).toHaveLength(2)
     expect(container.querySelector('.review-workspace')).toBeNull()
     await complete(sent(1))
-    expect(container.textContent).toContain(reviewVersionDigest)
+    // FR-052: the loaded version is recognised by its content, not by its digest.
+    expectReviewVersionShown()
   })
 
   it('holds a pending read across target changes and never displays its late old response', async () => {
@@ -330,7 +338,8 @@ describe('ReviewPanel UX037 with the actual ReviewStateProvider', () => {
     expect(sent(1).params).toEqual({ versionId: otherVersionId })
     expect(container.textContent).not.toContain(reviewVersionDigest)
     await complete(sent(1))
-    expect(container.textContent).toContain(otherVersionDigest)
+    // FR-052: the loaded version is recognised by its content, not by its digest.
+    expectOtherVersionShown()
     expect(onDirtyChange.mock.calls).toEqual([[false]])
   })
 
@@ -772,6 +781,23 @@ describe('ReviewPanel UX037 with the actual ReviewStateProvider', () => {
 
   function submitComment(): void {
     submitForm(control('#review-comment-text').closest('form'))
+  }
+
+  function expectReviewVersionShown(): void {
+    expect(container.querySelector('.review-workspace')).not.toBeNull()
+    expect(container.textContent).toContain('字幕の語尾を確認してください。')
+    expect(container.querySelectorAll('[data-approval-validity="valid"]')).toHaveLength(1)
+    expect(container.textContent).not.toContain(reviewVersionId)
+    expect(container.textContent).not.toContain(reviewVersionDigest)
+  }
+
+  function expectOtherVersionShown(): void {
+    expect(container.querySelector('.review-workspace')).not.toBeNull()
+    expect(container.textContent).not.toContain('字幕の語尾を確認してください。')
+    expect(container.querySelectorAll('[data-approval-validity="valid"]')).toHaveLength(0)
+    expect(container.querySelectorAll('[data-approval-validity="stale"]')).toHaveLength(2)
+    expect(container.textContent).not.toContain(otherVersionId)
+    expect(container.textContent).not.toContain(otherVersionDigest)
   }
 })
 

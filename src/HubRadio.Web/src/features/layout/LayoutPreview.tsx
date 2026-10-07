@@ -40,7 +40,7 @@ export function LayoutPreview({
         {previewModes.audioOnly ? (
           <div className="audio-only-placeholder" role="note" style={{ aspectRatio }}>
             <strong>音声のみプレビュー</strong>
-            <span>{aspect} layout evidence の映像表示を隠しています。</span>
+            <span>{aspect} の映像表示を隠しています。</span>
           </div>
         ) : (
           <>
@@ -60,7 +60,7 @@ export function LayoutPreview({
             >
               <title id="layout-preview-title">{`${aspect} ${snapshot.subtitleOnly ? '字幕配置' : 'レイアウト'} preview`}</title>
               <desc id="layout-preview-description">
-                ネイティブが返した整数 pixel rectangle を同じ viewBox 座標で表示します。
+                字幕・映像の位置を、作成される動画と同じ比率で表示します。
               </desc>
               <rect
                 className="layout-preview-background"
@@ -151,7 +151,7 @@ export function LayoutPreview({
         )}
       </div>
       <figcaption>
-        {snapshot.output.width} × {snapshot.output.height} px・{aspect}。表示は native pixel evidence を SVG viewBox へ直接投影し、小数座標を authority にしません。{' '}
+        {snapshot.output.width} × {snapshot.output.height} px・{aspect}。枠は作成される動画での字幕・映像の位置を示します。{' '}
         {snapshot.subtitleOnly && '字幕・グラフィックの配置だけを表示し、映像の画角は投影していません。 '}
         {orientationDescription(previewModes.orientation, aspect)}
       </figcaption>
@@ -165,11 +165,11 @@ function orientationDescription(
 ): string {
   switch (orientation) {
     case null:
-      return `表示枠は媒体の比率を使用し、この ${aspect} evidence は変更しません。`
+      return `表示枠は動画の比率（${aspect}）に合わせています。`
     case 'landscape':
-      return `横長は代理媒体の確認枠だけに適用し、この ${aspect} native layout evidence を変換しません。`
+      return `横長の確認枠で表示しています。動画の配置は変わりません。`
     case 'portrait':
-      return `縦型確認枠の指定では、この ${aspect} native layout evidence を変換しません。`
+      return `縦型の確認枠で表示しています。動画の配置は変わりません。`
   }
 }
 

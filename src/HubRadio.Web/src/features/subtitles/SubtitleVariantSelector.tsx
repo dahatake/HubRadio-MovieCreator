@@ -16,17 +16,17 @@ export function SubtitleVariantSelector({
 }: SubtitleVariantSelectorProps) {
   return (
     <section className="layout-editor-card" aria-labelledby="subtitle-variant-title">
-      <p className="section-kicker">Existing delivery evidence only</p>
-      <h3 id="subtitle-variant-title">字幕焼き込み variant</h3>
+      <p className="section-kicker">作成済みの動画</p>
+      <h3 id="subtitle-variant-title">字幕あり・なしの切り替え</h3>
       {variantPair === null ? (
         <div className="layout-variant-unavailable" role="note">
-          <strong>対応する variant pair はありません</strong>
-          <p>画面側で manifest、render graph、sidecar の有無を推測しません。</p>
+          <strong>字幕あり・なしの両方の動画はまだありません</strong>
+          <p>自動編集が完了すると選べるようになります。</p>
         </div>
       ) : (
         <>
           <fieldset className="layout-variant-options" disabled={disabled}>
-            <legend>preview で照合する既存 evidence</legend>
+            <legend>プレビューで見る動画</legend>
             <label>
               <input
                 type="radio"
@@ -36,8 +36,6 @@ export function SubtitleVariantSelector({
               />
               <span>
                 <strong>字幕焼き込みあり</strong>
-                <code>{variantPair.burnedIn.deliveryManifestId}</code>
-                <code>{variantPair.burnedIn.renderGraphId}</code>
               </span>
             </label>
             <label>
@@ -49,19 +47,12 @@ export function SubtitleVariantSelector({
               />
               <span>
                 <strong>字幕なし</strong>
-                <code>{variantPair.subtitleFree.deliveryManifestId}</code>
-                <code>{variantPair.subtitleFree.renderGraphId}</code>
-                <small>Sidecar: {variantPair.subtitleFree.hasSidecar ? 'あり' : 'なし'}</small>
+                <small>字幕ファイル（SRT など）: {variantPair.subtitleFree.hasSidecar ? 'あり' : 'なし'}</small>
               </span>
             </label>
           </fieldset>
-          <dl className="layout-variant-evidence">
-            <div><dt>Composition digest</dt><dd><code>{variantPair.compositionVersionDigest}</code></dd></div>
-            <div><dt>Display profile digest</dt><dd><code>{variantPair.displayProfileDigest}</code></dd></div>
-            <div><dt>Subtitle evidence digest</dt><dd><code>{variantPair.subtitleEvidenceDigest}</code></dd></div>
-          </dl>
           <p className="layout-card-note">
-            この選択は preview 表示だけの session-local 状態です。render、保存、承認、variant 生成は実行しません。
+            この選択はプレビューの表示だけを切り替えます。動画の作り直しや保存は行いません。
           </p>
         </>
       )}

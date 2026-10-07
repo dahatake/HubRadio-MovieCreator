@@ -25,6 +25,7 @@ import type {
   LayoutTeropEdit,
   LayoutTeropCue,
 } from '../layout/layoutProtocol'
+import { formatDuration, formatTimestamp } from '../results/humanReadable'
 
 export interface SubtitleEditorProps {
   readonly snapshot: LayoutSnapshot
@@ -35,8 +36,8 @@ export interface SubtitleEditorProps {
 
 const navigationMessages = Object.freeze({
   requested: '字幕の元時刻への移動をプレイヤーへ要求しました。',
-  unavailable: '同じ案件の代理動画を先に読み込んでください。',
-  projectMismatch: 'プレイヤーには別の案件が読み込まれています。',
+  unavailable: '同じProjectの代理動画を先に読み込んでください。',
+  projectMismatch: 'プレイヤーには別のProjectが読み込まれています。',
   busy: 'プレイヤーの移動確認が完了するまでお待ちください。',
   outOfRange: 'この元時刻に対応する代理フレームはありません。',
 } as const)
@@ -108,13 +109,13 @@ export function SubtitleEditor({
     <section className="layout-editor-card subtitle-editor" aria-labelledby="subtitle-editor-title">
       <div className="layout-card-heading">
         <div>
-          <p className="section-kicker">Immutable cue revisions</p>
-          <h3 id="subtitle-editor-title">字幕 Cue とテロップ</h3>
+          <p className="section-kicker">字幕とテロップの編集</p>
+          <h3 id="subtitle-editor-title">字幕とテロップ</h3>
         </div>
         <span className="layout-evidence-badge">{snapshot.persistence === 'persisted' ? '字幕変更は保存済み' : '未永続化'}</span>
       </div>
       <p className="layout-card-note">
-        字幕とテロップは別の revision evidence で編集します。文字列は React text node として表示し、HTML として解釈しません。
+        字幕とテロップはそれぞれ別に直せます。直す前の内容も記録に残ります。
       </p>
       {snapshot.persistence === 'persisted' && <p className="layout-card-note">保存済みなのは字幕の変更記録です。動画への反映には再生成が必要です。</p>}
       {navigationMessage !== null && (
@@ -125,9 +126,9 @@ export function SubtitleEditor({
 
       <div className="subtitle-editor-grid">
         <section aria-labelledby="subtitle-cue-list-title">
-          <h4 id="subtitle-cue-list-title">字幕 Cue</h4>
+          <h4 id="subtitle-cue-list-title">字幕</h4>
           {snapshot.subtitles.length === 0 ? (
-            <p className="layout-empty-list">字幕 Cue はありません。</p>
+            <p className="layout-empty-list">字幕はありません。</p>
           ) : (
             <>
               <div className="cue-list" role="listbox" aria-label="字幕 Cue 一覧">
@@ -152,7 +153,7 @@ export function SubtitleEditor({
                   >
                     <strong>{cue.text}</strong>
                     <span>{formatRange(cue.outputRange)}</span>
-                    <small>{cue.layoutResolution.status}</small>
+                    <small>{cue.layoutResolution.status === 'resolved' ? '配置済み' : '配置の調整が必要'}</small>
                   </button>
                 ))}
               </div>
@@ -205,7 +206,7 @@ export function SubtitleEditor({
                   >
                     <strong>{cue.text}</strong>
                     <span>{formatRange(cue.outputRange)}</span>
-                    <small>{cue.sourceKind}</small>
+                    <small>{cue.sourceKind === 'adoptedSuggestion' ? '自動提案から採用' : '手で追加'}</small>
                   </button>
                 ))}
               </div>
@@ -477,7 +478,7 @@ function TeropCueEditor({
           <strong>Revision {cue.revisionCount}</strong>
           <span>{cue.regionName}</span>
         </div>
-        <span className="layout-evidence-badge">{cue.sourceKind}</span>
+        <span className="layout-evidence-badge">{cue.sourceKind === 'adoptedSuggestion' ? '自動提案から採用' : '手で追加'}</span>
       </div>
       <p className="cue-text-preview">{cue.text}</p>
       <form className="cue-edit-form" data-layout-cue-id={cue.cueId} onSubmit={submit}>
@@ -698,7 +699,7 @@ function handleListKey(
 }
 
 function formatRange(range: LayoutSubtitleCue['outputRange']): string {
-  return `${range.start.value}/${range.start.rate} + ${range.duration.value}/${range.duration.rate}`
+  return `${formatTimestamp(range.start.value, range.start.rate)} から ${formatDuration(range.duration.value, range.duration.rate)}`
 }
 
 function isRequiredText(value: string): boolean {

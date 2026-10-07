@@ -80,7 +80,7 @@ export function ProjectWorkspaceView({
   const confirmAndDelete = (id: string, name: string): void => {
     if (
       !window.confirm(
-        `案件「${name}」を削除しますか？\n削除した案件は一覧から消え、アプリから元に戻せません。\nこの案件の作業ファイルと、アプリの保存領域に書き出したファイルも削除されます。選んだ元の動画ファイルは削除されません。`,
+        `Project「${name}」を削除しますか？\n削除したProjectは一覧から消え、アプリから元に戻せません。\nこのProjectの作業ファイルと、アプリの保存領域に書き出したファイルも削除されます。選んだ元の動画ファイルは削除されません。`,
       )
     ) {
       return
@@ -186,8 +186,8 @@ export function ProjectWorkspaceView({
           <div className="section-heading-row">
             <div>
               <p className="section-kicker">Projects</p>
-              <h2 id="projects-title">案件一覧</h2>
-              <p>下書きと作成済み案件を、更新が新しい順に表示します。「新しい案件を作成」を押して動画ファイルを1本選ぶと、新しい案件が作成されます。</p>
+              <h2 id="projects-title">Project一覧</h2>
+              <p>下書きと作成済みProjectを、更新が新しい順に表示します。「新しいProjectを作成」を押して動画ファイルを1本選ぶと、新しいProjectが作成されます。</p>
             </div>
             <div className="section-actions">
               <button
@@ -204,22 +204,22 @@ export function ProjectWorkspaceView({
                 disabled={openDisabled || !state.canCreate}
                 onClick={selectNewSource}
               >
-                新しい案件を作成
+                新しいProjectを作成
               </button>
             </div>
           </div>
 
           {!state.canCreate && !pending && state.catalog.outputProfiles.length > 0 && (
             <p className="permission-note">
-              案件を作成する権限がありません。一覧の閲覧権限は案件ごとに適用されます。
+              Projectを作成する権限がありません。一覧の閲覧権限はProjectごとに適用されます。
             </p>
           )}
 
           {state.projects.length === 0 ? (
             <div className="project-list-cards">
               <div className="empty-state project-list-cards-empty" role="status">
-                <strong>案件はまだありません</strong>
-                <p>作成権限がある場合は「新しい案件を作成」から始められます。</p>
+                <strong>Projectはまだありません</strong>
+                <p>作成権限がある場合は「新しいProjectを作成」から始められます。</p>
               </div>
             </div>
           ) : (
@@ -261,7 +261,7 @@ export function ProjectWorkspaceView({
                 disabled={navigationDisabled}
                 onClick={requestDeleteOpenProject}
               >
-                案件削除
+                Project削除
               </button>
             </div>
           )}

@@ -477,6 +477,9 @@ public static class SourceOnlyResultCodec
         "cue-boundary-whitespace-trimmed", "output-cues-overlap", "output-gap-below-minimum-without-retiming",
         "line-height-rounded-inward-to-pixels", "opaque-setting-explicitly-overridden-by-transparent-background-request",
         "platform-ui-mask-not-measured", "NOT EVALUATED", "source-gaps-preserved-instead-of-retimed",
+        // FR-051 FullCoverage summaries (one per build).
+        "cue-ends-may-extend-into-following-silence-starts-never-move", "cue-end-extended-into-following-silence", "shown-below-minimum-duration",
+        "shown-above-maximum-reading-speed", "shown-with-gap-below-minimum", "untimed-token-shown-between-timed-neighbours",
     });
 
     internal static JsonDocument ParseDocument(string json, int maximumBytes, int maximumArrayLength = 8192,

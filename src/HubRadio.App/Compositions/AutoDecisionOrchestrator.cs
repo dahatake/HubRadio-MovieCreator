@@ -79,6 +79,7 @@ public static class AutoDecisionRule
     public const string ExplicitCut = "fr005.explicit-cut";
     public const string AdjacentExactRepetition = "fr005.adjacent-exact-repetition";
     public const string HeadTailSilence = "fr005.head-tail-silence";
+    public const string PauseTightening = "fr057.pause-tightening";
 }
 
 public sealed class AutoDecisionRequest
@@ -1088,6 +1089,11 @@ public static class AutoDecisionOrchestrator
         ModelRun modelRun)
     {
         SilenceCandidate payload = candidate.Payload;
+        if (string.Equals(payload.ThresholdVersion, SilenceDetector.PauseThresholdVersion, StringComparison.Ordinal))
+        {
+            return ValidatePause(request, candidate, spans, modelRun);
+        }
+
         if (!string.Equals(
                 payload.ThresholdVersion,
                 SilenceRuleVersion,
@@ -1140,6 +1146,86 @@ public static class AutoDecisionOrchestrator
             request.Parent.Elements,
             spans);
     }
+
+    /// <summary>
+    /// FR-057: a pause strictly inside the recording (never the head or tail) is shortened to
+    /// <see cref="PausePadding"/> on each side. The minimum pause length comes from the accepted
+    /// <c>editing.pauseTightening</c> setting; a profile without that key never tightens pauses.
+    /// </summary>
+    private static CandidatePlan ValidatePause(
+        AutoDecisionRequest request,
+        SilenceSuggestionCandidate candidate,
+        IReadOnlyDictionary<EntityId<SourceSpanIdTag>, SourceSpan> spans,
+        ModelRun modelRun)
+    {
+        SilenceCandidate payload = candidate.Payload;
+        string? strength = request.Settings.Values
+            .FirstOrDefault(static item => item.Key == PauseTighteningKey)?.Value.TextValue;
+        if (strength is null || !TryGetPauseMinimum(strength, out RationalTime minimum))
+        {
+            throw Failure(AutoDecisionFailureReason.SettingsMismatch);
+        }
+
+        if (payload.AnalysisTimeline.ProjectId != request.Parent.ProjectId
+            || payload.SourceSpan.Range.Duration < SilenceDetector.PauseMinimumDuration
+            || payload.SourceSpan.Range.Duration <= PausePadding + PausePadding
+            || payload.SourceSpan.TranscriptRevisionId is not null
+            || payload.SourceSpan.TranscriptTokenIds.Count != 0)
+        {
+            throw Failure(AutoDecisionFailureReason.AmbiguousEvidence);
+        }
+
+        SourceExtent extent = ResolveSourceExtent(
+            request.Parent.Elements,
+            spans,
+            payload.SourceSpan.AssetId,
+            payload.SourceSpan.StreamId,
+            payload.SourceSpan.SourceDigest);
+        if (payload.SourceSpan.Range.Start <= extent.Start || payload.SourceSpan.Range.End >= extent.End)
+        {
+            throw Failure(AutoDecisionFailureReason.AmbiguousEvidence);
+        }
+
+        TimeRange deleteRange = new(
+            payload.SourceSpan.Range.Start + PausePadding,
+            payload.SourceSpan.Range.Duration - PausePadding - PausePadding);
+        return CreatePlan(
+            candidate,
+            modelRun,
+            AutoDecisionRule.PauseTightening,
+            SilenceDetector.PauseThresholdVersion,
+            ComputeDigest(
+                "hubradio.auto-rule.pause.v1",
+                [SilenceDetector.PauseThresholdVersion, "-32", strength, FormatRational(minimum), "3/20", "interior"]),
+            payload.SourceSpan,
+            comparisonSourceSpanId: null,
+            comparisonTokenIds: [],
+            deleteRange,
+            request.Parent.Elements,
+            spans);
+    }
+
+    internal const string PauseTighteningKey = "editing.pauseTightening";
+
+    internal static readonly RationalTime PausePadding = new(3, 20);
+
+    /// <summary>FR-057: weak 2 s, standard 0.7 s, strong 0.4 s.</summary>
+    internal static bool TryGetPauseMinimum(string strength, out RationalTime minimum)
+    {
+        switch (strength)
+        {
+            case "weak": minimum = new RationalTime(2, 1); return true;
+            case "standard": minimum = new RationalTime(7, 10); return true;
+            case "strong": minimum = new RationalTime(2, 5); return true;
+            default: minimum = default; return false;
+        }
+    }
+
+    private static string FormatRational(RationalTime value) =>
+        string.Concat(
+            value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "/",
+            value.Rate.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     private static CandidatePlan CreatePlan(
         DeleteRangeSuggestionCandidate candidate,

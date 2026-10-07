@@ -111,7 +111,19 @@ internal static class SourceOnlyProjectCreationContract
                 SourceOnlyProjectCreationFailureReason.SettingsUnavailable);
         }
 
-        DefaultSettingsSnapshot snapshot = globalSettings.Snapshot;
+        return Resolve(draftId, sourceCandidateId, selectedPath, globalSettings.Snapshot, catalog);
+    }
+
+    /// <summary>FR-054: the same contract for a snapshot already tuned to the source video.</summary>
+    internal static SourceOnlyProjectCreationResolution Resolve(
+        EntityId<ProjectCreationDraftIdTag> draftId,
+        EntityId<AssetIdTag> sourceCandidateId,
+        string selectedPath,
+        DefaultSettingsSnapshot snapshot,
+        ProjectCreationCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(catalog);
         RequireText(snapshot, "project.anonymousSpeakerPolicy", "anonymousSpeakerLabels");
         RequireText(snapshot, "project.languagePolicy", "autoDetectWithJaJpFallback");
         RequireText(snapshot, "project.publicationDeadlinePolicy", "none");

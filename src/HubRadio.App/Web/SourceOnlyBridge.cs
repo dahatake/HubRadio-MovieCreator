@@ -630,6 +630,23 @@ internal static class SourceOnlyBridgeJson
                 writer.WriteString("phase", entry.Phase.ToString());
                 writer.WriteBoolean("hasResult", entry.HasResult);
                 writer.WriteBoolean("isCurrent", entry.IsCurrent);
+                // FR-055: when the video was made, the settings that differ between the listed videos,
+                // and its viewable outputs (served by the revalidating source-only media route).
+                writer.WriteString("createdAt", (entry.CreatedAt ?? DateTimeOffset.UnixEpoch).ToUniversalTime()
+                    .ToString("yyyy-MM-dd'T'HH:mm:ss.fffffff'+00:00'", System.Globalization.CultureInfo.InvariantCulture));
+                SettingsBridgeJson.WriteSelections(writer, "settings", entry.Settings ?? []);
+                writer.WriteStartArray("outputs");
+                foreach (SourceOnlyVersionOutput output in entry.Outputs ?? [])
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("role", output.Role.ToString());
+                    writer.WriteString("artifactId", output.ArtifactId.ToString());
+                    writer.WriteString("contentDigest", output.ContentDigest.Hex);
+                    writer.WriteString("mediaType", output.MediaType);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
                 writer.WriteEndObject();
             }
 

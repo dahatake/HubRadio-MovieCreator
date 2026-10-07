@@ -348,6 +348,8 @@ internal static class StandardCompositionEvidenceCodec
             input.MeasuredVerticalProfileJson);
         BundledRenderProfileDefinition measuredLandscape =
             BundledRenderProfileLoader.Load(landscapeJson);
+        BundledRenderProfileDefinition measuredVertical =
+            BundledRenderProfileLoader.Load(verticalJson);
         RationalNumber sourceFrameRate = input.SourceFrameRate.ToDomain();
         if (sourceFrameRate.Numerator <= 0)
         {
@@ -355,12 +357,17 @@ internal static class StandardCompositionEvidenceCodec
                 "The source frame rate must be positive.");
         }
 
+        var sourceGeometry = new SourceDisplayGeometry(
+            input.SourceDisplayGeometry.Width,
+            input.SourceDisplayGeometry.Height);
         BundledRenderProfileDefinition landscapeProfile =
-            StandardRenderProfileFactory.CreateLandscape(
+            StandardRenderProfileFactory.CreateLongForm(
                 settingsProfile,
                 settings,
                 measuredLandscape,
-                sourceFrameRate);
+                measuredVertical,
+                sourceFrameRate,
+                sourceGeometry);
         LongFormCompositionRequest longForm = input.LongFormRequest.ToDomain(
             landscapeProfile);
         WorkingCopy workingCopy = input.WorkingCopy.ToDomain(parent);
@@ -386,9 +393,7 @@ internal static class StandardCompositionEvidenceCodec
             verticalJson,
             longForm,
             ReadId<TimelineMapIdTag>(input.ParentTimelineMapId),
-            new SourceDisplayGeometry(
-                input.SourceDisplayGeometry.Width,
-                input.SourceDisplayGeometry.Height),
+            sourceGeometry,
             sourceFrameRate,
             ReadDigest(input.ToolDigest),
             ReadDigest(input.ModelDigest),

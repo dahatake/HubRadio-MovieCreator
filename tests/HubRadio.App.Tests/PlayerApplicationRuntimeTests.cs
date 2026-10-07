@@ -21,6 +21,10 @@ public sealed class PlayerApplicationRuntimeTests
 
         try
         {
+            // FR-062: keep the workspace inside the temporary application root.
+            Directory.CreateDirectory(applicationRoot);
+            new Infrastructure.Settings.WorkspaceLocationStore(applicationRoot)
+                .Save(Path.Combine(applicationRoot, "Workspace"));
             PlayerApplicationRuntime first =
                 PlayerApplicationRuntime.Create(applicationRoot);
 

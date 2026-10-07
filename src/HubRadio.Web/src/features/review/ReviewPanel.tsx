@@ -30,6 +30,7 @@ import {
   type ReviewStateContextValue,
 } from './ReviewStateProvider'
 import { selectReviewAction } from './reviewState'
+import { formatTimestamp } from '../results/humanReadable'
 
 const stateLabels: Readonly<Record<ReviewState, string>> = {
   editing: '編集中',
@@ -592,20 +593,12 @@ function VersionSummary({ snapshot }: Readonly<{ snapshot: ReviewSnapshot }>) {
       </div>
       <dl className="review-metadata">
         <div>
-          <dt>構成版 ID</dt>
-          <dd><code>{snapshot.versionId}</code></dd>
-        </div>
-        <div className="digest-row">
-          <dt>内容 digest（SHA-256・完全値）</dt>
-          <dd><code>{snapshot.versionDigest}</code></dd>
-        </div>
-        <div>
           <dt>作成日時</dt>
           <dd><time dateTime={snapshot.createdAt}>{formatUtc(snapshot.createdAt)}</time></dd>
         </div>
         <div>
           <dt>直接の親版</dt>
-          <dd>{snapshot.parentVersionId === null ? 'なし' : <code>{snapshot.parentVersionId}</code>}</dd>
+          <dd>{snapshot.parentVersionId === null ? 'なし（最初の版）' : 'あり'}</dd>
         </div>
       </dl>
       {snapshot.reviewState === null ? (
@@ -959,7 +952,7 @@ function ApprovalForm({
             onChange={(event) => update({ text: event.currentTarget.value })}
           />
           <p id="review-approval-help" className="field-help">
-            承認は上記の構成版 ID と完全 digest に固定され、同じ役割での二重承認は競合として拒否されます。
+            承認はこの編集版に対して記録されます。同じ役割で二重に承認することはできません。
           </p>
         </div>
         <button
@@ -1036,16 +1029,10 @@ function CommentThread({ comments }: Readonly<{ comments: ReviewSnapshot['commen
             <li key={comment.id}>
               <div className="review-comment-meta">
                 <strong>{roleLabels[comment.actorRole]}</strong>
-                <span>出力 {formatRational(comment.outputTime)}</span>
+                <span>動画の {formatRational(comment.outputTime)} の位置</span>
                 <time dateTime={comment.createdAt}>{formatUtc(comment.createdAt)}</time>
               </div>
               <p>{comment.text}</p>
-              <dl>
-                <div>
-                  <dt>SourceSpan ID</dt>
-                  <dd><code>{comment.sourceSpanId}</code></dd>
-                </div>
-              </dl>
             </li>
           ))}
         </ol>
@@ -1074,8 +1061,6 @@ function ApprovalTable({ approvals }: Readonly<{ approvals: readonly ReviewAppro
               <tr>
                 <th scope="col">有効性</th>
                 <th scope="col">役割</th>
-                <th scope="col">対象版</th>
-                <th scope="col">対象 digest</th>
                 <th scope="col">承認日時</th>
                 <th scope="col">理由</th>
               </tr>
@@ -1089,8 +1074,6 @@ function ApprovalTable({ approvals }: Readonly<{ approvals: readonly ReviewAppro
                     </span>
                   </td>
                   <td>{roleLabels[approval.actorRole]}</td>
-                  <td><code>{approval.versionId}</code></td>
-                  <td><code>{approval.versionDigest}</code></td>
                   <td><time dateTime={approval.approvedAt}>{formatUtc(approval.approvedAt)}</time></td>
                   <td>{approval.reason}</td>
                 </tr>
@@ -1128,10 +1111,6 @@ function DirectParentDiffView({
       ) : (
         <details className="review-diff-details">
           <summary>直接の親版との差分 {diff.changes.length} 件を表示</summary>
-          <dl className="diff-version-pair">
-            <div><dt>親版</dt><dd><code>{diff.fromVersionId}</code></dd></div>
-            <div><dt>対象版</dt><dd><code>{diff.toVersionId}</code></dd></div>
-          </dl>
           {diff.changes.length === 0 ? (
             <p>安定内容に差分はありません。</p>
           ) : (
@@ -1139,7 +1118,6 @@ function DirectParentDiffView({
               {diff.changes.map((change) => (
                 <li key={change.elementId}>
                   <strong>{changeKindLabel(change.kind)}</strong>
-                  <code>{change.elementId}</code>
                   <span>{formatChangeIndices(change)}</span>
                 </li>
               ))}
@@ -1167,7 +1145,7 @@ function formatChangeIndices(change: ReviewCompositionChange): string {
 }
 
 function formatRational(value: ReviewRationalTime): string {
-  return `${value.value}/${value.rate}`
+  return formatTimestamp(value.value, value.rate)
 }
 
 function formatUtc(value: string): string {

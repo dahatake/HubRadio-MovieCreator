@@ -485,6 +485,7 @@ public sealed class SourceOnlySubtitleProjectionTests
         using var fixture = new PipelineProjectionFixture();
         Assert.AreEqual(LegacyGeneratedJson(fixture.InitialExecution, fixture.Initial),
             SourceOnlyPipeline.WriteGeneratedRuntimeEvidence(fixture.InitialExecution, fixture.Initial));
+        Assert.AreEqual(StandardSubtitleBuilder.FullCoverageRuleVersion, fixture.Initial.BuilderRule);
         var (execution, target) = fixture.Next(fixture.InitialExecution, fixture.Initial, []);
         SourceOnlyGeneratedRuntimeEvidence projected = SourceOnlyPipeline.ProjectCapturedSubtitleEdits(
             execution, target, fixture.InitialExecution, fixture.Initial, []);
@@ -528,7 +529,8 @@ public sealed class SourceOnlySubtitleProjectionTests
             transcriptDigest = Hash(TranscriptSnapshotJson.WriteRevision(evidence.Import.Revision)).Hex,
             createdAt = evidence.CreatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
             font = evidence.Font,
-            builderRule = StandardSubtitleBuilder.RuleVersion,
+            // FR-051: the rule is per evidence (v3 for new runs, v2 when replaying older results).
+            builderRule = evidence.BuilderRule,
             projectionRule = "source-only.subtitle-projection.v1",
             versions = evidence.Versions.Values.OrderBy(item => item.Version.Id.ToString(), StringComparer.Ordinal).Select(item => new
             {

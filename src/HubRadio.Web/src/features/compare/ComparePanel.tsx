@@ -21,6 +21,7 @@ import {
   useComparisonState,
   type ComparisonStateContextValue,
 } from './CompareStateProvider'
+import { formatDuration, formatTimestamp } from '../results/humanReadable'
 
 type ComparisonTab = 'summary' | 'ranges' | 'changes'
 
@@ -204,10 +205,10 @@ export function ComparePanelView({
     >
       <div className="comparison-heading">
         <div>
-          <p className="eyebrow">Exact-version comparison</p>
+          <p className="eyebrow">編集版の比較</p>
           <h2 id="comparison-title">構成版の比較</h2>
           <p>
-            同じ案件の2版を完全な内容 digest で固定し、永続化された根拠だけを比較します。
+            同じProjectの2版を完全な内容 digest で固定し、永続化された根拠だけを比較します。
           </p>
         </div>
         <span className="comparison-safety-badge">推測なし</span>
@@ -287,14 +288,14 @@ export function ComparePanelView({
         data-comparison-pending={pending ? 'true' : 'false'}
       >
         {workflow && contextKey === null
-          ? '比較する2版が未選択です。'
+          ? '比較する2つの編集版を選んでください。'
           : pending
-            ? 'ネイティブ側で版・digest・閲覧権限を確認しています。'
+            ? '比較の準備をしています。'
             : comparison === null
               ? workflow
                 ? '選択した2版の比較結果はまだありません。'
                 : '左右の exact version を指定してください。'
-              : '永続化された構成根拠を読み込みました。'}
+              : '比較結果を読み込みました。'}
       </p>
 
       {comparison === null ? (
@@ -303,7 +304,7 @@ export function ComparePanelView({
           <p>
             {workflow
               ? '2版がそろうと比較できます。'
-              : '2版を指定すると、使用区間、再生時間、要素差分、Suggestion 採用前後を表示します。'}
+              : '2つの編集版を選ぶと、使った部分、長さ、場面の違い、採用した提案の違いを表示します。'}
           </p>
         </div>
       ) : (
@@ -433,7 +434,7 @@ function ComparisonWorkspace({
     <div className="comparison-workspace">
       <div className="comparison-result-heading">
         <div>
-          <p className="section-kicker">Pinned evidence</p>
+          <p className="section-kicker">比較結果</p>
           <h3 ref={resultTitleRef} tabIndex={-1} id="comparison-result-title">
             比較結果
           </h3>
@@ -489,7 +490,7 @@ function ComparisonWorkspace({
           <SourceRangeList label="比較先" ranges={comparison.right.usedSourceRanges} />
         </div>
         <p className="comparison-evidence-note">
-          SourceSpan ID と時間範囲は版に保存された根拠です。同一の素材ファイルであることは推測していません。
+          元動画のどの部分を、完成した動画のどこで使っているかを示します。
         </p>
       </div>
 
@@ -518,16 +519,8 @@ function VersionSummary({
   return (
     <section className="comparison-card" aria-labelledby={`comparison-${side}-summary`}>
       <p className="section-kicker">{label}</p>
-      <h4 id={`comparison-${side}-summary`}>構成版</h4>
+      <h4 id={`comparison-${side}-summary`}>編集版</h4>
       <dl className="comparison-version-data">
-        <div>
-          <dt>版 ID</dt>
-          <dd><code>{version.versionId}</code></dd>
-        </div>
-        <div>
-          <dt>完全 digest</dt>
-          <dd><code>{version.versionDigest}</code></dd>
-        </div>
         <div>
           <dt>作成日時</dt>
           <dd><time dateTime={version.createdAt}>{formatUtc(version.createdAt)}</time></dd>
@@ -573,8 +566,7 @@ function FeatureComparison({
         </tbody>
       </table>
       <p className="comparison-unavailable-note">
-        「データ未提供」は、任意の exact version に対応する永続化済み情報がない項目です。
-        要素位置や Suggestion ID から補完していません。
+        「データ未提供」は、その編集版に記録がないため比べられない項目です。
       </p>
     </div>
   )
@@ -587,28 +579,20 @@ function SourceRangeList({
   return (
     <section className="comparison-card source-range-card">
       <p className="section-kicker">{label}</p>
-      <h4>使用した SourceSpan 区間</h4>
+      <h4>元動画から使った部分</h4>
       {ranges.length === 0 ? (
-        <p className="comparison-list-empty">SourceSpan 由来の使用区間はありません。</p>
+        <p className="comparison-list-empty">元動画から使った部分はありません。</p>
       ) : (
         <ol className="comparison-range-list">
           {ranges.map((range) => (
             <li key={range.elementId}>
               <dl>
                 <div>
-                  <dt>要素 ID</dt>
-                  <dd><code>{range.elementId}</code></dd>
-                </div>
-                <div>
-                  <dt>SourceSpan ID</dt>
-                  <dd><code>{range.sourceSpanId}</code></dd>
-                </div>
-                <div>
-                  <dt>素材区間</dt>
+                  <dt>元動画</dt>
                   <dd>{formatRange(range.sourceRange)}</dd>
                 </div>
                 <div>
-                  <dt>出力区間</dt>
+                  <dt>完成した動画</dt>
                   <dd>{formatRange(range.outputRange)}</dd>
                 </div>
               </dl>
@@ -625,10 +609,10 @@ function ChangeList({
 }: Readonly<{ changes: readonly ComparisonElementChange[] }>) {
   return (
     <section className="comparison-card">
-      <p className="section-kicker">Composition diff</p>
-      <h4>要素の変更</h4>
+      <p className="section-kicker">場面の並び</p>
+      <h4>場面の変更</h4>
       {changes.length === 0 ? (
-        <p className="comparison-list-empty">要素の変更はありません。</p>
+        <p className="comparison-list-empty">場面の変更はありません。</p>
       ) : (
         <ol className="comparison-change-list">
           {changes.map((change) => (
@@ -636,7 +620,6 @@ function ChangeList({
               <span className={`comparison-change-badge kind-${change.kind}`}>
                 {changeKindLabels[change.kind]}
               </span>
-              <code>{change.elementId}</code>
               <span>{formatIndexChange(change)}</span>
             </li>
           ))}
@@ -651,24 +634,23 @@ function AdoptionChangeList({
 }: Readonly<{ changes: readonly ComparisonAdoptionChange[] }>) {
   return (
     <section className="comparison-card">
-      <p className="section-kicker">Suggestion provenance</p>
-      <h4>採用内容の変更</h4>
+      <p className="section-kicker">自動提案</p>
+      <h4>採用した提案の変更</h4>
       {changes.length === 0 ? (
-        <p className="comparison-list-empty">Suggestion 採用の変更はありません。</p>
+        <p className="comparison-list-empty">採用した提案の変更はありません。</p>
       ) : (
         <ol className="comparison-adoption-list">
           {changes.map((change) => (
             <li key={change.elementId}>
               <strong>{adoptionKindLabels[change.kind]}</strong>
-              <code>{change.elementId}</code>
               <dl>
                 <div>
                   <dt>変更前</dt>
-                  <dd>{nullableCode(change.previousSuggestionId)}</dd>
+                  <dd>{change.previousSuggestionId === null ? '提案なし' : '提案を採用'}</dd>
                 </div>
                 <div>
                   <dt>変更後</dt>
-                  <dd>{nullableCode(change.currentSuggestionId)}</dd>
+                  <dd>{change.currentSuggestionId === null ? '提案なし' : '提案を採用'}</dd>
                 </div>
               </dl>
             </li>
@@ -679,10 +661,6 @@ function AdoptionChangeList({
   )
 }
 
-function nullableCode(value: string | null) {
-  return value === null ? 'なし' : <code>{value}</code>
-}
-
 function formatIndexChange(change: ComparisonElementChange): string {
   const previous = change.previousIndex === null ? 'なし' : `${change.previousIndex + 1}番`
   const current = change.currentIndex === null ? 'なし' : `${change.currentIndex + 1}番`
@@ -690,11 +668,11 @@ function formatIndexChange(change: ComparisonElementChange): string {
 }
 
 function formatRange(range: UsedSourceRange['sourceRange']): string {
-  return `開始 ${formatRationalTime(range.start)}・長さ ${formatRationalTime(range.duration)}`
+  return `${formatTimestamp(range.start.value, range.start.rate)} から ${formatDuration(range.duration.value, range.duration.rate)}`
 }
 
 function formatRationalTime(time: ComparisonRationalTime): string {
-  return `${time.value}/${time.rate} 秒`
+  return formatDuration(time.value, time.rate)
 }
 
 function formatAvailability(
@@ -706,7 +684,6 @@ function formatAvailability(
 function formatUtc(value: string): string {
   return new Intl.DateTimeFormat('ja-JP', {
     dateStyle: 'medium',
-    timeStyle: 'medium',
-    timeZone: 'UTC',
+    timeStyle: 'short',
   }).format(new Date(value))
 }

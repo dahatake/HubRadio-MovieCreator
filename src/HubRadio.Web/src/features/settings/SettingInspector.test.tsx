@@ -95,7 +95,7 @@ describe('SettingInspector', () => {
   it.each(valueCases)('distinguishes current, draft and initial values for $name', async ({ value, initialValue, draft, currentText, initialText, inputs }) => {
     const view = await renderInspector({ definition: makeDefinition(initialValue), value, initialValue, draft })
     expect(summaryValue(view.container, '現在値')).toBe(currentText)
-    expect(summaryValue(view.container, '復元先（案件開始時の初期値）')).toBe(initialText)
+    expect(summaryValue(view.container, '復元先（Project開始時の初期値）')).toBe(initialText)
     expect(summaryValue(view.container, 'プロファイル既定値')).toBe(initialText)
     const controls = Array.from(view.container.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input,select,textarea'))
     expect(controls.map(control => control.value)).toEqual(inputs)
@@ -123,8 +123,8 @@ describe('SettingInspector', () => {
   const globalSnapshot: AnySettingsSnapshot = { ...projectSnapshot, projectId: null, initialValues: [{ key: definition.key, value: definition.defaultValue }] }
 
   it.each([
-    { scope: 'global', snapshot: globalSnapshot, scopeLabel: '新しい動画の既定値', restoreLabel: '復元先（プロファイル初期値）', resetLabel: 'プロファイル初期値へ戻す', initial: '3' },
-    { scope: 'project', snapshot: projectSnapshot, scopeLabel: 'この動画', restoreLabel: '復元先（案件開始時の初期値）', resetLabel: '案件開始時の値へ戻す', initial: '5' },
+    { scope: 'global', snapshot: globalSnapshot, scopeLabel: '全体の初期値', restoreLabel: '復元先（プロファイル初期値）', resetLabel: 'プロファイル初期値へ戻す', initial: '3' },
+    { scope: 'project', snapshot: projectSnapshot, scopeLabel: '次に作成するJob', restoreLabel: '復元先（Project開始時の初期値）', resetLabel: 'Project開始時の値へ戻す', initial: '5' },
   ] as const)('shows the $scope restore source and one-level profile/evidence details', async ({ scope, snapshot, scopeLabel, restoreLabel, resetLabel, initial }) => {
     const view = await renderInspector({ scope, definition: snapshot.definitions[0]!, value: snapshot.values[0]!.value, initialValue: snapshot.initialValues[0]!.value, draft: integer('9'), profileVersion: snapshot.profileVersion })
     expect(view.queries.getByText(scopeLabel)).toBeDefined()
@@ -265,7 +265,7 @@ describe('SettingInspector', () => {
     expect(control.value).toBe(current)
     expect(summaryValue(view.container, '現在値')).toBe(current)
     await act(async () => { await view.user.click(view.container.querySelector('summary')!) })
-    expect(summaryValue(view.container, '復元先（案件開始時の初期値）')).toBe(initial)
+    expect(summaryValue(view.container, '復元先（Project開始時の初期値）')).toBe(initial)
     expect(summaryValue(view.container, 'プロファイル既定値')).toBe(profileDefault)
     expect(summaryValue(view.container, '用途')).toBe(description)
     expect(view.container.querySelector('b')).toBeNull()
@@ -485,7 +485,7 @@ describe('SettingInspector', () => {
     const draft = value.kind === 'textList' ? textList(...value.textListValue) : { ...value }
     const view = await renderInspector({ definition: makeDefinition(value), value, initialValue: value, draft })
     expect(view.queries.getByRole<HTMLButtonElement>('button', { name: '保存' }).disabled).toBe(true)
-    expect(view.queries.getByRole<HTMLButtonElement>('button', { name: '案件開始時の値へ戻す' }).disabled).toBe(true)
+    expect(view.queries.getByRole<HTMLButtonElement>('button', { name: 'Project開始時の値へ戻す' }).disabled).toBe(true)
     await act(async () => { fireEvent.submit(view.container.querySelector('form')!) })
     expect(view.onSave).not.toHaveBeenCalled()
   })
@@ -501,7 +501,7 @@ describe('SettingInspector', () => {
     for (const control of view.container.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement>('input,select,textarea,button')) expect(control.disabled).toBe(true)
     await act(async () => {
       await view.user.click(view.queries.getByRole('button', { name: '保存' }))
-      await view.user.click(view.queries.getByRole('button', { name: '案件開始時の値へ戻す' }))
+      await view.user.click(view.queries.getByRole('button', { name: 'Project開始時の値へ戻す' }))
       if (value.kind === 'textList') {
         await view.user.click(view.queries.getByRole('button', { name: '項目を追加' }))
         await view.user.click(view.queries.getByRole('button', { name: 'テスト設定 項目 1 を削除' }))
@@ -517,7 +517,7 @@ describe('SettingInspector', () => {
 
   it('resets by current versus initial, not by draft, and leaves draft replacement to the parent', async () => {
     const view = await renderInspector({ definition: makeDefinition(integer('1')), value: integer('2'), initialValue: integer('1'), draft: integer('') })
-    const reset = view.queries.getByRole<HTMLButtonElement>('button', { name: '案件開始時の値へ戻す' })
+    const reset = view.queries.getByRole<HTMLButtonElement>('button', { name: 'Project開始時の値へ戻す' })
     expect(reset.disabled).toBe(false)
     await act(async () => { await view.user.click(reset) })
     expect(view.onReset).toHaveBeenCalledExactlyOnceWith()

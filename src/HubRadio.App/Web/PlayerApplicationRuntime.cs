@@ -34,15 +34,7 @@ internal sealed class PlayerApplicationRuntime
         string actorSid = actorProvider.GetCurrentSid();
         string applicationRoot = Path.GetFullPath(applicationDataDirectory);
         Directory.CreateDirectory(applicationRoot);
-        string workspacePath = Path.Combine(applicationRoot, "Workspace");
-        if (Directory.Exists(workspacePath))
-        {
-            _ = WorkspaceAcl.VerifyExisting(workspacePath, actorSid);
-        }
-        else
-        {
-            _ = WorkspaceAcl.CreateNew(workspacePath, actorSid);
-        }
+        string workspacePath = HubRadio.App.Projects.WorkspaceFolderBootstrap.Prepare(applicationRoot, actorSid);
 
         string databasePath = Path.Combine(workspacePath, "hubradio.db");
         _ = DatabaseMigrator.Migrate(

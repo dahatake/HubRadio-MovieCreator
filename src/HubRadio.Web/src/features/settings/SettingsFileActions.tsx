@@ -63,7 +63,7 @@ function FileActions({ workspace, onReturnToDraft }: { workspace: SettingsWorksp
   const busy = state.pendingRequest !== null
   const blocked = busy || snapshot === null || state.needsRefresh
   const overwrite = state.exportNeedsConfirmation && fileSha256 !== null
-  const scopeName = state.scope === 'global' ? '新しい動画の既定値' : 'この動画'
+  const scopeName = state.scope === 'global' ? '全体の初期値' : '次に作成するJob'
   const changes = snapshot !== null && importPreview !== null ? differences(snapshot, importPreview) : []
   const pageCount = Math.ceil(changes.length / pageSize)
   const page = Math.min(requestedPage, Math.max(0, pageCount - 1))

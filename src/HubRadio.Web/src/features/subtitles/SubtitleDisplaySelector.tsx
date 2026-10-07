@@ -18,22 +18,22 @@ export function SubtitleDisplaySelector({
       className="layout-editor-card subtitle-display-selector"
       aria-labelledby="subtitle-display-title"
     >
-      <p className="section-kicker">Native display-policy evidence</p>
+      <p className="section-kicker">字幕の見せ方</p>
       <h3 id="subtitle-display-title">字幕表示</h3>
       {displays.length === 0 ? (
         <div className="layout-variant-unavailable" role="note">
-          <strong>表示 profile は供給されていません</strong>
-          <p>画面側で全文・選択 Cue・句読点の組合せを捏造しません。</p>
+          <strong>選べる字幕の見せ方はありません</strong>
+          <p>字幕の作成後に選べるようになります。</p>
         </div>
       ) : (
         <>
           {activeDigest === null && (
             <p className="layout-card-note" role="status">
-              preview へ表示する profile を明示的に選択してください。
+              プレビューに表示する字幕の見せ方を選んでください。
             </p>
           )}
           <fieldset className="layout-variant-options" disabled={disabled}>
-            <legend>preview に投影する既存 profile</legend>
+            <legend>プレビューに表示する字幕</legend>
             {displays.map((display) => (
               <label key={display.profileVersionDigest}>
                 <input
@@ -45,24 +45,23 @@ export function SubtitleDisplaySelector({
                 />
                 <span>
                   <strong>
-                    {display.cueMode === 'full' ? '全文' : '選択 Cue'}・
+                    {display.cueMode === 'full' ? '全文' : '一部の字幕'}・
                     {display.punctuationDisplay === 'preserve'
                       ? '句読点あり'
                       : '句読点なし'}
                   </strong>
                   <small>
-                    表示 {display.displayedCues.length} / 元 Cue {display.sourceCueCount}
+                    字幕 {display.displayedCues.length} 件を表示（全 {display.sourceCueCount} 件）
                     {display.omittedCueIds.length > 0
-                      ? `・空表示を ${display.omittedCueIds.length} 件除外`
+                      ? `・表示する文字がない ${display.omittedCueIds.length} 件を除外`
                       : ''}
                   </small>
-                  <code>{display.profileVersionDigest}</code>
                 </span>
               </label>
             ))}
           </fieldset>
           <p className="layout-card-note">
-            この選択は native の SubtitleDisplayPolicy 結果を切り替える preview 専用状態です。原文、保存、render 設定は変更しません。
+            この選択はプレビューの表示だけを切り替えます。文字起こしや作成済みの動画は変わりません。
           </p>
         </>
       )}

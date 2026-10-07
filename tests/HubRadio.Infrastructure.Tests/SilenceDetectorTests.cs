@@ -60,6 +60,38 @@ public sealed class SilenceDetectorTests
         Assert.IsFalse(request.ArgumentList.Contains("-y", StringComparer.Ordinal));
     }
 
+    // FR-057: the pause detector is a separate, versioned review-only configuration.
+    [TestMethod]
+    [TestCategory("FR-057")]
+    public void PauseConfigurationAndProcessRequest_AreVersionedReviewOnlyAndShellFree()
+    {
+        using Fixture fixture = new();
+        SilenceDetectionConfiguration configuration = SilenceDetector.PauseDetectionConfiguration;
+
+        Assert.AreEqual("fr057-2026-10-07.ffmpeg-silencedetect-pause.v1", configuration.ThresholdVersion);
+        Assert.AreEqual(-32d, configuration.NoiseDb);
+        Assert.AreEqual(new RationalTime(2, 5), configuration.MinimumDuration);
+        Assert.IsFalse(configuration.ProductionApproved);
+        Assert.IsFalse(configuration.AutomaticDeletionAllowed);
+        Assert.AreEqual("stage0-2026-08-27.ffmpeg-silencedetect.v1", fixture.Detector.Configuration.ThresholdVersion);
+
+        ProcessRunRequest request = SilenceDetector.CreatePauseProcessRequest(
+            fixture.FfmpegPath,
+            fixture.AudioPath,
+            TimeSpan.FromSeconds(123));
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "-nostdin", "-hide_banner", "-nostats", "-v", "info",
+                "-i", fixture.AudioPath,
+                "-map", "0:a:0", "-vn", "-sn", "-dn",
+                "-af", "silencedetect=noise=-32.0dB:d=0.4",
+                "-f", "null", "NUL",
+            },
+            request.ArgumentList.ToArray());
+        Assert.IsNull(request.StandardInput);
+    }
+
     [TestMethod]
     public void ParseProcessResult_MapsExactSamplesToSourceAndCreatesProposedCandidate()
     {
@@ -380,8 +412,8 @@ public sealed class SilenceDetectorTests
         Assert.AreEqual(0, typeof(SilenceCandidate).GetConstructors().Length);
         Assert.AreEqual(0, typeof(SilenceDetectionResult).GetConstructors().Length);
         Assert.AreEqual(0, typeof(SilenceDetectorException).GetConstructors().Length);
-        CollectionAssert.AreEqual(
-            new[] { "DetectAsync" },
+        CollectionAssert.AreEquivalent(
+            new[] { "DetectAsync", "DetectPausesAsync" },
             typeof(SilenceDetector)
                 .GetMethods(
                     BindingFlags.Instance

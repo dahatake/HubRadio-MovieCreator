@@ -18,6 +18,8 @@ public sealed class BundledDefaultSettingsProfileTests
         "src/HubRadio.App/DefaultSettings/Profiles/1.0.0.json";
     private const string CurrentRelativeProfilePath =
         "src/HubRadio.App/DefaultSettings/Profiles/1.1.0.json";
+    private const string LatestRelativeProfilePath =
+        "src/HubRadio.App/DefaultSettings/Profiles/1.2.0.json";
     private const string ExpectedId = "8d75a1fe-d10e-4aa7-87c5-3ac2d06d1f9b";
     private const string ExpectedDigest =
         "5ffedbd56f43f9142b92c16e36abfd289da45cd34feea897da82101164a7414c";
@@ -310,11 +312,11 @@ public sealed class BundledDefaultSettingsProfileTests
         BundledDefaultSettingsProfileCatalog catalog =
             BundledDefaultSettingsProfileCatalog.Load(sourceDirectory);
 
-        Assert.AreEqual(2, catalog.Profiles.Count);
+        Assert.AreEqual(3, catalog.Profiles.Count);
         CollectionAssert.AreEqual(
-            new[] { "1.0.0", "1.1.0" },
+            new[] { "1.0.0", "1.1.0", "1.2.0" },
             catalog.Profiles.Select(static profile => profile.Version.ToString()).ToArray());
-        Assert.AreSame(catalog.Current, catalog.Profiles[1]);
+        Assert.AreSame(catalog.Current, catalog.Profiles[2]);
         Assert.AreSame(
             catalog.Profiles[0],
             catalog.Resolve(
@@ -352,6 +354,11 @@ public sealed class BundledDefaultSettingsProfileTests
         File.WriteAllBytes(
             Path.Combine(temporary.Path, "1.1.0.json"),
             File.ReadAllBytes(ResolveRepositoryPath(CurrentRelativeProfilePath)));
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            BundledDefaultSettingsProfileCatalog.Load(temporary.Path));
+        File.WriteAllBytes(
+            Path.Combine(temporary.Path, "1.2.0.json"),
+            File.ReadAllBytes(ResolveRepositoryPath(LatestRelativeProfilePath)));
         _ = BundledDefaultSettingsProfileCatalog.Load(temporary.Path);
 
         File.WriteAllBytes(
@@ -399,6 +406,47 @@ public sealed class BundledDefaultSettingsProfileTests
         Assert.AreEqual(5, current.GetDefinition("editing.shortHookMaximumStart").Maximum!.IntegerValue);
         Assert.IsTrue(BundledDefaultSettingsProfileLoader.IsApprovedProfile(previous));
         Assert.IsTrue(BundledDefaultSettingsProfileLoader.IsApprovedProfile(current));
+    }
+
+    [TestMethod]
+    [TestCategory("FR-057")]
+    [TestCategory("FR-058")]
+    [TestCategory("FR-059")]
+    [TestCategory("FR-060")]
+    public void LatestProfileKeepsEveryPreviousDefinitionAndAddsOnlyTheFourNewSettings()
+    {
+        DefaultSettingsProfile previous = BundledDefaultSettingsProfileLoader.Load(
+            File.ReadAllBytes(ResolveRepositoryPath(CurrentRelativeProfilePath)));
+        DefaultSettingsProfile latest = BundledDefaultSettingsProfileLoader.Load(
+            File.ReadAllBytes(ResolveRepositoryPath(LatestRelativeProfilePath)));
+
+        Assert.AreEqual("1.2.0", latest.Version.ToString());
+        Assert.AreEqual(previous.Id, latest.Id);
+        foreach (DefaultSettingDefinition definition in previous.Definitions)
+        {
+            DefaultSettingDefinition after = latest.GetDefinition(definition.Key);
+            Assert.AreEqual(definition.DefaultValue, after.DefaultValue, definition.Key);
+            Assert.AreEqual(definition.Description, after.Description, definition.Key);
+            Assert.AreEqual(definition.Minimum, after.Minimum, definition.Key);
+            Assert.AreEqual(definition.Maximum, after.Maximum, definition.Key);
+            CollectionAssert.AreEqual(definition.AllowedTextValues.ToArray(), after.AllowedTextValues.ToArray(), definition.Key);
+        }
+
+        CollectionAssert.AreEqual(
+            new[] { "audio.soundEffectsEnabled", "editing.pauseTightening", "output.longFormOrientation", "subtitles.emphasisTelopAmount" },
+            latest.Definitions.Select(static item => item.Key)
+                .Except(previous.Definitions.Select(static item => item.Key)).Order(StringComparer.Ordinal).ToArray());
+        Assert.AreEqual(DefaultSettingValue.FromBoolean(true), latest.GetDefinition("audio.soundEffectsEnabled").DefaultValue);
+        Assert.AreEqual(DefaultSettingValue.FromText("standard"), latest.GetDefinition("editing.pauseTightening").DefaultValue);
+        CollectionAssert.AreEquivalent(new[] { "weak", "standard", "strong" },
+            latest.GetDefinition("editing.pauseTightening").AllowedTextValues.ToArray());
+        Assert.AreEqual(DefaultSettingValue.FromText("followSource"), latest.GetDefinition("output.longFormOrientation").DefaultValue);
+        CollectionAssert.AreEquivalent(new[] { "followSource", "landscape" },
+            latest.GetDefinition("output.longFormOrientation").AllowedTextValues.ToArray());
+        Assert.AreEqual(DefaultSettingValue.FromText("standard"), latest.GetDefinition("subtitles.emphasisTelopAmount").DefaultValue);
+        CollectionAssert.AreEquivalent(new[] { "few", "standard", "many" },
+            latest.GetDefinition("subtitles.emphasisTelopAmount").AllowedTextValues.ToArray());
+        Assert.IsTrue(BundledDefaultSettingsProfileLoader.IsApprovedProfile(latest));
     }
 
     [TestMethod]

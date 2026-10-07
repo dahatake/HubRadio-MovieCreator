@@ -192,6 +192,7 @@ public sealed partial class MainWindow : Window
                     bridgeHandlers.SourceOnlyMedia)
                 {
                     StitchHandler = bridgeHandlers.Stitch,
+                    WorkspaceHandler = bridgeHandlers.Workspace,
                 };
                 // Own the host before awaiting so Closed can detach it before closing the control.
                 webViewHost = host;

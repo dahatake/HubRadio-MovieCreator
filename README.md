@@ -11,15 +11,15 @@ HubRadio MovieCreator は、企業向けのトーク、対談、インタビュ�
 
 ## できるようになること
 
-編集前動画を1本選ぶだけで、次の社内向け成果物を一つの案件として作成できることを目標にしています。
+編集前動画を1本選ぶだけで、次の社内向け成果物を一つのProjectとして作成できることを目標にしています。
 
-- 社内配信用の16:9長尺版
+- 社内配信用の長尺版（16:9。縦長の元動画からは9:16）
 - 最大3本の9:16短尺候補
 - 字幕焼き込み版と字幕なし版
 - 字幕、文字起こし、サムネイル、チャプター
 - 使用区間、設定版、自動代理評価の記録
 
-案件名、社内限定区分、言語、匿名話者、ニュートラルな見た目、出力形式は安全な初期値から補完します。全設定を専用画面で確認・変更・resetする機能は実装済みです。設定保存だけでは既存動画を変更せず、明示的な再生成で保存済み設定を使います。
+Project名、社内限定区分、言語、匿名話者、ニュートラルな見た目、出力形式は安全な初期値から補完します。全設定を専用画面で確認・変更・resetする機能は実装済みです。設定保存だけでは既存動画を変更せず、明示的な再生成で保存済み設定を使います。
 
 このアプリケーションは、AIが無人で外部公開する仕組みではありません。機械判定できる項目は自動代理評価しますが、その合格を人による可読性・理解・法的判断と同一視しません。外部公開と直接投稿は初期対象外です。
 
@@ -53,7 +53,7 @@ HubRadio MovieCreator は、企業向けのトーク、対談、インタビュ�
 
 ### 6. 必要なときだけOpening／Closing動画を付ける
 
-書き出した動画（本編）の前後に、用意したOpening／Closing動画を付けた**新しいMP4**を作れます（[要求定義書 FR-035](docs/requirement-definition.md#fr-035-オープニングクロージング動画の結合)）。並び順は Opening → 本編 → Closing で、どちらか一方だけでも構いません。
+書き出した動画（本編）の前後に、用意したOpening／Closing動画を付けた**新しいMP4**を作れます（[要求定義書 FR-035](docs/requirements/editing.md#fr-035-オープニングクロージング動画の結合)）。並び順は Opening → 本編 → Closing で、どちらか一方だけでも構いません。
 
 **画面から:** 仕上がり一覧の動画成果物にある「オープニング・クロージングを付けて保存」を開き、「オープニングを選ぶ」「クロージングを選ぶ」で動画を選んで「結合して保存」を押し、保存先と名前を指定します。結果は同じ領域に表示されます（[画面の使い方](docs/ui-workflow-guide.md)）。
 
@@ -130,12 +130,15 @@ dotnet run --project src\HubRadio.Stitch -c Release -- `
 
 production-channel のクリーンな Windows、別の標準ユーザー、offline、Runtime欠落などの異常系、業務操作・動画納品のend-to-endは未評価です。候補は限定技術評価以外へコピー・共有せず、実行ファイルを変更しません。
 
-起動により、実行依存はSDK管理の再生成可能な展開cacheへ展開されます。一方、案件・設定・WebView2 profileは次の利用者データ領域へ保存され、展開cacheとは別です。WebView2 profileはportable実装上の固定per-user pathを使い、run単位のprofile分離を主張しません。
+起動により、実行依存はSDK管理の再生成可能な展開cacheへ展開されます。一方、Project・設定・WebView2 profileは次の利用者データ領域へ保存され、展開cacheとは別です。WebView2 profileはportable実装上の固定per-user pathを使い、run単位のprofile分離を主張しません。
 
-- `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\hubradio.db` — 案件のSQLite DB
+- `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\hubradio.db` — ProjectのSQLite DB（既定の場所。FR-062で、新しい環境の既定は`<ドライブ>\workspace`になり、設定画面から変更できます。下の注を参照）
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\backups` — DB backup
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\job` — 実行ジョブの履歴（1ジョブ1つのJSON、最新1000件。FR-049。見方は[トラブルシューティング](docs/dev/troubleshooting.md#実行ジョブの履歴jobフォルダを確認するサポートへ送る)）
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\WebView2` — WebView2 profile
+- `%LOCALAPPDATA%\HubRadio.MovieCreator\workspace-location.json` — Workspaceフォルダーの保存先の設定（FR-062。設定画面で「保存」したときだけできます）
+
+**Workspaceフォルダー（FR-062）:** DB・Project・`job`・`logs`・`backups`を収めるWorkspaceフォルダーの初期値は、`<アプリのデータ用フォルダーのドライブ>\workspace`（例: `C:\workspace`）です。従来の場所（上の`...\Workspace`）に`hubradio.db`がある環境は、次回の起動でフォルダーごと初期値の場所へ移します（同じドライブ内の名前の変更で、コピー・削除はしません）。移せない場合（使用中、初期値の場所に別のデータがある、権限不足など）は、何も変えずに従来の場所を使い続けます。設定画面の「Workspaceフォルダー」欄で場所を変えられます（ローカルの固定ドライブ上の、新しい・空の・または`hubradio.db`があるフォルダー。次回の起動から有効で、既存のデータは自動では移動しません）。
 
 起動できない場合は、[トラブルシューティング](docs/dev/troubleshooting.md#限定ローカル技術評価候補を起動できない)を参照してください。
 

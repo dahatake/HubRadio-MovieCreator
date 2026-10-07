@@ -285,6 +285,40 @@ public sealed class FfmpegCompilerTests
             FfmpegCompilerFailureReason.InputBindingMismatch);
     }
 
+    // FR-060 AC-035.3: verified WAV effects are delayed to their start, attenuated and mixed before loudness.
+    [TestMethod]
+    [TestCategory("FR-060")]
+    public async Task SoundEffectsAreVerifiedDelayedAttenuatedAndMixedBeforeLoudness()
+    {
+        using Fixture fixture = Fixture.Create();
+        var effect = new BinaryVerificationRequest("sound-effect", Path.Combine(fixture.RootPath, "pop.wav"), Digest('7'), 100);
+        var encoder = new FfmpegEncoderSettings(8_000_000, 192_000, 1, new FfmpegLoudnessTarget(-16m, -1m));
+        FfmpegCompileRequest Request(RationalTime start, string? path = null) => new(fixture.Graph, fixture.Context, fixture.Tool,
+            fixture.Bindings, fixture.OutputPath, fixture.RootPath, TimeSpan.FromMinutes(1), encoderSettings: encoder,
+            soundEffects: [new FfmpegSoundEffectBinding(path is null ? effect
+                : new BinaryVerificationRequest("sound-effect", path, Digest('7'), 100), start, new RationalTime(3, 10), -14)]);
+        var verified = new List<BinaryVerificationRequest>();
+        FfmpegCompilation compiled = await FfmpegCompiler.CompileAsync(Request(new RationalTime(2, 1)), (binding, _) =>
+        {
+            verified.Add(binding);
+            return Task.FromResult(BinaryVerificationResult.Verified(binding, binding.ExpectedByteSize, binding.ExpectedDigest));
+        });
+        Assert.AreSame(effect, verified[^1]);
+        CollectionAssert.Contains(InputPathTokens(compiled.ProcessRequest.ArgumentList), effect.FilePath);
+        StringAssert.Contains(compiled.FilterScript, "aformat=channel_layouts=mono,volume=-14dB,atrim=duration=0.3,asetpts=PTS-STARTPTS,adelay=96000S:all=1");
+        StringAssert.Contains(compiled.FilterScript, "amix=inputs=2:duration=first:dropout_transition=0:normalize=0[sound_effect_mix]");
+        Assert.IsTrue(compiled.FilterScript.IndexOf("[sound_effect_mix]", StringComparison.Ordinal)
+            < compiled.FilterScript.IndexOf("loudnorm", StringComparison.Ordinal));
+        await AssertFailureBeforeVerificationAsync(Request(new RationalTime(100, 1)), FfmpegCompilerFailureReason.InputBindingMismatch);
+        // A cue start off the frame grid is accepted; the delay is floored to whole 48 kHz samples.
+        FfmpegCompilation offGrid = await CompileAsync(fixture, Request(new RationalTime(20131, 10000)));
+        StringAssert.Contains(offGrid.FilterScript, "adelay=96628S:all=1");
+        await AssertFailureBeforeVerificationAsync(Request(new RationalTime(1, 1), Path.Combine(fixture.RootPath, "pop.mp3")),
+            FfmpegCompilerFailureReason.InputBindingMismatch);
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new FfmpegSoundEffectBinding(effect, default, new RationalTime(3, 10), -14));
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new FfmpegSoundEffectBinding(effect, new RationalTime(1, 1), new RationalTime(3, 10), 3));
+    }
+
     private static RenderGraphValidationContext ContextForInputs(Fixture fixture, IReadOnlyList<RenderGraphInput> inputs) => new(
         fixture.Context.Project, fixture.Context.CompositionVersion, fixture.Context.TimelineMap, fixture.Context.TimelineMapDigest,
         fixture.Context.Profile, fixture.Context.LayoutSpec, fixture.Context.LayoutSpecDigest, fixture.Context.Template,

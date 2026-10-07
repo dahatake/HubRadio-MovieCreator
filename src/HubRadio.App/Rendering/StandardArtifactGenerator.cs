@@ -365,7 +365,16 @@ public sealed record StandardRenderExecutionEvidence(FfmpegEncoderSettings? Enco
     IReadOnlyList<StandardTextOverlayEvidence> TextOverlays,
     StandardLoudnessEvidence? Loudness, StandardThumbnailRenderEvidence? Thumbnail,
     StandardSourceColorEvidence? SourceColor = null,
-    IReadOnlyList<StandardMusicRenderEvidence>? Music = null);
+    IReadOnlyList<StandardMusicRenderEvidence>? Music = null)
+{
+    /// <summary>FR-060: the self-generated effects mixed into this output; omitted (null) when none play.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<StandardSoundEffectRenderEvidence>? SoundEffects { get; init; }
+}
+
+/// <summary>FR-060: one effect as rendered: which sound, when, by which rule, the WAV digest and the mix gain.</summary>
+public sealed record StandardSoundEffectRenderEvidence(StandardSoundEffectKind Kind, RationalTime OutputStart, string Rule,
+    ContentDigest FileDigest, int GainDecibels);
 
 /// <summary>An attempted promotion, not a claim that a DB row exists.</summary>
 public sealed record StandardPromotionAttempt(
@@ -660,6 +669,23 @@ public sealed class StandardArtifactGenerator
             held.Add(OpenHeld(fontPath));
             var localFont = new FfmpegFontBinding(request.Font.Evidence, new BinaryVerificationRequest(
                 "standard.font", fontPath, request.Font.Evidence.FileDigest, request.Font.VerificationRequest.ExpectedByteSize));
+            // FR-060: the synthesized effects are written once per run into the owned staging directory.
+            var soundEffectFiles = new Dictionary<StandardSoundEffectKind, BinaryVerificationRequest>();
+            BinaryVerificationRequest SoundEffectFile(StandardSoundEffectKind kind)
+            {
+                if (soundEffectFiles.TryGetValue(kind, out BinaryVerificationRequest? existing))
+                    return existing;
+                byte[] bytes = StandardSoundEffectSynthesizer.Create(kind);
+                string path = Path.Combine(staging, StandardSoundEffectSynthesizer.FileName(kind));
+                ownedFiles.Add(path);
+                using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    stream.Write(bytes);
+                held.Add(OpenHeld(path));
+                var verification = new BinaryVerificationRequest("standard.sound-effect", path,
+                    ContentDigest.Compute(bytes), bytes.LongLength);
+                soundEffectFiles[kind] = verification;
+                return verification;
+            }
             var outputs = new List<StandardRenderGraphOutput>();
             StandardRenderGraphOutput clean = StandardRenderGraphFactory.Create(request.Preparation, request.Original.Asset,
                 request.SourceDisplayGeometry, false, request.LandscapeSubtitles, request.Font.Evidence,
@@ -730,6 +756,9 @@ public sealed class StandardArtifactGenerator
                 FfmpegEncoderSettings? outputEncoder = image ? null : encoder;
                 FfmpegAssGraphicBinding[] graphics = output.GraphicFiles.Select(static file => file.Binding).ToArray();
                 IReadOnlyList<FfmpegMusicBinding> music = renderMusic ? output.MusicBindings : [];
+                FfmpegSoundEffectBinding[] soundEffects = image ? [] : output.SoundEffectCues
+                    .Select(cue => new FfmpegSoundEffectBinding(SoundEffectFile(cue.Kind), cue.OutputStart,
+                        StandardEmphasisTelops.SoundEffectDuration, StandardSoundEffectSynthesizer.MixGainDecibels)).ToArray();
                 if (outputEncoder?.Loudness is FfmpegLoudnessTarget singlePass)
                 {
                     // Measurement pass for loudnorm's linear mode (DEC3-1 (f)).
@@ -741,7 +770,7 @@ public sealed class StandardArtifactGenerator
                         output.Graph, output.ValidationContext, request.Tool, bindings, measurementPath, staging,
                         request.ProcessTimeout, output.VideoGeometry, output.Graph.Fonts.Count == 0 ? [] : [localFont],
                         outputEncoder, new FfmpegGeneratedScriptTarget(measurementScriptPath), graphics, null, music,
-                        loudnessMeasurement: true), cancellationToken).ConfigureAwait(false);
+                        loudnessMeasurement: true, soundEffects: soundEffects), cancellationToken).ConfigureAwait(false);
                     if (!string.Equals(measurement.OutputPath, measurementPath, StringComparison.Ordinal)
                         || !string.Equals(measurement.GeneratedScriptPath, measurementScriptPath, StringComparison.Ordinal))
                     {
@@ -768,7 +797,7 @@ public sealed class StandardArtifactGenerator
                     output.Graph, output.ValidationContext, request.Tool, bindings, outputPath, staging,
                     request.ProcessTimeout, output.VideoGeometry, output.Graph.Fonts.Count == 0 ? [] : [localFont],
                     outputEncoder, new FfmpegGeneratedScriptTarget(scriptPath),
-                    graphics, output.FrameExtraction, music), cancellationToken).ConfigureAwait(false);
+                    graphics, output.FrameExtraction, music, soundEffects: soundEffects), cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(compilation.OutputPath, outputPath, StringComparison.Ordinal)
                     || !string.Equals(compilation.GeneratedScriptPath, scriptPath, StringComparison.Ordinal))
                 {
@@ -790,7 +819,12 @@ public sealed class StandardArtifactGenerator
                 var execution = new StandardRenderExecutionEvidence(outputEncoder,
                     compilation.FilterScriptDigest, Encoding.UTF8.GetByteCount(compilation.FilterScript), "compiler-created-file",
                     Array.AsReadOnly(output.GraphicFiles.Select(static file => file.Evidence).ToArray()), loudness, output.ThumbnailEvidence,
-                    sourceColor, renderMusic ? output.MusicEvidence : []);
+                    sourceColor, renderMusic ? output.MusicEvidence : [])
+                {
+                    SoundEffects = soundEffects.Length == 0 ? null : output.SoundEffectCues.Zip(soundEffects,
+                        static (cue, binding) => new StandardSoundEffectRenderEvidence(cue.Kind, cue.OutputStart, cue.Rule,
+                            binding.VerificationRequest.ExpectedDigest, binding.GainDecibels)).ToArray(),
+                };
                 pending.Add(new PendingArtifact(id, outputPath, $"{runName}/{output.Role}/{id}{extension}", output.Role,
                     image ? "image/png" : "video/mp4", image ? "thumbnail" : "video", digest, size, output, execution));
             }

@@ -170,7 +170,11 @@ public sealed record SourceOnlyGeneratedRuntimeEvidence(
     IReadOnlyList<StandardShortArtifactInput> ShortForms,
     IReadOnlyDictionary<EntityId<CompositionVersionIdTag>, SourceOnlyGeneratedSubtitleRuntimeEvidence> Versions,
     DateTimeOffset CreatedAt,
-    RenderFontEvidence Font);
+    RenderFontEvidence Font)
+{
+    /// <summary>The subtitle builder rule this evidence was (and must be replayed) with.</summary>
+    public string BuilderRule { get; init; } = StandardSubtitleBuilder.RuleVersion;
+}
 
 /// <summary>Actual subtitle-builder profile, production timeline and initial cue histories for one exact version.</summary>
 public sealed record SourceOnlyGeneratedSubtitleRuntimeEvidence(
@@ -214,6 +218,12 @@ internal interface ISourceOnlyProjectCoordinator
     public bool RestoreSelection(EntityId<ProjectCreationDraftIdTag> draftId,
         EntityId<AssetIdTag> candidateId) => false;
     void ForgetSelection(EntityId<ProjectCreationDraftIdTag> draftId);
+    // FR-053: makes a poster frame for the Project list. Optional; never fails the caller.
+    public Task<bool> EnsurePosterAsync(EntityId<ProjectCreationDraftIdTag> draftId,
+        CancellationToken cancellationToken) => Task.FromResult(false);
+    // FR-054: duration and displayed size of the selected source; null when it cannot be read.
+    public Task<SourceMediaFacts?> ProbeSourceAsync(string sourcePath, CancellationToken cancellationToken) =>
+        Task.FromResult<SourceMediaFacts?>(null);
     StoredProjectCreationDraft Accept(ProjectCreationDraft draft, DefaultSettingsSnapshot settings,
         string payloadJson, int expectedRevision, string actorSid, DateTimeOffset acceptedAt);
 }

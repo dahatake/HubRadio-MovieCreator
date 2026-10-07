@@ -42,9 +42,10 @@ import {
   type TranscriptState,
   type TranscriptUiStatus,
 } from './transcriptState'
+import { formatTimestamp } from '../results/humanReadable'
 
 const statusMessages: Readonly<Record<TranscriptUiStatus, string>> = {
-  idle: '確定済み案件を開くと文字起こしを確認できます',
+  idle: '確定済みProjectを開くと文字起こしを確認できます',
   loading: '正規の文字起こし snapshot を確認しています',
   available: '文字起こしを読み込みました',
   forbidden: 'この文字起こしを表示する権限がありません',
@@ -81,8 +82,8 @@ const dependencyLabels: Readonly<Record<TranscriptDependencyNode, string>> = {
 
 const navigationMessages = Object.freeze({
   requested: '元時刻への移動をプレイヤーへ要求しました。',
-  unavailable: '同じ案件の代理動画を先に読み込んでください。',
-  projectMismatch: 'プレイヤーには別の案件が読み込まれています。',
+  unavailable: '同じProjectの代理動画を先に読み込んでください。',
+  projectMismatch: 'プレイヤーには別のProjectが読み込まれています。',
   busy: 'プレイヤーの移動確認が完了するまでお待ちください。',
   outOfRange: 'この元時刻に対応する代理フレームはありません。',
 } as const)
@@ -327,7 +328,7 @@ export function TranscriptPanelView({
       send(session, request, dispatch)
       if (session === null) submittedRequestRef.current = null
     } catch {
-      setInputMessage('案件 ID を文字起こし要求として検証できませんでした。')
+      setInputMessage('Project ID を文字起こし要求として検証できませんでした。')
     }
   }, [active, projectId, refreshKey])
 
@@ -401,7 +402,7 @@ export function TranscriptPanelView({
     if (!canMutate || snapshot === null || speakerDraft !== null) return
     const firstPerformer = snapshot.performers[0]
     if (firstPerformer === undefined) {
-      setInputMessage('この案件には割当可能な出演者がいません。')
+      setInputMessage('このProjectには割当可能な出演者がいません。')
       return
     }
     setInputMessage(null)
@@ -569,13 +570,13 @@ export function TranscriptPanelView({
 
       {projectId === null ? (
         <div className="transcript-empty">
-          <p>確定済み案件を案件一覧から開いてください。</p>
+          <p>確定済みProjectをProject一覧から開いてください。</p>
         </div>
       ) : null}
 
       {targetSwitchBlocked ? (
         <p className="transcript-input-error" role="alert">
-          未保存の入力または保存中の変更を保持しています。元の案件に戻り、保存または取消してから切り替えてください。
+          未保存の入力または保存中の変更を保持しています。元のProjectに戻り、保存または取消してから切り替えてください。
         </p>
       ) : null}
 
@@ -655,7 +656,7 @@ export function TranscriptPanelView({
           {snapshot === null ? null : <div className="transcript-evidence-summary">
             <span>{!hasFreshSnapshot
               ? '前回取得した文字起こし（未確認）'
-              : context === undefined ? `版 ${snapshot.revisionId}` : '現在の文字起こし'}</span>
+              : '現在の文字起こし'}</span>
             <span>{snapshot.changeSource === 'human' ? '人による修正' : '解析結果'}</span>
             <span>{snapshot.createdAt}</span>
           </div>}
@@ -1133,7 +1134,7 @@ function formatConfidence(value: number | null): string {
 function formatRange(range: TranscriptToken['range']): string {
   if (range === null) return '単語時刻なし'
   const end = addRationalTimes(range.start, range.duration)
-  return `開始 ${range.start.value}/${range.start.rate}・終了 ${end.value}/${end.rate}`
+  return `${formatTimestamp(range.start.value, range.start.rate)} 〜 ${formatTimestamp(end.value, end.rate)}`
 }
 
 function addRationalTimes(

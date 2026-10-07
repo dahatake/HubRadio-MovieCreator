@@ -3,6 +3,7 @@ import { SettingInspector } from './SettingInspector'
 import { SettingsFileActions } from './SettingsFileActions'
 import { SettingsList } from './SettingsList'
 import { SettingsOutcomePreview } from './SettingsOutcomePreview'
+import { WorkspaceLocationSection } from './WorkspaceLocationSection'
 import { isSettingEditable } from './settingEditors'
 import { useSettingsWorkspace } from './SettingsStateProvider'
 import { createSettingsReadRequest, type AnySettingsSnapshot, type SettingsGroup, type SettingsWorkspaceMethod } from './settingsProtocol'
@@ -12,13 +13,18 @@ import './settings.css'
 export interface SettingsPanelProps {
   readonly isActive?: boolean
   readonly activeProjectId?: string | null
+  /**
+   * FR-061.6: whether a project is open. Defaults to "an active project ID was given".
+   * Without an open project only 「全体の初期値」 is offered.
+   */
+  readonly projectOpen?: boolean
   readonly onClose?: () => void
   readonly initialSettingKey?: string | null
   readonly onDirtyChange?: (dirty: boolean) => void
 }
 
 const groupNames: Readonly<Record<SettingsGroup, string>> = {
-  projectAndOutput: '案件と出力', editing: '編集', subtitlesAndGraphics: '字幕とグラフィック', audioAndAssets: '音声と素材', privacyAndStorage: 'プライバシーと保存',
+  projectAndOutput: 'Projectと出力', editing: '編集', subtitlesAndGraphics: '字幕とグラフィック', audioAndAssets: '音声と素材', privacyAndStorage: 'プライバシーと保存',
 }
 const groups = Object.keys(groupNames) as SettingsGroup[]
 const errorMessages: Readonly<Record<WorkspaceSettingsError, string>> = {
@@ -36,12 +42,12 @@ const errorMessages: Readonly<Record<WorkspaceSettingsError, string>> = {
 }
 const completionMessages: Readonly<Record<SettingsWorkspaceMethod, string>> = {
   'settings.read': '設定を読み込みました。',
-  'settings.global.read': '新しい動画の既定値を読み込みました。',
+  'settings.global.read': '全体の初期値を読み込みました。',
   'settings.update': '現在値を保存しました。',
   'settings.global.update': '既定値を保存しました。',
-  'settings.reset': '案件開始時の値へ戻しました。',
+  'settings.reset': 'Project開始時の値へ戻しました。',
   'settings.global.reset': 'プロファイル初期値へ戻しました。',
-  'settings.resetAll': 'すべての設定を案件開始時の値へ戻しました。',
+  'settings.resetAll': 'すべての設定をProject開始時の値へ戻しました。',
   'settings.global.resetAll': 'すべての設定をプロファイル初期値へ戻しました。',
   'settings.file.export': '保存済み設定をsetting.txtに出力しました。',
   'settings.file.preview': '設定ファイルの差分を取得しました。設定は未変更です。',
@@ -61,11 +67,14 @@ interface Confirmation {
 }
 
 /** Keep one SettingsWorkspaceStateProvider mounted above this page; legacy consumers remain separate. */
-export function SettingsPanel({ isActive = true, activeProjectId = null, onClose, initialSettingKey = null, onDirtyChange }: SettingsPanelProps) {
+export function SettingsPanel({ isActive = true, activeProjectId = null, projectOpen: projectOpenProp, onClose, initialSettingKey = null, onDirtyChange }: SettingsPanelProps) {
   const workspace = useSettingsWorkspace()
   const { state, isDirty, setScope, load } = workspace
   const { snapshot, draftValues, pendingRequest } = state
   const activeTarget = useMemo(() => canonicalProjectId(activeProjectId), [activeProjectId])
+  const projectOpen = projectOpenProp ?? activeProjectId !== null
+  // A stale project scope stays switchable back to the defaults until it is resolved.
+  const showGlobalScope = !projectOpen || activeTarget === null || state.scope === 'global'
   const id = `settings-${useId()}`
   const panel = useRef<HTMLElement>(null)
   const title = useRef<HTMLHeadingElement>(null)
@@ -104,8 +113,8 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, onClose
   const changedKeys = Object.keys(draftValues)
   const busy = pendingRequest !== null
   const oldProject = state.projectId !== null && state.projectId !== activeTarget
-  const scopeName = state.scope === 'global' ? '新しい動画の既定値' : oldProject ? '切替前の動画' : 'この動画'
-  const restoreName = state.scope === 'global' ? 'プロファイル初期値' : '案件開始時の初期値'
+  const scopeName = state.scope === 'global' ? '全体の初期値' : oldProject ? '切替前のProject' : '次に作成するJob'
+  const restoreName = state.scope === 'global' ? 'プロファイル初期値' : 'Project開始時の初期値'
   const blocked = !isActive || busy || snapshot === null || state.needsRefresh || confirmation !== null
   const confirmationIsCurrent = confirmation !== null && confirmation.projectId === state.projectId
     && confirmation.snapshot === snapshot && confirmation.drafts === draftValues
@@ -297,13 +306,15 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, onClose
           <h2 id={`${id}-title`} ref={title} tabIndex={-1}>設定</h2>
           <div className="settings-scope" role="group" aria-label="設定の対象">
             <span>対象</span>
-            <button type="button" aria-pressed={state.scope === 'global'} disabled={!isActive || busy} onClick={() => requestScope(null)}>新しい動画の既定値</button>
-            <button type="button" aria-pressed={state.scope === 'project' && !oldProject} disabled={!isActive || busy || activeTarget === null} onClick={() => requestScope(activeTarget)}>この動画</button>
+            {/* FR-061.6: the list edits only the overall defaults; a created project edits only its next Job. */}
+            {showGlobalScope && <button type="button" aria-pressed={state.scope === 'global'} disabled={!isActive || busy} onClick={() => requestScope(null)}>全体の初期値</button>}
+            {projectOpen && <button type="button" aria-pressed={state.scope === 'project' && !oldProject} disabled={!isActive || busy || activeTarget === null} onClick={() => requestScope(activeTarget)}>次に作成するJob</button>}
           </div>
           {onClose !== undefined && <button type="button" className="settings-close" disabled={!isActive || busy} onClick={requestClose}>設定を閉じて戻る</button>}
         </header>
-        <p className="settings-scope-note">編集中：{scopeName}。{activeTarget === null && (activeProjectId === null ? '「この動画」は、「編集を開始」で案件を作成すると選べます。作成前は既定値を編集できます。' : 'この動画の設定先を確認できません。')}設定の保存だけでは動画・既存の成果物を更新しません。</p>
-        {oldProject && <div className="settings-context-warning" role="status">切替前の動画の設定を保持しています。個別に保存するか、対象を切り替えてください。</div>}
+        <p className="settings-scope-note">編集中：{scopeName}。{activeTarget === null && projectOpen && (activeProjectId === null ? '「次に作成するJob」は、「編集を開始」でProjectを作成すると選べます。作成前は全体の初期値を編集できます。' : 'このProjectの設定先を確認できません。')}{state.scope === 'project' && !oldProject && '保存した設定は、このProjectで次に作成するJobに使います。作成済みのJobの設定は変わりません。'}設定の保存だけでは動画・既存の成果物を更新しません。</p>
+        {oldProject && <div className="settings-context-warning" role="status">切替前のProjectの設定を保持しています。個別に保存するか、対象を切り替えてください。</div>}
+        <WorkspaceLocationSection isActive={isActive} />
         <div className="settings-toolbar">
           <div className="settings-view-switch" role="group" aria-label="設定の表示">
             {([['setting', '項目を編集'], ['outcome', '予定を確認'], ['file', '設定ファイル']] as const).map(([view, label]) => (
@@ -411,7 +422,7 @@ function SettingsConfirmation({ confirmation, scopeName, restoreName, blocked, s
         <h3 id={`${id}-title`}>{label}</h3>
         <div id={`${id}-message`}>
           <p>対象：{scopeName}</p>
-          {action.kind === 'scope' ? <p>「{action.target === null ? '新しい動画の既定値' : 'この動画'}」へ切り替えます。未保存項目を個別に保存する場合は入力へ戻ってください。</p>
+          {action.kind === 'scope' ? <p>「{action.target === null ? '全体の初期値' : '次に作成するJob'}」へ切り替えます。未保存項目を個別に保存する場合は入力へ戻ってください。</p>
             : action.kind === 'close' ? <p>「未保存のまま戻る」では入力を保持して画面を閉じます。保存はしません。個別に保存する場合は「未保存項目へ戻る」を選んでください。</p>
               : <p>{action.kind === 'resetAll' ? 'すべての設定' : '選択した設定'}を{restoreName}へ戻します。既存の動画や成果物は更新しません。</p>}
           {dirty && <p>{action.kind === 'close' ? '「変更を破棄して閉じる」を選ぶと、未保存の変更を破棄します。' : '未保存の変更を破棄する操作です。'}{action.kind === 'reset' && '他の項目の未保存値は保持します。'}</p>}

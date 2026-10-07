@@ -94,6 +94,8 @@ public sealed class WebBridgeSchemaTests
                 "settings.file.export",
                 "settings.file.preview",
                 "settings.file.apply",
+                "settings.workspace.read",
+                "settings.workspace.update",
                 "pipeline.read",
                 "pipeline.regenerate",
                 "pipeline.retry",
@@ -196,6 +198,8 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/settingsFileExportRequest",
                 "#/$defs/settingsFilePreviewRequest",
                 "#/$defs/settingsFileApplyRequest",
+                "#/$defs/settingsWorkspaceReadRequest",
+                "#/$defs/settingsWorkspaceUpdateRequest",
                 "#/$defs/settingsGlobalReadResponse",
                 "#/$defs/settingsGlobalUpdateResponse",
                 "#/$defs/settingsGlobalResetResponse",
@@ -203,6 +207,8 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/settingsFileExportResponse",
                 "#/$defs/settingsFilePreviewResponse",
                 "#/$defs/settingsFileApplyResponse",
+                "#/$defs/settingsWorkspaceReadResponse",
+                "#/$defs/settingsWorkspaceUpdateResponse",
                 "#/$defs/pipelineReadRequest",
                 "#/$defs/pipelineRegenerateRequest",
                 "#/$defs/pipelineRetryRequest",
@@ -489,6 +495,11 @@ public sealed class WebBridgeSchemaTests
             "settingsFileExportResponse",
             "settingsFilePreviewResponse",
             "settingsFileApplyResponse",
+            "settingsWorkspaceUpdateParams",
+            "settingsWorkspaceReadRequest",
+            "settingsWorkspaceUpdateRequest",
+            "settingsWorkspaceReadResponse",
+            "settingsWorkspaceUpdateResponse",
         })
         {
             Assert.AreEqual(
@@ -776,6 +787,9 @@ public sealed class WebBridgeSchemaTests
             ("settingsFileExport", "settings.file.export", "settingsFileExportParams", "settingsFileResult"),
             ("settingsFilePreview", "settings.file.preview", "settingsFilePreviewParams", "settingsFileResult"),
             ("settingsFileApply", "settings.file.apply", "settingsFileApplyParams", "settingsFileResult"),
+            // FR-062 / AC-037.3
+            ("settingsWorkspaceRead", "settings.workspace.read", "emptyObject", "settingsWorkspaceResult"),
+            ("settingsWorkspaceUpdate", "settings.workspace.update", "settingsWorkspaceUpdateParams", "settingsWorkspaceResult"),
         ];
 
         foreach ((string stem, string method, string parameters, string result) in methods)
@@ -1916,8 +1930,9 @@ public sealed class WebBridgeSchemaTests
         AssertClosedProperties(versionsResult, "status", "workingCopyRevision", "versions");
         CollectionAssert.AreEqual(new[] { "available", "notFound", "conflict", "forbidden", "unavailable", "invalid" },
             GetStrings(versionsResult.GetProperty("properties").GetProperty("status").GetProperty("enum")));
+        // FR-055 AC-030.1: createdAt, the differing settings and the viewable outputs are part of every entry.
         AssertClosedProperties(definitions.GetProperty("sourceOnlyVersionEntry"), "versionId", "versionDigest",
-            "parentVersionId", "executionId", "phase", "hasResult", "isCurrent");
+            "parentVersionId", "executionId", "phase", "hasResult", "isCurrent", "createdAt", "settings", "outputs");
         CollectionAssert.AreEqual(Enum.GetNames<SourceOnlyExecutionPhase>(), GetStrings(definitions
             .GetProperty("sourceOnlyVersionEntry").GetProperty("properties").GetProperty("phase").GetProperty("enum")));
         AssertClosedProperties(definitions.GetProperty("pipelineReadParams"), "projectId");

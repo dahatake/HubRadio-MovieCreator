@@ -56,7 +56,7 @@ export type ProjectAction =
   | Readonly<{ type: 'errorCleared' }>
 
 export const filesNotRemovedNotice =
-  '案件は一覧から削除しましたが、一部のファイルを削除できませんでした。ファイルが他のアプリで使用中の可能性があります。'
+  'Projectは一覧から削除しましたが、一部のファイルを削除できませんでした。ファイルが他のアプリで使用中の可能性があります。'
 
 export const emptyProjectInput: ProjectDraftInput = Object.freeze({
   sourceCandidateId: null,
@@ -422,6 +422,7 @@ function upsertProject(
     }),
     updatedAt: draft.updatedAt,
     ...(previous?.thumbnail === undefined ? {} : { thumbnail: previous.thumbnail }),
+    ...(previous?.poster === undefined ? {} : { poster: previous.poster }),
   }
   const withoutCurrent = projects.filter((project) => project.draftId !== draft.draftId)
   return sortProjects([...withoutCurrent, item])

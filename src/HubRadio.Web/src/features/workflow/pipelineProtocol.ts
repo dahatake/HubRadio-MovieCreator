@@ -1,4 +1,5 @@
 import { BRIDGE_PROTOCOL_VERSION, isCanonicalBridgeId } from '../../bridge/protocol'
+import { parseValue, type SettingValue } from '../settings/settingsProtocol'
 
 // Web projection of SourceOnlyResultCodec.ToDto, NOT its persistence JSON (which
 // contains native-only recovery locators). Keep enum casing from that codec.
@@ -66,6 +67,9 @@ const generationWarningCodes: readonly string[] = [
   'cue-boundary-whitespace-trimmed', 'output-cues-overlap', 'output-gap-below-minimum-without-retiming',
   'line-height-rounded-inward-to-pixels', 'opaque-setting-explicitly-overridden-by-transparent-background-request',
   'platform-ui-mask-not-measured', 'NOT EVALUATED', 'source-gaps-preserved-instead-of-retimed',
+  // FR-051 FullCoverage summaries (one per build).
+  'cue-ends-may-extend-into-following-silence-starts-never-move', 'cue-end-extended-into-following-silence', 'shown-below-minimum-duration',
+  'shown-above-maximum-reading-speed', 'shown-with-gap-below-minimum', 'untimed-token-shown-between-timed-neighbours',
 ]
 function generationWarningCode(value: unknown): string {
   requireValid(typeof value === 'string' && value.length > 0 && value.length <= 128 && generationWarningCodes.includes(value))
@@ -418,11 +422,46 @@ const restoreParams = object({
   expectedWorkingCopyRevision: integer(), expectedSettingsRevision: integer(), expectedSettingsSnapshotDigest: digest,
 })
 export type PipelineRestoreParams = ReturnType<typeof restoreParams>
-const versionEntry = object({
+const versionEntryBase = object({
   versionId: id, versionDigest: digest, parentVersionId: nullable(id), executionId: id,
   phase: enumeration(PIPELINE_PHASES), hasResult: bool, isCurrent: bool,
 })
-export type PipelineVersionEntry = ReturnType<typeof versionEntry>
+const versionOutput = object({
+  role: enumeration(SOURCE_ONLY_ROLES), artifactId: id, contentDigest: digest, mediaType: enumeration(['video/mp4', 'image/png'] as const),
+})
+export type PipelineVersionOutput = ReturnType<typeof versionOutput>
+export interface PipelineVersionSetting { readonly key: string, readonly value: SettingValue }
+const versionSetting: Reader<PipelineVersionSetting> = value => {
+  requireValid(typeof value === 'object' && value !== null && !Array.isArray(value))
+  const record = value as Record<string, unknown>
+  requireValid(Object.keys(record).length === 2 && typeof record.key === 'string' && record.key.length > 0 && record.key.length <= 128)
+  const parsed = parseValue(record.value)
+  requireValid(parsed !== null)
+  return Object.freeze({ key: record.key as string, value: parsed })
+}
+/** FR-055: createdAt, the differing settings and the viewable outputs are omitted by hosts that predate FR-055. */
+export type PipelineVersionEntry = ReturnType<typeof versionEntryBase> & {
+  readonly createdAt?: string
+  readonly settings?: readonly PipelineVersionSetting[]
+  readonly outputs?: readonly PipelineVersionOutput[]
+}
+const versionExtensions = ['createdAt', 'settings', 'outputs'] as const
+const versionEntry: Reader<PipelineVersionEntry> = value => {
+  requireValid(typeof value === 'object' && value !== null && !Array.isArray(value))
+  const record = value as Record<string, unknown>
+  const present = versionExtensions.filter(key => Object.hasOwn(record, key))
+  requireValid(present.length === 0 || present.length === versionExtensions.length)
+  const base = versionEntryBase(Object.fromEntries(Object.entries(record).filter(([key]) => !present.includes(key as never))))
+  if (present.length === 0) return base
+  const settings = array(versionSetting, 512)(record.settings)
+  requireValid(new Set(settings.map(item => item.key)).size === settings.length)
+  return Object.freeze({
+    ...base,
+    createdAt: timestamp(record.createdAt),
+    settings,
+    outputs: array(versionOutput, 64)(record.outputs),
+  })
+}
 const versionsResponseShape = object({
   version: enumeration([BRIDGE_PROTOCOL_VERSION] as const), requestId: id,
   method: enumeration([PIPELINE_VERSIONS_METHOD] as const),

@@ -31,6 +31,7 @@ type CatalogEditor =
   | Readonly<{ control: 'boolean' }>
   | Readonly<{ control: 'choices'; values: readonly string[] }>
   | Readonly<{ control: 'multiple'; options: readonly SettingMultipleOption[] }>
+  | Readonly<{ control: 'text'; options: readonly SettingMultipleOption[] }>
 
 interface SettingEditorCatalog {
   readonly fixed: ReadonlyMap<string, FixedSettingReason>
@@ -52,8 +53,8 @@ function parseCatalog(source: unknown): SettingEditorCatalog {
     if (fixed.has(key) || !isRecord(entry)) throw invalid()
     if (entry.control === 'range' || entry.control === 'boolean') editors.set(key, { control: entry.control })
     else if (entry.control === 'choices' && Array.isArray(entry.values) && entry.values.every(item => typeof item === 'string')) editors.set(key, { control: 'choices', values: [...entry.values] as string[] })
-    else if (entry.control === 'multiple' && Array.isArray(entry.options) && entry.options.every(item => isRecord(item) && typeof item.value === 'string' && typeof item.label === 'string')) {
-      editors.set(key, { control: 'multiple', options: (entry.options as { value: string; label: string }[]).map(item => ({ value: item.value, label: item.label })) })
+    else if ((entry.control === 'multiple' || entry.control === 'text') && Array.isArray(entry.options) && entry.options.every(item => isRecord(item) && typeof item.value === 'string' && typeof item.label === 'string')) {
+      editors.set(key, { control: entry.control, options: (entry.options as { value: string; label: string }[]).map(item => ({ value: item.value, label: item.label })) })
     } else throw invalid()
   }
   return { fixed, editors }
@@ -76,6 +77,7 @@ export function getSettingEditor(definition: SettingDefinition): SettingEditor |
     if (entry.control === 'range' && kind === 'integer') return atLeastTwo(rangeChoices(definition, Number.POSITIVE_INFINITY))
     if (entry.control === 'choices' && (kind === 'integer' || kind === 'rational')) return atLeastTwo(listedChoices(definition, entry.values))
     if (entry.control === 'multiple' && kind === 'textList') return { kind: 'multiple', options: entry.options }
+    if (entry.control === 'text' && kind === 'text') return atLeastTwo(labelledTextChoices(definition, entry.options))
   }
   return derivedEditor(definition)
 }
@@ -117,6 +119,12 @@ function booleanEditor(): SettingEditor {
     { id: 'true', value: { kind: 'boolean', booleanValue: true }, label: '有効' },
     { id: 'false', value: { kind: 'boolean', booleanValue: false }, label: '無効' },
   ] }
+}
+
+// FR-057〜FR-060: text settings offer only the catalog's options that the profile allows, with Japanese labels.
+function labelledTextChoices(definition: SettingDefinition, options: readonly SettingMultipleOption[]): readonly SettingChoice[] {
+  return options.filter(item => definition.allowedTextValues.includes(item.value))
+    .map(item => ({ id: item.value, value: { kind: 'text', textValue: item.value }, label: item.label }))
 }
 
 function textEditor(definition: SettingDefinition): SettingEditor {

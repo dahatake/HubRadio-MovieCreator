@@ -22,25 +22,31 @@ public sealed class SettingEditorCatalogTests
     [TestMethod]
     [DataRow("1.0.0")]
     [DataRow("1.1.0")]
+    [DataRow("1.2.0")]
     public void SettingEditorCatalogClassifiesEveryShippedKeyExactlyOnce(string version)
     {
         DefaultSettingsProfile profile = LoadProfile(version);
         string[] fixedKeys = Fixed().Select(static item => item.Key).ToArray();
         string[] editorKeys = Editors().Select(static item => item.Key).ToArray();
 
-        Assert.HasCount(123, profile.Definitions);
+        bool latest = version == "1.2.0";
+        Assert.HasCount(latest ? 127 : 123, profile.Definitions);
         Assert.IsEmpty(fixedKeys.Intersect(editorKeys, StringComparer.Ordinal).ToArray());
-        CollectionAssert.AreEquivalent(profile.Definitions.Select(static item => item.Key).ToArray(), fixedKeys.Concat(editorKeys).ToArray());
+        // FR-057〜FR-060: the catalog also classifies the keys that only profile 1.2.0 defines.
+        string[] classified = fixedKeys.Concat(editorKeys).ToArray();
+        CollectionAssert.AreEquivalent(
+            profile.Definitions.Select(static item => item.Key).Concat(latest ? [] : BundledDefaultSettingsProfileLoader.KeysAddedIn120).ToArray(),
+            classified);
         foreach ((string key, string reason) in Fixed())
             CollectionAssert.Contains(FixedReasons, reason, key);
-        Assert.HasCount(22, editorKeys);
+        Assert.HasCount(26, editorKeys);
     }
 
     // FR-050.1 AC-025.5
     [TestMethod]
     public void SettingEditorCatalogSingleValueKeysOfferOneValueInTheCurrentProfile()
     {
-        DefaultSettingsProfile profile = LoadProfile("1.1.0");
+        DefaultSettingsProfile profile = LoadProfile("1.2.0");
         foreach ((string key, string reason) in Fixed().Where(static item => item.Reason == "singleValue"))
         {
             DefaultSettingDefinition definition = profile.GetDefinition(key);
@@ -55,7 +61,7 @@ public sealed class SettingEditorCatalogTests
     [TestMethod]
     public void SettingEditorCatalogChoicesAreAcceptedByTheRenderConfigurationAndProfiles()
     {
-        DefaultSettingsProfile profile = LoadProfile("1.1.0");
+        DefaultSettingsProfile profile = LoadProfile("1.2.0");
         BundledRenderProfileDefinition longForm = BundledRenderProfileLoader.Load(File.ReadAllBytes(RepositoryPath("src/HubRadio.App/Profiles/16x9/long-form.json")));
         BundledRenderProfileDefinition vertical = BundledRenderProfileLoader.Load(File.ReadAllBytes(RepositoryPath("src/HubRadio.App/Profiles/9x16/vertical-short.json")));
         var standardRate = new RationalNumber(30, 1);
@@ -91,7 +97,7 @@ public sealed class SettingEditorCatalogTests
     [TestMethod]
     public void SettingEditorCatalogGeometryChoicesNeverExceedTheDefault()
     {
-        DefaultSettingsProfile profile = LoadProfile("1.1.0");
+        DefaultSettingsProfile profile = LoadProfile("1.2.0");
         string[] geometry = Editors().Where(static item => item.Entry.TryGetProperty("maximumIsDefault", out JsonElement flag) && flag.GetBoolean())
             .Select(static item => item.Key).ToArray();
         CollectionAssert.AreEquivalent(new[]
@@ -122,7 +128,7 @@ public sealed class SettingEditorCatalogTests
     [DataRow("thumbnails.sourceFrameOnly")]
     public void SettingEditorCatalogRuntimeFixedBooleansAreRejectedWhenChanged(string key)
     {
-        DefaultSettingsProfile profile = LoadProfile("1.1.0");
+        DefaultSettingsProfile profile = LoadProfile("1.2.0");
         Assert.AreEqual("runtimeFixed", Fixed().Single(item => item.Key == key).Reason);
         bool initial = profile.GetDefinition(key).DefaultValue.BooleanValue!.Value;
         DefaultSettingsSnapshot settings = WithValue(profile, key, DefaultSettingValue.FromBoolean(!initial));
@@ -135,6 +141,9 @@ public sealed class SettingEditorCatalogTests
     {
         foreach ((string key, JsonElement entry) in Editors())
         {
+            // Keys added by a later profile (FR-057〜FR-060) are not offered for an older profile.
+            if (!profile.Definitions.Any(item => item.Key == key))
+                continue;
             DefaultSettingDefinition definition = profile.GetDefinition(key);
             string control = entry.GetProperty("control").GetString()!;
             IEnumerable<DefaultSettingValue> values = control switch
@@ -144,6 +153,7 @@ public sealed class SettingEditorCatalogTests
                     ? Enumerable.Range(0, checked((int)(maximum - minimum + 1))).Select(offset => DefaultSettingValue.FromInteger(minimum + offset))
                     : [],
                 "choices" => entry.GetProperty("values").EnumerateArray().Select(static item => ParseChoice(item.GetString()!)),
+                "text" => entry.GetProperty("options").EnumerateArray().Select(static item => DefaultSettingValue.FromText(item.GetProperty("value").GetString()!)),
                 "multiple" => Subsets(entry.GetProperty("options").EnumerateArray().Select(static item => item.GetProperty("value").GetString()!).ToArray()),
                 _ => throw new AssertFailedException($"Unknown control {control} for {key}."),
             };

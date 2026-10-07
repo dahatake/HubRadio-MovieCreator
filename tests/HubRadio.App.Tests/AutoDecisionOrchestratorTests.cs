@@ -244,6 +244,104 @@ public sealed class AutoDecisionOrchestratorTests
             AutoDecisionFailureReason.AmbiguousEvidence);
     }
 
+    // FR-057 AC-032.1: an interior pause is shortened to 0.15 s on each side under profile 1.2.0.
+    [TestMethod]
+    [TestCategory("FR-057")]
+    public void InteriorPauseIsTightenedToPaddingOnEachSideOnlyWithThePauseSetting()
+    {
+        Fixture fixture = new();
+        SilenceSuggestionCandidate pause = fixture.CreateSilenceCandidate(
+            new TimeRange(new RationalTime(4, 1), new RationalTime(1, 1)),
+            thresholdVersion: SilenceDetector.PauseThresholdVersion);
+        IReadOnlyList<SourceSpan> spans = fixture.SourceSpans.Append(pause.Payload.SourceSpan).ToArray();
+        DefaultSettingsProfile latest = LoadProfile("1.2.0");
+
+        AutoDecisionPreparation result = AutoDecisionOrchestrator.Prepare(
+            fixture.Request([pause], settingsProfile: latest, settings: latest.CreateSnapshot(), sourceSpans: spans));
+
+        AutoDecisionEvidence evidence = result.Evidence.Single();
+        Assert.AreEqual(AutoDecisionRule.PauseTightening, evidence.RuleId);
+        Assert.AreEqual(SilenceDetector.PauseThresholdVersion, evidence.RuleVersion);
+        Assert.AreEqual(
+            new TimeRange(new RationalTime(83, 20), new RationalTime(7, 10)),
+            evidence.DeletedSourceRange);
+
+        DefaultSettingsSnapshot strong = latest.CreateSnapshot(latest.CreateSnapshot().Values.Select(item =>
+            item.Key == "editing.pauseTightening" ? new DefaultSettingSelection(item.Key, DefaultSettingValue.FromText("strong")) : item).ToArray());
+        AutoDecisionEvidence strongEvidence = AutoDecisionOrchestrator.Prepare(
+            fixture.Request([pause], settingsProfile: latest, settings: strong, sourceSpans: spans)).Evidence.Single();
+        Assert.AreNotEqual(evidence.RuleDigest, strongEvidence.RuleDigest);
+
+        // The saved decision replays under the evidence codec exactly like the FR-005 rules.
+        CompositionVersion reloaded = CompositionSnapshotJson.ReadVersion(CompositionSnapshotJson.WriteVersion(result.Child));
+        AutoDecisionEvidenceCodec.ValidateLoaded(reloaded, fixture.Parent);
+
+        // A profile without editing.pauseTightening never tightens pauses.
+        AssertFailure(
+            () => AutoDecisionOrchestrator.Prepare(fixture.Request([pause], sourceSpans: spans)),
+            AutoDecisionFailureReason.SettingsMismatch);
+    }
+
+    // FR-057 AC-032.2: pauses at the head or tail, or shorter than the detector minimum, are not tightened.
+    [TestMethod]
+    [TestCategory("FR-057")]
+    public void HeadOrShortPausesFailClosed()
+    {
+        Fixture fixture = new();
+        DefaultSettingsProfile latest = LoadProfile("1.2.0");
+        foreach (TimeRange range in new[]
+        {
+            new TimeRange(default, new RationalTime(1, 1)),
+            new TimeRange(new RationalTime(9, 1), new RationalTime(1, 1)),
+            new TimeRange(new RationalTime(4, 1), new RationalTime(3, 10)),
+        })
+        {
+            SilenceSuggestionCandidate pause = fixture.CreateSilenceCandidate(range, thresholdVersion: SilenceDetector.PauseThresholdVersion);
+            AssertFailure(
+                () => AutoDecisionOrchestrator.Prepare(fixture.Request([pause], settingsProfile: latest,
+                    settings: latest.CreateSnapshot(), sourceSpans: fixture.SourceSpans.Append(pause.Payload.SourceSpan).ToArray())),
+                AutoDecisionFailureReason.AmbiguousEvidence);
+        }
+    }
+
+    // FR-057 AC-032.3: only the part of a pause between two utterances counts, and the deleted middle lands on cut points.
+    [TestMethod]
+    [TestCategory("FR-057")]
+    public void PauseRangesStayBetweenUtterancesAndAlignToCutPoints()
+    {
+        Fixture fixture = new();
+        SilenceDetectionResult detected = fixture.ParsePauses(
+            "[silencedetect @ a] silence_start: 0.5\n" +
+            "[silencedetect @ a] silence_end: 2.5 | silence_duration: 2\n" +
+            "[silencedetect @ a] silence_start: 4.2\n" +
+            "[silencedetect @ a] silence_end: 4.65 | silence_duration: 0.45\n" +
+            "[silencedetect @ a] silence_start: 7\n" +
+            "[silencedetect @ a] silence_end: 10 | silence_duration: 3\n");
+        Assert.AreEqual(SilenceDetector.PauseThresholdVersion, detected.Configuration.ThresholdVersion);
+        Assert.HasCount(3, detected.Candidates);
+        // Speech 0–1, 2–4, 5–8: gaps are 1–2 and 4–5. The 7–10 pause overlaps speech until 8 and then the tail.
+        TimeRange[] spoken = [Range(0, 1), Range(2, 2), Range(5, 3)];
+        // Cut points on the exact 16 kHz analysis grid of a 30 fps source: every third frame (0.1 s).
+        RationalTime[] cutPoints = Enumerable.Range(0, 101).Select(static step => new RationalTime(step, 10)).ToArray();
+
+        IReadOnlyList<(long StartSample, long EndSample)> standard = HubRadio.App.Projects.SourceOnlyPipeline.SelectPauseRanges(
+            detected, spoken, new RationalTime(7, 10), cutPoints);
+        // Pause 0.5–2.5 within gap 1–2: deleted middle 1.2–1.8 (first/last cut points inside 1.15–1.85),
+        // so the kept pause is 1.05–1.95.
+        CollectionAssert.AreEqual(new[] { (16800L, 31200L) }, standard.ToArray());
+        SilenceDetectionResult narrowed = SilenceDetector.NarrowPauses(detected, standard);
+        Assert.AreEqual(new TimeRange(new RationalTime(21, 20), new RationalTime(9, 10)), narrowed.Candidates.Single().SourceSpan.Range);
+        Assert.AreEqual(SilenceDetector.PauseThresholdVersion, narrowed.Candidates.Single().ThresholdVersion);
+
+        IReadOnlyList<(long StartSample, long EndSample)> strong = HubRadio.App.Projects.SourceOnlyPipeline.SelectPauseRanges(
+            detected, spoken, new RationalTime(2, 5), cutPoints);
+        // The 0.45 s pause 4.2–4.65 inside gap 4–5 is tightened only when strong (deleted 4.4–4.5).
+        CollectionAssert.AreEqual(new[] { (16800L, 31200L), (68000L, 74400L) }, strong.ToArray());
+        Assert.IsEmpty(HubRadio.App.Projects.SourceOnlyPipeline.SelectPauseRanges(detected, spoken, new RationalTime(2, 1), cutPoints));
+
+        Assert.ThrowsExactly<ArgumentException>(() => SilenceDetector.NarrowPauses(detected, [(30000L, 50000L)]));
+    }
+
     [TestMethod]
     public void SilenceSamplesMustMatchCanonicalTimelineAndSourceRange()
     {
@@ -935,7 +1033,8 @@ public sealed class AutoDecisionOrchestratorTests
 
         internal SilenceSuggestionCandidate CreateSilenceCandidate(
             TimeRange range,
-            EntityId<AssetIdTag>? assetId = null)
+            EntityId<AssetIdTag>? assetId = null,
+            string? thresholdVersion = null)
         {
             EntityId<AssetIdTag> actualAsset = assetId ?? _silenceAssetId;
             ContentDigest digest = actualAsset == _silenceAssetId
@@ -972,11 +1071,17 @@ public sealed class AutoDecisionOrchestratorTests
                 span,
                 detection,
                 suggestion,
-                SilenceDetector.ThresholdVersion,
+                thresholdVersion ?? SilenceDetector.ThresholdVersion,
                 analysisStartSample: checked(range.Start.Value * 16000 / range.Start.Rate),
                 analysisEndSample: checked(range.End.Value * 16000 / range.End.Rate));
             return SuggestionService.Register(payload, []);
         }
+
+        internal SilenceDetectionResult ParsePauses(string standardError) =>
+            SilenceDetector.ParsePauseProcessResult(
+                CreateAudioTimeline(),
+                ModelRun.Id,
+                new ProcessRunResult(0, string.Empty, standardError, Truncated: false, TimeSpan.FromMilliseconds(1)));
 
         internal AutoDecisionRequest CreateNestedExtentRequest(
             SilenceSuggestionCandidate candidate)
@@ -1342,7 +1447,7 @@ public sealed class AutoDecisionOrchestratorTests
             CreatedAt.AddMinutes(-5),
             CreatedAt.AddMinutes(-4));
 
-    private static DefaultSettingsProfile LoadProfile()
+    private static DefaultSettingsProfile LoadProfile(string version = "1.0.0")
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
         while (directory is not null)
@@ -1356,7 +1461,7 @@ public sealed class AutoDecisionOrchestratorTests
                     "HubRadio.App",
                     "DefaultSettings",
                     "Profiles",
-                    "1.0.0.json");
+                    version + ".json");
                 return DefaultSettingsProfile.ParseCanonical(File.ReadAllText(path));
             }
 

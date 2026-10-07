@@ -67,7 +67,7 @@ describe('ProjectWorkspace', () => {
     })
     expect(markup).toContain('<form')
     expect(markup).toMatch(/<button[^>]*type="submit"[^>]*>下書きを保存<\/button>/)
-    expect(markup).toMatch(/<button[^>]*type="button"[^>]*>案件を作成<\/button>/)
+    expect(markup).toMatch(/<button[^>]*type="button"[^>]*>Projectを作成<\/button>/)
   })
 
   it('executes wizard navigation and finalization with keyboard input', async () => {
@@ -115,7 +115,7 @@ describe('ProjectWorkspace', () => {
 
       await act(async () => user.keyboard('[End]'))
       const finish = [...container.querySelectorAll<HTMLButtonElement>('button')]
-        .find((button) => button.textContent?.trim() === '案件を作成')
+        .find((button) => button.textContent?.trim() === 'Projectを作成')
       if (finish === undefined) {
         throw new Error('Expected the project finalization button.')
       }
@@ -207,7 +207,7 @@ describe('ProjectWorkspace', () => {
       expect(markup).toContain(scope)
     }
     expect(markup).toContain('必須項目がすべて入力されています。')
-    expect(markup).toContain('案件を作成')
+    expect(markup).toContain('Projectを作成')
     expect(markup).not.toContain(candidateId)
     expect(markup).not.toContain(draftId)
   })
@@ -221,9 +221,9 @@ describe('ProjectWorkspace', () => {
       },
     })
 
-    expect(markup).toContain('案件を作成する権限がありません')
+    expect(markup).toContain('Projectを作成する権限がありません')
     expect(markup).toMatch(
-      /<button[^>]*disabled=""[^>]*>新しい案件を作成<\/button>/,
+      /<button[^>]*disabled=""[^>]*>新しいProjectを作成<\/button>/,
     )
   })
 
@@ -262,9 +262,9 @@ describe('ProjectWorkspace', () => {
     })
 
     expect(markup).toContain('再選択が必要')
-    expect(markup).toContain('案件作成まで残り 1 項目')
+    expect(markup).toContain('Project作成まで残り 1 項目')
     expect(markup).toMatch(
-      /<button[^>]*class="primary-button"[^>]*disabled=""[^>]*>案件を作成<\/button>/,
+      /<button[^>]*class="primary-button"[^>]*disabled=""[^>]*>Projectを作成<\/button>/,
     )
     expect(markup).not.toContain('必須項目がすべて入力されています。')
   })
@@ -302,8 +302,9 @@ describe('ProjectWorkspace', () => {
     expect(provenance?.open).toBe(false)
     expect(provenance?.querySelector('summary')?.textContent).toBe('適用する既定設定')
     expect(provenance?.textContent).toContain('1.0.0')
-    expect(provenance?.textContent).toContain(profileDigest)
-    expect(provenance?.textContent).toContain(snapshotDigest)
+    // FR-052: digests are not shown to the user.
+    expect(provenance?.textContent).not.toContain(profileDigest)
+    expect(provenance?.textContent).not.toContain(snapshotDigest)
     expect(provenance?.innerHTML).toContain('開始前の警告</dt><dd>0 件')
     expect(container.querySelectorAll('.quick-start-actions button[type="submit"]')).toHaveLength(1)
     expect(container.querySelector<HTMLButtonElement>('.quick-start-actions button[type="submit"]')?.disabled).toBe(false)
@@ -464,7 +465,7 @@ describe('ProjectWorkspace', () => {
     expect(namedMarkup).not.toContain('<script')
     expect(namedMarkup).not.toContain('<img')
     expect(legacyMarkup).toContain('wizard-progress')
-    expect(legacyMarkup).toContain('案件作成ウィザード')
+    expect(legacyMarkup).toContain('Project作成ウィザード')
     expect(legacyMarkup).not.toContain('かんたん編集')
   })
 })
@@ -511,7 +512,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     return {
       ...initialProjectState,
       canCreate: true,
-      projects: [projectListItem('保存済みの案件')],
+      projects: [projectListItem('保存済みのProject')],
       draft: sourceOnly ? sourceOnlyDraft(input) : projectDraft(input),
       input,
     }
@@ -553,7 +554,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     expect(container.querySelectorAll('.quick-start-panel')).toHaveLength(1)
     expect(container.querySelectorAll('.quick-start-actions button[type="submit"]')).toHaveLength(1)
     expect(container.querySelector('.project-list-panel, .project-card, .wizard-panel')).toBeNull()
-    expect(container.textContent).not.toContain('保存済みの案件')
+    expect(container.textContent).not.toContain('保存済みのProject')
 
     renderView(callbacks(draftState(false)))
     expect(container.querySelectorAll('.wizard-progress button')).toHaveLength(5)
@@ -569,7 +570,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     const props = callbacks({
       ...initialProjectState,
       projects: [{
-        ...projectListItem('保存済みの案件'),
+        ...projectListItem('保存済みのProject'),
         state,
         sourceStatus,
         projectId: state === 'finalized' ? finalizedProjectId : null,
@@ -580,7 +581,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     expect(container.querySelector('.source-status')?.textContent).toBe(sourceLabel)
     expect(container.textContent).not.toMatch(/生成済み|生成中|編集完了/)
     const user = userEvent.setup({ document })
-    await act(async () => user.click(button('保存済みの案件を開く')))
+    await act(async () => user.click(button('保存済みのProjectを開く')))
     expect(props.loadDraft).toHaveBeenCalledExactlyOnceWith(draftId)
     expect(props.createDraft).not.toHaveBeenCalled()
     expect(props.finalizeDraft).not.toHaveBeenCalled()
@@ -592,7 +593,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
         ...initialProjectState,
         canCreate: true,
         projects: Array.from({ length: 7 }, (_, index) => ({
-          ...projectListItem(`案件 ${index + 1}`),
+          ...projectListItem(`Project ${index + 1}`),
           draftId: `00000000-0000-4000-8000-${(index + 1).toString().padStart(12, '0')}`,
         })),
         pending: reason === 'pending'
@@ -604,7 +605,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     }
     renderView(props)
     const user = userEvent.setup({ document })
-    for (const name of ['新しい案件を作成', '案件 1を開く', '次のページ']) {
+    for (const name of ['新しいProjectを作成', 'Project 1を開く', '次のページ']) {
       expect(button(name).disabled).toBe(true)
       await act(async () => user.click(button(name)))
     }
@@ -617,9 +618,9 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     }
 
     renderView({ ...props, active: true, navigationBlocked: false, state: { ...props.state, pending: null } })
-    expect(button('新しい案件を作成').disabled).toBe(false)
-    expect(button('案件 1を開く').disabled).toBe(false)
-    await act(async () => user.click(button('案件 1を開く')))
+    expect(button('新しいProjectを作成').disabled).toBe(false)
+    expect(button('Project 1を開く').disabled).toBe(false)
+    await act(async () => user.click(button('Project 1を開く')))
     expect(props.loadDraft).toHaveBeenCalledExactlyOnceWith(props.state.projects[0]!.draftId)
   })
 
@@ -627,22 +628,22 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     const props = callbacks({
       ...initialProjectState,
       canCreate: true,
-      projects: [projectListItem('消す案件'), { ...projectListItem('残す案件'), draftId: '21112222-3333-4444-8555-666677778888' }],
+      projects: [projectListItem('消すProject'), { ...projectListItem('残すProject'), draftId: '21112222-3333-4444-8555-666677778888' }],
     })
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderView(props)
     const user = userEvent.setup({ document })
 
-    await act(async () => user.click(button('消す案件を削除')))
+    await act(async () => user.click(button('消すProjectを削除')))
     expect(confirm).toHaveBeenCalledOnce()
-    expect(confirm.mock.calls[0]![0]).toContain('案件「消す案件」を削除しますか？')
+    expect(confirm.mock.calls[0]![0]).toContain('Project「消すProject」を削除しますか？')
     expect(confirm.mock.calls[0]![0]).toContain('元に戻せません')
     expect(confirm.mock.calls[0]![0]).toContain('作業ファイルと、アプリの保存領域に書き出したファイルも削除されます')
     expect(confirm.mock.calls[0]![0]).toContain('選んだ元の動画ファイルは削除されません')
     expectNoOperations(props)
 
     confirm.mockReturnValue(true)
-    await act(async () => user.click(button('消す案件を削除')))
+    await act(async () => user.click(button('消すProjectを削除')))
     expect(props.deleteProject).toHaveBeenCalledExactlyOnceWith(draftId)
     expect(props.createDraft).not.toHaveBeenCalled()
     expect(props.loadDraft).not.toHaveBeenCalled()
@@ -655,15 +656,15 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     renderView(props)
     const user = userEvent.setup({ document })
 
-    await act(async () => user.click(button('案件削除')))
+    await act(async () => user.click(button('Project削除')))
     expect(confirm).toHaveBeenCalledOnce()
-    expect(confirm.mock.calls[0]![0]).toContain('案件「Hubらじお」を削除しますか？')
+    expect(confirm.mock.calls[0]![0]).toContain('Project「Hubらじお」を削除しますか？')
     expect(confirm.mock.calls[0]![0]).toContain('元に戻せません')
     expect(confirm.mock.calls[0]![0]).toContain('選んだ元の動画ファイルは削除されません')
     expectNoOperations(props)
 
     confirm.mockReturnValue(true)
-    await act(async () => user.click(button('案件削除')))
+    await act(async () => user.click(button('Project削除')))
     expect(props.deleteProject).toHaveBeenCalledExactlyOnceWith(draftId)
     expect(props.finalizeDraft).not.toHaveBeenCalled()
   })
@@ -672,13 +673,13 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
   it.each([true, false])('shows the detail delete button on the %s source-only detail screen', (sourceOnly) => {
     renderView(callbacks(draftState(sourceOnly)))
     expect(container.querySelectorAll('.project-detail-actions button')).toHaveLength(1)
-    expect(button('案件削除').disabled).toBe(false)
+    expect(button('Project削除').disabled).toBe(false)
   })
 
   // FR-046 AC-021
   it('hides the detail delete button without permission and disables it while pending', async () => {
     renderView(callbacks({ ...draftState(true), canCreate: false }))
-    expect(within(container).queryByRole('button', { name: '案件削除', hidden: true })).toBeNull()
+    expect(within(container).queryByRole('button', { name: 'Project削除', hidden: true })).toBeNull()
 
     const props = callbacks({
       ...draftState(true),
@@ -686,8 +687,8 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     })
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderView(props)
-    expect(button('案件削除').disabled).toBe(true)
-    await act(async () => userEvent.setup({ document }).click(button('案件削除')))
+    expect(button('Project削除').disabled).toBe(true)
+    await act(async () => userEvent.setup({ document }).click(button('Project削除')))
     expect(confirm).not.toHaveBeenCalled()
     expectNoOperations(props)
   })
@@ -697,13 +698,13 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     const props = callbacks(draftState(true))
     renderView(props)
     const user = userEvent.setup({ document })
-    const input = within(container).getByLabelText<HTMLInputElement>('案件名（この画面と一覧に表示される名前）')
+    const input = within(container).getByLabelText<HTMLInputElement>('Project名（この画面と一覧に表示される名前）')
 
     expect(input.value).toBe('Hubらじお')
-    expect(button('案件名を保存').disabled).toBe(true)
+    expect(button('Project名を保存').disabled).toBe(true)
     await act(async () => { await user.clear(input); await user.type(input, '  社内向け 第1回 ') })
-    expect(button('案件名を保存').disabled).toBe(false)
-    await act(async () => user.click(button('案件名を保存')))
+    expect(button('Project名を保存').disabled).toBe(false)
+    await act(async () => user.click(button('Project名を保存')))
 
     expect(props.renameProject).toHaveBeenCalledExactlyOnceWith(draftId, '社内向け 第1回')
     expect(props.finalizeDraft).not.toHaveBeenCalled()
@@ -715,7 +716,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     const state = draftState(true)
     renderView(callbacks({ ...state, draft: { ...state.draft!, displayName: '表示名' } }))
     expect(container.querySelector('.quick-start-content-name')?.textContent).toBe('表示名')
-    expect(within(container).getByLabelText<HTMLInputElement>('案件名（この画面と一覧に表示される名前）').value).toBe('表示名')
+    expect(within(container).getByLabelText<HTMLInputElement>('Project名（この画面と一覧に表示される名前）').value).toBe('表示名')
     expect(container.textContent).toContain('元の名前：Hubらじお')
 
     renderView(callbacks({
@@ -743,8 +744,8 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     if (reason === 'no authority') {
       expect(container.querySelector('.project-name-editor')).toBeNull()
     } else {
-      expect(within(container).getByLabelText<HTMLInputElement>('案件名（この画面と一覧に表示される名前）').disabled).toBe(reason === 'pending')
-      expect(within(container).getByRole<HTMLButtonElement>('button', { name: '案件名を保存', hidden: true }).disabled).toBe(true)
+      expect(within(container).getByLabelText<HTMLInputElement>('Project名（この画面と一覧に表示される名前）').disabled).toBe(reason === 'pending')
+      expect(within(container).getByRole<HTMLButtonElement>('button', { name: 'Project名を保存', hidden: true }).disabled).toBe(true)
     }
     expect(props.renameProject).not.toHaveBeenCalled()
   })
@@ -754,15 +755,15 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     const props = callbacks(draftState(true))
     renderView(props)
     const user = userEvent.setup({ document })
-    const input = within(container).getByLabelText<HTMLInputElement>('案件名（この画面と一覧に表示される名前）')
+    const input = within(container).getByLabelText<HTMLInputElement>('Project名（この画面と一覧に表示される名前）')
 
     await act(async () => user.clear(input))
     expect(within(container).getByRole('alert').textContent).toContain('1〜100 文字')
     expect(input.getAttribute('aria-invalid')).toBe('true')
-    expect(button('案件名を保存').disabled).toBe(true)
+    expect(button('Project名を保存').disabled).toBe(true)
     await act(async () => user.type(input, '{Enter}'))
     await act(async () => { await user.clear(input); await user.type(input, 'あ'.repeat(101)) })
-    expect(button('案件名を保存').disabled).toBe(true)
+    expect(button('Project名を保存').disabled).toBe(true)
     expect(props.renameProject).not.toHaveBeenCalled()
   })
 
@@ -790,7 +791,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
       ...callbacks({
         ...initialProjectState,
         canCreate: reason !== 'no authority',
-        projects: [projectListItem('消す案件')],
+        projects: [projectListItem('消すProject')],
         pending: reason === 'pending'
           ? { requestId: 'list-request', method: 'project.list' }
           : null,
@@ -803,10 +804,10 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     const user = userEvent.setup({ document })
 
     if (reason === 'no authority') {
-      expect(within(container).queryByRole('button', { name: '消す案件を削除', hidden: true })).toBeNull()
+      expect(within(container).queryByRole('button', { name: '消すProjectを削除', hidden: true })).toBeNull()
     } else {
-      expect(button('消す案件を削除').disabled).toBe(true)
-      await act(async () => user.click(button('消す案件を削除')))
+      expect(button('消すProjectを削除').disabled).toBe(true)
+      await act(async () => user.click(button('消すProjectを削除')))
     }
     expect(confirm).not.toHaveBeenCalled()
     expectNoOperations(props)
@@ -1028,7 +1029,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     expect(createClient).toHaveBeenCalledOnce()
     expect(requests).toHaveLength(1)
     expect(within(container).getByTestId('parent-project').textContent).toBe('未選択')
-    expect(button('新しい案件を作成').disabled).toBe(true)
+    expect(button('新しいProjectを作成').disabled).toBe(true)
     emit({
       version: 1,
       requestId: requests[0]!.requestId,
@@ -1042,14 +1043,14 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
         canCreate: true,
       },
     })
-    expect(container.textContent).toContain('「新しい案件を作成」から始められます')
+    expect(container.textContent).toContain('「新しいProjectを作成」から始められます')
     const user = userEvent.setup({ document })
-    await act(async () => user.click(button('新しい案件を作成')))
+    await act(async () => user.click(button('新しいProjectを作成')))
     expect(requests.map((request) => request.method)).toEqual(['project.list', 'project.createDraft'])
     expect(requests[1]!.params).toEqual({})
     expect(container.querySelector('.wizard-panel, .quick-start-panel')).toBeNull()
     expect(container.querySelector('.project-list-panel')).not.toBeNull()
-    expect(button('新しい案件を作成').disabled).toBe(true)
+    expect(button('新しいProjectを作成').disabled).toBe(true)
     renderParent(false)
     renderParent(true)
     expect(requests).toHaveLength(2)
@@ -1082,7 +1083,7 @@ describe('ProjectWorkspace workflow integration (UX022)', () => {
     expect(focus).not.toHaveBeenCalled()
     expect(document.activeElement).toBe(otherControl)
     expect(within(container).getByTestId('parent-project').textContent).toBe(finalizedProjectId)
-    expect(container.textContent).toContain('案件を作成しました。自動編集画面で処理状況を確認できます。')
+    expect(container.textContent).toContain('Projectを作成しました。「ジョブの状態の確認」画面で処理状況を確認できます。')
     expect(container.querySelector('.project-list-panel')).toBeNull()
     expect(onProjectChange.mock.calls).toEqual([[null], [finalizedProjectId]])
     expect(onDirtyChange.mock.calls).toEqual([[false]])

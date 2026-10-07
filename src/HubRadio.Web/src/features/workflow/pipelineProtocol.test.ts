@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { createBridgeClient, type BridgeMessageEvent, type BridgeTransport } from '../../bridge'
 import { createPipelineExecutionRequest, createPipelineReadRequest, createPipelineRegenerateRequest, parsePipelineRequest, parsePipelineResponse,
-  pipelineRegistrationRefreshKey, pipelineResponseMatchesRequest, sourceOnlyMediaUrl, verifiedPipelineResponse } from './pipelineProtocol'
+  parsePipelineVersionsResponse, pipelineRegistrationRefreshKey, pipelineResponseMatchesRequest, sourceOnlyMediaUrl, verifiedPipelineResponse } from './pipelineProtocol'
 import { createCompletedPipeline, createPipelineArtifact, createPipelineSnapshot, fixtureId, pipelineResponse,
   pipelineProjectId, pipelineVersionDigest, pipelineVersionId, setPipelineWarningTarget } from './pipelineTestFixture'
 
@@ -305,3 +305,42 @@ describe('pipeline native v2 protocol (synthetic fixtures only)', () => {
     expect(() => client.sendPipeline(request)).toThrow('disposed')
   })
 })
+
+// FR-055 AC-030.1
+describe('pipeline.versions entries with created time, differing settings and outputs', () => {
+  const base = {
+    versionId: fixtureId(41), versionDigest: 'a'.repeat(64), parentVersionId: null, executionId: fixtureId(42),
+    phase: 'Completed', hasResult: true, isCurrent: true,
+  }
+  const extended = {
+    ...base,
+    createdAt: '2026-10-06T12:46:17.5700147+00:00',
+    settings: [{ key: 'subtitles.readingSpeedMaximum', value: { kind: 'integer', integerValue: '9' } }],
+    outputs: [{ role: 'LandscapeBurnIn', artifactId: fixtureId(43), contentDigest: 'b'.repeat(64), mediaType: 'video/mp4' }],
+  }
+  const response = (entry: object) => ({
+    version: 1, requestId: fixtureId(40), method: 'pipeline.versions',
+    result: { status: 'available', workingCopyRevision: 1, versions: [entry] },
+  })
+
+  it('accepts the FR-055 fields together, or the older entry without them', () => {
+    expect(parsePipelineVersionsResponse(response(extended))?.result.versions[0]).toEqual(extended)
+    expect(parsePipelineVersionsResponse(response(base))?.result.versions[0]).toEqual(base)
+  })
+
+  it('rejects partial, duplicated or malformed FR-055 fields', () => {
+    const { outputs: _outputs, ...partial } = extended
+    for (const bad of [
+      partial,
+      { ...extended, createdAt: '2026-10-06T12:46:17Z' },
+      { ...extended, settings: [...extended.settings, ...extended.settings] },
+      { ...extended, settings: [{ key: 'x', value: { kind: 'integer', integerValue: 9 } }] },
+      { ...extended, outputs: [{ ...extended.outputs[0], mediaType: 'text/plain' }] },
+      { ...extended, outputs: [{ ...extended.outputs[0], path: 'C:\\x.mp4' }] },
+      { ...extended, extra: true },
+    ]) {
+      expect(parsePipelineVersionsResponse(response(bad))).toBeNull()
+    }
+  })
+})
+

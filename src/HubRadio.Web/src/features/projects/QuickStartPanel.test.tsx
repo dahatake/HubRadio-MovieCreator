@@ -104,7 +104,7 @@ describe('QuickStartPanel', () => {
   })
 
   it('preserves and escapes the full name without exposing private paths or native IDs', () => {
-    const contentName = `${'長い案件名・'.repeat(80)}<script>alert(1)</script><img src=x onerror=alert(1)>&tail`
+    const contentName = `${'長いProject名・'.repeat(80)}<script>alert(1)</script><img src=x onerror=alert(1)>&tail`
     const sourcePath = 'C:\\Users\\private\\Videos\\source.mp4'
     const privateDraft = { ...draft, contentName, sourcePath }
     renderPanel(panelProps({ draft: privateDraft, input: { ...input, contentName } }))
@@ -145,6 +145,30 @@ describe('QuickStartPanel', () => {
     expect(preview.textContent).toContain('未評価（NOT EVALUATED）')
   })
 
+  // FR-054 AC-029.4: the settings chosen for this video are listed with their reasons; none is shown without a record.
+  it('lists the automatically chosen settings and their reasons only when the host recorded them', () => {
+    renderPanel(panelProps({
+      draft: {
+        ...draft,
+        autoSettings: [{
+          key: 'editing.shortHookMaximumStart', label: 'つかみ（最初の見せ場）の開始', valueText: '2秒以内',
+          reason: 'ショート動画は最初の1〜3秒で見続けるかが決まるため、見せ場を2秒以内に置くようにしました。',
+        }],
+      },
+    }))
+    const section = within(container).getByRole('region', { name: '動画に合わせて自動で設定した項目' })
+    expect(section.textContent).toContain('つかみ（最初の見せ場）の開始: 2秒以内')
+    expect(section.textContent).toContain('最初の1〜3秒')
+    expect(section.querySelector('[data-setting-key="editing.shortHookMaximumStart"]')).not.toBeNull()
+
+    renderPanel(panelProps({ draft: { ...draft, autoSettings: [] } }))
+    expect(within(container).getByRole('region', { name: '動画に合わせて自動で設定した項目' }).textContent)
+      .toContain('標準の設定のまま')
+
+    renderPanel(panelProps({ draft: { ...draft, autoSettings: null } }))
+    expect(within(container).queryByRole('region', { name: '動画に合わせて自動で設定した項目' })).toBeNull()
+  })
+
   it('keeps provenance in one initially closed disclosure instead of an overview review-list', () => {
     renderPanel(panelProps())
 
@@ -152,12 +176,13 @@ describe('QuickStartPanel', () => {
     const details = disclosure()
     expect(details.open).toBe(false)
     expect(details.querySelector('summary')?.textContent).toBe('適用する既定設定')
-    for (const value of [sourceOnly.profileVersion, profileDigest, snapshotDigest]) {
-      expect(within(container).getByText(value).closest('details')).toBe(details)
-    }
+    expect(within(container).getByText(sourceOnly.profileVersion).closest('details')).toBe(details)
+    // FR-052: digests are not shown to the user.
+    expect(container.textContent).not.toContain(profileDigest)
+    expect(container.textContent).not.toContain(snapshotDigest)
     expect(details.querySelector('.review-list')).toBeNull()
     expect([...details.querySelectorAll('dt')].map(term => term.textContent)).toEqual([
-      '設定プロファイル版', '設定プロファイルdigest', '設定snapshot digest', '開始前の警告',
+      '設定プロファイル版', '開始前の警告',
     ])
     for (const list of container.querySelectorAll('.review-list')) {
       expect(list.closest('.settings-outcome-preview')).not.toBeNull()
@@ -195,8 +220,8 @@ describe('QuickStartPanel', () => {
     await act(async () => user.keyboard('[Enter]'))
     expect(props.finalizeDraft).toHaveBeenCalledExactlyOnceWith()
     expect(props.pickSource).not.toHaveBeenCalled()
-    expect(status().textContent).toBe('この内容で案件を作成できます。')
-    expect(container.textContent).not.toContain('案件を作成しました。')
+    expect(status().textContent).toBe('この内容でProjectを作成できます。')
+    expect(container.textContent).not.toContain('Projectを作成しました。')
 
     expect(props.finalizeDraft).toHaveBeenCalledOnce()
     expect(props.pickSource).not.toHaveBeenCalled()
@@ -268,7 +293,7 @@ describe('QuickStartPanel', () => {
 
     expect(container.querySelector('.source-status')?.textContent).toBe('選択済み')
     expect(actionButton('編集を開始').disabled).toBe(true)
-    expect(status().textContent).toBe('案件の作成に必要な情報を確認してください。')
+    expect(status().textContent).toBe('Projectの作成に必要な情報を確認してください。')
     submitDirectly()
     expect(props.finalizeDraft).not.toHaveBeenCalled()
     expect(container.querySelector('input, textarea, select')).toBeNull()
@@ -280,9 +305,9 @@ describe('QuickStartPanel', () => {
     })
     renderPanel(props)
 
-    expect(within(container).getByRole('heading', { name: '案件の内容' })).toBeTruthy()
+    expect(within(container).getByRole('heading', { name: 'Projectの内容' })).toBeTruthy()
     expect(container.querySelector('.state-badge.finalized')?.textContent).toBe('作成済み')
-    expect(status().textContent).toBe('案件を作成しました。自動編集画面で処理状況を確認できます。')
+    expect(status().textContent).toBe('Projectを作成しました。「ジョブの状態の確認」画面で処理状況を確認できます。')
     expect(status().getAttribute('aria-live')).toBe('polite')
     expect([...container.querySelectorAll('button')].map(button => button.textContent)).toEqual([])
     expect(container.querySelector('form, progress, img, video, canvas')).toBeNull()

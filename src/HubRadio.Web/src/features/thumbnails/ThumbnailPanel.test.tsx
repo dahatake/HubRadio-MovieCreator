@@ -24,14 +24,18 @@ import {
   createThumbnailCancelResponseValue,
   createThumbnailGenerateResponseValue,
   createThumbnailReadResponseValue,
+  thumbnailApprovalDigest,
   thumbnailEvidenceDigest,
   thumbnailGenerationId,
   thumbnailJobId,
+  thumbnailLayoutDigest,
   thumbnailOutputDigest,
   thumbnailPlayerEvidenceDigest,
+  thumbnailProfileDigest,
   thumbnailProjectId,
   thumbnailRequestId,
   thumbnailSourceAssetId,
+  thumbnailTemplateDigest,
   thumbnailTemplateId,
 } from './thumbnailTestFixture'
 
@@ -61,18 +65,20 @@ describe('ThumbnailPanel', () => {
     const client = new FakeThumbnailClient()
     renderPanel(client)
 
-    expect(container.textContent).toContain('Source PTS-1/20frame 7')
-    expect(container.textContent).toContain('Proxy PTS1001/30000frame 1')
-    expect(container.textContent).toContain('Output PTS—')
+    // FR-052: the selected frame is described by plain source/output positions, without raw PTS rationals or proxy frame numbers.
+    expect(container.textContent).toContain('元動画の場面-0:00.1') // FR-052: a negative source time (-1/20) is shown as -0:00.1
+    expect(container.textContent).toContain('完成した動画での位置不明')
+    expect(container.textContent).not.toMatch(/PTS|-1\/20|1001\/30000|frame \d/)
     completeRead(client)
 
     expect(status().dataset.thumbnailStatus).toBe('ready')
     expect(container.textContent).toContain('外部公開可')
-    expect(container.textContent).toContain('BrandApprover')
-    expect(container.textContent).toContain('approval 777777')
-    expect(container.textContent).toContain('template 888888')
-    expect(container.textContent).toContain('profile 999999')
-    expect(container.textContent).toContain('layout aaaaaa')
+    // FR-052: template approval is shown as a date; approval role codes and digests are not shown.
+    expect(container.textContent).toContain('承認日時')
+    expect(container.textContent).not.toContain('BrandApprover')
+    for (const digest of [thumbnailApprovalDigest, thumbnailTemplateDigest, thumbnailProfileDigest, thumbnailLayoutDigest]) {
+      expect(container.textContent).not.toContain(digest)
+    }
     expect(container.innerHTML).not.toMatch(/face|quality|recommend|score/i)
     expect(container.innerHTML).not.toContain('file://')
     expect(container.innerHTML).not.toContain('C:\\')
@@ -110,10 +116,15 @@ describe('ThumbnailPanel', () => {
     const image = requiredElement<HTMLImageElement>('.thumbnail-preview img')
     expect(image.getAttribute('src')).toContain('/thumbnail/')
     expect(image.getAttribute('src')).toContain(thumbnailOutputDigest)
-    expect(image.getAttribute('alt')).toContain('Source PTS -1/20')
-    expect(container.textContent).toContain('output SHA-256')
-    expect(container.textContent).toContain(thumbnailOutputDigest)
-    expect(container.textContent).toContain('exact source PTS-1/20')
+    // FR-052: the generated PNG is described by scene and size; digests and raw PTS stay out of visible text.
+    // FR-052: the negative source time (-1/20) is shown as -0:00.1.
+    expect(image.getAttribute('alt')).toContain('元動画の -0:00.1 の場面から作ったサムネイル')
+    expect(image.getAttribute('alt')).not.toMatch(/PTS|-1\/20/)
+    expect(requiredElement('.thumbnail-output figcaption').textContent).toContain('2.0 KB')
+    expect(container.textContent).toContain('生成結果の詳細')
+    expect(container.textContent).not.toContain('SHA-256')
+    expect(container.textContent).not.toContain(thumbnailOutputDigest)
+    expect(container.textContent).not.toMatch(/PTS|-1\/20/)
   })
 
   it('loads evidence and starts generation with keyboard activation', async () => {
@@ -319,7 +330,9 @@ describe('ThumbnailPanel', () => {
     expect(requiredElement('input:checked')).toBe(selected)
     expect(requiredElement('.thumbnail-preview img')).toBe(image)
     expect(image.getAttribute('alt')).toContain(alternate.name)
-    expect(container.textContent).toContain('Source PTS-1/20frame 7')
+    // FR-052: the retained frame is shown without raw PTS rationals.
+    expect(container.textContent).toContain('元動画の場面-0:00.1') // FR-052: a negative source time (-1/20) is shown as -0:00.1
+    expect(container.textContent).not.toMatch(/PTS|-1\/20/)
     expect(status().dataset.thumbnailStatus).toBe('generated')
     expect(client.reads).toHaveLength(1)
     expect(client.generates).toHaveLength(1)
@@ -389,9 +402,10 @@ describe('ThumbnailPanel', () => {
       const client = new FakeThumbnailClient()
       renderPanel(client, false, { context: { projectId: thumbnailProjectId } })
       expect(status().textContent).toBe('社内向けサムネイル生成は未接続です')
-      expect(container.textContent).toContain('Source PTS-1/20frame 7')
-      expect(container.textContent).toContain('Proxy PTS1001/30000frame 1')
-      expect(container.textContent).toContain('Output PTS—')
+      // FR-052: the selected frame is described by plain source/output positions, without raw PTS rationals or proxy frame numbers.
+      expect(container.textContent).toContain('元動画の場面-0:00.1') // FR-052: a negative source time (-1/20) is shown as -0:00.1
+      expect(container.textContent).toContain('完成した動画での位置不明')
+      expect(container.textContent).not.toMatch(/PTS|-1\/20|1001\/30000|frame \d/)
 
       const value = createThumbnailReadResponseValue()
       value.result.snapshot.rights.status = rightsStatus
@@ -484,7 +498,9 @@ describe('ThumbnailPanel', () => {
     })
     expect(status().dataset.thumbnailStatus).toBe('mismatched')
     expect(container.querySelector('img')).toBeNull()
-    expect(container.textContent).toContain('Source PTS0/1frame 8')
+    // FR-052: the newly selected frame is shown as a plain playback position.
+    expect(container.textContent).toContain('元動画の場面0:00')
+    expect(container.textContent).not.toMatch(/PTS|0\/1|frame 8/)
 
     renderPanel(client)
     expect(status().dataset.thumbnailStatus).toBe('generated')
@@ -501,15 +517,14 @@ describe('ThumbnailPanel', () => {
     clickButton('選択フレームから生成')
     completeGeneration(client)
 
+    // FR-052: full hashes are no longer shown anywhere, so neither the header nor the collapsed details contain them.
     const digests = [...container.querySelectorAll('code')].filter(
       (code) => /[0-9a-f]{64}/.test(code.textContent ?? ''),
     )
-    expect(digests.length).toBeGreaterThan(0)
-    for (const digest of digests) {
-      const details = digest.closest('details')
-      expect(details).not.toBeNull()
-      expect(details?.open).toBe(false)
-    }
+    expect(digests).toHaveLength(0)
+    expect(container.textContent).not.toMatch(/[0-9a-f]{64}/)
+    const details = requiredElement<HTMLDetailsElement>('.thumbnail-output details')
+    expect(details.open).toBe(false)
     expect(requiredElement('.thumbnail-heading').textContent).not.toMatch(/[0-9a-f]{64}/)
   })
 

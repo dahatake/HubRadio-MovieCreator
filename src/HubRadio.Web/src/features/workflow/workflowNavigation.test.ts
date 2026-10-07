@@ -70,7 +70,8 @@ const stateKeys = ['activeTool', 'returnToStep', 'step', 'warningVisit']
 describe('workflow navigation', () => {
   it('starts with four fixed labeled display steps and no domain state', () => {
     expect(workflowSteps).toEqual(['source', 'processing', 'results', 'delivery'])
-    expect(workflowSteps.map(step => workflowStepLabels[step])).toEqual(['元動画', '自動編集', '仕上がり', '保存'])
+    // FR-056 AC-031.2: the processing step is shown as 「ジョブの状態の確認」.
+    expect(workflowSteps.map(step => workflowStepLabels[step])).toEqual(['元動画', 'ジョブの状態の確認', '仕上がり', '保存'])
     expect(initialWorkflowNavigation).toEqual({ step: 'source', returnToStep: null, activeTool: null, warningVisit: null })
     expect(Object.keys(initialWorkflowNavigation).sort()).toEqual(stateKeys)
     expect(selectWorkflowScreen(initialWorkflowNavigation)).toBe('source')

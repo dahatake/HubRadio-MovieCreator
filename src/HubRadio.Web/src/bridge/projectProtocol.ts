@@ -98,6 +98,17 @@ export interface ProjectListItem {
   readonly updatedAt: string
   /** Generated landscape thumbnail; omitted by hosts that predate FR-045. */
   readonly thumbnail?: ProjectThumbnailReference | null
+  /** FR-053: poster frame of the source video, shown when there is no generated thumbnail. */
+  readonly poster?: ProjectPosterReference | null
+}
+
+export interface ProjectPosterReference {
+  readonly contentDigest: string
+}
+
+/** FR-053: the host serves a poster only while its Project is listed, after re-verifying the digest. */
+export function projectPosterUrl(draftId: string, poster: ProjectPosterReference): string {
+  return `https://player-media.appassets.example/source-only/poster/${draftId}/${poster.contentDigest}`
 }
 
 /** The host serves only artifacts of a stored execution that it revalidates on every read. */
@@ -136,6 +147,15 @@ export interface ProjectDraft {
   readonly missingFields: readonly ProjectCreationMissingField[]
   readonly updatedAt: string
   readonly sourceOnly: SourceOnlyProjectSummary | null
+  /** FR-054: settings the built-in preset chose for this video; omitted by hosts that predate FR-054. */
+  readonly autoSettings?: readonly ProjectAutoSetting[] | null
+}
+
+export interface ProjectAutoSetting {
+  readonly key: string
+  readonly label: string
+  readonly valueText: string
+  readonly reason: string
 }
 
 interface ProjectRequestBase<M extends ProjectBridgeMethod, P> {
@@ -657,6 +677,7 @@ function parseProjectListItem(value: unknown): ProjectListItem | null {
   const optionalKeys = [
     ...(isRecord(value) && 'displayName' in value ? ['displayName'] : []),
     ...(isRecord(value) && 'thumbnail' in value ? ['thumbnail'] : []),
+    ...(isRecord(value) && 'poster' in value ? ['poster'] : []),
   ]
   if (
     !isRecordWithExactKeys(value, [
@@ -704,6 +725,16 @@ function parseProjectListItem(value: unknown): ProjectListItem | null {
     }
   }
 
+  let poster: ProjectPosterReference | null = null
+  if ('poster' in value) {
+    if (value.poster !== null) {
+      if (!isRecordWithExactKeys(value.poster, ['contentDigest']) || !isContentDigest(value.poster.contentDigest)) {
+        return null
+      }
+      poster = Object.freeze({ contentDigest: value.poster.contentDigest })
+    }
+  }
+
   return Object.freeze({
     draftId: value.draftId,
     projectId: value.projectId,
@@ -719,6 +750,7 @@ function parseProjectListItem(value: unknown): ProjectListItem | null {
     outputFormats: Object.freeze([...value.outputFormats]),
     updatedAt: value.updatedAt,
     ...('thumbnail' in value ? { thumbnail } : {}),
+    ...('poster' in value ? { poster } : {}),
   })
 }
 
@@ -796,6 +828,7 @@ function parseProjectDraft(value: unknown): ProjectDraft | null {
       'missingFields',
       'updatedAt',
       'sourceOnly',
+      ...(isRecord(value) && 'autoSettings' in value ? ['autoSettings'] : []),
     ])) ||
     !isEntityId(value.draftId) ||
     !isNonnegativeInt32(value.revision) ||
@@ -816,6 +849,7 @@ function parseProjectDraft(value: unknown): ProjectDraft | null {
     !isUniqueMissingFieldArray(value.missingFields) ||
     !isNativeTimestamp(value.updatedAt) ||
     !isNullOrSourceOnlyProjectSummary(value.sourceOnly) ||
+    ('autoSettings' in value && value.autoSettings !== null && !isAutoSettingArray(value.autoSettings)) ||
     (value.isFinalized && value.projectId === null) ||
     (!value.isFinalized && value.projectId !== null)
   ) {
@@ -842,7 +876,18 @@ function parseProjectDraft(value: unknown): ProjectDraft | null {
     missingFields: Object.freeze([...value.missingFields]),
     updatedAt: value.updatedAt,
     sourceOnly: freezeSourceOnlyProjectSummary(value.sourceOnly),
+    ...('autoSettings' in value
+      ? { autoSettings: value.autoSettings === null ? null : Object.freeze((value.autoSettings as readonly ProjectAutoSetting[])
+          .map(item => Object.freeze({ key: item.key, label: item.label, valueText: item.valueText, reason: item.reason }))) }
+      : {}),
   })
+}
+
+function isAutoSettingArray(value: unknown): value is readonly ProjectAutoSetting[] {
+  const text = (item: unknown): boolean => typeof item === 'string' && item.length > 0 && item.length <= 512
+  return Array.isArray(value) && value.length <= 32 && value.every(item =>
+    isRecordWithExactKeys(item, ['key', 'label', 'valueText', 'reason']) &&
+    text(item.key) && text(item.label) && text(item.valueText) && text(item.reason))
 }
 
 function isNullOrSourceOnlyProjectSummary(

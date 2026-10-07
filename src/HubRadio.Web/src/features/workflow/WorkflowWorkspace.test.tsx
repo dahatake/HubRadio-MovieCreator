@@ -30,7 +30,7 @@ import { createTranscriptResponseValue, projectId, revisionDigest, revisionId, t
 import { WorkflowWorkspace } from './WorkflowWorkspace'
 import type { PipelineSnapshot, SourceOnlyResultArtifact } from './pipelineProtocol'
 import { createCompletedPipeline, createPipelineArtifact, createPipelineSnapshot, fixtureId, setPipelineWarningTarget } from './pipelineTestFixture'
-import { workflowStepLabels, workflowSteps, workflowTools, type WorkflowStep, type WorkflowTool } from './workflowNavigation'
+import { projectListStepLabels, projectListSteps, workflowStepLabels, workflowTools, type WorkflowStep, type WorkflowTool } from './workflowNavigation'
 
 // All identities and responses below are test fixtures, never production bindings.
 const draftId = '11112222-3333-4444-8555-666677778888'
@@ -67,18 +67,19 @@ afterEach(async () => {
 })
 
 describe('WorkflowWorkspace UX-039A', () => {
-  it('composes real providers into four manually activated tabs and exactly one visible screen', async () => {
+  // FR-061 AC-036
+  it('composes real providers into the project-list tabs and exactly one visible screen', async () => {
     const h = await mount()
     await h.reply(h.last('project.list'), listResult())
     const tablist = within(h.container).getByRole('tablist', { name: '動画の作業' })
     expect(within(tablist).getAllByRole('tab').map(tab => tab.textContent))
-      .toEqual(['元動画', '自動編集', '仕上がり', '保存'])
+      .toEqual(['Project一覧', 'ジョブの状態の確認'])
     const projectWorkspace = h.element('.project-workspace')
     const jobPanel = h.element<HTMLElement>('.job-panel')
     const listenerCount = h.listeners.size
     const initialRequests = [...h.requests]
 
-    for (const step of workflowSteps) {
+    for (const step of projectListSteps) {
       await h.selectStep(step)
       expectScreen(h, step)
       expect(h.element('.project-workspace')).toBe(projectWorkspace)
@@ -101,6 +102,7 @@ describe('WorkflowWorkspace UX-039A', () => {
 
   it('preserves manual tab activation, links, focus and the visible panel entry stop', async () => {
     const h = await mount()
+    await openUnfinalizedDraft(h)
     const user = userEvent.setup({ document })
     await act(async () => { h.tab('source').focus(); await user.keyboard('{ArrowRight}') })
     expect(document.activeElement).toBe(h.tab('processing'))
@@ -113,11 +115,12 @@ describe('WorkflowWorkspace UX-039A', () => {
     await act(async () => { await user.tab({ shift: true }); await user.keyboard('{End} ') })
     expectScreen(h, 'delivery')
     expect(document.activeElement).toBe(h.tab('delivery'))
-    expect(h.requests.map(request => request.method)).toEqual(['project.list'])
+    expect(h.requests.map(request => request.method)).toEqual(['project.list', 'project.createDraft'])
   })
 
-  it.each([false, true])('opens global settings without a project exactly once and restores tool and setting selection (StrictMode=%s)', async strict => {
+  it.each([false, true])('opens global settings without a created project exactly once and restores tool and setting selection (StrictMode=%s)', async strict => {
     const h = await mount(strict)
+    await openUnfinalizedDraft(h)
     expect(h.requests.filter(request => request.method.startsWith('settings.'))).toHaveLength(0)
     await h.selectStep('results')
     await h.selectTool('transcript')
@@ -127,9 +130,9 @@ describe('WorkflowWorkspace UX-039A', () => {
     expectScreen(h, 'settings')
     expect(h.last('settings.global.read').params).toEqual({})
     await h.reply(h.last('settings.global.read'), { status: 'available', snapshot: globalSnapshot })
-    expect(h.button('この動画').disabled).toBe(true)
+    expect(h.button('次に作成するJob').disabled).toBe(true)
     // FR-043 AC-018
-    expect(h.element('.settings-scope-note').textContent).toContain('「この動画」は、「編集を開始」で案件を作成すると選べます。')
+    expect(h.element('.settings-scope-note').textContent).toContain('「次に作成するJob」は、「編集を開始」でProjectを作成すると選べます。')
     await h.click('短尺候補数')
     const setting = h.element<HTMLInputElement>('.setting-inspector input:checked')
     expect(setting.value).toBe('3')
@@ -149,6 +152,7 @@ describe('WorkflowWorkspace UX-039A', () => {
 
   it('does not let hidden tabs, tools or the header bypass dirty settings confirmation', async () => {
     const h = await mount()
+    await openUnfinalizedDraft(h)
     await h.selectStep('results')
     await h.selectTool('compare')
     await h.click('設定')
@@ -171,7 +175,8 @@ describe('WorkflowWorkspace UX-039A', () => {
     await h.click('未保存項目へ戻る')
     expect(document.activeElement).toBe(h.element('.setting-inspector textarea'))
     expect(h.settings().state.draftValues).toBe(drafts)
-    expect(h.requests.filter(request => request.method.startsWith('settings.')).map(request => request.method))
+    // FR-062: the Workspace folder section reads its own location once; it is not part of the settings workspace state.
+    expect(h.requests.filter(request => request.method.startsWith('settings.') && !request.method.startsWith('settings.workspace.')).map(request => request.method))
       .toEqual(['settings.global.read'])
     await h.click('設定を閉じて戻る')
     await h.click('変更を破棄して閉じる')
@@ -183,6 +188,7 @@ describe('WorkflowWorkspace UX-039A', () => {
 
   it('keeps every editor mounted but exposes one tool and the same preview in results', async () => {
     const h = await mount()
+    await openUnfinalizedDraft(h)
     await h.selectStep('results')
     const preview = h.element('.player-card')
     const modes = h.element('.preview-mode-card')
@@ -219,7 +225,7 @@ describe('WorkflowWorkspace UX-039A', () => {
     await h.click('未保存のまま戻る')
     expectScreen(h, 'source')
     expect(h.settings().state.draftValues).toBe(drafts)
-    expect(h.button('案件一覧へ戻る').disabled).toBe(true)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(true)
     await h.click('設定の編集へ戻る')
     expect(h.element<HTMLTextAreaElement>('.setting-inspector textarea').value).toBe('保持する設定')
     expect(h.requests.filter(request => request.method === 'settings.read')).toHaveLength(1)
@@ -265,15 +271,15 @@ describe('WorkflowWorkspace UX-039A', () => {
     expect(h.container.textContent).not.toContain('解析は参照専用です')
 
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(false)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(false)
     expect(h.container.querySelector('.workflow-dirty-notice')).toBeNull()
     await h.selectStep('results')
     expect(h.element('.analysis-reason input')).toBe(reason)
 
     await h.change('.analysis-reason input', '理由だけの未送信入力')
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(true)
-    await h.click('案件一覧へ戻る')
+    expect(h.button('Project一覧へ戻る').disabled).toBe(true)
+    await h.click('Project一覧へ戻る')
     expect(h.project().state.draft?.projectId).toBe(projectId)
     await h.click('解析の編集へ戻る')
     expect(h.element('.analysis-reason input')).toBe(reason)
@@ -282,12 +288,12 @@ describe('WorkflowWorkspace UX-039A', () => {
     expect(reason.value).toBe('')
 
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(false)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(false)
     await h.selectStep('results')
     await h.change('.analysis-topic-field input[type="text"]', '送信するタイトル')
     await h.change('.analysis-topic-field textarea', '別項目の未送信要約')
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(true)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(true)
     await h.click('解析の編集へ戻る')
     expect(h.element('.analysis-topic-field input[type="text"]')).toBe(title)
     expect(h.element('.analysis-topic-field textarea')).toBe(summary)
@@ -316,7 +322,7 @@ describe('WorkflowWorkspace UX-039A', () => {
     await act(async () => { h.element<HTMLButtonElement>('[data-input-status="stale"] button').click() })
     expect(summary.value).toBe('運用上の判断を説明します。')
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(false)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(false)
     expect(h.container.textContent).toContain('未永続化')
     await h.selectStep('results')
 
@@ -336,8 +342,8 @@ describe('WorkflowWorkspace UX-039A', () => {
     await act(async () => { h.element<HTMLButtonElement>('.analysis-local-inputs button').click() })
     expect(h.container.querySelector('.analysis-reason input')).toBeNull()
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(false)
-    await h.click('案件一覧へ戻る')
+    expect(h.button('Project一覧へ戻る').disabled).toBe(false)
+    await h.click('Project一覧へ戻る')
     expect(h.project().state.draft).toBeNull()
     expect(h.requests.filter(request => request.method === 'analysis.read')).toHaveLength(1)
   })
@@ -346,12 +352,12 @@ describe('WorkflowWorkspace UX-039A', () => {
   it('renames the open project from the source screen and shows the new name in the header', async () => {
     const h = await mount()
     await h.reply(h.last('project.list'), listResult())
-    await h.click('新しい案件を作成')
+    await h.click('新しいProjectを作成')
     const draft = sourceOnlyDraft(false)
     await h.reply(h.last('project.createDraft'), { draft })
-    const input = within(h.container).getByLabelText<HTMLInputElement>('案件名（この画面と一覧に表示される名前）')
+    const input = within(h.container).getByLabelText<HTMLInputElement>('Project名（この画面と一覧に表示される名前）')
     await act(async () => { fireEvent.change(input, { target: { value: '  見出しの名前 ' } }) })
-    await h.click('案件名を保存')
+    await h.click('Project名を保存')
 
     expect(h.last('project.rename').params).toEqual({ draftId: draft.draftId, displayName: '見出しの名前' })
     await h.reply(h.last('project.rename'), { draft: { ...draft, displayName: '見出しの名前' } })
@@ -362,7 +368,7 @@ describe('WorkflowWorkspace UX-039A', () => {
   it('uses the confirmed source-only draft for the name and plans without fabricating a job, version, preview or files', async () => {
     const h = await mount()
     await h.reply(h.last('project.list'), listResult())
-    await h.click('新しい案件を作成')
+    await h.click('新しいProjectを作成')
     expect(h.last('project.createDraft').params).toEqual({})
     const draft = sourceOnlyDraft(false)
     await h.reply(h.last('project.createDraft'), { draft })
@@ -372,7 +378,9 @@ describe('WorkflowWorkspace UX-039A', () => {
     const quickStart = h.element('.quick-start-panel')
     await h.selectStep('results')
     expect(h.element('.result-gallery').textContent).toContain('作成予定')
-    expect(h.element('[data-evaluation]').textContent).toBe('NOT EVALUATED')
+    // FR-052: the raw status stays in data-evaluation; the visible label is plain language.
+    expect(h.element('[data-evaluation]').getAttribute('data-evaluation')).toBe('NOT EVALUATED')
+    expect(h.element('[data-evaluation]').textContent).toBe('未評価')
     expect(h.container.querySelector('[data-result-state="generated"], [data-save-state="saved"]')).toBeNull()
     expect(h.container.querySelector('video[src], img[src]')).toBeNull()
     await h.selectStep('source')
@@ -387,7 +395,7 @@ describe('WorkflowWorkspace UX-039A', () => {
     expectScreen(h, 'processing')
     expect(document.activeElement).toBe(h.tab('processing'))
     expect(h.project().state.draft?.projectId).toBe(projectId)
-    expect(h.element('#workflow-panel-processing').textContent).toContain('案件は作成済みですが、編集処理の開始は確認できていません')
+    expect(h.element('#workflow-panel-processing').textContent).toContain('Projectは作成済みですが、編集処理の開始は確認できていません')
     expect(h.last('pipeline.read').params).toEqual({ projectId })
     expect(h.requests.filter(request => request.method === 'pipeline.read')).toHaveLength(1)
     expect(h.app().state.jobMonitor.trackedJobId).toBeNull()
@@ -402,10 +410,10 @@ describe('WorkflowWorkspace UX-039A', () => {
   })
 
   // FR-042 AC-017
-  it('moves to the 自動編集 screen by itself after a successful 編集を開始, and stays put on failure', async () => {
+  it('moves to the ジョブの状態の確認 screen by itself after a successful 編集を開始, and stays put on failure', async () => {
     const h = await mount()
     await h.reply(h.last('project.list'), listResult())
-    await h.click('新しい案件を作成')
+    await h.click('新しいProjectを作成')
     const draft = sourceOnlyDraft(false)
     await h.reply(h.last('project.createDraft'), { draft })
     await h.click('編集を開始')
@@ -422,10 +430,10 @@ describe('WorkflowWorkspace UX-039A', () => {
   })
 
   // FR-043 AC-018
-  it('lets a created project switch settings to この動画 and read that project’s settings', async () => {
+  it('lets a created project switch settings to 次に作成するJob and read that project’s settings', async () => {
     const h = await mount()
     await h.reply(h.last('project.list'), listResult())
-    await h.click('新しい案件を作成')
+    await h.click('新しいProjectを作成')
     const draft = sourceOnlyDraft(false)
     await h.reply(h.last('project.createDraft'), { draft })
     await h.click('編集を開始')
@@ -433,20 +441,21 @@ describe('WorkflowWorkspace UX-039A', () => {
     await h.click('設定')
     expect(h.last('settings.read').params).toEqual({ projectId })
     await h.reply(h.last('settings.read'), { status: 'available', snapshot: { ...globalSnapshot, projectId, revision: 7 } })
-    expect(h.button('この動画').disabled).toBe(false)
-    expect(h.button('この動画').getAttribute('aria-pressed')).toBe('true')
-    expect(h.button('新しい動画の既定値').getAttribute('aria-pressed')).toBe('false')
+    expect(h.button('次に作成するJob').disabled).toBe(false)
+    expect(h.button('次に作成するJob').getAttribute('aria-pressed')).toBe('true')
+    // FR-061.6: a created project edits only its next Job.
+    expect(within(h.container).queryByRole('button', { name: '全体の初期値' })).toBeNull()
     await h.click('短尺候補数')
     await act(async () => { h.element<HTMLInputElement>('.setting-inspector input[value="1"]').click() })
     await h.click('保存')
     expect(h.last('settings.update').params).toMatchObject({ projectId, key: countKey, value: { kind: 'integer', integerValue: '1' } })
-    expect(h.element('.settings-scope-note').textContent).toContain('編集中：この動画。')
+    expect(h.element('.settings-scope-note').textContent).toContain('編集中：次に作成するJob。')
   })
 
   it('does not let changed global defaults replace a fixed source-only summary', async () => {
     const h = await mount()
     await h.reply(h.last('project.list'), listResult())
-    await h.click('新しい案件を作成')
+    await h.click('新しいProjectを作成')
     await h.reply(h.last('project.createDraft'), { draft: sourceOnlyDraft(false) })
     await h.selectStep('results')
     const gallery = h.element('.result-gallery')
@@ -481,8 +490,8 @@ describe('WorkflowWorkspace UX-039A', () => {
     const edit = h.element<HTMLInputElement>('.token-editing input')
     edit.setSelectionRange(1, 3)
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(true)
-    await h.click('案件一覧へ戻る')
+    expect(h.button('Project一覧へ戻る').disabled).toBe(true)
+    await h.click('Project一覧へ戻る')
     expect(h.project().state.draft?.projectId).toBe(projectId)
     expect(h.element('.token-editing input')).toBe(edit)
     expect(edit.value).toBe('Hub')
@@ -497,16 +506,16 @@ describe('WorkflowWorkspace UX-039A', () => {
     const write = h.last('transcript.editToken')
     expect(write.params).toEqual({ projectId, revisionId, digest: revisionDigest, tokenId: timedTokenId, expectedText: 'ハブ', revisedText: 'Hub', reason: '表記を確認' })
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(true)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(true)
     await h.reply(write, editedTranscriptResult())
     expect(document.activeElement).toBe(h.tab('source'))
-    expect(h.button('案件一覧へ戻る').disabled).toBe(false)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(false)
     expect(h.requests.filter(request => request.method === 'transcript.read')).toHaveLength(1)
     await h.selectStep('results')
     expect(h.element('.transcript-panel').textContent).toContain('文: Hub 未時刻')
     expect(h.container.querySelector('.token-editing')).toBeNull()
     await h.selectStep('source')
-    await h.click('案件一覧へ戻る')
+    await h.click('Project一覧へ戻る')
     expect(h.project().state.draft).toBeNull()
     expect(h.element('.workflow-project-name').textContent).toBe('元動画を選択してください')
     expect(h.container.querySelector('.result-gallery')).toBeNull()
@@ -527,7 +536,7 @@ describe('WorkflowWorkspace UX-039A', () => {
     await h.click('Delete')
     expect(h.container.querySelectorAll('.timeline-element-list button')).toHaveLength(1)
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(true)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(true)
     await h.click('カットの編集へ戻る')
     await h.click('設定')
     await h.reply(h.last('settings.read'), { status: 'available', snapshot: { ...globalSnapshot, projectId, revision: 7 } })
@@ -542,7 +551,7 @@ describe('WorkflowWorkspace UX-039A', () => {
     await h.click('1 操作を適用')
     expect(h.last('timeline.apply').params).toMatchObject({ projectId, expectedRevision: 3, operations: [{ kind: 'delete', elementId: timelineSourceElementId }] })
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(true)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(true)
     expect(h.project().state.draft?.projectId).toBe(projectId)
     expect(h.requests.filter(request => request.method === 'timeline.read')).toHaveLength(1)
     expect(h.requests.filter(request => /cancel|retry|finalizeDraft/.test(request.method))).toHaveLength(0)
@@ -550,6 +559,7 @@ describe('WorkflowWorkspace UX-039A', () => {
 
   it.each(['processing', 'settings'] as const)('pauses hidden media without resetting time, unmounting or autoplay when visiting %s', async destination => {
     const h = await mount()
+    await openUnfinalizedDraft(h)
     await h.selectStep('results')
     const preview = h.element('.player-card')
     // DOM-only media guard fixture: no fabricated player response, URL or real playback.
@@ -593,17 +603,17 @@ describe('WorkflowWorkspace UX-039A', () => {
     await h.reply(h.last('transcript.read'), createTranscriptResponseValue().result)
     await h.change('.transcript-reason input', '未保存の理由')
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(true)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(true)
     expect(h.button('カットの編集へ戻る')).toBeTruthy()
     await h.click('文字起こしの編集へ戻る')
     await h.click('未保存の入力を取り消す')
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(true)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(true)
     expect(within(h.container).queryByRole('button', { name: '文字起こしの編集へ戻る' })).toBeNull()
     await h.click('カットの編集へ戻る')
     await h.click('未送信操作を元に戻す')
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(false)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(false)
     expect(h.project().state.draft?.projectId).toBe(projectId)
     expect(h.requests.filter(request => /apply|editToken|cancel|retry/.test(request.method))).toHaveLength(0)
   })
@@ -662,7 +672,7 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     await h.selectStep('results'); await h.selectStep('source')
     // Switching screens may add the read-only past-version list read, but must
     // not repeat or accept any other work.
-    expect(h.requests.filter(request => request.method !== 'pipeline.versions')).toEqual(requests)
+    expect(h.requests.filter(request => request.method !== 'pipeline.versions')).toEqual(requests.filter(request => request.method !== 'pipeline.versions'))
     expect(h.requests.filter(request => request.method === 'pipeline.versions').length).toBeLessThanOrEqual(1)
     expect(h.requests.filter(request => /pipeline\.(cancel|retry|regenerate|restore)|jobs\.(cancel|retry)/.test(request.method))).toHaveLength(0)
     expect(h.container.querySelector('video[src*="source-only"], [data-result-state="generated"]')).toBeNull()
@@ -695,7 +705,9 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     await h.selectStep('results')
     expect(h.element<HTMLVideoElement>('[data-preview-kind="generated"] video').controls).toBe(true)
     expect(h.element<HTMLVideoElement>('[data-preview-kind="generated"] video').src).toContain(`/source-only/${projectId}/${completed.executionId}/`)
-    expect(h.element('[data-artifact-delivered]').textContent).toContain('納品済み')
+    // FR-052: the delivered artifact is described as saved in plain language.
+    expect(h.element('[data-artifact-delivered]').getAttribute('data-artifact-delivered')).toBe('true')
+    expect(h.element('[data-artifact-delivered]').textContent).toContain('保存済み（ファイルを確認済み）')
     expect(h.button('保存済み設定で再生成').disabled).toBe(true)
     await h.click('設定')
     await h.reply(h.last('settings.read'), { status: 'available', snapshot: { ...globalSnapshot, projectId, revision: 7 } })
@@ -723,6 +735,45 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     expect(h.element('[data-result-source]').textContent).toContain('前回の成果物')
     expect(h.element<HTMLVideoElement>('[data-preview-kind="generated"] video').src).toContain(`/${completed.executionId}/`)
     expect(h.button('保存済み設定で再生成').disabled).toBe(true)
+  })
+
+  // FR-063 AC-038.4
+  it('organises the results by Job and widens the screen to compare two Jobs', async () => {
+    const h = await mount()
+    const completed = createCompletedPipeline(projectId)
+    await openFinalizedProject(h, completed)
+    await h.selectStep('results')
+    const job = (versionId: string, executionId: string, isCurrent: boolean, speed: string, hour: string, artifact: number) => ({
+      versionId, versionDigest: (isCurrent ? 'a' : 'b').repeat(64), parentVersionId: null, executionId, phase: 'Completed', hasResult: true, isCurrent,
+      createdAt: `2026-10-07T${hour}:00:00.0000000+00:00`,
+      settings: [{ key: 'subtitles.readingSpeedMaximum', value: { kind: 'integer', integerValue: speed } }],
+      outputs: [{ role: 'LandscapeBurnIn', artifactId: fixtureId(artifact), contentDigest: String(artifact % 10).repeat(64), mediaType: 'video/mp4' }],
+    })
+    await h.reply(h.last('pipeline.versions'), { status: 'available', workingCopyRevision: 1, versions: [
+      job(completed.versionId!, completed.executionId, true, '9', '13', 71), job(fixtureId(70), fixtureId(73), false, '7', '12', 72),
+    ] })
+    expect(h.element('#workflow-tool-overview').textContent).toBe('Jobの仕上がり')
+    expect(within(h.container).getByRole('heading', { name: 'Jobごとの仕上がり（2件）' })).toBeTruthy()
+    // The current Job keeps its detailed results and the generated preview.
+    expect(h.element('[data-artifact-delivered]').textContent).toContain('保存済み（ファイルを確認済み）')
+    expect(h.element<HTMLVideoElement>('[data-preview-kind="generated"] video').src).toContain(`/${completed.executionId}/`)
+
+    const rail = within(h.container).getByRole('list', { name: 'Jobの一覧' })
+    await act(async () => { within(rail).getByRole('button', { name: /Job 1/ }).click() })
+    expect(within(h.container).getByRole('list', { name: 'Job 1の動画・画像' }).querySelector('video')!.getAttribute('src'))
+      .toBe(`https://player-media.appassets.example/source-only/${projectId}/${fixtureId(73)}/${fixtureId(72)}/${'2'.repeat(64)}`)
+    expect(h.container.querySelector('[data-artifact-delivered]')).toBeNull()
+
+    await h.click('Jobを比較')
+    expect(h.element('.workflow-results-content').classList.contains('is-comparing')).toBe(true)
+    expect(h.element<HTMLElement>('.workflow-preview').hidden).toBe(true)
+    const row = within(h.container).getByRole('table', { name: '設定の比較' }).querySelector('[data-setting-key="subtitles.readingSpeedMaximum"]')!
+    expect([...row.querySelectorAll('td')].map(cell => cell.textContent)).toEqual(['7', '9'])
+    expect(h.requests.filter(request => request.method === 'pipeline.regenerate' || request.method === 'pipeline.restore')).toHaveLength(0)
+
+    await h.click('Jobごとに見る')
+    expect(h.element('.workflow-results-content').classList.contains('is-comparing')).toBe(false)
+    expect(h.element<HTMLElement>('.workflow-preview').hidden).toBe(false)
   })
 
   it('loads a warning setting in the correct project/scope and returns focus to the exact warning without clearing drafts', async () => {
@@ -951,7 +1002,7 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     expect(h.container.querySelectorAll('.timeline-element-list button')).toHaveLength(1)
     expect(h.button('保存済み設定で再生成').disabled).toBe(true)
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(true)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(true)
     await h.click('カットの編集へ戻る')
     expect(h.element('.timeline-canvas')).toBe(canvas)
     expect(h.button('未送信操作を元に戻す').disabled).toBe(false)
@@ -1033,8 +1084,9 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
       expect(request.params).toEqual({ projectId, evaluationTime: null, expectedVersionId: artifact.versionId,
         expectedVersionDigest: artifact.versionDigest, latestInBranch: true })
       await h.reply(request, { status: 'available', snapshot: layoutSnapshotFor(artifactLayoutTarget(artifact)) })
-      expect(h.element('.layout-identity').textContent).toContain(artifact.versionId)
-      await h.click('成果物一覧')
+      // FR-052: the identity shows plain output information; the displayed version is checked via provider state.
+      expectLayoutIdentity(h, artifact.versionId)
+      await h.click('Jobの仕上がり')
     }
     expect(h.requests.filter(request => request.method === 'layout.read')).toHaveLength(2)
   })
@@ -1058,16 +1110,18 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     await h.reply(initial, durableLayoutResult(first, target))
     expect(h.layout().state.target?.versionId).toBe(first.compositionVersionId)
     expect(h.layout().state.branch).toEqual({ root: target, sequence: 1 })
-    expect(h.element('.layout-identity').textContent).toContain(first.compositionVersionId)
+    // FR-052: the identity shows plain output information; the displayed version is checked via provider state.
+    expectLayoutIdentity(h, first.compositionVersionId)
     expect(h.element('.layout-persistence-notice').textContent).toContain('字幕変更は保存済み／動画は変更後未生成')
     expect(h.requests.filter(request => request.method === 'layout.read')).toHaveLength(1)
-    await h.click('成果物一覧'); await h.selectTool('layout')
+    await h.click('Jobの仕上がり'); await h.selectTool('layout')
     const reopen = h.last('layout.read')
     expect(reopen.requestId).not.toBe(initial.requestId)
     expect(reopen.params).toEqual(initial.params)
     await h.reply(reopen, durableLayoutResult(second, target))
     expect(h.layout().state.target?.versionId).toBe(second.compositionVersionId)
-    expect(h.element('.layout-identity').textContent).toContain(second.compositionVersionId)
+    // FR-052: the identity shows plain output information; the displayed version is checked via provider state.
+    expectLayoutIdentity(h, second.compositionVersionId)
     expect(h.container.querySelector('.layout-target-guard')).toBeNull()
     await h.click('最新版を再読み込み')
     const reload = h.last('layout.read')
@@ -1088,7 +1142,7 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     await openFinalizedProject(h, completed); await h.selectStep('results'); await h.selectTool('layout')
     await h.reply(h.last('layout.read'), durableLayoutResult(head, target))
     expect(h.layout().state.target?.versionId).toBe(head.compositionVersionId)
-    await h.click('成果物一覧'); await h.click('編集へ')
+    await h.click('Jobの仕上がり'); await h.click('編集へ')
     const warningRead = h.last('layout.read')
     expect(warningRead.params).toEqual({ projectId, evaluationTime: null,
       expectedVersionId: target.versionId, expectedVersionDigest: target.versionDigest })
@@ -1127,7 +1181,7 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     expect(h.layout().state.target?.versionId).toBe(head.compositionVersionId)
     expect(h.layout().state.branch?.root).toEqual(target)
     expect(h.element('.layout-panel').getAttribute('data-layout-dirty')).toBe('false')
-    await h.click('成果物一覧')
+    await h.click('Jobの仕上がり')
     expect(h.element('.result-gallery')).toBe(gallery)
     expect(h.element<HTMLVideoElement>('[data-preview-kind="generated"] video').src).toBe(oldVideo)
     expect(h.element(`[data-artifact-id="${artifact.artifact.artifactId}"]`)).toBeTruthy()
@@ -1181,7 +1235,7 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     await h.change('[name="subtitle-reason"]', '元の版への変更理由')
     await h.change('#keyframe-0-0-destination-x', '1/3')
     text.setSelectionRange(1, 5)
-    await h.click('成果物一覧'); await selectPipelineArtifact(h, second!)
+    await h.click('Jobの仕上がり'); await selectPipelineArtifact(h, second!)
     const warning = h.element<HTMLButtonElement>(`[data-warning-id="${second!.warnings[0]!.id}"] button`)
     expect(warning.disabled).toBe(true)
     await act(async () => { fireEvent.click(warning) })
@@ -1201,7 +1255,7 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
       operation: { edit: { kind: 'text', text: '元の版の未送信本文を保持' } } })
     expect(h.layout().state.pending?.invalidated).not.toBe(true)
     await h.selectStep('source')
-    expect(h.button('案件一覧へ戻る').disabled).toBe(true)
+    expect(h.button('Project一覧へ戻る').disabled).toBe(true)
   })
 
   it('holds a pending read target without invalidation and requires a new explicit selection after it drains', async () => {
@@ -1211,7 +1265,7 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     await openFinalizedProject(h, completed); await h.selectStep('results')
     await selectPipelineArtifact(h, first!); await h.selectTool('layout')
     const oldRead = h.last('layout.read')
-    await h.click('成果物一覧'); await selectPipelineArtifact(h, second!); await h.selectTool('layout')
+    await h.click('Jobの仕上がり'); await selectPipelineArtifact(h, second!); await h.selectTool('layout')
     expect(h.layout().state.pending?.requestId).toBe(oldRead.requestId)
     expect(h.layout().state.pending?.invalidated).not.toBe(true)
     const firstSnapshot = layoutSnapshotFor(artifactLayoutTarget(first!))
@@ -1303,7 +1357,7 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     await h.change('[name="subtitle-edit-kind"]', 'style'); await h.change('[name="subtitle-style"]', 'quote')
     await h.click('字幕 revision を作成')
     const apply = h.last('layout.apply')
-    await h.click('成果物一覧'); await selectPipelineArtifact(h, second!); await h.selectTool('layout')
+    await h.click('Jobの仕上がり'); await selectPipelineArtifact(h, second!); await h.selectTool('layout')
     expect(h.layout().state.pending?.invalidated).not.toBe(true)
     await h.selectStep('processing')
     const child = subtitleChildSnapshot(original)
@@ -1315,7 +1369,8 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     expect(h.last('layout.read').params).toMatchObject({ expectedVersionId: target.versionId,
       expectedVersionDigest: target.versionDigest, latestInBranch: true })
     await h.reply(h.last('layout.read'), durableLayoutResult(child, target))
-    expect(h.element('.layout-identity').textContent).toContain(child.compositionVersionId)
+    // FR-052: the identity shows plain output information; the displayed version is checked via provider state.
+    expectLayoutIdentity(h, child.compositionVersionId)
     expect(h.requests.filter(request => request.method === 'layout.read')).toHaveLength(2)
     await h.click('最新版を再読み込み')
     expect(h.last('layout.read').params).toMatchObject({ expectedVersionId: target.versionId,
@@ -1323,7 +1378,8 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     await h.reply(h.last('layout.read'), durableLayoutResult(child, target))
     expect(h.layout().state.target?.versionId).toBe(child.compositionVersionId)
     expect(h.element('.layout-panel').getAttribute('data-layout-status')).toBe('available')
-    expect(h.element('.layout-identity').textContent).toContain(child.compositionVersionId)
+    // FR-052: the identity shows plain output information; the displayed version is checked via provider state.
+    expectLayoutIdentity(h, child.compositionVersionId)
     expect(h.layout().state.snapshot?.subtitles[1]).toEqual(original.subtitles[1])
   })
 
@@ -1375,7 +1431,8 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     expect(text.value).toBe('テロップ更新後も保持する字幕下書き')
     expect(text.selectionStart).toBe(1); expect(text.selectionEnd).toBe(5)
     expect(h.container.querySelector('.layout-target-guard')).toBeNull()
-    expect(h.element('.layout-identity').textContent).toContain(child.compositionVersionId)
+    // FR-052: the identity shows plain output information; the displayed version is checked via provider state.
+    expectLayoutIdentity(h, child.compositionVersionId)
     await h.click('最新版を再読み込み')
     expect(h.last('layout.read').params).toMatchObject({ expectedVersionId: child.compositionVersionId, expectedVersionDigest: target.versionDigest })
     await h.reply(h.last('layout.read'), { status: 'available', snapshot: child })
@@ -1434,7 +1491,8 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
           }) }
       await h.reply(badRead, { status: 'available', snapshot: invalid })
       expect(h.element('.layout-panel').getAttribute('data-layout-status')).toBe('invalid')
-      expect(h.element('.layout-identity').textContent).toContain(child.compositionVersionId)
+      // FR-052: the identity shows plain output information; the displayed version is checked via provider state.
+      expectLayoutIdentity(h, child.compositionVersionId)
       expect(h.button('最新版を再読み込み').disabled).toBe(false)
       await h.click('最新版を再読み込み')
       const recovery = h.last('layout.read')
@@ -1446,7 +1504,8 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
       expect(h.layout().state.target).toEqual(childTarget)
       expect(h.layout().state.snapshot?.subtitles).toEqual(child.subtitles)
       expect(h.element('.layout-panel').getAttribute('data-layout-status')).toBe('available')
-      expect(h.element('.layout-identity').textContent).toContain(child.compositionVersionId)
+      // FR-052: the identity shows plain output information; the displayed version is checked via provider state.
+      expectLayoutIdentity(h, child.compositionVersionId)
       expect(h.requests.filter(request => request.method === 'layout.read')).toHaveLength(3)
     },
   )
@@ -1468,7 +1527,8 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     } })
     expect(h.layout().state.target).toEqual(target)
     expect(h.element('.layout-panel').getAttribute('data-layout-status')).toBe('invalid')
-    expect(h.element('.layout-identity').textContent).toContain(target.versionId)
+    // FR-052: the identity shows plain output information; the displayed version is checked via provider state.
+    expectLayoutIdentity(h, target.versionId)
     expect(h.element('.layout-identity').textContent).not.toContain(child.compositionVersionId)
     expect(h.container.textContent).not.toContain('字幕・テロップの編集で子版へ進みました')
     expect(h.element<HTMLInputElement>('[name="subtitle-reason"]').value).toBe('一つだけ変更する要求')
@@ -1502,7 +1562,8 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     expect(h.container.textContent).not.toContain('警告の対象へ移動しました')
     await h.reply(read, { status: 'available', snapshot: original })
     expect(h.layout().state.target).toEqual(target)
-    expect(h.element('.layout-identity').textContent).toContain(target.versionId)
+    // FR-052: the identity shows plain output information; the displayed version is checked via provider state.
+    expectLayoutIdentity(h, target.versionId)
     expect(document.activeElement).toBe(h.element('#subtitle-editor-title'))
     expect(h.requests.filter(request => request.method === 'layout.read')).toHaveLength(2)
   })
@@ -1513,9 +1574,10 @@ describe('WorkflowWorkspace UX-039B / UX-040B-D live connection (synthetic host 
     await openFinalizedProject(h, completed); await h.selectStep('results'); await h.selectTool('layout')
     await h.reply(h.last('layout.read'), { status: 'available', snapshot: layoutSnapshotFor(artifactLayoutTarget(completed.result!.artifacts[0]!), true) })
     const form = h.element<HTMLFormElement>('.cue-edit-form')
-    await h.selectStep('source'); await h.click('案件一覧へ戻る')
+    await h.selectStep('source'); await h.click('Project一覧へ戻る')
     expect(h.project().state.draft).toBeNull()
-    await h.selectStep('results'); await h.selectTool('layout')
+    // FR-061.1: the project list has no results tab; the editor stays mounted but hidden.
+    expect(h.container.querySelector('#workflow-tab-results')).toBeNull()
     expect(h.element('.cue-edit-form')).toBe(form)
     expect(form.closest('[hidden], [inert]')).not.toBeNull()
     await act(async () => { fireEvent.submit(form) })
@@ -1587,7 +1649,12 @@ async function mount(strict = false) {
     if (result === null) throw new Error(`Missing workflow element: ${selector}`)
     return result
   }
-  function button(name: string): HTMLButtonElement { return within(container).getByRole('button', { name }) as HTMLButtonElement }
+  // FR-062: the Workspace folder section in the settings screen has its own 保存 button.
+  function button(name: string): HTMLButtonElement {
+    const matches = within(container).getAllByRole('button', { name }).filter(element => element.closest('.settings-workspace-location') === null)
+    if (matches.length !== 1) throw new Error(`Expected one "${name}" button, found ${matches.length}.`)
+    return matches[0] as HTMLButtonElement
+  }
   function tab(step: WorkflowStep): HTMLButtonElement { return element(`#workflow-tab-${step}`) }
   function tool(name: WorkflowTool): HTMLButtonElement { return element(`#workflow-tool-${name}`) }
   return {
@@ -1612,6 +1679,12 @@ async function mount(strict = false) {
 }
 
 type Harness = Awaited<ReturnType<typeof mount>>
+function expectLayoutIdentity(h: Harness, versionId: string): void {
+  expect(h.layout().state.snapshot?.compositionVersionId).toBe(versionId)
+  const identity = h.element('.layout-identity').textContent
+  expect(identity).toContain('画面の大きさ')
+  expect(identity).not.toContain(versionId)
+}
 function artifactLayoutTarget(artifact: SourceOnlyResultArtifact): LayoutVersionContext {
   return { projectId, versionId: artifact.versionId, versionDigest: artifact.versionDigest }
 }
@@ -1681,8 +1754,11 @@ function expectScreen(h: Harness, screen: WorkflowStep | 'settings'): void {
   expect(panels.filter(panel => !panel.hidden).map(panel => panel.id))
     .toEqual([screen === 'settings' ? 'workflow-settings' : `workflow-panel-${screen}`])
   for (const panel of panels) expect(panel.hasAttribute('inert')).toBe(panel.hidden)
-  expect(within(h.container).queryAllByRole('tab', { name: /^(元動画|自動編集|仕上がり|保存)$/ })).toHaveLength(screen === 'settings' ? 0 : 4)
-  if (screen !== 'settings') expect(within(h.container).getByRole('tabpanel', { name: workflowStepLabels[screen] }).id).toBe(`workflow-panel-${screen}`)
+  // FR-061.1: the project list shows two tabs, an open project four.
+  const listMode = h.project().state.draft === null
+  const labels: Readonly<Partial<Record<WorkflowStep, string>>> = listMode ? projectListStepLabels : workflowStepLabels
+  expect(within(h.container).queryAllByRole('tab', { name: /^(元動画|Project一覧|ジョブの状態の確認|仕上がり|保存)$/ })).toHaveLength(screen === 'settings' ? 0 : listMode ? 2 : 4)
+  if (screen !== 'settings') expect(within(h.container).getByRole('tabpanel', { name: labels[screen] }).id).toBe(`workflow-panel-${screen}`)
 }
 function expectNoRawIds(h: Harness): void {
   expect(h.container.querySelector('#job-id, #player-job-id, #timeline-project-id, #layout-project-id, #review-version-id, #delivery-version-id, #comparison-left-version-id, #comparison-right-version-id, #settings-project-id')).toBeNull()
@@ -1701,6 +1777,12 @@ function sourceOnlyDraft(finalized: boolean): ProjectDraft {
 }
 function listResult(projects: readonly ProjectListItem[] = []) {
   return { projects, canCreate: true, catalog: { outputProfiles: [{ id: profileId, name: 'long-form-1280x720' }], brandTemplates: [{ id: templateId, name: 'development-neutral-long-form' }] } }
+}
+/** FR-061.1: project-only tabs (results, delivery) exist only while a project is open. */
+async function openUnfinalizedDraft(h: Harness): Promise<void> {
+  await h.reply(h.last('project.list'), listResult())
+  await h.click('新しいProjectを作成')
+  await h.reply(h.last('project.createDraft'), { draft: sourceOnlyDraft(false) })
 }
 async function openFinalizedProject(h: Harness, pipeline: PipelineSnapshot | null = null): Promise<void> {
   const draft = sourceOnlyDraft(true)
@@ -1769,3 +1851,131 @@ function acknowledgeAnalysisTitle(
     }],
   }
 }
+// FR-061 AC-036
+describe('WorkflowWorkspace FR-061 project list and Jobs', () => {
+  function versionEntry(snapshot: PipelineSnapshot, createdAt = '2026-10-07T01:00:00.0000000+00:00') {
+    return {
+      versionId: snapshot.versionId, versionDigest: snapshot.versionDigest, parentVersionId: null, executionId: snapshot.executionId,
+      phase: snapshot.phase, hasResult: snapshot.result !== null, isCurrent: true, createdAt, settings: [], outputs: [],
+    }
+  }
+  function finalizedItem(): ProjectListItem {
+    const draft = sourceOnlyDraft(true)
+    return { draftId, projectId, state: 'finalized', contentName: draft.contentName, episodeNumber: null, sourceStatus: 'available', owner: null, publicationScope: 'internalOnly', editState: null, reviewState: null, outputFormats: ['long-form-1280x720'], updatedAt: timestamp }
+  }
+
+  // FR-061 AC-036.1 AC-036.3
+  it('lists every created project’s Jobs in the project list and opens one on its job screen', async () => {
+    const h = await mount()
+    const item = finalizedItem()
+    await h.reply(h.last('project.list'), listResult([item]))
+    expect(h.container.querySelector('#workflow-tab-results, #workflow-tab-delivery')).toBeNull()
+    await h.selectStep('processing')
+    expectScreen(h, 'processing')
+    const read = h.last('pipeline.versions')
+    expect(read.params).toEqual({ projectId })
+    const completed = createCompletedPipeline(projectId)
+    await h.reply(read, { status: 'available', workingCopyRevision: 1, versions: [versionEntry(completed)] })
+    // FR-061.10: the panel also reads each project's latest Job.
+    const latest = h.last('pipeline.read')
+    expect(latest.params).toEqual({ projectId })
+    await h.reply(latest, { status: 'available', snapshot: completed })
+    const table = within(h.element('#workflow-panel-processing')).getByRole('table')
+    expect(table.textContent).toContain('Job 1（最新）')
+    expect(table.textContent).toContain(item.contentName!)
+    expectNoRawIds(h)
+    await h.click(`「${item.contentName}」のJob 1を開く`)
+    expect(h.last('project.loadDraft').params).toEqual({ draftId })
+    await h.reply(h.last('project.loadDraft'), { draft: sourceOnlyDraft(true) })
+    expect(h.project().state.draft?.projectId).toBe(projectId)
+    expect(within(h.container).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['元動画', 'ジョブの状態の確認', '仕上がり', '保存'])
+    expect(h.tab('processing').getAttribute('aria-selected')).toBe('true')
+    await h.reply(h.last('pipeline.read'), { status: 'available', snapshot: completed })
+    expectScreen(h, 'processing')
+    await h.selectStep('results')
+    await h.selectStep('source'); await h.click('Project一覧へ戻る')
+    expectScreen(h, 'source')
+    expect(within(h.container).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Project一覧', 'ジョブの状態の確認'])
+  })
+
+  // FR-061 AC-036.4 AC-036.6 AC-036.7
+  it('creates a new Job from the source screen with the saved next-Job settings and lists the project’s Jobs', async () => {
+    const h = await mount()
+    const completed = createCompletedPipeline(projectId)
+    await openFinalizedProject(h, completed)
+    const versions = h.last('pipeline.versions')
+    await h.reply(versions, { status: 'available', workingCopyRevision: 1, versions: [versionEntry(completed)] })
+    const source = h.element('#workflow-panel-source')
+    // FR-061.5: the latest Job's phase arrived while the first read was pending, so the list is read once more.
+    await h.reply(h.last('pipeline.versions'), { status: 'available', workingCopyRevision: 1, versions: [versionEntry(completed)] })
+    expect(within(source).getByRole('heading', { name: /このProjectのジョブ/ }).textContent).toContain('1件')
+    expect(within(source).getByRole('button', { name: '新しいJobを作成' })).toHaveProperty('disabled', true)
+    expect(source.textContent).toContain('「次に作成するJobの設定を開く」で設定を確認すると、Jobを作成できます。')
+    await h.click('次に作成するJobの設定を開く')
+    expectScreen(h, 'settings')
+    expect(h.last('settings.read').params).toEqual({ projectId })
+    await h.reply(h.last('settings.read'), { status: 'available', snapshot: { ...globalSnapshot, projectId, revision: 7 } })
+    await h.click('設定を閉じて戻る')
+    expectScreen(h, 'source')
+    // FR-061.5: showing the source tab again re-reads the Job list.
+    await h.reply(h.last('pipeline.versions'), { status: 'available', workingCopyRevision: 1, versions: [versionEntry(completed)] })
+    const create = within(source).getByRole('button', { name: '新しいJobを作成' }) as HTMLButtonElement
+    expect(create.disabled).toBe(false)
+    await act(async () => { create.click() })
+    expect(within(source).getByRole('alertdialog').textContent).toContain('Job 2を作成しますか')
+    expect(h.requests.filter(request => request.method === 'pipeline.regenerate')).toHaveLength(0)
+    await h.click('作成する')
+    const regenerate = h.last('pipeline.regenerate')
+    expect(regenerate.params).toEqual({ projectId, expectedVersionId: completed.versionId, expectedVersionDigest: completed.versionDigest,
+      expectedSettingsRevision: 7, expectedSettingsSnapshotDigest: globalSnapshot.snapshotDigest })
+    expect(h.requests.filter(request => request.method === 'pipeline.regenerate')).toHaveLength(1)
+    expectScreen(h, 'source')
+    await h.selectStep('processing')
+    expect(within(h.element('#workflow-panel-processing')).getByRole('heading', { name: /このProjectのジョブ/ })).toBeTruthy()
+  })
+
+  // FR-061 AC-036.9
+  it('copies a Job’s varying settings into 次に作成するJob by saving them one by one', async () => {
+    const h = await mount()
+    const completed = createCompletedPipeline(projectId)
+    await openFinalizedProject(h, completed)
+    const count = (value: string) => ({ key: countKey, value: { kind: 'integer', integerValue: value } })
+    const older = { ...versionEntry(completed, '2026-10-07T00:00:00.0000000+00:00'), versionId: fixtureId(880), executionId: fixtureId(881), isCurrent: false, settings: [count('1')] }
+    const listed = { status: 'available', workingCopyRevision: 1, versions: [{ ...versionEntry(completed), settings: [count('3')] }, older] }
+    await h.reply(h.last('pipeline.versions'), listed)
+    const source = h.element('#workflow-panel-source')
+    const copy = () => within(source).getByRole('button', { name: 'Job 1の設定を次のJobに使う' }) as HTMLButtonElement
+    expect(copy().disabled).toBe(true)
+    expect(source.textContent).toContain('「次に作成するJobの設定を開く」で設定を確認すると、Jobの設定を写せます。')
+    await h.click('次に作成するJobの設定を開く')
+    await h.reply(h.last('settings.read'), { status: 'available', snapshot: { ...globalSnapshot, projectId, revision: 7 } })
+    await h.click('設定を閉じて戻る')
+    // FR-061.5: showing the source screen again re-reads the Jobs.
+    await h.reply(h.last('pipeline.versions'), listed)
+    await act(async () => { copy().click() })
+    await act(async () => { within(source).getByRole('button', { name: '保存する' }).click() })
+    const update = h.last('settings.update')
+    expect(update.params).toMatchObject({ projectId, key: countKey, value: { kind: 'integer', integerValue: '1' } })
+    expect(h.requests.filter(request => request.method === 'settings.update')).toHaveLength(1)
+    await h.reply(update, { status: 'available', snapshot: { ...globalSnapshot, projectId, revision: 8, snapshotDigest: 'd'.repeat(64),
+      values: globalSnapshot.values.map(item => item.key === countKey ? count('1') : item) } })
+    expect(source.textContent).toContain('Job 1の設定を「次に作成するJob」に保存しました（1項目）。')
+    expect(h.settings().isDirty).toBe(false)
+    await act(async () => { copy().click() })
+    await act(async () => { within(source).getByRole('button', { name: '保存する' }).click() })
+    expect(source.textContent).toContain('Job 1の設定は、すでに「次に作成するJob」と同じです。')
+    expect(h.requests.filter(request => request.method === 'settings.update')).toHaveLength(1)
+  })
+  // FR-061 AC-036.7
+  it('does not create a Job while the latest Job is running', async () => {
+    const h = await mount()
+    const running = createPipelineSnapshot('Analyzing', projectId)
+    await openFinalizedProject(h, running)
+    await h.click('次に作成するJobの設定を開く')
+    await h.reply(h.last('settings.read'), { status: 'available', snapshot: { ...globalSnapshot, projectId, revision: 7 } })
+    await h.click('設定を閉じて戻る')
+    const source = h.element('#workflow-panel-source')
+    expect((within(source).getByRole('button', { name: '新しいJobを作成' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(source.textContent).toContain('実行中のJobが終わると、新しいJobを作成できます（Jobは1つずつ順番に実行します）。')
+  })
+})

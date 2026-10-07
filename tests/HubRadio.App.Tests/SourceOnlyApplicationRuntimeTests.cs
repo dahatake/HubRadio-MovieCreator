@@ -63,7 +63,7 @@ public sealed class SourceOnlyApplicationRuntimeTests
         Assert.AreEqual(Path.Combine(fixture.PackageRoot, "Worker"), resources.WorkerDirectory);
         Assert.AreEqual(Path.Combine(fixture.PackageRoot, "ModelCatalog", "catalog.json"), resources.ModelCatalogPath);
         Assert.AreEqual(Path.Combine(fixture.PackageRoot, "ModelCatalog"), resources.ModelBundleRootPath);
-        Assert.AreEqual(Path.Combine(fixture.PackageRoot, "DefaultSettings", "Profiles", "1.1.0.json"), resources.DefaultSettingsProfilePath);
+        Assert.AreEqual(Path.Combine(fixture.PackageRoot, "DefaultSettings", "Profiles", "1.2.0.json"), resources.DefaultSettingsProfilePath);
         Assert.AreEqual(Path.Combine(fixture.PackageRoot, "Music"), resources.MusicDirectory);
         Assert.AreEqual(fixture.PackageRoot, resources.PackageRoot);
         Assert.IsNull(resources.Font, "Font manifest resolution is deferred until resource initialization.");

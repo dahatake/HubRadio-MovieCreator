@@ -1113,11 +1113,12 @@ public static class LongFormComposer
             throw Failure(LongFormComposerFailureReason.TemplateMismatch);
         }
 
+        bool portraitLongForm = StandardRenderProfileFactory.IsPortraitLongForm(definition);
         if (definition.Layout.Id != definition.Profile.LayoutSpecId
-            || definition.Layout.OutputAspectWidth != 16
-            || definition.Layout.OutputAspectHeight != 9
-            || (long)definition.Profile.Width * 9
-                != (long)definition.Profile.Height * 16)
+            || (!portraitLongForm && (definition.Layout.OutputAspectWidth != 16
+                || definition.Layout.OutputAspectHeight != 9
+                || (long)definition.Profile.Width * 9
+                    != (long)definition.Profile.Height * 16)))
         {
             throw Failure(LongFormComposerFailureReason.UnsupportedProfile);
         }

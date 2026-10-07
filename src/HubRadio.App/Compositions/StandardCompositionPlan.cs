@@ -678,13 +678,15 @@ public sealed class StandardCompositionPlan
                 nameof(longForm));
         }
 
-        if (longForm.Profile.Profile.Width != 1920
+        // FR-058: the portrait long form (1080x1920, 9:16) is the only alternative to 1920x1080.
+        bool portraitLongForm = StandardRenderProfileFactory.IsPortraitLongForm(longForm.Profile);
+        if (!portraitLongForm && (longForm.Profile.Profile.Width != 1920
             || longForm.Profile.Profile.Height != 1080
             || (long)longForm.Profile.Layout.OutputAspectWidth * 9
-            != (long)longForm.Profile.Layout.OutputAspectHeight * 16)
+            != (long)longForm.Profile.Layout.OutputAspectHeight * 16))
         {
             throw new ArgumentException(
-                "A standard composition plan requires a 1920x1080 long-form profile.",
+                "A standard composition plan requires a 1920x1080 or portrait long-form profile.",
                 nameof(longForm));
         }
 

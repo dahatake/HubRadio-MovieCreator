@@ -94,7 +94,7 @@ const issueMessages: Readonly<Record<TimelineIssue, string>> = {
   bridgeUnavailable: 'ネイティブホストへ接続できません。',
   sendFailed: 'タイムライン要求を送信できませんでした。',
   forbidden: 'このタイムラインを操作する権限がありません。',
-  notFound: 'この案件の編集タイムラインはまだありません。',
+  notFound: 'このProjectの編集タイムラインはまだありません。',
   unavailable: 'タイムラインを現在利用できません。',
   invalidOperation: '未送信操作を適用できませんでした。',
   conflict: '別の編集が保存されました。未送信操作を保持したまま再読み込みしてください。',
@@ -706,7 +706,7 @@ function TimelineEditorSession({
 
       {hasContext ? null : (
         <form className="timeline-load-form" onSubmit={onSubmit}>
-          <label htmlFor="timeline-project-id">案件 ID</label>
+          <label htmlFor="timeline-project-id">Project ID</label>
           <div>
             <input
               id="timeline-project-id"
@@ -773,8 +773,8 @@ function TimelineEditorSession({
           <strong>タイムラインは未読み込みです</strong>
           <p>
             {hasContext
-              ? '編集する案件を選択すると、権限確認後に working copy を表示します。'
-              : '案件 ID を指定すると、権限確認後に working copy を表示します。'}
+              ? '編集するProjectを選択すると、権限確認後に working copy を表示します。'
+              : 'Project ID を指定すると、権限確認後に working copy を表示します。'}
           </p>
         </div>
       ) : (

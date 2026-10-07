@@ -28,8 +28,8 @@ export function SettingInspector({ definition, value, initialValue, draft, scope
   const differsFromInitial = !sameValue(value, initialValue)
   const error = validationMessage(definition, editor, draft)
   const saveDisabled = disabled || !changed || error !== null
-  const restoreLabel = scope === 'global' ? '復元先（プロファイル初期値）' : '復元先（案件開始時の初期値）'
-  const resetLabel = scope === 'global' ? 'プロファイル初期値へ戻す' : '案件開始時の値へ戻す'
+  const restoreLabel = scope === 'global' ? '復元先（プロファイル初期値）' : '復元先（Project開始時の初期値）'
+  const resetLabel = scope === 'global' ? 'プロファイル初期値へ戻す' : 'Project開始時の値へ戻す'
   const describedBy = `${id}-description ${id}-status${error === null ? '' : ` ${id}-error`}`
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -40,7 +40,7 @@ export function SettingInspector({ definition, value, initialValue, draft, scope
     <form className="setting-inspector setting-card" aria-labelledby={`${id}-title`} aria-describedby={`${id}-description`} noValidate onSubmit={submit}>
       <div className="setting-copy">
         <h3 id={`${id}-title`}>{definition.displayName}{definition.isAdvanced && <span className="setting-badge">詳細</span>}</h3>
-        <p>{scope === 'global' ? '新しい動画の既定値' : 'この動画'}</p>
+        <p>{scope === 'global' ? '全体の初期値' : '次に作成するJob'}</p>
       </div>
       <section className="setting-help" aria-labelledby={`${id}-help-title`}>
         <h4 id={`${id}-help-title`}>{help.label}</h4>

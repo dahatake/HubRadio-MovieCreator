@@ -38,7 +38,7 @@ describe('describePipelineFailure', () => {
     expect(guide.cause).toContain('可変フレームレート')
     expect(guide.cause).toContain('0.25秒')
     expect(guide.remedies.join('')).toContain('固定フレームレート')
-    expect(guide.remedies.join('')).toContain('新しい案件を作成')
+    expect(guide.remedies.join('')).toContain('新しいProjectを作成')
   })
 
   it('falls back to a generic explanation for an unknown code', () => {

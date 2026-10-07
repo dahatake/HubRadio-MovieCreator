@@ -38,6 +38,12 @@ public sealed class StandardRenderConfiguration
     public int VerticalThumbnailWidth { get; }
     public int VerticalThumbnailHeight { get; }
 
+    /// <summary>FR-059: few/standard/many, or null for profiles before 1.2.0 (no emphasis telops).</summary>
+    public string? EmphasisTelopAmount { get; private init; }
+
+    /// <summary>FR-060: true only when the accepted settings enable sound effects (profile 1.2.0 or later).</summary>
+    public bool SoundEffectsEnabled { get; private init; }
+
     public static StandardRenderConfiguration FromSettings(DefaultSettingsProfile profile,
         DefaultSettingsSnapshot settings, RationalNumber sourceFrameRate, int sourceAudioChannels)
     {
@@ -105,6 +111,12 @@ public sealed class StandardRenderConfiguration
 
         try
         {
+            string? telops = values.TryGetValue("subtitles.emphasisTelopAmount", out DefaultSettingValue? amount)
+                ? amount.TextValue is "few" or "standard" or "many" ? amount.TextValue
+                    : throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedSetting)
+                : null;
+            bool soundEffects = values.TryGetValue("audio.soundEffectsEnabled", out DefaultSettingValue? effects)
+                && (effects.BooleanValue ?? throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedSetting));
             return new StandardRenderConfiguration(settings.ContentDigest,
                 new FfmpegEncoderSettings(checked((int)Integer(sourceFrameRate > new RationalNumber(30, 1)
                     ? "output.highFrameRateBitrate" : "output.standardFrameRateBitrate")),
@@ -113,7 +125,11 @@ public sealed class StandardRenderConfiguration
                         Integer("audio.truePeakMaximum") - LoudnormTruePeakHeadroomDb)),
                 Duration("editing.shortHookMaximumStart", 5), Duration("output.endScreenDuration", 20),
                 Value("editing.callToActionTexts").TextListValue.Single(),
-                Canvas("thumbnails.landscapeCanvas", 16, 9), Canvas("thumbnails.verticalCanvas", 9, 16));
+                Canvas("thumbnails.landscapeCanvas", 16, 9), Canvas("thumbnails.verticalCanvas", 9, 16))
+            {
+                EmphasisTelopAmount = telops,
+                SoundEffectsEnabled = soundEffects,
+            };
         }
         catch (Exception exception) when (exception is ArgumentException or OverflowException)
         {

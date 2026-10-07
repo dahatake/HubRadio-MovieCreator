@@ -68,15 +68,51 @@ public sealed class StandardSubtitleBuildException : Exception
     public StandardSubtitleBuildResult Result { get; }
 }
 
+/// <summary>How a token block that has no exact partition within every FR-012 limit is handled.</summary>
+public enum StandardSubtitleBuildPolicy
+{
+    /// <summary>v2: such a block is excluded with an unresolved warning. Kept to replay saved v2 results.</summary>
+    ExactSourceTokens,
+
+    /// <summary>
+    /// v3 (FR-051): such a block is still shown. It is split between real tokens to fit the line
+    /// limits, and each cue may END later (into following silence of the same production cut) to
+    /// approach the minimum duration and reading speed, and to close gaps below 0.5 s (FR-012).
+    /// A cue never starts before, or ends before, its own real tokens.
+    /// </summary>
+    FullCoverage,
+}
+
 /// <summary>
 /// Builds initial source-grounded subtitles, not a Human transcript or an editorial change.
-/// Splits only between real tokens; never interpolates, clips, or stretches their times.
+/// Splits only between real tokens and never moves a cue start or clips a token. Under
+/// <see cref="StandardSubtitleBuildPolicy.ExactSourceTokens"/> times are never stretched; under
+/// <see cref="StandardSubtitleBuildPolicy.FullCoverage"/> only the end of an otherwise excluded cue may be extended.
 /// Existing line breaks are preserved. Additional line breaks are not inserted into source text.
 /// Font evidence is supplied by the caller; glyph fit and platform UI masks are not measured here.
 /// </summary>
 public static class StandardSubtitleBuilder
 {
     public const string RuleVersion = "standard-subtitle-builder.exact-source-tokens.v2";
+    public const string FullCoverageRuleVersion = "standard-subtitle-builder.full-coverage-source-tokens.v3";
+
+    public static string GetRuleVersion(StandardSubtitleBuildPolicy policy) => policy switch
+    {
+        StandardSubtitleBuildPolicy.ExactSourceTokens => RuleVersion,
+        StandardSubtitleBuildPolicy.FullCoverage => FullCoverageRuleVersion,
+        _ => throw new ArgumentOutOfRangeException(nameof(policy)),
+    };
+
+    public static bool TryParseRuleVersion(string? rule, out StandardSubtitleBuildPolicy policy)
+    {
+        policy = rule switch
+        {
+            RuleVersion => StandardSubtitleBuildPolicy.ExactSourceTokens,
+            FullCoverageRuleVersion => StandardSubtitleBuildPolicy.FullCoverage,
+            _ => (StandardSubtitleBuildPolicy)(-1),
+        };
+        return Enum.IsDefined(policy);
+    }
 
     /// <summary>Throws with a BuildResult if any source subtitle cannot be resolved safely.</summary>
     public static StandardSubtitleInput Build(
@@ -95,12 +131,17 @@ public static class StandardSubtitleBuilder
     /// Returns safe cues plus explicit exclusions and unmeasured-policy evidence. Empty ASR stays empty.
     /// transcriptSpans must include every original utterance span. Optional cut spans must be explicit,
     /// revision-bound, contiguous-token subsets of those spans; source times alone never prove identity.
+    /// retimingWindows (FullCoverage only) are the production cuts in which source and output time are
+    /// linear; a cue end may be extended only inside the window that contains its own cut. When null,
+    /// each cut of <paramref name="timeline"/> is its own window.
     /// </summary>
     public static StandardSubtitleBuildResult BuildWithEvidence(
         CompositionVersion version, TimelineMap timeline, LayoutSpec layout, RenderProfile renderProfile,
         TranscriptRevision transcript, ContentDigest transcriptDigest, IReadOnlyList<SourceSpan> transcriptSpans,
         DefaultSettingsProfile settingsProfile, DefaultSettingsSnapshot settings, RenderFontEvidence font,
-        string actorSid, DateTimeOffset createdAt, CancellationToken cancellationToken = default)
+        string actorSid, DateTimeOffset createdAt, CancellationToken cancellationToken = default,
+        StandardSubtitleBuildPolicy policy = StandardSubtitleBuildPolicy.ExactSourceTokens,
+        IReadOnlyList<TimelineMapEntry>? retimingWindows = null)
     {
         ArgumentNullException.ThrowIfNull(version);
         ArgumentNullException.ThrowIfNull(timeline);
@@ -134,9 +175,9 @@ public static class StandardSubtitleBuilder
             : SubtitleSegmenter.Segment(transcript, transcriptDigest, originals, cancellationToken);
         ValidateAdditionalSpans(transcript, originals, spans.Values, cancellationToken);
 
-        var warnings = new List<StandardSubtitleBuildWarning>();
+        var warnings = new WarningSink(GetRuleVersion(policy));
         Configuration configuration = Configure(version, timeline, layout, renderProfile, settingsProfile,
-            settings, font, warnings);
+            settings, font, warnings, policy);
         var histories = new List<SubtitleCueHistory>();
         cancellationToken.ThrowIfCancellationRequested();
         if (segmented.InspectedTokenCount == 0)
@@ -169,6 +210,8 @@ public static class StandardSubtitleBuilder
 
         HashSet<EntityId<TranscriptTokenIdTag>> overlapping = segmented.TimingOverlaps.SelectMany(static overlap =>
             new[] { overlap.PreviousEvidenceTokenId, overlap.CurrentEvidenceTokenId }).ToHashSet();
+        HashSet<EntityId<TranscriptTokenIdTag>> riders = configuration.Policy == StandardSubtitleBuildPolicy.FullCoverage
+            ? FindRiders(utterances) : [];
         var eligible = new HashSet<EntityId<TranscriptTokenIdTag>>();
         foreach (TextAtom atom in utterances.SelectMany(static atoms => atoms))
         {
@@ -176,6 +219,14 @@ public static class StandardSubtitleBuilder
             if (!configuration.Enabled)
             {
                 WarnAtom(warnings, atom, "subtitles.enabled", "disabled-by-settings", false);
+                continue;
+            }
+
+            if (atom.Token.Range is null && riders.Contains(atom.Token.Id))
+            {
+                // FR-051: shown inside the cue of its timed neighbours; it gets no time of its own.
+                WarnOnce(warnings, "subtitles.sourceTiming", "source-token", "untimed-token-shown-between-timed-neighbours");
+                eligible.Add(atom.Token.Id);
                 continue;
             }
 
@@ -233,6 +284,7 @@ public static class StandardSubtitleBuilder
         }
 
         var proposals = new List<MappedCandidate>();
+        var relaxed = new List<RelaxedCue>();
         foreach (BoundCut cut in cuts)
         {
             foreach (TextAtom[] atoms in utterances)
@@ -241,13 +293,14 @@ public static class StandardSubtitleBuilder
                 foreach (TextAtom atom in atoms)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    bool timed = atom.Token.Range is TimeRange range && Contains(cut.Entry.SourceRange!.Value, range);
                     bool included = eligible.Contains(atom.Token.Id) && SameSource(atom.Span, cut.Span)
-                        && atom.Token.Range is TimeRange range && Contains(cut.Entry.SourceRange!.Value, range);
-                    bool longSilence = included && block.Count > 0
-                        && atom.Token.Range!.Value.Start - block[^1].Token.Range!.Value.End >= new RationalTime(1, 2);
+                        && (timed || atom.Token.Range is null && block.Count > 0);
+                    bool longSilence = timed && block.Count > 0
+                        && atom.Token.Range!.Value.Start - LastTimedEnd(block) >= new RationalTime(1, 2);
                     if (!included || longSilence)
                     {
-                        Partition(block, cut, configuration, proposals, warnings, cancellationToken);
+                        Partition(block, cut, configuration, proposals, relaxed, warnings, cancellationToken);
                         block.Clear();
                     }
 
@@ -257,10 +310,11 @@ public static class StandardSubtitleBuilder
                     }
                 }
 
-                Partition(block, cut, configuration, proposals, warnings, cancellationToken);
+                Partition(block, cut, configuration, proposals, relaxed, warnings, cancellationToken);
             }
         }
 
+        ResolveRelaxedCues(relaxed, proposals, timeline, retimingWindows, configuration, warnings, cancellationToken);
         MappedCandidate[] ordered = proposals.OrderBy(static candidate => candidate.OutputRange.Start)
             .ThenBy(static candidate => candidate.OutputRange.End)
             .ThenBy(static candidate => candidate.Candidate.Id.ToString(), StringComparer.Ordinal).ToArray();
@@ -436,8 +490,21 @@ public static class StandardSubtitleBuilder
             or UnicodeCategory.InitialQuotePunctuation or UnicodeCategory.FinalQuotePunctuation or UnicodeCategory.OtherPunctuation);
 
     private static void Partition(IReadOnlyList<TextAtom> block, BoundCut cut, Configuration configuration,
-        List<MappedCandidate> proposals, List<StandardSubtitleBuildWarning> warnings, CancellationToken cancellationToken)
+        List<MappedCandidate> proposals, List<RelaxedCue> relaxed, WarningSink warnings, CancellationToken cancellationToken)
     {
+        int trailing = block.Count;
+        while (trailing > 0 && block[trailing - 1].Token.Range is null)
+        {
+            trailing--;
+            // A rider without a following timed neighbour in this cut cannot be placed in time.
+            WarnAtom(warnings, block[trailing], "subtitles.sourceTiming", "missing-token-timing", true);
+        }
+
+        if (trailing != block.Count)
+        {
+            block = block.Take(trailing).ToArray();
+        }
+
         if (block.Count == 0)
         {
             return;
@@ -448,7 +515,8 @@ public static class StandardSubtitleBuilder
         int[] next = Enumerable.Repeat(-1, block.Count + 1).ToArray();
         var costs = new int[block.Count + 1];
         next[^1] = block.Count;
-        for (int start = block.Count - 1; start >= 0; start--)
+        bool hasRiders = block.Any(static atom => atom.Token.Range is null);
+        for (int start = hasRiders ? -1 : block.Count - 1; start >= 0; start--)
         {
             for (int end = start; end < block.Count; end++)
             {
@@ -480,6 +548,12 @@ public static class StandardSubtitleBuilder
 
         if (next[0] < 0)
         {
+            if (configuration.Policy == StandardSubtitleBuildPolicy.FullCoverage
+                && TryPartitionForCoverage(block, cut, configuration, relaxed, cancellationToken))
+            {
+                return;
+            }
+
             TimeRange range = SourceRange(block, 0, block.Count - 1);
             TextMetrics metrics = Measure(SourceText(block, 0, block.Count - 1));
             int before = warnings.Count;
@@ -501,8 +575,8 @@ public static class StandardSubtitleBuilder
                 Exclude("subtitles.cueMinimumDuration", "source-duration-below-minimum");
             if (!ReadingSpeedFits(metrics.ReadingCharacters, range.Duration, configuration.MaximumReadingSpeed))
                 Exclude("subtitles.readingSpeedMaximum", "source-reading-speed-exceeded");
-            if (Enumerable.Range(1, block.Count - 1).Any(index => block[index].Token.Range!.Value.Start
-                - block[index - 1].Token.Range!.Value.End < configuration.MinimumGap))
+            if (Enumerable.Range(1, block.Count - 1).Any(index => block[index].Token.Range is TimeRange current
+                && block[index - 1].Token.Range is TimeRange previous && current.Start - previous.End < configuration.MinimumGap))
                 Exclude("subtitles.cueGapMinimum", "no-feasible-partition-with-source-gaps");
             if (warnings.Count == before)
                 Exclude("subtitles.lineBreakPolicy", "no-feasible-exact-token-partition");
@@ -513,51 +587,235 @@ public static class StandardSubtitleBuilder
         {
             cancellationToken.ThrowIfCancellationRequested();
             int end = next[start] - 1;
-            TextAtom first = block[start];
-            TextAtom last = block[end];
-            TimeRange range = SourceRange(block, start, end);
-            string text = SourceText(block, start, end);
-            if (text.Length != last.TextEnd - first.TextStart)
-            {
-                // Existing candidate trim convention only; never rewrite the transcript or its internal spaces.
-                Warn(warnings, "subtitles.lineBreakPolicy", "source-text-boundary",
-                    "cue-boundary-whitespace-trimmed", false, range, first.Span.Id);
-            }
-
-            EntityId<TranscriptTokenIdTag>[] ids = block.Skip(start).Take(end - start + 1)
-                .Select(static atom => atom.Token.Id).ToArray();
-            var identity = new
-            {
-                configuration.Digest,
-                cut.Index,
-                first.Span.AssetId,
-                first.Span.StreamId,
-                first.Span.SourceDigest,
-                first.Parent.SourceRevisionId,
-                first.Parent.SourceRevisionDigest,
-                range,
-                text,
-                ids
-            };
-            var span = new SourceSpan(StableId<SourceSpanIdTag>(new { identity, kind = "source-span" }),
-                first.Span.AssetId, first.Span.StreamId, range, first.Span.SourceDigest,
-                first.Parent.SourceRevisionId, ids);
-            bool atOriginalBoundary = last.Parent.EvidenceTokenIds[^1] == last.Token.Id;
-            IReadOnlyList<SubtitleBoundaryReason> reasons = atOriginalBoundary
-                ? last.Parent.BoundaryReasons : [SubtitleBoundaryReason.ExactTokenBoundary];
-            var candidate = new SubtitleCueCandidate(StableId<SubtitleCueCandidateIdTag>(new { identity, kind = "candidate" }),
-                first.Parent.SourceRevisionId, first.Parent.SourceRevisionDigest, first.Utterance.SpeakerId,
-                text, span, OriginRef.FromSourceSpan(span.Id), ids, [], reasons,
-                atOriginalBoundary ? last.Parent.ObservedPositiveGapAfter : null,
-                "Source token boundaries retained by the standard subtitle settings policy.");
-            var outputRange = new TimeRange(cut.Entry.OutputRange.Start
-                + (range.Start - cut.Entry.SourceRange!.Value.Start), range.Duration);
-            proposals.Add(new MappedCandidate(candidate, outputRange, first.Span));
+            proposals.Add(CreateProposal(block, start, end, cut, SourceRange(block, start, end), configuration, warnings));
         }
     }
 
+    private static MappedCandidate CreateProposal(IReadOnlyList<TextAtom> block, int start, int end, BoundCut cut,
+        TimeRange range, Configuration configuration, WarningSink warnings)
+    {
+        TextAtom first = block[start];
+        TextAtom last = block[end];
+        string text = SourceText(block, start, end);
+        if (text.Length != last.TextEnd - first.TextStart)
+        {
+            // Existing candidate trim convention only; never rewrite the transcript or its internal spaces.
+            Warn(warnings, "subtitles.lineBreakPolicy", "source-text-boundary",
+                "cue-boundary-whitespace-trimmed", false, range, first.Span.Id);
+        }
+
+        EntityId<TranscriptTokenIdTag>[] ids = block.Skip(start).Take(end - start + 1)
+            .Select(static atom => atom.Token.Id).ToArray();
+        var identity = new
+        {
+            configuration.Digest,
+            cut.Index,
+            first.Span.AssetId,
+            first.Span.StreamId,
+            first.Span.SourceDigest,
+            first.Parent.SourceRevisionId,
+            first.Parent.SourceRevisionDigest,
+            range,
+            text,
+            ids
+        };
+        var span = new SourceSpan(StableId<SourceSpanIdTag>(new { identity, kind = "source-span" }),
+            first.Span.AssetId, first.Span.StreamId, range, first.Span.SourceDigest,
+            first.Parent.SourceRevisionId, ids);
+        bool atOriginalBoundary = last.Parent.EvidenceTokenIds[^1] == last.Token.Id;
+        IReadOnlyList<SubtitleBoundaryReason> reasons = atOriginalBoundary
+            ? last.Parent.BoundaryReasons : [SubtitleBoundaryReason.ExactTokenBoundary];
+        var candidate = new SubtitleCueCandidate(StableId<SubtitleCueCandidateIdTag>(new { identity, kind = "candidate" }),
+            first.Parent.SourceRevisionId, first.Parent.SourceRevisionDigest, first.Utterance.SpeakerId,
+            text, span, OriginRef.FromSourceSpan(span.Id), ids, [], reasons,
+            atOriginalBoundary ? last.Parent.ObservedPositiveGapAfter : null,
+            "Source token boundaries retained by the standard subtitle settings policy.");
+        var outputRange = new TimeRange(cut.Entry.OutputRange.Start
+            + (range.Start - cut.Entry.SourceRange!.Value.Start), range.Duration);
+        return new MappedCandidate(candidate, outputRange, first.Span);
+    }
+
+    /// <summary>
+    /// FR-051: splits a block that has no exact partition into the fewest cues that fit the line
+    /// count, line length and maximum duration, preferring evenly sized cues. Cue timing is decided
+    /// later by <see cref="ResolveRelaxedCues"/>. Returns false when even that is impossible.
+    /// </summary>
+    private static bool TryPartitionForCoverage(IReadOnlyList<TextAtom> block, BoundCut cut,
+        Configuration configuration, List<RelaxedCue> relaxed, CancellationToken cancellationToken)
+    {
+        int count = block.Count;
+        var next = Enumerable.Repeat(-1, count + 1).ToArray();
+        var cueCounts = new int[count + 1];
+        var squares = new long[count + 1];
+        next[count] = count;
+        for (int start = count - 1; start >= 0; start--)
+        {
+            if (!block[start].StartsAtTextBoundary || block[start].Token.Range is null)
+            {
+                continue;
+            }
+
+            for (int end = start; end < count; end++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (block[end].Token.Range is null)
+                {
+                    continue; // A cue cannot end on a rider; it has no time of its own.
+                }
+
+                TimeRange range = SourceRange(block, start, end);
+                TextMetrics metrics = Measure(SourceText(block, start, end));
+                if (range.Duration > configuration.MaximumDuration || metrics.Lines > configuration.MaximumLines
+                    || metrics.LongestLineHalfWidthUnits > 2L * configuration.MaximumCharacters)
+                {
+                    break;
+                }
+
+                if (next[end + 1] < 0 || !block[end].EndsAtTextBoundary || !metrics.Valid || metrics.ReadingCharacters == 0)
+                {
+                    continue;
+                }
+
+                int cues = checked(1 + cueCounts[end + 1]);
+                long square = checked(squares[end + 1] + (long)metrics.ReadingCharacters * metrics.ReadingCharacters);
+                if (next[start] < 0 || cues < cueCounts[start] || cues == cueCounts[start] && square < squares[start])
+                {
+                    next[start] = end + 1;
+                    cueCounts[start] = cues;
+                    squares[start] = square;
+                }
+            }
+        }
+
+        if (next[0] < 0)
+        {
+            return false;
+        }
+
+        for (int start = 0; start < count; start = next[start])
+        {
+            int end = next[start] - 1;
+            relaxed.Add(new RelaxedCue(block.Skip(start).Take(end - start + 1).ToArray(), cut,
+                SourceRange(block, start, end), Measure(SourceText(block, start, end)).ReadingCharacters));
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// FR-051 timing for coverage cues. A cue keeps its first token start. Its end is extended (never
+    /// shortened) toward max(minimum duration, characters / reading speed), and to 2 frames before the
+    /// next cue when the gap after the tokens is below 0.5 s (FR-012). It never reaches into the next cue's
+    /// minimum gap, beyond the maximum duration, or outside the production cut (window) of its own cut.
+    /// </summary>
+    private static void ResolveRelaxedCues(List<RelaxedCue> relaxed, List<MappedCandidate> proposals,
+        TimelineMap timeline, IReadOnlyList<TimelineMapEntry>? retimingWindows, Configuration configuration,
+        WarningSink warnings, CancellationToken cancellationToken)
+    {
+        if (relaxed.Count == 0)
+        {
+            return;
+        }
+
+        RationalTime OutputStart(RelaxedCue cue) =>
+            cue.Cut.Entry.OutputRange.Start + (cue.TokenRange.Start - cue.Cut.Entry.SourceRange!.Value.Start);
+        RationalTime[] starts = proposals.Select(static proposal => proposal.OutputRange.Start)
+            .Concat(relaxed.Select(OutputStart)).Order().ToArray();
+        IReadOnlyList<TimelineMapEntry> windows = retimingWindows ?? timeline.Entries;
+        var halfSecond = new RationalTime(1, 2);
+        foreach (RelaxedCue cue in relaxed)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TimeRange cutSource = cue.Cut.Entry.SourceRange!.Value;
+            RationalTime offset = cue.Cut.Entry.OutputRange.Start - cutSource.Start;
+            RationalTime windowSourceEnd = windows.Where(window => window.SourceRange is TimeRange source
+                    && Contains(source, cutSource) && window.OutputRange.Start - source.Start == offset)
+                .Select(static window => window.SourceRange!.Value.End).DefaultIfEmpty(cutSource.End).Max();
+            RationalTime start = cue.TokenRange.Start + offset;
+            RationalTime tokenEnd = cue.TokenRange.End + offset;
+            RationalTime? nextStart = starts.Where(time => time > start).Cast<RationalTime?>().FirstOrDefault();
+
+            RationalTime desired = Max(cue.TokenRange.Duration, Max(configuration.MinimumDuration,
+                new RationalTime(cue.ReadingCharacters, configuration.MaximumReadingSpeed)));
+            RationalTime end = start + desired;
+            if (nextStart is RationalTime closing && closing - tokenEnd < halfSecond)
+            {
+                end = Max(end, closing - configuration.MinimumGap);
+            }
+
+            RationalTime limit = Min(windowSourceEnd + offset, start + Max(configuration.MaximumDuration, cue.TokenRange.Duration));
+            if (nextStart is RationalTime following)
+            {
+                limit = Min(limit, following - configuration.MinimumGap);
+            }
+
+            end = Max(tokenEnd, Min(end, limit));
+            var range = new TimeRange(cue.TokenRange.Start, end - start);
+            MappedCandidate proposal = CreateProposal(cue.Atoms, 0, cue.Atoms.Count - 1, cue.Cut, range, configuration, warnings);
+            proposals.Add(proposal);
+            // One summary per reason keeps a long video within the result's warning limit.
+            if (end > tokenEnd)
+            {
+                WarnOnce(warnings, "subtitles.cueGapPolicy", "coverage-cue", "cue-end-extended-into-following-silence");
+            }
+
+            if (range.Duration < configuration.MinimumDuration)
+            {
+                WarnOnce(warnings, "subtitles.cueMinimumDuration", "coverage-cue", "shown-below-minimum-duration");
+            }
+
+            if (!ReadingSpeedFits(cue.ReadingCharacters, range.Duration, configuration.MaximumReadingSpeed))
+            {
+                WarnOnce(warnings, "subtitles.readingSpeedMaximum", "coverage-cue", "shown-above-maximum-reading-speed");
+            }
+        }
+    }
+
+    private static RationalTime Max(RationalTime left, RationalTime right) => left >= right ? left : right;
+    private static RationalTime Min(RationalTime left, RationalTime right) => left <= right ? left : right;
+
+    private static RationalTime LastTimedEnd(IReadOnlyList<TextAtom> block) =>
+        block.Last(static atom => atom.Token.Range is not null).Token.Range!.Value.End;
+
+    /// <summary>Untimed tokens with a timed, text-matched neighbour on both sides in the same utterance.</summary>
+    private static HashSet<EntityId<TranscriptTokenIdTag>> FindRiders(TextAtom[][] utterances)
+    {
+        var riders = new HashSet<EntityId<TranscriptTokenIdTag>>();
+        foreach (TextAtom[] atoms in utterances)
+        {
+            for (int index = 0; index < atoms.Length; index++)
+            {
+                if (atoms[index].Token.Range is not null)
+                {
+                    continue;
+                }
+
+                int last = index;
+                while (last + 1 < atoms.Length && atoms[last + 1].Token.Range is null)
+                {
+                    last++;
+                }
+
+                bool bounded = index > 0 && last + 1 < atoms.Length && !atoms[index - 1].HasUnmatchedText
+                    && !atoms[last + 1].HasUnmatchedText
+                    && atoms.Skip(index).Take(last - index + 1).All(static atom => !atom.HasUnmatchedText);
+                if (bounded)
+                {
+                    for (int rider = index; rider <= last; rider++)
+                    {
+                        riders.Add(atoms[rider].Token.Id);
+                    }
+                }
+
+                index = last;
+            }
+        }
+
+        return riders;
+    }
+
     private static bool[] FindOutputConflicts(MappedCandidate[] ordered, Configuration configuration,
-        List<StandardSubtitleBuildWarning> warnings, CancellationToken cancellationToken)
+        WarningSink warnings, CancellationToken cancellationToken)
     {
         var conflicts = new bool[ordered.Length];
         var active = new List<int>();
@@ -570,6 +828,13 @@ public static class StandardSubtitleBuilder
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 bool overlaps = ordered[previous].OutputRange.End > ordered[index].OutputRange.Start;
+                if (!overlaps && configuration.Policy == StandardSubtitleBuildPolicy.FullCoverage)
+                {
+                    // FR-051: a cue never starts early or clips a token, so a back-to-back pair is shown as is.
+                    WarnOnce(warnings, "subtitles.cueGapMinimum", "output-cue", "shown-with-gap-below-minimum");
+                    continue;
+                }
+
                 if (overlaps && !conflicts[previous])
                 {
                     conflicts[previous] = true;
@@ -669,7 +934,7 @@ public static class StandardSubtitleBuilder
 
     private static Configuration Configure(CompositionVersion version, TimelineMap timeline, LayoutSpec layout,
         RenderProfile render, DefaultSettingsProfile profile, DefaultSettingsSnapshot settings,
-        RenderFontEvidence font, List<StandardSubtitleBuildWarning> warnings)
+        RenderFontEvidence font, WarningSink warnings, StandardSubtitleBuildPolicy policy)
     {
         var values = settings.Values.ToDictionary(static selection => selection.Key, static selection => selection.Value,
             StringComparer.Ordinal);
@@ -743,12 +1008,16 @@ public static class StandardSubtitleBuilder
         if (Boolean("subtitles.platformUiMaskWarningRequired"))
             Warn(warnings, "subtitles.platformUiMaskStatus", "generic-safe-region", "platform-ui-mask-not-measured", false);
         Warn(warnings, "subtitles.semanticCompleteness", "no-semantic-evaluator", "NOT EVALUATED", false);
-        Warn(warnings, "subtitles.cueGapPolicy", "no-synthetic-timing",
-            "source-gaps-preserved-instead-of-retimed", false);
+        if (policy == StandardSubtitleBuildPolicy.FullCoverage)
+            Warn(warnings, "subtitles.cueGapPolicy", "full-coverage-retiming",
+                "cue-ends-may-extend-into-following-silence-starts-never-move", false);
+        else
+            Warn(warnings, "subtitles.cueGapPolicy", "no-synthetic-timing",
+                "source-gaps-preserved-instead-of-retimed", false);
 
         ContentDigest digest = Digest(new
         {
-            rule = RuleVersion,
+            rule = warnings.Rule,
             version.Id,
             version.ContentDigest,
             timeline,
@@ -778,7 +1047,7 @@ public static class StandardSubtitleBuilder
         SubtitlePlacementCandidate[] placements = CreatePlacements(layout, render, vertical,
             checked(fontSize * lines), fontSize, characters, digest);
         return new Configuration(enabled, characters, lines, speed, minimumDuration, maximumDuration, minimumGap,
-            lengthKey, digest, displayProfile, ass, layoutProfile, placements);
+            lengthKey, digest, displayProfile, ass, layoutProfile, placements, policy);
     }
 
     private static SubtitlePlacementCandidate[] CreatePlacements(LayoutSpec layout, RenderProfile render,
@@ -831,26 +1100,43 @@ public static class StandardSubtitleBuilder
     private static EntityId<T> StableId<T>(object value) =>
         EntityId<T>.From(new Guid(Convert.FromHexString(Digest(value).Hex)[..16]));
 
-    private static void Warn(List<StandardSubtitleBuildWarning> warnings, string key, string rule, string reason,
+    private static void Warn(WarningSink warnings, string key, string rule, string reason,
         bool unresolved, TimeRange? range = null, EntityId<SourceSpanIdTag>? spanId = null) =>
-        warnings.Add(new StandardSubtitleBuildWarning(key, RuleVersion + "." + rule, reason, unresolved, range, spanId));
+        warnings.Add(new StandardSubtitleBuildWarning(key, warnings.Rule + "." + rule, reason, unresolved, range, spanId));
 
-    private static void WarnAtom(List<StandardSubtitleBuildWarning> warnings, TextAtom atom,
+    private static void WarnAtom(WarningSink warnings, TextAtom atom,
         string key, string reason, bool unresolved) => Warn(warnings, key, "source-token", reason,
             unresolved, atom.Token.Range ?? atom.Utterance.Range, atom.Span.Id);
 
-    private static void WarnCandidate(List<StandardSubtitleBuildWarning> warnings, MappedCandidate candidate,
+    private static void WarnCandidate(WarningSink warnings, MappedCandidate candidate,
         string key, string reason, bool unresolved) => Warn(warnings, key, "output-cue", reason,
             unresolved, candidate.Candidate.SourceRange, candidate.OriginalSpan.Id);
+
+    private static void WarnOnce(WarningSink warnings, string key, string rule, string reason)
+    {
+        if (warnings.Emitted.Add(reason))
+        {
+            Warn(warnings, key, rule, reason, false);
+        }
+    }
+
+    /// <summary>Warnings of one build, prefixed with that build's rule version.</summary>
+    private sealed class WarningSink(string rule) : List<StandardSubtitleBuildWarning>
+    {
+        public string Rule { get; } = rule;
+        public HashSet<string> Emitted { get; } = new(StringComparer.Ordinal);
+    }
 
     private sealed record TextAtom(Token Token, Utterance Utterance, SourceSpan Span,
         int TextStart, int TextEnd, SubtitleCueCandidate Parent,
         bool StartsAtTextBoundary, bool EndsAtTextBoundary, bool HasUnmatchedText);
     private sealed record BoundCut(int Index, TimelineMapEntry Entry, SourceSpan Span);
     private sealed record MappedCandidate(SubtitleCueCandidate Candidate, TimeRange OutputRange, SourceSpan OriginalSpan);
+    private sealed record RelaxedCue(IReadOnlyList<TextAtom> Atoms, BoundCut Cut, TimeRange TokenRange, int ReadingCharacters);
     private sealed record TextMetrics(bool Valid, int ReadingCharacters, long LongestLineHalfWidthUnits, int Lines);
     private sealed record Configuration(bool Enabled, int MaximumCharacters, int MaximumLines, int MaximumReadingSpeed,
         RationalTime MinimumDuration, RationalTime MaximumDuration, RationalTime MinimumGap, string LengthKey,
         ContentDigest Digest, SubtitleDisplayProfile DisplayProfile, AssSubtitleProfile AssProfile,
-        SubtitleLayoutProfile? LayoutProfile, SubtitlePlacementCandidate[] Placements);
+        SubtitleLayoutProfile? LayoutProfile, SubtitlePlacementCandidate[] Placements,
+        StandardSubtitleBuildPolicy Policy);
 }

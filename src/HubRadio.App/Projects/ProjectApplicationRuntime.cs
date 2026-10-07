@@ -32,7 +32,8 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
         SourceOnlyApplicationRuntime? sourceOnlyRuntime = null,
         SourceOnlyBridgeHandler? sourceOnly = null,
         SourceOnlyMediaResponseFactory? sourceOnlyMedia = null,
-        BookendStitchBridgeHandler? stitch = null)
+        BookendStitchBridgeHandler? stitch = null,
+        WorkspaceLocationBridgeHandler? workspace = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
@@ -62,7 +63,11 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
         SourceOnly = sourceOnly;
         SourceOnlyMedia = sourceOnlyMedia;
         Stitch = stitch;
+        Workspace = workspace;
     }
+
+    /// <summary>FR-062 workspace location handler.</summary>
+    internal WorkspaceLocationBridgeHandler? Workspace { get; }
 
     internal ProjectBridgeHandler Project { get; }
 
@@ -128,15 +133,7 @@ internal static class ProjectApplicationRuntime
         string actorSid = actorProvider.GetCurrentSid();
         string applicationRoot = Path.GetFullPath(applicationDataDirectory);
         Directory.CreateDirectory(applicationRoot);
-        string workspacePath = Path.Combine(applicationRoot, "Workspace");
-        if (Directory.Exists(workspacePath))
-        {
-            _ = WorkspaceAcl.VerifyExisting(workspacePath, actorSid);
-        }
-        else
-        {
-            _ = WorkspaceAcl.CreateNew(workspacePath, actorSid);
-        }
+        string workspacePath = WorkspaceFolderBootstrap.Prepare(applicationRoot, actorSid);
 
         string databasePath = Path.Combine(workspacePath, "hubradio.db");
         _ = DatabaseMigrator.Migrate(
@@ -185,6 +182,9 @@ internal static class ProjectApplicationRuntime
         BookendStitchBridgeHandler? stitch)
     {
         SourceOnlyApplicationServices services = native.Services;
+        var posters = new ProjectPosterStore(services.WorkspacePath);
+        var autoSettings = new ProjectAutoSettingsStore(services.WorkspacePath);
+        var posterAttempts = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
         var service = new ProjectCreationService(
             services.Drafts,
             authorization,
@@ -204,6 +204,23 @@ internal static class ProjectApplicationRuntime
             ProjectFilesRemover = projectId =>
                 ProjectWorkspaceFileRemover.Remove(services.WorkspacePath, projectId),
             ThumbnailResolver = new ProjectThumbnailResolver(services.Executions).Resolve,
+            PosterResolver = draftId => posters.TryGetDigest(draftId)?.Hex,
+            PosterRequester = draftId =>
+            {
+                // FR-053: one background attempt per Project and app session for posters missing
+                // from Projects made before FR-053 (or whose first attempt failed).
+                if (posterAttempts.TryAdd(draftId.ToString(), 0))
+                {
+                    _ = ((ISourceOnlyProjectCoordinator)native).EnsurePosterAsync(draftId, CancellationToken.None);
+                }
+            },
+            PosterRemover = draftId =>
+            {
+                posters.Delete(draftId);
+                autoSettings.Delete(draftId);
+            },
+            AutoSettingsRecorder = autoSettings.Save,
+            AutoSettingsReader = autoSettings.Read,
         };
         var projectHandler = new ProjectBridgeHandler(service, native.RestoreAfterReadAsync, native.RepairAsync);
         var jobHandler = new JobBridgeRequestHandler(
@@ -262,7 +279,11 @@ internal static class ProjectApplicationRuntime
             services.Results,
             services.Artifacts,
             actorProvider.GetCurrentSid,
-            authorization);
+            authorization)
+        {
+            Posters = posters,
+            Drafts = new ProjectCreationDraftStore(services.DatabasePath),
+        };
         return new ApplicationBridgeHandlers(
             projectHandler,
             jobHandler,
@@ -279,7 +300,11 @@ internal static class ProjectApplicationRuntime
             native,
             sourceOnlyHandler,
             sourceOnlyMedia,
-            stitch);
+            stitch,
+            new WorkspaceLocationBridgeHandler(
+                new WorkspaceLocationStore(applicationRoot),
+                settingsAuthorization,
+                services.WorkspacePath));
     }
 
     // FR-035: without both bundled tools the GUI reports unavailable instead of failing later.

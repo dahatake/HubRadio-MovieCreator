@@ -8,7 +8,6 @@ import {
 
 import { createHostBridgeClient, type BridgeClient } from '../../bridge'
 import {
-  formatRationalTime,
   type PlayerExactFrameSelection,
 } from '../player'
 import type {
@@ -29,6 +28,7 @@ import {
   type ThumbnailGenerationExpectation,
   type ThumbnailStatus,
 } from './thumbnailState'
+import { formatByteSize, formatTimestamp } from '../results/humanReadable'
 
 const statusMessages: Readonly<Record<ThumbnailStatus, string>> = {
   idle: 'プレイヤーで正確なフレームを選択してください',
@@ -503,7 +503,7 @@ export function ThumbnailPanel({
 
               {output === null ? (
                 <p className="thumbnail-empty">
-                  出力は exact source PTS と承認済み template binding の検証後に表示されます。
+                  フレームとテンプレートを選んで作成すると、ここにサムネイルが表示されます。
                 </p>
               ) : (
                 <div className="thumbnail-output">
@@ -515,37 +515,21 @@ export function ThumbnailPanel({
                         src={output.mediaReference}
                         width={output.width}
                         height={output.height}
-                        alt={`${template?.name ?? '承認済みテンプレート'}、Source PTS ${formatRationalTime(output.selection.sourcePresentationTime)} の生成済みサムネイル`}
+                        alt={`${template?.name ?? '承認済みテンプレート'}、元動画の ${sourceTimestamp(output.selection.sourcePresentationTime)} の場面から作ったサムネイル`}
                         onError={() => setPreviewFailed(true)}
                       />
                     )}
                     <figcaption>
                       {output.width} × {output.height} PNG ·{' '}
-                      {output.byteSize} bytes
+                      {formatByteSize(output.byteSize)}
                       {previewReduced ? '・縮小表示（拡大なし）' : ''}
                     </figcaption>
                   </figure>
                   <details>
                     <summary>生成結果の詳細</summary>
                     <dl className="thumbnail-output-evidence">
-                      <Evidence label="output SHA-256" value={output.contentDigest} code />
-                      <Evidence label="binding digest" value={output.bindingDigest} code />
-                      <Evidence label="artifact ID" value={output.artifactId} code />
-                      <Evidence
-                        label="exact source PTS"
-                        value={formatRationalTime(output.selection.sourcePresentationTime)}
-                        code
-                      />
-                      <Evidence
-                        label="source frame"
-                        value={String(output.selection.sourceFrameSequence)}
-                      />
-                      <Evidence
-                        label="proxy frame"
-                        value={String(output.selection.proxyFrameSequence)}
-                      />
-                      <Evidence label="template approval" value={output.template.approvalDigest} code />
-                      <Evidence label="作成日時 (UTC)" value={output.createdAt} code />
+                      <Evidence label="元動画の場面" value={sourceTimestamp(output.selection.sourcePresentationTime)} />
+                      <Evidence label="作成日時" value={new Date(output.createdAt).toLocaleString('ja-JP')} />
                     </dl>
                   </details>
                 </div>
@@ -564,18 +548,13 @@ function FrameEvidence({
   return (
     <dl className="thumbnail-time-grid">
       <TimeEvidence
-        label="Source PTS"
-        value={formatRationalTime(selection.frame.sourcePresentationTime)}
-        sequence={selection.frame.sourceFrameSequence}
+        label="元動画の場面"
+        value={sourceTimestamp(selection.frame.sourcePresentationTime)}
+        sequence={null}
       />
       <TimeEvidence
-        label="Proxy PTS"
-        value={formatRationalTime(selection.frame.proxyPresentationTime)}
-        sequence={selection.frame.proxyFrameSequence}
-      />
-      <TimeEvidence
-        label="Output PTS"
-        value={formatRationalTime(selection.frame.outputPresentationTime)}
+        label="完成した動画での位置"
+        value={sourceTimestamp(selection.frame.outputPresentationTime)}
         sequence={null}
       />
     </dl>
@@ -592,12 +571,6 @@ function SnapshotEvidence({
         label="外部公開"
         value={snapshot.rights.externalPublicationAllowed ? '許可' : '未許可'}
       />
-      <Evidence label="権利 digest" value={snapshot.sourceRightsDigest} code />
-      <Evidence label="ソース digest" value={snapshot.sourceContentDigest} code />
-      <Evidence label="PTS index digest" value={snapshot.sourcePtsIndexDigest} code />
-      <Evidence label="frame map digest" value={snapshot.proxyFrameMapDigest} code />
-      <Evidence label="player evidence" value={snapshot.playerEvidenceDigest} code />
-      <Evidence label="thumbnail evidence" value={snapshot.evidenceDigest} code />
     </dl>
   )
 }
@@ -611,8 +584,8 @@ function TimeEvidence({
     <div>
       <dt>{label}</dt>
       <dd>
-        <code>{value}</code>
-        {sequence === null ? null : <span>frame {sequence}</span>}
+        {value}
+        {sequence === null ? null : <span>（{sequence + 1}コマ目）</span>}
       </dd>
     </div>
   )
@@ -653,20 +626,15 @@ function TemplateOption({
         <span className="thumbnail-template-copy">
           <strong>{template.name}</strong>
           <span>{template.width} × {template.height} PNG</span>
-          <span>BrandApprover · {template.approvedAt}</span>
+          <span>承認日時 {new Date(template.approvedAt).toLocaleString('ja-JP')}</span>
         </span>
       </label>
-      <details>
-        <summary>テンプレートの詳細</summary>
-        <div className="thumbnail-template-copy">
-          <code>approval {template.approvalDigest}</code>
-          <code>template {template.templateVersionDigest}</code>
-          <code>profile {template.renderProfileDigest}</code>
-          <code>layout {template.layoutSpecDigest}</code>
-        </div>
-      </details>
     </div>
   )
+}
+
+function sourceTimestamp(time: { readonly value: number | string, readonly rate: number | string } | null): string {
+  return time === null ? '不明' : formatTimestamp(time.value, time.rate)
 }
 
 function createCanonicalId(): string {

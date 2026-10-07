@@ -56,7 +56,8 @@ internal sealed record ProjectListItem(
     IReadOnlyList<string> OutputFormats,
     string UpdatedAt,
     string? DisplayName = null,
-    ProjectThumbnailReference? Thumbnail = null);
+    ProjectThumbnailReference? Thumbnail = null,
+    string? PosterDigest = null);
 
 internal sealed record ProjectCreationOverview(
     IReadOnlyList<ProjectListItem> Projects,
@@ -84,7 +85,8 @@ internal sealed record ProjectCreationDraftView(
     IReadOnlyList<string> MissingFields,
     string UpdatedAt,
     SourceOnlyProjectSummary? SourceOnly,
-    string? DisplayName = null);
+    string? DisplayName = null,
+    IReadOnlyList<AutoSettingNote>? AutoSettings = null);
 
 internal sealed record SourceOnlyProjectSummary(
     string ProfileId,
@@ -246,6 +248,8 @@ internal sealed class ProjectCreationService
         SourceOnlyProjectCreationResolution resolution;
         StoredProjectCreationDraft stored;
         var draftId = EntityId<ProjectCreationDraftIdTag>.New();
+        SourceMediaFacts? facts = null;
+        IReadOnlyList<AutoSettingRecommendation> autoApplied = [];
         using (reservation)
         {
             try
@@ -257,12 +261,32 @@ internal sealed class ProjectCreationService
                         ProjectCreationFailureReason.SourceReselectionRequired);
                 }
 
-                resolution = SourceOnlyProjectCreationContract.Resolve(
-                    draftId,
-                    candidateId,
-                    reservation.SelectedPath,
-                    requiredSettingsStore.GetGlobalSettings(),
-                    catalog);
+                StoredGlobalSettings? global = requiredSettingsStore.GetGlobalSettings();
+                if (global is not null && sourceOnlyCoordinator is not null)
+                {
+                    // FR-054: tune the new Project to its own video with the built-in preset (no network).
+                    facts = await ProbeSourceQuietlyAsync(sourceOnlyCoordinator, reservation.SelectedPath, cancellationToken)
+                        .ConfigureAwait(true);
+                    HubRadio.Core.Settings.DefaultSettingsSnapshot snapshot = global.Snapshot;
+                    if (facts is not null &&
+                        requiredSettingsStore.GetProfile(snapshot.ProfileId, snapshot.ProfileVersion) is { } profile)
+                    {
+                        (snapshot, autoApplied) = BuzzEditingPreset.Apply(profile, snapshot, BuzzEditingPreset.Recommend(facts));
+                    }
+
+                    resolution = SourceOnlyProjectCreationContract.Resolve(
+                        draftId, candidateId, reservation.SelectedPath, snapshot, catalog);
+                }
+                else
+                {
+                    resolution = SourceOnlyProjectCreationContract.Resolve(
+                        draftId,
+                        candidateId,
+                        reservation.SelectedPath,
+                        global,
+                        catalog);
+                }
+
                 if (sourceOnlyCoordinator is not null)
                 {
                     await sourceOnlyCoordinator.CaptureSelectionAsync(draftId, candidateId,
@@ -279,6 +303,24 @@ internal sealed class ProjectCreationService
                 reservation.Discard();
                 sourceOnlyCoordinator?.ForgetSelection(draftId);
                 throw;
+            }
+        }
+
+        if (sourceOnlyCoordinator is not null)
+        {
+            // FR-053: best effort in the background; a missing poster never blocks or fails Project creation.
+            _ = EnsurePosterInBackgroundAsync(sourceOnlyCoordinator, draftId);
+        }
+
+        if (facts is not null)
+        {
+            try
+            {
+                AutoSettingsRecorder?.Invoke(draftId, facts, autoApplied);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // The explanation is optional; the tuned values are already in the draft's settings.
             }
         }
 
@@ -304,6 +346,21 @@ internal sealed class ProjectCreationService
     /// <summary>FR-045: supplies the thumbnail shown for a finalized project in the list; null when the host has none.</summary>
     internal Func<EntityId<ProjectIdTag>, ProjectThumbnailReference?>? ThumbnailResolver { get; set; }
 
+    /// <summary>FR-053: SHA-256 (hex) of the Project's poster frame; null when there is none yet.</summary>
+    internal Func<EntityId<ProjectCreationDraftIdTag>, string?>? PosterResolver { get; set; }
+
+    /// <summary>FR-053: asks the host to make a missing poster in the background (the next list shows it).</summary>
+    internal Action<EntityId<ProjectCreationDraftIdTag>>? PosterRequester { get; set; }
+
+    /// <summary>FR-053: removes the poster of a deleted Project.</summary>
+    internal Action<EntityId<ProjectCreationDraftIdTag>>? PosterRemover { get; set; }
+
+    /// <summary>FR-054: keeps what the preset changed (and why) for the new Project.</summary>
+    internal Action<EntityId<ProjectCreationDraftIdTag>, SourceMediaFacts, IReadOnlyList<AutoSettingRecommendation>>? AutoSettingsRecorder { get; set; }
+
+    /// <summary>FR-054: what the preset changed for a Project; null when nothing was recorded.</summary>
+    internal Func<EntityId<ProjectCreationDraftIdTag>, IReadOnlyList<AutoSettingNote>?>? AutoSettingsReader { get; set; }
+
     /// <returns>False when the project is hidden but some of its workspace files could not be removed.</returns>
     internal bool DeleteProject(
         EntityId<ProjectCreationDraftIdTag> draftId)
@@ -317,6 +374,7 @@ internal sealed class ProjectCreationService
                 ProjectCreationFailureReason.DeleteBlockedByRunningJob);
         }
 
+        PosterRemover?.Invoke(draftId);
         return projectId is null || ProjectFilesRemover is null || ProjectFilesRemover(projectId);
     }
 
@@ -531,7 +589,45 @@ internal sealed class ProjectCreationService
                 .ToArray()),
             ProjectCreationPayloadCodec.FormatTimestamp(stored.UpdatedAt),
             stored.DisplayName,
-            stored.FinalizedProjectId is { } projectId ? ThumbnailResolver?.Invoke(projectId) : null);
+            stored.FinalizedProjectId is { } projectId ? ThumbnailResolver?.Invoke(projectId) : null,
+            ResolvePoster(draft.Id));
+    }
+
+    private static async Task<SourceMediaFacts?> ProbeSourceQuietlyAsync(ISourceOnlyProjectCoordinator coordinator,
+        string sourcePath, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await coordinator.ProbeSourceAsync(sourcePath, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task EnsurePosterInBackgroundAsync(ISourceOnlyProjectCoordinator coordinator,
+        EntityId<ProjectCreationDraftIdTag> draftId)
+    {
+        try
+        {
+            _ = await coordinator.EnsurePosterAsync(draftId, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // The list asks again (PosterRequester) when the poster is still missing.
+        }
+    }
+
+    private string? ResolvePoster(EntityId<ProjectCreationDraftIdTag> draftId)
+    {
+        string? digest = PosterResolver?.Invoke(draftId);
+        if (digest is null)
+        {
+            PosterRequester?.Invoke(draftId);
+        }
+
+        return digest;
     }
 
     private ProjectCreationDraftView BuildView(
@@ -579,7 +675,8 @@ internal sealed class ProjectCreationService
                 : CreateSourceOnlySummary(
                     sourceOnly.SettingsSnapshot,
                     sourceOnly.ArtifactSet),
-            stored.DisplayName);
+            stored.DisplayName,
+            sourceOnly is null ? null : AutoSettingsReader?.Invoke(draft.Id));
     }
 
     private StoredProjectPayload ParseStored(StoredProjectCreationDraft stored)

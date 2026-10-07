@@ -97,6 +97,17 @@ internal sealed class SourceOnlyMediaResponseFactory
         this.authorization = authorization ?? throw new ArgumentNullException(nameof(authorization));
     }
 
+    /// <summary>FR-053: poster frames of listed Projects. Null serves no poster (404).</summary>
+    internal ProjectPosterStore? Posters { get; init; }
+
+    /// <summary>FR-053: a poster is served only while its Project (draft) is listed, i.e. not deleted.</summary>
+    internal ProjectCreationDraftStore? Drafts { get; init; }
+
+    internal const string PosterPrefix = SourceOnlyMediaAssetReference.Prefix + "poster/";
+
+    internal static string PosterUri(EntityId<ProjectCreationDraftIdTag> draftId, ContentDigest digest) =>
+        $"{PosterPrefix}{draftId}/{digest.Hex}";
+
     internal async Task<PlayerMediaResponse> CreateAsync(string? method, string? uri, string? rangeHeader,
         CancellationToken cancellationToken = default)
     {
@@ -111,6 +122,11 @@ internal sealed class SourceOnlyMediaResponseFactory
         {
             string actor = currentActorSid();
             authorization.Demand(actor, AuthorizationOperation.PreviewProject);
+            if (uri?.StartsWith(PosterPrefix, StringComparison.Ordinal) == true)
+            {
+                return CreatePosterResponse(uri, Posters, Drafts is null ? null : id => Drafts.GetDraft(id) is not null);
+            }
+
             if (!SourceOnlyMediaAssetReference.TryParse(uri, out SourceOnlyMediaAssetReference? reference))
             {
                 return Empty(404, "Not Found");
@@ -181,6 +197,29 @@ internal sealed class SourceOnlyMediaResponseFactory
         {
             if (held is not null) { await held.DisposeAsync().ConfigureAwait(false); }
         }
+    }
+
+    /// <summary>FR-053: GET of a poster; the caller has already authorized PreviewProject.</summary>
+    internal static PlayerMediaResponse CreatePosterResponse(string uri, ProjectPosterStore? posters,
+        Func<EntityId<ProjectCreationDraftIdTag>, bool>? isListed)
+    {
+        // Same strictness as generated media: exact canonical IDs and lowercase hex only.
+        string[] parts = uri.StartsWith(PosterPrefix, StringComparison.Ordinal) ? uri[PosterPrefix.Length..].Split('/') : [];
+        if (posters is null || isListed is null || parts.Length != 2 ||
+            !EntityId<ProjectCreationDraftIdTag>.TryParse(parts[0], out EntityId<ProjectCreationDraftIdTag>? draftId) ||
+            draftId.ToString() != parts[0] ||
+            !ContentDigest.TryParse(parts[1], out ContentDigest? digest) || digest.Hex != parts[1] ||
+            !string.Equals(uri, PosterUri(draftId, digest), StringComparison.Ordinal) ||
+            !isListed(draftId))
+        {
+            return Empty(404, "Not Found");
+        }
+
+        byte[]? bytes = posters.ReadValidated(draftId, digest);
+        return bytes is null
+            ? Empty(404, "Not Found")
+            : new PlayerMediaResponse(200, "OK", Headers("image/jpeg", bytes.LongLength, null, acceptRanges: false),
+                new MemoryStream(bytes, writable: false));
     }
 
     internal static PlayerMediaResponse Unavailable() => Empty(503, "Service Unavailable");

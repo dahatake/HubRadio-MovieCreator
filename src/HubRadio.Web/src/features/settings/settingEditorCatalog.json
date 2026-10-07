@@ -132,6 +132,30 @@
     },
     "audio.internalOnlineTargetLoudness": { "control": "choices", "values": ["-24", "-23", "-20", "-18", "-16"] },
     "audio.truePeakMaximum": { "control": "choices", "values": ["-3", "-2", "-1"] },
-    "audio.internalOnlineLoudnessTolerance": { "control": "choices", "values": ["1", "2"] }
+    "audio.internalOnlineLoudnessTolerance": { "control": "choices", "values": ["1", "2"] },
+    "editing.pauseTightening": {
+      "control": "text",
+      "options": [
+        { "value": "weak", "label": "弱め（2秒以上の間を詰める）" },
+        { "value": "standard", "label": "標準（0.7秒以上の間を詰める）" },
+        { "value": "strong", "label": "強め（0.4秒以上の間を詰める）" }
+      ]
+    },
+    "output.longFormOrientation": {
+      "control": "text",
+      "options": [
+        { "value": "followSource", "label": "元動画の向きに合わせる" },
+        { "value": "landscape", "label": "常に横長（16:9）" }
+      ]
+    },
+    "subtitles.emphasisTelopAmount": {
+      "control": "text",
+      "options": [
+        { "value": "few", "label": "少なめ" },
+        { "value": "standard", "label": "標準" },
+        { "value": "many", "label": "多め" }
+      ]
+    },
+    "audio.soundEffectsEnabled": { "control": "boolean" }
   }
 }

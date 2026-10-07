@@ -77,7 +77,7 @@ export function PipelineProgress({ active = true }: Readonly<{ active?: boolean 
   return <section className="job-panel job-panel-compact" aria-labelledby="job-panel-title" hidden={false}>
     <h2 id="job-panel-title">ジョブの進行状況</h2>
     <p role="status" data-pipeline-phase={s?.phase ?? 'none'}>{s === null
-      ? pipeline.state.projectId === null ? '確定済みの案件を選択してください。' : pipeline.state.pendingMethod !== null ? '自動編集の状態を確認しています。' : '編集処理の開始は確認できていません。'
+      ? pipeline.state.projectId === null ? '確定済みのProjectを選択してください。' : pipeline.state.pendingMethod !== null ? '自動編集の状態を確認しています。' : '編集処理の開始は確認できていません。'
       : pipelinePhaseLabels[s.phase]}</p>
     {s !== null && <PipelineStages phase={s.phase} />}
     {live && <progress aria-label="自動編集の進行状況" max={1} value={job?.progressRatio ?? undefined} />}

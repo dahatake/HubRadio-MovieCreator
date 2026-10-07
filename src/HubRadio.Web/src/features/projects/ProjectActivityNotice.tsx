@@ -15,14 +15,14 @@ export interface ProjectActivityDescription {
 const activityDescriptions: Readonly<Partial<Record<ProjectBridgeMethod, ProjectActivityDescription>>> = {
   'project.finalizeDraft': {
     title: 'いま行っていること：編集の受付',
-    detail: '選んだ元動画の確認、既定設定の固定、案件の保存を行っています。',
+    detail: '選んだ元動画の確認、既定設定の固定、Projectの保存を行っています。',
     userAction: 'あなたの操作は不要です。完了するまでこの画面のままお待ちください。処理中は「取消」と「編集を開始」を押せません。',
-    next: '完了すると案件が作成され、「自動編集」画面で処理状況を確認できます。',
+    next: '完了するとProjectが作成され、「ジョブの状態の確認」画面で処理状況を確認できます。',
   },
   'project.pickSource': {
     title: 'いま行っていること：元動画の選択',
     detail: '元動画を選ぶ画面を開いています。',
-    userAction: '別に開いた選択画面で動画を1本選んでください。選ばずに閉じても、案件は変更されません。',
+    userAction: '別に開いた選択画面で動画を1本選んでください。選ばずに閉じても、Projectは変更されません。',
     next: null,
   },
   'project.saveDraft': {

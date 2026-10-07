@@ -75,6 +75,8 @@ internal enum BridgeMethod
     SettingsFileExport,
     SettingsFilePreview,
     SettingsFileApply,
+    SettingsWorkspaceRead,
+    SettingsWorkspaceUpdate,
     PipelineRead,
     PipelineRegenerate,
     PipelineRetry,
@@ -266,6 +268,8 @@ internal static class BridgeProtocol
     internal const string SettingsFileExportMethod = "settings.file.export";
     internal const string SettingsFilePreviewMethod = "settings.file.preview";
     internal const string SettingsFileApplyMethod = "settings.file.apply";
+    internal const string SettingsWorkspaceReadMethod = "settings.workspace.read";
+    internal const string SettingsWorkspaceUpdateMethod = "settings.workspace.update";
     internal const string PipelineReadMethod = "pipeline.read";
     internal const string PipelineRegenerateMethod = "pipeline.regenerate";
     internal const string PipelineRetryMethod = "pipeline.retry";
@@ -538,6 +542,8 @@ internal static class BridgeProtocol
             BridgeMethod.SettingsFileExport => SettingsFileExportMethod,
             BridgeMethod.SettingsFilePreview => SettingsFilePreviewMethod,
             BridgeMethod.SettingsFileApply => SettingsFileApplyMethod,
+            BridgeMethod.SettingsWorkspaceRead => SettingsWorkspaceReadMethod,
+            BridgeMethod.SettingsWorkspaceUpdate => SettingsWorkspaceUpdateMethod,
             BridgeMethod.PipelineRead => PipelineReadMethod,
             BridgeMethod.PipelineRegenerate => PipelineRegenerateMethod,
             BridgeMethod.PipelineRetry => PipelineRetryMethod,
@@ -642,7 +648,9 @@ internal static class BridgeProtocol
             BridgeMethod.SettingsGlobalResetAll or
             BridgeMethod.SettingsFileExport or
             BridgeMethod.SettingsFilePreview or
-            BridgeMethod.SettingsFileApply;
+            BridgeMethod.SettingsFileApply or
+            BridgeMethod.SettingsWorkspaceRead or
+            BridgeMethod.SettingsWorkspaceUpdate;
 
     private static int GetMaximumRequestUtf8Bytes(BridgeMethod method) =>
         method switch
@@ -717,6 +725,8 @@ internal static class BridgeProtocol
             SettingsFileExportMethod => BridgeMethod.SettingsFileExport,
             SettingsFilePreviewMethod => BridgeMethod.SettingsFilePreview,
             SettingsFileApplyMethod => BridgeMethod.SettingsFileApply,
+            SettingsWorkspaceReadMethod => BridgeMethod.SettingsWorkspaceRead,
+            SettingsWorkspaceUpdateMethod => BridgeMethod.SettingsWorkspaceUpdate,
             PipelineReadMethod => BridgeMethod.PipelineRead,
             PipelineRegenerateMethod => BridgeMethod.PipelineRegenerate,
             PipelineRetryMethod => BridgeMethod.PipelineRetry,
@@ -1443,9 +1453,9 @@ internal static class BridgeProtocol
     private static string GetErrorMessage(string code) => code switch
     {
         StableErrorCodes.ProjectAlreadyFinalized =>
-            "この案件はすでに作成済みです。",
+            "このProjectはすでに作成済みです。",
         StableErrorCodes.ProjectDeleteBlocked =>
-            "処理中のジョブがあるため、この案件は削除できません。完了または中止してからもう一度お試しください。",
+            "処理中のジョブがあるため、このProjectは削除できません。完了または中止してからもう一度お試しください。",
         StableErrorCodes.ProjectIncomplete =>
             "必須入力をすべて完了してください。",
         StableErrorCodes.ProjectInvalidRequest =>
@@ -1472,7 +1482,7 @@ internal static class BridgeProtocol
             "対象版は現行版ではありません。レビューを再読み込みしてください。",
         StableErrorCodes.ReviewOperationFailed =>
             "レビュー操作を完了できませんでした。",
-        _ => "案件操作を完了できませんでした。",
+        _ => "Project操作を完了できませんでした。",
     };
 
     private static bool TryCreateRequest(
@@ -1848,6 +1858,8 @@ internal sealed class Bridge : IDisposable
 
     /// <summary>FR-035 GUI handler; optional so existing constructor contracts stay unchanged.</summary>
     internal BookendStitchBridgeHandler? StitchHandler { get; init; }
+
+    internal WorkspaceLocationBridgeHandler? WorkspaceHandler { get; init; }
     private readonly TaskCompletionSource firstPingResponsePosted = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
     private bool isStarted;
@@ -2267,7 +2279,8 @@ internal sealed class Bridge : IDisposable
                 settingsHandler,
                 globalSettingsHandler,
                 fileSettingsHandler,
-                cancellationToken);
+                cancellationToken,
+                WorkspaceHandler);
         }
 
         return jobHandler?.Handle(request) ??

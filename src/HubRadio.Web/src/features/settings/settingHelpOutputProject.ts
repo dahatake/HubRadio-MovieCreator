@@ -61,6 +61,11 @@ export const outputProjectStorageHelp: Readonly<Record<string, SettingHelpEntry>
     'ビットレートは、1秒あたりに使うデータの量で、大きいほどきれいになりますがファイルも大きくなります。この項目は、画面サイズ1080pで、1秒に48・50・60枚の滑らかな映像に使う値です。単位はbps（ビット毎秒）で、初期値は12000000（約12メガビット）です。',
     '大きくすると画質が上がりファイルサイズが増え、小さくすると画質が下がりファイルサイズが減ります。',
   ],
+  'output.longFormOrientation': [
+    '長尺動画の向き',
+    '長尺動画（元動画全体を編集した版）を、縦長と横長のどちらで作るかを選ぶ項目です。「元動画の向きに合わせる」（初期値）では、縦長で撮った動画は縦長（1080×1920）、横長で撮った動画は横長（1920×1080）で作ります。',
+    '「常に横長（16:9）」にすると、縦長の元動画でも横長で作り、左右に黒い帯が入ります。設定の版が1.2.0より古いProjectでは、常に横長です。',
+  ],
   'output.landscapeResolution': [
     '横長動画の画面サイズ',
     '横長（16:9）の動画の、画面の大きさ（解像度）です。現在の「1920x1080」は、横1920点×縦1080点の「フルHD」です。',
@@ -148,13 +153,13 @@ export const outputProjectStorageHelp: Readonly<Record<string, SettingHelpEntry>
   ],
   'project.publicationDeadlinePolicy': [
     '公開期限の扱い',
-    '案件に「公開の期限」を付けるかを決める項目です。現在の「none」は、期限を設定しないという意味です。',
+    'Projectに「公開の期限」を付けるかを決める項目です。現在の「none」は、期限を設定しないという意味です。',
     'アプリが期限を勝手に決めることはありません。この項目は選べる値が1つだけです。',
   ],
   'project.publicationScope': [
     '公開範囲',
     '作った動画を、だれに見せてよいかの範囲です。現在の「internalOnly」は「社内だけ」という意味です。',
-    'かんたん編集で作る案件と成果物は、社内向けとして扱われます。この項目は選べる値が1つだけです。',
+    'かんたん編集で作るProjectと成果物は、社内向けとして扱われます。この項目は選べる値が1つだけです。',
   ],
   'project.quickStartArtifactSet': [
     'かんたん編集で作る成果物の一覧',
@@ -163,7 +168,7 @@ export const outputProjectStorageHelp: Readonly<Record<string, SettingHelpEntry>
   ],
   'project.requiredSourceVideoCount': [
     '必要な元動画の本数',
-    '案件を作るために必要な、元の動画の本数です。かんたん編集では、元動画を1本選ぶだけで始められます。',
+    'Projectを作るために必要な、元の動画の本数です。かんたん編集では、元動画を1本選ぶだけで始められます。',
     '最小値・最大値がどちらも1なので、1以外の値にはできません。',
   ],
   'project.startSummaryRequired': [

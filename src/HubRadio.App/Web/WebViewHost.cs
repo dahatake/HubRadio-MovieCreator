@@ -38,6 +38,8 @@ internal sealed class WebViewHost : IDisposable
 
     /// <summary>FR-035 GUI handler, forwarded to the bridge at start.</summary>
     internal BookendStitchBridgeHandler? StitchHandler { get; init; }
+
+    internal WorkspaceLocationBridgeHandler? WorkspaceHandler { get; init; }
     private TaskCompletionSource? initialNavigation;
     private bool isStarted;
     private bool isDisposed;
@@ -305,6 +307,7 @@ internal sealed class WebViewHost : IDisposable
                 sourceOnlyHandler)
             {
                 StitchHandler = StitchHandler,
+                WorkspaceHandler = WorkspaceHandler,
             };
             bridge = startedBridge;
             await StartDocumentAsync(
@@ -343,10 +346,17 @@ internal sealed class WebViewHost : IDisposable
         SettingsBridgeRequestHandler? settingsHandler,
         GlobalSettingsBridgeRequestHandler? globalSettingsHandler,
         SettingsFileBridgeRequestHandler? fileSettingsHandler,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        WorkspaceLocationBridgeHandler? workspaceHandler = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
+        if (request.Method is BridgeMethod.SettingsWorkspaceRead or BridgeMethod.SettingsWorkspaceUpdate)
+        {
+            return workspaceHandler?.Handle(request) ??
+                WorkspaceLocationBridgeHandler.WriteFailure(request, "unavailable");
+        }
+
         string? response = request.Method switch
         {
             BridgeMethod.SettingsRead or

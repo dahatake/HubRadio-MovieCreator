@@ -212,6 +212,42 @@ public sealed class SourceOnlyPipelineTests
         Assert.AreEqual(0, f.WorkCalls);
     }
 
+    // FR-051 AC-026.4: a run that carries subtitle edits keeps its parent's rule (edits are bound to the parent's exact
+    // cues); a fresh run uses v3; an unknown parent rule fails closed.
+    [TestMethod]
+    public void NewRunKeepsTheParentRuleOnlyWhenCarryingSubtitleEdits()
+    {
+        Assert.AreEqual(StandardSubtitleBuildPolicy.FullCoverage, SourceOnlyPipeline.SelectBuilderPolicy(false, null));
+        Assert.AreEqual(StandardSubtitleBuildPolicy.FullCoverage, SourceOnlyPipeline.SelectBuilderPolicy(false, StandardSubtitleBuilder.RuleVersion));
+        Assert.AreEqual(StandardSubtitleBuildPolicy.ExactSourceTokens, SourceOnlyPipeline.SelectBuilderPolicy(true, StandardSubtitleBuilder.RuleVersion));
+        Assert.AreEqual(StandardSubtitleBuildPolicy.FullCoverage, SourceOnlyPipeline.SelectBuilderPolicy(true, StandardSubtitleBuilder.FullCoverageRuleVersion));
+        foreach (string? unknown in new[] { null, "", "standard-subtitle-builder.unknown.v9" })
+        {
+            Assert.AreEqual(SourceOnlyExecutionPhase.ReconciliationRequired, Assert.ThrowsExactly<SourceOnlyPipeline.PipelineFailure>(
+                () => SourceOnlyPipeline.SelectBuilderPolicy(true, unknown)).Phase);
+        }
+    }
+
+    // FR-051 AC-026.4: a result saved before FR-051 (rule v2) is replayed with v2, so it stays readable byte-for-byte.
+    [TestMethod]
+    [DataRow(StandardSubtitleBuildPolicy.ExactSourceTokens)]
+    [DataRow(StandardSubtitleBuildPolicy.FullCoverage)]
+    public async Task GeneratedEvidenceReplaysWithTheRuleItWasSavedWith(StandardSubtitleBuildPolicy policy)
+    {
+        await using RuntimeCheckpointFixture f = await RuntimeCheckpointFixture.CreateAsync(false);
+        SourceOnlyGeneratedRuntimeEvidence saved = f.BuildGenerated(policy);
+        await f.RestartAsync(new SourceOnlyRuntimeCallbacks());
+        await f.Pipeline.CheckpointGeneratedRuntimeAsync(f.Execution, saved, CancellationToken.None);
+
+        SourceOnlyGeneratedRuntimeEvidence? persisted = await f.Pipeline.ReadGeneratedRuntimeEvidenceAsync(
+            f.Execution, f.Preparation, f.Inputs.Import, CancellationToken.None);
+
+        Assert.IsNotNull(persisted);
+        Assert.AreEqual(StandardSubtitleBuilder.GetRuleVersion(policy), persisted.BuilderRule);
+        Assert.AreEqual(SourceOnlyPipeline.WriteGeneratedRuntimeEvidence(f.Execution, saved),
+            SourceOnlyPipeline.WriteGeneratedRuntimeEvidence(f.Execution, persisted));
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
@@ -1147,9 +1183,16 @@ public sealed class SourceOnlyPipelineTests
 
         Assert.AreEqual(before, CompositionSnapshotJson.WriteVersion(version));
         Assert.AreEqual(new RationalTime(20, 1), version.Elements.Single().OutputRange.End);
+        // FR-051 AC-026.6: the replay-only v2 rule keeps excluding a partially untimed utterance; v3 (default for
+        // new runs) shows its timed part and still reports the untimed tail as unresolved.
+        StandardSubtitleBuildResult exact = SourceOnlyPipeline.BuildProductionSubtitles(version, timeline,
+            render.Layout, render.Profile, import, ContentDigest.Compute(Encoding.UTF8.GetBytes(TranscriptSnapshotJson.WriteRevision(import.Revision))),
+            [.. import.SourceSpans, full], profile, settings, font, ActorSid, At, policy: StandardSubtitleBuildPolicy.ExactSourceTokens);
+        Assert.HasCount(empty || !allTimingValid ? 0 : 1, exact.Subtitles.Revisions);
+        Assert.AreEqual(!allTimingValid, exact.HasUnresolvedCues);
         Assert.AreEqual(!allTimingValid, result.HasUnresolvedCues, string.Join(",", result.Warnings.Select(item => item.Reason)));
         CollectionAssert.AreEqual(result.Warnings.ToArray(), result.Subtitles.Warnings.ToArray());
-        Assert.HasCount(empty || !allTimingValid ? 0 : 1, result.Subtitles.Revisions);
+        Assert.HasCount(empty ? 0 : 1, result.Subtitles.Revisions);
         Assert.AreEqual(TranscriptChangeSource.Machine, import.Revision.ChangeSource);
         if (!empty && allTimingValid)
         {
@@ -1386,8 +1429,10 @@ public sealed class SourceOnlyPipelineTests
             await Pipeline.DisposeAsync();
             Pipeline = NewPipeline(callbacks, operation);
         }
-        internal SourceOnlyGeneratedRuntimeEvidence BuildGenerated() => SourceOnlyPipeline.BuildGeneratedRuntimeEvidence(Preparation, Inputs.Import,
-            Inputs.Profile, Inputs.Settings, new RenderFontEvidence("Noto Sans JP", ContentDigest.Compute([8, 9])), ActorSid, At.AddSeconds(3));
+        internal SourceOnlyGeneratedRuntimeEvidence BuildGenerated(
+            StandardSubtitleBuildPolicy policy = StandardSubtitleBuildPolicy.FullCoverage) => SourceOnlyPipeline.BuildGeneratedRuntimeEvidence(Preparation, Inputs.Import,
+            Inputs.Profile, Inputs.Settings, new RenderFontEvidence("Noto Sans JP", ContentDigest.Compute([8, 9])), ActorSid, At.AddSeconds(3),
+            policy: policy);
         internal SourceOnlyResult FailureResult(bool reconciliation, bool cleanup) => new(
             new SourceOnlyResultBinding(Project.Id, Execution.Request.ExecutionId, Execution.Request.RootJobId, Inputs.Settings.ContentDigest,
                 Preparation.Child.Id, Preparation.Child.ContentDigest),

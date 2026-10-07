@@ -58,8 +58,10 @@ describe('ReviewStateProvider integration', () => {
     expect(load.params).toEqual({ versionId: reviewVersionId })
 
     completeSnapshot(load)
-    expect(container.textContent).toContain(reviewVersionDigest)
-    expect(container.textContent).toContain('出力 1/2')
+    // FR-052: the loaded snapshot shows its comment at a plain playback position, without the digest.
+    expect(container.textContent).toContain('字幕の語尾を確認してください。')
+    expect(container.textContent).toContain('動画の 0:00.5 の位置')
+    expect(container.textContent).not.toContain(reviewVersionDigest)
 
     setControlValue(requiredElement<HTMLInputElement>('#review-comment-value'), '3')
     setControlValue(requiredElement<HTMLInputElement>('#review-comment-rate'), '2')
@@ -131,7 +133,10 @@ describe('ReviewStateProvider integration', () => {
 
     const alert = requiredElement<HTMLElement>('.review-error[role="alert"]')
     expect(alert.textContent).toContain('対象版は現行版ではありません。')
-    expect(container.textContent).toContain(reviewVersionDigest)
+    // FR-052: the previously loaded snapshot stays visible (identified by its content, not its digest).
+    expect(container.querySelector('.review-workspace')).not.toBeNull()
+    expect(container.textContent).toContain('字幕の語尾を確認してください。')
+    expect(container.textContent).not.toContain(reviewVersionDigest)
 
     act(() => {
       requiredElement<HTMLButtonElement>(

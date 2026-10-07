@@ -43,9 +43,9 @@ const failureMessages: Readonly<
   Record<Exclude<LayoutBridgeStatus, 'available' | 'noChange'>, string>
 > = {
   forbidden: '現在の Windows ユーザーには、このレイアウトを閲覧または変更する権限がありません。',
-  notFound: '指定した案件のレイアウト aggregate は見つかりませんでした。',
-  conflict: 'レイアウトまたは Cue の revision が更新されました。最新版を再読み込みしてください。',
-  invalid: '要求または native evidence を閉じた contract として検証できませんでした。',
+  notFound: '指定したProjectのレイアウト情報は見つかりませんでした。',
+  conflict: 'レイアウトまたは字幕が更新されました。最新版を再読み込みしてください。',
+  invalid: 'レイアウト情報を正しく読み取れませんでした。',
   unavailable: 'production layout provider は利用できません。利用可能な状態を画面側で補完していません。',
 }
 
@@ -406,15 +406,15 @@ export function LayoutPanelView({
     >
       <div className="layout-heading">
         <div>
-          <p className="eyebrow">Exact native composition evidence</p>
+          <p className="eyebrow">字幕・画角</p>
           <h2 id="layout-title">レイアウト・字幕・テロップ</h2>
           <p>
-            native の LayoutResolver、SubtitleLayoutEngine、Cue revision evidence を同じ aggregate revision で編集します。
+            動画の画角、字幕、テロップの配置を確認・調整します。
           </p>
         </div>
         {matchesTarget && state.snapshot !== null && (
           <span className="layout-evidence-badge">
-            revision {state.snapshot.revision}
+            {state.snapshot.revision}回目の変更
             {recoveringApplyBase ? '・旧根拠（再確認が必要）' : ''}
             {subtitlesPersisted ? '・字幕変更は保存済み・その他は未永続化' : '・未永続化'}
           </span>
@@ -467,13 +467,13 @@ export function LayoutPanelView({
           <p>
             {projectId === null
               ? suppliedProjectId == null
-                ? '字幕・画角を編集する案件を選択してください。'
-                : '選択した案件 ID を確認できません。'
+                ? '字幕・画角を編集するProjectを選択してください。'
+                : '選択したProject ID を確認できません。'
               : !validContext
                 ? '版 ID と digest の両方を確認できるまで読み込みません。'
                 : versioned
-                  ? '選択した案件・版 ID・digest に結び付いた native 根拠を使用します。'
-                  : '選択した案件の native レイアウトを使用します。別の版は画面側で補完しません。'}
+                  ? '選択した動画のレイアウトを表示します。'
+                  : '選択したProjectのレイアウトを表示します。'}
           </p>
           {projectId !== null && (
             <button
@@ -491,8 +491,8 @@ export function LayoutPanelView({
       {targetSwitchBlocked ? (
         <div className="layout-target-guard" role={active ? 'alert' : undefined}>
           <p>
-            処理中または未適用の入力があるため、案件・版の切り替えを保留しています。
-            元の案件・版に戻るか、処理の完了後に入力の破棄を確認して切り替えてください。
+            処理中または未適用の入力があるため、Project・版の切り替えを保留しています。
+            元のProject・版に戻るか、処理の完了後に入力の破棄を確認して切り替えてください。
           </p>
           <button type="button" disabled={!active || pending} onClick={discardInputs}>
             入力を破棄して切り替える
@@ -584,23 +584,23 @@ export function LayoutPanelView({
       >
         {pending
           ? state.pending?.method === 'layout.apply'
-            ? '同じ aggregate revision に対する変更を native 側で検証しています。'
-            : 'レイアウト aggregate を native 側で検証しています。'
+            ? '変更内容を確認しています。'
+            : 'レイアウトを確認しています。'
           : workflow && (!matchesTarget || state.status === null)
-            ? '選択した案件の根拠を確認するまで、レイアウトは表示しません。'
+            ? '選択したProjectの根拠を確認するまで、レイアウトは表示しません。'
             : statusMessage(state.status, state.lastCompletedMethod)}
       </p>
 
       {failureStatus !== null && (
         <div className="layout-failure" role={active ? 'alert' : undefined}>
-          <strong>{recoveringApplyBase ? '変更後のレイアウトを確認できません' : 'レイアウト aggregate を利用できません'}</strong>
+          <strong>{recoveringApplyBase ? '変更後のレイアウトを確認できません' : 'レイアウトを表示できません'}</strong>
           <p>{failureMessages[failureStatus]}</p>
         </div>
       )}
       {state.snapshot === null ? failureStatus === null && (
         <div className="layout-empty">
           <strong>レイアウトは未選択です</strong>
-          <p>プロジェクトを読み込むまで、mode、座標、Cue、variant evidence は表示しません。</p>
+          <p>Projectを読み込むと、画角・字幕・テロップの配置を表示します。</p>
         </div>
       ) : (failureStatus === null || recoveringApplyBase) && (
         <LayoutWorkspace
@@ -736,14 +736,13 @@ function LayoutWorkspace({
         </div>
       )}
       <dl className="layout-identity">
-        <div><dt>Composition version</dt><dd><code>{snapshot.compositionVersionId}</code></dd></div>
-        <div><dt>Composition digest</dt><dd><code>{snapshot.compositionVersionDigest}</code></dd></div>
-        <div><dt>Layout spec</dt><dd><code>{snapshot.layout.layoutSpecId}</code></dd></div>
-        <div><dt>Output</dt><dd>{snapshot.output.width} × {snapshot.output.height}（{snapshot.output.aspectWidth}:{snapshot.output.aspectHeight}）</dd></div>
+        <div><dt>画面の大きさ</dt><dd>{snapshot.output.width} × {snapshot.output.height}（{snapshot.output.aspectWidth}:{snapshot.output.aspectHeight}・{snapshot.output.width >= snapshot.output.height ? '横長' : '縦長'}）</dd></div>
+        <div><dt>字幕</dt><dd>{snapshot.subtitles.length}件</dd></div>
+        <div><dt>テロップ</dt><dd>{snapshot.terops.length}件</dd></div>
       </dl>
       {!manualEditable && (
         <p className="layout-subtitle-only-notice" role="note">
-          字幕専用の native 根拠です。映像の画角・手動レイアウト・Keyframe は編集できません。
+          この動画では字幕だけを確認できます。映像の画角や配置は変更できません。
         </p>
       )}
 
@@ -893,15 +892,15 @@ function statusMessage(
   method: LayoutStateContextValue['state']['lastCompletedMethod'],
 ): string {
   if (status === null) {
-    return 'プロジェクトを指定してレイアウト aggregate を読み込んでください。'
+    return 'Projectを選ぶと、レイアウトを読み込みます。'
   }
   if (status === 'available') {
     return method === 'layout.apply'
-      ? '変更後の immutable snapshot を native 側で検証しました。'
-      : 'レイアウト aggregate を native 側で検証しました。'
+      ? '変更後のレイアウトを確認しました。'
+      : 'レイアウトを確認しました。'
   }
   if (status === 'noChange') {
-    return '変更内容は現行 evidence と同一でした。現行 snapshot を維持します。'
+    return '変更内容は今と同じだったため、そのままにしました。'
   }
-  return 'native 側の検証は閉じた失敗として完了しました。'
+  return 'レイアウトを確認できませんでした。'
 }

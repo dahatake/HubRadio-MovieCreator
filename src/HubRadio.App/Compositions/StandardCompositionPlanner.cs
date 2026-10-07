@@ -1156,12 +1156,13 @@ public static class StandardCompositionPlanner
     {
         BundledRenderProfileDefinition longProfile = request.LongForm.Profile;
         BundledRenderProfileDefinition shortProfile = request.ShortFormProfile;
+        bool portraitLongForm = StandardRenderProfileFactory.IsPortraitLongForm(longProfile);
         if (!ProfileMatches(
                 longProfile,
-                width: 1920,
-                height: 1080,
-                aspectWidth: 16,
-                aspectHeight: 9,
+                width: portraitLongForm ? 1080 : 1920,
+                height: portraitLongForm ? 1920 : 1080,
+                aspectWidth: portraitLongForm ? 9 : 16,
+                aspectHeight: portraitLongForm ? 16 : 9,
                 subtitleBurnIn: true)
             || !ProfileMatches(
                 shortProfile,

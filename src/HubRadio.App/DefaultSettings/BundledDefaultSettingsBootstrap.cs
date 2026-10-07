@@ -100,7 +100,19 @@ internal sealed class BundledDefaultSettingsBootstrap
         DefaultSettingsSnapshot carried;
         try
         {
-            carried = currentProfile.CreateSnapshot(existing.Snapshot.Values);
+            // Keys the current profile adds (for example the 1.2.0 keys) start at their defaults.
+            var saved = existing.Snapshot.Values.ToDictionary(
+                static item => item.Key, static item => item.Value, StringComparer.Ordinal);
+            carried = currentProfile.CreateSnapshot(currentProfile.Definitions
+                .Select(definition => new DefaultSettingSelection(
+                    definition.Key,
+                    saved.TryGetValue(definition.Key, out DefaultSettingValue? value) ? value : definition.DefaultValue))
+                .ToArray());
+            if (existing.Snapshot.Values.Any(item =>
+                    !currentProfile.Definitions.Any(definition => definition.Key == item.Key)))
+            {
+                return existing;
+            }
         }
         catch (ArgumentException)
         {

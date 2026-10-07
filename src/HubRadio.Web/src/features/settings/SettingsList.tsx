@@ -14,7 +14,7 @@ export interface SettingsListProps {
 
 const pageSize = 6
 const groupNames: Readonly<Record<SettingsGroup, string>> = {
-  projectAndOutput: '案件と出力',
+  projectAndOutput: 'Projectと出力',
   editing: '編集',
   subtitlesAndGraphics: '字幕とグラフィック',
   audioAndAssets: '音声と素材',

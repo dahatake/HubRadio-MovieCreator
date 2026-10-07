@@ -20,7 +20,7 @@ const countKey = 'project.candidateLimit'
 const shortCountKey = 'project.verticalShortCandidateCount'
 const advancedKey = 'subtitles.platformUiMaskWarningRequired'
 const fileSha256 = 'd'.repeat(64)
-const groupNames = ['案件と出力', '編集', '字幕とグラフィック', '音声と素材', 'プライバシーと保存'] as const
+const groupNames = ['Projectと出力', '編集', '字幕とグラフィック', '音声と素材', 'プライバシーと保存'] as const
 const definitions: readonly SettingDefinition[] = [
   definition(titleKey, { displayName: 'タイトル', defaultValue: text('プロファイルのタイトル') }),
   definition(countKey, { displayName: '短尺候補数', defaultValue: integer('3') }),
@@ -65,6 +65,7 @@ describe('SettingsPanel UX-025', () => {
     expectTypeOf<SettingsPanelProps>().toEqualTypeOf<{
       readonly isActive?: boolean
       readonly activeProjectId?: string | null
+      readonly projectOpen?: boolean
       readonly onClose?: () => void
       readonly initialSettingKey?: string | null
       readonly onDirtyChange?: (dirty: boolean) => void
@@ -72,9 +73,15 @@ describe('SettingsPanel UX-025', () => {
     const h = workspaceClient()
     const markup = renderToStaticMarkup(<SettingsWorkspaceStateProvider createClient={h.createClient}><SettingsPanel /></SettingsWorkspaceStateProvider>)
     expect(markup).toContain('>設定</h2>')
-    expect(markup).toContain('新しい動画の既定値')
-    expect(markup).toContain('この動画')
-    expect(markup).not.toMatch(/settings-project-id|案件 ID|actorSid|sourcePath|<input/)
+    expect(markup).toContain('全体の初期値')
+    // FR-061.6: the project list edits only the overall defaults.
+    expect(markup).not.toContain('次に作成するJob')
+    const draftMarkup = renderToStaticMarkup(<SettingsWorkspaceStateProvider createClient={h.createClient}><SettingsPanel projectOpen /></SettingsWorkspaceStateProvider>)
+    expect(draftMarkup).toContain('全体の初期値')
+    expect(draftMarkup).toContain('次に作成するJob')
+    expect(draftMarkup).toContain('「次に作成するJob」は、「編集を開始」でProjectを作成すると選べます。作成前は全体の初期値を編集できます。')
+    // FR-062: the Workspace folder section is the only text input and is not a Project ID input.
+    expect(markup.replace(/<section class="settings-workspace-location"[\s\S]*?<\/section>/, '')).not.toMatch(/settings-project-id|Project ID|actorSid|sourcePath|<input/)
     expect(h.client.sendSettingsWorkspace).not.toHaveBeenCalled()
   })
 
@@ -103,20 +110,19 @@ describe('SettingsPanel UX-025', () => {
     expect(h.container.querySelector('input[value="' + projectId + '"]')).toBeNull()
   })
 
-  it('preserves a user-selected global scope on ordinary reopen for the same project', async () => {
+  // FR-061 AC-036
+  it('offers only 次に作成するJob in a created project and only 全体の初期値 in the project list (FR-061.6)', async () => {
     const h = await mount({ activeProjectId: projectId })
+    expect(h.lastRequest()).toMatchObject({ method: 'settings.read', params: { projectId } })
     await respond(h, projectSnapshot)
-    await click(h, '新しい動画の既定値')
+    expect(within(h.container).queryByRole('button', { name: '全体の初期値' })).toBeNull()
+    expect(h.button('次に作成するJob').getAttribute('aria-pressed')).toBe('true')
+    expect(h.container.querySelector('.settings-scope-note')?.textContent).toContain('編集中：次に作成するJob。保存した設定は、このProjectで次に作成するJobに使います。作成済みのJobの設定は変わりません。')
+    await h.render({ activeProjectId: null, projectOpen: false })
     await respond(h, globalSnapshot)
-    await selectRow(h, '短尺候補数')
-    await h.render({ isActive: false })
-    await h.render({ isActive: true })
-    expect(h.read().state.projectId).toBeNull()
-    expect(h.read().state.snapshot?.projectId).toBeNull()
-    expect(h.button('新しい動画の既定値').getAttribute('aria-pressed')).toBe('true')
-    expect(h.button('この動画').getAttribute('aria-pressed')).toBe('false')
-    expect(within(h.container).queryByRole('alertdialog')).toBeNull()
-    expect(editor(h).value).toBe('3')
+    expect(within(h.container).queryByRole('button', { name: '次に作成するJob' })).toBeNull()
+    expect(h.button('全体の初期値').getAttribute('aria-pressed')).toBe('true')
+    expect(h.container.querySelector('.settings-scope-note')?.textContent).toContain('編集中：全体の初期値。')
     expect(h.client.sendSettingsWorkspace.mock.calls.map(([request]) => request.method)).toEqual(['settings.read', 'settings.global.read'])
   })
 
@@ -133,11 +139,11 @@ describe('SettingsPanel UX-025', () => {
   it.each(['', 'not-a-project', '00000000-0000-0000-0000-000000000000', 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE'])('uses global for invalid context %j without sending or displaying that ID', async activeProjectId => {
     const h = await mount({ activeProjectId })
     expect(h.lastRequest()).toMatchObject({ method: 'settings.global.read', params: {} })
-    expect(h.button('この動画').disabled).toBe(true)
-    expect(h.container.querySelector('input')).toBeNull()
+    expect(h.button('次に作成するJob').disabled).toBe(true)
+    expect(Array.from(h.container.querySelectorAll('input')).filter(input => input.closest('.settings-workspace-location') === null)).toEqual([])
     if (activeProjectId.length > 0) expect(h.container.textContent).not.toContain(activeProjectId)
     await respond(h, globalSnapshot)
-    expect(h.button('新しい動画の既定値').getAttribute('aria-pressed')).toBe('true')
+    expect(h.button('全体の初期値').getAttribute('aria-pressed')).toBe('true')
   })
 
   it('does not loop on failure, timeout, error dismissal or unrelated rerenders', async () => {
@@ -195,7 +201,7 @@ describe('SettingsPanel UX-025', () => {
   // FR-050 AC-025.1, AC-025.2: only the changeable shipped keys are reachable; fixed keys and empty groups are not shown.
   it('reaches every changeable shipped key once and no fixed key through the visible groups', async () => {
     type InventoryEntry = Pick<SettingDefinition, 'key' | 'group' | 'displayName' | 'description' | 'isAdvanced'>
-    const profile = JSON.parse(readFileSync(resolve(process.cwd(), '../HubRadio.App/DefaultSettings/Profiles/1.1.0.json'), 'utf8')) as { settings: readonly InventoryEntry[] }
+    const profile = JSON.parse(readFileSync(resolve(process.cwd(), '../HubRadio.App/DefaultSettings/Profiles/1.2.0.json'), 'utf8')) as { settings: readonly InventoryEntry[] }
     const catalog = JSON.parse(readFileSync(resolve(process.cwd(), 'src/features/settings/settingEditorCatalog.json'), 'utf8')) as { fixed: Record<string, string>; editors: Record<string, unknown> }
     // Real shipped key inventory; deliberately synthetic values are not render evidence.
     const inventory = profile.settings.map(item => definition(item.key, {
@@ -204,10 +210,10 @@ describe('SettingsPanel UX-025', () => {
     const fixture: GlobalSettingsSnapshot = { ...globalSnapshot, definitionCount: inventory.length, definitions: inventory,
       initialValues: inventory.map(item => ({ key: item.key, value: item.defaultValue })),
       values: inventory.map(item => ({ key: item.key, value: item.defaultValue })) }
-    expect(inventory).toHaveLength(123)
+    expect(inventory).toHaveLength(127)
     const h = await mount()
     await respond(h, fixture)
-    expect(within(h.container).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['案件と出力', '編集', '字幕とグラフィック', '音声と素材'])
+    expect(within(h.container).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Projectと出力', '編集', '字幕とグラフィック', '音声と素材'])
     const visited: string[] = []
     for (const name of groupNames.filter(group => group !== 'プライバシーと保存')) {
       await selectGroup(h, name)
@@ -224,7 +230,7 @@ describe('SettingsPanel UX-025', () => {
         await click(h, '次のページ')
       } while (visited.length <= inventory.length)
     }
-    expect(visited).toHaveLength(22)
+    expect(visited).toHaveLength(26)
     expect([...visited].sort()).toEqual(Object.keys(catalog.editors).sort())
     expect(visited.filter(key => Object.hasOwn(catalog.fixed, key))).toEqual([])
     expect(h.client.sendSettingsWorkspace).toHaveBeenCalledOnce()
@@ -259,7 +265,7 @@ describe('SettingsPanel UX-025', () => {
     expect(h.container.textContent).toContain('該当する設定はありません')
     await click(h, '予定を確認')
     await selectGroup(h, '音声と素材')
-    await selectGroup(h, '案件と出力')
+    await selectGroup(h, 'Projectと出力')
     expect(editor(h).value).toBe('未保存タイトル')
     expect(h.read().state.draftValues).toEqual({ [titleKey]: text('未保存タイトル') })
     expect(h.client.sendSettingsWorkspace).toHaveBeenCalledOnce()
@@ -287,7 +293,7 @@ describe('SettingsPanel UX-025', () => {
     expect(editor(h).value).toBe('別項目の未保存値')
     const details = h.container.querySelector<HTMLDetailsElement>('.setting-inspector details')!
     await act(async () => { details.open = true })
-    expect(details.textContent).toContain(snapshot.projectId === null ? '復元先（プロファイル初期値）' : '復元先（案件開始時の初期値）')
+    expect(details.textContent).toContain(snapshot.projectId === null ? '復元先（プロファイル初期値）' : '復元先（Project開始時の初期値）')
     expect(details.textContent).toContain(snapshot.projectId === null ? 'プロファイルのタイトル' : 'この動画の初期タイトル')
     expect(details.textContent).toContain('プロファイル既定値')
     expect(details.textContent).not.toContain('productDecision')
@@ -303,7 +309,7 @@ describe('SettingsPanel UX-025', () => {
     await selectRow(h, '短尺候補数')
     await change(h, '4')
     await selectRow(h, 'タイトル')
-    await click(h, '案件開始時の値へ戻す')
+    await click(h, 'Project開始時の値へ戻す')
     expect(h.client.sendSettingsWorkspace).toHaveBeenCalledOnce()
     expect(h.dialog().textContent).toContain('他の項目の未保存値は保持')
     await click(h, '初期値へ戻す')
@@ -350,7 +356,7 @@ describe('SettingsPanel UX-025', () => {
     await respond(h, snapshot)
     await change(h, '未保存のまま保持')
     await click(h, '初期値へすべて戻す')
-    expect(h.dialog().textContent).toContain(snapshot.projectId === null ? 'プロファイル初期値' : '案件開始時の初期値')
+    expect(h.dialog().textContent).toContain(snapshot.projectId === null ? 'プロファイル初期値' : 'Project開始時の初期値')
     expect(document.activeElement).toBe(h.button('取消'))
     expect(h.client.sendSettingsWorkspace).toHaveBeenCalledOnce()
     await click(h, '取消')
@@ -381,25 +387,25 @@ describe('SettingsPanel UX-025', () => {
     await respond(h, globalSnapshot)
     await change(h, '未保存の既定値')
     await h.render({ activeProjectId: projectId })
-    expect(h.dialog().textContent).toContain('「この動画」へ切り替えます')
+    expect(h.dialog().textContent).toContain('「次に作成するJob」へ切り替えます')
     expect(h.read().state.projectId).toBeNull()
     expect(h.client.sendSettingsWorkspace).toHaveBeenCalledOnce()
     await click(h, '取消')
     await h.render({ onClose: () => undefined })
     expect(within(h.container).queryByRole('alertdialog')).toBeNull()
-    expect(h.button('新しい動画の既定値').getAttribute('aria-pressed')).toBe('true')
+    expect(h.button('全体の初期値').getAttribute('aria-pressed')).toBe('true')
     expect(editor(h).value).toBe('未保存の既定値')
-    await click(h, 'この動画')
+    await click(h, '次に作成するJob')
     await click(h, '未保存項目へ戻る')
     expect(document.activeElement).toBe(editor(h))
     expect(h.read().isDirty).toBe(true)
     expect(h.client.sendSettingsWorkspace).toHaveBeenCalledOnce()
-    await click(h, 'この動画')
+    await click(h, '次に作成するJob')
     await click(h, '変更を破棄して切り替える')
     expect(h.read().isDirty).toBe(false)
     expect(h.lastRequest()).toMatchObject({ method: 'settings.read', params: { projectId } })
     await respond(h, projectSnapshot)
-    await change(h, '案件側の編集')
+    await change(h, 'Project側の編集')
     await click(h, '保存')
     expect(h.lastRequest().params).toMatchObject({ projectId, expectedRevision: 7, expectedSnapshotDigest: projectSnapshot.snapshotDigest })
   })
@@ -416,8 +422,8 @@ describe('SettingsPanel UX-025', () => {
     expect(document.activeElement).toBe(outside)
     await h.render({ isActive: true })
     await click(h, '取消')
-    expect(h.container.textContent).toContain('切替前の動画の設定を保持しています')
-    expect(h.button('この動画').getAttribute('aria-pressed')).toBe('false')
+    expect(h.container.textContent).toContain('切替前のProjectの設定を保持しています')
+    expect(h.button('次に作成するJob').getAttribute('aria-pressed')).toBe('false')
     expect(h.button('初期値へすべて戻す').disabled).toBe(true)
     await click(h, '設定ファイル')
     expect(within(h.container).queryByRole('button', { name: 'setting.txtに保存' })).toBeNull()
@@ -483,12 +489,9 @@ describe('SettingsPanel UX-025', () => {
   it.each(targets)('keeps $scope drafts and dirty notification when returning without saving and reopening the same active project', async ({ snapshot }) => {
     const onClose = vi.fn<() => void>()
     const onDirtyChange = vi.fn<(dirty: boolean) => void>()
-    const h = await mount({ activeProjectId: projectId, onClose, onDirtyChange })
-    await respond(h, projectSnapshot)
-    if (snapshot.projectId === null) {
-      await click(h, '新しい動画の既定値')
-      await respond(h, globalSnapshot)
-    }
+    // FR-061.6: the overall defaults are edited from the project list, then the same project is reopened.
+    const h = await mount({ activeProjectId: snapshot.projectId === null ? null : projectId, onClose, onDirtyChange })
+    await respond(h, snapshot)
     await change(h, '保持する未保存タイトル')
     await selectRow(h, '短尺候補数')
     await change(h, '4')
@@ -509,7 +512,7 @@ describe('SettingsPanel UX-025', () => {
     expect(h.read().state).toBe(state)
     expect(h.read().isDirty).toBe(true)
     expect(onDirtyChange).toHaveBeenLastCalledWith(true)
-    await h.render({ isActive: true, activeProjectId: projectId })
+    await h.render({ isActive: true, activeProjectId: snapshot.projectId === null ? null : projectId })
     expect(within(h.container).queryByRole('alertdialog')).toBeNull()
     expect(h.read().state.projectId).toBe(snapshot.projectId)
     expect(editor(h).value).toBe('4')
@@ -648,18 +651,17 @@ describe('SettingsPanel UX-025', () => {
   })
 
   it.each([null, advancedKey])('reopens the same project from global for a warning after initial key %j', async initialSettingKey => {
-    const h = await mount({ activeProjectId: projectId, initialSettingKey })
-    await respond(h, projectSnapshot)
-    await click(h, '新しい動画の既定値')
+    // FR-061.6: global is reached from the project list; the warning then targets the project.
+    const h = await mount({ initialSettingKey })
     await respond(h, globalSnapshot)
-    await selectGroup(h, '案件と出力')
+    await selectGroup(h, 'Projectと出力')
     await h.render({ isActive: false })
-    await h.render({ isActive: true, initialSettingKey: advancedKey })
+    await h.render({ isActive: true, activeProjectId: projectId, initialSettingKey: advancedKey })
     expect(h.lastRequest()).toMatchObject({ method: 'settings.read', params: { projectId } })
     expect(h.read().state.snapshot).toBeNull()
     await respond(h, withValue(projectSnapshot, advancedKey, { kind: 'boolean', booleanValue: true }))
     expect(h.read().state.snapshot?.projectId).toBe(projectId)
-    expect(h.button('この動画').getAttribute('aria-pressed')).toBe('true')
+    expect(h.button('次に作成するJob').getAttribute('aria-pressed')).toBe('true')
     expect(within(h.container).getByRole('tab', { name: '字幕とグラフィック' }).getAttribute('aria-selected')).toBe('true')
     expect((within(h.container).getByRole('checkbox', { name: '詳細設定を表示' }) as HTMLInputElement).checked).toBe(true)
     expect(editor(h).value).toBe('true')
@@ -667,23 +669,21 @@ describe('SettingsPanel UX-025', () => {
     await h.render({ onClose: () => undefined })
     expect(h.createClient).toHaveBeenCalledOnce()
     expect(h.client.sendSettingsWorkspace.mock.calls.map(([request]) => request.method)).toEqual([
-      'settings.read', 'settings.global.read', 'settings.read',
+      'settings.global.read', 'settings.read',
     ])
   })
 
   it('confirms a warning reopen from dirty global and keeps the draft after cancellation', async () => {
-    const h = await mount({ activeProjectId: projectId })
-    await respond(h, projectSnapshot)
-    await click(h, '新しい動画の既定値')
+    const h = await mount()
     await respond(h, globalSnapshot)
     await change(h, '未保存の既定値')
     const drafts = h.read().state.draftValues
     await h.render({ isActive: false })
-    await h.render({ isActive: true, initialSettingKey: advancedKey })
-    expect(h.dialog().textContent).toContain('「この動画」へ切り替えます')
+    await h.render({ isActive: true, activeProjectId: projectId, initialSettingKey: advancedKey })
+    expect(h.dialog().textContent).toContain('「次に作成するJob」へ切り替えます')
     expect(h.read().state.projectId).toBeNull()
     expect(h.read().state.draftValues).toBe(drafts)
-    expect(h.client.sendSettingsWorkspace).toHaveBeenCalledTimes(2)
+    expect(h.client.sendSettingsWorkspace).toHaveBeenCalledTimes(1)
     await click(h, '取消')
     await h.render({ onClose: () => undefined })
     expect(within(h.container).queryByRole('alertdialog')).toBeNull()
@@ -692,9 +692,9 @@ describe('SettingsPanel UX-025', () => {
     await change(h, '取消後も編集中の既定値')
     await h.render({ onDirtyChange: () => undefined })
     expect(within(h.container).queryByRole('alertdialog')).toBeNull()
-    expect(h.button('新しい動画の既定値').getAttribute('aria-pressed')).toBe('true')
+    expect(h.button('全体の初期値').getAttribute('aria-pressed')).toBe('true')
     expect(h.read().state.draftValues).toEqual({ [titleKey]: text('取消後も編集中の既定値') })
-    expect(h.client.sendSettingsWorkspace).toHaveBeenCalledTimes(2)
+    expect(h.client.sendSettingsWorkspace).toHaveBeenCalledTimes(1)
     await h.render({ isActive: false })
     await h.render({ isActive: true })
     await click(h, '変更を破棄して切り替える')
@@ -704,22 +704,20 @@ describe('SettingsPanel UX-025', () => {
     expect(within(h.container).getByRole('tab', { name: '字幕とグラフィック' }).getAttribute('aria-selected')).toBe('true')
     expect(within(h.container).queryByRole('alertdialog')).toBeNull()
     expect(h.client.sendSettingsWorkspace.mock.calls.map(([request]) => request.method)).toEqual([
-      'settings.read', 'settings.global.read', 'settings.read',
+      'settings.global.read', 'settings.read',
     ])
   })
 
   it('follows changed warning keys without duplicating an in-flight read or mutation', async () => {
-    const h = await mount({ activeProjectId: projectId })
-    await respond(h, projectSnapshot)
-    await click(h, '新しい動画の既定値')
+    const h = await mount()
     await respond(h, globalSnapshot)
-    await h.render({ initialSettingKey: countKey })
+    await h.render({ activeProjectId: projectId, initialSettingKey: countKey })
     const read = h.lastRequest()
     expect(read).toMatchObject({ method: 'settings.read', params: { projectId } })
     await h.render({ initialSettingKey: advancedKey })
     await h.render({ initialSettingKey: countKey })
     expect(h.read().state.pendingRequest?.requestId).toBe(read.requestId)
-    expect(h.client.sendSettingsWorkspace).toHaveBeenCalledTimes(3)
+    expect(h.client.sendSettingsWorkspace).toHaveBeenCalledTimes(2)
     await respond(h, projectSnapshot)
     expect(editor(h).value).toBe('3')
     await change(h, '4')
@@ -729,7 +727,7 @@ describe('SettingsPanel UX-025', () => {
     await h.render({ initialSettingKey: advancedKey })
     await h.render({ initialSettingKey: titleKey })
     expect(h.read().state.pendingRequest?.requestId).toBe(write.requestId)
-    expect(h.client.sendSettingsWorkspace).toHaveBeenCalledTimes(4)
+    expect(h.client.sendSettingsWorkspace).toHaveBeenCalledTimes(3)
     await act(async () => { h.emit(available(write, withValue(projectSnapshot, countKey, integer('4')))) })
     expect(editor(h).value).toBe('保存済みタイトル')
     expect(h.read().isDirty).toBe(false)
@@ -737,18 +735,16 @@ describe('SettingsPanel UX-025', () => {
     expect(within(h.container).getByRole('tab', { name: '字幕とグラフィック' }).getAttribute('aria-selected')).toBe('true')
     expect(h.client.abandonSettingsWorkspaceRequest).not.toHaveBeenCalled()
     expect(h.client.sendSettingsWorkspace.mock.calls.map(([request]) => request.method)).toEqual([
-      'settings.read', 'settings.global.read', 'settings.read', 'settings.update',
+      'settings.global.read', 'settings.read', 'settings.update',
     ])
   })
 
   it.each(['unavailable', 'timeout'] as const)('does not retry a warning read after %s, dismissal or unrelated rerenders', async error => {
     vi.useFakeTimers()
-    const h = await mount({ activeProjectId: projectId })
-    await respond(h, projectSnapshot)
-    await click(h, '新しい動画の既定値')
+    const h = await mount()
     await respond(h, globalSnapshot)
     await h.render({ isActive: false })
-    await h.render({ isActive: true, initialSettingKey: advancedKey })
+    await h.render({ isActive: true, activeProjectId: projectId, initialSettingKey: advancedKey })
     expect(h.lastRequest()).toMatchObject({ method: 'settings.read', params: { projectId } })
     await act(async () => {
       if (error === 'timeout') vi.advanceTimersByTime(5_000)
@@ -759,11 +755,11 @@ describe('SettingsPanel UX-025', () => {
     await h.render({ onClose: () => undefined })
     await act(async () => { vi.advanceTimersByTime(20_000) })
     expect(h.read().state.snapshot).toBeNull()
-    expect(h.client.sendSettingsWorkspace).toHaveBeenCalledTimes(3)
+    expect(h.client.sendSettingsWorkspace).toHaveBeenCalledTimes(2)
     await click(h, '設定を再読み込み')
     await respond(h, projectSnapshot)
     expect(within(h.container).getByRole('tab', { name: '字幕とグラフィック' }).getAttribute('aria-selected')).toBe('true')
-    expect(h.client.sendSettingsWorkspace).toHaveBeenCalledTimes(4)
+    expect(h.client.sendSettingsWorkspace).toHaveBeenCalledTimes(3)
   })
 
   it('keeps long values and initial evidence readable without executing markup or closing the page', async () => {
@@ -804,7 +800,7 @@ describe('SettingsPanel UX-025', () => {
     expect(h.button('保存').disabled).toBe(true)
     expect(within(h.container).getByRole('alert').textContent).toContain('64 ビット')
     await selectGroup(h, '編集')
-    await selectGroup(h, '案件と出力')
+    await selectGroup(h, 'Projectと出力')
     expect(editor(h).value).toBe('9223372036854775808')
     expect(h.client.sendSettingsWorkspace).toHaveBeenCalledOnce()
   })
@@ -949,7 +945,12 @@ async function mount(initialProps: SettingsPanelProps = {}, strict = false) {
   return {
     ...client, container, render,
     read(): SettingsWorkspaceContextValue { if (current === undefined) throw new Error('Settings observer is not mounted.'); return current },
-    button(name: string): HTMLButtonElement { return within(container).getByRole('button', { name }) as HTMLButtonElement },
+    // FR-062: the Workspace folder section has its own 保存 / 初期値に戻す buttons.
+    button(name: string): HTMLButtonElement {
+      const matches = within(container).getAllByRole('button', { name }).filter(element => element.closest('.settings-workspace-location') === null)
+      if (matches.length !== 1) throw new Error(`Expected one "${name}" button outside the workspace location section, found ${matches.length}.`)
+      return matches[0] as HTMLButtonElement
+    },
     dialog(): HTMLElement { return within(container).getByRole('alertdialog') },
   }
 }

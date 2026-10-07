@@ -86,7 +86,7 @@ internal sealed record SourceOnlyApplicationResources(
             Path.Combine(root, "ModelCatalog", "catalog.json"),
             Path.Combine(root, "ModelCatalog"),
             profilesDirectory,
-            Path.Combine(defaultSettingsProfilesDirectory, "1.1.0.json"),
+            Path.Combine(defaultSettingsProfilesDirectory, "1.2.0.json"),
             Path.Combine(root, "Music"),
             typeof(SourceOnlyApplicationRuntime).Assembly.GetName().Version!.ToString(), PackageRoot: root);
         // Deliberately path-only: read Fonts/font-manifest.json and build evidence
@@ -405,6 +405,35 @@ internal sealed class SourceOnlyApplicationRuntime : ISourceOnlyProjectCoordinat
             operations.Add(selection);
             _ = ObserveOperationAsync(selection);
             return selection;
+        }
+    }
+
+    Task<bool> ISourceOnlyProjectCoordinator.EnsurePosterAsync(EntityId<ProjectCreationDraftIdTag> draftId,
+        CancellationToken cancellationToken) =>
+        // FR-053: without a ready pipeline there is no verified ffmpeg; the list then shows "サムネイルなし".
+        RunTracked(coordinator => coordinator.EnsurePosterAsync(draftId, cancellationToken), false);
+
+    Task<SourceMediaFacts?> ISourceOnlyProjectCoordinator.ProbeSourceAsync(string sourcePath, CancellationToken cancellationToken) =>
+        RunTracked(coordinator => coordinator.ProbeSourceAsync(sourcePath, cancellationToken), null);
+
+    /// <summary>
+    /// Takes only the session under the gate, runs the work on the thread pool outside it, and
+    /// registers it so disposal waits for it, like a captured selection.
+    /// </summary>
+    private Task<T> RunTracked<T>(Func<ISourceOnlyProjectCoordinator, Task<T>> work, T unavailable)
+    {
+        lock (gate)
+        {
+            if (session is null || lifetime.IsCancellationRequested)
+            {
+                return Task.FromResult(unavailable);
+            }
+
+            ISourceOnlyProjectCoordinator coordinator = session.Coordinator;
+            Task<T> operation = Task.Run(() => work(coordinator), CancellationToken.None);
+            operations.Add(operation);
+            _ = ObserveOperationAsync(operation);
+            return operation;
         }
     }
 

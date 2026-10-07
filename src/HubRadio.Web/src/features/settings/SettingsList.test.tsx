@@ -11,7 +11,7 @@ import { SettingsList, type SettingsListProps } from './SettingsList'
 import type { SettingDefinition, SettingSelection, SettingValue, SettingsGroup } from './settingsProtocol'
 
 const groups = [
-  ['projectAndOutput', '案件と出力'],
+  ['projectAndOutput', 'Projectと出力'],
   ['editing', '編集'],
   ['subtitlesAndGraphics', '字幕とグラフィック'],
   ['audioAndAssets', '音声と素材'],
@@ -182,7 +182,7 @@ describe('SettingsList', () => {
     await click(next)
     await click(screen.getByRole('button', { name: '編集' }))
     expect(screen.getByRole('status').textContent).toBe('0件 · 0 / 0ページ')
-    await click(screen.getByRole('button', { name: '案件と出力' }))
+    await click(screen.getByRole('button', { name: 'Projectと出力' }))
     expect(screen.getByRole('status').textContent).toBe('1–6 / 13件 · 1 / 3ページ')
   })
 
@@ -239,7 +239,7 @@ describe('SettingsList', () => {
     expect(selection.getByText(longName).textContent).toBe(longName)
     await click(selection.getByRole('button', { name: '選択項目を表示' }))
     expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe('')
-    expect(screen.getByRole('button', { name: '案件と出力', pressed: true })).not.toBeNull()
+    expect(screen.getByRole('button', { name: 'Projectと出力', pressed: true })).not.toBeNull()
     expect(screen.getByRole('button', { name: longName, pressed: true })).not.toBeNull()
     expect(document.activeElement).toBe(selection.getByRole('button', { name: '選択項目を表示' }))
     expect(onSelect).toHaveBeenCalledTimes(1)

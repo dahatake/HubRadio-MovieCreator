@@ -39,7 +39,7 @@ describe('ProjectListCards', () => {
     renderCards([])
 
     expect(container.querySelector('.project-list-cards')).not.toBeNull()
-    expect(within(container).getByRole('status').textContent).toContain('案件はまだありません')
+    expect(within(container).getByRole('status').textContent).toContain('Projectはまだありません')
     expect(within(container).queryAllByRole('button')).toHaveLength(0)
     expect(within(container).queryByRole('list')).toBeNull()
     expect(within(container).queryByRole('navigation')).toBeNull()
@@ -53,7 +53,7 @@ describe('ProjectListCards', () => {
     expect(pageStatus().textContent).toBe(`1 / 1 ページ（1–${count} / ${count} 件）`)
     expect(pageButton('前のページ').hasAttribute('disabled')).toBe(true)
     expect(pageButton('次のページ').hasAttribute('disabled')).toBe(true)
-    expect(openButton('案件 1').hasAttribute('disabled')).toBe(false)
+    expect(openButton('Project 1').hasAttribute('disabled')).toBe(false)
     expect(container.querySelector('table, .table-scroll')).toBeNull()
   })
 
@@ -95,7 +95,7 @@ describe('ProjectListCards', () => {
   })
 
   it('keeps a long name intact in the title and accessible name instead of slicing text', () => {
-    const name = `${'とても長い案件名・'.repeat(80)}最後まで読める名前`
+    const name = `${'とても長いProject名・'.repeat(80)}最後まで読める名前`
     renderCards([projectListItem(0, { contentName: name })])
 
     const button = openButton(name)
@@ -131,8 +131,8 @@ describe('ProjectListCards', () => {
     const user = userEvent.setup({ document })
 
     await act(async () => user.tab())
-    expect(document.activeElement).toBe(openButton('案件 1'))
-    expect(openButton('案件 1').getAttribute('type')).toBe('button')
+    expect(document.activeElement).toBe(openButton('Project 1'))
+    expect(openButton('Project 1').getAttribute('type')).toBe('button')
     await act(async () => user.keyboard(key))
 
     expect(onOpen).toHaveBeenCalledExactlyOnceWith(project.draftId)
@@ -152,24 +152,24 @@ describe('ProjectListCards', () => {
     await act(async () => user.keyboard('[Enter]'))
     expect(pageStatus().textContent).toBe('2 / 3 ページ（7–12 / 13 件）')
     expect(visibleNames()).toEqual(projects.slice(6, 12).map((project) => project.contentName))
-    expect(document.activeElement).toBe(openButton('案件 7'))
+    expect(document.activeElement).toBe(openButton('Project 7'))
     seenNames.push(...visibleNames())
 
     act(() => pageButton('次のページ').focus())
     await act(async () => user.keyboard('[Space]'))
     expect(pageStatus().textContent).toBe('3 / 3 ページ（13–13 / 13 件）')
-    expect(visibleNames()).toEqual(['案件 13'])
-    expect(document.activeElement).toBe(openButton('案件 13'))
+    expect(visibleNames()).toEqual(['Project 13'])
+    expect(document.activeElement).toBe(openButton('Project 13'))
     expect(pageButton('次のページ').hasAttribute('disabled')).toBe(true)
     seenNames.push(...visibleNames())
     expect(seenNames).toEqual(projects.map((project) => project.contentName))
 
     act(() => pageButton('前のページ').focus())
     await act(async () => user.keyboard('[Enter]'))
-    expect(document.activeElement).toBe(openButton('案件 7'))
+    expect(document.activeElement).toBe(openButton('Project 7'))
     act(() => pageButton('前のページ').focus())
     await act(async () => user.keyboard('[Space]'))
-    expect(document.activeElement).toBe(openButton('案件 1'))
+    expect(document.activeElement).toBe(openButton('Project 1'))
     expect(pageButton('前のページ').hasAttribute('disabled')).toBe(true)
     expect(onOpen).not.toHaveBeenCalled()
   })
@@ -184,7 +184,7 @@ describe('ProjectListCards', () => {
 
     renderCards(projects.slice(0, 8), false, onOpen)
     expect(pageStatus().textContent).toBe('2 / 2 ページ（7–8 / 8 件）')
-    expect(visibleNames()).toEqual(['案件 7', '案件 8'])
+    expect(visibleNames()).toEqual(['Project 7', 'Project 8'])
     expect(pageButton('次のページ').hasAttribute('disabled')).toBe(true)
 
     renderCards(projects, false, onOpen)
@@ -195,7 +195,7 @@ describe('ProjectListCards', () => {
     expect(within(container).queryByRole('navigation')).toBeNull()
     renderCards(projects, false, onOpen)
     expect(pageStatus().textContent).toBe('1 / 3 ページ（1–6 / 13 件）')
-    expect(visibleNames()[0]).toBe('案件 1')
+    expect(visibleNames()[0]).toBe('Project 1')
     expect(onOpen).not.toHaveBeenCalled()
   })
 
@@ -204,10 +204,10 @@ describe('ProjectListCards', () => {
     const onOpen = renderCards(projects)
     const user = userEvent.setup({ document })
     await act(async () => user.click(pageButton('次のページ')))
-    const focusedButton = openButton('案件 7')
+    const focusedButton = openButton('Project 7')
     expect(document.activeElement).toBe(focusedButton)
 
-    const renamed = { ...projects[6]!, contentName: '更新した案件名' }
+    const renamed = { ...projects[6]!, contentName: '更新したProject名' }
     renderCards([
       ...projects.slice(0, 6),
       projects[7]!,
@@ -216,9 +216,9 @@ describe('ProjectListCards', () => {
     ], false, onOpen)
 
     expect(pageStatus().textContent).toContain('2 / 3 ページ')
-    expect(openButton('更新した案件名')).toBe(focusedButton)
+    expect(openButton('更新したProject名')).toBe(focusedButton)
     expect(document.activeElement).toBe(focusedButton)
-    expect(focusedButton.getAttribute('title')).toBe('更新した案件名')
+    expect(focusedButton.getAttribute('title')).toBe('更新したProject名')
     await act(async () => user.keyboard('[Enter]'))
     expect(onOpen).toHaveBeenCalledExactlyOnceWith(renamed.draftId)
   })
@@ -241,10 +241,10 @@ describe('ProjectListCards', () => {
 
     renderCards(projects, false, onOpen)
     expect(pageStatus().textContent).toContain('2 / 3 ページ')
-    expect(openButton('案件 7').hasAttribute('disabled')).toBe(false)
+    expect(openButton('Project 7').hasAttribute('disabled')).toBe(false)
     expect(pageButton('前のページ').hasAttribute('disabled')).toBe(false)
     expect(pageButton('次のページ').hasAttribute('disabled')).toBe(false)
-    await act(async () => user.click(openButton('案件 7')))
+    await act(async () => user.click(openButton('Project 7')))
     expect(onOpen).toHaveBeenCalledExactlyOnceWith(projects[6]!.draftId)
   })
 
@@ -257,12 +257,12 @@ describe('ProjectListCards', () => {
     renderCards(projects, false, undefined, onDelete)
     expect(within(container).getAllByRole('button', { name: /を削除$/ })).toHaveLength(3)
     const user = userEvent.setup({ document })
-    await act(async () => user.click(within(container).getByRole('button', { name: '案件 2を削除' })))
-    expect(onDelete).toHaveBeenCalledExactlyOnceWith(projects[1]!.draftId, '案件 2')
+    await act(async () => user.click(within(container).getByRole('button', { name: 'Project 2を削除' })))
+    expect(onDelete).toHaveBeenCalledExactlyOnceWith(projects[1]!.draftId, 'Project 2')
 
     onDelete.mockClear()
     renderCards(projects, true, undefined, onDelete)
-    const disabledDelete = within(container).getByRole('button', { name: '案件 2を削除' })
+    const disabledDelete = within(container).getByRole('button', { name: 'Project 2を削除' })
     expect(disabledDelete.hasAttribute('disabled')).toBe(true)
     await act(async () => user.click(disabledDelete))
     expect(onDelete).not.toHaveBeenCalled()
@@ -294,7 +294,7 @@ describe('ProjectListCards', () => {
     expect(images[0]!.getAttribute('src')).toBe(
       `https://player-media.appassets.example/source-only/${finalizedProjectId}/${thumbnail.executionId}/${thumbnail.artifactId}/${thumbnail.contentDigest}`,
     )
-    expect(images[0]!.getAttribute('alt')).toBe('案件 1のサムネイル')
+    expect(images[0]!.getAttribute('alt')).toBe('Project 1のサムネイル')
     expect(container.querySelectorAll('.project-card-thumbnail-empty')).toHaveLength(2)
     expect(container.querySelectorAll('.project-card-thumbnail-empty')[0]!.textContent).toBe('サムネイルなし')
   })
@@ -316,8 +316,45 @@ describe('ProjectListCards', () => {
 
     expect(container.querySelector('img')).toBeNull()
     expect(container.querySelector('.project-card-thumbnail-empty')).not.toBeNull()
-    expect(openButton('案件 1').hasAttribute('disabled')).toBe(false)
+    expect(openButton('Project 1').hasAttribute('disabled')).toBe(false)
     expect(onOpen).not.toHaveBeenCalled()
+  })
+
+  // FR-053 AC-028.5: a draft or a Project without a generated thumbnail shows the source video's poster frame.
+  it('shows the poster frame when there is no generated thumbnail, also for drafts', () => {
+    const poster = { contentDigest: 'c'.repeat(64) }
+    const items = [projectListItem(0, { poster }), projectListItem(1, { poster: null })]
+    renderCards(items)
+
+    const images = container.querySelectorAll('img')
+    expect(images).toHaveLength(1)
+    expect(images[0]!.getAttribute('src')).toBe(
+      `https://player-media.appassets.example/source-only/poster/${items[0]!.draftId}/${poster.contentDigest}`,
+    )
+    expect(images[0]!.getAttribute('alt')).toBe('Project 1のサムネイル')
+    expect(container.querySelectorAll('.project-card-thumbnail-empty')).toHaveLength(1)
+  })
+
+  // FR-053 AC-028.5: the generated thumbnail wins; when it cannot be loaded the poster is tried, then the placeholder.
+  it('falls back from the generated thumbnail to the poster and then to the placeholder', () => {
+    const thumbnail = {
+      executionId: '11111111-1111-4111-8111-111111111111',
+      artifactId: '22222222-2222-4222-8222-222222222222',
+      contentDigest: 'd'.repeat(64),
+    }
+    const poster = { contentDigest: 'e'.repeat(64) }
+    renderCards([projectListItem(0, { state: 'finalized', projectId: finalizedProjectId, thumbnail, poster })])
+
+    expect(container.querySelector('img')!.getAttribute('src')).toContain('/source-only/' + finalizedProjectId)
+    act(() => {
+      container.querySelector('img')!.dispatchEvent(new Event('error'))
+    })
+    expect(container.querySelector('img')!.getAttribute('src')).toContain('/source-only/poster/')
+    act(() => {
+      container.querySelector('img')!.dispatchEvent(new Event('error'))
+    })
+    expect(container.querySelector('img')).toBeNull()
+    expect(container.querySelector('.project-card-thumbnail-empty')!.textContent).toBe('サムネイルなし')
   })
 })
 
@@ -336,7 +373,7 @@ function renderCards(
 }
 
 function projectList() {
-  return within(container).getByRole('list', { name: '閲覧を許可された案件の一覧' })
+  return within(container).getByRole('list', { name: '閲覧を許可されたProjectの一覧' })
 }
 
 function openButton(name: string) {
@@ -364,7 +401,7 @@ function projectListItem(index: number, overrides: Partial<ProjectListItem> = {}
     draftId: `00000000-0000-4000-8000-${(index + 1).toString().padStart(12, '0')}`,
     projectId: null,
     state: 'draft',
-    contentName: `案件 ${index + 1}`,
+    contentName: `Project ${index + 1}`,
     episodeNumber: null,
     sourceStatus: 'available',
     owner: null,

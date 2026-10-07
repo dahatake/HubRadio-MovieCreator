@@ -200,6 +200,9 @@ public sealed class StandardRenderGraphOutput
     public IReadOnlyList<FfmpegMusicBinding> MusicBindings { get; }
     public IReadOnlyList<StandardMusicRenderEvidence> MusicEvidence { get; }
     internal SubtitleEditProjectionEvidence? SubtitleProjection { get; init; }
+
+    /// <summary>FR-060: the sound effects this output plays (empty when disabled or before profile 1.2.0).</summary>
+    public IReadOnlyList<StandardSoundEffectCue> SoundEffectCues { get; init; } = [];
 }
 
 public enum StandardGenerationFailureReason
@@ -392,16 +395,26 @@ public static class StandardRenderGraphFactory
 
         var subtitleFiles = new List<StandardSubtitleRenderFile>();
         var exportCues = new List<SubtitleFileCue>();
-        IReadOnlyList<StandardGraphicRenderFile> graphicFiles = StandardMetadataGraphics.Create(plan,
-            shortForm, visual!, profile, cursor, timeline.Entries[0].OutputRange.Duration, font, configuration);
-        inputs.AddRange(graphicFiles.Select(static file => file.Input));
         OutputQcSubtitleEvidence? subtitleEvidence = null;
         SubtitleDisplayResult display = ValidateSubtitles(plan, version, timeline, layout, profile, subtitles, font, shortFormId);
+        var cueTexts = new List<StandardDisplayedCueText>();
         foreach (SubtitleDisplayedCue displayed in display.DisplayedCues)
         {
             SubtitleCueRevision revision = subtitles.Revisions.Single(item => item.Snapshot.Cue.Id == displayed.Cue.Id);
-            exportCues.Add(SubtitleDisplayMapper.MapForExport(revision.Snapshot, displayed));
+            SubtitleFileCue exported = SubtitleDisplayMapper.MapForExport(revision.Snapshot, displayed);
+            exportCues.Add(exported);
+            cueTexts.Add(new StandardDisplayedCueText(exported.Cue.Range, exported.Text, revision.Snapshot.TextOrigin));
         }
+
+        // FR-059 / FR-060: emphasis captions and sound effects follow the accepted settings and the cues
+        // this output actually displays; settings without the 1.2.0 keys produce neither.
+        IReadOnlyList<StandardEmphasisTelop> telops = StandardEmphasisTelops.Select(cueTexts,
+            configuration?.EmphasisTelopAmount, cursor);
+        IReadOnlyList<StandardSoundEffectCue> soundEffects = StandardEmphasisTelops.PlanSoundEffects(
+            configuration?.SoundEffectsEnabled == true, cueTexts, telops, cursor);
+        IReadOnlyList<StandardGraphicRenderFile> graphicFiles = StandardMetadataGraphics.Create(plan,
+            shortForm, visual!, profile, cursor, timeline.Entries[0].OutputRange.Duration, font, configuration, telops);
+        inputs.AddRange(graphicFiles.Select(static file => file.Input));
 
         if (burnedIn)
         {
@@ -484,6 +497,7 @@ public static class StandardRenderGraphFactory
             musicEvidence: soundtrack.Select(static item => item.Evidence).ToArray())
         {
             SubtitleProjection = subtitles.Projection,
+            SoundEffectCues = soundEffects,
         };
     }
 

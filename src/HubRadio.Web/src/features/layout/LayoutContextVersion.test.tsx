@@ -457,7 +457,8 @@ describe('LayoutPanel and provider exact version context', () => {
     complete(createSubtitleOnlyLayoutResponseValue(request(0).requestId, landscape))
     expect(container.querySelector('.manual-layout-form, .keyframe-form')).toBeNull()
     expect(container.querySelector('[name="subtitle-text"]')).not.toBeNull()
-    expect(container.textContent).toContain('画角・手動レイアウト・Keyframe は編集できません')
+    // FR-052: the subtitle-only notice is shown in plain language.
+    expect(container.textContent).toContain('映像の画角や配置は変更できません')
     const svg = element<SVGElement>('.layout-preview svg')
     expect(svg.getAttribute('data-aspect')).toBe(landscape ? '16:9' : '9:16')
     expect(svg.style.aspectRatio).toBe(landscape ? '1920 / 1080' : '1080 / 1920')

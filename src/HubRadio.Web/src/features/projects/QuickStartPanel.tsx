@@ -64,9 +64,9 @@ export function QuickStartPanel({
         <div>
           <p className="section-kicker">Quick start</p>
           <h2 id="quick-start-title" ref={headingRef} tabIndex={-1}>
-            {draft.isFinalized ? '案件の内容' : 'かんたん編集'}
+            {draft.isFinalized ? 'Projectの内容' : 'かんたん編集'}
           </h2>
-          {!draft.isFinalized && <p>一回の確認で案件を作成します。</p>}
+          {!draft.isFinalized && <p>一回の確認でProjectを作成します。</p>}
         </div>
         <span className={`state-badge ${draft.isFinalized ? 'finalized' : 'draft'}`}>
           {draft.isFinalized ? '作成済み' : '確認待ち'}
@@ -105,7 +105,7 @@ export function QuickStartPanel({
       <p className="project-status-note">
         公開範囲は「社内限定」で固定されており、変更できません（外部公開は許可されません）。
         {draft.isFinalized
-          ? '案件は作成済みです。作成済みの案件を「確認待ち」に戻すことはできません。'
+          ? 'Projectは作成済みです。作成済みのProjectを「確認待ち」に戻すことはできません。'
           : '「確認待ち」は、「編集を開始」を押すと「作成済み」に変わります。'}
       </p>
 
@@ -117,12 +117,31 @@ export function QuickStartPanel({
 
       <SettingsOutcomePreview mode="sourceOnly" sourceOnly={sourceOnly} />
 
+      {draft.autoSettings != null && (
+        <section className="quick-start-auto-settings" aria-labelledby="quick-start-auto-settings-title">
+          <h3 id="quick-start-auto-settings-title">動画に合わせて自動で設定した項目</h3>
+          {draft.autoSettings.length === 0 ? (
+            <p>この動画では、標準の設定のままで作成します（変更した設定はありません）。</p>
+          ) : (
+            <ul>
+              {draft.autoSettings.map(item => (
+                <li key={item.key} data-setting-key={item.key}>
+                  <strong>{item.label}: {item.valueText}</strong>
+                  <span>{item.reason}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="field-help">
+            ショート動画で一般的に効果があるとされる作り方を、元動画の長さと縦横の向きに合わせて当てはめました。値は設定画面の「次に作成するJob」でいつでも変更できます。
+          </p>
+        </section>
+      )}
+
       <details className="completion-summary">
         <summary id="quick-start-summary-title">適用する既定設定</summary>
         <dl className="project-card-metadata quick-start-provenance">
           <SummaryItem term="設定プロファイル版" value={sourceOnly.profileVersion} />
-          <SummaryItem term="設定プロファイルdigest" value={sourceOnly.profileDigest} />
-          <SummaryItem term="設定snapshot digest" value={sourceOnly.settingsSnapshotDigest} />
           <SummaryItem term="開始前の警告" value={`${warningCount} 件`} />
         </dl>
       </details>
@@ -152,12 +171,12 @@ export function QuickStartPanel({
       <p className="operation-status" role="status" aria-live="polite">
         {pending === null
           ? draft.isFinalized
-            ? '案件を作成しました。自動編集画面で処理状況を確認できます。'
+            ? 'Projectを作成しました。「ジョブの状態の確認」画面で処理状況を確認できます。'
             : canStart
-              ? 'この内容で案件を作成できます。'
+              ? 'この内容でProjectを作成できます。'
               : sourceStatus !== 'available'
                 ? '元動画の再選択を待っています。'
-                : '案件の作成に必要な情報を確認してください。'
+                : 'Projectの作成に必要な情報を確認してください。'
           : '操作を処理しています。'}
       </p>
       {pending !== null && (

@@ -270,6 +270,18 @@ internal sealed class ProjectBridgeHandler
                         writer.WriteNull("thumbnail");
                     }
 
+                    // FR-053: the poster frame is a fallback picture; digest only, never a path or bytes.
+                    if (item.PosterDigest is { } posterDigest)
+                    {
+                        writer.WriteStartObject("poster");
+                        writer.WriteString("contentDigest", posterDigest);
+                        writer.WriteEndObject();
+                    }
+                    else
+                    {
+                        writer.WriteNull("poster");
+                    }
+
                     writer.WriteEndObject();
                 }
 
@@ -378,6 +390,27 @@ internal sealed class ProjectBridgeHandler
 
                     writer.WriteEndArray();
                     writer.WriteEndObject();
+                }
+
+                // FR-054: what the built-in preset set for this Project (labels and reasons only).
+                if (draft.AutoSettings is null)
+                {
+                    writer.WriteNull("autoSettings");
+                }
+                else
+                {
+                    writer.WriteStartArray("autoSettings");
+                    foreach (AutoSettingNote note in draft.AutoSettings)
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString("key", note.Key);
+                        writer.WriteString("label", note.Label);
+                        writer.WriteString("valueText", note.ValueText);
+                        writer.WriteString("reason", note.Reason);
+                        writer.WriteEndObject();
+                    }
+
+                    writer.WriteEndArray();
                 }
 
                 writer.WriteEndObject();

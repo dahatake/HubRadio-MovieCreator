@@ -393,12 +393,23 @@ describe('DeliveryPanel workflow context', () => {
     const digests = new Set(JSON.stringify(parsed).match(/[0-9a-f]{64}/g) ?? [])
     expect(digests.size).toBeGreaterThan(9)
     for (const digest of digests) {
-      expect(details.textContent).toContain(digest)
       expect(details.textContent).not.toContain(`${digest.slice(0, 12)}…`)
       expect(overview.textContent).not.toContain(digest)
     }
-    expect(details.textContent).toContain(deliveryApprovalId)
-    expect(details.textContent).toContain(deliverySourceSpanId)
+    // FR-052: inside the workflow the pinned identity, QC and trace evidence fields hide IDs and full digests;
+    // the details summarise the saved video in plain language instead.
+    expect(details.textContent).toContain('保存した動画の記録')
+    for (const hidden of [
+      deliveryVersionDigest,
+      deliveryProfileDigest,
+      deliveryEvidenceDigest,
+      deliveryUsedSourceSpansDigest,
+      deliveryApprovalEvidenceDigest,
+    ]) {
+      expect(details.textContent).not.toContain(hidden)
+    }
+    expect(details.textContent).not.toContain(deliveryVersionId)
+    expect(details.textContent).not.toContain(deliverySourceSpanId)
     expect(overview.textContent).not.toContain(deliveryApprovalId)
     expect(overview.textContent).not.toContain(deliveryVersionId)
 
@@ -410,6 +421,64 @@ describe('DeliveryPanel workflow context', () => {
       expect(requiredElement<HTMLElement>(`#delivery-evidence-panel-${kind}`).hidden).toBe(false)
     }
     expect(container.querySelector('a, img, [download]')).toBeNull()
+  })
+
+  // FR-052 AC-027.3: inside the workflow no identifier or digest from the snapshot/trace reaches the visible text,
+  // even with the details open on every evidence section; the standalone evidence view still shows them all.
+  it('hides every fixture identifier and digest in workflow mode but keeps them in the standalone view', async () => {
+    const parsed = availableEvidence()
+    const identifiers = collectIdentifiers({ snapshot: parsed.snapshot, trace: parsed.trace })
+    for (const expected of [
+      deliveryVersionId, deliveryVersionDigest, deliveryApprovalId, deliveryAssetId, deliverySourceSpanId,
+      deliveryProfileDigest, deliveryEvidenceDigest, deliveryUsedSourceSpansDigest, deliveryApprovalEvidenceDigest,
+      deliveryVideoDigest, deliverySubtitleDigest, deliverySourceDigest, deliveryFfmpegDigest,
+      parsed.snapshot.projectId, parsed.snapshot.deliveryManifestId,
+      ...parsed.snapshot.artifacts.flatMap(artifact => [artifact.artifactId, artifact.sha256]),
+      ...parsed.snapshot.review.records.map(record => record.reviewRecordId),
+      ...parsed.snapshot.review.approvals.map(approval => approval.approvalId),
+      ...parsed.snapshot.rights.flatMap(rights => [rights.assetId, rights.sourceDigest]),
+    ]) {
+      expect(identifiers).toContain(expected)
+    }
+
+    const user = userEvent.setup({ document })
+    const openEveryEvidenceSection = async () => {
+      const details = container.querySelector<HTMLDetailsElement>('.delivery-details')
+      if (details !== null && !details.open) {
+        await act(async () => user.click(requiredElement<HTMLElement>('.delivery-details > summary')))
+      }
+      if (details !== null) expect(details.open).toBe(true)
+      for (const kind of ['identity', 'artifacts', 'review', 'rights', 'qualityControl', 'trace']) {
+        await act(async () => user.click(requiredElement<HTMLButtonElement>(`#delivery-evidence-tab-${kind}`)))
+        expect(requiredElement<HTMLElement>(`#delivery-evidence-panel-${kind}`).hidden).toBe(false)
+      }
+    }
+
+    act(() => root.render(
+      <DeliveryPanelView
+        {...contextFor(evidenceState(parsed.snapshot, parsed.trace))}
+        context={{ versionId: deliveryVersionId }}
+      />,
+    ))
+    expect(requiredElement('.delivery-details > summary').textContent)
+      .toContain('保存した動画の確認記録の詳細（承認・品質確認・元動画との対応）')
+    await openEveryEvidenceSection()
+    for (const identifier of identifiers) {
+      expect(container.textContent).not.toContain(identifier)
+    }
+    expect(container.textContent).not.toMatch(/[0-9a-f]{64}/)
+    expect(container.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
+
+    act(() => root.unmount())
+    root = createRoot(container)
+    act(() => root.render(
+      <DeliveryPanelView {...contextFor(evidenceState(parsed.snapshot, parsed.trace))} />,
+    ))
+    expect(container.querySelector('.delivery-details')).toBeNull()
+    await openEveryEvidenceSection()
+    for (const identifier of identifiers) {
+      expect(container.textContent).toContain(identifier)
+    }
   })
 
   it('treats hostile artifact types and detail text as content, never markup or file actions', () => {
@@ -523,7 +592,9 @@ describe('DeliveryPanel workflow context', () => {
 
     await completeAvailable(retry)
     expect(container.textContent).toContain('ローカル保存済み（delivery 登録）')
-    expect(container.textContent).toContain(deliveryVersionDigest)
+    // FR-052: the reloaded snapshot is shown in the workflow without its raw digest.
+    expect(container.querySelector('.delivery-workspace')).not.toBeNull()
+    expect(container.textContent).not.toContain(deliveryVersionDigest)
     expect(requiredElement<HTMLDetailsElement>('.delivery-details').open).toBe(false)
     expect(container.querySelectorAll('.secondary-button')).toHaveLength(1)
     expect(reload.disabled).toBe(false)
@@ -592,7 +663,9 @@ describe('DeliveryPanel workflow context', () => {
     expect(container.querySelector('.delivery-workspace')).toBeNull()
 
     await completeAvailable(retry)
-    expect(container.textContent).toContain(deliverySecondVersionId)
+    // FR-052: only the matching second-version snapshot opens the workspace; neither version ID is shown.
+    expect(container.querySelector('.delivery-workspace')).not.toBeNull()
+    expect(container.textContent).not.toContain(deliverySecondVersionId)
     expect(container.textContent).not.toContain(deliveryVersionId)
     expect(container.textContent).toContain('ローカル保存済み（delivery 登録）')
     expect(reload.disabled).toBe(false)
@@ -619,7 +692,9 @@ describe('DeliveryPanel workflow context', () => {
     expect(container.querySelector('.delivery-workspace')).toBeNull()
     expect(client.sent).toHaveLength(2)
     await completeAvailable(second)
-    expect(container.textContent).toContain(deliverySecondVersionId)
+    // FR-052: only the matching second-version snapshot opens the workspace; neither version ID is shown.
+    expect(container.querySelector('.delivery-workspace')).not.toBeNull()
+    expect(container.textContent).not.toContain(deliverySecondVersionId)
     expect(container.textContent).not.toContain(deliveryVersionId)
     await renderPanel({ context: { versionId: deliverySecondVersionId } })
     expect(client.sent).toHaveLength(2)
@@ -658,7 +733,9 @@ describe('DeliveryPanel workflow context', () => {
     expect(client.sent.map((request) => request.params.versionId))
       .toEqual([deliveryVersionId, deliveryVersionId])
     await completeAvailable(requiredSent(1))
-    expect(container.textContent).toContain(deliveryVersionDigest)
+    // FR-052: the reloaded snapshot is shown in the workflow without its raw digest.
+    expect(container.querySelector('.delivery-workspace')).not.toBeNull()
+    expect(container.textContent).not.toContain(deliveryVersionDigest)
     await renderPanel({ context: { versionId: deliveryVersionId } })
     expect(client.sent).toHaveLength(2)
   })
@@ -731,7 +808,9 @@ describe('DeliveryPanel workflow context', () => {
     expect(container.querySelector('form, table, details')).toBeNull()
     expect(container.textContent).not.toContain(deliveryVersionDigest)
     await renderPanel({ context: { versionId: deliveryVersionId } })
-    expect(container.textContent).toContain(deliveryVersionDigest)
+    // FR-052: the reloaded snapshot is shown in the workflow without its raw digest.
+    expect(container.querySelector('.delivery-workspace')).not.toBeNull()
+    expect(container.textContent).not.toContain(deliveryVersionDigest)
     expect(client.sent).toHaveLength(1)
   })
 
@@ -815,6 +894,19 @@ function setControlValue(element: HTMLInputElement, value: string): void {
 
 function submit(form: HTMLFormElement): void {
   act(() => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+}
+
+function collectIdentifiers(value: unknown, found = new Set<string>()): string[] {
+  if (typeof value === 'string') {
+    if (/^[0-9a-f]{64}$/i.test(value) || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+      found.add(value)
+    }
+  } else if (Array.isArray(value)) {
+    for (const item of value) collectIdentifiers(item, found)
+  } else if (value !== null && typeof value === 'object') {
+    for (const item of Object.values(value)) collectIdentifiers(item, found)
+  }
+  return [...found]
 }
 
 function evidenceState(snapshot: DeliverySnapshot, trace: DeliveryTrace | null): DeliveryUiState {

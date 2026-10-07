@@ -64,6 +64,12 @@ internal static class SettingsBridgeProtocol
             BridgeMethod.SettingsFileApply =>
                 HasFileMutationIdentity(parameters, ["expectedFileSha256"]) &&
                 IsDigest(parameters.GetProperty("expectedFileSha256")),
+            BridgeMethod.SettingsWorkspaceRead =>
+                HasExactProperties(parameters, []),
+            BridgeMethod.SettingsWorkspaceUpdate =>
+                HasExactProperties(parameters, ["path"]) &&
+                (parameters.GetProperty("path").ValueKind == JsonValueKind.Null ||
+                    IsBoundedText(parameters.GetProperty("path"), 260, allowEmpty: true)),
             _ => false,
         };
     }

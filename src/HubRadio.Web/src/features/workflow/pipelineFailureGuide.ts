@@ -9,7 +9,7 @@ export interface PipelineFailureGuide {
 
 const retry = '「自動編集を再試行」を押してください。'
 const contact = '同じエラーが続く場合は、このエラーコードと「実行の参照」の内容を添えて管理者に連絡してください。'
-const newProject = '「案件一覧へ戻る」から新しい案件を作成し、その動画を選び直してください。'
+const newProject = '「Project一覧へ戻る」から新しいProjectを作成し、その動画を選び直してください。'
 const convert = '動画編集ソフトや変換ツールで、映像1本・音声1本、固定フレームレート（例: 30fps）、映像と音声の開始が0秒の MP4（H.264／AAC）に書き出し直してください。'
 
 const sourceTiming: PipelineFailureGuide = {
@@ -20,8 +20,8 @@ const sourceTiming: PipelineFailureGuide = {
 
 const sourceFile: PipelineFailureGuide = {
   title: '元動画のファイルを読み込めません',
-  cause: '案件を作成したときの元動画のファイルが、見つからない、移動・名前の変更・上書きされた、または読み取りを許可されていません。',
-  remedies: ['元動画のファイルを、案件を作成したときの場所と名前に戻し、内容を変更しないでください。', retry, `ファイルを戻せない場合は、${newProject}`],
+  cause: 'Projectを作成したときの元動画のファイルが、見つからない、移動・名前の変更・上書きされた、または読み取りを許可されていません。',
+  remedies: ['元動画のファイルを、Projectを作成したときの場所と名前に戻し、内容を変更しないでください。', retry, `ファイルを戻せない場合は、${newProject}`],
 }
 
 const exact: Readonly<Record<string, PipelineFailureGuide>> = {
@@ -73,7 +73,7 @@ const exact: Readonly<Record<string, PipelineFailureGuide>> = {
   },
   'source_only.execution_failed': {
     title: '自動編集中に予期しないエラーが発生しました',
-    cause: '分類できないエラーで自動編集が止まりました。保存済みの元動画と案件は変更されていません。',
+    cause: '分類できないエラーで自動編集が止まりました。保存済みの元動画とProjectは変更されていません。',
     remedies: [retry, 'アプリを再起動してからもう一度試してください。', contact],
   },
   'source_only.app_restarted': {
@@ -138,8 +138,8 @@ const groups: readonly GroupRule[] = [
     test: code => /^source_only\.(required_setting_missing_or_invalid|settings_[a-z_]+)$/.test(code),
     guide: {
       title: '設定の内容を使えません',
-      cause: '案件の設定に、足りない項目、または自動編集の開始後に変わった項目があります。',
-      remedies: ['「設定」で「この動画」の設定を確認し、「保存」してください。', retry],
+      cause: 'Projectの設定に、足りない項目、または自動編集の開始後に変わった項目があります。',
+      remedies: ['「設定」で「次に作成するJob」の設定を確認し、「保存」してください。', retry],
     },
   },
   {
@@ -163,7 +163,7 @@ const groups: readonly GroupRule[] = [
     guide: {
       title: '処理の記録の整合を確認できません',
       cause: '途中まで保存した処理の記録（解析結果・編集の版・成果物）が、予定と一致しませんでした。別の操作との競合、またはアプリの途中終了が考えられます。',
-      remedies: ['ほかの画面で同じ案件を操作していないか確認してください。', retry, contact],
+      remedies: ['ほかの画面で同じProjectを操作していないか確認してください。', retry, contact],
     },
   },
 ]
@@ -176,7 +176,7 @@ const fallback: PipelineFailureGuide = {
 
 const reselection: PipelineFailureGuide = {
   title: '元動画の選び直しが必要です',
-  cause: '元動画のファイルが、案件を作成したときから見つからない、または内容が変わっています。',
+  cause: '元動画のファイルが、Projectを作成したときから見つからない、または内容が変わっています。',
   remedies: sourceFile.remedies,
 }
 

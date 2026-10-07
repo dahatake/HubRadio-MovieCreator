@@ -90,8 +90,9 @@ internal sealed class SourceOnlySubtitleEvidenceReader
             DateTimeOffset createdAt = Utc(Text(root, "createdAt"));
             Require(createdAt >= preparation.Child.CreatedAt && createdAt >= current.Request.CreatedAt
                 && createdAt >= import.Revision.CreatedAt && saved.CreatedAt >= createdAt);
+            Require(StandardSubtitleBuilder.TryParseRuleVersion(Text(root, "builderRule"), out StandardSubtitleBuildPolicy builderPolicy));
             SourceOnlyGeneratedRuntimeEvidence replay = SourceOnlyPipeline.BuildGeneratedRuntimeEvidence(preparation,
-                import, profile, snapshot, font, current.Request.ActorSid, createdAt, token);
+                import, profile, snapshot, font, current.Request.ActorSid, createdAt, token, builderPolicy);
 
             IReadOnlyList<StoredSourceOnlyExecution> history = executions.ListForProject(
                 current.Request.ProjectId, SourceOnlyExecutionStore.MaximumListResults);
@@ -299,8 +300,9 @@ internal sealed class SourceOnlySubtitleEvidenceReader
         Require(Text(root, "revisionId") == revisionId.ToString() && Text(root, "speakerId") == speakerId.ToString()
             && createdAt == rawArtifact.CreatedAt && createdAt >= producer.Request.CreatedAt && checkpoint.CreatedAt >= createdAt
             && transcript.CreatedAt >= createdAt && createdAt >= audio.CreatedAt && createdAt >= timelineArtifact.CreatedAt);
-        TranscriptImportResult imported = SourceOnlyPipeline.RebindImportedIds(TranscriptImporter.Import(raw.WorkerResult, timeline,
-            revisionId, speakerId, createdAt));
+        TranscriptImportResult imported = SourceOnlyPipeline.RebindImportedIds(TranscriptImporter.Import(
+            await CorrectedWorkerAsync(seed, execution.Request.ProjectId, raw.WorkerResult, timeline, observed, token).ConfigureAwait(false),
+            timeline, revisionId, speakerId, createdAt));
         byte[] savedTranscript = await ReadBytesAsync(transcript, execution.Request.ProjectId, MaximumEvidenceBytes, observed, token).ConfigureAwait(false);
         Require(savedTranscript.AsSpan().SequenceEqual(Utf8.GetBytes(TranscriptSnapshotJson.WriteRevision(imported.Revision))));
         return imported;
@@ -378,6 +380,24 @@ internal sealed class SourceOnlySubtitleEvidenceReader
         && expected.ContentDigest == actual.ContentDigest && expected.ByteSize == actual.ByteSize
         && expected.StorageReference == actual.StorageReference && expected.CreatedAt == actual.CreatedAt);
     private StoredArtifact Required(EntityId<ArtifactIdTag> id) => artifacts.GetArtifact(id) ?? throw Failure();
+
+    // FR-057.5: the same pinned silence evidence the pipeline applied when it imported the transcript.
+    private async Task<AsrWorkerResult> CorrectedWorkerAsync(string seed, EntityId<ProjectIdTag> project, AsrWorkerResult worker,
+        AnalysisAudioTimeline timeline, Dictionary<EntityId<ArtifactIdTag>, StoredArtifact> observed, CancellationToken token)
+    {
+        StoredArtifact? stored = artifacts.GetArtifact(Stable<ArtifactIdTag>(seed, "asr-timing-correction"));
+        if (stored is null) { return worker; }
+        string json = Utf8.GetString(await ReadBytesAsync(stored, project, MaximumEvidenceBytes, observed, token).ConfigureAwait(false));
+        try
+        {
+            return AsrTimingCorrection.Apply(worker, AsrTimingCorrection.Read(json, SilenceDetector.PauseThresholdVersion,
+                timeline.AnalysisSampleCount, AnalysisAudioTimeline.FixedSampleRate));
+        }
+        catch (Exception exception) when (exception is FormatException or JsonException or InvalidOperationException)
+        {
+            throw Failure();
+        }
+    }
     private static EntityId<T> Stable<T>(string seed, string role) => SourceOnlyPipeline.StableId<T>(seed, role);
     private static string Text(JsonElement root, string key) => root.GetProperty(key).GetString() ?? throw Failure();
     private static DateTimeOffset Utc(string text) => DateTimeOffset.TryParseExact(text, "O", CultureInfo.InvariantCulture,

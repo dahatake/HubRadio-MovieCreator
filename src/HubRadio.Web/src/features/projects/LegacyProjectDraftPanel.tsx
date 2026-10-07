@@ -96,7 +96,7 @@ const publicationScopes: readonly Readonly<{
   {
     value: 'externalPublicationApproved',
     label: '外部公開承認済み',
-    description: '外部公開の承認を得た案件です。',
+    description: '外部公開の承認を得たProjectです。',
   },
   {
     value: 'publicationForbidden',
@@ -136,14 +136,14 @@ export const sourceStatusLabels: Readonly<Record<SourceStatus, string>> = {
 }
 
 const requestLabels: Readonly<Record<ProjectBridgeMethod, string>> = {
-  [PROJECT_LIST_METHOD]: '案件一覧を更新',
+  [PROJECT_LIST_METHOD]: 'Project一覧を更新',
   [PROJECT_CREATE_DRAFT_METHOD]: '下書きを作成',
   [PROJECT_LOAD_DRAFT_METHOD]: '下書きを読み込み',
   [PROJECT_SAVE_DRAFT_METHOD]: '下書きを保存',
   [PROJECT_PICK_SOURCE_METHOD]: '元動画を選択',
-  [PROJECT_DELETE_METHOD]: '案件を削除',
-  [PROJECT_RENAME_METHOD]: '案件名を変更',
-  [PROJECT_FINALIZE_DRAFT_METHOD]: '案件を作成',
+  [PROJECT_DELETE_METHOD]: 'Projectを削除',
+  [PROJECT_RENAME_METHOD]: 'Project名を変更',
+  [PROJECT_FINALIZE_DRAFT_METHOD]: 'Projectを作成',
 }
 
 export function LegacyProjectDraftPanel({
@@ -271,7 +271,7 @@ export function LegacyProjectDraftPanel({
         <div>
           <p className="section-kicker">Creation wizard</p>
           <h2 id="wizard-title" ref={wizardHeadingRef} tabIndex={-1}>
-            {finalized ? '案件の内容' : '案件作成ウィザード'}
+            {finalized ? 'Projectの内容' : 'Project作成ウィザード'}
           </h2>
         </div>
         <span className={`state-badge ${finalized ? 'finalized' : 'draft'}`}>
@@ -279,7 +279,7 @@ export function LegacyProjectDraftPanel({
         </span>
       </div>
 
-      <nav className="wizard-progress" aria-label="案件作成の手順">
+      <nav className="wizard-progress" aria-label="Project作成の手順">
         <ol>
           {wizardSteps.map((label, index) => (
             <li key={label}>
@@ -531,21 +531,21 @@ export function LegacyProjectDraftPanel({
         <fieldset disabled={pending || finalized} hidden={wizardStep !== 4}>
           <legend>入力内容の確認</legend>
           <p className="step-description">
-            下書きは未完成のまま保存できます。案件作成には10項目すべてが必要です。
+            下書きは未完成のまま保存できます。Project作成には10項目すべてが必要です。
           </p>
           <ProjectReview input={state.input} context={state} />
         </fieldset>
 
         <div className="completion-summary" aria-live="polite">
           {finalized ? (
-            <p>この案件は作成済みです。</p>
+            <p>このProjectは作成済みです。</p>
           ) : complete ? (
             <p className="complete-message">必須項目がすべて入力されています。</p>
           ) : missingFields.length === 0 ? (
-            <p className="field-warning">入力内容を修正してから案件を作成してください。</p>
+            <p className="field-warning">入力内容を修正してからProjectを作成してください。</p>
           ) : (
             <details open={wizardStep === wizardSteps.length - 1}>
-              <summary>案件作成まで残り {missingFields.length} 項目</summary>
+              <summary>Project作成まで残り {missingFields.length} 項目</summary>
               <ul>
                 {missingFields.map((field) => (
                   <li key={field}>{missingFieldLabels[field]}</li>
@@ -598,7 +598,7 @@ export function LegacyProjectDraftPanel({
               disabled={pending || finalized || !complete}
               onClick={finalizeDraft}
             >
-              案件を作成
+              Projectを作成
             </button>
           </div>
         </div>

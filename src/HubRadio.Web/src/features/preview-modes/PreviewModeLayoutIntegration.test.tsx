@@ -43,9 +43,11 @@ describe('preview modes with U-010 layout evidence', () => {
     expect(markup).toContain('data-preview-subtitles="false"')
     expect(markup).not.toContain('data-subtitle-cue=')
     expect(markup).toContain('data-mask-kind="generic-offline"')
+    // FR-052: the landscape frame note is plain language and keeps the 9:16 layout unchanged.
     expect(markup).toContain(
-      'この 9:16 native layout evidence を変換しません',
+      '横長の確認枠で表示しています。動画の配置は変わりません。',
     )
+    expect(markup).not.toContain('native layout evidence')
   })
 
   it('makes audio-only explicit without fabricating visual output', () => {
@@ -67,7 +69,8 @@ describe('preview modes with U-010 layout evidence', () => {
 
     expect(markup).toContain('data-audio-only="true"')
     expect(markup).toContain('音声のみプレビュー')
-    expect(markup).toContain('9:16 layout evidence の映像表示を隠しています')
+    // FR-052: the audio-only note names the 9:16 aspect without internal jargon.
+    expect(markup).toContain('9:16 の映像表示を隠しています')
     expect(markup).not.toContain('<svg')
     expect(markup).not.toContain('data-mask-kind=')
   })

@@ -75,7 +75,9 @@ describe('ResultGallery', () => {
       expect(container.querySelector('button, img, video, canvas, [data-warning-id], [data-job-status]')).toBeNull()
       expect(container.textContent).not.toContain('0件')
       expect(container.textContent).not.toContain('保存済み')
-      expect(within(container).getByText('NOT EVALUATED')).toBeTruthy()
+      // FR-052: the evaluation status is shown in plain language.
+      expect(within(container).getByText('未評価')).toBeTruthy()
+      expect(container.textContent).not.toContain('NOT EVALUATED')
     }
   })
 
@@ -103,7 +105,9 @@ describe('ResultGallery', () => {
       expect(container.querySelector('[data-save-state="saved"], button, img')).toBeNull()
       expect(container.textContent).not.toContain('保存済み')
       expect(container.textContent).not.toContain('PASS')
-      expect(container.querySelector('[data-evaluation]')?.textContent).toBe('NOT EVALUATED')
+      // FR-052: the raw status stays in data-evaluation; the visible label is plain language.
+      expect(container.querySelector('[data-evaluation]')?.getAttribute('data-evaluation')).toBe('NOT EVALUATED')
+      expect(container.querySelector('[data-evaluation]')?.textContent).toBe('未評価')
       expect(field(groupFor('videoLong'), '実生成')).toBe('未取得')
     },
   )
@@ -121,7 +125,10 @@ describe('ResultGallery', () => {
       expect(within(group).getByText('生成済み')).toBeTruthy()
     }
     expect(field(groupFor('videoShort'), '予定')).toBe('短尺動画候補')
-    expect(container.querySelector('[data-evaluation]')?.textContent).toBe(presentation.evaluation)
+    // FR-052: the raw status stays in data-evaluation; the visible label is plain language.
+    expect(container.querySelector('[data-evaluation]')?.getAttribute('data-evaluation')).toBe(presentation.evaluation)
+    expect(presentation.evaluation).toBe('NOT EVALUATED')
+    expect(container.querySelector('[data-evaluation]')?.textContent).toBe('未評価')
     expect(container.textContent).not.toMatch(/PASS|WARNING|FAIL|承認済み/)
     expect(presentation).toEqual(before)
   })
@@ -189,10 +196,15 @@ describe('ResultGallery', () => {
     expect(additional.open).toBe(false)
     act(() => { additional.open = true })
     openArtifactList('other')
-    expect(groupFor('video').textContent).toContain(deliveryVideoArtifactId)
-    expect(groupFor('other').textContent).toContain(image.artifactType)
+    // FR-052: groups show a plain media label instead of raw IDs/artifact types; IDs are only forwarded on selection.
+    expect(groupFor('video').textContent).toContain('動画')
+    expect(groupFor('video').textContent).not.toContain(deliveryVideoArtifactId)
+    expect(groupFor('other').textContent).toContain('画像')
+    expect(groupFor('other').textContent).not.toContain(image.artifactType)
+    expect(groupFor('other').textContent).not.toContain(image.artifactId)
+    act(() => within(groupFor('video')).getByRole('button').click())
     act(() => within(groupFor('other')).getByRole('button').click())
-    expect(onSelectArtifact).toHaveBeenCalledExactlyOnceWith(image.artifactId)
+    expect(onSelectArtifact.mock.calls).toEqual([[deliveryVideoArtifactId], [image.artifactId]])
     expect(container.querySelector('img, image, video, canvas')).toBeNull()
   })
 
@@ -288,7 +300,9 @@ describe('ResultGallery', () => {
     expect(onFollowWarning).toHaveBeenCalledTimes(4)
     expect(container.querySelectorAll('[data-warning-id]')).toHaveLength(4)
     expect(container.querySelector('a, img')).toBeNull()
-    expect(container.querySelector('[data-evaluation]')?.textContent).toBe('NOT EVALUATED')
+    // FR-052: the raw status stays in data-evaluation; the visible label is plain language.
+    expect(container.querySelector('[data-evaluation]')?.getAttribute('data-evaluation')).toBe('NOT EVALUATED')
+    expect(container.querySelector('[data-evaluation]')?.textContent).toBe('未評価')
   })
 
   it.each([
@@ -335,29 +349,14 @@ describe('ResultGallery', () => {
     expect(postMessage).not.toHaveBeenCalled()
   })
 
-  it('renders the past-version panel only when the caller supplies a list', () => {
-    const presentation = fullPresentation()
-    renderGallery(presentation)
+  // FR-063.1: the Job list lives in JobResultsBrowser; the gallery shows only the current Job's results.
+  it('does not list other Jobs itself', () => {
+    renderGallery(fullPresentation())
     expect(container.querySelector('[data-version-id]')).toBeNull()
-    expect(within(container).queryByRole('heading', { name: '過去版' })).toBeNull()
-
-    const onRestore = vi.fn()
-    renderGallery(presentation, {
-      versionHistory: {
-        versions: [{
-          versionId: fixtureId(21), versionDigest: 'c'.repeat(64), parentVersionId: null,
-          executionId: fixtureId(22), phase: 'Completed', hasResult: true, isCurrent: false,
-        }],
-        onRestore,
-      },
-    })
-    expect(within(container).getByRole('heading', { name: '過去版' })).toBeTruthy()
-    expect(container.querySelectorAll('[data-version-id]')).toHaveLength(1)
-    // The existing result groups are untouched by the added panel.
+    expect(within(container).queryByRole('heading', { name: /^作成した動画|^Jobごとの仕上がり/ })).toBeNull()
     for (const kind of ['videoLong', 'videoShort', 'text', 'thumbnail'] as const) {
       expect(groupFor(kind).getAttribute('data-result-state')).toBe('generated')
     }
-    expect(onRestore).not.toHaveBeenCalled()
   })
 
   it('shows delivered ancillary artifacts and keeps the rendered outputs visible when they are absent', () => {
@@ -370,9 +369,12 @@ describe('ResultGallery', () => {
     const pipeline = verifiedPipelineResponse(pipelineResponse(snapshot))!.result.snapshot!
     renderGallery(deriveResultPresentation({ pipeline }))
     const section = within(container).getByRole('region', { name: '付帯成果物' })
-    expect(within(section).getByText(/文字起こし（transcript\.json）/)).toBeTruthy()
-    expect(within(section).getByText(/使用区間一覧（used-source-ranges\.json）/)).toBeTruthy()
-    expect(section.textContent).toContain(fixtureId(91))
+    // FR-052: ancillary files are listed by plain name and size, without file IDs or digests.
+    expect(within(section).getByText('文字起こし（128 バイト）')).toBeTruthy()
+    expect(within(section).getByText('元動画のどこを使ったかの一覧（64 バイト）')).toBeTruthy()
+    expect(section.textContent).not.toContain(fixtureId(91))
+    expect(section.textContent).not.toContain('1'.repeat(64))
+    expect(section.textContent).not.toMatch(/transcript\.json|used-source-ranges\.json/)
 
     const omitted = createCompletedPipeline()
     omitted.result!.artifacts.push(createPipelineArtifact(omitted.result!, 'LandscapeThumbnail', 20))
@@ -387,8 +389,12 @@ describe('ResultGallery', () => {
     expect(omittedSection.querySelector('code')).toBeNull()
     // Both rendered outputs in this fixture stay visible and marked as produced.
     expect(container.querySelectorAll('[data-artifact-delivered="true"]')).toHaveLength(2)
-    expect(container.textContent).toContain('Transcript: AncillaryExportFailed')
-    expect(container.textContent).toContain('UsedSourceRanges: AncillaryExportFailed')
+    // FR-052: each omission is recorded in plain language without internal role/reason codes.
+    const omissionRecords = Array.from(container.querySelectorAll('.result-gallery-other li'))
+      .filter(item => item.textContent?.endsWith('今回は作成しませんでした'))
+    expect(omissionRecords).toHaveLength(2)
+    expect(container.textContent).not.toContain('AncillaryExportFailed')
+    expect(container.textContent).not.toMatch(/Transcript:|UsedSourceRanges:/)
   })
 
   it('renders only verified source-only video/image URLs with per-artifact evaluation and delivery', () => {

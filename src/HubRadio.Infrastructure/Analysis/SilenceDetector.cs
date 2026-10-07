@@ -361,6 +361,16 @@ public sealed partial class SilenceDetector
 
     internal const string FilterExpression = "silencedetect=noise=-50.0dB:d=2.0";
 
+    // FR-057: pauses between utterances. Speech recordings keep a room-noise floor well above
+    // -50 dB and its noise peaks often exceed -40 dB, so pauses use a separate, versioned -32 dB peak threshold. Candidates are review-only
+    // until the application narrows them to the gaps between transcript utterances.
+    public const string PauseThresholdVersion =
+        "fr057-2026-10-07.ffmpeg-silencedetect-pause.v1";
+    public const double PauseNoiseDb = -32d;
+    public static readonly RationalTime PauseMinimumDuration = new(2, 5);
+
+    internal const string PauseFilterExpression = "silencedetect=noise=-32.0dB:d=0.4";
+
     private const string ToolComponentIdentity =
         "tool.ffmpeg." +
         DecodeValidator.CanonicalPackageId + "." +
@@ -384,6 +394,24 @@ public sealed partial class SilenceDetector
             SampleRoundingRule,
             productionApproved: false,
             automaticDeletionAllowed: false);
+    private static readonly SilenceDetectionConfiguration PauseConfiguration =
+        new(
+            PauseThresholdVersion,
+            PauseNoiseDb,
+            PauseMinimumDuration,
+            SampleRoundingRule,
+            productionApproved: false,
+            automaticDeletionAllowed: false);
+    private static readonly DetectionMode FixedMode = new(
+        ThresholdVersion,
+        FilterExpression,
+        FixedConfiguration,
+        checked((long)AnalysisAudioTimeline.FixedSampleRate * MinimumDurationSeconds));
+    private static readonly DetectionMode PauseMode = new(
+        PauseThresholdVersion,
+        PauseFilterExpression,
+        PauseConfiguration,
+        AnalysisAudioTimeline.FixedSampleRate * PauseMinimumDuration.Value / PauseMinimumDuration.Rate);
 
     private readonly Func<
         ProcessRunRequest,
@@ -436,11 +464,69 @@ public sealed partial class SilenceDetector
 
     public SilenceDetectionConfiguration Configuration => FixedConfiguration;
 
-    public async Task<SilenceDetectionResult> DetectAsync(
+    public static SilenceDetectionConfiguration PauseDetectionConfiguration => PauseConfiguration;
+
+    public Task<SilenceDetectionResult> DetectAsync(
         ExtractedAnalysisAudio analysisAudio,
         EntityId<ModelRunIdTag> modelRunId,
         TimeSpan timeout,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        DetectCoreAsync(analysisAudio, modelRunId, timeout, FixedMode, cancellationToken);
+
+    /// <summary>FR-057: every interval below <see cref="PauseNoiseDb"/> lasting at least <see cref="PauseMinimumDuration"/>.</summary>
+    public Task<SilenceDetectionResult> DetectPausesAsync(
+        ExtractedAnalysisAudio analysisAudio,
+        EntityId<ModelRunIdTag> modelRunId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default) =>
+        DetectCoreAsync(analysisAudio, modelRunId, timeout, PauseMode, cancellationToken);
+
+    /// <summary>
+    /// FR-057: keeps only the given analysis-sample sub-ranges of detected pauses (for example the part of a pause
+    /// that lies between two utterances). Each range must lie inside one detected pause and be at least
+    /// <see cref="PauseMinimumDuration"/> long; the evidence chain (timeline, model run, version) is unchanged.
+    /// </summary>
+    public static SilenceDetectionResult NarrowPauses(
+        SilenceDetectionResult detected,
+        IReadOnlyList<(long StartSample, long EndSample)> ranges)
+    {
+        ArgumentNullException.ThrowIfNull(detected);
+        ArgumentNullException.ThrowIfNull(ranges);
+        if (!string.Equals(detected.Configuration.ThresholdVersion, PauseThresholdVersion, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Only pause detections can be narrowed.", nameof(detected));
+        }
+
+        string streamId = string.Concat(
+            "audio:",
+            detected.Timeline.SourceAudioStreamIndex.ToString(CultureInfo.InvariantCulture));
+        var candidates = new List<SilenceCandidate>(ranges.Count);
+        foreach ((long start, long end) in ranges.OrderBy(static item => item.StartSample))
+        {
+            if (end - start < PauseMode.MinimumSamples
+                || !detected.Candidates.Any(item => item.AnalysisStartSample <= start && end <= item.AnalysisEndSample))
+            {
+                throw new ArgumentException("A narrowed pause must lie inside one detected pause.", nameof(ranges));
+            }
+
+            candidates.Add(CreateCandidate(detected.Timeline, detected.ModelRunId, streamId, PauseThresholdVersion,
+                new SampleRange(start, end)));
+        }
+
+        return new SilenceDetectionResult(
+            detected.Timeline,
+            detected.ModelRunId,
+            detected.Configuration,
+            candidates,
+            detected.ProcessDuration);
+    }
+
+    private async Task<SilenceDetectionResult> DetectCoreAsync(
+        ExtractedAnalysisAudio analysisAudio,
+        EntityId<ModelRunIdTag> modelRunId,
+        TimeSpan timeout,
+        DetectionMode mode,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(analysisAudio);
         ArgumentNullException.ThrowIfNull(modelRunId);
@@ -471,7 +557,8 @@ public sealed partial class SilenceDetector
         ProcessRunRequest request = CreateProcessRequest(
             _ffmpegPath,
             audioPath,
-            timeout);
+            timeout,
+            mode.Filter);
         ProcessRunResult processResult;
         try
         {
@@ -501,13 +588,27 @@ public sealed partial class SilenceDetector
         return ParseProcessResult(
             analysisAudio.Timeline,
             modelRunId,
-            processResult);
+            processResult,
+            mode);
     }
 
     internal static ProcessRunRequest CreateProcessRequest(
         string ffmpegPath,
         string analysisAudioPath,
-        TimeSpan timeout)
+        TimeSpan timeout) =>
+        CreateProcessRequest(ffmpegPath, analysisAudioPath, timeout, FilterExpression);
+
+    internal static ProcessRunRequest CreatePauseProcessRequest(
+        string ffmpegPath,
+        string analysisAudioPath,
+        TimeSpan timeout) =>
+        CreateProcessRequest(ffmpegPath, analysisAudioPath, timeout, PauseFilterExpression);
+
+    private static ProcessRunRequest CreateProcessRequest(
+        string ffmpegPath,
+        string analysisAudioPath,
+        TimeSpan timeout,
+        string filterExpression)
     {
         string executable = SqliteStoreSupport.ValidateLocalAbsolutePath(
             ffmpegPath,
@@ -536,7 +637,7 @@ public sealed partial class SilenceDetector
                 "-sn",
                 "-dn",
                 "-af",
-                FilterExpression,
+                filterExpression,
                 "-f",
                 "null",
                 "NUL",
@@ -550,7 +651,20 @@ public sealed partial class SilenceDetector
     internal static SilenceDetectionResult ParseProcessResult(
         AnalysisAudioTimeline timeline,
         EntityId<ModelRunIdTag> modelRunId,
-        ProcessRunResult processResult)
+        ProcessRunResult processResult) =>
+        ParseProcessResult(timeline, modelRunId, processResult, FixedMode);
+
+    internal static SilenceDetectionResult ParsePauseProcessResult(
+        AnalysisAudioTimeline timeline,
+        EntityId<ModelRunIdTag> modelRunId,
+        ProcessRunResult processResult) =>
+        ParseProcessResult(timeline, modelRunId, processResult, PauseMode);
+
+    private static SilenceDetectionResult ParseProcessResult(
+        AnalysisAudioTimeline timeline,
+        EntityId<ModelRunIdTag> modelRunId,
+        ProcessRunResult processResult,
+        DetectionMode mode)
     {
         ArgumentNullException.ThrowIfNull(timeline);
         ArgumentNullException.ThrowIfNull(modelRunId);
@@ -579,7 +693,8 @@ public sealed partial class SilenceDetector
         {
             List<SampleRange> ranges = ParseSampleRanges(
                 processResult.StandardError,
-                timeline.AnalysisSampleCount);
+                timeline.AnalysisSampleCount,
+                mode.MinimumSamples);
             var candidates = new List<SilenceCandidate>(ranges.Count);
             string streamId = string.Concat(
                 "audio:",
@@ -587,50 +702,13 @@ public sealed partial class SilenceDetector
                     CultureInfo.InvariantCulture));
             foreach (SampleRange range in ranges)
             {
-                RationalTime sourceStart = timeline.MapAnalysisSampleToSourceTime(
-                    range.StartSample);
-                RationalTime sourceEnd = timeline.MapAnalysisSampleToSourceTime(
-                    range.EndSample);
-                var sourceSpan = new SourceSpan(
-                    EntityId<SourceSpanIdTag>.New(),
-                    timeline.SourceAssetId,
-                    streamId,
-                    new TimeRange(sourceStart, sourceEnd - sourceStart),
-                    timeline.SourceContentDigest,
-                    transcriptRevisionId: null,
-                    transcriptTokenIds: []);
-                OriginRef origin = OriginRef.FromSourceSpan(sourceSpan.Id);
-                var detection = new Detection(
-                    EntityId<DetectionIdTag>.New(),
-                    modelRunId,
-                    DetectionKind.Silence,
-                    origin,
-                    DetectionDescription,
-                    confidence: null);
-                var suggestion = new Suggestion(
-                    EntityId<SuggestionIdTag>.New(),
-                    modelRunId,
-                    SuggestionKind.DeleteRange,
-                    SuggestionStatus.Proposed,
-                    origin,
-                    SuggestionReason,
-                    confidence: null,
-                    MissingContext,
-                    ReviewWarning);
-                candidates.Add(new SilenceCandidate(
-                    timeline,
-                    sourceSpan,
-                    detection,
-                    suggestion,
-                    ThresholdVersion,
-                    range.StartSample,
-                    range.EndSample));
+                candidates.Add(CreateCandidate(timeline, modelRunId, streamId, mode.Version, range));
             }
 
             return new SilenceDetectionResult(
                 timeline,
                 modelRunId,
-                FixedConfiguration,
+                mode.Configuration,
                 candidates,
                 processResult.Duration);
         }
@@ -652,9 +730,57 @@ public sealed partial class SilenceDetector
         }
     }
 
+    private static SilenceCandidate CreateCandidate(
+        AnalysisAudioTimeline timeline,
+        EntityId<ModelRunIdTag> modelRunId,
+        string streamId,
+        string version,
+        SampleRange range)
+    {
+        RationalTime sourceStart = timeline.MapAnalysisSampleToSourceTime(
+            range.StartSample);
+        RationalTime sourceEnd = timeline.MapAnalysisSampleToSourceTime(
+            range.EndSample);
+        var sourceSpan = new SourceSpan(
+            EntityId<SourceSpanIdTag>.New(),
+            timeline.SourceAssetId,
+            streamId,
+            new TimeRange(sourceStart, sourceEnd - sourceStart),
+            timeline.SourceContentDigest,
+            transcriptRevisionId: null,
+            transcriptTokenIds: []);
+        OriginRef origin = OriginRef.FromSourceSpan(sourceSpan.Id);
+        var detection = new Detection(
+            EntityId<DetectionIdTag>.New(),
+            modelRunId,
+            DetectionKind.Silence,
+            origin,
+            DetectionDescription,
+            confidence: null);
+        var suggestion = new Suggestion(
+            EntityId<SuggestionIdTag>.New(),
+            modelRunId,
+            SuggestionKind.DeleteRange,
+            SuggestionStatus.Proposed,
+            origin,
+            SuggestionReason,
+            confidence: null,
+            MissingContext,
+            ReviewWarning);
+        return new SilenceCandidate(
+            timeline,
+            sourceSpan,
+            detection,
+            suggestion,
+            version,
+            range.StartSample,
+            range.EndSample);
+    }
+
     private static List<SampleRange> ParseSampleRanges(
         string standardError,
-        long analysisSampleCount)
+        long analysisSampleCount,
+        long minimumSamples)
     {
         var ranges = new List<SampleRange>();
         long? pendingStart = null;
@@ -685,7 +811,7 @@ public sealed partial class SilenceDetector
                 long duration = ParsePositiveSampleDuration(
                     endMatch.Groups["duration"].Value);
                 long start = pendingStart ?? checked(end - duration);
-                ValidateRange(start, end, duration, previousEnd, analysisSampleCount);
+                ValidateRange(start, end, duration, previousEnd, analysisSampleCount, minimumSamples);
                 ranges.Add(new SampleRange(start, end));
                 previousEnd = end;
                 pendingStart = null;
@@ -708,7 +834,8 @@ public sealed partial class SilenceDetector
                 analysisSampleCount,
                 duration,
                 previousEnd,
-                analysisSampleCount);
+                analysisSampleCount,
+                minimumSamples);
             ranges.Add(new SampleRange(trailingStart, analysisSampleCount));
         }
 
@@ -720,11 +847,10 @@ public sealed partial class SilenceDetector
         long end,
         long reportedDuration,
         long previousEnd,
-        long analysisSampleCount)
+        long analysisSampleCount,
+        long minimumSamples)
     {
         long actualDuration = checked(end - start);
-        long minimumSamples = checked(
-            (long)AnalysisAudioTimeline.FixedSampleRate * MinimumDurationSeconds);
         if (start < previousEnd
             || start < 0
             || end > analysisSampleCount
@@ -1012,4 +1138,10 @@ public sealed partial class SilenceDetector
     private static partial Regex SilenceEndPattern();
 
     private readonly record struct SampleRange(long StartSample, long EndSample);
+
+    private sealed record DetectionMode(
+        string Version,
+        string Filter,
+        SilenceDetectionConfiguration Configuration,
+        long MinimumSamples);
 }

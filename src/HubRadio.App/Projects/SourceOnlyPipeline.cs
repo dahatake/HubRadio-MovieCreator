@@ -120,6 +120,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
     private readonly VersionService versions;
     private readonly AssetCandidateRegistry candidates;
     private readonly SourceOnlySourceLocator locator;
+    private readonly ProjectPosterStore posters;
     private readonly SourceOnlyTaskOwner taskOwner = new();
     private readonly SourceOnlyRuntimeRegistrationGate runtimeRegistrations = new();
     private readonly TimeProvider clock;
@@ -209,6 +210,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         clock = timeProvider ?? TimeProvider.System;
         callbacks = new SourceOnlyRuntimeCallbacks();
         locator = new SourceOnlySourceLocator(workspace);
+        posters = new ProjectPosterStore(workspace);
         executions = new SourceOnlyExecutionStore(databasePath);
         drafts = new ProjectCreationDraftStore(databasePath);
         projects = new ProjectStore(databasePath);
@@ -245,6 +247,51 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
 
     void ISourceOnlyProjectCoordinator.ForgetSelection(EntityId<ProjectCreationDraftIdTag> draftId) =>
         locator.ForgetUnacceptedSelection(draftId);
+
+    internal ProjectPosterStore Posters => posters;
+
+    Task<bool> ISourceOnlyProjectCoordinator.EnsurePosterAsync(EntityId<ProjectCreationDraftIdTag> draftId,
+        CancellationToken cancellationToken) => EnsurePosterAsync(draftId, cancellationToken);
+
+    Task<SourceMediaFacts?> ISourceOnlyProjectCoordinator.ProbeSourceAsync(string sourcePath, CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        return options is null ? Task.FromResult<SourceMediaFacts?>(null)
+            : SourceMediaProbe.ProbeAsync(options.FfprobePath, sourcePath, workspace, new ProcessRunner().RunAsync, cancellationToken);
+    }
+
+    /// <summary>FR-053: a poster frame from the selected (draft) or accepted (Project) source video.</summary>
+    internal async Task<bool> EnsurePosterAsync(EntityId<ProjectCreationDraftIdTag> draftId, CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        if (options is null) { return false; }
+        if (posters.TryGetDigest(draftId) is not null) { return true; }
+        string sourcePath;
+        try
+        {
+            StoredSourceOnlyExecution? accepted = executions.GetByDraft(draftId);
+            if (accepted is not null)
+            {
+                sourcePath = ReadAcceptedSource(accepted).Path;
+            }
+            else
+            {
+                StoredProjectCreationDraft? draft = drafts.GetDraft(draftId);
+                if (draft is null || draft.IsFinalized || !SourceOnlyProjectCreationContract.IsSourceOnlyPayload(draft.CanonicalJson))
+                {
+                    return false;
+                }
+                using JsonDocument payload = JsonDocument.Parse(draft.CanonicalJson);
+                var candidateId = EntityId<AssetIdTag>.Parse(Text(payload.RootElement, "sourceCandidateId"));
+                sourcePath = locator.ReadSelection(draftId, candidateId).Path;
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return false;
+        }
+        return await posters.CreateAsync(draftId, sourcePath, options.FfmpegPath, cancellationToken).ConfigureAwait(false);
+    }
 
     bool ISourceOnlyProjectCoordinator.RestoreSelection(EntityId<ProjectCreationDraftIdTag> draftId,
         EntityId<AssetIdTag> candidateId) => RestoreSelection(draftId, candidateId);
@@ -691,7 +738,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         if (execution.VersionId is not null || execution.ResultJson is not null ||
             artifacts.GetArtifact(new AnalysisIds(execution.Request.IngestJobId.ToString()).Checkpoint) is not null ||
             new[] { "analysis-evidence", "baseline-checkpoint", "auto-checkpoint", "composition-checkpoint",
-                "render-preflight", "automatic-decisions", "silence-detection", "repetition-raw",
+                "render-preflight", "automatic-decisions", "silence-detection", "pause-detection", "repetition-raw",
                 "generated-runtime", "subtitle-warnings", "generation-evidence", "evaluation-receipt", "result-receipt" }
                 .Any(stage => HasEvidence(execution, stage)))
         {
@@ -801,7 +848,8 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             {
                 RequireShape(warning, "Key", "Rule", "Reason", "IsUnresolved", "SourceRange", "SourceSpanId");
                 if (new[] { "Key", "Rule", "Reason" }.Any(key => string.IsNullOrWhiteSpace(Text(warning, key)) || Text(warning, key).Length > 256) ||
-                    !Text(warning, "Rule").StartsWith(StandardSubtitleBuilder.RuleVersion + ".", StringComparison.Ordinal)) { throw new FormatException(); }
+                    !(Text(warning, "Rule").StartsWith(StandardSubtitleBuilder.RuleVersion + ".", StringComparison.Ordinal) ||
+                        Text(warning, "Rule").StartsWith(StandardSubtitleBuilder.FullCoverageRuleVersion + ".", StringComparison.Ordinal))) { throw new FormatException(); }
                 TimeRange? range = warning.GetProperty("SourceRange").ValueKind == JsonValueKind.Null ? null
                     : new TimeRange(SourceOnlyResultInputValidation.ReadTime(warning.GetProperty("SourceRange").GetProperty("Start")),
                         SourceOnlyResultInputValidation.ReadTime(warning.GetProperty("SourceRange").GetProperty("Duration")));
@@ -1334,7 +1382,8 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
 
                     SourceOnlyGeneratedRuntimeEvidence generatedRuntime = BuildGeneratedRuntimeEvidence(preparation,
                         analysis.Import, profile, execution.Request.SettingsSnapshot, runtime.Font.Evidence,
-                        execution.Request.ActorSid, Now(preparation.Child.CreatedAt), stageToken);
+                        execution.Request.ActorSid, Now(preparation.Child.CreatedAt), stageToken,
+                        await ResolveBuilderPolicyAsync(execution, stageToken).ConfigureAwait(false));
                     generatedRuntime = await ApplyCapturedSubtitleEditsAsync(execution, generatedRuntime, stageToken).ConfigureAwait(false);
                     StandardSubtitleBuildResult subtitles = generatedRuntime.LandscapeSubtitles;
                     IReadOnlyList<StandardShortArtifactInput> shortInputs = generatedRuntime.ShortForms;
@@ -1844,7 +1893,27 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         // The durable raw-result receipt fixes creation time even if a process exits
         // between raw promotion, transcript promotion, and the final checkpoint write.
         DateTimeOffset createdAt = rawArtifact.CreatedAt;
-        TranscriptImportResult imported = RebindImportedIds(TranscriptImporter.Import(raw.WorkerResult, timeline,
+        // FR-057.5: profiles with pause tightening first pin the measured silences, then correct word edges.
+        if (execution.Request.SettingsSnapshot.Values.Any(static item => item.Key == AutoDecisionOrchestrator.PauseTighteningKey) &&
+            artifacts.GetArtifact(ids.TimingCorrection) is null)
+        {
+            try
+            {
+                SilenceDetectionResult silences = await new SilenceDetector(artifacts, runner, verifier, options!.FfmpegPath)
+                    .DetectPausesAsync(new ExtractedAnalysisAudio(audioArtifact, timelineArtifact!, timeline, TimeSpan.Zero),
+                        StableId<ModelRunIdTag>(seed, "asr-timing-silences"), options.OperationTimeout, token).ConfigureAwait(false);
+                _ = await SaveJsonAsync(execution, ids.TimingCorrection, AsrTimingCorrection.Write(SilenceDetector.PauseThresholdVersion,
+                    silences.Candidates.Select(static item => (item.AnalysisStartSample, item.AnalysisEndSample)).ToArray()),
+                    "asr-timing-correction", token).ConfigureAwait(false);
+            }
+            catch (SilenceDetectorException)
+            {
+                // Without measured silences the recognizer's own word timings are kept (no evidence, no correction).
+            }
+        }
+        AsrWorkerResult correctedWorker = await CorrectWorkerTimingAsync(execution.Request.ProjectId, ids, raw.WorkerResult, timeline, token)
+            .ConfigureAwait(false);
+        TranscriptImportResult imported = RebindImportedIds(TranscriptImporter.Import(correctedWorker, timeline,
             ids.Revision, ids.Speaker, createdAt));
         string transcriptJson = TranscriptSnapshotJson.WriteRevision(imported.Revision);
         StoredArtifact transcript = await SaveJsonAsync(execution, ids.Transcript, transcriptJson, "machine-transcript", token).ConfigureAwait(false);
@@ -1919,8 +1988,9 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 Text(document.RootElement.GetProperty("result").GetProperty("configuration"), "language"), timeline);
             if (artifacts.GetArtifact(ids.Transcript) is not null)
             {
-                TranscriptImportResult imported = RebindImportedIds(TranscriptImporter.Import(raw.WorkerResult, timeline,
-                    ids.Revision, ids.Speaker, rawArtifact.CreatedAt));
+                TranscriptImportResult imported = RebindImportedIds(TranscriptImporter.Import(
+                    await CorrectWorkerTimingAsync(execution.Request.ProjectId, ids, raw.WorkerResult, timeline, token).ConfigureAwait(false),
+                    timeline, ids.Revision, ids.Speaker, rawArtifact.CreatedAt));
                 byte[] transcript = await ReadArtifactBytesAsync(ids.Transcript, execution.Request.ProjectId, MaximumTranscriptBytes, token).ConfigureAwait(false);
                 if (!transcript.AsSpan().SequenceEqual(Utf8.GetBytes(TranscriptSnapshotJson.WriteRevision(imported.Revision)))) { throw new FormatException(); }
             }
@@ -1977,8 +2047,9 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 artifacts.GetValidatedRegisteredArtifactPath(ids.Raw), Text(root, "requestId"), Text(root, "requestedPolicy"), timeline);
             DateTimeOffset createdAt = ParseUtc(Text(root, "createdAt"));
             if (createdAt < producer.Request.CreatedAt) { throw new FormatException(); }
-            TranscriptImportResult imported = RebindImportedIds(TranscriptImporter.Import(raw.WorkerResult, timeline,
-                ids.Revision, ids.Speaker, createdAt));
+            TranscriptImportResult imported = RebindImportedIds(TranscriptImporter.Import(
+                await CorrectWorkerTimingAsync(execution.Request.ProjectId, ids, raw.WorkerResult, timeline, token).ConfigureAwait(false),
+                timeline, ids.Revision, ids.Speaker, createdAt));
             byte[] expectedTranscript = Utf8.GetBytes(TranscriptSnapshotJson.WriteRevision(imported.Revision));
             byte[] storedTranscript = await ReadArtifactBytesAsync(ids.Transcript, execution.Request.ProjectId, MaximumTranscriptBytes, token).ConfigureAwait(false);
             if (!expectedTranscript.AsSpan().SequenceEqual(storedTranscript)) { throw new FormatException(); }
@@ -1986,6 +2057,22 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
         catch { throw new PipelineFailure(SourceOnlyExecutionPhase.ReconciliationRequired, "source_only.analysis_checkpoint_invalid"); }
+    }
+
+    /// <summary>
+    /// FR-057.5: applies the pinned silence evidence when the analysis recorded one. Analyses without it
+    /// (profiles before 1.2.0 and all saved results) use the recognizer's timings unchanged.
+    /// </summary>
+    private async Task<AsrWorkerResult> CorrectWorkerTimingAsync(EntityId<ProjectIdTag> projectId, AnalysisIds ids,
+        AsrWorkerResult worker, AnalysisAudioTimeline timeline, CancellationToken token)
+    {
+        if (artifacts.GetArtifact(ids.TimingCorrection) is null) { return worker; }
+        StoredArtifact stored = await artifacts.ValidateRegisteredAsync(ids.TimingCorrection, token).ConfigureAwait(false);
+        if (stored.ProjectId != projectId || stored.Kind != ArtifactKind.Analysis) { throw new FormatException(); }
+        string json = Utf8.GetString(await ReadArtifactBytesAsync(ids.TimingCorrection, projectId, MaximumTranscriptBytes, token)
+            .ConfigureAwait(false));
+        return AsrTimingCorrection.Apply(worker, AsrTimingCorrection.Read(json, SilenceDetector.PauseThresholdVersion,
+            timeline.AnalysisSampleCount, AnalysisAudioTimeline.FixedSampleRate));
     }
 
     /// <summary>Stable IDs are derived from the RECORDED revision and ordinal, never from fresh GUIDs on reload.</summary>
@@ -2225,7 +2312,8 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
 
     internal static SourceOnlyGeneratedRuntimeEvidence BuildGeneratedRuntimeEvidence(StandardCompositionPreparation preparation,
         TranscriptImportResult import, DefaultSettingsProfile profile, DefaultSettingsSnapshot snapshot,
-        RenderFontEvidence font, string actorSid, DateTimeOffset createdAt, CancellationToken token = default)
+        RenderFontEvidence font, string actorSid, DateTimeOffset createdAt, CancellationToken token = default,
+        StandardSubtitleBuildPolicy policy = StandardSubtitleBuildPolicy.FullCoverage)
     {
         token.ThrowIfCancellationRequested();
         ContentDigest transcriptDigest = ContentDigest.Compute(Utf8.GetBytes(TranscriptSnapshotJson.WriteRevision(import.Revision)));
@@ -2244,7 +2332,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             LayoutSpec layout = StandardRenderGraphFactory.GetLayout(preparation.Plan, shortId);
             RenderProfile render = StandardRenderGraphFactory.GetProfile(preparation.Plan, shortId is not null, shortId);
             StandardSubtitleBuildResult result = BuildProductionSubtitles(version, timeline, layout, render, import,
-                transcriptDigest, spans, profile, snapshot, font, actorSid, createdAt, token);
+                transcriptDigest, spans, profile, snapshot, font, actorSid, createdAt, token, policy);
             // StandardSubtitleInput retains the exact initial revisions/candidates but
             // not their histories. Rewrap those SAME objects; create no new cue/revision.
             SubtitleCueHistory[] histories = result.Subtitles.Revisions.Select(revision => new SubtitleCueHistory(
@@ -2266,7 +2354,41 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         }
         return new(preparation, import, landscape, shorts.AsReadOnly(),
             new ReadOnlyDictionary<EntityId<CompositionVersionIdTag>, SourceOnlyGeneratedSubtitleRuntimeEvidence>(byVersion),
-            createdAt, font);
+            createdAt, font)
+        { BuilderRule = StandardSubtitleBuilder.GetRuleVersion(policy) };
+    }
+
+    /// <summary>
+    /// FR-051.5: a new run uses the v3 subtitle rule, except when it carries subtitle edits from a parent
+    /// run. Then it keeps the parent's rule, because the carried edits are bound to the parent's exact cues
+    /// and timing (SubtitleEditProjection), which a different rule would change.
+    /// </summary>
+    internal async Task<StandardSubtitleBuildPolicy> ResolveBuilderPolicyAsync(StoredSourceOnlyExecution execution,
+        CancellationToken token)
+    {
+        IReadOnlyList<StoredSourceOnlyExecution> history = executions.ListForProject(
+            execution.Request.ProjectId, SourceOnlyExecutionStore.MaximumListResults);
+        if (!RequiresSubtitleProjection(execution, history)) { return SelectBuilderPolicy(false, null); }
+        StoredSourceOnlyExecution previous = FindSubtitleProjectionParent(execution, history);
+        var id = StableId<ArtifactIdTag>(previous.Request.ExecutionId.ToString(), "generated-runtime");
+        if (artifacts.GetArtifact(id) is null)
+        {
+            // The projection itself fails closed on a missing parent record.
+            return SelectBuilderPolicy(false, null);
+        }
+
+        byte[] bytes = await ReadArtifactBytesAsync(id, previous.Request.ProjectId, MaximumTranscriptBytes, token).ConfigureAwait(false);
+        using JsonDocument document = JsonDocument.Parse(bytes);
+        return SelectBuilderPolicy(true, document.RootElement.TryGetProperty("builderRule", out JsonElement rule) ? rule.GetString() : null);
+    }
+
+    /// <summary>FR-051.5: v3 for a fresh base; the parent's exact rule when its subtitle edits are carried over.</summary>
+    internal static StandardSubtitleBuildPolicy SelectBuilderPolicy(bool carriesParentSubtitleEdits, string? parentBuilderRule)
+    {
+        if (!carriesParentSubtitleEdits) { return StandardSubtitleBuildPolicy.FullCoverage; }
+        return StandardSubtitleBuilder.TryParseRuleVersion(parentBuilderRule, out StandardSubtitleBuildPolicy policy)
+            ? policy
+            : throw new PipelineFailure(SourceOnlyExecutionPhase.ReconciliationRequired, "source_only.generated_runtime_checkpoint_invalid");
     }
 
     internal static string WriteGeneratedRuntimeEvidence(StoredSourceOnlyExecution execution, SourceOnlyGeneratedRuntimeEvidence evidence)
@@ -2287,7 +2409,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             ["transcriptDigest"] = ContentDigest.Compute(Utf8.GetBytes(TranscriptSnapshotJson.WriteRevision(evidence.Import.Revision))).Hex,
             ["createdAt"] = evidence.CreatedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
             ["font"] = evidence.Font,
-            ["builderRule"] = StandardSubtitleBuilder.RuleVersion,
+            ["builderRule"] = evidence.BuilderRule,
             ["projectionRule"] = "source-only.subtitle-projection.v1",
             ["versions"] = evidence.Versions.Values.OrderBy(item => item.Version.Id.ToString(), StringComparer.Ordinal).Select(item => new
             {
@@ -2360,8 +2482,13 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             var font = new RenderFontEvidence(Text(root.GetProperty("font"), "Name"),
                 new ContentDigest(Text(root.GetProperty("font").GetProperty("FileDigest"), "Hex")));
             ValidateRuntimeComposition(execution, preparation, import);
+            if (!StandardSubtitleBuilder.TryParseRuleVersion(Text(root, "builderRule"), out StandardSubtitleBuildPolicy builderPolicy))
+            {
+                throw new FormatException();
+            }
             SourceOnlyGeneratedRuntimeEvidence replay = BuildGeneratedRuntimeEvidence(preparation, import, profile,
-                execution.Request.SettingsSnapshot, font, execution.Request.ActorSid, ParseUtc(Text(root, "createdAt")), token);
+                execution.Request.SettingsSnapshot, font, execution.Request.ActorSid, ParseUtc(Text(root, "createdAt")), token,
+                builderPolicy);
             // Never deserialize a projection capability or use saved projection fields
             // as input. Rebuild from the immutable accepted prefix, including prior proofs.
             replay = await ApplyCapturedSubtitleEditsAsync(execution, replay, token, depth).ConfigureAwait(false);
@@ -2451,8 +2578,9 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
 
         RationalNumber frameRate = ingest.Original!.MediaInfo.PrimaryVideoStream.NominalFrameRate
             ?? throw new PipelineFailure(SourceOnlyExecutionPhase.Failed, "source_only.source_frame_rate_unavailable");
-        BundledRenderProfileDefinition landscape = StandardRenderProfileFactory.CreateLandscape(profile,
-            execution.Request.SettingsSnapshot, BundledRenderProfileLoader.Load(runtime.LandscapeProfileJson.Span), frameRate);
+        BundledRenderProfileDefinition landscape = StandardRenderProfileFactory.CreateLongForm(profile,
+            execution.Request.SettingsSnapshot, BundledRenderProfileLoader.Load(runtime.LandscapeProfileJson.Span),
+            BundledRenderProfileLoader.Load(runtime.VerticalProfileJson.Span), frameRate, geometry);
         int? audioSampleRate = ingest.Original.MediaInfo.Streams.Where(item => item.Kind == MediaStreamType.Audio)
             .OrderBy(item => item.Index).FirstOrDefault()?.SampleRate;
         ValidateSourceTiming(ingest.Original.MediaInfo, ingest.SourcePtsIndex!, landscape.Profile, analysis.Import.AudioTimeline);
@@ -2474,7 +2602,8 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             .Concat(evidence.EditorialCandidates.Select(item => item.Payload.SourceSpan))
             .Concat(evidence.EmphasisCandidates.Select(item => item.Payload.SourceSpan))
             .DistinctBy(item => item.Id).ToArray();
-        AutomaticEvidence measured = await MeasureAutomaticEvidenceAsync(execution, analysis, evidence, token).ConfigureAwait(false);
+        AutomaticEvidence measured = await MeasureAutomaticEvidenceAsync(execution, analysis, evidence,
+            PauseCutPoints(ingest.SourcePtsIndex!, landscape.Profile, audioSampleRate!.Value), token).ConfigureAwait(false);
         SourceSpan[] decisionSpans = spans.Concat(measured.Candidates.OfType<SilenceSuggestionCandidate>()
             .Select(item => item.Payload.SourceSpan)).DistinctBy(item => item.Id).ToArray();
         DateTimeOffset decisionAt = Now(measured.ModelRuns.Select(item => item.CompletedAt).Append(state.WorkingCopy.UpdatedAt).Max());
@@ -2557,7 +2686,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
     }
 
     private async Task<AutomaticEvidence> MeasureAutomaticEvidenceAsync(StoredSourceOnlyExecution execution,
-        AnalysisState analysis, SourceOnlyAnalysisEvidence evidence, CancellationToken token)
+        AnalysisState analysis, SourceOnlyAnalysisEvidence evidence, IReadOnlyList<RationalTime> pauseCutPoints, CancellationToken token)
     {
         string seed = execution.Request.ExecutionId.ToString();
         var proposed = new List<SuggestionCandidate>(evidence.EditorialCandidates);
@@ -2648,7 +2777,135 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 if (!Directory.EnumerateFileSystemEntries(directory).Any()) { Directory.Delete(directory); }
             }
         }
+
+        // FR-057: pauses between utterances, only for profiles that define editing.pauseTightening.
+        if (values.TryGetValue(AutoDecisionOrchestrator.PauseTighteningKey, out DefaultSettingValue? pauseSetting) &&
+            pauseSetting.TextValue is string strength &&
+            AutoDecisionOrchestrator.TryGetPauseMinimum(strength, out RationalTime pauseMinimum))
+        {
+            DateTimeOffset startedAt = Now(evidence.CreatedAt);
+            var modelId = StableId<ModelRunIdTag>(seed, "pause-rule");
+            var audio = new ExtractedAnalysisAudio(analysis.Audio, analysis.Timeline, analysis.Import.AudioTimeline, TimeSpan.Zero);
+            try
+            {
+                SilenceDetectionResult raw = await new SilenceDetector(artifacts, new ProcessRunner(), new BinaryVerifier(), options!.FfmpegPath)
+                    .DetectPausesAsync(audio, modelId, options.OperationTimeout, token).ConfigureAwait(false);
+                SilenceDetectionResult narrowed = SilenceDetector.NarrowPauses(raw,
+                    SelectPauseRanges(raw, SpeechRanges(analysis.Import.Revision.Utterances),
+                        pauseMinimum, pauseCutPoints));
+                var rule = new
+                {
+                    rule = "fr057.pause-between-utterances-frame-aligned.v1",
+                    strength,
+                    minimumPause = $"{pauseMinimum.Value}/{pauseMinimum.Rate}",
+                    padding = "3/20",
+                    configuration = narrowed.Configuration,
+                };
+                StoredArtifact observation = await SaveJsonAsync(execution, StableId<ArtifactIdTag>(seed, "pause-detection"),
+                    CanonicalJson.Canonicalize(JsonSerializer.Serialize(new
+                    {
+                        schema = "source-only.pause-detection.v1",
+                        timeline = narrowed.Timeline.CanonicalJson,
+                        rule,
+                        detected = raw.Candidates.Select(static item => new { item.AnalysisStartSample, item.AnalysisEndSample }).ToArray(),
+                        narrowed.Candidates,
+                        narrowed.ProcessDuration,
+                    })), "pause-detection", token).ConfigureAwait(false);
+                runs.Add(new ModelRun(modelId, "FFmpeg", "silencedetect", SilenceDetector.PauseThresholdVersion,
+                    new ContentDigest(DecodeValidator.CanonicalFfmpegSha256), ModelHashAvailability.Available,
+                    CanonicalJson.ComputeDigest(JsonSerializer.SerializeToUtf8Bytes(rule)), analysis.Audio.ContentDigest,
+                    observation.ContentDigest, ModelRunOutcome.Succeeded, null, ModelExecutionLocation.Local, null, null, null, null,
+                    startedAt, Now(startedAt)));
+                proposed.AddRange(narrowed.Candidates.Select(item => SuggestionService.Register(item, [], token)));
+            }
+            catch (Exception exception) when (exception is SilenceDetectorException or ArgumentException)
+            {
+                // Pause tightening is an improvement, never a reason to fail the whole video.
+                skipped.Add(new(null, "source_only.pause_detection_unavailable_retained"));
+            }
+        }
+
         return new AutomaticEvidence(proposed.AsReadOnly(), runs.AsReadOnly(), skipped.AsReadOnly());
+    }
+
+    /// <summary>
+    /// FR-057: frame starts usable as exact cut points (source frame, output frame grid, source audio grid and the
+    /// 16 kHz analysis grid), in ascending order.
+    /// </summary>
+    internal static IReadOnlyList<RationalTime> PauseCutPoints(PtsIndex index, RenderProfile profile, int audioSampleRate) =>
+        index.Entries.Select(static frame => frame.PresentationTime)
+            .Where(time => FfmpegCompiler.IsOnOutputGrid(time, profile) && FfmpegCompiler.IsOnSampleGrid(time, audioSampleRate) &&
+                FfmpegCompiler.IsOnSampleGrid(time, AnalysisAudioTimeline.FixedSampleRate))
+            .Order().ToArray();
+
+    private static readonly RationalTime MinimumPauseTightening = new(1, 10);
+
+    /// <summary>
+    /// FR-057.5: speech is the timed words (after the FR-057.5 correction), so a pause between two words of
+    /// one utterance can be shortened. An utterance with any untimed word counts as speech for its whole range.
+    /// </summary>
+    internal static IReadOnlyList<TimeRange> SpeechRanges(IReadOnlyList<Utterance> utterances) =>
+        utterances.SelectMany(static utterance => utterance.Tokens.Any(static word => word.Range is null)
+            ? [utterance.Range]
+            : utterance.Tokens.Select(static word => word.Range!.Value)).ToArray();
+
+    /// <summary>
+    /// FR-057: the part of each detected pause that lies between two utterances and is at least
+    /// <paramref name="minimum"/> long, trimmed so that the deleted middle (pause minus 0.15 s on each side)
+    /// starts and ends on exact cut points. Returned as analysis-sample ranges (16 kHz, source time zero).
+    /// </summary>
+    internal static IReadOnlyList<(long StartSample, long EndSample)> SelectPauseRanges(SilenceDetectionResult detected,
+        IReadOnlyList<TimeRange> speech, RationalTime minimum, IReadOnlyList<RationalTime> cutPoints)
+    {
+        RationalTime padding = AutoDecisionOrchestrator.PausePadding;
+        var gaps = new List<TimeRange>();
+        RationalTime? speechEnd = null;
+        foreach (TimeRange utterance in speech.OrderBy(static item => item.Start))
+        {
+            if (speechEnd is RationalTime end && utterance.Start > end)
+            {
+                gaps.Add(new TimeRange(end, utterance.Start - end));
+            }
+
+            speechEnd = speechEnd is RationalTime latest && latest > utterance.End ? latest : utterance.End;
+        }
+
+        var ranges = new List<(long StartSample, long EndSample)>();
+        foreach (SilenceCandidate pause in detected.Candidates)
+        {
+            foreach (TimeRange gap in gaps)
+            {
+                RationalTime start = pause.SourceSpan.Range.Start > gap.Start ? pause.SourceSpan.Range.Start : gap.Start;
+                RationalTime end = pause.SourceSpan.Range.End < gap.End ? pause.SourceSpan.Range.End : gap.End;
+                if (end - start < minimum)
+                {
+                    continue;
+                }
+
+                RationalTime? first = null;
+                RationalTime? last = null;
+                foreach (RationalTime point in cutPoints)
+                {
+                    if (point >= start + padding && first is null) { first = point; }
+                    if (point <= end - padding) { last = point; }
+                }
+
+                if (first is not RationalTime cutStart || last is not RationalTime cutEnd || cutEnd - cutStart < MinimumPauseTightening)
+                {
+                    continue;
+                }
+
+                ranges.Add((ToAnalysisSample(detected.Timeline, cutStart - padding), ToAnalysisSample(detected.Timeline, cutEnd + padding)));
+            }
+        }
+
+        return ranges;
+    }
+
+    private static long ToAnalysisSample(AnalysisAudioTimeline timeline, RationalTime sourceTime)
+    {
+        RationalTime offset = sourceTime - timeline.FirstDecodedAudioFramePresentationTime;
+        return checked(offset.Value * AnalysisAudioTimeline.FixedSampleRate / offset.Rate);
     }
 
     internal static SourceOnlyAutomaticSelection SelectAutomaticCandidates(AutoDecisionRequest request,
@@ -2682,6 +2939,11 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                     RepetitionSuggestionCandidate repeated => repeated.Payload.EvidenceTokenIds,
                     _ => [],
                 };
+                bool isPause = candidate is SilenceSuggestionCandidate pause &&
+                    pause.Payload.ThresholdVersion == SilenceDetector.PauseThresholdVersion;
+                // FR-057.5: a pause may lie inside an utterance, but never over a word, an untimed word, or
+                // text that the subtitle segmenter cannot place.
+                Utterance[] around = import.Revision.Utterances.Where(item => item.Range.Overlaps(cut)).ToArray();
                 if (candidate is RepetitionSuggestionCandidate repetition &&
                     repetition.Payload.Features.Rule == RepetitionReasonFeatures.AdjacentExactUtteranceRule)
                 {
@@ -2689,7 +2951,13 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                     // equality of that placeholder does not prove the same speaker.
                     reason = "source_only.repetition_speaker_unverified_retained";
                 }
-                else if (candidate is SilenceSuggestionCandidate && import.Revision.Utterances.Any(item => item.Range.Overlaps(cut)))
+                else if (isPause && around.Any(utterance => utterance.Tokens.Any(word => word.Range is TimeRange range && range.Overlaps(cut))))
+                { reason = "source_only.silence_speech_overlap_retained"; }
+                else if (isPause && around.Any(utterance => utterance.Tokens.Any(word => word.Range is null)))
+                { reason = "source_only.untimed_words_retained"; }
+                else if (isPause && around.Any(utterance => HasUnrepresentedWords(utterance, token)))
+                { reason = "source_only.unrepresented_words_retained"; }
+                else if (!isPause && candidate is SilenceSuggestionCandidate && around.Length > 0)
                 { reason = "source_only.silence_speech_overlap_retained"; }
                 else if (candidate is not SilenceSuggestionCandidate && import.Revision.Utterances
                     .Where(item => item.Range.Overlaps(cut)).Any(item => item.Tokens.Any(word => word.Range is null)))
@@ -2969,7 +3237,8 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         TimelineMap timeline, LayoutSpec layout, RenderProfile renderProfile, TranscriptImportResult import,
         ContentDigest transcriptDigest, IReadOnlyList<SourceSpan> productionSpans,
         DefaultSettingsProfile settingsProfile, DefaultSettingsSnapshot snapshot, RenderFontEvidence font,
-        string actorSid, DateTimeOffset createdAt, CancellationToken token = default)
+        string actorSid, DateTimeOffset createdAt, CancellationToken token = default,
+        StandardSubtitleBuildPolicy policy = StandardSubtitleBuildPolicy.FullCoverage)
     {
         token.ThrowIfCancellationRequested();
         if (timeline.CompositionVersionId != version.Id ||
@@ -3018,9 +3287,10 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             RenderGraphCanonicalEvidence.ComputeCompositionDigest(projected), projected);
         TimelineMap projectionTimeline = TimelineMapBuilder.Build(
             StableId<TimelineMapIdTag>(projection.Id.ToString(), "timeline"), projection);
+        // Production cuts are the only places where a FullCoverage cue end may be extended.
         StandardSubtitleBuildResult built = StandardSubtitleBuilder.BuildWithEvidence(projection, projectionTimeline,
             layout, renderProfile, import.Revision, transcriptDigest, import.SourceSpans,
-            settingsProfile, snapshot, font, actorSid, createdAt, token);
+            settingsProfile, snapshot, font, actorSid, createdAt, token, policy, timeline.Entries);
         var histories = new List<SubtitleCueHistory>();
         foreach (SubtitleCueRevision cue in built.Subtitles.Revisions)
         {
@@ -3207,6 +3477,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         internal EntityId<ArtifactIdTag> Raw { get; } = StableId<ArtifactIdTag>(seed, "asr-raw");
         internal EntityId<ArtifactIdTag> Transcript { get; } = StableId<ArtifactIdTag>(seed, "machine-transcript");
         internal EntityId<ArtifactIdTag> Checkpoint { get; } = StableId<ArtifactIdTag>(seed, "analysis-checkpoint");
+        internal EntityId<ArtifactIdTag> TimingCorrection { get; } = StableId<ArtifactIdTag>(seed, "asr-timing-correction");
         internal EntityId<TranscriptRevisionIdTag> Revision { get; } = StableId<TranscriptRevisionIdTag>(seed, "machine-revision");
         internal EntityId<TranscriptSpeakerIdTag> Speaker { get; } = StableId<TranscriptSpeakerIdTag>(seed, "anonymous-speaker");
     }

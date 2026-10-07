@@ -74,7 +74,21 @@ public sealed class SourceOnlyBridgeTests
         Assert.IsFalse(raw.Contains(f.Generation.Root, StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(raw.Contains("storageReference", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(raw.Contains("stagingPath", StringComparison.OrdinalIgnoreCase));
-        Assert.IsFalse(raw.Contains(result.Artifacts[0].ArtifactId.ToString(), StringComparison.OrdinalIgnoreCase));
+        // FR-055 AC-030.1: a viewable output is identified (ID, digest, media type) only inside "outputs", so the
+        // list can preview it through the revalidating media route; no other artifact reference is listed.
+        Assert.AreEqual(stored.Request.CreatedAt, DateTimeOffset.Parse(entry.GetProperty("createdAt").GetString()!,
+            System.Globalization.CultureInfo.InvariantCulture));
+        Assert.AreEqual(0, entry.GetProperty("settings").GetArrayLength()); // A single video has nothing that differs.
+        string[] listed = entry.GetProperty("outputs").EnumerateArray()
+            .Select(static output => output.GetProperty("artifactId").GetString()!).ToArray();
+        CollectionAssert.AreEquivalent(result.Artifacts.Where(static artifact => artifact.FailureCode is null
+                && artifact.Artifact.Kind == ArtifactKind.Render && artifact.MediaType is "video/mp4" or "image/png")
+            .Select(static artifact => artifact.ArtifactId.ToString()).ToArray(), listed);
+        foreach (JsonElement output in entry.GetProperty("outputs").EnumerateArray())
+        {
+            CollectionAssert.AreEquivalent(new[] { "role", "artifactId", "contentDigest", "mediaType" },
+                output.EnumerateObject().Select(static property => property.Name).ToArray());
+        }
 
         // Reading the list is not a mutation.
         StoredSourceOnlyExecution after = new SourceOnlyExecutionStore(f.Generation.DatabasePath)

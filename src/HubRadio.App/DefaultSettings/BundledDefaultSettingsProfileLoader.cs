@@ -15,7 +15,17 @@ public static class BundledDefaultSettingsProfileLoader
         {
             ["1.0.0"] = "5ffedbd56f43f9142b92c16e36abfd289da45cd34feea897da82101164a7414c",
             ["1.1.0"] = "6f0bde7c863572d9e41b6b18e9f2a223a9864f80255334d35fa10f9d1fa3ee31",
+            ["1.2.0"] = "b96e40f3954a12f667d60040a77c3132b05b6b5e92bb40207a5de2c327ca602d",
         };
+
+    /// <summary>Keys added by profile 1.2.0 (FR-057〜FR-060). Older profiles do not define them.</summary>
+    internal static readonly IReadOnlyList<string> KeysAddedIn120 =
+    [
+        "audio.soundEffectsEnabled",
+        "editing.pauseTightening",
+        "output.longFormOrientation",
+        "subtitles.emphasisTelopAmount",
+    ];
     private const string CallToActionDescription =
         "A short uses the single text 本編を見る only when a corresponding long-form version exists; otherwise it has no call to action. No URL or other action is inferred.";
 
@@ -230,17 +240,22 @@ public static class BundledDefaultSettingsProfileLoader
         string[] actualKeys = profile.Definitions
             .Select(static definition => definition.Key)
             .ToArray();
-        if (!actualKeys.SequenceEqual(ExpectedKeys, StringComparer.Ordinal))
+        bool has120Keys = profile.Version.ToString() is not ("1.0.0" or "1.1.0");
+        string[] expectedKeys = has120Keys
+            ? ExpectedKeys.Concat(KeysAddedIn120).Order(StringComparer.Ordinal).ToArray()
+            : ExpectedKeys;
+        if (!actualKeys.SequenceEqual(expectedKeys, StringComparer.Ordinal))
         {
             throw new JsonException(
                 "The bundled default-settings profile key inventory is not approved.");
         }
 
-        RequireGroupCount(profile, DefaultSettingGroup.AudioAndAssets, 20);
-        RequireGroupCount(profile, DefaultSettingGroup.Editing, 22);
+        int added = has120Keys ? 1 : 0;
+        RequireGroupCount(profile, DefaultSettingGroup.AudioAndAssets, 20 + added);
+        RequireGroupCount(profile, DefaultSettingGroup.Editing, 22 + added);
         RequireGroupCount(profile, DefaultSettingGroup.PrivacyAndStorage, 13);
-        RequireGroupCount(profile, DefaultSettingGroup.ProjectAndOutput, 30);
-        RequireGroupCount(profile, DefaultSettingGroup.SubtitlesAndGraphics, 38);
+        RequireGroupCount(profile, DefaultSettingGroup.ProjectAndOutput, 30 + added);
+        RequireGroupCount(profile, DefaultSettingGroup.SubtitlesAndGraphics, 38 + added);
     }
 
     private static void RequireGroupCount(

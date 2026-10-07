@@ -215,6 +215,6 @@ const failureMessages: Readonly<Record<ComparisonFailureStatus, string>> = {
   forbidden: '現在の Windows ユーザーには構成版を比較する権限がありません。',
   notFound: '指定された構成版を確認できませんでした。版 ID を見直してください。',
   staleVersion: '版 ID と内容 digest が一致しません。最新の完全 digest を指定してください。',
-  invalidComparison: '異なる案件の構成版は比較できません。',
+  invalidComparison: '異なるProjectの構成版は比較できません。',
   unavailable: 'ネイティブホストへ比較要求を送信できませんでした。',
 }

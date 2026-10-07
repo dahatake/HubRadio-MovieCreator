@@ -21,6 +21,7 @@ import {
   normalizeProjectDisplayName,
   parseProjectBridgeResponse,
   parseProjectDraftInput,
+  projectPosterUrl,
   type ProjectDraftInput,
 } from './projectProtocol'
 
@@ -225,6 +226,42 @@ describe('project bridge responses', () => {
     expect(parseProjectBridgeResponse(withThumbnail(thumbnail, base.result.projects[0]))).toBeNull()
   })
 
+  // FR-054 AC-029.4
+  it('accepts the recorded automatic settings of a draft and rejects malformed ones', () => {
+    const response = draftResponse(PROJECT_LOAD_DRAFT_METHOD)
+    const item = { key: 'subtitles.verticalLineLengthMaximum', label: '縦型の字幕1行の文字数', valueText: '9文字', reason: '短い字幕にしました。' }
+    const withAuto = (value: unknown) => ({ ...response, result: { draft: { ...response.result.draft, autoSettings: value } } })
+    expect(parseProjectBridgeResponse(withAuto([item]))).toEqual(withAuto([item]))
+    expect(parseProjectBridgeResponse(withAuto(null))).toEqual(withAuto(null))
+    expect(parseProjectBridgeResponse(response)).not.toBeNull()
+    for (const forged of [[{ ...item, extra: 1 }], [{ ...item, reason: '' }], [{ ...item, label: 'x'.repeat(513) }], 'text', [item, null]]) {
+      expect(parseProjectBridgeResponse(withAuto(forged))).toBeNull()
+    }
+  })
+
+  // FR-053 AC-028.6
+  it('accepts a digest-only poster for drafts and Projects and rejects anything else', () => {
+    const base = listResponse()
+    const withPoster = (value: unknown) => ({
+      ...base,
+      result: { ...base.result, projects: [{ ...base.result.projects[0], poster: value }] },
+    })
+    const accepted = withPoster({ contentDigest: 'a'.repeat(64) })
+    expect(parseProjectBridgeResponse(accepted)).toEqual(accepted)
+    expect(parseProjectBridgeResponse(withPoster(null))).toEqual(withPoster(null))
+    for (const forged of [
+      { contentDigest: 'A'.repeat(64) },
+      { contentDigest: 'a'.repeat(63) },
+      { contentDigest: 'a'.repeat(64), path: 'C:\\posters\\x.jpg' },
+      'https://player-media.appassets.example/source-only/poster/x',
+      undefined,
+    ]) {
+      expect(parseProjectBridgeResponse(withPoster(forged))).toBeNull()
+    }
+    expect(projectPosterUrl(draftId, { contentDigest: 'b'.repeat(64) }))
+      .toBe(`https://player-media.appassets.example/source-only/poster/${draftId}/${'b'.repeat(64)}`)
+  })
+
   it('accepts an exact truthful list and keeps unknown columns null', () => {
     const response = listResponse()
     const parsed = parseProjectBridgeResponse(response)
@@ -357,7 +394,7 @@ describe('project bridge responses', () => {
       method: PROJECT_DELETE_METHOD,
       error: {
         code: 'project.delete_blocked',
-        message: '処理中のジョブがあるため、この案件は削除できません。',
+        message: '処理中のジョブがあるため、このProjectは削除できません。',
       },
     }
     expect(parseProjectBridgeResponse(blocked)).toEqual(blocked)

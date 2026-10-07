@@ -8,7 +8,7 @@ import { AppIcon, type AppIconName } from './AppIcons'
 // 5bae3fb7771054c252a54b1d9210e9c03439fa1b; not SHA-256s of our JSX.
 const iconCases = [
   { name: 'video', label: '元動画', blobSha1: '04f29c5d88569dcc0efe39e555724d3a25e3acf1' },
-  { name: 'processing', label: '自動編集', blobSha1: 'ba11497b00c12a394dc3d15092b4927b9cade4ba' },
+  { name: 'processing', label: 'ジョブの状態の確認', blobSha1: 'ba11497b00c12a394dc3d15092b4927b9cade4ba' },
   { name: 'play', label: '仕上がり', blobSha1: '05a0ec3f98ee72567238bfeee1ffa980553d8b0b' },
   { name: 'save', label: '保存', blobSha1: '4df2b9d636fdaa2635ebcb825acdde439043442c' },
   { name: 'settings', label: '設定', blobSha1: '54752c20fe6c380b1f2b5bcbef8738295e2cc1d0' },

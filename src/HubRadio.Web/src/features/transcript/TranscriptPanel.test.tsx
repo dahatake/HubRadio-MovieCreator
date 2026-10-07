@@ -485,7 +485,7 @@ describe('TranscriptPanelView', () => {
     expect(client.listenerCount).toBe(0)
     expect(container.querySelector('.transcript-workspace')).toBeNull()
     expect(container.querySelector('input')).toBeNull()
-    expect(container.textContent).toContain('確定済み案件を案件一覧から開いてください。')
+    expect(container.textContent).toContain('確定済みProjectをProject一覧から開いてください。')
     expect(container.textContent).not.toContain(projectId)
     expect(buttonByText('最新版を読み込む').disabled).toBe(true)
   })
@@ -497,7 +497,9 @@ describe('TranscriptPanelView', () => {
 
     expect(client.sent).toHaveLength(1)
     expect(client.sent[0]?.params).toEqual({ projectId })
-    expect(container.textContent).toContain(`版 ${revisionId}`)
+    // FR-052: the loaded revision is summarized in plain language without its raw ID.
+    expect(container.textContent).toContain('現在の文字起こし')
+    expect(container.textContent).not.toContain(revisionId)
     expect(requiredElement<HTMLElement>('.transcript-panel').hidden).toBe(false)
     expect(requiredElement<HTMLInputElement>('.transcript-reason input').disabled).toBe(false)
   })
@@ -700,9 +702,9 @@ describe('TranscriptPanelView', () => {
     const second = new FakeTranscriptClient()
     renderPanel(first, { context: { projectId } })
     emitRead(first)
-    setText(requiredElement<HTMLInputElement>('.transcript-reason input'), '元の案件の理由')
+    setText(requiredElement<HTMLInputElement>('.transcript-reason input'), '元のProjectの理由')
     clickButton('ハブ を編集')
-    setText(requiredElement<HTMLInputElement>('.token-editing input'), '元の案件の未保存本文')
+    setText(requiredElement<HTMLInputElement>('.token-editing input'), '元のProjectの未保存本文')
 
     renderPanel(second, { context: { projectId: otherProjectId } })
 
@@ -711,17 +713,17 @@ describe('TranscriptPanelView', () => {
     expect(first.listenerCount).toBe(1)
     expect(container.querySelector('.transcript-workspace')).toBeNull()
     expect(container.textContent).not.toContain('ハブ')
-    expect(container.textContent).not.toContain('元の案件の理由')
+    expect(container.textContent).not.toContain('元のProjectの理由')
     expect(container.textContent).toContain('未保存の入力または保存中の変更を保持しています。')
     expect(buttonByText('最新版を読み込む').disabled).toBe(true)
 
     // No shell callback is required for the panel's fail-safe draft retention.
     renderPanel(first, { context: { projectId }, active: false })
     const edit = requiredElement<HTMLInputElement>('.token-editing input')
-    expect(edit.value).toBe('元の案件の未保存本文')
+    expect(edit.value).toBe('元のProjectの未保存本文')
     expect(document.activeElement).not.toBe(edit)
     renderPanel(first, { context: { projectId }, active: true })
-    expect(requiredElement<HTMLInputElement>('.transcript-reason input').value).toBe('元の案件の理由')
+    expect(requiredElement<HTMLInputElement>('.transcript-reason input').value).toBe('元のProjectの理由')
     expect(first.sent).toHaveLength(1)
     pressKey(edit, 'Escape')
     setText(requiredElement<HTMLInputElement>('.transcript-reason input'), '')
@@ -1439,11 +1441,11 @@ describe('TranscriptPanelView', () => {
     const dirtyChanges: boolean[] = []
     render(client, undefined, { context: { projectId }, onDirtyChange: (dirty) => { dirtyChanges.push(dirty) } })
     emitRead(client)
-    setText(requiredElement<HTMLInputElement>('.transcript-reason input'), '自分の案件の理由')
+    setText(requiredElement<HTMLInputElement>('.transcript-reason input'), '自分のProjectの理由')
     clickButton('話者を設定')
     setText(requiredElement<HTMLInputElement>('.speaker-editor input'), '未送信の姓')
     clickButton('ハブ を編集')
-    setText(requiredElement<HTMLInputElement>('.token-editing input'), '自分の案件の本文')
+    setText(requiredElement<HTMLInputElement>('.token-editing input'), '自分のProjectの本文')
     pressKey(requiredElement<HTMLInputElement>('.token-editing input'), 'Enter')
     if (method === 'transcript.read') {
       emitStatus(client, 1, 'conflict')
@@ -1455,14 +1457,14 @@ describe('TranscriptPanelView', () => {
     const foreign = value.result.snapshot!
     foreign.projectId = otherProjectId
     foreign.termCandidates = []
-    foreign.utterances[0]!.text = foreign.utterances[0]!.sentences[0]!.text = '別案件の秘密 未時刻'
-    foreign.utterances[0]!.sentences[0]!.tokens[0]!.text = '別案件の秘密'
+    foreign.utterances[0]!.text = foreign.utterances[0]!.sentences[0]!.text = '別Projectの秘密 未時刻'
+    foreign.utterances[0]!.sentences[0]!.tokens[0]!.text = '別Projectの秘密'
     client.emit(requireResponse(value))
 
     expect(requiredElement<HTMLElement>('.transcript-status').dataset.transcriptStatus).toBe('invalid')
-    expect(container.innerHTML).not.toContain('別案件の秘密')
+    expect(container.innerHTML).not.toContain('別Projectの秘密')
     expect(container.textContent).not.toContain(otherProjectId)
-    expect(requiredElement<HTMLInputElement>('.token-editing input').value).toBe('自分の案件の本文')
+    expect(requiredElement<HTMLInputElement>('.token-editing input').value).toBe('自分のProjectの本文')
     expect(requiredElement<HTMLInputElement>('.token-editing input').readOnly).toBe(true)
     expect(buttonByText('保存').disabled).toBe(true)
     clickButton('最新版を読み込む')
@@ -1487,7 +1489,7 @@ describe('TranscriptPanelView', () => {
     expect(client.disposed).toBe(true)
     expect(container.querySelector('.transcript-workspace')).toBeNull()
     expect(container.textContent).not.toContain('ハブ')
-    expect(container.textContent).toContain('確定済み案件を案件一覧から開いてください。')
+    expect(container.textContent).toContain('確定済みProjectをProject一覧から開いてください。')
     expect(buttonByText('最新版を読み込む').disabled).toBe(true)
   })
 

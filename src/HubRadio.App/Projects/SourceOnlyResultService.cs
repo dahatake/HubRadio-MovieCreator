@@ -26,7 +26,14 @@ public sealed record SourceOnlyVersionHistoryEntry(
     EntityId<CompositionVersionIdTag> VersionId, ContentDigest VersionDigest,
     EntityId<CompositionVersionIdTag>? ParentVersionId,
     EntityId<SourceOnlyExecutionIdTag> ExecutionId, SourceOnlyExecutionPhase Phase,
-    bool HasResult, bool IsCurrent);
+    bool HasResult, bool IsCurrent,
+    DateTimeOffset? CreatedAt = null,
+    IReadOnlyList<DefaultSettingSelection>? Settings = null,
+    IReadOnlyList<SourceOnlyVersionOutput>? Outputs = null);
+
+/// <summary>FR-055: a viewable output (video or image) of one listed version; IDs and digest only.</summary>
+public sealed record SourceOnlyVersionOutput(
+    SourceOnlyResultRole Role, EntityId<ArtifactIdTag> ArtifactId, ContentDigest ContentDigest, string MediaType);
 
 /// <summary>
 /// Reopens durable results using store-owned IDs only. Validation is a snapshot, NOT
@@ -83,10 +90,51 @@ public sealed class SourceOnlyResultService
             }
 
             entries.Add(new SourceOnlyVersionHistoryEntry(versionId, versionDigest, version.ParentVersionId,
-                execution.Request.ExecutionId, execution.Phase, execution.ResultJson is not null, versionId == head));
+                execution.Request.ExecutionId, execution.Phase, execution.ResultJson is not null, versionId == head,
+                execution.Request.CreatedAt, execution.Request.SettingsSnapshot.Values, ReadOutputs(execution)));
         }
 
-        return entries;
+        return KeepDifferingSettings(entries);
+    }
+
+    /// <summary>
+    /// FR-055: keeps, in every entry, only the settings whose value is not the same in all entries (or that
+    /// some entry lacks), ordered by key, so the list states exactly what changed from one video to the next.
+    /// </summary>
+    internal static IReadOnlyList<SourceOnlyVersionHistoryEntry> KeepDifferingSettings(
+        IReadOnlyList<SourceOnlyVersionHistoryEntry> entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        var differing = entries.SelectMany(static entry => entry.Settings ?? []).GroupBy(static item => item.Key, StringComparer.Ordinal)
+            .Where(group => group.Select(static item => item.Value).Distinct().Count() > 1 || group.Count() != entries.Count)
+            .Select(static group => group.Key).ToHashSet(StringComparer.Ordinal);
+        return entries.Select(entry => entry with
+        {
+            Settings = Array.AsReadOnly((entry.Settings ?? []).Where(item => differing.Contains(item.Key))
+                .OrderBy(static item => item.Key, StringComparer.Ordinal).ToArray()),
+        }).ToArray();
+    }
+
+    private static IReadOnlyList<SourceOnlyVersionOutput> ReadOutputs(StoredSourceOnlyExecution execution)
+    {
+        if (execution.ResultJson is null || execution.ResultDigest is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            SourceOnlyResult result = SourceOnlyResult.ParseCanonical(execution.ResultJson, execution.ResultDigest);
+            return Array.AsReadOnly(result.Artifacts.Where(static item => item.FailureCode is null
+                    && item.Artifact.Kind == ArtifactKind.Render && item.MediaType is "video/mp4" or "image/png")
+                .Select(static item => new SourceOnlyVersionOutput(item.Role, item.ArtifactId, item.ArtifactDigest, item.MediaType))
+                .ToArray());
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // A damaged record only loses its previews; the media route revalidates every read anyway.
+            return [];
+        }
     }
 
     /// <summary>Invalid canonical/binding data is rejected; missing/stale resources are returned as per-artifact issues.</summary>

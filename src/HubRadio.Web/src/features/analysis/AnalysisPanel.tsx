@@ -44,9 +44,10 @@ import {
   type AnalysisTopicInputs,
   type AnalysisUiStatus,
 } from './analysisState'
+import { formatDuration, formatTimestamp } from '../results/humanReadable'
 
 const statusMessages: Readonly<Record<AnalysisUiStatus, string>> = {
-  idle: '確定済み案件を開くと解析結果を確認できます',
+  idle: '確定済みProjectを開くと解析結果を確認できます',
   loading: '正規の解析 snapshot を確認しています',
   available: '解析結果を読み込みました',
   forbidden: 'この解析結果を表示または判断する権限がありません',
@@ -61,8 +62,8 @@ const statusMessages: Readonly<Record<AnalysisUiStatus, string>> = {
 
 const navigationMessages = Object.freeze({
   requested: '元時刻への移動をプレイヤーへ要求しました。',
-  unavailable: '同じ案件の代理動画を先に読み込んでください。',
-  projectMismatch: 'プレイヤーには別の案件が読み込まれています。',
+  unavailable: '同じProjectの代理動画を先に読み込んでください。',
+  projectMismatch: 'プレイヤーには別のProjectが読み込まれています。',
   busy: 'プレイヤーの移動確認が完了するまでお待ちください。',
   outOfRange: 'この元時刻に対応する代理フレームはありません。',
 } as const)
@@ -306,7 +307,7 @@ function AnalysisPanelSession({
         dispatch,
       )
     } catch {
-      setInputMessage('案件 ID を解析要求として検証できませんでした。')
+      setInputMessage('Project ID を解析要求として検証できませんでした。')
     }
   }, [active, dispatch, projectId, refreshKey])
 
@@ -451,7 +452,7 @@ function AnalysisPanelSession({
         <div className="analysis-heading-actions">
           <p className="analysis-status" role="status" data-analysis-status={state.status}>
             {isContextual && projectId === null
-              ? '未選択 — 解析する案件を選択してください。'
+              ? '未選択 — 解析するProjectを選択してください。'
               : isContextual && (state.status === 'bridgeUnavailable' || state.status === 'unavailable')
                 ? `未接続 — ${statusMessages[state.status]}`
                 : statusMessages[state.status]}
@@ -471,7 +472,7 @@ function AnalysisPanelSession({
 
       {!isContextual && projectId === null ? (
         <div className="analysis-empty">
-          <p>確定済み案件を案件一覧から開いてください。</p>
+          <p>確定済みProjectをProject一覧から開いてください。</p>
         </div>
       ) : null}
 
@@ -552,9 +553,8 @@ function AnalysisPanelSession({
           )}
 
           <div className="analysis-evidence-summary">
-            <span>解析版 {snapshot.revisionId}</span>
-            <span>文字起こし版 {snapshot.sourceRevisionId}</span>
-            <time dateTime={snapshot.createdAt}>{snapshot.createdAt}</time>
+            <span>解析日時</span>
+            <time dateTime={snapshot.createdAt}>{new Date(snapshot.createdAt).toLocaleString('ja-JP')}</time>
           </div>
 
           <section className="analysis-section" aria-labelledby="analysis-speakers-title">
@@ -1130,7 +1130,6 @@ function SensitivitySection({
             <li key={`${finding.utteranceId}-${finding.kind}-${index}`}>
               <div>
                 <strong>{sensitivityLabels[finding.kind]}</strong>
-                <span>{finding.reasonCode}</span>
                 <span>{formatRange(finding.sourceRange)}</span>
               </div>
               <button type="button" disabled={disabled} onClick={() => onNavigate(finding.sourceRange)}>
@@ -1213,11 +1212,11 @@ function formatConfidence(value: number | null): string {
 }
 
 function formatRange(range: AnalysisTimeRange): string {
-  return `開始 ${formatRational(range.start)}・長さ ${formatRational(range.duration)}`
+  return `${formatTimestamp(range.start.value, range.start.rate)} から ${formatDuration(range.duration.value, range.duration.rate)}`
 }
 
 function formatRational(value: AnalysisTimeRange['start']): string {
-  return `${value.value}/${value.rate}`
+  return formatTimestamp(value.value, value.rate)
 }
 
 function yesNo(value: boolean): string {
@@ -1228,7 +1227,7 @@ function originLabel(origin: AnalysisTopic['titleOrigin']): string {
   switch (origin) {
     case 'unset': return '未設定'
     case 'deterministicPlaceholder': return '決定論的な仮値'
-    case 'projectSnapshot': return '案件 snapshot'
+    case 'projectSnapshot': return 'Project snapshot'
     case 'deterministicTranscriptOverlap': return '文字起こし重複時間'
     case 'manualEditorial': return '手動編集'
   }
@@ -1257,10 +1256,10 @@ function decisionKindLabel(decision: NonNullable<AnalysisCandidate['decision']>[
 
 function stagedChangeLabel(change: AnalysisStagedChange): string {
   switch (change.kind) {
-    case 'transcriptRevision': return '文字起こし子revision'
+    case 'transcriptRevision': return '文字起こしの修正'
     case 'editOperation': return change.operation.kind === 'delete' ? '削除操作' : '分割操作'
-    case 'cue': return '強調graphic cue'
-    case 'topicMetadataRevision': return `トピックmetadata（${fieldLabel(change.field)}）`
+    case 'cue': return '強調テロップ'
+    case 'topicMetadataRevision': return `トピック情報（${fieldLabel(change.field)}）`
   }
 }
 

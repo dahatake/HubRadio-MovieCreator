@@ -139,7 +139,7 @@ Appの2,410ケースには環境依存4件とopt-in実統合4件の計8 skipを�
 
 source-onlyの生成済み字幕workspaceは字幕専用として公開し、**手動layout・画角・keyframe・terop編集／永続化は提供しない**。legacy runtimeのメモリ内機能を字幕journalの永続保存と同一視しない。`ThumbnailApplicationRuntime`の旧承認テンプレートproviderも既定では利用不可のまま。一方、`StandardArtifactGenerator`の**標準自動thumbnailは社内限定で接続済み**であり、旧承認経路とは別。設定の勝手な変更や架空の`BrandApprover`承認で利用可能に見せない。
 
-これは当初UX-035／UX-050で認められた理由付き利用不可表示の境界である。両タスクは52必須タスク内に残り、新しいブロッカー・対象外の追加でも「手動機能実装済み」の主張でもない。**過去版復元UI/RPCは2026-09-22に実装した**（`pipeline.versions` / `pipeline.restore` と `VersionHistoryPanel`、上記「実装済みpipeline API」表を参照）。**検証範囲は自動試験のみで、pipeline E2Eおよびnative GUI上の受入は未実施である。** タブや警告の「戻る」をundo・過去版復元とはしない扱いは従来どおり維持する。詳細は[v2-012 敵対的レビュー](../reviews/v2-012-version-restore-adversarial-review.md)。
+これは当初UX-035／UX-050で認められた理由付き利用不可表示の境界である。両タスクは52必須タスク内に残り、新しいブロッカー・対象外の追加でも「手動機能実装済み」の主張でもない。**過去版復元UI/RPCは2026-09-22に実装した**（`pipeline.versions` / `pipeline.restore` と `VersionHistoryPanel`、上記「実装済みpipeline API」表を参照。2026-10-07のFR-063で、画面の部品は`JobResultsBrowser`に置き換えた。復元の操作「この動画から作り直す」とRPCは変えていない）。**検証範囲は自動試験のみで、pipeline E2Eおよびnative GUI上の受入は未実施である。** タブや警告の「戻る」をundo・過去版復元とはしない扱いは従来どおり維持する。詳細は[v2-012 敵対的レビュー](../reviews/v2-012-version-restore-adversarial-review.md)。
 
 ### 解析編集の既存境界
 

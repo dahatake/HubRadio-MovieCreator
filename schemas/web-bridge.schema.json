@@ -88,6 +88,8 @@
     { "$ref": "#/$defs/settingsFileExportRequest" },
     { "$ref": "#/$defs/settingsFilePreviewRequest" },
     { "$ref": "#/$defs/settingsFileApplyRequest" },
+    { "$ref": "#/$defs/settingsWorkspaceReadRequest" },
+    { "$ref": "#/$defs/settingsWorkspaceUpdateRequest" },
     { "$ref": "#/$defs/settingsGlobalReadResponse" },
     { "$ref": "#/$defs/settingsGlobalUpdateResponse" },
     { "$ref": "#/$defs/settingsGlobalResetResponse" },
@@ -95,6 +97,8 @@
     { "$ref": "#/$defs/settingsFileExportResponse" },
     { "$ref": "#/$defs/settingsFilePreviewResponse" },
     { "$ref": "#/$defs/settingsFileApplyResponse" },
+    { "$ref": "#/$defs/settingsWorkspaceReadResponse" },
+    { "$ref": "#/$defs/settingsWorkspaceUpdateResponse" },
     { "$ref": "#/$defs/pipelineReadRequest" },
     { "$ref": "#/$defs/pipelineRegenerateRequest" },
     { "$ref": "#/$defs/pipelineRetryRequest" },
@@ -327,7 +331,7 @@
     "sourceOnlyVersionEntry": {
       "$comment": "One past composition version. No file path, storage reference or artifact content crosses this boundary.",
       "type": "object", "additionalProperties": false,
-      "required": ["versionId", "versionDigest", "parentVersionId", "executionId", "phase", "hasResult", "isCurrent"],
+      "required": ["versionId", "versionDigest", "parentVersionId", "executionId", "phase", "hasResult", "isCurrent", "createdAt", "settings", "outputs"],
       "properties": {
         "versionId": { "$ref": "#/$defs/entityId" },
         "versionDigest": { "$ref": "#/$defs/contentDigest" },
@@ -335,7 +339,26 @@
         "executionId": { "$ref": "#/$defs/entityId" },
         "phase": { "enum": ["Queued", "Ingesting", "Analyzing", "Composing", "Rendering", "Evaluating", "Delivering", "Completed", "Failed", "Canceled", "ReselectionRequired", "ReconciliationRequired"] },
         "hasResult": { "type": "boolean" },
-        "isCurrent": { "type": "boolean" }
+        "isCurrent": { "type": "boolean" },
+        "createdAt": { "$comment": "FR-055: when this video's run was accepted (UTC).", "$ref": "#/$defs/timestamp" },
+        "settings": {
+          "$comment": "FR-055: values of only those settings that differ between the listed versions.",
+          "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/settingsSelection" }
+        },
+        "outputs": {
+          "$comment": "FR-055: viewable outputs; IDs and digest only. Media is served by the revalidating source-only route.",
+          "type": "array", "maxItems": 64,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["role", "artifactId", "contentDigest", "mediaType"],
+            "properties": {
+              "role": { "enum": ["LandscapeClean", "LandscapeBurnIn", "VerticalBurnIn", "SubRip", "WebVtt", "LandscapeThumbnail", "VerticalThumbnail"] },
+              "artifactId": { "$ref": "#/$defs/entityId" },
+              "contentDigest": { "$ref": "#/$defs/contentDigest" },
+              "mediaType": { "enum": ["video/mp4", "image/png"] }
+            }
+          }
+        }
       }
     },
     "sourceOnlyVersionsResult": {
@@ -717,6 +740,8 @@
         "settings.file.export",
         "settings.file.preview",
         "settings.file.apply",
+        "settings.workspace.read",
+        "settings.workspace.update",
         "pipeline.read",
         "pipeline.regenerate",
         "pipeline.retry",
@@ -1104,7 +1129,8 @@
         "reviewState",
         "outputFormats",
         "updatedAt",
-        "thumbnail"
+        "thumbnail",
+        "poster"
       ],
       "properties": {
         "draftId": { "$ref": "#/$defs/entityId" },
@@ -1137,6 +1163,20 @@
               }
             }
           ]
+        },
+        "poster": {
+          "description": "FR-053: SHA-256 of the Project's poster frame (taken from its source video); null while none exists.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["contentDigest"],
+              "properties": {
+                "contentDigest": { "$ref": "#/$defs/contentDigest" }
+              }
+            }
+          ]
         }
       }
     },
@@ -1162,7 +1202,8 @@
         "brandTemplateId",
         "missingFields",
         "updatedAt",
-        "sourceOnly"
+        "sourceOnly",
+        "autoSettings"
       ],
       "properties": {
         "draftId": { "$ref": "#/$defs/entityId" },
@@ -1203,6 +1244,27 @@
           "oneOf": [
             { "$ref": "#/$defs/sourceOnlyProjectSummary" },
             { "type": "null" }
+          ]
+        },
+        "autoSettings": {
+          "description": "FR-054: settings the built-in preset chose for this Project's video; null when none were recorded.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["key", "label", "valueText", "reason"],
+                "properties": {
+                  "key": { "type": "string", "minLength": 1, "maxLength": 512 },
+                  "label": { "type": "string", "minLength": 1, "maxLength": 512 },
+                  "valueText": { "type": "string", "minLength": 1, "maxLength": 512 },
+                  "reason": { "type": "string", "minLength": 1, "maxLength": 512 }
+                }
+              }
+            }
           ]
         }
       }
@@ -7065,6 +7127,36 @@
         "expectedSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
         "expectedFileSha256": { "$ref": "#/$defs/contentDigest" }
       }
+    },
+    "settingsWorkspaceUpdateParams": {
+      "type": "object",
+      "$comment": "FR-062: null resets to the default Workspace location. The new location is used from the next start.",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": { "path": { "oneOf": [ { "type": "string", "maxLength": 260 }, { "type": "null" } ] } }
+    },
+    "settingsWorkspaceResult": {
+      "$comment": "FR-062: available carries the current, saved and default Workspace paths. restartRequired is true when the location used from the next start differs from the current one. Failures carry nulls and restartRequired=false; no other path or error text is returned.",
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["status", "currentPath", "savedPath", "defaultPath", "restartRequired"], "properties": { "status": { "const": "available" }, "currentPath": { "type": "string", "minLength": 1, "maxLength": 260 }, "savedPath": { "oneOf": [ { "type": "string", "minLength": 1, "maxLength": 260 }, { "type": "null" } ] }, "defaultPath": { "type": "string", "minLength": 1, "maxLength": 260 }, "restartRequired": { "type": "boolean" } } },
+        { "type": "object", "additionalProperties": false, "required": ["status", "currentPath", "savedPath", "defaultPath", "restartRequired"], "properties": { "status": { "enum": ["invalid", "forbidden", "unavailable"] }, "currentPath": { "type": "null" }, "savedPath": { "type": "null" }, "defaultPath": { "type": "null" }, "restartRequired": { "const": false } } }
+      ]
+    },
+    "settingsWorkspaceReadRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.workspace.read" }, "params": { "$ref": "#/$defs/emptyObject" } }
+    },
+    "settingsWorkspaceUpdateRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.workspace.update" }, "params": { "$ref": "#/$defs/settingsWorkspaceUpdateParams" } }
+    },
+    "settingsWorkspaceReadResponse": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.workspace.read" }, "result": { "$ref": "#/$defs/settingsWorkspaceResult" } }
+    },
+    "settingsWorkspaceUpdateResponse": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.workspace.update" }, "result": { "$ref": "#/$defs/settingsWorkspaceResult" } }
     },
     "settingsGlobalReadRequest": {
       "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],

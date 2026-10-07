@@ -912,6 +912,125 @@ public sealed class StandardSubtitleBuilderTests
         Assert.ThrowsExactly<NotSupportedException>(() => ((IList<StandardSubtitleBuildWarning>)result.Warnings).Clear());
     }
 
+    // FR-051 AC-026.1: continuous speech faster than the reading-speed limit is shown in full (v3), while
+    // the replay-only v2 policy keeps its original exclusion so saved results stay byte-identical.
+    [TestMethod]
+    public void FullCoverageShowsContinuousFastSpeechThatExactPolicyExcludes()
+    {
+        TokenInput[] first = Enumerable.Range(0, 20).Select(index => new TokenInput("話す", Range(index, 1, 5))).ToArray();
+        TokenInput[] second = Enumerable.Range(0, 10).Select(index => new TokenInput("続き", Range(20 + index, 1, 5))).ToArray();
+        var fixture = new Fixture([new UtteranceInput(Range(0, 4), first), new UtteranceInput(Range(4, 2), second)]);
+
+        StandardSubtitleBuildResult exact = fixture.Result();
+        StandardSubtitleBuildResult full = fixture.Result(policy: StandardSubtitleBuildPolicy.FullCoverage);
+
+        Assert.IsTrue(exact.HasUnresolvedCues);
+        Assert.HasCount(0, exact.Subtitles.Revisions);
+        Assert.IsFalse(full.HasUnresolvedCues, Describe(full));
+        CollectionAssert.AreEqual(fixture.Transcript.Utterances.SelectMany(static utterance => utterance.Tokens)
+                .Select(static token => token.Id).ToArray(),
+            full.Subtitles.Candidates.OrderBy(static candidate => candidate.SourceRange.Start)
+                .SelectMany(static candidate => candidate.EvidenceTokenIds).ToArray());
+        Assert.AreEqual(string.Concat(fixture.Transcript.Utterances.Select(static utterance => utterance.Text)),
+            string.Concat(full.Subtitles.Revisions.OrderBy(static revision => revision.Snapshot.Cue.Range.Start)
+                .Select(static revision => revision.Snapshot.Text)));
+        var tokens = fixture.Transcript.Utterances.SelectMany(static utterance => utterance.Tokens).ToDictionary(static token => token.Id);
+        RationalTime? previousEnd = null;
+        foreach (SubtitleCueRevision revision in full.Subtitles.Revisions.OrderBy(static revision => revision.Snapshot.Cue.Range.Start))
+        {
+            SubtitleCueCandidate candidate = full.Subtitles.Candidates.Single(item => item.Id == revision.SourceCandidateId);
+            Assert.IsLessThanOrEqualTo(32L, LineHalfWidthUnits(revision.Snapshot.Text));
+            Assert.AreEqual(candidate.SourceRange, revision.Snapshot.Cue.Range);
+            Assert.AreEqual(tokens[candidate.EvidenceTokenIds[0]].Range!.Value.Start, candidate.SourceRange.Start);
+            Assert.IsTrue(candidate.EvidenceTokenIds.All(id => tokens[id].Range!.Value.End <= candidate.SourceRange.End));
+            if (previousEnd is RationalTime end)
+                Assert.IsTrue(revision.Snapshot.Cue.Range.Start >= end);
+            previousEnd = revision.Snapshot.Cue.Range.End;
+        }
+
+        Assert.IsTrue(full.Warnings.All(static warning => warning.Rule.StartsWith(
+            StandardSubtitleBuilder.FullCoverageRuleVersion + ".", StringComparison.Ordinal)));
+        Assert.IsTrue(full.Warnings.Any(static warning => warning.Key == "subtitles.readingSpeedMaximum"
+            && warning.Reason == "shown-above-maximum-reading-speed" && !warning.IsUnresolved));
+    }
+
+    // FR-051 AC-026.2: a coverage cue below the minimum duration is extended into the following silence of
+    // its production cut (window), never beyond it, and keeps its start.
+    [TestMethod]
+    [DataRow(10, 5, 6)]
+    [DataRow(2, 1, 2)]
+    public void FullCoverageExtendsShortCueOnlyInsideTheProductionWindow(int windowTenths, int endValue, int endRate)
+    {
+        var fixture = new Fixture([Utterance("はい。", Range(0, 1, 2))]);
+        var window = new SourceSpan(EntityId<SourceSpanIdTag>.New(), fixture.Spans[0].AssetId, fixture.Spans[0].StreamId,
+            Range(0, windowTenths, 10), fixture.Spans[0].SourceDigest, null, []);
+        IReadOnlyList<TimelineMapEntry> windows = TimelineMapBuilder.Build(EntityId<TimelineMapIdTag>.New(),
+            fixture.CutVersion((window, window.Range))).Entries;
+
+        StandardSubtitleBuildResult exact = fixture.Result(windows: windows);
+        StandardSubtitleBuildResult full = fixture.Result(policy: StandardSubtitleBuildPolicy.FullCoverage, windows: windows);
+
+        Assert.HasCount(0, exact.Subtitles.Revisions);
+        Assert.IsFalse(full.HasUnresolvedCues, Describe(full));
+        TimeRange cue = full.Subtitles.Revisions.Single().Snapshot.Cue.Range;
+        Assert.AreEqual(default, cue.Start);
+        // A 1.0 s window allows the 5/6 s minimum; a 0.2 s window does not contain the cut, so the cue keeps its tokens.
+        Assert.AreEqual(new RationalTime(endValue, endRate), cue.End);
+    }
+
+    // FR-051 AC-026.3 / FR-012: a gap below 0.5 s after a coverage cue is closed to the minimum gap (2 frames).
+    [TestMethod]
+    public void FullCoverageClosesShortGapsToTwoFramesWithoutMovingTheNextCue()
+    {
+        var fixture = new Fixture([new UtteranceInput(Range(0, 4),
+            [new TokenInput(new string('あ', 14), Range(0, 1)), new TokenInput(new string('い', 14), Range(13, 10, 10))])]);
+
+        StandardSubtitleBuildResult full = fixture.Result(policy: StandardSubtitleBuildPolicy.FullCoverage);
+
+        Assert.IsFalse(full.HasUnresolvedCues, Describe(full));
+        TimeRange[] cues = full.Subtitles.Revisions.Select(static revision => revision.Snapshot.Cue.Range)
+            .OrderBy(static range => range.Start).ToArray();
+        Assert.HasCount(2, cues);
+        Assert.AreEqual(new RationalTime(13, 10) - RationalTime.FromFrames(2, 30, 1), cues[0].End);
+        Assert.AreEqual(new RationalTime(13, 10), cues[1].Start);
+        Assert.AreEqual(new RationalTime(33, 10), cues[1].End);
+    }
+
+    // FR-051 AC-026.5: an untimed token between timed neighbours is shown inside their cue instead of splitting the word.
+    [TestMethod]
+    public void FullCoverageKeepsUntimedTokenBetweenTimedNeighboursAndDropsAnUnboundedOne()
+    {
+        var fixture = new Fixture([new UtteranceInput(Range(0, 3),
+            [new TokenInput("こん", Range(0, 1, 2)), new TokenInput("ば", null), new TokenInput("んは", Range(1, 1, 2)),
+             new TokenInput("どうも", null)])]);
+
+        StandardSubtitleBuildResult exact = fixture.Result();
+        StandardSubtitleBuildResult full = fixture.Result(policy: StandardSubtitleBuildPolicy.FullCoverage);
+
+        Assert.IsFalse(exact.Subtitles.Revisions.Any(static revision => revision.Snapshot.Text.Contains('ば')));
+        Assert.AreEqual("こんばんは", full.Subtitles.Revisions.Single().Snapshot.Text);
+        Assert.IsTrue(full.Warnings.Any(static warning => warning.Reason == "untimed-token-shown-between-timed-neighbours"
+            && !warning.IsUnresolved));
+        // The trailing untimed token has no timed neighbour after it, so it stays an explicit unresolved exclusion.
+        Assert.IsTrue(full.Warnings.Any(static warning => warning.Reason == "missing-token-timing" && warning.IsUnresolved));
+    }
+
+    // FR-051 AC-026.4: rule versions round-trip so a saved result replays with the rule it was built with.
+    [TestMethod]
+    public void RuleVersionsRoundTripAndUnknownRulesAreRejected()
+    {
+        foreach (StandardSubtitleBuildPolicy policy in Enum.GetValues<StandardSubtitleBuildPolicy>())
+        {
+            Assert.IsTrue(StandardSubtitleBuilder.TryParseRuleVersion(StandardSubtitleBuilder.GetRuleVersion(policy), out var parsed));
+            Assert.AreEqual(policy, parsed);
+        }
+
+        Assert.IsTrue(StandardSubtitleBuilder.TryParseRuleVersion("standard-subtitle-builder.exact-source-tokens.v2", out var legacy));
+        Assert.AreEqual(StandardSubtitleBuildPolicy.ExactSourceTokens, legacy);
+        Assert.IsFalse(StandardSubtitleBuilder.TryParseRuleVersion("standard-subtitle-builder.unknown.v9", out _));
+        Assert.IsFalse(StandardSubtitleBuilder.TryParseRuleVersion(null, out _));
+    }
+
     private static void AssertBounds(StandardSubtitleInput input, RenderProfile render, int characters, int lines,
         int speed, RationalTime minimum, RationalTime maximum)
     {
@@ -1038,11 +1157,14 @@ public sealed class StandardSubtitleBuilderTests
             LayoutSpec? layout = null, DefaultSettingsProfile? profile = null, DefaultSettingsSnapshot? settings = null,
             TranscriptRevision? transcript = null, ContentDigest? transcriptDigest = null, IReadOnlyList<SourceSpan>? spans = null,
             RenderFontEvidence? font = null, string actorSid = Actor, DateTimeOffset? createdAt = null,
-            CancellationToken cancellationToken = default) => StandardSubtitleBuilder.BuildWithEvidence(version ?? Version,
+            CancellationToken cancellationToken = default,
+            StandardSubtitleBuildPolicy policy = StandardSubtitleBuildPolicy.ExactSourceTokens,
+            IReadOnlyList<TimelineMapEntry>? windows = null) => StandardSubtitleBuilder.BuildWithEvidence(version ?? Version,
                 timeline ?? (version is null ? Timeline : TimelineMapBuilder.Build(EntityId<TimelineMapIdTag>.New(), version)),
                 layout ?? Layout, RenderProfile, transcript ?? Transcript,
                 transcriptDigest ?? (transcript is null ? TranscriptDigest : Hash(TranscriptSnapshotJson.WriteRevision(transcript))),
-                spans ?? Spans, profile ?? Profile, settings ?? Settings, font ?? Font, actorSid, createdAt ?? Created, cancellationToken);
+                spans ?? Spans, profile ?? Profile, settings ?? Settings, font ?? Font, actorSid, createdAt ?? Created, cancellationToken,
+                policy, windows);
 
         internal StandardSubtitleInput Build() => StandardSubtitleBuilder.Build(Version, Timeline, Layout, RenderProfile,
             Transcript, TranscriptDigest, Spans, Profile, Settings, Font, Actor, Created);

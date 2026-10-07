@@ -38,7 +38,8 @@ describe('ProjectActivityNotice', () => {
     expect(section.querySelector('h3')!.textContent).toBe('いま行っていること：編集の受付')
     expect(section.textContent).toContain('既定設定の固定')
     expect(section.textContent).toContain('あなたの操作は不要です')
-    expect(section.textContent).toContain('「自動編集」画面で処理状況を確認できます')
+    // FR-056 AC-031.2: the processing step is shown as 「ジョブの状態の確認」.
+    expect(section.textContent).toContain('「ジョブの状態の確認」画面で処理状況を確認できます')
     expect(section.textContent).toContain('経過時間：0 秒')
     expect(section.querySelector('button, input, a')).toBeNull()
   })

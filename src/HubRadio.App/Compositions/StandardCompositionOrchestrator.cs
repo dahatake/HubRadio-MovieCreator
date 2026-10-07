@@ -337,11 +337,13 @@ public static class StandardCompositionOrchestrator
                 request.MeasuredLandscapeProfileJson.Span);
             measuredVertical = BundledRenderProfileLoader.Load(
                 request.MeasuredVerticalProfileJson.Span);
-            landscapeProfile = StandardRenderProfileFactory.CreateLandscape(
+            landscapeProfile = StandardRenderProfileFactory.CreateLongForm(
                 request.SettingsProfile,
                 request.Settings,
                 measuredLandscape,
-                request.SourceFrameRate);
+                measuredVertical,
+                request.SourceFrameRate,
+                request.SourceDisplayGeometry);
             verticalProfile = StandardRenderProfileFactory.CreateVerticalShort(
                 request.SettingsProfile,
                 request.Settings,

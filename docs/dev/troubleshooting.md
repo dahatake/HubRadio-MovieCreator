@@ -10,11 +10,14 @@
 
 正常系は、Windows 11 Enterprise Insider Preview build 29648 x64 の本PC、非昇格利用者でのみ確認済みです。既存profileを保全し、専用の新しいSDK展開先を使ったcold相当起動でnative Readyまで44.023秒、同じ専用展開領域を再使用したwarm起動で5.525秒でした。coldはOS再起動後・空profile・offline・クリーンOSを意味せず、warm値も専用展開領域の再使用条件に限定されます。production-channelのクリーンWindows、別標準ユーザー、offline、異常系は未評価です。
 
-起動時にSDKが実行依存を再生成可能な展開cacheへ置きますが、案件データはそこに保存しません。WebView2 profileはportable実装上の固定per-user pathであり、run単位の分離を主張しません。利用者データの実際の保存先は次のとおりです。
+起動時にSDKが実行依存を再生成可能な展開cacheへ置きますが、Projectデータはそこに保存しません。WebView2 profileはportable実装上の固定per-user pathであり、run単位の分離を主張しません。利用者データの実際の保存先は次のとおりです。
 
-- `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\hubradio.db` — 案件のSQLite DB
+- `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\hubradio.db` — ProjectのSQLite DB（FR-062: 設定画面で保存先を変えた場合はその場所、新しい環境の既定は`<ドライブ>\workspace`。従来の場所に`hubradio.db`がある環境は、起動時に初期値へ移動します。移せない場合は従来の場所）
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\backups` — DB backup
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\WebView2` — WebView2 profile
+- `%LOCALAPPDATA%\HubRadio.MovieCreator\workspace-location.json` — Workspaceフォルダーの保存先の設定（FR-062）
+
+Workspaceフォルダーの設定が壊れている、または保存先のドライブが使えない場合、アプリは別の場所へ黙って切り替えず、起動に失敗します。`workspace-location.json`を削除して再起動すると、既定の場所（上の注のとおり）に戻ります。保存先のフォルダーとデータは削除されません。
 
 起動失敗への対処として、この領域を削除・改名したり、別のWebView2 Runtimeを環境変数で指定したりしません。候補EXEやSDK展開物の改変も行いません。
 
@@ -22,7 +25,7 @@
 
 **意味:** 同梱Fixed WebView2 Runtimeを検出できなかったため、Web UIの初期化を開始していません。portable候補はsystem Evergreen Runtimeへ黙って切り替えません。
 
-**対処:** アプリの表示に従って候補を再取得し、承認済みの候補EXEと照合してから再起動します。評価担当者から候補を再取得できない場合は、診断コードだけを添えて報告します。path、例外詳細、案件内容、認証情報を共有しません。
+**対処:** アプリの表示に従って候補を再取得し、承認済みの候補EXEと照合してから再起動します。評価担当者から候補を再取得できない場合は、診断コードだけを添えて報告します。path、例外詳細、Project内容、認証情報を共有しません。
 
 ### `webview.initialization_failed`
 
@@ -117,7 +120,7 @@ pwsh.exe -NoLogo -NoProfile -File benchmarks\setup-python-env.ps1 -PythonExecuta
 
 元動画画面で「編集を開始」を押したときのエラーです。`project.runtime_unavailable` の場合、表示文に原因と対処が書かれています（FR-036）。
 
-アプリは、押された時点で実行基盤の初期化と復旧を自動で再確認・再実行し、回復すれば続けて案件を作成します。回復できないときだけ、次のいずれかの原因が表示されます。
+アプリは、押された時点で実行基盤の初期化と復旧を自動で再確認・再実行し、回復すれば続けてProjectを作成します。回復できないときだけ、次のいずれかの原因が表示されます。
 
 | 表示される原因 | 確認と対処 |
 | --- | --- |
@@ -128,7 +131,7 @@ pwsh.exe -NoLogo -NoProfile -File benchmarks\setup-python-env.ps1 -PythonExecuta
 
 ## 動画生成が失敗する
 
-「自動編集」画面の「エラーの内容」に、失敗codeごとの原因と対応策が出ます（FR-047、固定文は`src/HubRadio.Web/src/features/workflow/pipelineFailureGuide.ts`）。
+「ジョブの状態の確認」画面の「エラーの内容」に、失敗codeごとの原因と対応策が出ます（FR-047、固定文は`src/HubRadio.Web/src/features/workflow/pipelineFailureGuide.ts`）。
 
 - `source_only.unsupported_source_timing`: 元動画が、映像1本・音声1本、開始0秒、固定フレームレート、フレームの連続、の条件を満たしません。音声が映像より0.25秒（`SourceAudioTailPolicy.MaximumShortfall`）以内で早く終わる場合は失敗にせず、末尾を無音で埋めます。ffprobe（`-show_entries stream=codec_type,r_frame_rate,avg_frame_rate,start_time,duration`）で各streamの開始と長さを確認し、条件を満たすMP4に書き出し直します。
 
@@ -152,11 +155,11 @@ pwsh.exe -NoLogo -NoProfile -File benchmarks\setup-python-env.ps1 -PythonExecuta
 - 1ジョブにつき1ファイル `job-{作成日時UTC}-{ジョブID}.json` です。ファイル名の順が作成の順です（新しいものが後ろ）。最新の1000件だけを残し、古いものから自動で削除します。
 - 見る項目:
   - `job.state` — ジョブの今の状態（`Queued` 待機、`Running` 実行中、`Succeeded` 成功、`Failed` 失敗、`Cancelled` 取消、`Interrupted` アプリの終了などで中断）。
-  - `attempts[].errorCode` — 失敗の理由のcode。`source_only.*`は「自動編集」画面の「エラーの内容」と同じcodeです（上の「動画生成が失敗する」）。`job.execution_failed`は処理中の予期しない例外で、`exceptionType`に例外の型名（例: `IOException`）が入ります。`job.app_restarted`は、実行中にアプリが終了し、次の起動で中断として記録されたものです。
+  - `attempts[].errorCode` — 失敗の理由のcode。`source_only.*`は「ジョブの状態の確認」画面の「エラーの内容」と同じcodeです（上の「動画生成が失敗する」）。`job.execution_failed`は処理中の予期しない例外で、`exceptionType`に例外の型名（例: `IOException`）が入ります。`job.app_restarted`は、実行中にアプリが終了し、次の起動で中断として記録されたものです。
   - `attempts[].lastProgress.phase` — 失敗・中断の直前にどの段階まで進んだか（例: `source_only.analysis`、`source_only.rendering`）。
   - `attempts[].durationMilliseconds`、`heartbeatCount`、`lastHeartbeatAt` — どれだけ動いていたか。`Running`のまま`lastHeartbeatAt`が古い場合は、アプリが強制終了した可能性があります。
 - サポートへ送るとき: 問題が起きた日時に近いファイル（ファイル名の日時はUTC。日本時間から9時間を引く）を選び、そのファイルだけを送ります。`job`フォルダごと送る必要はありません。
-- 履歴には、ファイルのpath・元動画のファイル名・利用者名・案件名・例外のメッセージ・字幕などの内容は含まれません（ID、状態、日時、code、段階だけ）。
+- 履歴には、ファイルのpath・元動画のファイル名・利用者名・Project名・例外のメッセージ・字幕などの内容は含まれません（ID、状態、日時、code、段階だけ）。
 - 履歴の保存に失敗しても（権限、ディスク不足、`job`がリンク）、編集処理には影響しません。その場合ファイルが無い・古いことがあります。DB（`hubradio.db`）の記録が正本です。
 
 ## backup restore が `ReconciliationRequired=true` で失敗する

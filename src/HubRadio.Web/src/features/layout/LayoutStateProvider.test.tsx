@@ -179,9 +179,11 @@ describe('LayoutStateProvider integration', () => {
     act(() => displayInputs[1]!.click())
     expect(preview.getAttribute('data-variant')).toBe('editor')
     expect(preview.getAttribute('data-subtitle-profile')).toBe('1'.repeat(64))
+    // FR-052: the variant note is plain language and the raw profile digest is not shown.
     expect(container.textContent).toContain(
-      'preview 表示だけの session-local 状態',
+      'この選択はプレビューの表示だけを切り替えます。',
     )
+    expect(container.textContent).not.toContain('1'.repeat(64))
   })
 
   it('supports all seven manual modes by keyboard and submits exact no-face geometry', () => {
@@ -274,7 +276,8 @@ describe('LayoutStateProvider integration', () => {
     expect(displayInputs).toHaveLength(4)
     expect(displayInputs.every((input) => !input.checked)).toBe(true)
     expect(container.querySelector('[data-subtitle-cue]')).toBeNull()
-    expect(container.textContent).toContain('profile を明示的に選択')
+    // FR-052: the explicit-selection prompt uses plain language instead of "profile".
+    expect(container.textContent).toContain('字幕の見せ方を選んでください')
 
     act(() => displayInputs[0]!.click())
     expect(container.querySelector('[data-subtitle-cue]')).not.toBeNull()
@@ -563,10 +566,11 @@ describe('LayoutStateProvider integration', () => {
     ))
 
     expect(container.querySelector('.layout-workspace')).not.toBeNull()
+    // FR-052: noChange and the retained revision are described in plain language.
     expect(container.textContent).toContain(
-      '変更内容は現行 evidence と同一でした。現行 snapshot を維持します。',
+      '変更内容は今と同じだったため、そのままにしました。',
     )
-    expect(container.textContent).toContain('revision 3・未永続化')
+    expect(container.textContent).toContain('3回目の変更・未永続化')
 
     setControlValue(keyframe, '1/4')
     submit(requiredElement<HTMLFormElement>('.keyframe-form'))
@@ -585,7 +589,7 @@ describe('LayoutStateProvider integration', () => {
     expect(requiredElement('.layout-panel').getAttribute('data-layout-dirty')).toBe('true')
     const failure = requiredElement<HTMLElement>('.layout-failure[role="alert"]')
     expect(failure.textContent).toContain(
-      'レイアウトまたは Cue の revision が更新されました。',
+      'レイアウトまたは字幕が更新されました。',
     )
     expect(failure.textContent).not.toMatch(/C:\\|exception|actor|path/i)
     submit(keyframeForm)

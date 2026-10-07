@@ -36,8 +36,8 @@ const globalSnapshot: GlobalSettingsSnapshot = {
 }
 const projectSnapshot: SettingsSnapshot = { ...globalSnapshot, projectId, revision: 7, snapshotDigest: 'c'.repeat(64) }
 const targets: readonly { scope: string; label: string; snapshot: AnySettingsSnapshot }[] = [
-  { scope: 'global', label: '新しい動画の既定値', snapshot: globalSnapshot },
-  { scope: 'project', label: 'この動画', snapshot: projectSnapshot },
+  { scope: 'global', label: '全体の初期値', snapshot: globalSnapshot },
+  { scope: 'project', label: '次に作成するJob', snapshot: projectSnapshot },
 ]
 const changedValues: Readonly<Record<string, SettingValue>> = {
   [enabledKey]: boolean(false),
@@ -460,7 +460,7 @@ describe('SettingsFileActions failures and visibility', () => {
     await act(async () => { expect(h.read().setScope(projectId)).toBe(true); expect(h.read().load()).toBe(true) })
     expect(h.container.querySelector('table')).toBeNull()
     expect(h.container.textContent).not.toContain('読み込んだ設定を適用しますか？')
-    expect(h.container.textContent).toContain('対象：この動画')
+    expect(h.container.textContent).toContain('対象：次に作成するJob')
     expect(h.button('setting.txtから読み込む').disabled).toBe(true)
     await act(async () => { h.emit(available(h.lastRequest(), projectSnapshot)) })
     await readPreview(h, projectSnapshot)
