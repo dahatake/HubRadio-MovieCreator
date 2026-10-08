@@ -565,7 +565,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 CancelQueued(current.Request.IngestJobId);
                 if (options is not null)
                 {
-                    await RestoreRuntimeAsync(current.Request.ProjectId, cancellationToken).ConfigureAwait(false);
+                    await TryRestoreSettledRuntimeAsync(current.Request.ProjectId, cancellationToken).ConfigureAwait(false);
                 }
                 recovered.Add(current);
                 continue;
@@ -595,7 +595,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                     ambiguous ? "source_only.reconciliation_required" : "source_only.app_restarted");
                 if (options is not null)
                 {
-                    await RestoreRuntimeAsync(current.Request.ProjectId, cancellationToken).ConfigureAwait(false);
+                    await TryRestoreSettledRuntimeAsync(current.Request.ProjectId, cancellationToken).ConfigureAwait(false);
                 }
             }
             recovered.Add(current);
@@ -611,6 +611,16 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             }
         }
         return recovered.AsReadOnly();
+    }
+
+    // Rehydrating an already settled project is read-only. A stale or unreadable old project
+    // (moved source, missing checkpoint) must not block starting new projects; the same restore
+    // runs again, per project, when that project is opened.
+    private async Task TryRestoreSettledRuntimeAsync(EntityId<ProjectIdTag> projectId, CancellationToken cancellationToken)
+    {
+        try { await RestoreRuntimeAsync(projectId, cancellationToken).ConfigureAwait(false); }
+        catch (Exception exception) when (exception is not (OperationCanceledException or ObjectDisposedException
+            or OutOfMemoryException or StackOverflowException or AccessViolationException)) { }
     }
 
     internal static async Task<StoredSourceOnlyExecution> ReconcileAndRestoreRuntimeAsync(StoredSourceOnlyExecution execution,
