@@ -31,19 +31,35 @@ public sealed class WorkspaceLocationStore
     private readonly string? defaultPathOverride;
     private static readonly object MigrationGate = new();
 
-    public WorkspaceLocationStore(string applicationRoot, string? defaultPath = null)
+    private readonly string installDirectory;
+    private readonly string previousDefaultPath;
+
+    public WorkspaceLocationStore(
+        string applicationRoot,
+        string? defaultPath = null,
+        string? installDirectory = null,
+        string? previousDefaultPath = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationRoot);
         this.applicationRoot = Path.GetFullPath(applicationRoot);
         defaultPathOverride = defaultPath is null ? null : Path.GetFullPath(defaultPath);
+        this.installDirectory = Path.TrimEndingDirectorySeparator(
+            Path.GetFullPath(installDirectory ?? AppContext.BaseDirectory));
+        this.previousDefaultPath = previousDefaultPath is null
+            ? Path.Combine(Path.GetPathRoot(this.applicationRoot)!, "workspace")
+            : Path.GetFullPath(previousDefaultPath);
     }
 
     public string ConfigPath => Path.Combine(applicationRoot, ConfigFileName);
 
+    /// <summary>FR-062.1: &lt;install directory&gt;\workspace.</summary>
     public string DefaultPath =>
-        defaultPathOverride ?? Path.Combine(Path.GetPathRoot(applicationRoot)!, "workspace");
+        defaultPathOverride ?? Path.Combine(installDirectory, "workspace");
 
     private string LegacyPath => Path.Combine(applicationRoot, "Workspace");
+
+    /// <summary>A-062-09: the previous default, &lt;drive of the application data folder&gt;\workspace.</summary>
+    private string PreviousDefaultPath => previousDefaultPath;
 
     /// <summary>
     /// Q-013 (B): with no saved location, moves a legacy Workspace that holds hubradio.db to the
@@ -63,7 +79,12 @@ public sealed class WorkspaceLocationStore
             string target = DefaultPath;
             try
             {
-                _ = Validate(target);
+                _ = Validate(target, installDirectory);
+                if (!SameVolume(LegacyPath, target))
+                {
+                    return false;
+                }
+
                 if (File.Exists(Path.Combine(target, DatabaseFileName)))
                 {
                     return false;
@@ -94,14 +115,73 @@ public sealed class WorkspaceLocationStore
         }
 
         // Until TryMigrateLegacyWorkspace succeeds, an existing installation keeps its data in place.
-        string current = File.Exists(Path.Combine(LegacyPath, DatabaseFileName))
-            ? LegacyPath
-            : DefaultPath;
-        return new WorkspaceLocation(current, null, DefaultPath);
+        if (File.Exists(Path.Combine(LegacyPath, DatabaseFileName)))
+        {
+            return new WorkspaceLocation(LegacyPath, null, DefaultPath);
+        }
+
+        // FR-062.2 (2)(a): the default, when it holds hubradio.db or is absent/empty and writable.
+        if (IsUsableDefault(DefaultPath))
+        {
+            return new WorkspaceLocation(DefaultPath, null, DefaultPath);
+        }
+
+        // FR-062.2 (2)(b) / A-062-09: keep using the previous default when it holds data.
+        string previous = PreviousDefaultPath;
+        if (!string.Equals(previous, DefaultPath, WorkspacePathSafety.PathComparison) &&
+            File.Exists(Path.Combine(previous, DatabaseFileName)))
+        {
+            return new WorkspaceLocation(previous, null, DefaultPath);
+        }
+
+        // FR-062.2 (2)(c): never fail startup; fall back to the legacy location.
+        return new WorkspaceLocation(LegacyPath, null, DefaultPath);
     }
 
+    private bool IsUsableDefault(string path)
+    {
+        try
+        {
+            _ = Validate(path, installDirectory);
+            if (File.Exists(Path.Combine(path, DatabaseFileName)))
+            {
+                return true;
+            }
+
+            string probeDirectory = path;
+            while (!Directory.Exists(probeDirectory))
+            {
+                probeDirectory = Path.GetDirectoryName(probeDirectory)!;
+            }
+
+            string probe = Path.Combine(probeDirectory, $".hubradio-write-test-{Guid.NewGuid():N}.tmp");
+            using (new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                1, FileOptions.DeleteOnClose))
+            {
+            }
+
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or IOException or UnauthorizedAccessException or
+            System.Security.SecurityException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private static bool SameVolume(string a, string b) =>
+        string.Equals(Path.GetPathRoot(Path.GetFullPath(a)), Path.GetPathRoot(Path.GetFullPath(b)),
+            StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Returns the normalized path or throws <see cref="ArgumentException"/>.</summary>
-    public static string Validate(string? path)
+    public static string Validate(string? path) => Validate(path, AppContext.BaseDirectory);
+
+    /// <summary>
+    /// FR-062.5: the install directory, its descendants and ancestors are rejected, except
+    /// &lt;install directory&gt;\workspace itself (the FR-062.1 default).
+    /// </summary>
+    internal static string Validate(string? path, string installDirectoryPath)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -144,10 +224,12 @@ public sealed class WorkspaceLocationStore
             }
         }
 
-        string installDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(AppContext.BaseDirectory));
-        if (string.Equals(normalized, installDirectory, WorkspacePathSafety.PathComparison) ||
+        string installDirectory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(installDirectoryPath));
+        string defaultInside = Path.Combine(installDirectory, "workspace");
+        if (!string.Equals(normalized, defaultInside, WorkspacePathSafety.PathComparison) &&
+            (string.Equals(normalized, installDirectory, WorkspacePathSafety.PathComparison) ||
             WorkspacePathSafety.IsStrictDescendant(installDirectory, normalized) ||
-            WorkspacePathSafety.IsStrictDescendant(normalized, installDirectory))
+            WorkspacePathSafety.IsStrictDescendant(normalized, installDirectory)))
         {
             throw Invalid();
         }
@@ -179,7 +261,7 @@ public sealed class WorkspaceLocationStore
             return;
         }
 
-        string normalized = Validate(path);
+        string normalized = Validate(path, installDirectory);
         Directory.CreateDirectory(applicationRoot);
         byte[] bytes = new UTF8Encoding(false).GetBytes(
             JsonSerializer.Serialize(new { version = 1, path = normalized }));
@@ -226,7 +308,7 @@ public sealed class WorkspaceLocationStore
                 throw new WorkspaceLocationException("workspace-location.json is invalid.");
             }
 
-            return Validate(pathElement.GetString());
+            return Validate(pathElement.GetString(), installDirectory);
         }
         catch (Exception exception) when (exception is JsonException or IOException or
             UnauthorizedAccessException or ArgumentException)
