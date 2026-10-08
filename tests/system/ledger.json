@@ -1,5 +1,33 @@
 {
   "version": 1,
-  "ac_digests": {},
-  "cases": []
+  "ac_digests": {
+    "AC-039": "sha256:b43b15bec78ea02d"
+  },
+  "cases": [
+    {
+      "id": "E2E-001",
+      "requirement_ids": [
+        "FR-064"
+      ],
+      "ac_ids": [
+        "AC-039"
+      ],
+      "title": "参照…でフォルダー選択→入力欄反映→保存→再起動後に使用（選んだだけでは未保存）",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-workspace-browse.ps1",
+      "canary": false,
+      "status": "not_run",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-08T12:30:02+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        }
+      ]
+    }
+  ]
 }
