@@ -12,7 +12,7 @@
 
 起動時にSDKが実行依存を再生成可能な展開cacheへ置きますが、Projectデータはそこに保存しません。WebView2 profileはportable実装上の固定per-user pathであり、run単位の分離を主張しません。利用者データの実際の保存先は次のとおりです。
 
-- `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\hubradio.db` — ProjectのSQLite DB（FR-062: 設定画面で保存先を変えた場合はその場所、新しい環境の既定は`<ドライブ>\workspace`。従来の場所に`hubradio.db`がある環境は、起動時に初期値へ移動します。移せない場合は従来の場所）
+- `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\hubradio.db` — ProjectのSQLite DB（従来の場所。FR-062: 設定画面で保存先を変えた場合はその場所、新しい環境の既定は`<インストール先>\workspace`。従来の場所に`hubradio.db`がある環境は、起動時に初期値へ移動します（同じドライブの場合）。移せない場合、またはインストール先が書き込めない場合は従来の場所）。**インストール先の削除・再インストールの前に、`<インストール先>\workspace`を別の場所へ退避してください**（データが失われます）
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\backups` — DB backup
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\WebView2` — WebView2 profile
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\workspace-location.json` — Workspaceフォルダーの保存先の設定（FR-062）
