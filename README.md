@@ -132,13 +132,13 @@ production-channel のクリーンな Windows、別の標準ユーザー、offli
 
 起動により、実行依存はSDK管理の再生成可能な展開cacheへ展開されます。一方、Project・設定・WebView2 profileは次の利用者データ領域へ保存され、展開cacheとは別です。WebView2 profileはportable実装上の固定per-user pathを使い、run単位のprofile分離を主張しません。
 
-- `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\hubradio.db` — ProjectのSQLite DB（既定の場所。FR-062で、新しい環境の既定は`<ドライブ>\workspace`になり、設定画面から変更できます。下の注を参照）
+- `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\hubradio.db` — ProjectのSQLite DB（従来の場所。FR-062で、新しい環境の既定は`<インストール先>\workspace`になり、設定画面から変更できます。下の注を参照）
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\backups` — DB backup
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\Workspace\job` — 実行ジョブの履歴（1ジョブ1つのJSON、最新1000件。FR-049。見方は[トラブルシューティング](docs/dev/troubleshooting.md#実行ジョブの履歴jobフォルダを確認するサポートへ送る)）
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\WebView2` — WebView2 profile
 - `%LOCALAPPDATA%\HubRadio.MovieCreator\workspace-location.json` — Workspaceフォルダーの保存先の設定（FR-062。設定画面で「保存」したときだけできます）
 
-**Workspaceフォルダー（FR-062）:** DB・Project・`job`・`logs`・`backups`を収めるWorkspaceフォルダーの初期値は、`<アプリのデータ用フォルダーのドライブ>\workspace`（例: `C:\workspace`）です。従来の場所（上の`...\Workspace`）に`hubradio.db`がある環境は、次回の起動でフォルダーごと初期値の場所へ移します（同じドライブ内の名前の変更で、コピー・削除はしません）。移せない場合（使用中、初期値の場所に別のデータがある、権限不足など）は、何も変えずに従来の場所を使い続けます。設定画面の「Workspaceフォルダー」欄で場所を変えられます（ローカルの固定ドライブ上の、新しい・空の・または`hubradio.db`があるフォルダー。次回の起動から有効で、既存のデータは自動では移動しません）。
+**Workspaceフォルダー（FR-062）:** DB・Project・`job`・`logs`・`backups`を収めるWorkspaceフォルダーの初期値は、アプリの実行ファイルがあるフォルダー（インストール先）の直下の`workspace`（例: `C:\Apps\HubRadio\workspace`）です。従来の場所（上の`...\Workspace`）に`hubradio.db`がある環境は、次回の起動でフォルダーごと初期値の場所へ移します（同じドライブ内の名前の変更で、コピー・削除はしません）。移せない場合、またはインストール先が書き込めない場合（Program Filesなど）は、何も変えずに従来の場所を使い続けます。以前の初期値`<ドライブ>\workspace`に`hubradio.db`がある環境は、その場所を使い続けます。**インストール先の削除・再インストールの前に、`<インストール先>\workspace`を退避してください。** 設定画面の「Workspaceフォルダー」欄で場所を変えられます（ローカルの固定ドライブ上の、新しい・空の・または`hubradio.db`があるフォルダー。次回の起動から有効で、既存のデータは自動では移動しません）。
 
 起動できない場合は、[トラブルシューティング](docs/dev/troubleshooting.md#限定ローカル技術評価候補を起動できない)を参照してください。
 

@@ -30,12 +30,14 @@ public sealed class WorkspaceLocationStoreTests
 
     // AC-037.1
     [TestMethod]
-    public void FR062_AC037_1_DefaultIsWorkspaceUnderTheDriveRoot()
+    public void FR062_AC037_1_DefaultIsWorkspaceUnderTheInstallDirectory()
     {
-        var store = new WorkspaceLocationStore(Path.Combine(root, "app"));
+        string install = Path.Combine(root, "install");
+        Directory.CreateDirectory(install);
+        var store = new WorkspaceLocationStore(Path.Combine(root, "app"), null, install);
         WorkspaceLocation location = store.Resolve();
 
-        string expected = Path.Combine(Path.GetPathRoot(root)!, "workspace");
+        string expected = Path.Combine(install, "workspace");
         Assert.AreEqual(expected, store.DefaultPath);
         Assert.AreEqual(expected, location.CurrentPath);
         Assert.AreEqual(expected, location.DefaultPath);
@@ -252,7 +254,100 @@ public sealed class WorkspaceLocationStoreTests
         string install = Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
 
         AssertRejected(install);
-        AssertRejected(Path.Combine(install, "Workspace"));
+        AssertRejected(Path.Combine(install, "other"));
+        AssertRejected(Path.Combine(install, "workspace", "sub"));
+        AssertRejected(Path.GetDirectoryName(install)!);
+    }
+
+    // FR-062.5 AC-037.2: only <install>\workspace itself is allowed.
+    [TestMethod]
+    public void FR062_AC037_2_AllowsTheDefaultWorkspaceUnderTheInstallDirectoryItself()
+    {
+        string install = Path.Combine(root, "install");
+        Directory.CreateDirectory(install);
+        string ws = Path.Combine(install, "workspace");
+
+        Assert.AreEqual(ws, WorkspaceLocationStore.Validate(ws, install));
+        Assert.AreEqual(ws, WorkspaceLocationStore.Validate(ws + "\\", install));
+        _ = Assert.ThrowsExactly<ArgumentException>(
+            () => WorkspaceLocationStore.Validate(Path.Combine(ws, "sub"), install));
+        _ = Assert.ThrowsExactly<ArgumentException>(() => WorkspaceLocationStore.Validate(install, install));
+        _ = Assert.ThrowsExactly<ArgumentException>(() => WorkspaceLocationStore.Validate(root, install));
+
+        Directory.CreateDirectory(ws);
+        File.WriteAllText(Path.Combine(ws, "foreign.txt"), "x");
+        _ = Assert.ThrowsExactly<ArgumentException>(() => WorkspaceLocationStore.Validate(ws, install));
+    }
+
+    // FR-062.2 AC-037.7 (a): default holding hubradio.db is used.
+    [TestMethod]
+    public void FR062_AC037_7_DefaultWithDatabaseIsUsed()
+    {
+        string install = Path.Combine(root, "install");
+        string ws = Path.Combine(install, "workspace");
+        Directory.CreateDirectory(ws);
+        File.WriteAllText(Path.Combine(ws, "hubradio.db"), "x");
+
+        WorkspaceLocation location = new WorkspaceLocationStore(Path.Combine(root, "app"), null, install).Resolve();
+
+        Assert.AreEqual(ws, location.CurrentPath);
+        Assert.AreEqual(ws, location.DefaultPath);
+    }
+
+    // FR-062.2 AC-037.7 (b): the previous default <drive>\workspace with hubradio.db keeps being used.
+    [TestMethod]
+    public void FR062_AC037_7_PreviousDriveRootDefaultIsKeptWithoutMoving()
+    {
+        string previous = Path.Combine(root, "previous-default");
+        Directory.CreateDirectory(previous);
+        File.WriteAllText(Path.Combine(previous, "hubradio.db"), "old");
+        string install = Path.Combine(root, "install");
+        Directory.CreateDirectory(Path.Combine(install, "workspace"));
+        File.WriteAllText(Path.Combine(install, "workspace", "foreign.txt"), "x");
+        var store = new WorkspaceLocationStore(Path.Combine(root, "app"), null, install, previous);
+
+        WorkspaceLocation location = store.Resolve();
+
+        Assert.AreEqual(previous, location.CurrentPath);
+        Assert.AreEqual(Path.Combine(install, "workspace"), location.DefaultPath);
+        Assert.AreEqual("old", File.ReadAllText(Path.Combine(previous, "hubradio.db")));
+    }
+
+    // FR-062.2 AC-037.7 (c): an unusable default never fails startup; the legacy location is used.
+    [TestMethod]
+    public void FR062_AC037_7_UnusableDefaultFallsBackToTheLegacyLocation()
+    {
+        string install = Path.Combine(root, "install");
+        string ws = Path.Combine(install, "workspace");
+        Directory.CreateDirectory(ws);
+        File.WriteAllText(Path.Combine(ws, "foreign.txt"), "x");
+        string app = Path.Combine(root, "app");
+
+        WorkspaceLocation location = new WorkspaceLocationStore(
+            app, null, install, Path.Combine(root, "no-previous")).Resolve();
+
+        Assert.AreEqual(Path.Combine(app, "Workspace"), location.CurrentPath);
+        Assert.AreEqual(ws, location.DefaultPath);
+        Assert.IsTrue(File.Exists(Path.Combine(ws, "foreign.txt")));
+    }
+
+    // FR-062.2 AC-037.6: legacy workspace moves to <install>\workspace by rename.
+    [TestMethod]
+    public void FR062_AC037_6_LegacyWorkspaceIsMovedToTheInstallDirectoryDefault()
+    {
+        string install = Path.Combine(root, "install");
+        Directory.CreateDirectory(install);
+        string app = Path.Combine(root, "app");
+        string legacy = Path.Combine(app, "Workspace");
+        Directory.CreateDirectory(legacy);
+        File.WriteAllText(Path.Combine(legacy, "hubradio.db"), "x");
+        var store = new WorkspaceLocationStore(app, null, install);
+
+        Assert.IsTrue(store.TryMigrateLegacyWorkspace());
+
+        Assert.IsFalse(Directory.Exists(legacy));
+        Assert.AreEqual(Path.Combine(install, "workspace"), store.Resolve().CurrentPath);
+        Assert.IsTrue(File.Exists(Path.Combine(install, "workspace", "hubradio.db")));
     }
 
     // AC-037.2
