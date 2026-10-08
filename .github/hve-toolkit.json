@@ -1,10 +1,10 @@
 {
-  "name": "hve-assured-build-kit",
+  "name": "hve-enterprise-app-build-kit",
   "version": "0.1.0",
   "source": "C:\\GitHub\\HypervelocityEngineering",
-  "installed_at": "2026-10-08T10:29:29+09:00",
+  "installed_at": "2026-10-08T12:58:57+09:00",
   "files": {
-    ".github/agents/conductor.agent.md": "78fac567dae7b94b010dde39776eb353c3c81e47b3952744521dfd6665e91dbf",
+    ".github/agents/conductor.agent.md": "5972d36d48a281cf799e1412418e2c848dfc40b2899588e850b6891abe21d1d2",
     ".github/agents/rd-author.agent.md": "a5288827ff8501ea2a6b9f842ca452a3f629b5cb0dd08820bc7174de7639e8e4",
     ".github/agents/rd-auditor.agent.md": "0abeb890a645527d76723bce09e7d750ea286432cce1376f7255d72148e6f384",
     ".github/agents/test-designer.agent.md": "df351091c569dccedc1c7b9adf47840c9bf2869e565bcf2077d189712c519ed1",
@@ -14,10 +14,10 @@
     ".github/skills/implement-fr/SKILL.md": "4fd68a064c40a9a36661fc0523379fac42829c92dedc25d0209d3b49e9e65043",
     ".github/skills/system-test-increment/SKILL.md": "b3fe6cd928ba228fd2d875b82eb615d5fe8390ad39707bc5652b51dca21d7379",
     ".github/skills/rd-audit/SKILL.md": "dad447217f0bdecd9ea831207fb2edc3b4b11f34cb1792e3d56538980f174b04",
-    ".github/skills/build/SKILL.md": "a7211aa3a9c85bb07c74f65b4d79b5c4be248d60de63e37d34a01df0707076a2",
-    ".github/hooks/quality-gates.json": "b79d7498a4238205a81d95bf5c1e0d0d5554c1e7b5af9669b324786f4d23484b",
+    ".github/skills/build/SKILL.md": "f8605ea8c6625cbc3a6fca811a8ec362a6bd517273746658ad5aede38a0a5ea9",
+    ".github/hooks/quality-gates.json": "aca9e51316105b1895d8d47aa1ef1a696b67c37e5085a8bca2e760ae9e269fd8",
     ".github/workflows/hve-verify.yml": "90ce0e3b5d2a07441962e75301be1df9cb619b9e6ad9bf2af43e1d26578ced79",
-    "scripts/hvelib.py": "40ca687996693478f33f15c261594e8795c6816378893243e8d65df6db537318",
+    "scripts/hvelib.py": "cfc8d376e36811da4118a9c72dd07e002db56d917c35af6990408c949a3852ce",
     "scripts/rdcheck.py": "438ee97344d9f91701257edea62d31ad45aa52c2e6c595960d9c7151db4ea6ab",
     "scripts/verify.py": "9982da569caca56419b3840c2177b6cba0633cb3a28ddbdad77ae8695d56891d",
     "scripts/verify.ps1": "9ecc20d132da30f2e6045668f36c60386d6ddfb161b88854b56cbd156ac17c1c",
@@ -30,6 +30,6 @@
     "scripts/run-state.py": "5897f011e1a4500c965c0acb1c51cf9585647b49dfdc53ecd8b3074fe9954365",
     "scripts/kpi.py": "ac196fe13effd2442d76a2c12ced4cc225cd6c35d25d2e5f92b35d0c0b4d56e6",
     "scripts/import-speckit.py": "9c75f13b9bbe35994b3dcaf4738ae27761404e2cc77f3bf8c5e9b5083b11c1e7",
-    "scripts/hooks/gate.py": "ebd60576e8a5a569c3d88bd8205a18dd4ba81d941e83db0dd5605461e6b1874d"
+    "scripts/hooks/gate.py": "f2206d09d1d149aeabe111fa927ca4f2b568a41a43bdc2a09770c9006d109150"
   }
 }
