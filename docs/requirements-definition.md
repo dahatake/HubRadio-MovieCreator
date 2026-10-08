@@ -18,6 +18,7 @@ ID（FR・NFR・AC・Q・PARAM）は `python scripts/next-id.py <種別>` でだ
 |---|---|---|---|---|
 | 2026-10-08 | 元文書（索引と、それまでの追補の変更履歴）から要求定義書とカタログを、要求・受入基準・質問票・決定記録に構造化して作成 | FR-001〜FR-064（原文の ID を保持。FR-065・FR-066 は元文書に存在せず欠番）、NFR-UX-001・NFR-PERF-001・NFR-REL-001・NFR-SEC-001・NFR-A11Y-001・NFR-AUD-001・NFR-EXT-001・NFR-FACT-001・NFR-DIST-001（旧 NFR-001〜009 を区分つき ID に変更）、NFR-BR-001〜005（旧 BR-001〜005）、NFR-UX-002・NFR-UX-003（既定制約 ui_policy の具体化。AI提案／承認待ち）、G-001〜G-004、PARAM-001、Q-017〜Q-019 | なし（回答なし） | 決定状態の欄がない既存の要求を承認済みとして扱うことを決定記録に記録。旧 BR-xxx と NFR-xxx の ID を、検査が認識する `NFR-<区分>-xxx` 形式に変更。FR の旧 ID は変更しない |
 | 2026-10-08 | 独立監査（work/runs/202610081959/audit/20261008-2030-run1.md）の依頼文 5 件への対応 | (1) FR-033・FR-050 の矛盾解消（C-050-01）。(2)(3) FR-001〜FR-064 とすべての NFR・BR の本文と AC に旧版の条件・値・エラー code を復元し、断片になっていた文を主語・条件・動作・対象を持つ文に直した。(4) NFR-UX-005（新規。AC-129〜AC-131）、NFR-UX-002（保存・復元に絞り MUST へ）、FR-061・FR-063 に ui_policy-1 の適用範囲（A-004）。(5) G-001 の測定方法の参照切れ（AC-056・AC-058）を実在の AC に直した。PARAM-002・PARAM-003、A-004〜A-006、AU-005〜AU-007 を追加 | なし（回答なし） | FR-035・FR-036 の決定状態の日付、FR-037〜FR-056 の題名・本文の旧称「案件」→ Project、FR-043 の題名の旧称「この動画」、FR-062 の題名の初期値、NFR-DIST-001 の旧 ID（NFR-001・AC-001）の参照、FR-063 の Job 数（2〜4）、§3.3 の禁止同義語、§7 の画面要求の範囲 |
+| 2026-10-08 | 利用者回答（run 202610082155）: profile は 1.2.0 のみ（1.1.0 廃止・選択 UI 不要） | FR-048・FR-050・FR-054・FR-057〜FR-060 と AC-023・AC-025 を 1.2.0 のみに整合 | なし（X-001・X-002 の前回回答を置き換え） | 元文書にのみある旧 1.1.0 仕様（SRC-002）は「廃止」。カタログ FR-048 の題名を同期 |
 | 2026-10-08 | 利用者回答（run 202610082136）: 新規 Project の既定 profile は 1.1.0、FR-050 の 22/101 は 1.1.0 前提、残りの質問票は一任、承認待ちはすべて承認 | FR-048・FR-050・FR-057〜FR-060 に前提を明記。NFR-UX-002・003・005 を承認済みに。AC-127・AC-128 の BLOCKED 解除 | X-001・X-002、Q-017〜Q-019（回答済み） | X-001・X-002 解決。カタログの決定状態を同期 |
 
 旧版の詳細な変更履歴（2026-10-01〜2026-10-08 の 22 行）は、SRC-001（docs/requirements-definition-original.md §0）に原文のまま残っています。旧版の本文・受入基準の詳細（FR 各号の枝番、AC-001〜AC-042、仮定 A-xxx、旧質問票 Q-001〜Q-016）は SRC-002（コミット 57dd6a5 の docs/requirements/*.md）にあります。本書の受入基準 AC-049〜AC-128 は、その要旨を 1 要求 1 件の観察できる形にしたもので、旧版の AC 番号との対応は §10.3 の A-001 に記録しています。
@@ -528,13 +529,13 @@ Hubらじおは、主に 16:9 の横長で収録される 10〜20 分の企業�
 - 受入基準 AC-022: 音声が最後の映像 frame の終わりより 0.25 秒早く終わる元動画は検査を通り、0.25 秒を超えて早く終わる元動画は `source_only.unsupported_source_timing` で失敗する。失敗時、`role="alert"` の表示に「エラーの内容」「原因」「対応策」「エラーコード」がこの順に出て、原因に上記 5 種類のうち該当するものが含まれる。
   - 検証レベル: integration
 
-#### FR-048 設定の選択肢の拡張（既定設定profile 1.1.0）と初期値の方針
-- 要求: システムは、既定設定 profile に版 `1.1.0` を追加すること。ID・名前は `1.0.0` と同じで、同梱 file は `DefaultSettings/Profiles/1.1.0.json`、digest は `6f0bde7c863572d9e41b6b18e9f2a223a9864f80255334d35fa10f9d1fa3ee31` とする。`1.0.0` との差は、`thumbnails.candidateCount` の範囲が 3〜3 から 1〜3、`editing.shortHookMaximumStart` の範囲が「なし」から 1〜5（秒）になる 2 点だけで、全 123 項目の既定値・単位・根拠は同一とする。新しい Project は `1.1.0` を選ぶ（既定。`1.2.0` は既定にしない。利用者回答 X-001 2026-10-08）。利用者は、Project の作成時と設定画面で、profile を `1.1.0`（既定）または `1.2.0` から選べること（S-01。選んだ profile は Project ごとに保存され、設定画面から後で切り替えられ、`1.2.0` を選ぶと FR-057〜FR-060 の追加 4 項目が有効になる。作成済みの Project は、利用者が選び直すまで変わらない）。global の設定が旧版で全値有効なら revision を 1 増やして移行する。縦型ショートは 0〜{PARAM-001} 本、サムネイルは 1〜{PARAM-002} 枚（{PARAM-002} は既定値かつ上限）、hook の最大開始は 1〜5 秒の範囲で選べ、範囲外は `SettingsMismatch` とする。候補が上限に達しない理由は `CandidateLimitApplied`、`NoAdditionalGroundedCandidate`、`NoAdditionalMeasuredSourceFrame`、`NoGroundedCandidate` のいずれかで記録すること。
+#### FR-048 設定の選択肢の拡張（既定設定profile 1.2.0 のみ）と初期値の方針
+- 要求: システムが使う既定設定 profile は版 `1.2.0` だけとする（利用者指示 2026-10-08・run 202610082155。旧版 `1.1.0` は廃止し、profile の選択肢と選択 UI は設けない）。すべての Project（新規・作成済み）は `1.2.0` を使い、FR-057〜FR-060 の追加 4 項目は常に有効とする。`thumbnails.candidateCount` の範囲は 1〜3、`editing.shortHookMaximumStart` の範囲は 1〜5（秒）とする。global の設定が旧版で全値有効なら revision を 1 増やして `1.2.0` へ移行する。縦型ショートは 0〜{PARAM-001} 本、サムネイルは 1〜{PARAM-002} 枚（{PARAM-002} は既定値かつ上限）、hook の最大開始は 1〜5 秒の範囲で選べ、範囲外は `SettingsMismatch` とする。候補が上限に達しない理由は `CandidateLimitApplied`、`NoAdditionalGroundedCandidate`、`NoAdditionalMeasuredSourceFrame`、`NoGroundedCandidate` のいずれかで記録すること。
 - 決定状態: 承認済み（依頼 2026-10-05）　出自: 依頼原文　優先度: MUST（旧版の優先順位 §16 の区分を保持）
 - 上位: G-001　出典: SRC-001（索引の行 FR-048）、SRC-002（詳細本文）
 - 対象エンティティ: Project, Job, 成果物　関係する状態: なし　参照パラメータ: なし
 - 関連する既存資産: docs/catalog.md の該当行（未登録の項目は §10.4 の AU-002）
-- 受入基準 AC-023: 既定設定 profile `1.1.0` で、`1.0.0` との差が `thumbnails.candidateCount`（1〜{PARAM-002}）と `editing.shortHookMaximumStart`（1〜5 秒）の 2 点だけで、他の既定値・単位・根拠が同一である。新しい Project が `1.1.0` を選び、範囲外の値は `SettingsMismatch` になり、候補が上限に達しない理由が 4 種類の code のいずれかで記録される。Project の作成時と設定画面で profile を `1.1.0`（既定）と `1.2.0` から選べ、`1.2.0` を選んだ Project では FR-057〜FR-060 の追加 4 項目が有効になり（AC-032〜AC-035 に到達できる）、`1.1.0` のままでは有効にならない。
+- 受入基準 AC-023: 既定設定 profile は `1.2.0` だけで、新規・作成済みの Project すべてが `1.2.0` を使い、profile を選ぶ画面や選択肢がない。`thumbnails.candidateCount`（1〜{PARAM-002}）と `editing.shortHookMaximumStart`（1〜5 秒）の範囲外の値は `SettingsMismatch` になり、候補が上限に達しない理由が 4 種類の code のいずれかで記録される。FR-057〜FR-060 の追加 4 項目が常に有効で、AC-032〜AC-035 に到達できる。
   - 検証レベル: integration
 
 #### FR-049 実行ジョブの履歴の`job`フォルダへの保存
@@ -547,12 +548,12 @@ Hubらじおは、主に 16:9 の横長で収録される 10〜20 分の企業�
   - 検証レベル: integration
 
 #### FR-050 設定画面からの、変えられない項目と「根拠」の除外と、選択肢による値の選択
-- 要求: 設定画面は、profile 1.1.0 を選んだ Project では（1.2.0 の追加項目は数えない。利用者回答 X-002 2026-10-08）、自動編集の結果に反映できる 22 項目だけを表示し、profile 1.2.0 を選んだ Project では、この 22 項目に加えて追加 4 項目（`editing.pauseTightening`・`output.longFormOrientation`・`subtitles.emphasisTelopAmount`・`audio.soundEffectsEnabled`。S-03）を表示すること。変えられない 101 項目と「根拠」は表示しないこと。値を選べる項目は選択肢から選び、文字入力が必要な値だけに入力欄を使うこと。項目ごとの分類（変更できる／できない、選択肢・範囲・既定値）は、同梱の分類表 `src/HubRadio.Web/src/features/settings/settingEditorCatalog.json`（形式 `hubradio.setting-editor-catalog.v1`）を正本とする。既定設定 profile は `1.1.0` とし、分類表の範囲・選択肢・既定値を使うこと。変えられない項目、「根拠」、`notClaimed` だけの項目は設定画面から除外する。FR-033 の「根拠区分」と「全設定」の画面表示は、この要求が上書きする（競合 C-050-01）。
+- 要求: 設定画面は、profile 1.2.0（唯一の profile。利用者指示 2026-10-08）の、自動編集の結果に反映できる 26 項目（従来の 22 項目と追加 4 項目 `editing.pauseTightening`・`output.longFormOrientation`・`subtitles.emphasisTelopAmount`・`audio.soundEffectsEnabled`。S-03）だけを表示すること。変えられない 101 項目と「根拠」は表示しないこと。値を選べる項目は選択肢から選び、文字入力が必要な値だけに入力欄を使うこと。項目ごとの分類（変更できる／できない、選択肢・範囲・既定値）は、同梱の分類表 `src/HubRadio.Web/src/features/settings/settingEditorCatalog.json`（形式 `hubradio.setting-editor-catalog.v1`）を正本とする。既定設定 profile は `1.2.0` だけとし、分類表の範囲・選択肢・既定値を使うこと。変えられない項目、「根拠」、`notClaimed` だけの項目は設定画面から除外する。FR-033 の「根拠区分」と「全設定」の画面表示は、この要求が上書きする（競合 C-050-01）。
 - 決定状態: 承認済み（依頼 2026-10-06）　出自: 依頼原文　優先度: MUST（旧版の優先順位 §16 の区分を保持）
 - 上位: G-002　出典: SRC-001（索引の行 FR-050）、SRC-002（詳細本文）
 - 対象エンティティ: Project, Job, 成果物　関係する状態: なし　参照パラメータ: なし
 - 関連する既存資産: docs/catalog.md の該当行（未登録の項目は §10.4 の AU-002）
-- 受入基準 AC-025: 設定画面を開いた結合試験で、profile 1.1.0 の Project では表示される設定項目が 22 項目、profile 1.2.0 の Project では 22 項目に追加 4 項目を加えた 26 項目で、各項目の選択肢・既定値・範囲が分類表 `settingEditorCatalog.json` と一致する。変えられない 101 項目、「根拠」、`notClaimed` だけの項目が表示されない。選択肢のある項目は選択肢から選べ、範囲外の値は保存されない。
+- 受入基準 AC-025: 設定画面を開いた結合試験で、表示される設定項目が 26 項目（profile 1.2.0 のみ）で、各項目の選択肢・既定値・範囲が分類表 `settingEditorCatalog.json` と一致する。変えられない 101 項目、「根拠」、`notClaimed` だけの項目が表示されない。選択肢のある項目は選択肢から選べ、範囲外の値は保存されない。
   - 検証レベル: integration
 
 #### FR-051 字幕焼き込み版で、話した内容を字幕として表示する
@@ -583,7 +584,7 @@ Hubらじおは、主に 16:9 の横長で収録される 10〜20 分の企業�
   - 検証レベル: integration
 
 #### FR-054 Projectの登録時に、動画に合わせて自動編集の設定を自動で決める
-- 要求: `project.createDraft` で元動画を選んだとき、システムは指定の ffprobe コマンドで元動画の長さ（秒）と表示上の幅・高さを読み取り、組み込みの規則（旧版の表 FR-054-T1）で自動編集の設定値を決めること。ffprobe を実行できない、失敗する、20 秒で timeout する、値が欠落している・0 以下であるときは設定を自動で変更せず、全体の設定で Project を作成する。自動で変更するのは profile の既定値のままの項目だけで、利用者が変更した値は保持する。自動設定は `<Workspace>\auto-settings\{draftId}.json`（形式 `hubradio.auto-settings.v1`）に、規則版・長さ・幅・高さ・キー・表示名・値の文・理由を保存し、`autoSettings` は `null` または最大 32 件（各項目 1〜512 文字）とする。強調テロップの量（`subtitles.emphasisTelopAmount`）も規則で決め、効果音（`audio.soundEffectsEnabled`）は規則で変えない。profile 1.2.0 より前の設定には該当項目がないため、その規則行は適用しない。
+- 要求: `project.createDraft` で元動画を選んだとき、システムは指定の ffprobe コマンドで元動画の長さ（秒）と表示上の幅・高さを読み取り、組み込みの規則（旧版の表 FR-054-T1）で自動編集の設定値を決めること。ffprobe を実行できない、失敗する、20 秒で timeout する、値が欠落している・0 以下であるときは設定を自動で変更せず、全体の設定で Project を作成する。自動で変更するのは profile の既定値のままの項目だけで、利用者が変更した値は保持する。自動設定は `<Workspace>\auto-settings\{draftId}.json`（形式 `hubradio.auto-settings.v1`）に、規則版・長さ・幅・高さ・キー・表示名・値の文・理由を保存し、`autoSettings` は `null` または最大 32 件（各項目 1〜512 文字）とする。強調テロップの量（`subtitles.emphasisTelopAmount`）も規則で決め、効果音（`audio.soundEffectsEnabled`）は規則で変えない。
 - 決定状態: 承認済み（依頼 2026-10-06）　出自: 依頼原文　優先度: MUST（旧版の優先順位 §16 の区分を保持）
 - 上位: G-001　出典: SRC-001（索引の行 FR-054）、SRC-002（詳細本文）
 - 対象エンティティ: Project, Job, 成果物　関係する状態: なし　参照パラメータ: なし
@@ -610,7 +611,7 @@ Hubらじおは、主に 16:9 の横長で収録される 10〜20 分の企業�
   - 検証レベル: integration
 
 #### FR-057 話の間を詰める（カットの強さ）
-- 要求: システムは、profile 1.2.0 を選んだ Project に限り（新規 Project の既定は 1.1.0 のため既定では適用されない。FR-048、X-001）、既定設定 profile 1.2.0 に `editing.pauseTightening`（`weak`・`standard`・`strong`、既定 `standard`）を追加し、最短長をそれぞれ 2 秒、0.7 秒、0.4 秒とすること。自動編集は `silencedetect=noise=-32.0dB:d=0.4` で無音を検出し、発話間の候補が最短長以上なら前後 0.15 秒を残した中央を削除すること。削除の時刻は frame・出力音声 sample・解析音声 16 kHz の grid へ内側に合わせ、削除が 0.1 秒未満になるものは採用しない。規則 ID は `fr057.pause-tightening`、記録は `source-only.pause-detection.v1` とする。検出に失敗しても生成は失敗させず `source_only.pause_detection_unavailable_retained` を記録する。無音と発話の重複、時刻のない語、表現できない語がある場合は、それぞれ `source_only.silence_speech_overlap_retained`、`source_only.untimed_words_retained`、`source_only.unrepresented_words_retained` を記録して保持すること。
+- 要求: システムは、既定設定 profile 1.2.0（唯一の profile。FR-048）に `editing.pauseTightening`（`weak`・`standard`・`strong`、既定 `standard`）を追加し、最短長をそれぞれ 2 秒、0.7 秒、0.4 秒とすること。自動編集は `silencedetect=noise=-32.0dB:d=0.4` で無音を検出し、発話間の候補が最短長以上なら前後 0.15 秒を残した中央を削除すること。削除の時刻は frame・出力音声 sample・解析音声 16 kHz の grid へ内側に合わせ、削除が 0.1 秒未満になるものは採用しない。規則 ID は `fr057.pause-tightening`、記録は `source-only.pause-detection.v1` とする。検出に失敗しても生成は失敗させず `source_only.pause_detection_unavailable_retained` を記録する。無音と発話の重複、時刻のない語、表現できない語がある場合は、それぞれ `source_only.silence_speech_overlap_retained`、`source_only.untimed_words_retained`、`source_only.unrepresented_words_retained` を記録して保持すること。
 - 決定状態: 承認済み（依頼 2026-10-07）　出自: 依頼原文　優先度: MUST（旧版の優先順位 §16 の区分を保持）
 - 上位: G-001　出典: SRC-001（索引の行 FR-057）、SRC-002（詳細本文）
 - 対象エンティティ: Project, Job, 成果物　関係する状態: なし　参照パラメータ: なし
@@ -619,7 +620,7 @@ Hubらじおは、主に 16:9 の横長で収録される 10〜20 分の企業�
   - 検証レベル: integration
 
 #### FR-058 縦長の元動画からは縦長の長尺動画を作る
-- 要求: システムは、profile 1.2.0 を選んだ Project に限り（新規 Project の既定は 1.1.0 のため既定では適用されない。FR-048、X-001）、既定設定 profile 1.2.0 に `output.longFormOrientation`（`followSource`・`landscape`、既定 `followSource`）を追加すること。`followSource` で元動画の表示上の高さが幅より大きい場合は、字幕なし版・字幕焼き込み版を 1080×1920 で作り、それ以外は 1920×1080 で作ること。縦長の出力は `9x16/vertical-short.json` の layout と中立 template を使い、profile 名は `standard-portrait-long-form-1080x1920-burned-in`、字幕には `subtitles.verticalLineLengthMaximum`・`verticalRegion`・`verticalLineHeight` を使うこと。作成時と再現時に `StandardRenderProfileFactory.CreateLongForm` を使い、旧い結果は従来の profile で再現すること。
+- 要求: システムは、既定設定 profile 1.2.0（唯一の profile。FR-048）に `output.longFormOrientation`（`followSource`・`landscape`、既定 `followSource`）を追加すること。`followSource` で元動画の表示上の高さが幅より大きい場合は、字幕なし版・字幕焼き込み版を 1080×1920 で作り、それ以外は 1920×1080 で作ること。縦長の出力は `9x16/vertical-short.json` の layout と中立 template を使い、profile 名は `standard-portrait-long-form-1080x1920-burned-in`、字幕には `subtitles.verticalLineLengthMaximum`・`verticalRegion`・`verticalLineHeight` を使うこと。作成時と再現時に `StandardRenderProfileFactory.CreateLongForm` を使い、旧い結果は従来の profile で再現すること。
 - 決定状態: 承認済み（依頼 2026-10-07）　出自: 依頼原文　優先度: MUST（旧版の優先順位 §16 の区分を保持）
 - 上位: G-001　出典: SRC-001（索引の行 FR-058）、SRC-002（詳細本文）
 - 対象エンティティ: Project, Job, 成果物　関係する状態: なし　参照パラメータ: なし
@@ -628,7 +629,7 @@ Hubらじおは、主に 16:9 の横長で収録される 10〜20 分の企業�
   - 検証レベル: integration
 
 #### FR-059 強調テロップを入れる
-- 要求: システムは、profile 1.2.0 を選んだ Project に限り（新規 Project の既定は 1.1.0 のため既定では適用されない。FR-048、X-001）、既定設定 profile 1.2.0 に `subtitles.emphasisTelopAmount`（`few`・`standard`・`many`、既定 `standard`。設定画面では「少なめ」「標準」「多め」）を追加し、強調テロップを入れること。強調テロップの文字は字幕の文字の一部をそのまま使い、言葉を作り足したり書き換えたりしない。数を含む字幕、`standard`・`many` の指定語、「！」「？」で終わる字幕を、規則 `fr059-emphasis-telop.v1` で候補にする。数は、`few` が 1 分に 1 つ（最低 1）、`standard` が 30 秒に 1 つ（最低 2）、`many` が 15 秒に 1 つ（最低 3）で、上限は 32 とし、重複せず開始間隔を 5 秒以上あける。profile 1.2.0 より前は強調テロップを出さない。
+- 要求: システムは、既定設定 profile 1.2.0（唯一の profile。FR-048）に `subtitles.emphasisTelopAmount`（`few`・`standard`・`many`、既定 `standard`。設定画面では「少なめ」「標準」「多め」）を追加し、強調テロップを入れること。強調テロップの文字は字幕の文字の一部をそのまま使い、言葉を作り足したり書き換えたりしない。数を含む字幕、`standard`・`many` の指定語、「！」「？」で終わる字幕を、規則 `fr059-emphasis-telop.v1` で候補にする。数は、`few` が 1 分に 1 つ（最低 1）、`standard` が 30 秒に 1 つ（最低 2）、`many` が 15 秒に 1 つ（最低 3）で、上限は 32 とし、重複せず開始間隔を 5 秒以上あける。`audio`・字幕の強調テロップ項目がない旧い設定の結果は、従来のまま再現する。
 - 決定状態: 承認済み（依頼 2026-10-07）　出自: 依頼原文　優先度: MUST（旧版の優先順位 §16 の区分を保持）
 - 上位: G-001　出典: SRC-001（索引の行 FR-059）、SRC-002（詳細本文）
 - 対象エンティティ: Project, Job, 成果物　関係する状態: なし　参照パラメータ: なし
@@ -637,7 +638,7 @@ Hubらじおは、主に 16:9 の横長で収録される 10〜20 分の企業�
   - 検証レベル: integration
 
 #### FR-060 効果音（SE）を入れる
-- 要求: システムは、質問票 Q-001 の回答 A（2026-10-07）により、効果音の挿入を行い、既定設定 profile 1.2.0 の `audio.soundEffectsEnabled`（真偽値）を profile 1.2.0 の既定値として有効にすること（新規 Project の既定は 1.1.0 のため、1.2.0 を選んだ Project でだけ既定で有効。FR-048、X-001）。無効、または profile 1.2.0 より前の設定では効果音を入れない。効果音は、アプリのコードが合成する 2 種類（話題の切り替わりの「上がる音」0.3 秒、強調の「ポン」0.3 秒。48 kHz・ステレオ・16 bit の WAV、最大の大きさ -6 dBFS）だけを使い、他人の素材は使わない。効果音の位置（規則 `fr060-sound-effect.v1`）は、強調テロップ（FR-059）の始まりと、「じゃあ」「では」「さて」「次に」「まず」「続いて」「ところで」「それでは」「最後に」で始まる字幕の始まりとする。FR-054 の自動設定規則では効果音の有効・無効を変更しない。
+- 要求: システムは、質問票 Q-001 の回答 A（2026-10-07）により、効果音の挿入を行い、既定設定 profile 1.2.0 の `audio.soundEffectsEnabled`（真偽値）を profile 1.2.0 の既定値として有効にすること（1.2.0 が唯一の profile のため、すべての Project で既定で有効。FR-048）。無効、または profile 1.2.0 より前の設定では効果音を入れない。効果音は、アプリのコードが合成する 2 種類（話題の切り替わりの「上がる音」0.3 秒、強調の「ポン」0.3 秒。48 kHz・ステレオ・16 bit の WAV、最大の大きさ -6 dBFS）だけを使い、他人の素材は使わない。効果音の位置（規則 `fr060-sound-effect.v1`）は、強調テロップ（FR-059）の始まりと、「じゃあ」「では」「さて」「次に」「まず」「続いて」「ところで」「それでは」「最後に」で始まる字幕の始まりとする。FR-054 の自動設定規則では効果音の有効・無効を変更しない。
 - 決定状態: 承認済み（依頼 2026-10-07）　出自: 依頼原文　優先度: MUST（旧版の優先順位 §16 の区分を保持）
 - 上位: G-001　出典: SRC-001（索引の行 FR-060）、SRC-002（詳細本文）
 - 対象エンティティ: Project, Job, 成果物　関係する状態: なし　参照パラメータ: なし
@@ -876,6 +877,7 @@ Hubらじおは、主に 16:9 の横長で収録される 10〜20 分の企業�
 | 2026-10-08 | Q-019 | A: NFR-UX-003 を承認、WCAG 2.2 AA を適用、業界調査は省略（単一ペルソナで時間軸は既存画面と整合。根拠は仮説のまま）。AC-128 の BLOCKED 解除 | 利用者の一任回答（rd-author が選択） | 202610082136 |
 | 2026-10-08 | NFR-UX-002・NFR-UX-003・NFR-UX-005 | 承認待ち → 承認済み（承認依頼 2026-10-08）。包括承認ではなく利用者承認 | 利用者承認（2026-10-08 の依頼の回答） | 202610082136 | 質問票
 | 2026-10-08 | S-01〜S-03、FR-048・FR-050・PARAM-002・AC-023・AC-025 | S-01: Project 作成時・設定画面で profile（1.1.0 既定／1.2.0）を選べると FR-048 に追加し AC-032〜035 に到達可能にした。S-02: PARAM-002 を「既定値かつ上限」と明記。S-03: 1.2.0 選択時は追加 4 項目を設定画面に表示（FR-050、22→26 項目） | 利用者の指示（論理的に判断して進める） | 202610082136 | 
+| 2026-10-08 | FR-048・FR-050・FR-054・FR-057〜FR-060、AC-023・AC-025・AC-032〜AC-035、X-001・X-002、S-01 | 既定設定 profile を 1.2.0 のみとする。1.1.0 は廃止（「1.0.0 との差」の記述、profile の選択肢と選択 UI＝S-01 の要求を除く）。新規・作成済み Project の既定＝唯一の profile は 1.2.0。FR-057〜FR-060 の追加 4 項目は常に有効、設定画面は 26 項目（FR-050・AC-025）。X-001・X-002 の回答（1.1.0 既定）は本指示で置き換え（履歴として残す）。削除した ID はなし（FR・AC の ID は維持し、文面のみ変更） | 利用者指示（run 202610082155 の依頼） | 202610082155 | 
 
 | ID | 重要度 | 質問 | 選択肢 | 推奨 | 状態 | 回答 |
 |---|---|---|---|---|---|---|
