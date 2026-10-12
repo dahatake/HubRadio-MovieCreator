@@ -1,7 +1,15 @@
 {
   "version": 1,
   "ac_digests": {
-    "AC-039": "sha256:b43b15bec78ea02d"
+    "AC-039": "sha256:ed8a8115c6067fe7",
+    "AC-040": "sha256:12f152e1304c0dd0",
+    "AC-042": "sha256:843138252d88fb15",
+    "AC-041": "sha256:e11565590197475f",
+    "AC-132": "sha256:a0064d809e8f8eda",
+    "AC-136": "sha256:399341ba9b7218ab",
+    "AC-137": "sha256:3e38d76c28c8e8dd",
+    "AC-139": "sha256:9f9ae722fdb59645",
+    "AC-142": "sha256:59d6f99ccdc163fa"
   },
   "cases": [
     {
@@ -23,6 +31,218 @@
       "history": [
         {
           "at": "2026-10-08T12:30:02+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        }
+      ]
+    },
+    {
+      "id": "E2E-002",
+      "requirement_ids": [
+        "FR-064"
+      ],
+      "ac_ids": [
+        "AC-040"
+      ],
+      "title": "参照…の取り消し・無効な選択で不変、ダイアログ中は二重押下不可",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-browse-cancel.ps1",
+      "canary": false,
+      "status": "not_run",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-13T05:43:34+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        }
+      ]
+    },
+    {
+      "id": "E2E-003",
+      "requirement_ids": [
+        "FR-064"
+      ],
+      "ac_ids": [
+        "AC-042"
+      ],
+      "title": "参照…をキーボードで操作・読み上げ名・直接入力でも同じ結果",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-browse-cancel.ps1",
+      "canary": false,
+      "status": "not_run",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-13T05:43:37+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        }
+      ]
+    },
+    {
+      "id": "E2E-004",
+      "requirement_ids": [
+        "FR-064"
+      ],
+      "ac_ids": [
+        "AC-041"
+      ],
+      "title": "権限なし利用者の参照…は forbidden（例外文・SID なし）",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/forbidden-pending.ps1",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-13T05:43:39+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-13T05:44:00+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "TBD: 権限なし利用者の再現方法が要求定義書にない（AC-041/AC-139）"
+        }
+      ]
+    },
+    {
+      "id": "E2E-005",
+      "requirement_ids": [
+        "FR-131"
+      ],
+      "ac_ids": [
+        "AC-132"
+      ],
+      "title": "複数 Job の各画面に Job ごとのサムネイルと名前/作成日時",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-131-job-thumbnails.ps1",
+      "canary": false,
+      "status": "not_run",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-13T05:43:42+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        }
+      ]
+    },
+    {
+      "id": "E2E-006",
+      "requirement_ids": [
+        "FR-132"
+      ],
+      "ac_ids": [
+        "AC-136"
+      ],
+      "title": "仕上がりで書き出し：4 ファイル・名前規則・元成果物不変",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-132-export.ps1",
+      "canary": false,
+      "status": "not_run",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-13T05:43:44+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        }
+      ]
+    },
+    {
+      "id": "E2E-007",
+      "requirement_ids": [
+        "FR-132"
+      ],
+      "ac_ids": [
+        "AC-137"
+      ],
+      "title": "書き出し先に同名があるとき既存不変で連番別名保存",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-132-export.ps1",
+      "canary": false,
+      "status": "not_run",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-13T05:43:46+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        }
+      ]
+    },
+    {
+      "id": "E2E-008",
+      "requirement_ids": [
+        "FR-132"
+      ],
+      "ac_ids": [
+        "AC-139"
+      ],
+      "title": "権限なし利用者の書き出しは forbidden・ファイル 0",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/forbidden-pending.ps1",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-13T05:43:48+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-13T05:44:00+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "TBD: 権限なし利用者の再現方法が要求定義書にない（AC-041/AC-139）"
+        }
+      ]
+    },
+    {
+      "id": "E2E-009",
+      "requirement_ids": [
+        "FR-133"
+      ],
+      "ac_ids": [
+        "AC-142"
+      ],
+      "title": "新規 Project のフォルダー名が Project 名（GUID でない）",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-133-project-folder-name.ps1",
+      "canary": true,
+      "status": "not_run",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-13T05:43:51+09:00",
           "by": "test-designer",
           "change": "追加",
           "reason": "受入基準からケースを作成"
