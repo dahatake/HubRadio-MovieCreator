@@ -251,6 +251,136 @@ public sealed class WorkspaceLocationBridgeTests
         Assert.AreEqual(target, WorkspaceFolderBootstrap.Prepare(app, sid));
     }
 
+    // FR-064 AC-039 AC-042: browse only returns the chosen path; nothing is saved.
+    [TestMethod]
+    public async Task FR064_AC039_BrowseReturnsPickedFolderWithoutSaving()
+    {
+        var store = new WorkspaceLocationStore(app);
+        string picked = Path.Combine(root, "picked");
+        Directory.CreateDirectory(picked);
+        var picker = new FakePicker { Result = picked };
+        var handler = new WorkspaceLocationBridgeHandler(store, new FakeAuthorization(), current, picker);
+
+        JsonElement result = await RunBrowse(handler);
+
+        Assert.AreEqual("selected", result.GetProperty("status").GetString());
+        Assert.AreEqual(picked, result.GetProperty("path").GetString());
+        Assert.IsFalse(File.Exists(store.ConfigPath));
+        Assert.AreEqual(1, picker.Calls);
+    }
+
+    // FR-064 AC-040
+    [TestMethod]
+    public async Task FR064_AC040_CancelFailureAndNonFolderLeaveNoPath()
+    {
+        var store = new WorkspaceLocationStore(app);
+        string file = Path.Combine(root, "a.txt");
+        File.WriteAllText(file, "x");
+        foreach ((FakePicker picker, string status) in new (FakePicker, string)[]
+        {
+            (new FakePicker { Result = null }, "cancelled"),
+            (new FakePicker { Throw = true }, "failed"),
+            (new FakePicker { Result = file }, "failed"),
+            (new FakePicker { Result = "relative" }, "failed"),
+            (new FakePicker { Result = Path.Combine(root, "missing") }, "failed"),
+        })
+        {
+            var handler = new WorkspaceLocationBridgeHandler(store, new FakeAuthorization(), current, picker);
+            JsonElement result = await RunBrowse(handler);
+            Assert.AreEqual(status, result.GetProperty("status").GetString());
+            Assert.AreEqual(JsonValueKind.Null, result.GetProperty("path").ValueKind);
+        }
+
+        Assert.IsFalse(File.Exists(store.ConfigPath));
+    }
+
+    // FR-064 AC-040: a second press while the dialog is open does not open another one.
+    [TestMethod]
+    public async Task FR064_AC040_SecondBrowseWhileOpenIsRejected()
+    {
+        var gate = new TaskCompletionSource<string?>();
+        var picker = new FakePicker { Gate = gate.Task };
+        var handler = new WorkspaceLocationBridgeHandler(
+            new WorkspaceLocationStore(app), new FakeAuthorization(), current, picker);
+
+        Task<JsonElement> first = RunBrowse(handler);
+        JsonElement second = await RunBrowse(handler);
+        gate.SetResult(null);
+        JsonElement firstResult = await first;
+
+        Assert.AreEqual("failed", second.GetProperty("status").GetString());
+        Assert.AreEqual("cancelled", firstResult.GetProperty("status").GetString());
+        Assert.AreEqual(1, picker.Calls);
+    }
+
+    // FR-064 AC-041
+    [TestMethod]
+    public async Task FR064_AC041_WithoutEditPermissionDialogIsNotOpenedAndNothingLeaks()
+    {
+        var picker = new FakePicker { Result = root };
+        var handler = new WorkspaceLocationBridgeHandler(
+            new WorkspaceLocationStore(app), new FakeAuthorization { DenyEdit = true }, current, picker);
+        BridgeRequest request = Parse("settings.workspace.browse", new { });
+
+        string response = await handler.HandleBrowseAsync(request, CancellationToken.None);
+
+        JsonElement result = JsonDocument.Parse(response).RootElement.GetProperty("result");
+        Assert.AreEqual("forbidden", result.GetProperty("status").GetString());
+        Assert.AreEqual(JsonValueKind.Null, result.GetProperty("path").ValueKind);
+        Assert.AreEqual(0, picker.Calls);
+        Assert.IsFalse(response.Contains("Exception", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(response.Contains("S-1-", StringComparison.Ordinal));
+    }
+
+    // FR-064 AC-042
+    [TestMethod]
+    public void FR064_AC042_BrowseIsASettingsMethodWithEmptyParametersAndUnavailableWithoutHandler()
+    {
+        BridgeRequest request = Parse("settings.workspace.browse", new { });
+        Assert.IsTrue(BridgeProtocol.IsSettingsMethod(request.Method));
+        Assert.AreEqual("settings.workspace.browse", BridgeProtocol.GetMethodName(request.Method));
+        string message =
+            $"{{\"version\":1,\"requestId\":\"{Guid.NewGuid():D}\",\"method\":\"settings.workspace.browse\",\"params\":{{\"path\":\"x\"}}}}";
+        Assert.IsFalse(BridgeProtocol.TryParseRequest(WebViewHost.EntryPoint, message, out _, out _));
+
+        string response = WebViewHost.HandleSettingsRequest(request, null, null, null, CancellationToken.None);
+        Assert.AreEqual(
+            "unavailable",
+            JsonDocument.Parse(response).RootElement.GetProperty("result").GetProperty("status").GetString());
+    }
+
+    private static async Task<JsonElement> RunBrowse(WorkspaceLocationBridgeHandler handler)
+    {
+        BridgeRequest request = Parse("settings.workspace.browse", new { });
+        using JsonDocument document = JsonDocument.Parse(await handler.HandleBrowseAsync(request, CancellationToken.None));
+        CollectionAssert.AreEqual(
+            new[] { "status", "path" },
+            document.RootElement.GetProperty("result").EnumerateObject().Select(static p => p.Name).ToArray());
+        return document.RootElement.GetProperty("result").Clone();
+    }
+
+    private sealed class FakePicker : IWorkspaceFolderPicker
+    {
+        internal string? Result { get; init; }
+
+        internal bool Throw { get; init; }
+
+        internal Task<string?>? Gate { get; init; }
+
+        internal int Calls { get; private set; }
+
+        public async Task<string?> PickFolderAsync(string? startFolder, CancellationToken cancellationToken)
+        {
+            Calls++;
+            if (Throw)
+            {
+                throw new InvalidOperationException("secret detail");
+            }
+
+            return Gate is null ? Result : await Gate;
+        }
+    }
+
     private static void AssertFailure(JsonElement result, string status)
     {
         Assert.AreEqual(status, result.GetProperty("status").GetString());

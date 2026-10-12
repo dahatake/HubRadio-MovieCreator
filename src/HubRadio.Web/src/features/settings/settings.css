@@ -32,6 +32,9 @@
 .settings-workspace-location-paths dt { color: var(--cp-text-muted); }
 .settings-workspace-location-paths dd { margin: 0; overflow-wrap: anywhere; }
 .settings-workspace-location input { min-width: 0; }
+.settings-workspace-location-input { display: flex; gap: 0.5rem; align-items: stretch; }
+.settings-workspace-location-input input { flex: 1 1 auto; }
+.settings-workspace-location-input button { flex: 0 0 auto; }
 .settings-workspace-location-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .settings-workspace-location [role='status']:empty { display: none; }
 .settings-panel :where(button, input, select, textarea, summary) { font-size: 1rem; }

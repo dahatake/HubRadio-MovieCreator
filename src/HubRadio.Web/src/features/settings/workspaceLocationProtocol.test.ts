@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  createHostWorkspaceLocationService, createWorkspaceLocationReadRequest, createWorkspaceLocationService,
-  createWorkspaceLocationUpdateRequest, parseWorkspaceLocationResponse, type WorkspaceLocationRequest,
+  createHostWorkspaceLocationService, createWorkspaceBrowseRequest, createWorkspaceLocationReadRequest, createWorkspaceLocationService,
+  createWorkspaceLocationUpdateRequest, parseWorkspaceBrowseResponse, parseWorkspaceLocationResponse, type WorkspaceLocationRequest,
   type WorkspaceLocationTransport,
 } from './workspaceLocationProtocol'
 
@@ -20,6 +20,35 @@ function fakeTransport() {
   }
   return { transport, sent, listeners, emit: (data: unknown) => { for (const listener of [...listeners]) listener({ data }) } }
 }
+
+// FR-064 AC-042: the browse request/response pair is closed and carries a path only when selected.
+describe('FR-064 AC-042 workspace browse protocol', () => {
+  it('creates a closed browse request and parses only closed results', () => {
+    expect(createWorkspaceBrowseRequest(id(1))).toEqual({ version: 1, requestId: id(1), method: 'settings.workspace.browse', params: {} })
+    expect(() => createWorkspaceBrowseRequest('nope')).toThrow(TypeError)
+    const ok = (result: unknown) => parseWorkspaceBrowseResponse(envelope('settings.workspace.browse', result))
+    expect(ok({ status: 'selected', path: 'D:\\x' })?.result).toEqual({ status: 'selected', path: 'D:\\x' })
+    for (const status of ['cancelled', 'failed', 'forbidden', 'unavailable']) {
+      expect(ok({ status, path: null })?.result.status).toBe(status)
+    }
+    for (const bad of [
+      { status: 'selected', path: null }, { status: 'selected', path: '' }, { status: 'cancelled', path: 'D:\\leak' },
+      { status: 'selected', path: 'D:\\x', extra: 1 }, { status: 'other', path: null }, { status: 'selected' },
+    ]) expect(ok(bad)).toBeNull()
+    expect(parseWorkspaceBrowseResponse(envelope('settings.workspace.read', { status: 'cancelled', path: null }))).toBeNull()
+  })
+
+  it('correlates browse responses and does not accept a read response for it', async () => {
+    const h = fakeTransport()
+    const service = createWorkspaceLocationService(h.transport, { createRequestId: () => id(5) })
+    const browse = service.browse()
+    expect(h.sent[0]).toEqual({ version: 1, requestId: id(5), method: 'settings.workspace.browse', params: {} })
+    h.emit(envelope('settings.workspace.read', available, id(5)))
+    h.emit(envelope('settings.workspace.browse', { status: 'selected', path: 'D:\\picked' }, id(5)))
+    expect(await browse).toEqual({ status: 'selected', path: 'D:\\picked' })
+    service.dispose()
+  })
+})
 
 // FR-062 / AC-037.4
 describe('FR-062 AC-037.4 workspace location protocol', () => {

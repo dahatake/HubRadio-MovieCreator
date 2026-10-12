@@ -70,7 +70,7 @@
 | FR-060 | 効果音（SE）を入れる | 承認済み（依頼 2026-10-07） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-061 | 画面上部の表示を「Project一覧」と「Project」で分け、Jobごとに設定してJobを作る | 承認済み（依頼 2026-10-07。「保存」タブの廃止は依頼 2026-10-13 による文面の変更） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-062 | Workspaceフォルダーの初期値を、実行ファイルのフォルダーの`\workspace`にし、設定画面から変更できるようにする | 承認済み（依頼 2026-10-07） | 未確認（AU-002） | 未確認（AU-002） | なし |
-| FR-064 | Workspaceフォルダーを、フォルダー選択ダイアログ（参照…）で指定できるようにする | 承認済み（依頼 2026-10-08） | 未確認（AU-002） | 未確認（AU-002） | なし |
+| FR-064 | Workspaceフォルダーを、フォルダー選択ダイアログ（参照…）で指定できるようにする | 承認済み（依頼 2026-10-08） | src/HubRadio.App/Web/WorkspaceLocationBridgeHandler.cs, src/HubRadio.App/Media/WorkspaceFolderPicker.cs, src/HubRadio.Web/src/features/settings/WorkspaceLocationSection.tsx, src/HubRadio.Web/src/features/settings/workspaceLocationProtocol.ts | tests/HubRadio.App.Tests/WorkspaceLocationBridgeTests.cs, src/HubRadio.Web/src/features/settings/WorkspaceLocationSection.test.tsx, src/HubRadio.Web/src/features/settings/workspaceLocationProtocol.test.ts | Web Bridge プロトコル |
 | FR-063 | 仕上がり画面を、Jobごとに見て、複数のJobを映像と設定で比べる構成にする | 承認済み（依頼 2026-10-07） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-131 | すべての画面で Job ごとのサムネイルを表示する | 承認済み（依頼 2026-10-13） | 未実装 | 未実装 | なし |
 | FR-132 | 仕上がり画面で、Job の動画とサムネイルを外部のフォルダーへ保存（書き出し）する | 承認済み（依頼 2026-10-13） | 未実装 | 未実装 | なし |
@@ -99,6 +99,7 @@
 
 | 名前 | 定義ファイル | 関連する要求 ID |
 |---|---|---|
+| Bridge `settings.workspace.browse` | schemas/web-bridge.schema.json | FR-064 |
 
 ## テーブル
 
@@ -109,3 +110,4 @@
 
 | 部品名 | ファイル | 用途 | 使っている要求 ID |
 |---|---|---|---|
+| Web Bridge プロトコル | schemas/web-bridge.schema.json | WebView と本体の間の要求・応答の契約 | FR-064 |

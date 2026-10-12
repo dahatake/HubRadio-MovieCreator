@@ -351,6 +351,11 @@ internal sealed class WebViewHost : IDisposable
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
+        if (request.Method == BridgeMethod.SettingsWorkspaceBrowse)
+        {
+            return WorkspaceLocationBridgeHandler.WriteBrowseFailure(request, "unavailable");
+        }
+
         if (request.Method is BridgeMethod.SettingsWorkspaceRead or BridgeMethod.SettingsWorkspaceUpdate)
         {
             return workspaceHandler?.Handle(request) ??

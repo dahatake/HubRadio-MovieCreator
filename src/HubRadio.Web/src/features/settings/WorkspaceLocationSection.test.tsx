@@ -5,7 +5,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceLocationSection, workspaceLocationMessages } from './WorkspaceLocationSection'
-import type { WorkspaceLocationOutcome, WorkspaceLocationService } from './workspaceLocationProtocol'
+import type { WorkspaceBrowseOutcome, WorkspaceLocationOutcome, WorkspaceLocationService } from './workspaceLocationProtocol'
 
 const info = { status: 'available', currentPath: 'C:\\workspace', savedPath: null, defaultPath: 'C:\\workspace', restartRequired: false } as const
 const failure = (status: 'invalid' | 'forbidden' | 'unavailable') =>
@@ -15,6 +15,7 @@ function fakeService(read: WorkspaceLocationOutcome = info) {
   const service: WorkspaceLocationService = {
     read: vi.fn(() => Promise.resolve(read)),
     update: vi.fn((_path: string | null) => Promise.resolve<WorkspaceLocationOutcome>(info)),
+    browse: vi.fn(() => Promise.resolve<WorkspaceBrowseOutcome>({ status: 'cancelled', path: null })),
     dispose: vi.fn(),
   }
   return service
@@ -149,5 +150,81 @@ describe('FR-062 AC-037.4 WorkspaceLocationSection', () => {
 
     expect(status().textContent).toBe(workspaceLocationMessages.forbidden)
     expect(container.querySelector('[data-workspace-path]')).toBeNull()
+  })
+
+  // FR-064 AC-039 AC-042: 参照… fills the input only; it never calls update (save).
+  it('FR-064 AC-039 AC-042 fills the input from the folder dialog without saving', async () => {
+    const service = fakeService()
+    vi.mocked(service.browse).mockResolvedValueOnce({ status: 'selected', path: 'D:\\picked' })
+    await render(service)
+
+    await click('参照…')
+
+    expect(service.browse).toHaveBeenCalledTimes(1)
+    expect(service.update).not.toHaveBeenCalled()
+    expect(input().value).toBe('D:\\picked')
+    await click('保存')
+    expect(service.update).toHaveBeenCalledExactlyOnceWith('D:\\picked')
+  })
+
+  // FR-064 AC-040: cancel keeps the input; failure shows the message and keeps the input.
+  it('FR-064 AC-040 keeps the input on cancel and on failure and shows the message', async () => {
+    const service = fakeService()
+    await render(service)
+    await type('E:\\typed')
+
+    await click('参照…')
+    expect(input().value).toBe('E:\\typed')
+    expect(status().textContent).toBe('')
+
+    vi.mocked(service.browse).mockResolvedValueOnce({ status: 'failed', path: null })
+    await click('参照…')
+    expect(input().value).toBe('E:\\typed')
+    expect(status().textContent).toBe('フォルダーを選べませんでした。場所を直接入力してください。')
+
+    vi.mocked(service.browse).mockResolvedValueOnce({ status: 'timeout' })
+    await click('参照…')
+    expect(status().textContent).toBe(workspaceLocationMessages.browseFailed)
+    expect(service.update).not.toHaveBeenCalled()
+  })
+
+  // FR-064 AC-040: no double press while the dialog is open.
+  it('FR-064 AC-040 disables 参照… while the dialog is open', async () => {
+    const service = fakeService()
+    let finish: (value: WorkspaceBrowseOutcome) => void = () => undefined
+    vi.mocked(service.browse).mockReturnValueOnce(new Promise<WorkspaceBrowseOutcome>(resolve => { finish = resolve }))
+    await render(service)
+
+    await click('参照…')
+    expect(button('参照…').disabled).toBe(true)
+    await act(async () => { button('参照…').click() })
+    expect(service.browse).toHaveBeenCalledTimes(1)
+
+    await act(async () => { finish({ status: 'cancelled', path: null }) })
+    expect(button('参照…').disabled).toBe(false)
+  })
+
+  // FR-064 AC-041: forbidden from the host is reported and leaves the input unchanged.
+  it('FR-064 AC-041 reports forbidden without changing the input', async () => {
+    const service = fakeService()
+    vi.mocked(service.browse).mockResolvedValueOnce({ status: 'forbidden', path: null })
+    await render(service)
+
+    await click('参照…')
+
+    expect(status().textContent).toBe(workspaceLocationMessages.forbidden)
+    expect(input().value).toBe('C:\\workspace')
+  })
+
+  // FR-064 AC-042: keyboard and assistive technology.
+  it('FR-064 AC-042 exposes a named native button before the save button and a named input', async () => {
+    await render(fakeService())
+
+    const browse = button('参照…')
+    expect(browse.tagName).toBe('BUTTON')
+    expect(browse.type).toBe('button')
+    expect(input().getAttribute('aria-label')).toBe('Workspaceフォルダーの場所')
+    expect(input().compareDocumentPosition(browse) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(browse.compareDocumentPosition(button('保存')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

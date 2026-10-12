@@ -162,7 +162,8 @@ internal static class ProjectApplicationRuntime
         {
             cancellationToken.ThrowIfCancellationRequested();
             return CreateHandlers(native, authorization, actorProvider, catalog, picker, applicationRoot, actorSid,
-                CreateStitchHandler(native.Services, authorization, actorProvider, new BookendStitchFilePicker(owner), resources));
+                CreateStitchHandler(native.Services, authorization, actorProvider, new BookendStitchFilePicker(owner), resources),
+                new WorkspaceFolderPicker(owner));
         }
         catch
         {
@@ -179,7 +180,8 @@ internal static class ProjectApplicationRuntime
         MediaPicker picker,
         string applicationRoot,
         string actorSid,
-        BookendStitchBridgeHandler? stitch)
+        BookendStitchBridgeHandler? stitch,
+        IWorkspaceFolderPicker? workspaceFolderPicker = null)
     {
         SourceOnlyApplicationServices services = native.Services;
         var posters = new ProjectPosterStore(services.WorkspacePath);
@@ -304,7 +306,8 @@ internal static class ProjectApplicationRuntime
             new WorkspaceLocationBridgeHandler(
                 new WorkspaceLocationStore(applicationRoot),
                 settingsAuthorization,
-                services.WorkspacePath));
+                services.WorkspacePath,
+                workspaceFolderPicker));
     }
 
     // FR-035: without both bundled tools the GUI reports unavailable instead of failing later.
