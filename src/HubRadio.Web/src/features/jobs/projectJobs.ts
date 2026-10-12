@@ -1,4 +1,4 @@
-import type { PipelinePhase, PipelineVersionEntry } from '../workflow/pipelineProtocol'
+import type { PipelinePhase, PipelineVersionEntry, PipelineVersionOutput } from '../workflow/pipelineProtocol'
 
 /** FR-061: one Job (a source-only execution) of a Project, as shown in job lists. */
 export interface ProjectJobRow {
@@ -10,6 +10,8 @@ export interface ProjectJobRow {
   readonly phase: PipelinePhase
   readonly createdAt: string | null
   readonly isLatest: boolean
+  /** FR-131: the Job's viewable outputs, from which its own thumbnail is taken; absent for a Job without a version. */
+  readonly outputs?: readonly PipelineVersionOutput[]
 }
 
 /** FR-061: versions are newest first, so the oldest entry is Job 1. */
@@ -26,6 +28,7 @@ export function buildProjectJobRows(
     phase: entry.phase,
     createdAt: entry.createdAt ?? null,
     isLatest: index === 0,
+    ...(entry.outputs === undefined ? {} : { outputs: entry.outputs }),
   }))
 }
 

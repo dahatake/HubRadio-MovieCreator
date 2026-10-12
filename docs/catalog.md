@@ -72,7 +72,7 @@
 | FR-062 | Workspaceフォルダーの初期値を、実行ファイルのフォルダーの`\workspace`にし、設定画面から変更できるようにする | 承認済み（依頼 2026-10-07） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-064 | Workspaceフォルダーを、フォルダー選択ダイアログ（参照…）で指定できるようにする | 承認済み（依頼 2026-10-08） | src/HubRadio.App/Web/WorkspaceLocationBridgeHandler.cs, src/HubRadio.App/Media/WorkspaceFolderPicker.cs, src/HubRadio.Web/src/features/settings/WorkspaceLocationSection.tsx, src/HubRadio.Web/src/features/settings/workspaceLocationProtocol.ts | tests/HubRadio.App.Tests/WorkspaceLocationBridgeTests.cs, src/HubRadio.Web/src/features/settings/WorkspaceLocationSection.test.tsx, src/HubRadio.Web/src/features/settings/workspaceLocationProtocol.test.ts | Web Bridge プロトコル |
 | FR-063 | 仕上がり画面を、Jobごとに見て、複数のJobを映像と設定で比べる構成にする | 承認済み（依頼 2026-10-07） | 未確認（AU-002） | 未確認（AU-002） | なし |
-| FR-131 | すべての画面で Job ごとのサムネイルを表示する | 承認済み（依頼 2026-10-13） | 未実装 | 未実装 | なし |
+| FR-131 | すべての画面で Job ごとのサムネイルを表示する | 承認済み（依頼 2026-10-13） | src/HubRadio.Web/src/features/jobs/JobThumbnail.tsx, src/HubRadio.Web/src/features/jobs/ProjectJobList.tsx, src/HubRadio.Web/src/features/jobs/AllProjectJobsPanel.tsx, src/HubRadio.Web/src/features/jobs/projectJobs.ts, src/HubRadio.Web/src/features/results/JobResultsBrowser.tsx, src/HubRadio.Web/src/features/jobs/jobs.css | src/HubRadio.Web/src/features/jobs/JobThumbnail.test.tsx | Job サムネイル |
 | FR-132 | 仕上がり画面で、Job の動画とサムネイルを外部のフォルダーへ保存（書き出し）する | 承認済み（依頼 2026-10-13） | 未実装 | 未実装 | なし |
 | FR-133 | Workspace 配下の Project フォルダー名を、GUID ではなく Project 名にする | 承認済み（依頼 2026-10-13。重複・使えない文字の拒否の細部は承認待ち＝Q-020） | 未実装 | 未実装 | なし |
 | FR-134 | 既存の GUID 名のフォルダーを、データを失わずに Project 名のフォルダーへ移行する | 承認済み（依頼 2026-10-13。移行できない Project の扱いは承認待ち＝Q-020） | 未実装 | 未実装 | なし |
@@ -111,3 +111,4 @@
 | 部品名 | ファイル | 用途 | 使っている要求 ID |
 |---|---|---|---|
 | Web Bridge プロトコル | schemas/web-bridge.schema.json | WebView と本体の間の要求・応答の契約 | FR-064 |
+| Job サムネイル | src/HubRadio.Web/src/features/jobs/JobThumbnail.tsx | Job 単位のサムネイル・代替表示・代替テキスト・選択可否（Project 単位の FR-045/053 の画像参照を再利用） | FR-131 |

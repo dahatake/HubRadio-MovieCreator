@@ -728,7 +728,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
                 if (opener) openSettings(opener)
               }}
               onConfirm={createJob} />
-            <ProjectJobList versions={jobs} status={pipeline.state.versionsStatus} copy={jobSettingsCopy} />
+            <ProjectJobList versions={jobs} status={pipeline.state.versionsStatus} copy={jobSettingsCopy} projectId={activeProjectId} />
           </div>}
         </WorkflowSurface>
 
@@ -744,7 +744,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
               ? 'Projectは作成済みですが、編集処理の開始は確認できていません。ホストの状態を確認してください。'
               : '元動画を選択して開始を確認すると、自動編集の状態を取得します。'}
           </p>}
-          {draft?.isFinalized === true && <ProjectJobList versions={jobs} status={pipeline.state.versionsStatus} copy={jobSettingsCopy} />}
+          {draft?.isFinalized === true && <ProjectJobList versions={jobs} status={pipeline.state.versionsStatus} copy={jobSettingsCopy} projectId={activeProjectId} />}
           {projectOpen && <div className="workflow-return"><button type="button" onClick={() => selectStep('source')}>元動画へ戻る</button></div>}
           </div>
         </WorkflowSurface>
