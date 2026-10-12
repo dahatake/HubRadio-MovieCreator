@@ -6,12 +6,15 @@ Usage:
   python scripts/run-state.py status                       # resume summary (read this first in a new context)
   python scripts/run-state.py stage N [--done]             # 0 init,1 RD,2 audit,3 plan,4 ST design,5 impl,6 final
   python scripts/run-state.py progress "text"              # append one entry (<= 3 lines) to progress.md
-  python scripts/run-state.py queue add --id I-01 --req FR-001 [--ac AC-001] [--boundary B] [--depends I-00] [--shared X] [--summary S]
-  python scripts/run-state.py queue set I-01 [--status todo|doing|done|blocked] [--attempts +1] [--branch B] [--summary S]
-  python scripts/run-state.py queue ready [--parallel 3]   # items that can start now (deps done, no shared boundary)
+  python scripts/run-state.py queue add --id I-01 --req FR-001[,FR-002..] [--ac AC-001] [--boundary B] [--depends I-00] [--shared X] [--summary S]
+  python scripts/run-state.py queue set I-01 [--status todo|doing|done|blocked] [--attempts +1] [--branch B] [--worktree P] [--summary S]
+  python scripts/run-state.py queue ready [--parallel 5]   # items that can start now (deps done, no shared boundary)
   python scripts/run-state.py queue show
   python scripts/run-state.py time                         # elapsed / max_hours; exit 3 when >= 85 %
   python scripts/run-state.py complete-check               # exit 0 only when the run may end (§8.3)
+  python scripts/run-state.py lane decide --changed N [--flags security,conflict,shared,unresolved,goal_unmapped]   # fast|full（工程 1 の後）
+  python scripts/run-state.py lane confirm [--flags ...]   # 工程 3 の後に queue の数で再判定。full なら fast に戻さない
+  python scripts/run-state.py lane show
   python scripts/run-state.py human answers|resume|instruction [--note "..."]   # count one human prompt (KPI)
   python scripts/run-state.py finish [--result "..."] [--credits "..."]   # append docs/run-history.md, close the run
 """
@@ -19,17 +22,18 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
 import re
 import sys
 from pathlib import Path
 from typing import Dict, List
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import hvelib as h  # noqa: E402
+import ebaklib as h  # noqa: E402
 
 STAGES = {0: "初期化", 1: "要求定義", 2: "独立監査", 3: "計画", 4: "System Test の設計", 5: "実装ループ", 6: "最終"}
 DEFAULT_OPTIONS = {
-    "max_hours": "24", "approval_policy": "安全範囲は推奨どおり", "parallel_workers": "3",
+    "max_hours": "24", "approval_policy": "安全範囲は推奨どおり", "parallel_workers": "auto",
     "scope": "承認済みすべて", "git_push": "しない", "deploy": "しない", "external_write": "しない",
     "paid_services": "使わない", "external_exposure": "公開しない",
 }
@@ -42,6 +46,8 @@ HISTORY_HEADER = (
 )
 HISTORY_NEW_COLS = ("人の介入", "検証済み要求")
 HUMAN_KINDS = ("request", "answers", "resume", "instruction")
+MAX_REQS_PER_ITEM = 5
+MAX_AC_PER_ITEM = 12
 
 
 def upgrade_history(text: str) -> str:
@@ -113,6 +119,11 @@ def cmd_start(args) -> int:
         text = args.options.replace("\\n", "\n")
     opts = dict(DEFAULT_OPTIONS)
     opts.update(h.parse_options_text(text))
+    pw = str(opts.get("parallel_workers", "auto")).strip()
+    auto_note = ""
+    if pw.lower() in ("auto", "自動", ""):
+        opts["parallel_workers"] = str(h.auto_workers())
+        auto_note = f"parallel_workers: auto -> {opts['parallel_workers']}（CPU {os.cpu_count()} コア・メモリ {h.total_memory_gb():.0f} GB から算出）"
     rid = h.new_run_id()
     rdir = h.run_dir(root, cfg, rid)
     n = 1
@@ -147,6 +158,12 @@ def cmd_start(args) -> int:
     if branch_msg:
         print(branch_msg)
     print("options: " + ", ".join(f"{k}={v}" for k, v in opts.items()))
+    if auto_note:
+        print(auto_note)
+    models = cfg.get("models") or {}
+    if not any(v for k, v in models.items() if not k.startswith("_") and isinstance(v, str)):
+        print("HINT models: 全役割が空（既定のモデル）です。実測では conductor・implementer の選択が所要時間と Token を最も左右しました。"
+              "較正の手順は users-guide/04-customization.md 4.2 を参照してください")
     return 0
 
 
@@ -179,6 +196,7 @@ def cmd_status(args) -> int:
     print(f"run: {rid} status={meta.get('status')} stage={meta.get('stage')}({STAGES.get(meta.get('stage'), '?')}) done={meta.get('stages_done')}")
     print(f"time: {el:.1f}h / {mh:g}h ({el / mh * 100:.0f}%)  branch={h.current_branch(root)} HEAD={h.head_commit(root)}")
     print(f"integration: {meta.get('integration_branch') or '-'}")
+    print(f"lane: {meta.get('lane', '未判定')}")
     if heal:
         print(heal)
     print(f"queue: todo={c['todo']} doing={c['doing']} done={c['done']} blocked={c['blocked']}")
@@ -201,13 +219,16 @@ def cmd_stage(args) -> int:
     n = args.n
     if n not in STAGES:
         raise SystemExit("ERROR run-state: stage は 0〜6 です")
+    times = meta.setdefault("stage_times", {}).setdefault(str(n), {})
     if args.done:
+        times["done"] = h.now_iso()
         if n not in meta["stages_done"]:
             meta["stages_done"].append(n)
         if n == 4:
             meta["ledger_strict"] = True
         msg = f"工程{n} {STAGES[n]} 完了"
     else:
+        times.setdefault("start", h.now_iso())
         meta["stage"] = n
         if n == 1:
             meta["ledger_strict"] = False
@@ -241,6 +262,23 @@ def ids(v) -> List[str]:
     return [x for x in re.split(r"[,\s]+", v or "") if x]
 
 
+def mark_status(it: dict, status: str) -> None:
+    """Set the status and record the timing used by kpi.py (flow metrics)."""
+    now = h.now_iso()
+    if status == "doing" and it.get("status") != "doing":
+        it.setdefault("first_started_at", now)
+        it["started_at"] = now
+    if status in ("done", "blocked", "todo") and it.get("status") == "doing" and it.get("started_at"):
+        try:
+            sec = (parse_ts(now) - parse_ts(it["started_at"])).total_seconds()
+            it["work_sec"] = round(it.get("work_sec", 0) + max(sec, 0), 1)
+        except ValueError:
+            pass
+    if status in ("done", "blocked"):
+        it["finished_at"] = now
+    it["status"] = status
+
+
 def save_queue(root, cfg, rid, q) -> None:
     h.write_json(h.run_dir(root, cfg, rid) / "queue.json", q)
 
@@ -255,15 +293,18 @@ def cmd_queue(args) -> int:
         if args.id in by_id:
             raise SystemExit(f"ERROR run-state: {args.id} は既にあります")
         reqs = ids(args.req)
-        if not 1 <= len(reqs) <= 3:
-            raise SystemExit("ERROR run-state: 1 項目の要求 ID は 1〜3 個です（§7.3）")
+        if not 1 <= len(reqs) <= MAX_REQS_PER_ITEM:
+            raise SystemExit(f"ERROR run-state: 1 項目の要求 ID は 1〜{MAX_REQS_PER_ITEM} 個です（縦に切った機能の単位）")
         for d in ids(args.depends):
             if d not in by_id:
                 raise SystemExit(f"ERROR run-state: 依存先 {d} がありません")
+        n_ac = len(ids(args.ac))
+        if n_ac > MAX_AC_PER_ITEM and not args.allow_large:
+            raise SystemExit(f"ERROR run-state: 1 項目の AC は {MAX_AC_PER_ITEM} 個までです（{n_ac} 個）。1 項目の作業時間が長いほど 1 回目のゲート通過率が下がるため、分割します（やむを得ない場合は --allow-large）")
         items.append({
             "id": args.id, "requirement_ids": reqs, "ac_ids": ids(args.ac), "boundary": args.boundary or "",
             "shared": ids(args.shared), "depends_on": ids(args.depends), "status": "todo", "attempts": 0,
-            "branch": None, "summary": args.summary or "",
+            "branch": None, "worktree": None, "summary": args.summary or "",
         })
         save_queue(root, cfg, rid, q)
         print(f"added {args.id}")
@@ -275,11 +316,13 @@ def cmd_queue(args) -> int:
         if args.status:
             if args.status not in ("todo", "doing", "done", "blocked"):
                 raise SystemExit("ERROR run-state: status は todo/doing/done/blocked です")
-            it["status"] = args.status
+            mark_status(it, args.status)
         if args.attempts:
             it["attempts"] = it.get("attempts", 0) + int(args.attempts[1:]) if args.attempts.startswith("+") else int(args.attempts)
         if args.branch is not None:
             it["branch"] = args.branch or None
+        if args.worktree is not None:
+            it["worktree"] = args.worktree or None
         if args.summary is not None:
             it["summary"] = args.summary
         save_queue(root, cfg, rid, q)
@@ -355,6 +398,60 @@ def cmd_complete_check(args) -> int:
         print("incomplete: " + " / ".join(reasons))
         return 1
     print(f"complete: {rid}")
+    return 0
+
+
+LANE_MAX_CHANGED = 3
+LANE_MAX_ITEMS = 2
+LANE_FAST_SKIPS = ["工程2 独立監査", "reviewer", "工程6 の全量監査（3 回の多数決）→ 差分 1 回"]
+LANE_BLOCKERS = {
+    "security": "セキュリティ・個人情報・課金・認証の要求に触れる",
+    "conflict": "既存の要求との競合（競合:）が出た",
+    "shared": "共通部品・契約（API・スキーマ）・テーブルを変える",
+    "unresolved": "未確定の要求・BLOCKED を含む",
+    "goal_unmapped": "事業の目的（G）に対応しない、または目的そのものを変える",
+}
+
+
+def decide_lane(changed: int, items, flags) -> tuple:
+    """Return (lane, reasons). fast only when every condition holds; any doubt means full."""
+    reasons = [LANE_BLOCKERS[f] for f in LANE_BLOCKERS if f in flags]
+    if changed > LANE_MAX_CHANGED:
+        reasons.append(f"変えた要求が {changed} 件（上限 {LANE_MAX_CHANGED}）")
+    if items is not None and items > LANE_MAX_ITEMS:
+        reasons.append(f"queue が {items} 項目（上限 {LANE_MAX_ITEMS}）")
+    return ("full" if reasons else "fast"), reasons
+
+
+def cmd_lane(args) -> int:
+    root, cfg = ctx(args)
+    rid = need_run(root, cfg)
+    meta = h.load_meta(root, cfg, rid)
+    if args.lcmd == "show":
+        print(f"lane: {meta.get('lane', '未判定')}" + (f" ({meta.get('lane_reason')})" if meta.get("lane_reason") else ""))
+        return 0
+    flags = [f.strip() for f in (args.flags or "").split(",") if f.strip()]
+    bad = [f for f in flags if f not in LANE_BLOCKERS]
+    if bad:
+        raise SystemExit(f"ERROR run-state: 不明な --flags: {','.join(bad)}（{','.join(LANE_BLOCKERS)}）")
+    items = None
+    if args.lcmd == "confirm":
+        items = len([i for i in h.load_queue(root, cfg, rid).get("items", []) if i.get("status") != "blocked"])
+        flags = sorted(set(flags) | set(meta.get("lane_flags", [])))
+    lane, reasons = decide_lane(args.changed if args.changed is not None else meta.get("lane_changed", 0), items, flags)
+    if args.lcmd == "confirm" and meta.get("lane") == "full":
+        lane = "full"
+        reasons = reasons or [meta.get("lane_reason", "")]
+    if args.lcmd == "decide":
+        meta["lane_changed"] = args.changed or 0
+    meta["lane"], meta["lane_flags"] = lane, flags
+    meta["lane_reason"] = "; ".join(r for r in reasons if r) or "全条件を満たす"
+    h.save_meta(root, cfg, rid, meta)
+    skipped = ", ".join(LANE_FAST_SKIPS) if lane == "fast" else "なし"
+    append_progress(root, cfg, rid, meta, f"レーン: {lane}（{meta['lane_reason']}）省略: {skipped}")
+    print(f"LANE: {lane}")
+    print(f"reason: {meta['lane_reason']}")
+    print(f"skipped: {skipped}")
     return 0
 
 
@@ -441,18 +538,27 @@ def main(argv=None) -> int:
     qa.add_argument("--boundary", default="")
     qa.add_argument("--shared", default="", help="共通部品・テーブルなど、並行させない対象（カンマ区切り）")
     qa.add_argument("--depends", default="")
+    qa.add_argument("--allow-large", action="store_true", help="AC が上限を超える項目を許す")
     qa.add_argument("--summary", default="")
     qset = qs.add_parser("set")
     qset.add_argument("id")
     qset.add_argument("--status")
     qset.add_argument("--attempts")
     qset.add_argument("--branch")
+    qset.add_argument("--worktree")
     qset.add_argument("--summary")
     qr = qs.add_parser("ready")
-    qr.add_argument("--parallel", type=int, default=3)
+    qr.add_argument("--parallel", type=int, default=5)
     qs.add_parser("show")
     sub.add_parser("time")
     sub.add_parser("complete-check")
+    ln = sub.add_parser("lane")
+    ls = ln.add_subparsers(dest="lcmd", required=True)
+    for name in ("decide", "confirm"):
+        lp = ls.add_parser(name)
+        lp.add_argument("--changed", type=int, default=None, help="今回変えた要求の件数")
+        lp.add_argument("--flags", default="", help="、".join(LANE_BLOCKERS) + "（カンマ区切り）")
+    ls.add_parser("show")
     hu = sub.add_parser("human")
     hu.add_argument("kind", choices=HUMAN_KINDS)
     hu.add_argument("--note", default="")
@@ -463,7 +569,7 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     return {"start": cmd_start, "status": cmd_status, "stage": cmd_stage, "progress": cmd_progress,
             "queue": cmd_queue, "time": cmd_time, "complete-check": cmd_complete_check,
-            "human": cmd_human, "finish": cmd_finish}[args.cmd](args)
+            "lane": cmd_lane, "human": cmd_human, "finish": cmd_finish}[args.cmd](args)
 
 
 if __name__ == "__main__":

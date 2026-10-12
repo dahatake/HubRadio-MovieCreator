@@ -10,25 +10,49 @@ Events (first argument):
   subagent-stop   G-4: run scripts/verify before implementer / test-designer / rd-author may finish
   agent-stop      do not let the conductor end its turn before the completion conditions hold
   user-prompt     detect `/build template`: deny tools other than reads and let the turn end after printing it
+Also in pre-tool (G-7): while a run is active, a `task` call for a custom agent whose model is fixed in
+scripts/ebak.config.json -> models must pass that model; every call is logged to work/runs/<run-id>/models.jsonl.
+Speed: pre-tool for built-in read-only tools (view, grep, glob, ...) answers before importing anything else,
+because it runs thousands of times per run and none of the gates applies to them.
 Reads the hook payload (camelCase or snake_case) from stdin; writes one JSON decision to stdout.
-Fail-safe: unexpected internal errors allow the tool call (exit 0) and are logged to work/.hve/gate.log,
+Fail-safe: unexpected internal errors allow the tool call (exit 0) and are logged to work/.ebak/gate.log,
 except that a malformed payload for pre-tool is allowed as well, so a broken gate never bricks a session.
 """
 from __future__ import annotations
 
 import json
-import os
-import re
 import sys
-import tempfile
-import time
-import traceback
-from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+
+# Built-in tools that only read. Every gate allows them (they also match READ_TOOL_RX below, so `/build template`
+# allows them too), so pre-tool answers without loading the configuration or calling git.
+FAST_READ_TOOLS = {
+    "view", "read", "grep", "glob", "read_file", "list_dir", "grep_search", "list_code_usages", "read_bash",
+    "read_powershell", "list_bash", "list_powershell", "read_agent", "list_agents", "web_fetch", "web_search",
+    "fetch", "fetch_webpage", "search", "web",
+}
+_RAW: "bytes | None" = None
+if __name__ == "__main__" and sys.argv[1:2] == ["pre-tool"]:
+    _RAW = sys.stdin.buffer.read() if not sys.stdin.isatty() else b""
+    try:
+        _d = json.loads(_RAW.decode("utf-8", "replace") or "{}")
+        _t = str(_d.get("toolName") or _d.get("tool_name") or "") if isinstance(_d, dict) else ""
+    except ValueError:
+        _t = ""
+    if _t.lower() in FAST_READ_TOOLS:
+        sys.stdout.write("{}")
+        sys.exit(0)
+
+import os  # noqa: E402
+import re  # noqa: E402
+import tempfile  # noqa: E402
+import time  # noqa: E402
+import traceback  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Iterable, List, Optional, Tuple  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
-import hvelib as h  # noqa: E402
+import ebaklib as h  # noqa: E402
 
 WRITE_TOOL_RX = re.compile(r"edit|create|write|replace|patch|insert|delete|rename|move|notebook", re.I)
 READ_TOOL_RX = re.compile(r"^(view|read|grep|glob|search|list|fetch|web)", re.I)
@@ -57,7 +81,7 @@ BUILTIN_TOOLS = {
 }
 # `/build template` only prints the request template (skill build, step 0). While that turn runs, every tool except
 # reads and these is denied, and agentStop lets the turn end even if a run is active.
-TEMPLATE_PROMPT_RX = re.compile(r"^\s*/build\s+template\s*$", re.I)
+TEMPLATE_PROMPT_RX = re.compile(r"^\s*/build(?:\s+|-)template\s*$", re.I)
 TEMPLATE_ALLOWED_TOOLS = {"skill", "report_intent", "task_complete"}
 TEMPLATE_TTL_SEC = 30 * 60
 # GitHub Copilot app: renames the session's git branch. During a run it would orphan meta.json's integration_branch.
@@ -82,7 +106,10 @@ BUILTIN_NORM = {normalize_tool(t) for t in BUILTIN_TOOLS}
 # ---------------------------------------------------------------------- io helpers
 
 def payload() -> dict:
-    raw = sys.stdin.buffer.read().decode("utf-8", "replace") if not sys.stdin.isatty() else ""
+    if _RAW is not None:
+        raw = _RAW.decode("utf-8", "replace")
+    else:
+        raw = sys.stdin.buffer.read().decode("utf-8", "replace") if not sys.stdin.isatty() else ""
     try:
         data = json.loads(raw) if raw.strip() else {}
     except json.JSONDecodeError:
@@ -120,7 +147,7 @@ class Ctx:
         cfg0 = h.load_config(self.root)
         self.croot = h.conductor_root(self.root, cfg0)
         self.cfg = h.load_config(self.croot)
-        self.state_dir = h.work_dir(self.croot, self.cfg) / ".hve"
+        self.state_dir = h.work_dir(self.croot, self.cfg) / ".ebak"
         self.run_id = h.current_run(self.croot, self.cfg)
         self.meta = h.load_meta(self.croot, self.cfg, self.run_id) if self.run_id else {}
         self.run_active = bool(self.run_id and self.meta.get("status") == "active")
@@ -261,7 +288,7 @@ def check_write(ctx: Ctx, rel: Optional[str], in_worker: bool, ap: Path) -> Opti
             and ctx.cfg["gates"].get("enforce_conductor_edit_scope", True)
             and rel != h.mf(ctx.cfg, "run_history")):
         return ("G-5", f"conductor が編集できるのは /{wd}/ と {h.mf(ctx.cfg, 'run_history')} だけです。作業は作業役に委譲します"
-                       "（subagent の検出に問題がある場合は scripts/hve.config.json の gates.enforce_conductor_edit_scope を false にします）")
+                       "（subagent の検出に問題がある場合は scripts/ebak.config.json の gates.enforce_conductor_edit_scope を false にします）")
     return None
 
 
@@ -295,8 +322,17 @@ def check_shell(ctx: Ctx, cmd: str) -> Optional[Tuple[str, str]]:
     if worker or any(n in ("implementer", "reviewer") for n in names):
         if re.search(r"(\b(rm|del|Remove-Item|git\s+rm|git\s+mv|mv|move|Move-Item|Set-Content|Add-Content|Out-File|tee|sed\s+-i|perl\s+-pi)\b[^;&|]*|>{1,2}\s*)['\"]?(\./)?tests[/\\]system", c, re.I):
             return ("G-2", "System Test（tests/system/）は implementer・reviewer からは変更できません")
-        if re.search(r"\bledger\.py\b.*\b(add|update|block|digests|set)\b", c):
+        if re.search(r"\bledger\.py\b.*\b(add|update|block|digests|set)\b", c) or re.search(r"\bledger\.py\b.*\brepair\b.*--apply\b", c):
             return ("G-2", "作業役は台帳を更新しません（`ledger.py run --no-record` で実行だけ行います）")
+    if re.search(r"\brdfix\.py\b.*--apply\b", c):
+        m = re.search(r"--only[=\s]+['\"]?([A-Za-z,]+)", c)
+        only = {x for x in (m.group(1).split(",") if m else []) if x} or {"registry", "catalog", "ledger", "gitignore", "history"}
+        if worker or any(n in ("implementer", "reviewer", "rd-auditor") for n in names):
+            return ("G-2", "作業役・読み取り専用の役割はデータ層を自動修正しません（`rdfix.py` は確認だけ。--apply は conductor が統合ブランチで実行します）")
+        allowed = {"rd-author": {"registry", "catalog"}, "test-designer": {"ledger"}}
+        for n in names:
+            if n in allowed and not only <= allowed[n]:
+                return ("G-5", f"{n} が rdfix.py --apply で直せるのは {','.join(sorted(allowed[n]))} だけです（--only で絞ります）")
     if re.search(r"(\b(Set-Content|Add-Content|Out-File|tee|sed\s+-i|perl\s+-pi)\b[^;&|]*|>{1,2}\s*)['\"]?(\./)?docs[/\\]requirements", c, re.I):
         if worker or (ctx.run_active and "rd-author" not in names):
             return ("G-1", "要求定義書を編集できるのは rd-author だけです")
@@ -335,6 +371,38 @@ def check_external(ctx: Ctx, tool: str) -> Optional[Tuple[str, str]]:
         return ("G-5", f"run_options の external_write が「しない」なので、外部のツールでの変更（{tool}）はしません。"
                        "参照（検索・取得）だけ行い、変更が必要なら報告に書きます")
     return None
+
+
+# ---------------------------------------------------------------------- G-7 models
+
+SUBAGENT_TOOLS = {"task"}
+AGENT_KEYS = ("agent_type", "agentType", "subagent_type", "agentName", "agent_name")
+
+
+def check_model(ctx: Ctx, tool: str, args) -> Optional[Tuple[str, str]]:
+    """G-7: the model table in ebak.config.json is enforced on `task` calls (it was ignored in 10 of 15 runs)."""
+    if normalize_tool(tool) not in SUBAGENT_TOOLS or not ctx.run_active or not isinstance(args, dict):
+        return None
+    agent = str(g(args, *AGENT_KEYS, default="")).strip()
+    got = str(args.get("model") or "").strip()
+    try:
+        rdir = h.run_dir(ctx.croot, ctx.cfg, ctx.run_id)
+        with open(rdir / "models.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"at": h.now_iso(), "agent": agent, "model": got or "(既定)"}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+    if not agent or not ctx.cfg["gates"].get("enforce_models", True):
+        return None
+    models = {k: str(v).strip() for k, v in (ctx.cfg.get("models") or {}).items() if not k.startswith("_") and isinstance(v, str)}
+    want = models.get(agent, "")
+    if not want:
+        return None
+    allowed = {want} | {v for k, v in models.items() if k.startswith(agent + "-") and v}
+    if got in allowed:
+        return None
+    return ("G-7", f"scripts/ebak.config.json の models で {agent} のモデルは {want} です"
+                   f"{'（ほかに ' + ', '.join(sorted(allowed - {want})) + ' も可）' if len(allowed) > 1 else ''}。"
+                   f"task の model に \"{want}\" を指定して呼び直してください（現在: {got or '未指定'}）")
 
 
 # ---------------------------------------------------------------------- /build template
@@ -387,7 +455,7 @@ def on_pre_tool(ctx: Ctx) -> None:
             args = json.loads(args)
         except json.JSONDecodeError:
             args = {"command": args} if SHELL_TOOL_RX.match(tool) else {"input": args}
-    res = check_external(ctx, tool)
+    res = check_model(ctx, tool, args) or check_external(ctx, tool)
     if res:
         ctx.log(f"DENY {res[0]} {tool}")
         deny(res[1], res[0])
@@ -552,7 +620,7 @@ def main() -> int:
          "user-prompt": on_user_prompt}.get(event, lambda c: emit({}))(ctx)
     except Exception:  # never brick a session because of a gate bug
         try:
-            d = Path(os.getcwd()) / "work" / ".hve"
+            d = Path(os.getcwd()) / "work" / ".ebak"
             d.mkdir(parents=True, exist_ok=True)
             with open(d / "gate.log", "a", encoding="utf-8") as fh:
                 fh.write(f"{h.now_iso()} ERROR {event}: {traceback.format_exc()}\n")

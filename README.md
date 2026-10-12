@@ -7,7 +7,16 @@ HubRadio MovieCreator は、企業向けのトーク、対談、インタビュ�
 
 ## はじめての方へ
 
-動画編集が初めての方は、まず **[はじめての方へ：かんたんガイド](docs/beginner-guide.md)** をお読みください。できること、スクリーンショット付きの画面の見かた（どの部品を押すとアプリがどう動くか）、使い方の流れ、困ったときの対処、用語集を平易にまとめています。画面ごとの詳しい説明は[画面の使い方](docs/ui-workflow-guide.md)です。
+動画編集が初めての方は、**[ユーザーガイド](users-guide/README.md)** を上から順にお読みください。
+
+| 順 | ドキュメント | 内容 |
+|---|---|---|
+| 1 | [QuickStart](users-guide/app/01-quickstart.md) | 起動 → 動画を選ぶ → 待つ → 確認 → 保存の確認まで（最短手順） |
+| 2 | [画面ガイド](users-guide/app/02-screen-guide.md) | 画面の構成と、どこで何ができるか（スクリーンショット付き） |
+| 3 | [やりたいこと別ガイド](users-guide/app/03-tasks.md) | 名前変更・削除・設定・字幕修正・Jobの比較・Opening/Closing |
+| 4 | [困ったとき・用語集](users-guide/app/04-faq-troubleshooting.md) | 症状別の対処、FAQ、安全のために、用語集 |
+
+あわせて、平易な[かんたんガイド](docs/beginner-guide.md)と、画面ごとの詳しい説明の[画面の使い方](docs/ui-workflow-guide.md)もあります。
 
 ## できるようになること
 
