@@ -90,6 +90,7 @@
     { "$ref": "#/$defs/settingsFileApplyRequest" },
     { "$ref": "#/$defs/settingsWorkspaceReadRequest" },
     { "$ref": "#/$defs/settingsWorkspaceUpdateRequest" },
+    { "$ref": "#/$defs/settingsWorkspaceBrowseRequest" },
     { "$ref": "#/$defs/settingsGlobalReadResponse" },
     { "$ref": "#/$defs/settingsGlobalUpdateResponse" },
     { "$ref": "#/$defs/settingsGlobalResetResponse" },
@@ -99,6 +100,7 @@
     { "$ref": "#/$defs/settingsFileApplyResponse" },
     { "$ref": "#/$defs/settingsWorkspaceReadResponse" },
     { "$ref": "#/$defs/settingsWorkspaceUpdateResponse" },
+    { "$ref": "#/$defs/settingsWorkspaceBrowseResponse" },
     { "$ref": "#/$defs/pipelineReadRequest" },
     { "$ref": "#/$defs/pipelineRegenerateRequest" },
     { "$ref": "#/$defs/pipelineRetryRequest" },
@@ -742,6 +744,7 @@
         "settings.file.apply",
         "settings.workspace.read",
         "settings.workspace.update",
+        "settings.workspace.browse",
         "pipeline.read",
         "pipeline.regenerate",
         "pipeline.retry",
@@ -7157,6 +7160,21 @@
     "settingsWorkspaceUpdateResponse": {
       "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
       "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.workspace.update" }, "result": { "$ref": "#/$defs/settingsWorkspaceResult" } }
+    },
+    "settingsWorkspaceBrowseResult": {
+      "$comment": "FR-064: the folder chosen in the native dialog. selected carries the absolute folder path; every other status carries a null path. Nothing is saved by this method; the path is saved only through settings.workspace.update. No exception text, SID or other path is returned.",
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["status", "path"], "properties": { "status": { "const": "selected" }, "path": { "type": "string", "minLength": 1, "maxLength": 260 } } },
+        { "type": "object", "additionalProperties": false, "required": ["status", "path"], "properties": { "status": { "enum": ["cancelled", "failed", "forbidden", "unavailable"] }, "path": { "type": "null" } } }
+      ]
+    },
+    "settingsWorkspaceBrowseRequest": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.workspace.browse" }, "params": { "$ref": "#/$defs/emptyObject" } }
+    },
+    "settingsWorkspaceBrowseResponse": {
+      "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "result"],
+      "properties": { "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" }, "method": { "const": "settings.workspace.browse" }, "result": { "$ref": "#/$defs/settingsWorkspaceBrowseResult" } }
     },
     "settingsGlobalReadRequest": {
       "type": "object", "additionalProperties": false, "required": ["version", "requestId", "method", "params"],

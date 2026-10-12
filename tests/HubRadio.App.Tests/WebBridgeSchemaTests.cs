@@ -96,6 +96,7 @@ public sealed class WebBridgeSchemaTests
                 "settings.file.apply",
                 "settings.workspace.read",
                 "settings.workspace.update",
+                "settings.workspace.browse",
                 "pipeline.read",
                 "pipeline.regenerate",
                 "pipeline.retry",
@@ -200,6 +201,7 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/settingsFileApplyRequest",
                 "#/$defs/settingsWorkspaceReadRequest",
                 "#/$defs/settingsWorkspaceUpdateRequest",
+                "#/$defs/settingsWorkspaceBrowseRequest",
                 "#/$defs/settingsGlobalReadResponse",
                 "#/$defs/settingsGlobalUpdateResponse",
                 "#/$defs/settingsGlobalResetResponse",
@@ -209,6 +211,7 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/settingsFileApplyResponse",
                 "#/$defs/settingsWorkspaceReadResponse",
                 "#/$defs/settingsWorkspaceUpdateResponse",
+                "#/$defs/settingsWorkspaceBrowseResponse",
                 "#/$defs/pipelineReadRequest",
                 "#/$defs/pipelineRegenerateRequest",
                 "#/$defs/pipelineRetryRequest",
@@ -500,6 +503,8 @@ public sealed class WebBridgeSchemaTests
             "settingsWorkspaceUpdateRequest",
             "settingsWorkspaceReadResponse",
             "settingsWorkspaceUpdateResponse",
+            "settingsWorkspaceBrowseRequest",
+            "settingsWorkspaceBrowseResponse",
         })
         {
             Assert.AreEqual(
@@ -790,6 +795,8 @@ public sealed class WebBridgeSchemaTests
             // FR-062 / AC-037.3
             ("settingsWorkspaceRead", "settings.workspace.read", "emptyObject", "settingsWorkspaceResult"),
             ("settingsWorkspaceUpdate", "settings.workspace.update", "settingsWorkspaceUpdateParams", "settingsWorkspaceResult"),
+            // FR-064 AC-042
+            ("settingsWorkspaceBrowse", "settings.workspace.browse", "emptyObject", "settingsWorkspaceBrowseResult"),
         ];
 
         foreach ((string stem, string method, string parameters, string result) in methods)

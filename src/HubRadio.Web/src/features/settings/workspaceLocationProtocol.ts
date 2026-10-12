@@ -2,8 +2,10 @@
 
 export const WORKSPACE_LOCATION_READ_METHOD = 'settings.workspace.read' as const
 export const WORKSPACE_LOCATION_UPDATE_METHOD = 'settings.workspace.update' as const
+export const WORKSPACE_LOCATION_BROWSE_METHOD = 'settings.workspace.browse' as const
 export const WORKSPACE_LOCATION_MAX_PATH_LENGTH = 260
 export const WORKSPACE_LOCATION_TIMEOUT_MS = 30_000
+export const WORKSPACE_LOCATION_BROWSE_TIMEOUT_MS = 30 * 60_000
 
 export type WorkspaceLocationFailureStatus = 'invalid' | 'forbidden' | 'unavailable'
 
@@ -14,6 +16,21 @@ export type WorkspaceLocationResult =
 export type WorkspaceLocationRequest =
   | Readonly<{ version: 1; requestId: string; method: typeof WORKSPACE_LOCATION_READ_METHOD; params: Readonly<Record<string, never>> }>
   | Readonly<{ version: 1; requestId: string; method: typeof WORKSPACE_LOCATION_UPDATE_METHOD; params: Readonly<{ path: string | null }> }>
+  | Readonly<{ version: 1; requestId: string; method: typeof WORKSPACE_LOCATION_BROWSE_METHOD; params: Readonly<Record<string, never>> }>
+
+/** FR-064: the folder chosen in the native dialog. Only `selected` carries a path. */
+export type WorkspaceBrowseResult =
+  | Readonly<{ status: 'selected'; path: string }>
+  | Readonly<{ status: 'cancelled' | 'failed' | 'forbidden' | 'unavailable'; path: null }>
+
+export type WorkspaceBrowseResponse = Readonly<{
+  version: 1
+  requestId: string
+  method: typeof WORKSPACE_LOCATION_BROWSE_METHOD
+  result: WorkspaceBrowseResult
+}>
+
+export type WorkspaceBrowseOutcome = WorkspaceBrowseResult | Readonly<{ status: 'timeout' }> | Readonly<{ status: 'disconnected' }>
 
 export type WorkspaceLocationResponse = Readonly<{
   version: 1
@@ -52,6 +69,29 @@ function exactKeys(value: unknown, keys: readonly string[]): value is Record<str
   return actual.length === keys.length && keys.every(key => Object.hasOwn(value, key))
 }
 
+export function createWorkspaceBrowseRequest(requestId: string): WorkspaceLocationRequest {
+  if (!isRequestId(requestId)) throw new TypeError('Invalid workspace browse request ID.')
+  return Object.freeze({ version: 1, requestId, method: WORKSPACE_LOCATION_BROWSE_METHOD, params: Object.freeze({}) })
+}
+
+const BROWSE_FAILURES: readonly unknown[] = ['cancelled', 'failed', 'forbidden', 'unavailable']
+
+function parseBrowseResult(value: unknown): WorkspaceBrowseResult | null {
+  if (!exactKeys(value, ['status', 'path'])) return null
+  const { status, path } = value
+  if (status === 'selected') return isPathText(path) ? Object.freeze({ status, path }) : null
+  return BROWSE_FAILURES.includes(status) && path === null
+    ? Object.freeze({ status: status as 'cancelled' | 'failed' | 'forbidden' | 'unavailable', path: null })
+    : null
+}
+
+export function parseWorkspaceBrowseResponse(value: unknown): WorkspaceBrowseResponse | null {
+  if (!exactKeys(value, ['version', 'requestId', 'method', 'result']) || value.version !== 1 || !isRequestId(value.requestId)) return null
+  if (value.method !== WORKSPACE_LOCATION_BROWSE_METHOD) return null
+  const result = parseBrowseResult(value.result)
+  return result === null ? null : Object.freeze({ version: 1, requestId: value.requestId, method: WORKSPACE_LOCATION_BROWSE_METHOD, result })
+}
+
 function parseResult(value: unknown): WorkspaceLocationResult | null {
   if (!exactKeys(value, ['status', 'currentPath', 'savedPath', 'defaultPath', 'restartRequired'])) return null
   const { status, currentPath, savedPath, defaultPath, restartRequired } = value
@@ -83,15 +123,19 @@ export interface WorkspaceLocationService {
   read(): Promise<WorkspaceLocationOutcome>
   /** A null path resets to the default location. */
   update(path: string | null): Promise<WorkspaceLocationOutcome>
+  /** FR-064: opens the native folder dialog. Returns the chosen path only; nothing is saved. */
+  browse(): Promise<WorkspaceBrowseOutcome>
   dispose(): void
 }
 
 export interface WorkspaceLocationServiceOptions {
   readonly createRequestId?: () => string
   readonly timeoutMilliseconds?: number
+  /** The folder dialog stays open until the user closes it, so it waits longer than a plain request. */
+  readonly browseTimeoutMilliseconds?: number
 }
 
-type Settled = WorkspaceLocationResponse | 'timeout' | 'disconnected'
+type Settled = WorkspaceLocationResponse | WorkspaceBrowseResponse | 'timeout' | 'disconnected'
 
 export function createWorkspaceLocationService(
   transport: WorkspaceLocationTransport,
@@ -99,14 +143,16 @@ export function createWorkspaceLocationService(
 ): WorkspaceLocationService {
   const newId = options.createRequestId ?? (() => globalThis.crypto.randomUUID().toLowerCase())
   const timeout = options.timeoutMilliseconds ?? WORKSPACE_LOCATION_TIMEOUT_MS
-  const pending = new Map<string, Readonly<{ method: WorkspaceLocationRequest['method']; settle: (response: WorkspaceLocationResponse | null) => void }>>()
+  const browseTimeout = options.browseTimeoutMilliseconds ?? WORKSPACE_LOCATION_BROWSE_TIMEOUT_MS
+  const pending = new Map<string, Readonly<{ method: WorkspaceLocationRequest['method']; settle: (response: WorkspaceLocationResponse | WorkspaceBrowseResponse | null) => void }>>()
   let disposed = false
 
   const receive = (event: { readonly data: unknown }): void => {
     const data = event.data
     if (typeof data !== 'object' || data === null || !('method' in data) ||
         typeof data.method !== 'string' || !data.method.startsWith('settings.workspace.')) return
-    const response = parseWorkspaceLocationResponse(data)
+    const response = data.method === WORKSPACE_LOCATION_BROWSE_METHOD
+      ? parseWorkspaceBrowseResponse(data) : parseWorkspaceLocationResponse(data)
     if (response === null) return
     const waiting = pending.get(response.requestId)
     if (waiting === undefined || waiting.method !== response.method) return
@@ -115,10 +161,11 @@ export function createWorkspaceLocationService(
   }
   transport.addEventListener('message', receive)
 
-  function send(request: WorkspaceLocationRequest): Promise<WorkspaceLocationOutcome> {
+  function send(request: WorkspaceLocationRequest): Promise<WorkspaceLocationOutcome | WorkspaceBrowseOutcome> {
     if (disposed) return Promise.resolve(Object.freeze({ status: 'disconnected' as const }))
+    const limit = request.method === WORKSPACE_LOCATION_BROWSE_METHOD ? browseTimeout : timeout
     return new Promise<Settled>(resolve => {
-      const timer = setTimeout(() => { pending.delete(request.requestId); resolve('timeout') }, timeout)
+      const timer = setTimeout(() => { pending.delete(request.requestId); resolve('timeout') }, limit)
       pending.set(request.requestId, { method: request.method, settle: response => {
         clearTimeout(timer)
         resolve(response ?? 'disconnected')
@@ -129,8 +176,9 @@ export function createWorkspaceLocationService(
   }
 
   return Object.freeze({
-    read: () => send(createWorkspaceLocationReadRequest(newId())),
-    update: (path: string | null) => send(createWorkspaceLocationUpdateRequest(newId(), path)),
+    read: () => send(createWorkspaceLocationReadRequest(newId())) as Promise<WorkspaceLocationOutcome>,
+    update: (path: string | null) => send(createWorkspaceLocationUpdateRequest(newId(), path)) as Promise<WorkspaceLocationOutcome>,
+    browse: () => send(createWorkspaceBrowseRequest(newId())) as Promise<WorkspaceBrowseOutcome>,
     dispose() {
       if (disposed) return
       disposed = true

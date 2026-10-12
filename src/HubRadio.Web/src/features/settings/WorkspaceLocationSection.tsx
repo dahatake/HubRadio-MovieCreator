@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import {
   createHostWorkspaceLocationService,
+  type WorkspaceBrowseOutcome,
   type WorkspaceLocationOutcome,
   type WorkspaceLocationResult,
   type WorkspaceLocationService,
@@ -14,6 +15,7 @@ export const workspaceLocationMessages = {
   unavailable: 'Workspaceフォルダーの設定を利用できません。',
   unavailableEnvironment: 'この環境では利用できません。',
   empty: '場所を入力してください。',
+  browseFailed: 'フォルダーを選べませんでした。場所を直接入力してください。',
 } as const
 
 type Available = Extract<WorkspaceLocationResult, { status: 'available' }>
@@ -97,6 +99,20 @@ export function WorkspaceLocationSection({ isActive = true, service: injected }:
     void apply(path)
   }
 
+  /** FR-064: the dialog only fills the input. Saving stays with the 保存 button. */
+  async function browse(): Promise<void> {
+    if (service === null || pending) return
+    setPending(true)
+    setMessage('')
+    let outcome: WorkspaceBrowseOutcome
+    try { outcome = await service.browse() } catch { outcome = { status: 'disconnected' } }
+    if (!mounted.current) return
+    if (outcome.status === 'selected') setDraft(outcome.path)
+    else if (outcome.status === 'forbidden') setMessage(workspaceLocationMessages.forbidden)
+    else if (outcome.status !== 'cancelled') setMessage(workspaceLocationMessages.browseFailed)
+    setPending(false)
+  }
+
   const available = service !== null
   const disabled = !isActive || !available || pending
   const headingId = `${id}-title`
@@ -123,9 +139,13 @@ export function WorkspaceLocationSection({ isActive = true, service: injected }:
         </dl>
       )}
       <label htmlFor={`${id}-path`}>次回起動から使う場所</label>
-      <input id={`${id}-path`} type="text" value={draft} spellCheck={false} autoComplete="off" disabled={disabled}
-        aria-describedby={`${id}-status`} onChange={event => setDraft(event.target.value)}
-        onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); save() } }} />
+      <div className="settings-workspace-location-input">
+        <input id={`${id}-path`} type="text" value={draft} spellCheck={false} autoComplete="off" disabled={disabled}
+          aria-label="Workspaceフォルダーの場所"
+          aria-describedby={`${id}-status`} onChange={event => setDraft(event.target.value)}
+          onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); save() } }} />
+        <button type="button" disabled={disabled} onClick={() => { void browse() }}>参照…</button>
+      </div>
       <div className="settings-workspace-location-actions">
         <button type="button" disabled={disabled} onClick={save}>保存</button>
         <button type="button" disabled={disabled} onClick={() => { void apply(null) }}>初期値に戻す</button>

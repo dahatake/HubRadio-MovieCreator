@@ -77,6 +77,7 @@ internal enum BridgeMethod
     SettingsFileApply,
     SettingsWorkspaceRead,
     SettingsWorkspaceUpdate,
+    SettingsWorkspaceBrowse,
     PipelineRead,
     PipelineRegenerate,
     PipelineRetry,
@@ -270,6 +271,7 @@ internal static class BridgeProtocol
     internal const string SettingsFileApplyMethod = "settings.file.apply";
     internal const string SettingsWorkspaceReadMethod = "settings.workspace.read";
     internal const string SettingsWorkspaceUpdateMethod = "settings.workspace.update";
+    internal const string SettingsWorkspaceBrowseMethod = "settings.workspace.browse";
     internal const string PipelineReadMethod = "pipeline.read";
     internal const string PipelineRegenerateMethod = "pipeline.regenerate";
     internal const string PipelineRetryMethod = "pipeline.retry";
@@ -544,6 +546,7 @@ internal static class BridgeProtocol
             BridgeMethod.SettingsFileApply => SettingsFileApplyMethod,
             BridgeMethod.SettingsWorkspaceRead => SettingsWorkspaceReadMethod,
             BridgeMethod.SettingsWorkspaceUpdate => SettingsWorkspaceUpdateMethod,
+            BridgeMethod.SettingsWorkspaceBrowse => SettingsWorkspaceBrowseMethod,
             BridgeMethod.PipelineRead => PipelineReadMethod,
             BridgeMethod.PipelineRegenerate => PipelineRegenerateMethod,
             BridgeMethod.PipelineRetry => PipelineRetryMethod,
@@ -650,7 +653,8 @@ internal static class BridgeProtocol
             BridgeMethod.SettingsFilePreview or
             BridgeMethod.SettingsFileApply or
             BridgeMethod.SettingsWorkspaceRead or
-            BridgeMethod.SettingsWorkspaceUpdate;
+            BridgeMethod.SettingsWorkspaceUpdate or
+            BridgeMethod.SettingsWorkspaceBrowse;
 
     private static int GetMaximumRequestUtf8Bytes(BridgeMethod method) =>
         method switch
@@ -727,6 +731,7 @@ internal static class BridgeProtocol
             SettingsFileApplyMethod => BridgeMethod.SettingsFileApply,
             SettingsWorkspaceReadMethod => BridgeMethod.SettingsWorkspaceRead,
             SettingsWorkspaceUpdateMethod => BridgeMethod.SettingsWorkspaceUpdate,
+            SettingsWorkspaceBrowseMethod => BridgeMethod.SettingsWorkspaceBrowse,
             PipelineReadMethod => BridgeMethod.PipelineRead,
             PipelineRegenerateMethod => BridgeMethod.PipelineRegenerate,
             PipelineRetryMethod => BridgeMethod.PipelineRetry,
@@ -2270,6 +2275,13 @@ internal sealed class Bridge : IDisposable
                 : await layoutSubtitleHandler.HandleAsync(
                     request,
                     cancellationToken);
+        }
+
+        if (request.Method == BridgeMethod.SettingsWorkspaceBrowse)
+        {
+            return WorkspaceHandler is null
+                ? WorkspaceLocationBridgeHandler.WriteBrowseFailure(request, "unavailable")
+                : await WorkspaceHandler.HandleBrowseAsync(request, cancellationToken);
         }
 
         if (BridgeProtocol.IsSettingsMethod(request.Method))
