@@ -13,7 +13,7 @@ import { getWorkflowTabFocusStep, projectListStepLabels, projectListSteps, visib
 import workflowCss from './workflow.css?inline'
 
 const iconNames: Readonly<Record<WorkflowStep, AppIconName>> = {
-  source: 'video', processing: 'processing', results: 'play', delivery: 'save',
+  source: 'video', processing: 'processing', results: 'play',
 }
 
 describe('WorkflowTabs', () => {
@@ -41,13 +41,13 @@ describe('WorkflowTabs', () => {
     delete (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT
   })
 
-  it('renders four labeled icon tabs and linked panel IDs', () => {
+  it('  renders three labeled icon tabs and linked panel IDs', () => {
     renderTabs()
     const tablist = within(container).getByRole('tablist', { name: '動画の作業' })
     expect(tablist.getAttribute('aria-orientation')).toBe('horizontal')
-    expect(within(tablist).getAllByRole('tab')).toHaveLength(4)
+      expect(within(tablist).getAllByRole('tab')).toHaveLength(3)
     expect(within(tablist).queryAllByRole('button')).toHaveLength(0)
-    expect(within(container).getAllByRole('tabpanel', { hidden: true })).toHaveLength(4)
+      expect(within(container).getAllByRole('tabpanel', { hidden: true })).toHaveLength(3)
 
     for (const step of workflowSteps) {
       const tab = within(tablist).getByRole('tab', { name: workflowStepLabels[step] })
@@ -64,8 +64,8 @@ describe('WorkflowTabs', () => {
       expect(tab.hasAttribute('aria-pressed')).toBe(false)
     }
     const ids = [...container.querySelectorAll('[id]')].map(element => element.id)
-    expect(ids).toHaveLength(8)
-    expect(new Set(ids).size).toBe(8)
+    expect(ids).toHaveLength(6)
+    expect(new Set(ids).size).toBe(6)
     expect(onSelect).not.toHaveBeenCalled()
   })
 
@@ -84,9 +84,9 @@ describe('WorkflowTabs', () => {
     const user = userEvent.setup({ document })
     act(() => tabFor('results').focus())
     const moves = [
-      ['[ArrowRight]', 'delivery'],
       ['[ArrowRight]', 'source'],
-      ['[ArrowLeft]', 'delivery'],
+      ['[ArrowRight]', 'processing'],
+      ['[ArrowLeft]', 'source'],
       ['[ArrowLeft]', 'results'],
       ['[ArrowLeft]', 'processing'],
       ['[ArrowLeft]', 'source'],
@@ -103,7 +103,7 @@ describe('WorkflowTabs', () => {
 
   it.each([
     ['ArrowLeft', 'source'], ['ArrowRight', 'results'],
-    ['Home', 'source'], ['End', 'delivery'],
+    ['Home', 'source'], ['End', 'results'],
   ] as const)('handles %s focus movement with default prevention', (key, step) => {
     renderTabs('processing')
     act(() => tabFor('processing').focus())
@@ -146,18 +146,18 @@ describe('WorkflowTabs', () => {
   it('activates Space on keyup only', async () => {
     renderTabs()
     const user = userEvent.setup({ document })
-    act(() => tabFor('delivery').focus())
+    act(() => tabFor('results').focus())
     await act(async () => user.keyboard('[Space>]'))
     expect(onSelect).not.toHaveBeenCalled()
     await act(async () => user.keyboard('[/Space]'))
-    expect(onSelect).toHaveBeenCalledExactlyOnceWith('delivery')
-    expectSelection('source', 'delivery')
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('results')
+    expectSelection('source', 'results')
   })
 
   it('allows every tab click without gating', async () => {
-    renderTabs('delivery', 'processing')
+    renderTabs('results', 'processing')
     const user = userEvent.setup({ document })
-    for (const step of ['source', 'results', 'processing', 'delivery'] as const) {
+    for (const step of ['source', 'results', 'processing'] as const) {
       expect(tabFor(step).disabled).toBe(false)
       expect(tabFor(step).hasAttribute('aria-disabled')).toBe(false)
       await act(async () => user.click(tabFor(step)))
@@ -165,15 +165,15 @@ describe('WorkflowTabs', () => {
       renderTabs(step, 'processing')
       expectSelection(step)
     }
-    expect(onSelect.mock.calls).toEqual([['source'], ['results'], ['processing'], ['delivery']])
+    expect(onSelect.mock.calls).toEqual([['source'], ['results'], ['processing']])
   })
 
   it('keeps controlled updates from stealing focus', async () => {
     renderTabs()
     const user = userEvent.setup({ document })
-    await act(async () => user.click(tabFor('delivery')))
-    expect(onSelect).toHaveBeenCalledExactlyOnceWith('delivery')
-    expectSelection('source', 'delivery')
+    await act(async () => user.click(tabFor('results')))
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('results')
+    expectSelection('source', 'results')
 
     const outside = within(container).getByRole('button', { name: '作業の前' })
     act(() => outside.focus())
@@ -198,10 +198,10 @@ describe('WorkflowTabs', () => {
     }
     const before = within(container).getByRole('button', { name: '作業の前' })
     act(() => before.focus())
-    expectSelection('delivery')
+    expectSelection('results')
     await act(async () => user.tab())
-    expect(document.activeElement).toBe(tabFor('delivery'))
-    expectSelection('delivery')
+    expect(document.activeElement).toBe(tabFor('results'))
+    expectSelection('results')
     expect(onSelect).not.toHaveBeenCalled()
   })
 
@@ -216,26 +216,26 @@ describe('WorkflowTabs', () => {
   })
 
   it('keeps processing independent from selection', () => {
-    renderTabs('delivery', 'processing')
+    renderTabs('results', 'processing')
     const outside = within(container).getByRole('button', { name: '作業の前' })
     act(() => outside.focus())
 
     for (const step of workflowSteps) {
-      renderTabs('delivery', step)
+      renderTabs('results', step)
       expect(within(container).getByRole('tab', { name: new RegExp(`^${workflowStepLabels[step]}\\s*処理中$`) })).toBe(tabFor(step))
       expect(container.querySelectorAll('.workflow-tab-status')).toHaveLength(1)
-      expectSelection('delivery')
+      expectSelection('results')
       expect(document.activeElement).toBe(outside)
       expect(workflowSteps.every(candidate => !tabFor(candidate).disabled)).toBe(true)
     }
-    renderTabs('delivery')
+    renderTabs('results')
     expect(container.querySelector('.workflow-tab-status')).toBeNull()
-    expectSelection('delivery')
+    expectSelection('results')
     expect(onSelect).not.toHaveBeenCalled()
   })
 
   it.each([
-    ['[ArrowLeft]', 'processing'], ['[ArrowRight]', 'delivery'],
+    ['[ArrowLeft]', 'processing'], ['[ArrowRight]', 'source'],
   ] as const)('exits into the active panel after %s and skips hidden panels', async (key, focusedStep) => {
     renderTabs('results')
     const user = userEvent.setup({ document })
@@ -264,7 +264,7 @@ describe('WorkflowTabs', () => {
   })
 
   it.each([
-    ['[ArrowLeft]', 'processing'], ['[ArrowRight]', 'delivery'],
+    ['[ArrowLeft]', 'processing'], ['[ArrowRight]', 'source'],
   ] as const)('exits before the tablist after %s then Shift+Tab and re-enters at selection', async (key, focusedStep) => {
     renderTabs('results')
     const user = userEvent.setup({ document })
@@ -296,7 +296,7 @@ describe('WorkflowTabs', () => {
       element.hidden = false
     }
     const panels = within(container).getAllByRole('tabpanel', { hidden: true })
-    expect(panels).toHaveLength(4)
+    expect(panels).toHaveLength(3)
     for (const step of workflowSteps) {
       const panel = container.querySelector<HTMLElement>(`#workflow-panel-${step}`)!
       expect(panel.hidden).toBe(step !== 'source')
@@ -318,7 +318,7 @@ describe('WorkflowTabs', () => {
       renderTabs(step, 'processing')
     }
     await act(async () => user.keyboard('[Home][ArrowRight][Enter][End][Space]'))
-    expect(onSelect).toHaveBeenCalledTimes(6)
+    expect(onSelect).toHaveBeenCalledTimes(5)
     act(() => root.render(null))
     expect(postMessage).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
@@ -382,7 +382,7 @@ describe('WorkflowTabs project list (FR-061.1)', () => {
       await act(async () => root.render(<WorkflowTabs selectedStep="source" onSelect={onSelect} steps={projectListSteps} labels={projectListStepLabels} />))
       const tabs = within(container).getAllByRole('tab')
       expect(tabs.map(tab => tab.textContent)).toEqual(['Project一覧', 'ジョブの状態の確認'])
-      expect(container.querySelector('#workflow-tab-results, #workflow-tab-delivery')).toBeNull()
+      expect(container.querySelector('#workflow-tab-results')).toBeNull()
       const user = userEvent.setup({ document })
       await act(async () => { tabs[0]!.focus(); await user.keyboard('{End}') })
       expect(document.activeElement).toBe(tabs[1])
@@ -396,12 +396,11 @@ describe('WorkflowTabs project list (FR-061.1)', () => {
     }
   })
 
-  it('keeps the four project tabs, and maps hidden project-only steps back to the list', () => {
+  it('keeps the three project tabs, and maps hidden project-only steps back to the list', () => {
     expect(getWorkflowTabFocusStep('processing', 'ArrowRight', projectListSteps)).toBe('source')
     expect(getWorkflowTabFocusStep('results', 'ArrowRight', projectListSteps)).toBeNull()
-    expect(getWorkflowTabFocusStep('delivery', 'Home')).toBe('source')
+    expect(getWorkflowTabFocusStep('results', 'Home')).toBe('source')
     expect(visibleWorkflowStep('results', false)).toBe('source')
-    expect(visibleWorkflowStep('delivery', false)).toBe('source')
     expect(visibleWorkflowStep('processing', false)).toBe('processing')
     expect(visibleWorkflowStep('results', true)).toBe('results')
     expect(renderToStaticMarkup(<WorkflowTabs selectedStep="source" onSelect={() => undefined} />).match(/role="tab"/g)).toHaveLength(workflowSteps.length)

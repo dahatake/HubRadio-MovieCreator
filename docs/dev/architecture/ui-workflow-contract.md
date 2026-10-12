@@ -125,7 +125,7 @@ Appの2,410ケースには環境依存4件とopt-in実統合4件の計8 skipを�
 
 ### 現在のUI合成・警告移動
 
-`WorkflowWorkspace`は`PipelineProvider`の実snapshotからjob・版・親版比較contextを作り、`ResultGallery`へ検証済み結果と実warning・callbackを渡す。作成予定だけの`noJob/noVersion/noComparison`前提は現行経路に適用しない。今回結果・前回親版の保持表示・未生成を区別し、保存タブは実納品証跡に基づく。再確認が必要な結果や処理中の旧結果から変更操作を許可しない。
+`WorkflowWorkspace`は`PipelineProvider`の実snapshotからjob・版・親版比較contextを作り、`ResultGallery`へ検証済み結果と実warning・callbackを渡す。作成予定だけの`noJob/noVersion/noComparison`前提は現行経路に適用しない。今回結果・前回親版の保持表示・未生成を区別する。成果物の外部フォルダーへの保存は「仕上がり」画面の機能で行い、「保存」タブは廃止した（依頼 2026-10-13）。再確認が必要な結果や処理中の旧結果から変更操作を許可しない。
 
 警告は案件・実行・版／digest・artifact／digest・警告identityを照合し、対象を読み込んでからseek/focusし、戻る際も結果・設定・版を再照合する。元動画はproxy根拠とseek応答、出力動画は対象mediaとseek完了を確認する。字幕警告は対象版を厳密に読み、実cueの結び付きを確認する。通常の最新保存版読込とは分け、別版・空cue・別の道具へ置換しない。dirty／pendingの入力・DOM・選択・undoと元のbindingを保持し、遅延応答・不一致・対象なし・timeoutを成功扱いしない。子版へ進んだ後は元警告と同じ版として選択復元しない。UX-039Bの照合処理は接続済みだが、native実画面の最終受入完了とはしない。
 

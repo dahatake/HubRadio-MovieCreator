@@ -113,8 +113,8 @@ describe('WorkflowWorkspace UX-039A', () => {
     await act(async () => { await user.tab() })
     expect(document.activeElement).toBe(h.element('#workflow-panel-processing'))
     await act(async () => { await user.tab({ shift: true }); await user.keyboard('{End} ') })
-    expectScreen(h, 'delivery')
-    expect(document.activeElement).toBe(h.tab('delivery'))
+    expectScreen(h, 'results')
+    expect(document.activeElement).toBe(h.tab('results'))
     expect(h.requests.map(request => request.method)).toEqual(['project.list', 'project.createDraft'])
   })
 
@@ -400,9 +400,6 @@ describe('WorkflowWorkspace UX-039A', () => {
     expect(h.requests.filter(request => request.method === 'pipeline.read')).toHaveLength(1)
     expect(h.app().state.jobMonitor.trackedJobId).toBeNull()
     expect(h.requests.filter(request => /^(job\.|player\.|thumbnail\.|review\.|delivery\.|comparison\.)/.test(request.method))).toHaveLength(0)
-    await h.selectStep('delivery')
-    expect(h.element('#workflow-panel-delivery').textContent).toContain('未取得')
-    expect(within(h.element('#workflow-panel-delivery')).getAllByRole('button').map(button => button.textContent)).toEqual(['仕上がりへ戻る'])
     expectNoRawIds(h)
     await h.click('設定')
     expect(h.last('settings.read').params).toEqual({ projectId })
@@ -624,13 +621,13 @@ describe('WorkflowWorkspace UX-039A', () => {
     await h.selectStep('results')
     await h.selectTool('transcript')
     const read = h.last('transcript.read')
-    await h.selectStep('delivery')
+    await h.selectStep('processing')
     const focused = document.activeElement
     await h.reply(read, { status: 'unavailable', snapshot: null })
     expect(document.activeElement).toBe(focused)
     await act(async () => { h.element<HTMLElement>('#workflow-tool-panel-transcript button').focus() })
     expect(h.element('#workflow-tool-panel-transcript').contains(document.activeElement)).toBe(false)
-    expectScreen(h, 'delivery')
+    expectScreen(h, 'processing')
     expect(h.requests.filter(request => request.method === 'transcript.read')).toHaveLength(1)
   })
 
@@ -1754,10 +1751,10 @@ function expectScreen(h: Harness, screen: WorkflowStep | 'settings'): void {
   expect(panels.filter(panel => !panel.hidden).map(panel => panel.id))
     .toEqual([screen === 'settings' ? 'workflow-settings' : `workflow-panel-${screen}`])
   for (const panel of panels) expect(panel.hasAttribute('inert')).toBe(panel.hidden)
-  // FR-061.1: the project list shows two tabs, an open project four.
+  // FR-061.1: the project list shows   two tabs, an open project three.
   const listMode = h.project().state.draft === null
   const labels: Readonly<Partial<Record<WorkflowStep, string>>> = listMode ? projectListStepLabels : workflowStepLabels
-  expect(within(h.container).queryAllByRole('tab', { name: /^(元動画|Project一覧|ジョブの状態の確認|仕上がり|保存)$/ })).toHaveLength(screen === 'settings' ? 0 : listMode ? 2 : 4)
+    expect(within(h.container).queryAllByRole('tab', { name: /^(元動画|Project一覧|ジョブの状態の確認|仕上がり)$/ })).toHaveLength(screen === 'settings' ? 0 : listMode ? 2 : 3)
   if (screen !== 'settings') expect(within(h.container).getByRole('tabpanel', { name: labels[screen] }).id).toBe(`workflow-panel-${screen}`)
 }
 function expectNoRawIds(h: Harness): void {
@@ -1869,7 +1866,7 @@ describe('WorkflowWorkspace FR-061 project list and Jobs', () => {
     const h = await mount()
     const item = finalizedItem()
     await h.reply(h.last('project.list'), listResult([item]))
-    expect(h.container.querySelector('#workflow-tab-results, #workflow-tab-delivery')).toBeNull()
+    expect(h.container.querySelector('#workflow-tab-results')).toBeNull()
     await h.selectStep('processing')
     expectScreen(h, 'processing')
     const read = h.last('pipeline.versions')
@@ -1888,7 +1885,7 @@ describe('WorkflowWorkspace FR-061 project list and Jobs', () => {
     expect(h.last('project.loadDraft').params).toEqual({ draftId })
     await h.reply(h.last('project.loadDraft'), { draft: sourceOnlyDraft(true) })
     expect(h.project().state.draft?.projectId).toBe(projectId)
-    expect(within(h.container).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['元動画', 'ジョブの状態の確認', '仕上がり', '保存'])
+    expect(within(h.container).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['元動画', 'ジョブの状態の確認', '仕上がり'])
     expect(h.tab('processing').getAttribute('aria-selected')).toBe('true')
     await h.reply(h.last('pipeline.read'), { status: 'available', snapshot: completed })
     expectScreen(h, 'processing')

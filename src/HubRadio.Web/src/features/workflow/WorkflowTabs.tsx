@@ -12,7 +12,6 @@ const stepIcons: Readonly<Record<WorkflowStep, AppIconName>> = {
   source: 'video',
   processing: 'processing',
   results: 'play',
-  delivery: 'save',
 }
 
 export interface WorkflowTabsProps {

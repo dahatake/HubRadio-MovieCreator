@@ -19,7 +19,7 @@ import { ProjectJobList } from '../jobs/ProjectJobList'
 import { editableJobSettings } from '../results/jobSettings'
 import { ProjectWorkspace } from '../projects/ProjectWorkspace'
 import { useProjectState } from '../projects/ProjectStateProvider'
-import { ancillaryArtifactLabels, ResultGallery, type ResultGalleryWarning } from '../results/ResultGallery'
+import { ResultGallery, type ResultGalleryWarning } from '../results/ResultGallery'
 import { JobResultsBrowser, type JobResultsView } from '../results/JobResultsBrowser'
 import { deriveResultPresentation } from '../results/resultPresentation'
 import { useReviewState } from '../review'
@@ -847,27 +847,6 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
                 <BoundDeliveryPanel binding={editorVersion} context={versionContext} active={toolActive('evidence') && result === null} />
               </WorkflowSurface>
             </div>
-          </div>
-        </WorkflowSurface>
-
-        <WorkflowSurface id="workflow-panel-delivery" labelledBy="workflow-tab-delivery" role="tabpanel" className="workflow-screen" active={screen === 'delivery'}>
-          <div className="workflow-empty">
-            <h2>保存</h2>
-            {result === null ? <p role="status">保存対象の版・成果物は未取得です。実ファイルの保存証跡が届くまで保存済みとは表示しません。</p>
-              : <>
-                <p role="status">{presentation.resultSource === 'previous' ? '前回の親版の保存記録です。' : '今回の成果物の保存記録です。'}外部公開は許可されていません。</p>
-                <ul>{result.artifacts.map(a => <li key={a.artifact.artifactId}>{a.role}: {a.delivered ? '納品済み（実ファイル・受領証跡あり）' : '未納品'}</li>)}</ul>
-                <h3>付帯成果物</h3>
-                {result.ancillaryArtifacts.length === 0
-                  ? <p role="status">文字起こし・使用区間一覧の保存記録はありません。</p>
-                  : <ul>{result.ancillaryArtifacts.map(a => (
-                    <li key={a.artifact.artifactId}>
-                      {ancillaryArtifactLabels[a.kind]}:{' '}
-                      納品済み（実ファイル・受領証跡あり） · <code>{a.artifact.contentDigest}</code>
-                    </li>
-                  ))}</ul>}
-              </>}
-            <button type="button" onClick={() => selectStep('results')}>仕上がりへ戻る</button>
           </div>
         </WorkflowSurface>
 
