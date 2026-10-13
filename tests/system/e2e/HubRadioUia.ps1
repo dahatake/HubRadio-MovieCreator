@@ -56,6 +56,7 @@ function Start-App($sb) {
     $root = Get-Root $p
     while (-not (Test-ByName $root '設定' 2) -and -not $p.HasExited -and $sw.Elapsed.TotalSeconds -lt 360) { }
     if ($p.HasExited) { throw "app exited: $($p.ExitCode)" }
+    $script:AppProc = $p
     $p
 }
 function Stop-App($p) { if ($p -and -not $p.HasExited) { $null = $p.CloseMainWindow(); if (-not $p.WaitForExit(10000)) { $p.Kill($true) } } }
@@ -116,9 +117,38 @@ function Find-AllByNameLike($root, [string]$regex) {
     $all = $root.FindAll($script:Desc, [System.Windows.Automation.Condition]::TrueCondition)
     foreach ($e in $all) { if ($e.Current.Name -match $regex) { $e } }
 }
+function Get-OwnerWindowHandle($e) {
+    $w = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+    $x = $e
+    while ($x) {
+        $h = $x.Current.NativeWindowHandle
+        if ($h -ne 0 -and $x.Current.ControlType -eq [System.Windows.Automation.ControlType]::Window) { return $h }
+        $x = $w.GetParent($x)
+    }
+    if ($script:AppProc) { return $script:AppProc.MainWindowHandle }
+    0
+}
+# 押す手段を順に試す: Invoke → SelectionItem.Select → ExpandCollapse.Expand → Toggle → 要素の中心をクリック → 最後の手段として SetFocus+Space
+function Find-EditByName($root, [string]$name, [int]$timeoutSec = 20) {
+    # 同じ名前のラベル（Text）と入力欄（Edit）があるため、入力欄だけを探す
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $e = Find-AllByNameLike $root ('^' + [regex]::Escape($name) + '$') | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Edit } | Select-Object -First 1
+        if ($e) { return $e }
+        Start-Sleep -Milliseconds 300
+    } while ($sw.Elapsed.TotalSeconds -lt $timeoutSec)
+    throw "Edit not found: '$name'"
+}
 function Invoke-Element($e) {
-    try { $e.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() }
-    catch { $e.SetFocus(); [System.Windows.Forms.SendKeys]::SendWait(' ') }
+    try { $e.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); return } catch {}
+    try { $e.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select(); return } catch {}
+    try { $e.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand(); return } catch {}
+    try { $e.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle(); return } catch {}
+    try {
+        $rc = $e.Current.BoundingRectangle
+        if ($rc.Width -gt 0 -and $rc.Height -gt 0) { Click-Element $e (Get-OwnerWindowHandle $e); return }
+    } catch {}
+    $e.SetFocus(); [System.Windows.Forms.SendKeys]::SendWait(' ')
 }
 function Get-Value($e) { $e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value }
 function Set-Value($e, [string]$v) { $e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($v) }
@@ -225,16 +255,26 @@ function New-SyntheticVideo($sb, [string]$dir) {
 }
 function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jobCount, [string]$videoPath) {
     # 「新しいProjectを作成」は OS の「開く」ダイアログで動画を 1 本選ぶ。選ぶとそのまま「かんたん編集」の画面になる。
-    Invoke-Element (Find-ByName $root '新しいProjectを作成')
-    $dlg = Find-Dialog $root 20
-    if (-not $dlg) { throw 'file dialog did not open after pressing 新しいProjectを作成' }
+    $create = Find-ByName $root '新しいProjectを作成'
+    $sw0 = [Diagnostics.Stopwatch]::StartNew()
+    while (-not $create.Current.IsEnabled -and $sw0.Elapsed.TotalSeconds -lt 60) { Start-Sleep -Milliseconds 500; $create = Find-ByName $root '新しいProjectを作成' }
+    Invoke-Element $create
+    $dlg = Find-Dialog $root 60
+    if (-not $dlg) {
+        $seen = (Find-AllByNameLike $root '.') | ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Select-Object -First 25
+        throw "file dialog did not open after pressing 新しいProjectを作成 (enabled=$($create.Current.IsEnabled)). Visible: $($seen -join ' / ')"
+    }
     Set-DialogForeground $dlg
     [System.Windows.Forms.SendKeys]::SendWait('%n')
     [System.Windows.Forms.SendKeys]::SendWait('^a')
     [System.Windows.Forms.SendKeys]::SendWait((ConvertTo-SendKeysText $videoPath))
     Start-Sleep -Milliseconds 400
     [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
-    $nameBox = Find-ByName $root 'Project名（この画面と一覧に表示される名前）' 30
+    try { $nameBox = Find-EditByName $root 'Project名（この画面と一覧に表示される名前）' 120 }
+    catch {
+        $seen = (Find-AllByNameLike $root '.') | ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Select-Object -First 25
+        throw "Project name field did not appear after choosing the video. Visible: $($seen -join ' / ')"
+    }
     Set-Value $nameBox $projectName
     Invoke-Element (Find-ByName $root 'Project名を保存')
     # 最初の Job は「編集を開始」で作られる。完了は、その Job のサムネイルの名前（… 完了）で判定する

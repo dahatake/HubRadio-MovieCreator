@@ -154,10 +154,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-131-job-thumbnails.ps1",
       "canary": false,
-      "status": "blocked",
-      "last_commit": "0760643",
-      "last_run_at": "2026-10-13T11:49:23+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-005-202610131145.log",
+      "status": "fail",
+      "last_commit": "3cb8b2f",
+      "last_run_at": "2026-10-13T12:06:08+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-005-202610131204.log",
       "history": [
         {
           "at": "2026-10-13T05:43:42+09:00",
