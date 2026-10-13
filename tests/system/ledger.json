@@ -43,9 +43,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-workspace-browse.ps1",
       "canary": false,
       "status": "fail",
-      "last_commit": "5a921b3",
-      "last_run_at": "2026-10-13T10:04:50+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-001-202610131003.log",
+      "last_commit": "697a420",
+      "last_run_at": "2026-10-13T10:13:26+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-001-202610131012.log",
       "history": [
         {
           "at": "2026-10-08T12:30:02+09:00",
@@ -67,10 +67,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-browse-cancel.ps1",
       "canary": false,
-      "status": "fail",
-      "last_commit": "5a921b3",
-      "last_run_at": "2026-10-13T10:04:50+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-002-202610131003.log",
+      "status": "pass",
+      "last_commit": "697a420",
+      "last_run_at": "2026-10-13T10:12:10+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-002-202610131011.log",
       "history": [
         {
           "at": "2026-10-13T05:43:34+09:00",
@@ -92,10 +92,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-browse-cancel.ps1",
       "canary": false,
-      "status": "fail",
-      "last_commit": "5a921b3",
-      "last_run_at": "2026-10-13T10:04:50+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-003-202610131004.log",
+      "status": "pass",
+      "last_commit": "697a420",
+      "last_run_at": "2026-10-13T10:13:26+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-003-202610131012.log",
       "history": [
         {
           "at": "2026-10-13T05:43:37+09:00",

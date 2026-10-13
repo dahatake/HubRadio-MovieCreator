@@ -153,9 +153,17 @@ function Focus-ByClick($p, $e) {
     Start-Sleep -Milliseconds 600
 }
 function ConvertTo-SendKeysText([string]$s) { [regex]::Replace($s, '[+^%~(){}\[\]]', '{$0}') }
+function Click-Element($e, $hwnd) {
+    if ($hwnd) { Set-Foreground ([IntPtr]$hwnd) }
+    $rc = $e.Current.BoundingRectangle
+    $null = [HubRadioSt.Win32]::SetCursorPos([int]($rc.X + $rc.Width / 2), [int]($rc.Y + $rc.Height / 2))
+    [HubRadioSt.Win32]::mouse_event(2, 0, 0, 0, 0); [HubRadioSt.Win32]::mouse_event(4, 0, 0, 0, 0)
+}
+# ダイアログ要素の「キャンセル」を UIA で押す（InvokePattern が無ければその位置をクリック）
 function Close-DialogByEsc($dlg, $root) {
-    Set-DialogForeground $dlg
-    [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+    $c = Find-ByName $dlg 'キャンセル' 5
+    try { $c.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() }
+    catch { Click-Element $c $dlg.Current.NativeWindowHandle }
 }
 function Set-DialogFolder($dlg, [string]$path) {
     # OS のフォルダー選択ダイアログ: 前面にして、フォルダー名の欄（既定のフォーカス）へ入力し、「フォルダーの選択」を押す

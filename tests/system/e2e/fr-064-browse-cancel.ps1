@@ -46,7 +46,7 @@ Invoke-Test -Label 'FR-064 AC-040/AC-042' -Sandbox $sb -Body {
         [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
         Start-Sleep -Seconds 1
         # OS が不正な場所を拒否してダイアログが残る場合は取り消して閉じる（残らないなら何もしない）
-        for ($k = 0; $k -lt 3; $k++) { $left = Find-Dialog $root 1; if (-not $left) { break }; Close-DialogByEsc $left $root; Start-Sleep -Milliseconds 700 }
+        for ($k = 0; $k -lt 3; $k++) { $left = Find-Dialog $root 1; if (-not $left) { break }; try { if (Test-ByName $left 'OK' 1) { Invoke-Element (Find-ByName $left 'OK' 1); Start-Sleep -Milliseconds 700 }; Close-DialogByEsc $left $root } catch { Set-DialogForeground $left; [System.Windows.Forms.SendKeys]::SendWait('{ESC}') }; Start-Sleep -Milliseconds 700 }
         if ((Get-Value (Find-ByName $root 'Workspaceフォルダーの場所')) -ne $draft0) { throw 'input changed after invalid selection' }
         if ((Get-FileHashOrAbsent $sb.Config) -ne $cfg0) { throw 'config changed after invalid selection' }
 
@@ -58,4 +58,6 @@ Invoke-Test -Label 'FR-064 AC-040/AC-042' -Sandbox $sb -Body {
         $null = Find-ByName $root '保存しました。アプリを再起動すると新しい場所を使います。今ある案件のファイルは自動では移動されません。'
     } finally { Stop-App $p }
 }
+
+
 

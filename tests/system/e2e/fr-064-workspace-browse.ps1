@@ -5,6 +5,8 @@
 $sb = New-AppSandbox
 $target = Join-Path $sb.Work 'picked-empty-folder'
 New-Item -ItemType Directory -Path $target | Out-Null
+# 再起動時の検証（FR-062: 継承なし・所有者は現在の利用者）に通る、アクセス権を限定した空フォルダーにする
+& icacls $target /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" | Out-Null
 $p = $null
 Invoke-Test -Label 'FR-064 AC-039' -Sandbox $sb -Body {
     try {
@@ -45,4 +47,5 @@ Invoke-Test -Label 'FR-064 AC-039' -Sandbox $sb -Body {
         if (-not (Get-ChildItem $target -Force | Select-Object -First 1)) { throw 'picked folder is not used by the app after restart (no workspace files)' }
     } finally { Stop-App $p }
 }
+
 
