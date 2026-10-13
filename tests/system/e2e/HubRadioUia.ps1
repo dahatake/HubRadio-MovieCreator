@@ -280,7 +280,9 @@ function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jo
     if (-not $dlg) {
         $tops = (Get-AppTopLevels $root) | ForEach-Object { "[$($_.Current.ControlType.ProgrammaticName)|$($_.Current.ClassName)|$($_.Current.Name)|h=$($_.Current.NativeWindowHandle)]" }
         $wins = (Get-AppTopLevels $root) | ForEach-Object { $_.FindAll($script:Desc, [System.Windows.Automation.PropertyCondition]::new($script:UIA::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)) } | ForEach-Object { "[$($_.Current.ClassName)|$($_.Current.Name)|h=$($_.Current.NativeWindowHandle)]" }
-        $dw = $script:UIA::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object { "[$($_.Current.ClassName)|$($_.Current.Name)|pid=$($_.Current.ProcessId)]" }`n        Write-Host "DIAG desktop: $($dw -join ' ') apppids=$((Get-AppPids $root.Process) -join ',')"`n        Write-Host "DIAG tops: $($tops -join ' ') windows: $($wins -join ' ') main=$($root.Process.MainWindowHandle)"
+        $dw = $script:UIA::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object { "[$($_.Current.ClassName)|$($_.Current.Name)|pid=$($_.Current.ProcessId)]" }
+        Write-Host "DIAG desktop: $($dw -join ' ') apppids=$((Get-AppPids $root.Process) -join ',')"
+        Write-Host "DIAG tops: $($tops -join ' ') windows: $($wins -join ' ') main=$($root.Process.MainWindowHandle)"
         $seen = (Find-AllByNameLike $root '.') | ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Select-Object -First 25
         throw "file dialog did not open after pressing 新しいProjectを作成 (enabled=$($create.Current.IsEnabled)). Visible: $($seen -join ' / ')"
     }
@@ -288,9 +290,27 @@ function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jo
     # ファイル名の欄へ ValuePattern で入力し「開く」を Invoke する。不可なら SendKeys に切り替える
     $done = $false
     try {
+        # 「開く」ダイアログのファイル名欄（id 1148）は UIA では Pane。Win32 で ComboBox→Edit を辿り WM_SETTEXT で入力し、「開く」(id 1) を BM_CLICK する
+        if (-not ('HubRadioSt.Dlg' -as [type])) {
+            Add-Type -Namespace HubRadioSt -Name Dlg -MemberDefinition '[DllImport("user32.dll")] public static extern System.IntPtr GetDlgItem(System.IntPtr h, int id); [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern System.IntPtr FindWindowEx(System.IntPtr p, System.IntPtr a, string cls, string title); [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern System.IntPtr SendMessage(System.IntPtr h, int m, System.IntPtr w, string l); [DllImport("user32.dll")] public static extern System.IntPtr SendMessage(System.IntPtr h, int m, System.IntPtr w, System.IntPtr l);'
+        }
+        $h = [IntPtr]$dlg.Current.NativeWindowHandle
+        $fnH = [HubRadioSt.Dlg]::GetDlgItem($h, 1148)
+        $edit = [IntPtr]::Zero
+        if ($fnH -ne [IntPtr]::Zero) {
+            $cb = [HubRadioSt.Dlg]::FindWindowEx($fnH, [IntPtr]::Zero, 'ComboBox', $null)
+            $edit = if ($cb -ne [IntPtr]::Zero) { [HubRadioSt.Dlg]::FindWindowEx($cb, [IntPtr]::Zero, 'Edit', $null) } else { [HubRadioSt.Dlg]::FindWindowEx($fnH, [IntPtr]::Zero, 'Edit', $null) }
+        }
+        $okH = [HubRadioSt.Dlg]::GetDlgItem($h, 1)
+        if ($edit -ne [IntPtr]::Zero -and $okH -ne [IntPtr]::Zero) {
+            $null = [HubRadioSt.Dlg]::SendMessage($edit, 0x0C, [IntPtr]::Zero, $videoPath)
+            Start-Sleep -Milliseconds 400
+            $null = [HubRadioSt.Dlg]::SendMessage($okH, 0xF5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $done = $true
+        } else { Write-Host "DIAG: win32 edit not found (1148=$fnH edit=$edit ok=$okH)" }
         $idc = { param($id) [System.Windows.Automation.PropertyCondition]::new($script:UIA::AutomationIdProperty, $id) }
         $set = $false
-        foreach ($fn in $dlg.FindAll($script:Desc, (& $idc '1148'))) {
+        foreach ($fn in @(if ($done) { } else { $dlg.FindAll($script:Desc, (& $idc '1148')) })) {
             try { Set-Value $fn $videoPath; if ((Get-Value $fn) -eq $videoPath) { $set = $true; break } } catch {}
         }
         if ($set) {
