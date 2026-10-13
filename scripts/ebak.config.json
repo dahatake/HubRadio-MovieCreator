@@ -55,6 +55,6 @@
     },
     "subagent_verify_max_blocks": 3,
     "agent_stop_max_blocks": 40,
-    "enforce_conductor_edit_scope": false
+    "enforce_conductor_edit_scope": true
   }
 }
