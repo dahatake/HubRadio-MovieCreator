@@ -22,13 +22,25 @@ function New-AppSandbox {
     $appCopy = Join-Path $work 'app'
     New-Item -ItemType Directory -Path $appCopy | Out-Null
     Copy-Item -Path (Join-Path (Split-Path -Parent $appPath) '*') -Destination $appCopy -Recurse -Force
+    # 配布形（portable）は設定をアプリのフォルダーに、通常ビルドは利用者の %LOCALAPPDATA%\HubRadio.MovieCreator に置く。
+    # 後者は実利用者の設定なので、実行前の内容を退避して終了時に必ず戻す（Remove-AppSandbox）。
+    $portable = Test-Path -LiteralPath (Join-Path $appCopy 'WebView2Runtime')
+    $cfg = if ($portable) { Join-Path $appCopy 'workspace-location.json' } else { Join-Path $env:LOCALAPPDATA 'HubRadio.MovieCreator\workspace-location.json' }
+    $saved = if (-not $portable -and (Test-Path -LiteralPath $cfg)) { [IO.File]::ReadAllBytes($cfg) } else { $null }
     [pscustomobject]@{
         Work = $work; AppDir = $appCopy
         Exe = (Join-Path $appCopy (Split-Path -Leaf $appPath))
-        Config = (Join-Path $appCopy 'workspace-location.json')
+        Config = $cfg; Portable = $portable; SavedConfig = $saved
     }
 }
-function Remove-AppSandbox($sb) { if ($sb) { Remove-Item -LiteralPath $sb.Work -Recurse -Force -ErrorAction SilentlyContinue } }
+function Remove-AppSandbox($sb) {
+    if (-not $sb) { return }
+    if (-not $sb.Portable) {
+        if ($null -ne $sb.SavedConfig) { [IO.File]::WriteAllBytes($sb.Config, $sb.SavedConfig) }
+        elseif (Test-Path -LiteralPath $sb.Config) { Remove-Item -LiteralPath $sb.Config -Force -ErrorAction SilentlyContinue }
+    }
+    Remove-Item -LiteralPath $sb.Work -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 function Start-App($sb) {
     $p = [Diagnostics.Process]::Start([Diagnostics.ProcessStartInfo]@{ FileName = $sb.Exe; WorkingDirectory = $sb.AppDir; UseShellExecute = $false })
@@ -38,7 +50,45 @@ function Start-App($sb) {
     $p
 }
 function Stop-App($p) { if ($p -and -not $p.HasExited) { $null = $p.CloseMainWindow(); if (-not $p.WaitForExit(10000)) { $p.Kill($true) } } }
-function Get-Root($p) { $script:UIA::FromHandle($p.MainWindowHandle) }
+# WinUI3+WebView2 では画面の中身が MainWindowHandle の子孫ではなく、UIA のデスクトップ直下の別のトップレベル要素
+# （起動プロセスまたは子孫プロセスに属する）にある。探索の範囲は「起動したアプリのプロセスと子孫プロセスに属する UIA 要素の集合」とする。
+function Get-AppPids($p) {
+    $all = @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId)
+    $set = [System.Collections.Generic.HashSet[int]]::new()
+    [void]$set.Add([int]$p.Id)
+    do {
+        $added = $false
+        foreach ($x in $all) { if ($set.Contains([int]$x.ParentProcessId) -and $set.Add([int]$x.ProcessId)) { $added = $true } }
+    } while ($added)
+    , $set
+}
+function Get-AppTopLevels($scope) {
+    $pids = Get-AppPids $scope.Process
+    foreach ($t in $script:UIA::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)) {
+        if ($pids.Contains([int]$t.Current.ProcessId)) { $t }
+    }
+}
+function Get-Root($p) {
+    $o = [pscustomobject]@{ Process = $p }
+    $o | Add-Member -MemberType ScriptMethod -Name FindFirst -Value {
+        param($scope, $cond)
+        foreach ($t in (Get-AppTopLevels $this)) {
+            if ($cond.Equals([System.Windows.Automation.Condition]::TrueCondition) -or $t.FindFirst([System.Windows.Automation.TreeScope]::Element, $cond)) { return $t }
+            $e = $t.FindFirst($script:Desc, $cond); if ($e) { return $e }
+        }
+        $null
+    }
+    $o | Add-Member -MemberType ScriptMethod -Name FindAll -Value {
+        param($scope, $cond)
+        $r = [System.Collections.Generic.List[object]]::new()
+        foreach ($t in (Get-AppTopLevels $this)) {
+            $r.Add($t)
+            foreach ($e in $t.FindAll($script:Desc, $cond)) { $r.Add($e) }
+        }
+        , $r.ToArray()
+    }
+    $o
+}
 
 function Find-ByName($root, [string]$name, [int]$timeoutSec = 20) {
     $cond = [System.Windows.Automation.PropertyCondition]::new($script:UIA::NameProperty, $name)
@@ -64,21 +114,70 @@ function Invoke-Element($e) {
 function Get-Value($e) { $e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value }
 function Set-Value($e, [string]$v) { $e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($v) }
 function Find-Dialog($root, [int]$timeoutSec = 20) {
-    $cond = [System.Windows.Automation.PropertyCondition]::new($script:UIA::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)
+    $winCond = [System.Windows.Automation.PropertyCondition]::new($script:UIA::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)
+    $main = [int]$root.Process.MainWindowHandle
     $sw = [Diagnostics.Stopwatch]::StartNew()
     do {
-        $d = $root.FindFirst($script:Desc, $cond)
-        if ($d) { return $d }
+        foreach ($t in (Get-AppTopLevels $root)) {
+            $cands = @()
+            if ($t.Current.ControlType -eq [System.Windows.Automation.ControlType]::Window) { $cands += $t }
+            $cands += @($t.FindAll($script:Desc, $winCond))
+            foreach ($c in $cands) {
+                if ($c.Current.NativeWindowHandle -eq $main) { continue }
+                if ($c.Current.Name -like 'Hubらじお Movie Creator*') { continue }
+                return $c
+            }
+        }
         Start-Sleep -Milliseconds 200
     } while ($sw.Elapsed.TotalSeconds -lt $timeoutSec)
     $null
 }
-function Set-DialogFolder($dlg, [string]$path) {
-    $edit = $dlg.FindFirst($script:Desc, [System.Windows.Automation.PropertyCondition]::new($script:UIA::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit))
-    Set-Value $edit $path
-    Invoke-Element (Find-ByName $dlg 'フォルダーの選択')
+Add-Type -Namespace HubRadioSt -Name Win32 -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr h, int n); [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern void keybd_event(byte b, byte s, int f, int e); [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e);' -ErrorAction SilentlyContinue
+function Set-Foreground([IntPtr]$h) {
+    $null = [HubRadioSt.Win32]::ShowWindow($h, 5)
+    for ($i = 0; $i -lt 15; $i++) {
+        [HubRadioSt.Win32]::keybd_event(0x12, 0, 0, 0); [HubRadioSt.Win32]::keybd_event(0x12, 0, 2, 0)   # Alt を押して前面化の制限を外す
+        $null = [HubRadioSt.Win32]::SetForegroundWindow($h)
+        Start-Sleep -Milliseconds 300
+        if ([HubRadioSt.Win32]::GetForegroundWindow() -eq $h) { break }
+    }
+    Start-Sleep -Milliseconds 300
 }
-function Open-Settings($root) { Invoke-Element (Find-ByName $root '設定') }
+function Set-DialogForeground($dlg) { Set-Foreground ([IntPtr]$dlg.Current.NativeWindowHandle) }
+# アプリのウィンドウを前面にし、要素を実際にマウスでクリックして本物のキーボードフォーカスを与える
+function Focus-ByClick($p, $e) {
+    Set-Foreground $p.MainWindowHandle
+    $rc = $e.Current.BoundingRectangle
+    $null = [HubRadioSt.Win32]::SetCursorPos([int]($rc.X + $rc.Width / 2), [int]($rc.Y + $rc.Height / 2))
+    [HubRadioSt.Win32]::mouse_event(2, 0, 0, 0, 0); [HubRadioSt.Win32]::mouse_event(4, 0, 0, 0, 0)
+    Start-Sleep -Milliseconds 600
+}
+function ConvertTo-SendKeysText([string]$s) { [regex]::Replace($s, '[+^%~(){}\[\]]', '{$0}') }
+function Close-DialogByEsc($dlg, $root) {
+    Set-DialogForeground $dlg
+    [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
+}
+function Set-DialogFolder($dlg, [string]$path) {
+    # OS のフォルダー選択ダイアログ: 前面にして、フォルダー名の欄（既定のフォーカス）へ入力し、「フォルダーの選択」を押す
+    Set-DialogForeground $dlg
+    [System.Windows.Forms.SendKeys]::SendWait('%f')
+    [System.Windows.Forms.SendKeys]::SendWait('^a')
+    [System.Windows.Forms.SendKeys]::SendWait((ConvertTo-SendKeysText $path))
+    Start-Sleep -Milliseconds 300
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')   # 入力した場所へ移動する
+    Start-Sleep -Milliseconds 1200
+    # 欄を空にして Enter（＝表示中のフォルダーを選択）。応答しない場合は「フォルダーの選択」を押す
+    [System.Windows.Forms.SendKeys]::SendWait('%f')
+    [System.Windows.Forms.SendKeys]::SendWait('^a{DEL}')
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+}
+function Open-Settings($root) {
+    # 画面の準備前の押下は無視されることがあるため、設定画面の項目が現れるまで押し直す
+    for ($i = 0; $i -lt 5; $i++) {
+        Invoke-Element (Find-ByName $root '設定')
+        if (Test-ByName $root 'Workspaceフォルダーの場所' 6) { return }
+    }
+}
 function Get-FileHashOrAbsent([string]$path) { if (Test-Path -LiteralPath $path) { (Get-FileHash -LiteralPath $path).Hash } else { 'absent' } }
 
 function Invoke-Test([scriptblock]$Body, [string]$Label, $Sandbox) {
@@ -108,3 +207,6 @@ function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jo
         $null = Find-ByName $root '完了' 600
     }
 }
+
+
+
