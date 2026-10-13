@@ -565,10 +565,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-036",
       "canary": false,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "fail",
+      "last_commit": "38b2551",
+      "last_run_at": "2026-10-13T21:03:32+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-020-202610132059.log",
       "history": [
         {
           "at": "2026-10-13T07:45:40+09:00",

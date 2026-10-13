@@ -54,7 +54,7 @@ Invoke-Test -Label "CHK10 $Ac" -Sandbox $sb -Body {
             'AC-036' {
                 # FR-036: 3 タブのみ。「保存」タブ・「仕上がりへ戻る」なし。
                 New-ProjectWithCompletedJobs $root $sb 'tab-sample' 2 $video
-                foreach ($t in '元の動画','ジョブの状態の確認','仕上がり') { $null = Find-ByName $root $t 10 }
+                foreach ($t in '元動画','ジョブの状態の確認','仕上がり') { $null = Find-ByName $root $t 10 }
                 if (Test-ByName $root '仕上がりへ戻る' 2) { throw 'forbidden back button exists' }
                 if (Test-ByName $root '保存タブ' 2) { throw 'forbidden save tab exists' }
             }
