@@ -10,6 +10,7 @@ HubRadio MovieCreator を初めて使う方は、上から順に読んでくだ�
 | 2 | [画面ガイド](app/02-screen-guide.md) | 画面の構成と、どこで何ができるか（スクリーンショット付き） |
 | 3 | [やりたいこと別ガイド](app/03-tasks.md) | 名前変更・削除・設定・字幕修正・Job の比較・Opening/Closing |
 | 4 | [困ったとき・用語集](app/04-faq-troubleshooting.md) | 症状別の対処、FAQ、安全のために、用語集 |
+| 5 | [Workspace のフォルダー構造](app/05-workspace-structure.md) | ファイルの保存場所、Project 名とフォルダー、移行、書き出し、退避の方法 |
 
 関連ドキュメント：[かんたんガイド](../docs/beginner-guide.md)、[画面の使い方（詳細）](../docs/ui-workflow-guide.md)
 
