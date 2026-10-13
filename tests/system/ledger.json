@@ -209,10 +209,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-132-export.ps1",
       "canary": false,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "fail",
+      "last_commit": "1195ff2",
+      "last_run_at": "2026-10-13T22:39:32+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-006-202610132229.log",
       "history": [
         {
           "at": "2026-10-13T05:43:44+09:00",
@@ -234,10 +234,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-132-export.ps1",
       "canary": false,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "fail",
+      "last_commit": "1195ff2",
+      "last_run_at": "2026-10-13T22:39:32+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-007-202610132236.log",
       "history": [
         {
           "at": "2026-10-13T05:43:46+09:00",
@@ -291,9 +291,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-133-project-folder-name.ps1",
       "canary": true,
       "status": "fail",
-      "last_commit": "ae0803c",
-      "last_run_at": "2026-10-13T19:44:32+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-009-202610131935.log",
+      "last_commit": "1195ff2",
+      "last_run_at": "2026-10-13T22:39:32+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-009-202610132219.log",
       "history": [
         {
           "at": "2026-10-13T05:43:51+09:00",
@@ -566,9 +566,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-036",
       "canary": false,
       "status": "fail",
-      "last_commit": "38b2551",
-      "last_run_at": "2026-10-13T21:03:32+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-020-202610132059.log",
+      "last_commit": "1195ff2",
+      "last_run_at": "2026-10-13T22:39:32+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-020-202610132223.log",
       "history": [
         {
           "at": "2026-10-13T07:45:40+09:00",
