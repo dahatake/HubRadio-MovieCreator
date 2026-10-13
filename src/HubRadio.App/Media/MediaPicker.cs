@@ -22,11 +22,16 @@ internal sealed class MediaPicker
 
     public async Task<EntityId<AssetIdTag>?> PickAssetCandidateAsync()
     {
-        FileOpenPicker picker = new(owner.AppWindow.Id);
-        PickFileResult? result = await picker.PickSingleFileAsync();
+        // FR-061: the dialog and AppWindow are UI-thread objects; hop there if called from a pool thread.
+        string? path = await UiThreadInvoker.RunAsync(owner.DispatcherQueue, async () =>
+        {
+            FileOpenPicker picker = new(owner.AppWindow.Id);
+            PickFileResult? result = await picker.PickSingleFileAsync();
+            return result?.Path;
+        });
 
         // The selected path remains in the native host. Only its opaque candidate ID
         // is returned to the caller that will eventually cross the WebView boundary.
-        return candidateRegistry.RegisterSelection(result?.Path);
+        return candidateRegistry.RegisterSelection(path);
     }
 }

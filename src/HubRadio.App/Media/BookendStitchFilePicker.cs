@@ -19,23 +19,29 @@ internal sealed class BookendStitchFilePicker : IBookendStitchFilePicker
     public async Task<string?> PickClipAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        FileOpenPicker picker = new(owner.AppWindow.Id);
-        foreach (string extension in BookendStitcher.AllowedInputExtensions)
-            picker.FileTypeFilter.Add(extension);
-        PickFileResult? result = await picker.PickSingleFileAsync();
-        return result?.Path;
+        return await UiThreadInvoker.RunAsync(owner.DispatcherQueue, async () =>
+        {
+            FileOpenPicker picker = new(owner.AppWindow.Id);
+            foreach (string extension in BookendStitcher.AllowedInputExtensions)
+                picker.FileTypeFilter.Add(extension);
+            PickFileResult? result = await picker.PickSingleFileAsync();
+            return result?.Path;
+        });
     }
 
     public async Task<string?> PickOutputAsync(string suggestedFileName, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        FileSavePicker picker = new(owner.AppWindow.Id)
+        return await UiThreadInvoker.RunAsync(owner.DispatcherQueue, async () =>
         {
-            SuggestedFileName = Path.GetFileNameWithoutExtension(suggestedFileName),
-            DefaultFileExtension = ".mp4",
-        };
-        picker.FileTypeChoices.Add("MP4 動画", [".mp4"]);
-        PickFileResult? result = await picker.PickSaveFileAsync();
-        return result?.Path;
+            FileSavePicker picker = new(owner.AppWindow.Id)
+            {
+                SuggestedFileName = Path.GetFileNameWithoutExtension(suggestedFileName),
+                DefaultFileExtension = ".mp4",
+            };
+            picker.FileTypeChoices.Add("MP4 動画", [".mp4"]);
+            PickFileResult? result = await picker.PickSaveFileAsync();
+            return result?.Path;
+        });
     }
 }
