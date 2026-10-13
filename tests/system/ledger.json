@@ -154,7 +154,7 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-131-job-thumbnails.ps1",
       "canary": false,
-      "status": "fail",
+      "status": "blocked",
       "last_commit": "238588d",
       "last_run_at": "2026-10-13T11:20:52+09:00",
       "evidence": "work/runs/202610130500/logs/system-test/E2E-005-202610131119.log",
@@ -164,6 +164,12 @@
           "by": "test-designer",
           "change": "追加",
           "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-13T11:26:27+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "検証レベルを integration に変更。実機確認は MT-001（ペイロード同梱ビルドで実行）。環境不足で実行不可"
         }
       ]
     },
