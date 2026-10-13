@@ -3,6 +3,7 @@ import type { PipelineVersionEntry } from '../workflow/pipelineProtocol'
 import { pipelinePhaseLabels } from '../workflow/pipelinePresentation'
 import { editableJobSettings, settingLabel, settingValueText, VersionSettings } from '../results/jobSettings'
 import { formatJobCreatedAt } from './projectJobs'
+import { JobThumbnail } from './JobThumbnail'
 
 /** FR-061.13: copying one Job's settings into 「次に作成するJob」; the caller owns the saving. */
 export interface ProjectJobSettingsCopy {
@@ -16,8 +17,10 @@ export interface ProjectJobSettingsCopy {
 }
 
 /** FR-061: the Jobs of one Project, newest first, each with its own settings. */
-export function ProjectJobList({ versions, status, heading = 'このProjectのジョブ', copy }: Readonly<{
+export function ProjectJobList({ versions, status, heading = 'このProjectのジョブ', copy, projectId = null }: Readonly<{
   versions: readonly PipelineVersionEntry[] | null
+  /** FR-131: the Project the Jobs belong to; the thumbnails need it. */
+  projectId?: string | null
   status: 'idle' | 'loading' | 'available' | 'notFound' | 'conflict' | 'forbidden' | 'unavailable' | 'invalid' | string
   heading?: string
   copy?: ProjectJobSettingsCopy
@@ -54,6 +57,8 @@ export function ProjectJobList({ versions, status, heading = 'このProjectの�
         const items = editableJobSettings(entry)
         return <li key={entry.versionId} data-job-phase={entry.phase}>
           <h3>Job {jobNumber}{entry.isCurrent ? '（いまの版）' : ''}</h3>
+          <JobThumbnail projectId={projectId} jobName={`Job ${jobNumber}`} executionId={entry.executionId}
+            createdAt={entry.createdAt ?? null} phase={entry.phase} outputs={entry.outputs} showCaption={false} />
           <p>状態: {pipelinePhaseLabels[entry.phase]} · 作成日時: {formatJobCreatedAt(entry.createdAt ?? null)}</p>
           <VersionSettings entry={entry} previous={versions[index + 1]} />
           {copy !== undefined && items.length > 0 && (confirmingId === entry.versionId

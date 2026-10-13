@@ -7,6 +7,7 @@ import {
   type PipelineRequest, type PipelineResponse, type PipelineVersionsResponse,
 } from '../workflow/pipelineProtocol'
 import { pipelinePhaseLabels } from '../workflow/pipelinePresentation'
+import { JobThumbnail } from './JobThumbnail'
 import { buildProjectJobRows, formatJobCreatedAt, mergeLatestSnapshot, sortAllJobRows, type LatestJobSnapshot, type ProjectJobRow } from './projectJobs'
 
 type JobsClient = Pick<BridgeClient, 'sendPipelineVersions' | 'onPipelineVersionsResponse' | 'sendPipeline' | 'onPipelineResponse' | 'dispose'>
@@ -334,7 +335,7 @@ export function AllProjectJobsPanel({ active, projects, createClient = createHos
     {openDisabledReason !== null && rows.length > 0 && <p role="status">{openDisabledReason}</p>}
     {rows.length > 0 && <table>
       <caption>ジョブの一覧（{rows.length}件）</caption>
-      <thead><tr><th scope="col">Project</th><th scope="col">ジョブ</th><th scope="col">状態</th><th scope="col">作成日時</th><th scope="col">操作</th></tr></thead>
+      <thead><tr><th scope="col">Project</th><th scope="col">ジョブ</th><th scope="col">状態</th><th scope="col">作成日時</th><th scope="col">サムネイル</th><th scope="col">操作</th></tr></thead>
       <tbody>
         {rows.map(row => {
           const snapshot = row.isLatest ? latestByProject.get(row.projectId) : undefined
@@ -346,6 +347,8 @@ export function AllProjectJobsPanel({ active, projects, createClient = createHos
             <td>Job {row.jobNumber}{row.isLatest ? '（最新）' : ''}</td>
             <td>{pipelinePhaseLabels[row.phase]}</td>
             <td>{formatJobCreatedAt(row.createdAt)}</td>
+            <td><JobThumbnail projectId={row.projectId} jobName={`Job ${row.jobNumber}`} executionId={row.executionId} createdAt={row.createdAt}
+              phase={row.phase} outputs={row.outputs} showCaption={false} /></td>
             <td>
               <button type="button" aria-label={`「${row.projectName}」のJob ${row.jobNumber}を開く`} disabled={openDisabledReason !== null} onClick={() => onOpenJob(row.draftId)}>開く</button>
               {canCancel && <button type="button" aria-label={`「${row.projectName}」のJob ${row.jobNumber}を取り消す`} disabled={busy}

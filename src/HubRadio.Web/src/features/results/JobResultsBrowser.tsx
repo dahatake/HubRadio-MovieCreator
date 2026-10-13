@@ -1,6 +1,7 @@
 import { Fragment, useId, useRef, useState, type ReactNode } from 'react'
 import { projectThumbnailUrl } from '../../bridge'
 import { formatJobCreatedAt } from '../jobs/projectJobs'
+import { isJobSelectable, JobThumbnail, jobThumbnailStatus } from '../jobs/JobThumbnail'
 import { pipelinePhaseLabels } from '../workflow/pipelinePresentation'
 import type { PipelineVersionEntry, PipelineVersionOutput } from '../workflow/pipelineProtocol'
 import { changedJobSettingKeys, editableJobSettings, settingLabel, settingValueText, VersionSettings } from './jobSettings'
@@ -31,7 +32,6 @@ const maxComparedJobs = 4
 
 /** FR-063.4: the order media outputs are listed and the first one used as a Job's picture. */
 const outputOrder: readonly PipelineVersionOutput['role'][] = ['LandscapeBurnIn', 'LandscapeClean', 'VerticalBurnIn', 'LandscapeThumbnail', 'VerticalThumbnail']
-const posterOrder: readonly PipelineVersionOutput['role'][] = ['LandscapeThumbnail', 'VerticalThumbnail']
 
 interface JobOutputItem {
   readonly key: string
@@ -114,7 +114,8 @@ export function JobResultsBrowser({
               return (
                 <li key={entry.versionId} data-version-id={entry.versionId} data-version-current={entry.isCurrent}>
                   <button type="button" aria-pressed={shown} onClick={() => setSelectedId(entry.versionId)}>
-                    <JobPoster projectId={projectId} entry={entry} />
+                    <JobThumbnail projectId={projectId} jobName={`Job ${jobNumber(list, entry)}`} executionId={entry.executionId}
+                      createdAt={entry.createdAt ?? null} phase={entry.phase} outputs={entry.outputs} inControl showCaption={false} />
                     <strong>{jobTitle(list, entry)}</strong>
                     <span>{pipelinePhaseLabels[entry.phase]}</span>
                     <span>{formatJobCreatedAt(entry.createdAt ?? null)}</span>
@@ -137,12 +138,6 @@ export function JobResultsBrowser({
       </> : <JobComparison versions={list} projectId={projectId} />}
     </section>
   )
-}
-
-function JobPoster({ projectId, entry }: Readonly<{ projectId: string | null, entry: PipelineVersionEntry }>) {
-  const poster = posterOrder.map(role => entry.outputs?.find(output => output.role === role)).find(output => output !== undefined)
-  if (projectId === null || poster === undefined) return <span className="job-rail-poster" aria-hidden="true">画像なし</span>
-  return <img className="job-rail-poster" src={mediaUrl(projectId, entry, poster)} alt="" loading="lazy" />
 }
 
 function PastJobDetail({ versions, entry, current, projectId, pending, disabledReason, onRestore }: Readonly<{
@@ -249,7 +244,10 @@ function JobComparison({ versions, projectId }: Readonly<{ versions: readonly Pi
   const maxCount = Math.min(maxComparedJobs, versions.length)
   const shownCount = Math.min(count, maxCount)
   // FR-063.5: by default the newest Jobs are shown, the oldest of them first (left/top).
-  const defaults = versions.slice(0, shownCount).reverse()
+  // FR-131: only completed Jobs are chosen by default; unfinished ones fill in only when too few have completed.
+  const pool = versions.filter(entry => isJobSelectable(entry.phase)).length >= shownCount
+    ? versions.filter(entry => isJobSelectable(entry.phase)) : versions
+  const defaults = pool.slice(0, shownCount).reverse()
   const entries = Array.from({ length: shownCount }, (_, index) =>
     versions.find(entry => entry.versionId === slotIds[index]) ?? defaults[index]!)
   const itemLists = entries.map(jobOutputItems)
@@ -288,8 +286,25 @@ function JobComparison({ versions, projectId }: Readonly<{ versions: readonly Pi
             <label htmlFor={`${slotSelectId}-${index}`}>{index + 1}つ目に表示するJob</label>
             <select id={`${slotSelectId}-${index}`} value={entry.versionId}
               onChange={event => { const value = event.currentTarget.value; setSlotIds(previous => { const next = [...previous]; next[index] = value; return next }) }}>
-              {versions.map(option => <option key={option.versionId} value={option.versionId}>{jobTitle(versions, option)}</option>)}
+              {versions.map(option => <option key={option.versionId} value={option.versionId}
+                disabled={!isJobSelectable(option.phase) && option !== entry}>
+                {jobTitle(versions, option)}{isJobSelectable(option.phase) ? '' : `（${jobThumbnailStatus(option.phase)}・選べません）`}
+              </option>)}
             </select>
+            <ul className="job-thumbnail-picker" aria-label={`${index + 1}つ目に表示するJobのサムネイル`}>
+              {versions.map(option => {
+                const selectable = isJobSelectable(option.phase)
+                const chosenHere = option === entry
+                return <li key={option.versionId}>
+                  <button type="button" aria-pressed={chosenHere} disabled={!selectable && !chosenHere} data-version-id={option.versionId}
+                    onClick={() => setSlotIds(previous => { const next = [...previous]; next[index] = option.versionId; return next })}>
+                    <JobThumbnail projectId={projectId} jobName={jobTitle(versions, option)} executionId={option.executionId}
+                      createdAt={option.createdAt ?? null} phase={option.phase} outputs={option.outputs} inControl />
+                    {!selectable && <span>選べません（完了していません）</span>}
+                  </button>
+                </li>
+              })}
+            </ul>
           </Fragment>
         ))}
         <label htmlFor={outputSelectId}>比べる成果物</label>
