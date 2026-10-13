@@ -6,6 +6,8 @@ import { pipelinePhaseLabels } from '../workflow/pipelinePresentation'
 import type { PipelineVersionEntry, PipelineVersionOutput } from '../workflow/pipelineProtocol'
 import { changedJobSettingKeys, editableJobSettings, settingLabel, settingValueText, VersionSettings } from './jobSettings'
 import { pipelineArtifactLabels } from './ResultGallery'
+import type { JobExportService } from './jobExportProtocol'
+import { JobExportPanel, jobExportMessages, type JobExportPanelProps } from './JobExportPanel'
 import './results.css'
 
 export type JobResultsView = 'job' | 'compare'
@@ -25,6 +27,9 @@ export interface JobResultsBrowserProps {
   readonly onViewChange?: (view: JobResultsView) => void
   /** The current Job's detailed results (automatic check, saving with opening/closing). */
   readonly currentResults: ReactNode
+  /** FR-132: injected services for the Job export panel. undefined uses the WebView2 host bridge; null is unavailable. */
+  readonly exportService?: JobExportService | null
+  readonly exportBrowseService?: JobExportPanelProps['browseService']
 }
 
 /** FR-063.5: the most Jobs shown side by side (Q-011 B). */
@@ -72,7 +77,7 @@ function mediaUrl(projectId: string, entry: PipelineVersionEntry, output: Pipeli
  */
 export function JobResultsBrowser({
   versions, unavailableReason = null, projectId, pending = false, disabledReason = null, onRestore,
-  view: controlledView, onViewChange, currentResults,
+  view: controlledView, onViewChange, currentResults, exportService, exportBrowseService,
 }: JobResultsBrowserProps) {
   const headingId = useId()
   const [ownView, setOwnView] = useState<JobResultsView>('job')
@@ -126,6 +131,15 @@ export function JobResultsBrowser({
             })}
           </ol>
         )}
+        {list.length > 0 && (() => {
+          const shown = shownPast ?? current
+          return shown === null ? null : (
+            <JobExportPanel key={shown.versionId} projectId={projectId} executionId={shown.executionId}
+              jobName={`Job ${jobNumber(list, shown)}`}
+              disabledReason={isJobSelectable(shown.phase) ? null : jobExportMessages.notCompleted}
+              service={exportService} browseService={exportBrowseService} />
+          )
+        })()}
         {shownPast === null ? (
           <div className="job-results-current">
             {current !== null && <h3>{jobTitle(list, current)}の仕上がり</h3>}

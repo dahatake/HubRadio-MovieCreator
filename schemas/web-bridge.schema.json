@@ -116,9 +116,75 @@
     { "$ref": "#/$defs/stitchPickClipRequest" },
     { "$ref": "#/$defs/stitchRunRequest" },
     { "$ref": "#/$defs/stitchPickClipResponse" },
-    { "$ref": "#/$defs/stitchRunResponse" }
+    { "$ref": "#/$defs/stitchRunResponse" },
+    { "$ref": "#/$defs/jobExportRequest" },
+    { "$ref": "#/$defs/jobExportResponse" }
   ],
   "$defs": {
+    "jobExportProtocolLimits": {
+      "$comment": "FR-132. results.export uses 2 KiB (2048) request and 16 KiB (16384) response UTF-8 ceilings, including envelopes. Responses always contain a closed result object, never an error envelope. The current native actor must have ExportComposition (the same permission as composition export); without it nothing is written and the status is forbidden. The folder is chosen with the FR-064 dialog (settings.workspace.browse) or typed, and arrives as destination (at most 260 characters). The Job is identified only by project and execution; the files are read from the validated stored result of that execution (long clean, long burned-in, short burned-in videos and thumbnails). Existing files are never overwritten: a numbered name is used. The response carries no path, exception text or SID; failures are closed reason codes. Only files are saved to the chosen folder; nothing is published, posted or sent.",
+      "x-maxRequestUtf8Bytes": 2048,
+      "x-maxResponseUtf8Bytes": 16384
+    },
+    "jobExportRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "results.export" }, "params": { "$ref": "#/$defs/jobExportParams" }
+      }
+    },
+    "jobExportResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "results.export" }, "result": { "$ref": "#/$defs/jobExportResult" }
+      }
+    },
+    "jobExportParams": {
+      "type": "object", "additionalProperties": false,
+      "required": ["projectId", "executionId", "destination", "jobName"],
+      "properties": {
+        "projectId": { "$ref": "#/$defs/entityId" },
+        "executionId": { "$ref": "#/$defs/entityId" },
+        "destination": { "type": "string", "minLength": 1, "maxLength": 260 },
+        "jobName": { "oneOf": [{ "type": "null" }, { "type": "string", "minLength": 1, "maxLength": 40 }] }
+      }
+    },
+    "jobExportKind": {
+      "enum": ["longClean", "longBurnIn", "shortBurnIn", "thumbnailLandscape", "thumbnailVertical"]
+    },
+    "jobExportResult": {
+      "$comment": "completed carries savedCount, the saved files (bare file names) and the per-file failures; destinationInvalid carries destinationReason; every other status has destinationReason null, savedCount 0 and empty lists.",
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "destinationReason", "savedCount", "files", "failures"],
+      "properties": {
+        "status": { "enum": ["completed", "forbidden", "invalid", "notFound", "destinationInvalid", "busy", "unavailable"] },
+        "destinationReason": { "oneOf": [{ "type": "null" }, { "enum": ["notFound", "notFolder", "notWritable"] }] },
+        "savedCount": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "files": {
+          "type": "array", "maxItems": 32,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["kind", "fileName"],
+            "properties": {
+              "kind": { "$ref": "#/$defs/jobExportKind" },
+              "fileName": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[^\\\\/:]+$(?![\\s\\S])" }
+            }
+          }
+        },
+        "failures": {
+          "type": "array", "maxItems": 32,
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["kind", "reason"],
+            "properties": {
+              "kind": { "$ref": "#/$defs/jobExportKind" },
+              "reason": { "enum": ["missing", "notWritable", "diskFull", "unavailable"] }
+            }
+          }
+        }
+      }
+    },
     "stitchProtocolLimits": {
       "$comment": "FR-035 GUI. stitch.pickClip and stitch.run use 1 KiB (1024) request and 4096 response UTF-8 ceilings, including envelopes. Responses always contain a closed result object, never an error envelope. The current native actor must have ExportComposition; denial opens no dialog. Opening/Closing cross this boundary only as opaque process-lifetime clipIds plus a bare fileName without directories; the main video only as the project, execution, artifact and digest of an output listed in a validated stored result. Output paths are chosen in the native save dialog and never sent to the Web. One stitch runs at a time. Nothing is registered, delivered or evaluated.",
       "x-maxRequestUtf8Bytes": 1024,
@@ -752,7 +818,8 @@
         "pipeline.versions",
         "pipeline.restore",
         "stitch.pickClip",
-        "stitch.run"
+        "stitch.run",
+        "results.export"
       ]
     },
     "projectMethod": {

@@ -86,6 +86,7 @@ internal enum BridgeMethod
     PipelineRestore,
     StitchPickClip,
     StitchRun,
+    JobExport,
 }
 
 internal sealed class BridgeRequest
@@ -282,6 +283,9 @@ internal static class BridgeProtocol
     internal const string StitchRunMethod = "stitch.run";
     internal const int MaxStitchRequestUtf8Bytes = 1024;
     internal const int MaxStitchResponseUtf8Bytes = 4096;
+    internal const string JobExportMethod = "results.export";
+    internal const int MaxJobExportRequestUtf8Bytes = 2048;
+    internal const int MaxJobExportResponseUtf8Bytes = 16 * 1024;
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -555,6 +559,7 @@ internal static class BridgeProtocol
             BridgeMethod.PipelineRestore => PipelineRestoreMethod,
             BridgeMethod.StitchPickClip => StitchPickClipMethod,
             BridgeMethod.StitchRun => StitchRunMethod,
+            BridgeMethod.JobExport => JobExportMethod,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(method),
                 method,
@@ -575,6 +580,7 @@ internal static class BridgeProtocol
             _ when IsSettingsMethod(method) => MaxLayoutResponseUtf8Bytes,
             _ when IsSourceOnlyMethod(method) => MaxSourceOnlyResponseUtf8Bytes,
             _ when IsStitchMethod(method) => MaxStitchResponseUtf8Bytes,
+            BridgeMethod.JobExport => MaxJobExportResponseUtf8Bytes,
             _ when IsLargePayloadMethod(method) => MaxProjectResponseUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewResponseUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonResponseUtf8Bytes,
@@ -669,6 +675,7 @@ internal static class BridgeProtocol
             _ when IsSettingsMethod(method) => MaxAnalysisRequestUtf8Bytes,
             _ when IsSourceOnlyMethod(method) => MaxSourceOnlyRequestUtf8Bytes,
             _ when IsStitchMethod(method) => MaxStitchRequestUtf8Bytes,
+            BridgeMethod.JobExport => MaxJobExportRequestUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewRequestUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonRequestUtf8Bytes,
             BridgeMethod.DeliveryRead => MaxDeliveryRequestUtf8Bytes,
@@ -740,6 +747,7 @@ internal static class BridgeProtocol
             PipelineRestoreMethod => BridgeMethod.PipelineRestore,
             StitchPickClipMethod => BridgeMethod.StitchPickClip,
             StitchRunMethod => BridgeMethod.StitchRun,
+            JobExportMethod => BridgeMethod.JobExport,
             _ => (BridgeMethod)(-1),
         };
         return Enum.IsDefined(parsedMethod);
@@ -898,6 +906,11 @@ internal static class BridgeProtocol
         if (IsStitchMethod(method))
         {
             return BookendStitchBridgeProtocol.HasValidParameters(method, parameters);
+        }
+
+        if (method == BridgeMethod.JobExport)
+        {
+            return JobExportBridgeProtocol.HasValidParameters(parameters);
         }
 
         return false;
@@ -1512,7 +1525,8 @@ internal static class BridgeProtocol
             IsLayoutMethod(method) ||
             IsSettingsMethod(method) ||
             IsSourceOnlyMethod(method) ||
-            IsStitchMethod(method))
+            IsStitchMethod(method) ||
+            method == BridgeMethod.JobExport)
         {
             if (!HasValidParameters(method, parameters))
             {
@@ -1871,6 +1885,10 @@ internal sealed class Bridge : IDisposable
     internal BookendStitchBridgeHandler? StitchHandler { get; init; }
 
     internal WorkspaceLocationBridgeHandler? WorkspaceHandler { get; init; }
+
+    /// <summary>FR-132 handler that saves a Job's videos and thumbnails to a folder the user chose.</summary>
+    internal JobExportBridgeHandler? ExportHandler { get; init; }
+
     private readonly TaskCompletionSource firstPingResponsePosted = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
     private bool isStarted;
@@ -2182,6 +2200,13 @@ internal sealed class Bridge : IDisposable
                 : await StitchHandler.HandleAsync(request, cancellationToken);
         }
 
+        if (request.Method == BridgeMethod.JobExport)
+        {
+            return ExportHandler is null
+                ? JobExportBridgeJson.Unavailable(request)
+                : await ExportHandler.HandleAsync(request, cancellationToken);
+        }
+
         if (BridgeProtocol.IsProjectMethod(request.Method))
         {
             return handleProjectRequestAsync is null
@@ -2317,6 +2342,11 @@ internal sealed class Bridge : IDisposable
         if (BridgeProtocol.IsStitchMethod(request.Method))
         {
             return BookendStitchBridgeJson.Unavailable(request);
+        }
+
+        if (request.Method == BridgeMethod.JobExport)
+        {
+            return JobExportBridgeJson.Unavailable(request);
         }
 
         if (request.Method == BridgeMethod.PlayerRead)
