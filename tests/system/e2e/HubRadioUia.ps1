@@ -345,6 +345,10 @@ function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jo
     # 2 つ目以降は「新しいJobを作成」→ 確認の「作成する」
     for ($i = 2; $i -le $jobCount; $i++) {
         Invoke-Element (Find-ByName $root '元動画')   # 「新しいJobを作成」は「元動画」の画面にある
+        # 設定を一度確認するまで「新しいJobを作成」は押せない（AC: 「次に作成するJobの設定を開く」→「設定を閉じて戻る」）
+        Invoke-Element (Find-ByName $root '次に作成するJobの設定を開く' 60)
+        Invoke-Element (Find-ByName $root '設定を閉じて戻る' 60)
+        Start-Sleep -Seconds 2
         Invoke-Element (Find-ByName $root '新しいJobを作成' 60)
         Invoke-Element (Find-ByName $root '作成する' 30)
         Wait-JobCompleted $root $i
