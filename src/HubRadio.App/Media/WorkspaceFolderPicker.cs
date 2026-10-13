@@ -18,13 +18,16 @@ internal sealed class WorkspaceFolderPicker : IWorkspaceFolderPicker
     public async Task<string?> PickFolderAsync(string? startFolder, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        FolderPicker picker = new(owner.AppWindow.Id);
-        if (!string.IsNullOrEmpty(startFolder) && Directory.Exists(startFolder))
+        return await UiThreadInvoker.RunAsync(owner.DispatcherQueue, async () =>
         {
-            picker.SuggestedFolder = startFolder;
-        }
+            FolderPicker picker = new(owner.AppWindow.Id);
+            if (!string.IsNullOrEmpty(startFolder) && Directory.Exists(startFolder))
+            {
+                picker.SuggestedFolder = startFolder;
+            }
 
-        PickFolderResult? result = await picker.PickSingleFolderAsync();
-        return result?.Path;
+            PickFolderResult? result = await picker.PickSingleFolderAsync();
+            return result?.Path;
+        });
     }
 }
