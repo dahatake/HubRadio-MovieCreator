@@ -251,6 +251,19 @@ public sealed class WorkspaceLocationBridgeTests
         Assert.AreEqual(target, WorkspaceFolderBootstrap.Prepare(app, sid));
     }
 
+    // FR-062 AC-037: an existing empty folder (made by the user, inherited ACL) is adopted.
+    [TestMethod]
+    public void FR062_AC037_BootstrapAdoptsExistingEmptyFolder()
+    {
+        string sid = new WindowsActorProvider().GetCurrentSid();
+        string empty = Path.Combine(root, "user-made-empty");
+        Directory.CreateDirectory(empty);
+        new WorkspaceLocationStore(app).Save(empty);
+
+        Assert.AreEqual(empty, WorkspaceFolderBootstrap.Prepare(app, sid));
+        _ = WorkspaceAcl.VerifyExisting(empty, sid);
+    }
+
     // FR-064 AC-039 AC-042: browse only returns the chosen path; nothing is saved.
     [TestMethod]
     public async Task FR064_AC039_BrowseReturnsPickedFolderWithoutSaving()
