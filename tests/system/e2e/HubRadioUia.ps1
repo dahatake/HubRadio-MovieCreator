@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # System Test 共通部品（UI Automation）。期待値は持たない。各 .ps1 から dot-source する。
 # アプリの配布フォルダーを一時領域にコピーして実行し、実利用者の設定には触れない。
 # 環境変数 HUBRADIO_APP_PATH で HubRadio.App.exe を指定できる（既定は Release ビルドの出力）。
@@ -169,6 +169,15 @@ function Find-Dialog($root, [int]$timeoutSec = 20) {
                 return $c
             }
         }
+        # 同一プロセスのデスクトップ直下の「開く」ウィンドウ（#32770 または名前が 開く/Open）も探す
+        $pids = Get-AppPids $root.Process
+        foreach ($t in $script:UIA::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $winCond)) {
+            if ($pids.Contains([int]$t.Current.ProcessId) -and $t.Current.NativeWindowHandle -ne $main -and ($t.Current.ClassName -eq '#32770' -or $t.Current.Name -in '開く', 'Open', 'フォルダーの選択')) { return $t }
+        }
+        # 別プロセス（ブローカー）が持つ「開く」ウィンドウ: 名前が 開く/Open で、アプリ起動後に現れたもの
+        foreach ($t in $script:UIA::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $winCond)) {
+            if ($t.Current.Name -in '開く', 'Open') { return $t }
+        }
         Start-Sleep -Milliseconds 200
     } while ($sw.Elapsed.TotalSeconds -lt $timeoutSec)
     $null
@@ -271,19 +280,41 @@ function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jo
     if (-not $dlg) {
         $tops = (Get-AppTopLevels $root) | ForEach-Object { "[$($_.Current.ControlType.ProgrammaticName)|$($_.Current.ClassName)|$($_.Current.Name)|h=$($_.Current.NativeWindowHandle)]" }
         $wins = (Get-AppTopLevels $root) | ForEach-Object { $_.FindAll($script:Desc, [System.Windows.Automation.PropertyCondition]::new($script:UIA::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)) } | ForEach-Object { "[$($_.Current.ClassName)|$($_.Current.Name)|h=$($_.Current.NativeWindowHandle)]" }
-        Write-Host "DIAG tops: $($tops -join ' ') windows: $($wins -join ' ') main=$($root.Process.MainWindowHandle)"
+        $dw = $script:UIA::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object { "[$($_.Current.ClassName)|$($_.Current.Name)|pid=$($_.Current.ProcessId)]" }`n        Write-Host "DIAG desktop: $($dw -join ' ') apppids=$((Get-AppPids $root.Process) -join ',')"`n        Write-Host "DIAG tops: $($tops -join ' ') windows: $($wins -join ' ') main=$($root.Process.MainWindowHandle)"
         $seen = (Find-AllByNameLike $root '.') | ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Select-Object -First 25
         throw "file dialog did not open after pressing 新しいProjectを作成 (enabled=$($create.Current.IsEnabled)). Visible: $($seen -join ' / ')"
     }
     Set-DialogForeground $dlg
-    [System.Windows.Forms.SendKeys]::SendWait('%n')
-    [System.Windows.Forms.SendKeys]::SendWait('^a')
-    [System.Windows.Forms.SendKeys]::SendWait((ConvertTo-SendKeysText $videoPath))
-    Start-Sleep -Milliseconds 400
-    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    # ファイル名の欄へ ValuePattern で入力し「開く」を Invoke する。不可なら SendKeys に切り替える
+    $done = $false
+    try {
+        $idc = { param($id) [System.Windows.Automation.PropertyCondition]::new($script:UIA::AutomationIdProperty, $id) }
+        $set = $false
+        foreach ($fn in $dlg.FindAll($script:Desc, (& $idc '1148'))) {
+            try { Set-Value $fn $videoPath; if ((Get-Value $fn) -eq $videoPath) { $set = $true; break } } catch {}
+        }
+        if ($set) {
+            Start-Sleep -Milliseconds 400
+            $ob = $dlg.FindFirst($script:Desc, (& $idc '1'))
+            if ($ob) {
+                try { $ob.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() } catch { Click-Element $ob $dlg.Current.NativeWindowHandle }
+                $done = $true
+            }
+        } else { Write-Host 'DIAG: no 1148 element accepted ValuePattern' }
+    } catch { Write-Host "DIAG value-input failed: $_" }
+    if (-not $done) {
+        Set-DialogForeground $dlg
+        [System.Windows.Forms.SendKeys]::SendWait('%n')
+        [System.Windows.Forms.SendKeys]::SendWait('^a')
+        [System.Windows.Forms.SendKeys]::SendWait((ConvertTo-SendKeysText $videoPath))
+        Start-Sleep -Milliseconds 400
+        [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    }
     try { $nameBox = Find-EditByName $root 'Project名（この画面と一覧に表示される名前）' 120 }
     catch {
         $seen = (Find-AllByNameLike $root '.') | ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Select-Object -First 25
+        $od = Find-Dialog $root 2; if ($od) { Write-Host "DIAG dialog still open: [$($od.Current.ClassName)|$($od.Current.Name)]" }
+        $tl = (Get-AppTopLevels $root) | ForEach-Object { "[$($_.Current.ClassName)|$($_.Current.Name)|enabled=$($_.Current.IsEnabled)]" }; Write-Host "DIAG tops: $($tl -join ' ')"
         throw "Project name field did not appear after choosing the video. Visible: $($seen -join ' / ')"
     }
     Set-Value $nameBox $projectName
