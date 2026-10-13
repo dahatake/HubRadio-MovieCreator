@@ -189,7 +189,8 @@ internal static class WorkspacePathSafety
         {
             fullPath = Path.GetFullPath(Path.Combine(
                 rootPath,
-                relativePath.Replace('/', Path.DirectorySeparatorChar)));
+                ProjectFolders.ToPhysicalRelative(rootPath, relativePath)
+                    .Replace('/', Path.DirectorySeparatorChar)));
         }
         catch (Exception exception)
             when (exception is ArgumentException or NotSupportedException or PathTooLongException)
@@ -239,6 +240,7 @@ internal static class WorkspacePathSafety
             return false;
         }
 
+        relativePath = ProjectFolders.ToLogicalRelative(rootPath, relativePath);
         return true;
     }
 

@@ -12,6 +12,9 @@ public static class StableErrorCodes
     public const string ProjectCatalogUnavailable = "project.catalog_unavailable";
     public const string ProjectDeleteBlocked = "project.delete_blocked";
     public const string ProjectIncomplete = "project.incomplete";
+    public const string ProjectNameInvalid = "project.name_invalid";
+    public const string ProjectNameDuplicate = "project.name_duplicate";
+    public const string ProjectFolderRenameFailed = "project.folder_rename_failed";
     public const string ProjectInvalidRequest = "project.invalid_request";
     public const string ProjectNotAuthorized = "project.not_authorized";
     public const string ProjectNotFound = "project.not_found";
@@ -46,6 +49,9 @@ public static class StableErrorCodes
         ProjectCatalogUnavailable,
         ProjectDeleteBlocked,
         ProjectIncomplete,
+        ProjectNameInvalid,
+        ProjectNameDuplicate,
+        ProjectFolderRenameFailed,
         ProjectInvalidRequest,
         ProjectNotAuthorized,
         ProjectNotFound,
@@ -80,6 +86,9 @@ public static class StableErrorCodes
         string.Equals(code, ProjectCatalogUnavailable, StringComparison.Ordinal) ||
         string.Equals(code, ProjectDeleteBlocked, StringComparison.Ordinal) ||
         string.Equals(code, ProjectIncomplete, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectNameInvalid, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectNameDuplicate, StringComparison.Ordinal) ||
+        string.Equals(code, ProjectFolderRenameFailed, StringComparison.Ordinal) ||
         string.Equals(code, ProjectInvalidRequest, StringComparison.Ordinal) ||
         string.Equals(code, ProjectNotAuthorized, StringComparison.Ordinal) ||
         string.Equals(code, ProjectNotFound, StringComparison.Ordinal) ||

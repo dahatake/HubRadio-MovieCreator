@@ -760,6 +760,132 @@ public sealed class ProjectCreationServiceTests
         }
     }
 
+    // FR-133 AC-142 AC-145: a new Project's folder is named after the Project; renaming renames the folder and keeps the files.
+    [TestMethod]
+    public void FinalizedProjectFolderFollowsTheProjectNameAndItsRename()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        fixture.Service.WorkspacePath = fixture.WorkspaceRoot;
+        ProjectCreationDraftView finalized = FinalizeNewDraft(fixture);
+        EntityId<ProjectIdTag> projectId = EntityId<ProjectIdTag>.Parse(finalized.ProjectId!);
+        string projects = Path.Combine(fixture.WorkspaceRoot, "projects");
+        Assert.IsTrue(Directory.Exists(Path.Combine(projects, finalized.ContentName!)));
+        Assert.IsFalse(Directory.Exists(Path.Combine(projects, projectId.ToString())));
+        string file = Path.Combine(HubRadio.Infrastructure.Files.ProjectFolders.GetPath(fixture.WorkspaceRoot, projectId), "deliveries", "x.mp4");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        File.WriteAllText(file, "data");
+
+        _ = fixture.Service.RenameProject(EntityId<ProjectCreationDraftIdTag>.Parse(finalized.DraftId), "hubradio-sample");
+
+        Assert.IsFalse(Directory.Exists(Path.Combine(projects, finalized.ContentName!)));
+        Assert.AreEqual("data", File.ReadAllText(Path.Combine(projects, "hubradio-sample", "deliveries", "x.mp4")));
+        Assert.AreEqual(
+            Path.Combine(projects, "hubradio-sample"),
+            HubRadio.Infrastructure.Files.ProjectFolders.GetPath(fixture.WorkspaceRoot, projectId));
+    }
+
+    // FR-133 AC-143 AC-144: unusable and duplicate names are rejected and nothing changes.
+    [TestMethod]
+    public void RenameRejectsUnusableAndDuplicateNamesWithoutChangingAnything()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        fixture.Service.WorkspacePath = fixture.WorkspaceRoot;
+        ProjectCreationDraftView first = FinalizeNewDraft(fixture);
+        _ = fixture.Service.RenameProject(EntityId<ProjectCreationDraftIdTag>.Parse(first.DraftId), "alpha");
+        ProjectCreationDraftView second = FinalizeNewDraft(fixture);
+        EntityId<ProjectCreationDraftIdTag> secondId = EntityId<ProjectCreationDraftIdTag>.Parse(second.DraftId);
+        string projects = Path.Combine(fixture.WorkspaceRoot, "projects");
+        string before = string.Join("|", Directory.GetDirectories(projects).Select(Path.GetFileName).Order());
+
+        foreach (string bad in new[] { "a/b", "a:b", "a?b", "end.", "CON", "nul.txt", new string('x', 81) })
+        {
+            ProjectCreationException error = Assert.ThrowsExactly<ProjectCreationException>(
+                () => fixture.Service.RenameProject(secondId, bad), bad);
+            Assert.AreEqual(ProjectCreationFailureReason.ProjectNameInvalid, error.Reason, bad);
+        }
+
+        ProjectCreationException duplicate = Assert.ThrowsExactly<ProjectCreationException>(
+            () => fixture.Service.RenameProject(secondId, "ALPHA"));
+        Assert.AreEqual(ProjectCreationFailureReason.ProjectNameDuplicate, duplicate.Reason);
+        Assert.AreEqual(before, string.Join("|", Directory.GetDirectories(projects).Select(Path.GetFileName).Order()));
+        Assert.IsNull(fixture.Service.LoadDraft(secondId).DisplayName);
+    }
+
+    // FR-133 AC-145: a folder that cannot be renamed leaves the name, the folder and the data as they were.
+    [TestMethod]
+    public void FailedFolderRenameKeepsTheNameFolderAndData()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        fixture.Service.WorkspacePath = fixture.WorkspaceRoot;
+        ProjectCreationDraftView finalized = FinalizeNewDraft(fixture);
+        EntityId<ProjectIdTag> projectId = EntityId<ProjectIdTag>.Parse(finalized.ProjectId!);
+        string folder = HubRadio.Infrastructure.Files.ProjectFolders.GetPath(fixture.WorkspaceRoot, projectId);
+        string file = Path.Combine(folder, "locked.bin");
+        File.WriteAllText(file, "data");
+
+        using (new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            ProjectCreationException error = Assert.ThrowsExactly<ProjectCreationException>(
+                () => fixture.Service.RenameProject(EntityId<ProjectCreationDraftIdTag>.Parse(finalized.DraftId), "new-name"));
+            Assert.AreEqual(ProjectCreationFailureReason.ProjectFolderRenameFailed, error.Reason);
+        }
+
+        Assert.IsNull(fixture.Service.LoadDraft(EntityId<ProjectCreationDraftIdTag>.Parse(finalized.DraftId)).DisplayName);
+        Assert.AreEqual("data", File.ReadAllText(file));
+        Assert.AreEqual(folder, HubRadio.Infrastructure.Files.ProjectFolders.GetPath(fixture.WorkspaceRoot, projectId));
+        Assert.IsFalse(Directory.Exists(Path.Combine(fixture.WorkspaceRoot, "projects", "new-name")));
+    }
+
+    // FR-134 AC-146 AC-147: GUID-named folders become Project-name folders at start; a second run changes nothing.
+    [TestMethod]
+    public void StartupMigratesGuidFoldersByRenamingAndIsRepeatable()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        ProjectCreationDraftView finalized = FinalizeNewDraft(fixture);
+        string guidFolder = Path.Combine(fixture.WorkspaceRoot, "projects", finalized.ProjectId!);
+        Directory.CreateDirectory(Path.Combine(guidFolder, "deliveries"));
+        File.WriteAllText(Path.Combine(guidFolder, "deliveries", "a.mp4"), "payload");
+        fixture.Service.WorkspacePath = fixture.WorkspaceRoot;
+
+        _ = fixture.Service.MigrateProjectFolders();
+        IReadOnlyList<HubRadio.Infrastructure.Files.ProjectFolderMigrationEntry> second = fixture.Service.MigrateProjectFolders();
+
+        Assert.IsFalse(Directory.Exists(guidFolder));
+        Assert.AreEqual(
+            "payload",
+            File.ReadAllText(Path.Combine(fixture.WorkspaceRoot, "projects", finalized.ContentName!, "deliveries", "a.mp4")));
+        Assert.IsTrue(second.All(e => e.Status == HubRadio.Infrastructure.Files.ProjectFolderMigrationStatus.AlreadyNamed));
+    }
+
+    // FR-134 AC-148: a Project whose name cannot be used keeps its GUID folder with the data unchanged.
+    [TestMethod]
+    public void StartupKeepsTheGuidFolderWhenTheNameCannotBeUsed()
+    {
+        using ProjectCreationFixture fixture = new(AuthorizedSid);
+        ProjectCreationDraftView finalized = FinalizeNewDraft(fixture);
+        _ = fixture.Service.RenameProject(EntityId<ProjectCreationDraftIdTag>.Parse(finalized.DraftId), "bad:name");
+        string guidFolder = Path.Combine(fixture.WorkspaceRoot, "projects", finalized.ProjectId!);
+        Directory.CreateDirectory(guidFolder);
+        File.WriteAllText(Path.Combine(guidFolder, "a.bin"), "payload");
+        fixture.Service.WorkspacePath = fixture.WorkspaceRoot;
+
+        IReadOnlyList<HubRadio.Infrastructure.Files.ProjectFolderMigrationEntry> result = fixture.Service.MigrateProjectFolders();
+
+        Assert.AreEqual(HubRadio.Infrastructure.Files.ProjectFolderMigrationStatus.SkippedInvalidName, result.Single().Status);
+        Assert.AreEqual("payload", File.ReadAllText(Path.Combine(guidFolder, "a.bin")));
+    }
+
+    private static ProjectCreationDraftView FinalizeNewDraft(ProjectCreationFixture fixture)
+    {
+        ProjectCreationDraftView draft = fixture.Service.CreateDraft();
+        EntityId<AssetIdTag> candidate = fixture.Registry.RegisterSelection(fixture.PickerSourcePath)
+            ?? throw new AssertFailedException("A source selection must create an opaque candidate.");
+        return fixture.Service.FinalizeDraft(
+            EntityId<ProjectCreationDraftIdTag>.Parse(draft.DraftId),
+            draft.Revision,
+            ParseElement(CreateCompleteInput(fixture.Catalog, candidate)));
+    }
+
     // FR-040 AC-013
     [TestMethod]
     public async Task RenameProjectChangesOnlyTheDisplayNameOfADraftAndAFinalizedProject()
@@ -1825,6 +1951,7 @@ public sealed class ProjectCreationServiceTests
 
         private string RootPath { get; }
 
+        internal string WorkspaceRoot => RootPath;
         internal string DatabasePath { get; }
 
         internal ProjectCreationDraftStore DraftStore { get; }

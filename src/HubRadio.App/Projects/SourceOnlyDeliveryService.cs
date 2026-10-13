@@ -105,7 +105,7 @@ public sealed class SourceOnlyDeliveryService
             StoredSourceOnlyExecution current = _executions.Get(execution.Request.ExecutionId) ?? throw Invalid();
             Require(current.RequestDigest == execution.RequestDigest && current.RequestJson == execution.RequestJson &&
                 current.Phase is SourceOnlyExecutionPhase.Delivering or SourceOnlyExecutionPhase.Completed);
-            string projectRoot = Path.Combine(_workspacePath, "projects", basis.Binding.ProjectId.ToString());
+            string projectRoot = ProjectFolders.GetPath(_workspacePath, basis.Binding.ProjectId);
             string staging = Path.Combine(projectRoot, "staging", SourceOnlyDeliveryReceipt.StagingName(basis.Binding));
             string stagedFiles = Path.Combine(staging, "files");
             string finalDirectory = Path.Combine(projectRoot, "deliveries",

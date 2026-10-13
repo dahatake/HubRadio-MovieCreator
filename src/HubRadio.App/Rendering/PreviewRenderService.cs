@@ -1610,9 +1610,7 @@ public sealed class PreviewRenderService
         CancellationToken cancellationToken)
     {
         string stagingRoot = Path.GetFullPath(Path.Combine(
-            _workspacePath,
-            "projects",
-            projectId.ToString(),
+            ProjectFolders.GetPath(_workspacePath, projectId),
             "staging",
             "previews"));
         string stagingDirectory = Path.Combine(stagingRoot, jobId.ToString());

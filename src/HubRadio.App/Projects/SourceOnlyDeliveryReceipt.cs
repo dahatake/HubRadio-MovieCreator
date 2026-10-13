@@ -263,8 +263,8 @@ internal sealed record SourceOnlyDeliveryReceipt(string SchemaVersion, string De
         string prefix = $"projects/{result.Binding.ProjectId}/deliveries/source-only/{result.Binding.ExecutionId}/";
         Require(result.Artifacts.Select(a => a.Delivery!.Artifact.ArtifactId).ToHashSet().SetEquals(
             artifacts.ListProjectArtifacts(result.Binding.ProjectId).Where(a => a.StorageReference.StartsWith(prefix, StringComparison.Ordinal)).Select(a => a.Id)) &&
-            !WorkspacePathSafety.PathEntryExistsConservatively(Path.Combine(artifacts.LocalWorkspacePath, "projects",
-                result.Binding.ProjectId.ToString(), "staging", StagingName(result.Binding))));
+            !WorkspacePathSafety.PathEntryExistsConservatively(Path.Combine(ProjectFolders.GetPath(artifacts.LocalWorkspacePath, result.Binding.ProjectId),
+                "staging", StagingName(result.Binding))));
         using SqliteConnection connection = SqliteStoreSupport.OpenConnection(artifacts.LocalDatabasePath, SqliteOpenMode.ReadOnly);
         using SqliteTransaction transaction = connection.BeginTransaction(deferred: true);
         RequireEvaluationSet(connection, transaction, basis);

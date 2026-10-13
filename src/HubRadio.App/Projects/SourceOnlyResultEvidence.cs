@@ -69,7 +69,7 @@ internal sealed class SourceOnlyResultEvidenceStore(ArtifactStore artifacts,
         SourceOnlyResultCodec.Require(segments.Length >= 4 && segments[0] == "projects" && segments[1] == binding.ProjectId.ToString());
         string projectRoot = actualPath;
         for (int i = 2; i < segments.Length; i++) projectRoot = Path.GetDirectoryName(projectRoot) ?? throw SourceOnlyResultCodec.Invalid();
-        SourceOnlyResultCodec.Require(Path.GetFileName(projectRoot) == binding.ProjectId.ToString() &&
+        SourceOnlyResultCodec.Require(Path.GetFileName(projectRoot) == ProjectFolders.GetFolderName(artifacts.LocalWorkspacePath, binding.ProjectId.ToString()) &&
             Path.GetFileName(Path.GetDirectoryName(projectRoot)) == "projects");
         WorkspacePathSafety.ValidateExistingDirectoryAncestorChain(projectRoot);
         string stagingRoot = Path.Combine(projectRoot, "staging");

@@ -321,9 +321,7 @@ public sealed class MediaImporter
         EntityId<JobIdTag> jobId)
     {
         string stagingDirectory = Path.GetFullPath(Path.Combine(
-            _workspacePath,
-            "projects",
-            projectId.ToString(),
+            ProjectFolders.GetPath(_workspacePath, projectId),
             "staging",
             "imports",
             jobId.ToString()));

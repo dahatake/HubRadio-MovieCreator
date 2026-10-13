@@ -1506,9 +1506,7 @@ public sealed class AudioExtraction
         CancellationToken cancellationToken)
     {
         string root = Path.GetFullPath(Path.Combine(
-            _workspacePath,
-            "projects",
-            projectId.ToString(),
+            ProjectFolders.GetPath(_workspacePath, projectId),
             "staging",
             "analysis-audio"));
         EnsureDirectoryChain(root, cancellationToken);

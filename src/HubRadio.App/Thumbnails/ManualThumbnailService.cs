@@ -1311,9 +1311,7 @@ public sealed class ManualThumbnailService
         CancellationToken cancellationToken)
     {
         string root = Path.GetFullPath(Path.Combine(
-            _workspacePath,
-            "projects",
-            request.Source.ProjectId.ToString(),
+            ProjectFolders.GetPath(_workspacePath, request.Source.ProjectId),
             "staging",
             "manual-thumbnails"));
         try

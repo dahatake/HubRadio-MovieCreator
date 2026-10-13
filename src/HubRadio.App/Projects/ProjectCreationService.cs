@@ -5,6 +5,7 @@ using HubRadio.Core.Projects;
 using HubRadio.Core.Provenance;
 using HubRadio.Core.Security;
 using HubRadio.Infrastructure.Database;
+using HubRadio.Infrastructure.Files;
 using HubRadio.Infrastructure.Media;
 using CoreProjectSnapshotJson = HubRadio.Core.Projects.ProjectSnapshotJson;
 
@@ -17,6 +18,9 @@ internal enum ProjectCreationFailureReason
     DraftIncomplete,
     SourceReselectionRequired,
     DeleteBlockedByRunningJob,
+    ProjectNameInvalid,
+    ProjectNameDuplicate,
+    ProjectFolderRenameFailed,
 }
 
 internal sealed class ProjectCreationException : InvalidOperationException
@@ -42,6 +46,12 @@ internal sealed class ProjectCreationException : InvalidOperationException
                 "The source media must be selected again.",
             ProjectCreationFailureReason.DeleteBlockedByRunningJob =>
                 "The project cannot be deleted while a job is running.",
+            ProjectCreationFailureReason.ProjectNameInvalid =>
+                "The project name cannot be used as a folder name.",
+            ProjectCreationFailureReason.ProjectNameDuplicate =>
+                "Another project already has this name.",
+            ProjectCreationFailureReason.ProjectFolderRenameFailed =>
+                "The project folder could not be renamed.",
             _ => "The project creation operation failed.",
         };
 }
@@ -392,13 +402,172 @@ internal sealed class ProjectCreationService
         ArgumentNullException.ThrowIfNull(draftId);
         _ = Demand(AuthorizationOperation.CreateProject);
         string normalized = NormalizeDisplayName(displayName);
-        _ = GetRequiredDraft(draftId);
-        StoredProjectCreationDraft stored = draftStore.SetDisplayName(
-            draftId,
-            normalized,
-            GetUtcNow());
+        StoredProjectCreationDraft current = GetRequiredDraft(draftId);
+        string? workspace = WorkspacePath;
+        EntityId<ProjectIdTag>? projectId = current.FinalizedProjectId;
+        bool folderRenamed = false;
+        string? previousName = null;
+        if (workspace is not null)
+        {
+            EnsureProjectNameUsable(normalized, draftId);
+            if (projectId is not null)
+            {
+                previousName = ProjectFolders.GetFolderName(workspace, projectId.ToString());
+                try
+                {
+                    ProjectFolders.Rename(workspace, projectId, normalized);
+                    folderRenamed = !string.Equals(previousName, normalized, StringComparison.Ordinal);
+                }
+                catch (ProjectFolderException exception)
+                {
+                    throw MapFolderFailure(exception);
+                }
+            }
+        }
+
+        StoredProjectCreationDraft stored;
+        try
+        {
+            stored = draftStore.SetDisplayName(
+                draftId,
+                normalized,
+                GetUtcNow());
+        }
+        catch
+        {
+            if (folderRenamed && workspace is not null && projectId is not null && previousName is not null)
+            {
+                try
+                {
+                    ProjectFolders.Rename(workspace, projectId, previousName);
+                }
+                catch (ProjectFolderException)
+                {
+                    // The registry still points at the folder that exists; nothing is lost.
+                }
+            }
+
+            throw;
+        }
+
         StoredProjectPayload payload = ParseStored(stored);
         return BuildView(stored, payload.Draft, payload.SourceOnly);
+    }
+
+    /// <summary>FR-133: the workspace whose projects folder is named after the Project; null keeps GUID folders (no file management).</summary>
+    internal string? WorkspacePath { get; set; }
+
+    private static ProjectCreationException MapFolderFailure(ProjectFolderException exception) =>
+        new(exception.Reason switch
+        {
+            ProjectFolderFailureReason.InvalidName => ProjectCreationFailureReason.ProjectNameInvalid,
+            ProjectFolderFailureReason.DuplicateName => ProjectCreationFailureReason.ProjectNameDuplicate,
+            _ => ProjectCreationFailureReason.ProjectFolderRenameFailed,
+        });
+
+    /// <summary>FR-133 AC-143/AC-144: rejects a name that cannot be a folder name or that another Project already uses.</summary>
+    private void EnsureProjectNameUsable(string? name, EntityId<ProjectCreationDraftIdTag> draftId)
+    {
+        if (WorkspacePath is null)
+        {
+            return;
+        }
+
+        if (ProjectFolders.ValidateName(name) is not null)
+        {
+            throw new ProjectCreationException(ProjectCreationFailureReason.ProjectNameInvalid);
+        }
+
+        foreach (StoredProjectCreationDraft other in draftStore.ListDrafts())
+        {
+            if (other.Id == draftId || !other.IsFinalized)
+            {
+                continue;
+            }
+
+            string? otherName = TryGetEffectiveName(other);
+            if (otherName is not null && string.Equals(otherName, name, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ProjectCreationException(ProjectCreationFailureReason.ProjectNameDuplicate);
+            }
+        }
+
+        try
+        {
+            EntityId<ProjectIdTag>? self = draftStore.GetDraft(draftId)?.FinalizedProjectId;
+            ProjectFolders.EnsureNameAvailable(WorkspacePath, self, name!);
+        }
+        catch (ProjectFolderException exception)
+        {
+            throw MapFolderFailure(exception);
+        }
+    }
+
+    private string? TryGetEffectiveName(StoredProjectCreationDraft stored)
+    {
+        if (stored.DisplayName is { Length: > 0 } display)
+        {
+            return display;
+        }
+
+        try
+        {
+            return ParseStored(stored).Draft.ContentName;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The name a draft will have as a Project once finalized.</summary>
+    private string? FinalizedName(StoredProjectCreationDraft current, ProjectCreationDraft draft) =>
+        current.DisplayName is { Length: > 0 } display ? display : draft.ContentName;
+
+    /// <summary>FR-133: after a Project is created, its folder is the Project name (a leftover GUID folder is renamed, not copied).</summary>
+    private void BindProjectFolder(EntityId<ProjectIdTag>? projectId, string? name)
+    {
+        if (WorkspacePath is null || projectId is null || name is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _ = ProjectFolders.Migrate(WorkspacePath, [(projectId.ToString(), name)]);
+            _ = Directory.CreateDirectory(ProjectFolders.GetPath(WorkspacePath, projectId));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // The Project keeps working from its GUID folder; the next start migrates it.
+        }
+    }
+
+    /// <summary>FR-134: at start, renames GUID-named Project folders to the Project name (same-volume move; idempotent).</summary>
+    internal IReadOnlyList<ProjectFolderMigrationEntry> MigrateProjectFolders()
+    {
+        if (WorkspacePath is null)
+        {
+            return [];
+        }
+
+        var projects = new List<(string, string?)>();
+        foreach (StoredProjectCreationDraft stored in draftStore.ListDrafts())
+        {
+            if (stored.IsFinalized && stored.FinalizedProjectId is { } id)
+            {
+                projects.Add((id.ToString(), TryGetEffectiveName(stored)));
+            }
+        }
+
+        try
+        {
+            return ProjectFolders.Migrate(WorkspacePath, projects);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
     }
 
     private static readonly System.Text.UTF8Encoding StrictUtf8 = new(
@@ -506,6 +675,8 @@ internal sealed class ProjectCreationService
                 ProjectCreationFailureReason.DraftIncomplete);
         }
 
+        string? projectName = FinalizedName(current, draft);
+        EnsureProjectNameUsable(projectName, draftId);
         if (!candidateRegistry.TryReserve(draft.SourceCandidateId!, out var reservation))
         {
             throw new ProjectCreationException(
@@ -537,6 +708,7 @@ internal sealed class ProjectCreationService
                 expectedRevision,
                 GetUtcNow());
             reservation.Commit();
+            BindProjectFolder(stored.FinalizedProjectId, projectName);
             return BuildView(stored, draft, sourceOnly: null);
         }
     }
@@ -746,6 +918,8 @@ internal sealed class ProjectCreationService
         }
 
         ProjectCreationDraft draft = submitted;
+        string? sourceOnlyProjectName = FinalizedName(current, draft);
+        EnsureProjectNameUsable(sourceOnlyProjectName, draft.Id);
         if (sourceOnlyCoordinator is not null)
         {
             // Native execution binds the ORIGINAL picker identity, not a same-name file
@@ -760,6 +934,7 @@ internal sealed class ProjectCreationService
                 draft, sourceOnly.SettingsSnapshot,
                 SourceOnlyProjectCreationContract.Serialize(acceptedSourceOnly),
                 expectedRevision, actorSid, GetUtcNow());
+            BindProjectFolder(accepted.FinalizedProjectId, sourceOnlyProjectName);
             return BuildView(accepted, draft, acceptedSourceOnly);
         }
 
@@ -809,6 +984,7 @@ internal sealed class ProjectCreationService
                 GetUtcNow(),
                 sourceOnly.SettingsSnapshot);
             reservation.Commit();
+            BindProjectFolder(finalized.FinalizedProjectId, sourceOnlyProjectName);
             return BuildView(finalized, draft, finalizedSourceOnly);
         }
     }
