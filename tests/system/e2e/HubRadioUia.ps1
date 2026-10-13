@@ -24,7 +24,9 @@ function New-AppSandbox {
     Copy-Item -Path (Join-Path (Split-Path -Parent $appPath) '*') -Destination $appCopy -Recurse -Force
     # 配布形（portable）は設定をアプリのフォルダーに、通常ビルドは利用者の %LOCALAPPDATA%\HubRadio.MovieCreator に置く。
     # 後者は実利用者の設定なので、実行前の内容を退避して終了時に必ず戻す（Remove-AppSandbox）。
-    $portable = Test-Path -LiteralPath (Join-Path $appCopy 'WebView2Runtime')
+    # アプリは常に %LOCALAPPDATA%\HubRadio.MovieCreator の workspace-location.json を読む（MainWindow.xaml.cs: applicationDataDirectory）。
+    # WebView2Runtime の有無で場所を変えると、実利用者の Workspace を使ってしまう。
+    $portable = $false
     $cfg = if ($portable) { Join-Path $appCopy 'workspace-location.json' } else { Join-Path $env:LOCALAPPDATA 'HubRadio.MovieCreator\workspace-location.json' }
     $saved = if (-not $portable -and (Test-Path -LiteralPath $cfg)) { [IO.File]::ReadAllBytes($cfg) } else { $null }
     if (-not $portable) {
@@ -259,8 +261,17 @@ function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jo
     $sw0 = [Diagnostics.Stopwatch]::StartNew()
     while (-not $create.Current.IsEnabled -and $sw0.Elapsed.TotalSeconds -lt 60) { Start-Sleep -Milliseconds 500; $create = Find-ByName $root '新しいProjectを作成' }
     Invoke-Element $create
-    $dlg = Find-Dialog $root 60
+    $dlg = Find-Dialog $root 25
     if (-not $dlg) {
+        # 押下が画面の準備前で無視された場合に備え、ボタンが有効なら 1 回だけ押し直す
+        $create = Find-ByName $root '新しいProjectを作成'
+        if ($create.Current.IsEnabled) { Invoke-Element $create }
+        $dlg = Find-Dialog $root 40
+    }
+    if (-not $dlg) {
+        $tops = (Get-AppTopLevels $root) | ForEach-Object { "[$($_.Current.ControlType.ProgrammaticName)|$($_.Current.ClassName)|$($_.Current.Name)|h=$($_.Current.NativeWindowHandle)]" }
+        $wins = (Get-AppTopLevels $root) | ForEach-Object { $_.FindAll($script:Desc, [System.Windows.Automation.PropertyCondition]::new($script:UIA::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)) } | ForEach-Object { "[$($_.Current.ClassName)|$($_.Current.Name)|h=$($_.Current.NativeWindowHandle)]" }
+        Write-Host "DIAG tops: $($tops -join ' ') windows: $($wins -join ' ') main=$($root.Process.MainWindowHandle)"
         $seen = (Find-AllByNameLike $root '.') | ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Select-Object -First 25
         throw "file dialog did not open after pressing 新しいProjectを作成 (enabled=$($create.Current.IsEnabled)). Visible: $($seen -join ' / ')"
     }
@@ -282,6 +293,7 @@ function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jo
     Wait-JobCompleted $root 1
     # 2 つ目以降は「新しいJobを作成」→ 確認の「作成する」
     for ($i = 2; $i -le $jobCount; $i++) {
+        Invoke-Element (Find-ByName $root '元動画')   # 「新しいJobを作成」は「元動画」の画面にある
         Invoke-Element (Find-ByName $root '新しいJobを作成' 60)
         Invoke-Element (Find-ByName $root '作成する' 30)
         Wait-JobCompleted $root $i
