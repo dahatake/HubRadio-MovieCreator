@@ -1,6 +1,6 @@
 ---
 name: system-test-increment
-description: 要求定義書の受入基準から System Test と台帳のケースを作り、増分で実行する手順書。test-designer（設計）と conductor（実行）が使う。
+description: 承認済みで BLOCKED でない「検証レベル: system」の受入基準から、System Test（E2E・契約・ai_eval など）と tests/system/ledger.json のケースを作り、変更のあったケースだけを canary 先行で増分実行する手順書。test-designer が実装より前に設計し、conductor が統合のたび・節目・最終で `ledger.py run` を実行する。台帳は ledger.py だけで更新する。
 ---
 # system-test-increment（test-designer と conductor の手順書）
 
@@ -29,7 +29,7 @@ description: 要求定義書の受入基準から System Test と台帳のケー
 | 原本の部分 | 担当 | この実行での行い方 |
 |---|---|---|
 | `<ledger>`・`<test_design>` | test-designer（工程 4） | 実装より前に、承認済み・BLOCKED でない・`検証レベル: system` の AC ごとにケースを作り、すべて `not_run` で commit します。 |
-| `<execution>` 1〜4・6 | conductor（統合のたび・節目・工程 6） | `python scripts/ledger.py --by conductor run --select changed --canary-first --stop-on-canary-fail`。工程 6 は `--select all`。 |
+| `<execution>` 1〜4・6 | conductor（統合のたび・節目・工程 6） | `python scripts/ledger.py --by conductor run --select changed --canary-first --stop-on-canary-fail`。工程 6 も、既定（`system_test: 必要最小限`）は `--select changed --base <meta.json の head_at_start>` で、この run で変わった要求のケースと canary だけを実行する。`system_test: 全量` のときだけ `--select all`。 |
 | `<execution>` 5（自動修正） | implementer（conductor が依頼） | 統合ブランチの上で修正します。test-designer は修正しません。 |
 | `<execution>` 7（commit） | conductor | 台帳の status の更新を統合ブランチに commit します。 |
 | `<report>` | conductor | 書式はそのまま、`work/runs/<run-id>/run-report.md` に書きます。 |

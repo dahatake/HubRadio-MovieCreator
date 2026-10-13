@@ -36,6 +36,7 @@ DEFAULT_OPTIONS = {
     "max_hours": "24", "approval_policy": "安全範囲は推奨どおり", "parallel_workers": "auto",
     "scope": "承認済みすべて", "git_push": "しない", "deploy": "しない", "external_write": "しない",
     "paid_services": "使わない", "external_exposure": "公開しない",
+    "system_test": "必要最小限",
 }
 HISTORY_HEADER = (
     "# 実行履歴\n\n"
@@ -163,7 +164,7 @@ def cmd_start(args) -> int:
     models = cfg.get("models") or {}
     if not any(v for k, v in models.items() if not k.startswith("_") and isinstance(v, str)):
         print("HINT models: 全役割が空（既定のモデル）です。実測では conductor・implementer の選択が所要時間と Token を最も左右しました。"
-              "較正の手順は users-guide/04-customization.md 4.2 を参照してください")
+              "較正の手順は EABK-docs/04-customization.md 4.2 を参照してください")
     return 0
 
 
