@@ -99,9 +99,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-browse-cancel.ps1",
       "canary": false,
       "status": "pass",
-      "last_commit": "697a420",
-      "last_run_at": "2026-10-13T10:13:26+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-003-202610131012.log",
+      "last_commit": "80d21ea",
+      "last_run_at": "2026-10-13T11:07:42+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-003-202610131106.log",
       "history": [
         {
           "at": "2026-10-13T05:43:37+09:00",
@@ -154,10 +154,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-131-job-thumbnails.ps1",
       "canary": false,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "fail",
+      "last_commit": "80d21ea",
+      "last_run_at": "2026-10-13T11:05:12+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-005-202610131104.log",
       "history": [
         {
           "at": "2026-10-13T05:43:42+09:00",
@@ -756,6 +756,31 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。結合テストで確認するため台帳では止める"
+        }
+      ]
+    },
+    {
+      "id": "IT-004",
+      "requirement_ids": [
+        "FR-064"
+      ],
+      "ac_ids": [
+        "AC-041"
+      ],
+      "title": "権限なし利用者の参照…は forbidden（ダイアログ未起動・例外文/SID/選択外情報なし）。既存の契約/統合テストで充足",
+      "layer": "contract",
+      "command": "dotnet test tests/HubRadio.App.Tests/HubRadio.App.Tests.csproj --filter FullyQualifiedName~FR064_AC041 -p:Platform=x64",
+      "canary": false,
+      "status": "pass",
+      "last_commit": "bd922e2",
+      "last_run_at": "2026-10-13T10:59:52+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/IT-004-202610131055.log",
+      "history": [
+        {
+          "at": "2026-10-13T10:54:47+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
         }
       ]
     }

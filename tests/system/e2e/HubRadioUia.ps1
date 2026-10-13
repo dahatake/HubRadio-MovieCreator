@@ -27,6 +27,11 @@ function New-AppSandbox {
     $portable = Test-Path -LiteralPath (Join-Path $appCopy 'WebView2Runtime')
     $cfg = if ($portable) { Join-Path $appCopy 'workspace-location.json' } else { Join-Path $env:LOCALAPPDATA 'HubRadio.MovieCreator\workspace-location.json' }
     $saved = if (-not $portable -and (Test-Path -LiteralPath $cfg)) { [IO.File]::ReadAllBytes($cfg) } else { $null }
+    if (-not $portable) {
+        # 実利用者の Workspace（既存の Project）を汚さないよう、実行中だけ Workspace を一時領域へ向ける（終了時に設定を元に戻す）
+        New-Item -ItemType Directory -Path (Split-Path -Parent $cfg) -Force | Out-Null
+        [IO.File]::WriteAllText($cfg, (@{ version = 1; path = (Join-Path $work 'workspace') } | ConvertTo-Json -Compress))
+    }
     [pscustomobject]@{
         Work = $work; AppDir = $appCopy
         Exe = (Join-Path $appCopy (Split-Path -Leaf $appPath))
@@ -199,9 +204,18 @@ function Invoke-Test([scriptblock]$Body, [string]$Label, $Sandbox) {
 # --- Job 成果物つき Project の作成（実際の操作で作る。合成した 2 秒の動画を元素材にする） ---
 function New-SyntheticVideo($sb, [string]$dir) {
     $ff = Join-Path $sb.AppDir 'Tools\ffmpeg.exe'
-    if (-not (Test-Path $ff)) { throw 'Tools\ffmpeg.exe not found in app folder' }
+    if (-not (Test-Path $ff)) {
+        # 開発ビルドには同梱されない。テスト用の合成動画の作成だけに PATH 上の ffmpeg を使う（アプリの動作には使わない）
+        $cmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw 'ffmpeg not found (Tools\ffmpeg.exe in app folder or ffmpeg on PATH)' }
+        $ff = $cmd.Source
+    }
     $out = Join-Path $dir 'source.mp4'
     & $ff -y -f lavfi -i 'testsrc=size=1920x1080:rate=30:duration=3' -f lavfi -i 'sine=frequency=440:duration=3' -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest $out 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        # libx264 の無い ffmpeg 向け（合成動画の作成だけの代替）
+        & $ff -y -f lavfi -i 'testsrc=size=1920x1080:rate=30:duration=3' -f lavfi -i 'sine=frequency=440:duration=3' -c:v mpeg4 -pix_fmt yuv420p -c:a aac -shortest $out 2>$null
+    }
     if ($LASTEXITCODE -ne 0) { throw 'ffmpeg failed to create synthetic video' }
     $out
 }
