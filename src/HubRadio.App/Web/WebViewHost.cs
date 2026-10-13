@@ -40,6 +40,8 @@ internal sealed class WebViewHost : IDisposable
     internal BookendStitchBridgeHandler? StitchHandler { get; init; }
 
     internal WorkspaceLocationBridgeHandler? WorkspaceHandler { get; init; }
+
+    internal JobExportBridgeHandler? ExportHandler { get; init; }
     private TaskCompletionSource? initialNavigation;
     private bool isStarted;
     private bool isDisposed;
@@ -308,6 +310,7 @@ internal sealed class WebViewHost : IDisposable
             {
                 StitchHandler = StitchHandler,
                 WorkspaceHandler = WorkspaceHandler,
+                ExportHandler = ExportHandler,
             };
             bridge = startedBridge;
             await StartDocumentAsync(

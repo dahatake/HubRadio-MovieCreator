@@ -33,7 +33,8 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
         SourceOnlyBridgeHandler? sourceOnly = null,
         SourceOnlyMediaResponseFactory? sourceOnlyMedia = null,
         BookendStitchBridgeHandler? stitch = null,
-        WorkspaceLocationBridgeHandler? workspace = null)
+        WorkspaceLocationBridgeHandler? workspace = null,
+        JobExportBridgeHandler? export = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
@@ -64,7 +65,11 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
         SourceOnlyMedia = sourceOnlyMedia;
         Stitch = stitch;
         Workspace = workspace;
+        Export = export;
     }
+
+    /// <summary>FR-132 handler that saves a Job's videos and thumbnails to a user-chosen folder.</summary>
+    internal JobExportBridgeHandler? Export { get; }
 
     /// <summary>FR-062 workspace location handler.</summary>
     internal WorkspaceLocationBridgeHandler? Workspace { get; }
@@ -310,7 +315,10 @@ internal static class ProjectApplicationRuntime
                 new WorkspaceLocationStore(applicationRoot),
                 settingsAuthorization,
                 services.WorkspacePath,
-                workspaceFolderPicker));
+                workspaceFolderPicker),
+            JobExportSources.CreateHandler(
+                services.Executions, services.Results, services.Artifacts, services.WorkspacePath,
+                actorProvider.GetCurrentSid, authorization));
     }
 
     // FR-035: without both bundled tools the GUI reports unavailable instead of failing later.
