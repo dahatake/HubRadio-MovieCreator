@@ -155,9 +155,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-131-job-thumbnails.ps1",
       "canary": false,
       "status": "fail",
-      "last_commit": "80d21ea",
-      "last_run_at": "2026-10-13T11:05:12+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-005-202610131104.log",
+      "last_commit": "238588d",
+      "last_run_at": "2026-10-13T11:20:52+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-005-202610131119.log",
       "history": [
         {
           "at": "2026-10-13T05:43:42+09:00",

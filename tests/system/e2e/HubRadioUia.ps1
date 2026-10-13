@@ -220,14 +220,41 @@ function New-SyntheticVideo($sb, [string]$dir) {
     $out
 }
 function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jobCount, [string]$videoPath) {
-    Invoke-Element (Find-ByName $root '新規作成')
-    Set-Value (Find-ByName $root 'Project名') $projectName
-    Set-Value (Find-ByName $root '元動画のパス') $videoPath
+    # 「新しいProjectを作成」は OS の「開く」ダイアログで動画を 1 本選ぶ。選ぶとそのまま「かんたん編集」の画面になる。
+    Invoke-Element (Find-ByName $root '新しいProjectを作成')
+    $dlg = Find-Dialog $root 20
+    if (-not $dlg) { throw 'file dialog did not open after pressing 新しいProjectを作成' }
+    Set-DialogForeground $dlg
+    [System.Windows.Forms.SendKeys]::SendWait('%n')
+    [System.Windows.Forms.SendKeys]::SendWait('^a')
+    [System.Windows.Forms.SendKeys]::SendWait((ConvertTo-SendKeysText $videoPath))
+    Start-Sleep -Milliseconds 400
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    $nameBox = Find-ByName $root 'Project名（この画面と一覧に表示される名前）' 30
+    Set-Value $nameBox $projectName
+    Invoke-Element (Find-ByName $root 'Project名を保存')
+    # 最初の Job は「編集を開始」で作られる。完了は、その Job のサムネイルの名前（… 完了）で判定する
     Invoke-Element (Find-ByName $root '編集を開始')
-    for ($i = 1; $i -le $jobCount; $i++) {
-        Invoke-Element (Find-ByName $root 'Jobを作成')
-        $null = Find-ByName $root '完了' 600
+    Wait-JobCompleted $root 1
+    # 2 つ目以降は「新しいJobを作成」→ 確認の「作成する」
+    for ($i = 2; $i -le $jobCount; $i++) {
+        Invoke-Element (Find-ByName $root '新しいJobを作成' 60)
+        Invoke-Element (Find-ByName $root '作成する' 30)
+        Wait-JobCompleted $root $i
     }
+}
+function Wait-JobCompleted($root, [int]$jobNumber, [int]$timeoutSec = 900) {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        if (@(Find-AllByNameLike $root "^サムネイル: Job $jobNumber、.*完了$").Count -gt 0) { return }
+        $failed = @(Find-AllByNameLike $root '操作を完了できませんでした|^サムネイル: Job \d+、.*(失敗|取消)$')
+        if ($failed.Count -gt 0) {
+            $msg = (Find-AllByNameLike $root '編集を開始できません|失敗') | Select-Object -First 1
+            throw "Job $jobNumber did not complete: $($msg.Current.Name)"
+        }
+        Start-Sleep -Seconds 2
+    } while ($sw.Elapsed.TotalSeconds -lt $timeoutSec)
+    throw "Job $jobNumber did not complete within $timeoutSec s"
 }
 
 

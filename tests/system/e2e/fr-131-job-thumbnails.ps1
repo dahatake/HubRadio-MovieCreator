@@ -7,16 +7,24 @@ $p = $null
 Invoke-Test -Label 'FR-131 AC-132' -Sandbox $sb -Body {
     try {
         $video = New-SyntheticVideo $sb $sb.Work
+        # 動画処理ツール（Tools\ffmpeg.exe・ffprobe.exe）は配布物に同梱される。無い開発ビルドでは、PATH のものを一時コピーに置く
+        $tools = Join-Path $sb.AppDir 'Tools'
+        New-Item -ItemType Directory -Path $tools -Force | Out-Null
+        foreach ($n in 'ffmpeg', 'ffprobe') {
+            if (-not (Test-Path (Join-Path $tools "$n.exe"))) { $c = Get-Command $n -ErrorAction SilentlyContinue; if ($c) { Copy-Item $c.Source (Join-Path $tools "$n.exe") } }
+        }
         $p = Start-App $sb
         $root = Get-Root $p
         New-ProjectWithCompletedJobs $root $sb 'thumb-sample' 2 $video
-        foreach ($screen in 'Project 一覧', 'ジョブの状態', '仕上がり', '仕上がりの比較') {
+        # Job を表示・選択する画面（ジョブの状態の確認・元動画の画面の Job 一覧・仕上がり）
+        foreach ($screen in 'ジョブの状態の確認', '元動画', '仕上がり') {
             Invoke-Element (Find-ByName $root $screen)
-            # サムネイルは画像要素として、Job の名前または作成日時を含む名前で公開される
-            $thumbs = @(Find-AllByNameLike $root '(?i)(サムネイル|thumbnail)')
+            Start-Sleep -Seconds 2
+            # サムネイルは画像として「サムネイル: Job n、作成日時 …、状態」という名前で公開される
+            $thumbs = @(Find-AllByNameLike $root '^サムネイル: Job \d+')
             if ($thumbs.Count -lt 2) { throw "[$screen] expected >=2 job thumbnails, found $($thumbs.Count)" }
             foreach ($t in $thumbs) {
-                if ($t.Current.Name -notmatch '(Job|ジョブ|\d{4}[-/年]\d{1,2})') { throw "[$screen] thumbnail lacks job name/created time: '$($t.Current.Name)'" }
+                if ($t.Current.Name -notmatch '^サムネイル: Job \d+、作成日時 \S+') { throw "[$screen] thumbnail lacks job name/created time: '$($t.Current.Name)'" }
             }
             $names = $thumbs | ForEach-Object { $_.Current.Name } | Sort-Object -Unique
             if ($names.Count -lt 2) { throw "[$screen] thumbnails are not distinguishable per job" }
