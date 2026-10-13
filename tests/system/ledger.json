@@ -43,9 +43,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-workspace-browse.ps1",
       "canary": false,
       "status": "fail",
-      "last_commit": "d2302a7",
-      "last_run_at": "2026-10-13T08:10:43+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-001-202610130809.log",
+      "last_commit": "36dfdad",
+      "last_run_at": "2026-10-13T08:27:11+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-001-202610130826.log",
       "history": [
         {
           "at": "2026-10-08T12:30:02+09:00",
