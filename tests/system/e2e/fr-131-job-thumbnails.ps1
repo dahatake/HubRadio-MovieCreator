@@ -29,5 +29,12 @@ Invoke-Test -Label 'FR-131 AC-132' -Sandbox $sb -Body {
             $names = $thumbs | ForEach-Object { $_.Current.Name } | Sort-Object -Unique
             if ($names.Count -lt 2) { throw "[$screen] thumbnails are not distinguishable per job" }
         }
+        # 仕上がりの「Jobを比較」（比較する Job を選ぶ画面）にも各 Job のサムネイルが名前・作成日時つきで出る
+        Invoke-Element (Find-ByName $root '仕上がり')
+        Invoke-Element (Find-ByName $root 'Jobを比較')
+        Start-Sleep -Seconds 2
+        $cthumbs = @(Find-AllByNameLike $root '^サムネイル: Job \d+、作成日時 \S+')
+        if ($cthumbs.Count -lt 2) { throw "[Jobを比較] expected >=2 job thumbnails, found $($cthumbs.Count)" }
+        if (@($cthumbs | ForEach-Object { $_.Current.Name } | Sort-Object -Unique).Count -lt 2) { throw '[Jobを比較] thumbnails are not distinguishable per job' }
     } finally { Stop-App $p }
 }

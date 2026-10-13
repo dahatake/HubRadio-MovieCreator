@@ -52,6 +52,10 @@ function Start-App($sb) {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while ($p.MainWindowHandle -eq [IntPtr]::Zero -and -not $p.HasExited -and $sw.Elapsed.TotalSeconds -lt 30) { Start-Sleep -Milliseconds 200; $p.Refresh() }
     if ($p.HasExited) { throw "app exited: $($p.ExitCode)" }
+    # 配布形の起動は、同梱のモデルの確認などで 2 分近くかかることがある。画面（設定ボタン）が現れるまで待つ
+    $root = Get-Root $p
+    while (-not (Test-ByName $root '設定' 2) -and -not $p.HasExited -and $sw.Elapsed.TotalSeconds -lt 360) { }
+    if ($p.HasExited) { throw "app exited: $($p.ExitCode)" }
     $p
 }
 function Stop-App($p) { if ($p -and -not $p.HasExited) { $null = $p.CloseMainWindow(); if (-not $p.WaitForExit(10000)) { $p.Kill($true) } } }
