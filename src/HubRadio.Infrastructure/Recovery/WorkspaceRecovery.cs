@@ -341,9 +341,7 @@ public sealed class WorkspaceRecovery
 
             WorkspacePathSafety.ValidateExistingDirectoryAncestorChain(_workspacePath);
             string stagingRoot = Path.GetFullPath(Path.Combine(
-                _workspacePath,
-                "projects",
-                candidate.ProjectId.ToString(),
+                ProjectFolders.GetPath(_workspacePath, candidate.ProjectId),
                 "staging"));
             if (!WorkspacePathSafety.TryResolvePortableRelativePath(
                     stagingRoot,
@@ -776,7 +774,7 @@ public sealed class WorkspaceRecovery
                 continue;
             }
 
-            string directoryName = Path.GetFileName(entry);
+            string directoryName = ProjectFolders.GetProjectIdForFolder(_workspacePath, Path.GetFileName(entry));
             if (!TryParseCanonicalEntityId(
                     directoryName,
                     out EntityId<ProjectIdTag>? projectId))

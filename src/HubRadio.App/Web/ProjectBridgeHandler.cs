@@ -114,6 +114,12 @@ internal sealed class ProjectBridgeHandler
                         StableErrorCodes.ProjectSourceReselectionRequired,
                     ProjectCreationFailureReason.DeleteBlockedByRunningJob =>
                         StableErrorCodes.ProjectDeleteBlocked,
+                    ProjectCreationFailureReason.ProjectNameInvalid =>
+                        StableErrorCodes.ProjectNameInvalid,
+                    ProjectCreationFailureReason.ProjectNameDuplicate =>
+                        StableErrorCodes.ProjectNameDuplicate,
+                    ProjectCreationFailureReason.ProjectFolderRenameFailed =>
+                        StableErrorCodes.ProjectFolderRenameFailed,
                     _ => StableErrorCodes.ProjectOperationFailed,
                 });
         }

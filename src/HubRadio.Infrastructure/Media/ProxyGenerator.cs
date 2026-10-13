@@ -1474,9 +1474,7 @@ public sealed class ProxyGenerator
         CancellationToken cancellationToken)
     {
         string proxyStagingRoot = Path.GetFullPath(Path.Combine(
-            _workspacePath,
-            "projects",
-            projectId.ToString(),
+            ProjectFolders.GetPath(_workspacePath, projectId),
             "staging",
             "proxies"));
         string stagingDirectory = Path.Combine(

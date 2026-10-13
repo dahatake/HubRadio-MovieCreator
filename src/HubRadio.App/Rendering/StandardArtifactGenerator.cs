@@ -580,7 +580,7 @@ public sealed class StandardArtifactGenerator
         }
 
         string runName = "standard-" + Guid.NewGuid().ToString("N");
-        string staging = Path.Combine(_workspace, "projects", request.ProjectId.ToString(), "staging", runName);
+        string staging = Path.Combine(ProjectFolders.GetPath(_workspace, request.ProjectId), "staging", runName);
         var ownedFiles = new List<string>();
         var pending = new List<PendingArtifact>();
         var promoted = new List<StandardGeneratedArtifact>();

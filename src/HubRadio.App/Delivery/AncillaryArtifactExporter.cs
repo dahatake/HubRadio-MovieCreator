@@ -2025,9 +2025,7 @@ public sealed class AncillaryArtifactExporter
         CancellationToken cancellationToken)
     {
         string root = Path.GetFullPath(Path.Combine(
-            _workspacePath,
-            "projects",
-            prepared.Request.Project.Id.ToString(),
+            ProjectFolders.GetPath(_workspacePath, prepared.Request.Project.Id),
             "staging",
             "ancillary"));
         string directory = Path.Combine(

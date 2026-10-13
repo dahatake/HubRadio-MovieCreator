@@ -1,5 +1,6 @@
 using HubRadio.Core.Identity;
 using HubRadio.Core.Projects;
+using HubRadio.Infrastructure.Files;
 
 namespace HubRadio.App.Projects;
 
@@ -16,7 +17,7 @@ internal static class ProjectWorkspaceFileRemover
         ArgumentNullException.ThrowIfNull(projectId);
 
         string projectsRoot = Path.GetFullPath(Path.Combine(workspacePath, "projects"));
-        string target = Path.GetFullPath(Path.Combine(projectsRoot, projectId.ToString()));
+        string target = Path.GetFullPath(ProjectFolders.GetPath(workspacePath, projectId));
         if (!string.Equals(Path.GetDirectoryName(target), projectsRoot, StringComparison.OrdinalIgnoreCase))
         {
             return false;
@@ -29,6 +30,7 @@ internal static class ProjectWorkspaceFileRemover
                 : File.Exists(target) ? new FileInfo(target) : null;
             if (entry is null)
             {
+                Forget(workspacePath, projectId);
                 return true;
             }
 
@@ -42,11 +44,24 @@ internal static class ProjectWorkspaceFileRemover
                 entry.Delete();
             }
 
+            if (!Directory.Exists(target) && !File.Exists(target)) { Forget(workspacePath, projectId); }
             return !Directory.Exists(target) && !File.Exists(target);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             return false;
+        }
+    }
+
+    private static void Forget(string workspacePath, EntityId<ProjectIdTag> projectId)
+    {
+        try
+        {
+            ProjectFolders.Unbind(workspacePath, projectId);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // A stale registry entry only names a folder that no longer exists.
         }
     }
 }

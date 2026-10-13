@@ -1783,9 +1783,7 @@ public sealed class PreviewAssetGenerator
         CancellationToken cancellationToken)
     {
         string root = Path.GetFullPath(Path.Combine(
-            _workspacePath,
-            "projects",
-            projectId.ToString(),
+            ProjectFolders.GetPath(_workspacePath, projectId),
             "staging",
             "preview-assets"));
         EnsureDirectoryChain(root, cancellationToken);

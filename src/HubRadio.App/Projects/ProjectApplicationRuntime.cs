@@ -223,7 +223,10 @@ internal static class ProjectApplicationRuntime
             },
             AutoSettingsRecorder = autoSettings.Save,
             AutoSettingsReader = autoSettings.Read,
+            WorkspacePath = services.WorkspacePath,
         };
+        // FR-134: GUID-named Project folders become Project-name folders at start (rename only; safe to repeat).
+        _ = service.MigrateProjectFolders();
         var projectHandler = new ProjectBridgeHandler(service, native.RestoreAfterReadAsync, native.RepairAsync);
         var jobHandler = new JobBridgeRequestHandler(
             services.Coordinator,

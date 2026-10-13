@@ -1463,6 +1463,12 @@ internal static class BridgeProtocol
             "処理中のジョブがあるため、このProjectは削除できません。完了または中止してからもう一度お試しください。",
         StableErrorCodes.ProjectIncomplete =>
             "必須入力をすべて完了してください。",
+        StableErrorCodes.ProjectNameInvalid =>
+            "Project名に使えない文字（\\ / : * ? \" < > | と制御文字）、末尾のドットや空白、予約名（CON・NUL など）、または80文字を超える長さが含まれています。別の名前にしてください。Projectとフォルダーは変更していません。",
+        StableErrorCodes.ProjectNameDuplicate =>
+            "同じ名前のProjectがすでにあります（大文字と小文字は区別しません）。別の名前にしてください。既存のProjectとフォルダーは変更していません。",
+        StableErrorCodes.ProjectFolderRenameFailed =>
+            "Projectのフォルダー名を変更できませんでした（ファイルが使用中の可能性があります）。Project名とフォルダー名は元のままで、データは失われていません。使用中のアプリを閉じてからもう一度お試しください。",
         StableErrorCodes.ProjectInvalidRequest =>
             "入力内容を確認してください。",
         StableErrorCodes.ProjectNotAuthorized =>

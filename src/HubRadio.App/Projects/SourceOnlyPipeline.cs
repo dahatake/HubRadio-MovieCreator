@@ -1880,7 +1880,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             {
                 throw new PipelineFailure(SourceOnlyExecutionPhase.ReconciliationRequired, "source_only.raw_asr_missing");
             }
-            string resultDirectory = Path.Combine(workspace, "projects", execution.Request.ProjectId.ToString(), "staging",
+            string resultDirectory = Path.Combine(ProjectFolders.GetPath(workspace, execution.Request.ProjectId), "staging",
                 "source-only-asr-" + execution.Request.RootJobId);
             CreateDirectory(workspace, resultDirectory);
             var worker = new LocalAnalysisWorker(runner, options!.PythonExecutable, workspace);
@@ -2750,7 +2750,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         {
             DateTimeOffset startedAt = Now(evidence.CreatedAt);
             var modelId = StableId<ModelRunIdTag>(seed, "repetition-rule");
-            string directory = Path.Combine(workspace, "projects", execution.Request.ProjectId.ToString(), "staging", "source-only-repetition-" + seed);
+            string directory = Path.Combine(ProjectFolders.GetPath(workspace, execution.Request.ProjectId), "staging", "source-only-repetition-" + seed);
             CreateDirectory(workspace, directory);
             try
             {
@@ -3360,7 +3360,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             }
             return existing;
         }
-        string staging = Path.Combine(workspace, "projects", execution.Request.ProjectId.ToString(), "staging", "source-only-evidence");
+        string staging = Path.Combine(ProjectFolders.GetPath(workspace, execution.Request.ProjectId), "staging", "source-only-evidence");
         CreateDirectory(workspace, staging);
         string path = Path.Combine(staging, Guid.NewGuid().ToString("N") + ".partial");
         try

@@ -477,9 +477,9 @@ public sealed class ArtifactStore
 
         EntityId<ProjectIdTag> projectId = requests[0].ProjectId;
         string relativeRoot = $"source-only/{executionId}/{rootJobId}";
-        string stagingRoot = Path.Combine(_workspacePath, "projects", projectId.ToString(), "staging",
+        string stagingRoot = Path.Combine(ProjectFolders.GetPath(_workspacePath, projectId), "staging",
             $"source-only-delivery-{executionId}-{rootJobId}");
-        string deliveryRoot = Path.Combine(_workspacePath, "projects", projectId.ToString(), "deliveries",
+        string deliveryRoot = Path.Combine(ProjectFolders.GetPath(_workspacePath, projectId), "deliveries",
             "source-only", executionId.ToString(), rootJobId.ToString());
         var paths = new List<PromotionPaths>(requests.Count);
         for (int i = 0; i < requests.Count; i++)
@@ -785,14 +785,14 @@ public sealed class ArtifactStore
         string projectId = request.ProjectId.ToString();
         string folder = GetKindFolder(request.Kind);
         string stagingRoot = Path.GetFullPath(
-            Path.Combine(_workspacePath, "projects", projectId, "staging"));
+            Path.Combine(ProjectFolders.GetPath(_workspacePath, projectId), "staging"));
         if (!IsStrictDescendant(stagingRoot, request.StagingPath))
         {
             throw Failure(ArtifactStoreFailureReason.UnsafePath);
         }
 
         string kindRoot = Path.GetFullPath(
-            Path.Combine(_workspacePath, "projects", projectId, folder));
+            Path.Combine(ProjectFolders.GetPath(_workspacePath, projectId), folder));
         string destinationPath;
         try
         {
