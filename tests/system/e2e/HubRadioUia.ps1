@@ -238,9 +238,23 @@ function Open-Settings($root) {
 }
 function Get-FileHashOrAbsent([string]$path) { if (Test-Path -LiteralPath $path) { (Get-FileHash -LiteralPath $path).Hash } else { 'absent' } }
 
+# 診断: 失敗時に見えていた UIA 要素（Button/Edit/ListItem）を列挙する
+function Write-UiaDiag {
+    try {
+        if ($script:AppProc -and -not $script:AppProc.HasExited) {
+            $r = Get-Root $script:AppProc
+            $ct = [System.Windows.Automation.ControlType]
+            $vis = @($r.FindAll($script:Desc, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.ControlType -in $ct::Button, $ct::Edit, $ct::ListItem } | ForEach-Object { "$($_.Current.ControlType.ProgrammaticName.Replace('ControlType.',''))|$($_.Current.Name)|en=$($_.Current.IsEnabled)|off=$($_.Current.IsOffscreen)" })
+            Write-Host "DIAG-UIA: $($vis.Count) elements"; $vis | ForEach-Object { Write-Host "DIAG-UIA: $_" }
+        } else { Write-Host 'DIAG-UIA: app not running' }
+    } catch { Write-Host "DIAG-UIA failed: $_" }
+}
 function Invoke-Test([scriptblock]$Body, [string]$Label, $Sandbox) {
     $failed = $null
-    try { & $Body } catch { $failed = $_ }
+    try { & $Body } catch {
+        $failed = $_
+        Write-UiaDiag   # アプリがまだ生きていれば（Body 内で Stop-App 済みでなければ）列挙する
+    }
     finally { Remove-AppSandbox $Sandbox }
     if ($failed) { Write-Error "$Label failed: $failed"; exit 1 }
     Write-Host "$Label passed"; exit 0
@@ -343,16 +357,29 @@ function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jo
     Invoke-Element (Find-ByName $root '編集を開始')
     Wait-JobCompleted $root 1
     # 2 つ目以降は「新しいJobを作成」→ 確認の「作成する」
+    try {
     for ($i = 2; $i -le $jobCount; $i++) {
-        Invoke-Element (Find-ByName $root '元動画')   # 「新しいJobを作成」は「元動画」の画面にある
+        Invoke-Element (Find-ByName $root '元動画')    # 「新しいJobを作成」は「元動画」の画面にある
         # 設定を一度確認するまで「新しいJobを作成」は押せない（AC: 「次に作成するJobの設定を開く」→「設定を閉じて戻る」）
         Invoke-Element (Find-ByName $root '次に作成するJobの設定を開く' 60)
         Invoke-Element (Find-ByName $root '設定を閉じて戻る' 60)
         Start-Sleep -Seconds 2
-        Invoke-Element (Find-ByName $root '新しいJobを作成' 60)
-        Invoke-Element (Find-ByName $root '作成する' 30)
+        # 「新しいJobを作成」は見出し（Text）とボタンが同名。ボタンだけを押す（有効になるまで待つ）
+        $sw2 = [Diagnostics.Stopwatch]::StartNew(); $nb = $null
+        do {
+            $nb = Find-AllByNameLike $root '^新しいJobを作成$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $_.Current.IsEnabled } | Select-Object -First 1
+            if (-not $nb) { Start-Sleep -Milliseconds 500 }
+        } while (-not $nb -and $sw2.Elapsed.TotalSeconds -lt 60)
+        if (-not $nb) { throw "button '新しいJobを作成' not found or disabled" }
+        Invoke-Element $nb
+        Start-Sleep -Seconds 1
+        $cb2 = Find-AllByNameLike $root '^作成する$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button } | Select-Object -First 1
+        if (-not $cb2) { Start-Sleep -Seconds 3; $cb2 = Find-AllByNameLike $root '^作成する$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button } | Select-Object -First 1 }
+        if (-not $cb2) { throw "button '作成する' not found after pressing 新しいJobを作成" }
+        Invoke-Element $cb2
         Wait-JobCompleted $root $i
     }
+    } catch { Write-UiaDiag; throw }
 }
 function Wait-JobCompleted($root, [int]$jobNumber, [int]$timeoutSec = 900) {
     $sw = [Diagnostics.Stopwatch]::StartNew()

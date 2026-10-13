@@ -33,8 +33,9 @@ Invoke-Test -Label 'FR-131 AC-132' -Sandbox $sb -Body {
         Invoke-Element (Find-ByName $root '仕上がり')
         Invoke-Element (Find-ByName $root 'Jobを比較')
         Start-Sleep -Seconds 2
-        $cthumbs = @(Find-AllByNameLike $root '^サムネイル: Job \d+、作成日時 \S+')
+        # 比較の選択欄では「Job 2（いまの版）」のように注記が付くことがある
+        $cthumbs = @(Find-AllByNameLike $root '^サムネイル: Job \d+(（[^）]*）)?、作成日時 \S+')
         if ($cthumbs.Count -lt 2) { throw "[Jobを比較] expected >=2 job thumbnails, found $($cthumbs.Count)" }
         if (@($cthumbs | ForEach-Object { $_.Current.Name } | Sort-Object -Unique).Count -lt 2) { throw '[Jobを比較] thumbnails are not distinguishable per job' }
-    } finally { Stop-App $p }
+    } catch { Write-UiaDiag; throw } finally { Stop-App $p }
 }
