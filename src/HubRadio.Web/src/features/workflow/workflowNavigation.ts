@@ -10,14 +10,13 @@ import {
 } from '../timeline/rationalTime'
 
 export const workflowSteps = Object.freeze([
-  'source', 'processing', 'results', 'delivery',
+  'source', 'processing', 'results',
 ] as const)
 export type WorkflowStep = (typeof workflowSteps)[number]
 export const workflowStepLabels: Readonly<Record<WorkflowStep, string>> = Object.freeze({
   source: '元動画',
   processing: 'ジョブの状態の確認',
   results: '仕上がり',
-  delivery: '保存',
 })
 
 export const workflowTools = Object.freeze([

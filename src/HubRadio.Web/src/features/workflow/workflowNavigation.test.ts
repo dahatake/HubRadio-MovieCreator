@@ -68,10 +68,11 @@ const editorTarget = { ...binding, kind: 'editor', tool: 'timeline' } as const s
 const stateKeys = ['activeTool', 'returnToStep', 'step', 'warningVisit']
 
 describe('workflow navigation', () => {
-  it('starts with four fixed labeled display steps and no domain state', () => {
-    expect(workflowSteps).toEqual(['source', 'processing', 'results', 'delivery'])
+  it('  starts with three fixed labeled display steps and no domain state', () => {
+      expect(workflowSteps).toEqual(['source', 'processing', 'results'])
     // FR-056 AC-031.2: the processing step is shown as 「ジョブの状態の確認」.
-    expect(workflowSteps.map(step => workflowStepLabels[step])).toEqual(['元動画', 'ジョブの状態の確認', '仕上がり', '保存'])
+      // FR-061 AC-036: the 「保存」 step was removed (request 2026-10-13).
+      expect(workflowSteps.map(step => workflowStepLabels[step])).toEqual(['元動画', 'ジョブの状態の確認', '仕上がり'])
     expect(initialWorkflowNavigation).toEqual({ step: 'source', returnToStep: null, activeTool: null, warningVisit: null })
     expect(Object.keys(initialWorkflowNavigation).sort()).toEqual(stateKeys)
     expect(selectWorkflowScreen(initialWorkflowNavigation)).toBe('source')
@@ -92,8 +93,8 @@ describe('workflow navigation', () => {
   })
 
   it('rejects unknown steps rather than choosing a first or nearest step', () => {
-    const state = reduce({ type: 'selectStep', step: 'delivery' })
-    for (const step of ['settings', 'running', 'Results', '', '__proto__', null, undefined, 0, {}]) {
+    const state = reduce({ type: 'selectStep', step: 'results' })
+    for (const step of ['settings', 'running', 'Results', '', '__proto__', null, undefined, 0, {}, 'delivery']) {
       expect(isWorkflowStep(step)).toBe(false)
       expect(workflowNavigationReducer(state, { type: 'selectStep', step: step as WorkflowStep })).toBe(state)
       expect(getWorkflowTabFocusStep(step as WorkflowStep, 'ArrowRight')).toBeNull()
@@ -183,7 +184,7 @@ describe('workflow navigation', () => {
     )
     const before = structuredClone(tracked)
     const navigation = reduce(
-      { type: 'selectStep', step: 'delivery' },
+      { type: 'selectStep', step: 'processing' },
       { type: 'openSettings' },
       { type: 'closeSettings' },
       { type: 'selectStep', step: 'source' },
@@ -211,7 +212,7 @@ describe('workflow navigation', () => {
       { target: editorTarget, screen: 'results', tool: 'timeline' },
     ] as const
     for (const item of cases) {
-      const state = reduce({ type: 'selectTool', tool: 'review' }, { type: 'selectStep', step: 'delivery' }, follow(item.target))
+      const state = reduce({ type: 'selectTool', tool: 'review' }, { type: 'selectStep', step: 'processing' }, follow(item.target))
       expect(selectWorkflowScreen(state)).toBe(item.screen)
       expect(state.activeTool).toBe(item.tool)
       expect(state.warningVisit?.target).toEqual(item.target)
@@ -378,7 +379,7 @@ describe('workflow navigation', () => {
   })
 
   it('returns from every warning kind to the original view and lets the provider retain the warning selection', () => {
-    const origin = reduce({ type: 'selectTool', tool: 'review' }, { type: 'selectStep', step: 'delivery' })
+    const origin = reduce(    { type: 'selectTool', tool: 'review' }, { type: 'selectStep', step: 'processing' })
     for (const target of [previewTarget, settingsTarget, evidenceTarget, editorTarget]) {
       const visited = workflowNavigationReducer(origin, follow(target))
       const selectedWarningId = selectReturningWorkflowWarningId(visited, context, [warningId])
@@ -452,10 +453,10 @@ describe('workflow navigation', () => {
     const state = reduce({ type: 'selectStep', step: 'processing' })
     for (let index = 0; index < workflowSteps.length; index += 1) {
       const step = workflowSteps[index]!
-      expect(getWorkflowTabFocusStep(step, 'ArrowLeft')).toBe(workflowSteps[(index + 3) % 4])
-      expect(getWorkflowTabFocusStep(step, 'ArrowRight')).toBe(workflowSteps[(index + 1) % 4])
+      expect(getWorkflowTabFocusStep(step, 'ArrowLeft')).toBe(      workflowSteps[(index + 2) % 3])
+            expect(getWorkflowTabFocusStep(step, 'ArrowRight')).toBe(workflowSteps[(index + 1) % 3])
       expect(getWorkflowTabFocusStep(step, 'Home')).toBe('source')
-      expect(getWorkflowTabFocusStep(step, 'End')).toBe('delivery')
+            expect(getWorkflowTabFocusStep(step, 'End')).toBe('results')
     }
     expect(state.step).toBe('processing')
   })
@@ -486,7 +487,7 @@ function expectBlocked(
   reason: WorkflowWarningBlockReason,
   current: WorkflowWarningContext = context,
 ): void {
-  const origin = reduce({ type: 'selectStep', step: 'delivery' })
+  const origin = reduce({ type: 'selectStep', step: 'processing' })
   expect(resolveWorkflowWarningTarget(target, current)).toEqual({ status: 'blocked', reason })
   expect(workflowNavigationReducer(origin, follow(target, current))).toBe(origin)
   expect(selectPendingWorkflowWarning(origin, current)).toBeNull()
