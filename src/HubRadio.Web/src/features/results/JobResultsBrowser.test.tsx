@@ -61,6 +61,27 @@ describe('JobResultsBrowser', () => {
   const rail = () => within(container).getByRole('list', { name: 'Jobの一覧' })
   const railButton = (name: RegExp) => within(rail()).getByRole('button', { name })
 
+  // FR-132 AC-136 AC-140: the export panel belongs to the chosen Job and sends that Job's ids and name
+  it('exports the chosen Job: the panel follows the selection and sends that Job', async () => {
+    const exportService = { export: vi.fn(() => Promise.resolve({ status: 'completed', destinationReason: null, savedCount: 0, files: [], failures: [] } as const)), dispose: vi.fn() }
+    render({ versions: [newer, older], exportService, exportBrowseService: null })
+    const send = async (folder: string) => {
+      const input = within(container).getByLabelText<HTMLInputElement>('書き出し先のフォルダー')
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, folder)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await act(async () => { within(container).getByRole('button', { name: '書き出し' }).click(); await Promise.resolve() })
+    }
+
+    await send('D:\\out')
+    expect(exportService.export).toHaveBeenLastCalledWith({ projectId, executionId: newer.executionId, destination: 'D:\\out', jobName: 'Job 2' })
+
+    await act(async () => { railButton(/Job 1/).click() })
+    await send('D:\\out')
+    expect(exportService.export).toHaveBeenLastCalledWith({ projectId, executionId: older.executionId, destination: 'D:\\out', jobName: 'Job 1' })
+  })
+
   // FR-063 AC-038.1
   it('lists the Jobs newest first and shows the current Job results until another Job is chosen', () => {
     render({ versions: [newer, older] })

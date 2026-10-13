@@ -18,7 +18,7 @@
     "commands": [
       {
         "name": "toolkit-unit",
-        "run": "python -m pytest -q tests/toolkit/test_clean_work.py"
+        "run": "python -m pytest -q tests/toolkit/test_clean_work.py tests/toolkit/test_workspace_guide.py"
       }
     ]
   },

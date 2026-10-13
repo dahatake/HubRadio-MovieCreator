@@ -20,7 +20,7 @@
     "AC-010": "sha256:0e3708700e854c57",
     "AC-017": "sha256:6c185dcb0421da0d",
     "AC-030": "sha256:3665cd6a454d2172",
-    "AC-036": "sha256:b040e10447e16512",
+    "AC-036": "sha256:2ea58370006ce728",
     "AC-038": "sha256:3fe425010251d63b",
     "AC-007": "sha256:e22de15606a02ea8",
     "AC-127": "sha256:93015e5799090451",
@@ -209,10 +209,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-132-export.ps1",
       "canary": false,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "fail",
+      "last_commit": "1195ff2",
+      "last_run_at": "2026-10-13T22:39:32+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-006-202610132229.log",
       "history": [
         {
           "at": "2026-10-13T05:43:44+09:00",
@@ -234,10 +234,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-132-export.ps1",
       "canary": false,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "fail",
+      "last_commit": "1195ff2",
+      "last_run_at": "2026-10-13T22:39:32+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-007-202610132236.log",
       "history": [
         {
           "at": "2026-10-13T05:43:46+09:00",
@@ -290,10 +290,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-133-project-folder-name.ps1",
       "canary": true,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "fail",
+      "last_commit": "1195ff2",
+      "last_run_at": "2026-10-13T22:39:32+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-009-202610132219.log",
       "history": [
         {
           "at": "2026-10-13T05:43:51+09:00",
@@ -565,10 +565,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-036",
       "canary": false,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "fail",
+      "last_commit": "1195ff2",
+      "last_run_at": "2026-10-13T22:39:32+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-020-202610132223.log",
       "history": [
         {
           "at": "2026-10-13T07:45:40+09:00",
