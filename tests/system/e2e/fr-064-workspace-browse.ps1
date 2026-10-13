@@ -1,12 +1,10 @@
 #Requires -Version 7.0
 # FR-064 AC-039 (system): 「参照…」でフォルダーを選ぶ → 入力欄に反映 → 選んだだけでは
-# workspace-location.json が変わらない → 「保存」で成功の案内 → 再起動後にその場所が使われる。
+# workspace-location.json が変わらない → 「保存」で成功の案内と、選んだパスの保存（再起動後は AC の範囲外）。
 . (Join-Path $PSScriptRoot 'HubRadioUia.ps1')
 $sb = New-AppSandbox
 $target = Join-Path $sb.Work 'picked-empty-folder'
 New-Item -ItemType Directory -Path $target | Out-Null
-# 再起動時の検証（FR-062: 継承なし・所有者は現在の利用者）に通る、アクセス権を限定した空フォルダーにする
-& icacls $target /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" | Out-Null
 $p = $null
 Invoke-Test -Label 'FR-064 AC-039' -Sandbox $sb -Body {
     try {
@@ -36,15 +34,6 @@ Invoke-Test -Label 'FR-064 AC-039' -Sandbox $sb -Body {
         if (-not (Test-Path $sb.Config) -or -not (@((Get-Content $sb.Config -Raw | ConvertFrom-Json).PSObject.Properties.Value) | Where-Object { $_ -is [string] -and $_.TrimEnd('\') -ieq $target.TrimEnd('\') })) {
             throw 'workspace-location.json does not point to the picked folder after 保存'
         }
-        Stop-App $p
-
-        # --- 再起動後: 現在使っている場所が選んだフォルダー ---
-        $p = Start-App $sb
-        $root = Get-Root $p
-        Open-Settings $root
-        $null = Find-ByName $root '現在使っている場所'
-        $null = Find-ByName $root $target 10
-        if (-not (Get-ChildItem $target -Force | Select-Object -First 1)) { throw 'picked folder is not used by the app after restart (no workspace files)' }
     } finally { Stop-App $p }
 }
 

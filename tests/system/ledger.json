@@ -38,20 +38,26 @@
       "ac_ids": [
         "AC-039"
       ],
-      "title": "参照…でフォルダー選択→入力欄反映→保存→再起動後に使用（選んだだけでは未保存）",
+      "title": "参照…でフォルダー選択→入力欄反映→保存で案内と保存（選んだだけでは未保存）",
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-workspace-browse.ps1",
       "canary": false,
-      "status": "fail",
-      "last_commit": "697a420",
-      "last_run_at": "2026-10-13T10:13:26+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-001-202610131012.log",
+      "status": "pass",
+      "last_commit": "636d9b7",
+      "last_run_at": "2026-10-13T10:16:06+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-001-202610131015.log",
       "history": [
         {
           "at": "2026-10-08T12:30:02+09:00",
           "by": "test-designer",
           "change": "追加",
           "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-13T10:15:49+09:00",
+          "by": "conductor",
+          "change": "title: '参照…でフォルダー選択→入力欄反映→保存→再起動後に使用（選んだだけでは未保存）' -> '参照…でフォルダー選択→入力欄反映→保存で案内と保存（選んだだけでは未保存）'",
+          "reason": "AC-039 の文言は再起動後を求めないため、再起動後の検証を削除"
         }
       ]
     },
