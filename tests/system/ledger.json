@@ -38,20 +38,26 @@
       "ac_ids": [
         "AC-039"
       ],
-      "title": "参照…でフォルダー選択→入力欄反映→保存→再起動後に使用（選んだだけでは未保存）",
+      "title": "参照…でフォルダー選択→入力欄反映→保存で案内と保存（選んだだけでは未保存）",
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-workspace-browse.ps1",
       "canary": false,
-      "status": "fail",
-      "last_commit": "36dfdad",
-      "last_run_at": "2026-10-13T08:27:11+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-001-202610130826.log",
+      "status": "pass",
+      "last_commit": "636d9b7",
+      "last_run_at": "2026-10-13T10:16:06+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-001-202610131015.log",
       "history": [
         {
           "at": "2026-10-08T12:30:02+09:00",
           "by": "test-designer",
           "change": "追加",
           "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-13T10:15:49+09:00",
+          "by": "conductor",
+          "change": "title: '参照…でフォルダー選択→入力欄反映→保存→再起動後に使用（選んだだけでは未保存）' -> '参照…でフォルダー選択→入力欄反映→保存で案内と保存（選んだだけでは未保存）'",
+          "reason": "AC-039 の文言は再起動後を求めないため、再起動後の検証を削除"
         }
       ]
     },
@@ -67,10 +73,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-browse-cancel.ps1",
       "canary": false,
-      "status": "fail",
-      "last_commit": "d2302a7",
-      "last_run_at": "2026-10-13T08:10:43+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-002-202610130809.log",
+      "status": "pass",
+      "last_commit": "697a420",
+      "last_run_at": "2026-10-13T10:12:10+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-002-202610131011.log",
       "history": [
         {
           "at": "2026-10-13T05:43:34+09:00",
@@ -92,10 +98,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-browse-cancel.ps1",
       "canary": false,
-      "status": "fail",
-      "last_commit": "d2302a7",
-      "last_run_at": "2026-10-13T08:10:43+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-003-202610130810.log",
+      "status": "pass",
+      "last_commit": "80d21ea",
+      "last_run_at": "2026-10-13T11:07:42+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-003-202610131106.log",
       "history": [
         {
           "at": "2026-10-13T05:43:37+09:00",
@@ -148,16 +154,46 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-131-job-thumbnails.ps1",
       "canary": false,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "blocked",
+      "last_commit": "ed7a609",
+      "last_run_at": "2026-10-13T18:07:15+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/E2E-005-202610131806.log",
       "history": [
         {
           "at": "2026-10-13T05:43:42+09:00",
           "by": "test-designer",
           "change": "追加",
           "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-13T11:26:27+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "検証レベルを integration に変更。実機確認は MT-001（ペイロード同梱ビルドで実行）。環境不足で実行不可"
+        },
+        {
+          "at": "2026-10-13T11:50:52+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "検証レベルを integration に変更（db3ffea）。System Test の対象外のため止める。実機確認は MT-001（ペイロード同梱ビルドで実行）"
+        },
+        {
+          "at": "2026-10-13T14:38:55+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-132 の検証レベルが integration に変更され System Test の対象外（CHK-10）。AC は IT 側で確認する。E2E は削除せず保持"
+        },
+        {
+          "at": "2026-10-13T14:41:07+09:00",
+          "by": "test-designer",
+          "change": "status -> not_run",
+          "reason": "blocked 解除: AC-132 は system"
+        },
+        {
+          "at": "2026-10-13T18:11:17+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-132 は integration。配布パッケージ（ポータブル版）がなく Job が完了しないため system では実行不可。実機確認は MT-001"
         }
       ]
     },
@@ -750,6 +786,31 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。結合テストで確認するため台帳では止める"
+        }
+      ]
+    },
+    {
+      "id": "IT-004",
+      "requirement_ids": [
+        "FR-064"
+      ],
+      "ac_ids": [
+        "AC-041"
+      ],
+      "title": "権限なし利用者の参照…は forbidden（ダイアログ未起動・例外文/SID/選択外情報なし）。既存の契約/統合テストで充足",
+      "layer": "contract",
+      "command": "dotnet test tests/HubRadio.App.Tests/HubRadio.App.Tests.csproj --filter FullyQualifiedName~FR064_AC041 -p:Platform=x64",
+      "canary": false,
+      "status": "pass",
+      "last_commit": "bd922e2",
+      "last_run_at": "2026-10-13T10:59:52+09:00",
+      "evidence": "work/runs/202610130500/logs/system-test/IT-004-202610131055.log",
+      "history": [
+        {
+          "at": "2026-10-13T10:54:47+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
         }
       ]
     }

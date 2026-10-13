@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # System Test 共通部品（UI Automation）。期待値は持たない。各 .ps1 から dot-source する。
 # アプリの配布フォルダーを一時領域にコピーして実行し、実利用者の設定には触れない。
 # 環境変数 HUBRADIO_APP_PATH で HubRadio.App.exe を指定できる（既定は Release ビルドの出力）。
@@ -22,23 +22,85 @@ function New-AppSandbox {
     $appCopy = Join-Path $work 'app'
     New-Item -ItemType Directory -Path $appCopy | Out-Null
     Copy-Item -Path (Join-Path (Split-Path -Parent $appPath) '*') -Destination $appCopy -Recurse -Force
+    # 配布形（portable）は設定をアプリのフォルダーに、通常ビルドは利用者の %LOCALAPPDATA%\HubRadio.MovieCreator に置く。
+    # 後者は実利用者の設定なので、実行前の内容を退避して終了時に必ず戻す（Remove-AppSandbox）。
+    # アプリは常に %LOCALAPPDATA%\HubRadio.MovieCreator の workspace-location.json を読む（MainWindow.xaml.cs: applicationDataDirectory）。
+    # WebView2Runtime の有無で場所を変えると、実利用者の Workspace を使ってしまう。
+    $portable = $false
+    $cfg = if ($portable) { Join-Path $appCopy 'workspace-location.json' } else { Join-Path $env:LOCALAPPDATA 'HubRadio.MovieCreator\workspace-location.json' }
+    $saved = if (-not $portable -and (Test-Path -LiteralPath $cfg)) { [IO.File]::ReadAllBytes($cfg) } else { $null }
+    if (-not $portable) {
+        # 実利用者の Workspace（既存の Project）を汚さないよう、実行中だけ Workspace を一時領域へ向ける（終了時に設定を元に戻す）
+        New-Item -ItemType Directory -Path (Split-Path -Parent $cfg) -Force | Out-Null
+        [IO.File]::WriteAllText($cfg, (@{ version = 1; path = (Join-Path $work 'workspace') } | ConvertTo-Json -Compress))
+    }
     [pscustomobject]@{
         Work = $work; AppDir = $appCopy
         Exe = (Join-Path $appCopy (Split-Path -Leaf $appPath))
-        Config = (Join-Path $appCopy 'workspace-location.json')
+        Config = $cfg; Portable = $portable; SavedConfig = $saved
     }
 }
-function Remove-AppSandbox($sb) { if ($sb) { Remove-Item -LiteralPath $sb.Work -Recurse -Force -ErrorAction SilentlyContinue } }
+function Remove-AppSandbox($sb) {
+    if (-not $sb) { return }
+    if (-not $sb.Portable) {
+        if ($null -ne $sb.SavedConfig) { [IO.File]::WriteAllBytes($sb.Config, $sb.SavedConfig) }
+        elseif (Test-Path -LiteralPath $sb.Config) { Remove-Item -LiteralPath $sb.Config -Force -ErrorAction SilentlyContinue }
+    }
+    Remove-Item -LiteralPath $sb.Work -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 function Start-App($sb) {
     $p = [Diagnostics.Process]::Start([Diagnostics.ProcessStartInfo]@{ FileName = $sb.Exe; WorkingDirectory = $sb.AppDir; UseShellExecute = $false })
     $sw = [Diagnostics.Stopwatch]::StartNew()
     while ($p.MainWindowHandle -eq [IntPtr]::Zero -and -not $p.HasExited -and $sw.Elapsed.TotalSeconds -lt 30) { Start-Sleep -Milliseconds 200; $p.Refresh() }
     if ($p.HasExited) { throw "app exited: $($p.ExitCode)" }
+    # 配布形の起動は、同梱のモデルの確認などで 2 分近くかかることがある。画面（設定ボタン）が現れるまで待つ
+    $root = Get-Root $p
+    while (-not (Test-ByName $root '設定' 2) -and -not $p.HasExited -and $sw.Elapsed.TotalSeconds -lt 360) { }
+    if ($p.HasExited) { throw "app exited: $($p.ExitCode)" }
+    $script:AppProc = $p
     $p
 }
 function Stop-App($p) { if ($p -and -not $p.HasExited) { $null = $p.CloseMainWindow(); if (-not $p.WaitForExit(10000)) { $p.Kill($true) } } }
-function Get-Root($p) { $script:UIA::FromHandle($p.MainWindowHandle) }
+# WinUI3+WebView2 では画面の中身が MainWindowHandle の子孫ではなく、UIA のデスクトップ直下の別のトップレベル要素
+# （起動プロセスまたは子孫プロセスに属する）にある。探索の範囲は「起動したアプリのプロセスと子孫プロセスに属する UIA 要素の集合」とする。
+function Get-AppPids($p) {
+    $all = @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId)
+    $set = [System.Collections.Generic.HashSet[int]]::new()
+    [void]$set.Add([int]$p.Id)
+    do {
+        $added = $false
+        foreach ($x in $all) { if ($set.Contains([int]$x.ParentProcessId) -and $set.Add([int]$x.ProcessId)) { $added = $true } }
+    } while ($added)
+    , $set
+}
+function Get-AppTopLevels($scope) {
+    $pids = Get-AppPids $scope.Process
+    foreach ($t in $script:UIA::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)) {
+        if ($pids.Contains([int]$t.Current.ProcessId)) { $t }
+    }
+}
+function Get-Root($p) {
+    $o = [pscustomobject]@{ Process = $p }
+    $o | Add-Member -MemberType ScriptMethod -Name FindFirst -Value {
+        param($scope, $cond)
+        foreach ($t in (Get-AppTopLevels $this)) {
+            if ($cond.Equals([System.Windows.Automation.Condition]::TrueCondition) -or $t.FindFirst([System.Windows.Automation.TreeScope]::Element, $cond)) { return $t }
+            $e = $t.FindFirst($script:Desc, $cond); if ($e) { return $e }
+        }
+        $null
+    }
+    $o | Add-Member -MemberType ScriptMethod -Name FindAll -Value {
+        param($scope, $cond)
+        $r = [System.Collections.Generic.List[object]]::new()
+        foreach ($t in (Get-AppTopLevels $this)) {
+            $r.Add($t)
+            foreach ($e in $t.FindAll($script:Desc, $cond)) { $r.Add($e) }
+        }
+        , $r.ToArray()
+    }
+    $o
+}
 
 function Find-ByName($root, [string]$name, [int]$timeoutSec = 20) {
     $cond = [System.Windows.Automation.PropertyCondition]::new($script:UIA::NameProperty, $name)
@@ -57,33 +119,142 @@ function Find-AllByNameLike($root, [string]$regex) {
     $all = $root.FindAll($script:Desc, [System.Windows.Automation.Condition]::TrueCondition)
     foreach ($e in $all) { if ($e.Current.Name -match $regex) { $e } }
 }
+function Get-OwnerWindowHandle($e) {
+    $w = [System.Windows.Automation.TreeWalker]::ControlViewWalker
+    $x = $e
+    while ($x) {
+        $h = $x.Current.NativeWindowHandle
+        if ($h -ne 0 -and $x.Current.ControlType -eq [System.Windows.Automation.ControlType]::Window) { return $h }
+        $x = $w.GetParent($x)
+    }
+    if ($script:AppProc) { return $script:AppProc.MainWindowHandle }
+    0
+}
+# 押す手段を順に試す: Invoke → SelectionItem.Select → ExpandCollapse.Expand → Toggle → 要素の中心をクリック → 最後の手段として SetFocus+Space
+function Find-EditByName($root, [string]$name, [int]$timeoutSec = 20) {
+    # 同じ名前のラベル（Text）と入力欄（Edit）があるため、入力欄だけを探す
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $e = Find-AllByNameLike $root ('^' + [regex]::Escape($name) + '$') | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Edit } | Select-Object -First 1
+        if ($e) { return $e }
+        Start-Sleep -Milliseconds 300
+    } while ($sw.Elapsed.TotalSeconds -lt $timeoutSec)
+    throw "Edit not found: '$name'"
+}
 function Invoke-Element($e) {
-    try { $e.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() }
-    catch { $e.SetFocus(); [System.Windows.Forms.SendKeys]::SendWait(' ') }
+    try { $e.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); return } catch {}
+    try { $e.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select(); return } catch {}
+    try { $e.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand(); return } catch {}
+    try { $e.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle(); return } catch {}
+    try {
+        $rc = $e.Current.BoundingRectangle
+        if ($rc.Width -gt 0 -and $rc.Height -gt 0) { Click-Element $e (Get-OwnerWindowHandle $e); return }
+    } catch {}
+    $e.SetFocus(); [System.Windows.Forms.SendKeys]::SendWait(' ')
 }
 function Get-Value($e) { $e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value }
 function Set-Value($e, [string]$v) { $e.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($v) }
 function Find-Dialog($root, [int]$timeoutSec = 20) {
-    $cond = [System.Windows.Automation.PropertyCondition]::new($script:UIA::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)
+    $winCond = [System.Windows.Automation.PropertyCondition]::new($script:UIA::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)
+    $main = [int]$root.Process.MainWindowHandle
     $sw = [Diagnostics.Stopwatch]::StartNew()
     do {
-        $d = $root.FindFirst($script:Desc, $cond)
-        if ($d) { return $d }
+        foreach ($t in (Get-AppTopLevels $root)) {
+            $cands = @()
+            if ($t.Current.ControlType -eq [System.Windows.Automation.ControlType]::Window) { $cands += $t }
+            $cands += @($t.FindAll($script:Desc, $winCond))
+            foreach ($c in $cands) {
+                if ($c.Current.NativeWindowHandle -eq $main) { continue }
+                if ($c.Current.Name -like 'Hubらじお Movie Creator*') { continue }
+                return $c
+            }
+        }
+        # 同一プロセスのデスクトップ直下の「開く」ウィンドウ（#32770 または名前が 開く/Open）も探す
+        $pids = Get-AppPids $root.Process
+        foreach ($t in $script:UIA::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $winCond)) {
+            if ($pids.Contains([int]$t.Current.ProcessId) -and $t.Current.NativeWindowHandle -ne $main -and ($t.Current.ClassName -eq '#32770' -or $t.Current.Name -in '開く', 'Open', 'フォルダーの選択')) { return $t }
+        }
+        # 別プロセス（ブローカー）が持つ「開く」ウィンドウ: 名前が 開く/Open で、アプリ起動後に現れたもの
+        foreach ($t in $script:UIA::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $winCond)) {
+            if ($t.Current.Name -in '開く', 'Open') { return $t }
+        }
         Start-Sleep -Milliseconds 200
     } while ($sw.Elapsed.TotalSeconds -lt $timeoutSec)
     $null
 }
-function Set-DialogFolder($dlg, [string]$path) {
-    $edit = $dlg.FindFirst($script:Desc, [System.Windows.Automation.PropertyCondition]::new($script:UIA::ControlTypeProperty, [System.Windows.Automation.ControlType]::Edit))
-    Set-Value $edit $path
-    Invoke-Element (Find-ByName $dlg 'フォルダーの選択')
+Add-Type -Namespace HubRadioSt -Name Win32 -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(System.IntPtr h, int n); [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern void keybd_event(byte b, byte s, int f, int e); [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e);' -ErrorAction SilentlyContinue
+function Set-Foreground([IntPtr]$h) {
+    $null = [HubRadioSt.Win32]::ShowWindow($h, 5)
+    for ($i = 0; $i -lt 15; $i++) {
+        [HubRadioSt.Win32]::keybd_event(0x12, 0, 0, 0); [HubRadioSt.Win32]::keybd_event(0x12, 0, 2, 0)   # Alt を押して前面化の制限を外す
+        $null = [HubRadioSt.Win32]::SetForegroundWindow($h)
+        Start-Sleep -Milliseconds 300
+        if ([HubRadioSt.Win32]::GetForegroundWindow() -eq $h) { break }
+    }
+    Start-Sleep -Milliseconds 300
 }
-function Open-Settings($root) { Invoke-Element (Find-ByName $root '設定') }
+function Set-DialogForeground($dlg) { Set-Foreground ([IntPtr]$dlg.Current.NativeWindowHandle) }
+# アプリのウィンドウを前面にし、要素を実際にマウスでクリックして本物のキーボードフォーカスを与える
+function Focus-ByClick($p, $e) {
+    Set-Foreground $p.MainWindowHandle
+    $rc = $e.Current.BoundingRectangle
+    $null = [HubRadioSt.Win32]::SetCursorPos([int]($rc.X + $rc.Width / 2), [int]($rc.Y + $rc.Height / 2))
+    [HubRadioSt.Win32]::mouse_event(2, 0, 0, 0, 0); [HubRadioSt.Win32]::mouse_event(4, 0, 0, 0, 0)
+    Start-Sleep -Milliseconds 600
+}
+function ConvertTo-SendKeysText([string]$s) { [regex]::Replace($s, '[+^%~(){}\[\]]', '{$0}') }
+function Click-Element($e, $hwnd) {
+    if ($hwnd) { Set-Foreground ([IntPtr]$hwnd) }
+    $rc = $e.Current.BoundingRectangle
+    $null = [HubRadioSt.Win32]::SetCursorPos([int]($rc.X + $rc.Width / 2), [int]($rc.Y + $rc.Height / 2))
+    [HubRadioSt.Win32]::mouse_event(2, 0, 0, 0, 0); [HubRadioSt.Win32]::mouse_event(4, 0, 0, 0, 0)
+}
+# ダイアログ要素の「キャンセル」を UIA で押す（InvokePattern が無ければその位置をクリック）
+function Close-DialogByEsc($dlg, $root) {
+    $c = Find-ByName $dlg 'キャンセル' 5
+    try { $c.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() }
+    catch { Click-Element $c $dlg.Current.NativeWindowHandle }
+}
+function Set-DialogFolder($dlg, [string]$path) {
+    # OS のフォルダー選択ダイアログ: 前面にして、フォルダー名の欄（既定のフォーカス）へ入力し、「フォルダーの選択」を押す
+    Set-DialogForeground $dlg
+    [System.Windows.Forms.SendKeys]::SendWait('%f')
+    [System.Windows.Forms.SendKeys]::SendWait('^a')
+    [System.Windows.Forms.SendKeys]::SendWait((ConvertTo-SendKeysText $path))
+    Start-Sleep -Milliseconds 300
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')   # 入力した場所へ移動する
+    Start-Sleep -Milliseconds 1200
+    # 欄を空にして Enter（＝表示中のフォルダーを選択）。応答しない場合は「フォルダーの選択」を押す
+    [System.Windows.Forms.SendKeys]::SendWait('%f')
+    [System.Windows.Forms.SendKeys]::SendWait('^a{DEL}')
+    [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+}
+function Open-Settings($root) {
+    # 画面の準備前の押下は無視されることがあるため、設定画面の項目が現れるまで押し直す
+    for ($i = 0; $i -lt 5; $i++) {
+        Invoke-Element (Find-ByName $root '設定')
+        if (Test-ByName $root 'Workspaceフォルダーの場所' 6) { return }
+    }
+}
 function Get-FileHashOrAbsent([string]$path) { if (Test-Path -LiteralPath $path) { (Get-FileHash -LiteralPath $path).Hash } else { 'absent' } }
 
+# 診断: 失敗時に見えていた UIA 要素（Button/Edit/ListItem）を列挙する
+function Write-UiaDiag {
+    try {
+        if ($script:AppProc -and -not $script:AppProc.HasExited) {
+            $r = Get-Root $script:AppProc
+            $ct = [System.Windows.Automation.ControlType]
+            $vis = @($r.FindAll($script:Desc, [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.ControlType -in $ct::Button, $ct::Edit, $ct::ListItem } | ForEach-Object { "$($_.Current.ControlType.ProgrammaticName.Replace('ControlType.',''))|$($_.Current.Name)|en=$($_.Current.IsEnabled)|off=$($_.Current.IsOffscreen)" })
+            Write-Host "DIAG-UIA: $($vis.Count) elements"; $vis | ForEach-Object { Write-Host "DIAG-UIA: $_" }
+        } else { Write-Host 'DIAG-UIA: app not running' }
+    } catch { Write-Host "DIAG-UIA failed: $_" }
+}
 function Invoke-Test([scriptblock]$Body, [string]$Label, $Sandbox) {
     $failed = $null
-    try { & $Body } catch { $failed = $_ }
+    try { & $Body } catch {
+        $failed = $_
+        Write-UiaDiag   # アプリがまだ生きていれば（Body 内で Stop-App 済みでなければ）列挙する
+    }
     finally { Remove-AppSandbox $Sandbox }
     if ($failed) { Write-Error "$Label failed: $failed"; exit 1 }
     Write-Host "$Label passed"; exit 0
@@ -92,19 +263,137 @@ function Invoke-Test([scriptblock]$Body, [string]$Label, $Sandbox) {
 # --- Job 成果物つき Project の作成（実際の操作で作る。合成した 2 秒の動画を元素材にする） ---
 function New-SyntheticVideo($sb, [string]$dir) {
     $ff = Join-Path $sb.AppDir 'Tools\ffmpeg.exe'
-    if (-not (Test-Path $ff)) { throw 'Tools\ffmpeg.exe not found in app folder' }
+    if (-not (Test-Path $ff)) {
+        # 開発ビルドには同梱されない。テスト用の合成動画の作成だけに PATH 上の ffmpeg を使う（アプリの動作には使わない）
+        $cmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
+        if (-not $cmd) { throw 'ffmpeg not found (Tools\ffmpeg.exe in app folder or ffmpeg on PATH)' }
+        $ff = $cmd.Source
+    }
     $out = Join-Path $dir 'source.mp4'
     & $ff -y -f lavfi -i 'testsrc=size=1920x1080:rate=30:duration=3' -f lavfi -i 'sine=frequency=440:duration=3' -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest $out 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        # libx264 の無い ffmpeg 向け（合成動画の作成だけの代替）
+        & $ff -y -f lavfi -i 'testsrc=size=1920x1080:rate=30:duration=3' -f lavfi -i 'sine=frequency=440:duration=3' -c:v mpeg4 -pix_fmt yuv420p -c:a aac -shortest $out 2>$null
+    }
     if ($LASTEXITCODE -ne 0) { throw 'ffmpeg failed to create synthetic video' }
     $out
 }
 function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jobCount, [string]$videoPath) {
-    Invoke-Element (Find-ByName $root '新規作成')
-    Set-Value (Find-ByName $root 'Project名') $projectName
-    Set-Value (Find-ByName $root '元動画のパス') $videoPath
-    Invoke-Element (Find-ByName $root '編集を開始')
-    for ($i = 1; $i -le $jobCount; $i++) {
-        Invoke-Element (Find-ByName $root 'Jobを作成')
-        $null = Find-ByName $root '完了' 600
+    # 「新しいProjectを作成」は OS の「開く」ダイアログで動画を 1 本選ぶ。選ぶとそのまま「かんたん編集」の画面になる。
+    $create = Find-ByName $root '新しいProjectを作成'
+    $sw0 = [Diagnostics.Stopwatch]::StartNew()
+    while (-not $create.Current.IsEnabled -and $sw0.Elapsed.TotalSeconds -lt 60) { Start-Sleep -Milliseconds 500; $create = Find-ByName $root '新しいProjectを作成' }
+    Invoke-Element $create
+    $dlg = Find-Dialog $root 25
+    if (-not $dlg) {
+        # 押下が画面の準備前で無視された場合に備え、ボタンが有効なら 1 回だけ押し直す
+        $create = Find-ByName $root '新しいProjectを作成'
+        if ($create.Current.IsEnabled) { Invoke-Element $create }
+        $dlg = Find-Dialog $root 40
     }
+    if (-not $dlg) {
+        $tops = (Get-AppTopLevels $root) | ForEach-Object { "[$($_.Current.ControlType.ProgrammaticName)|$($_.Current.ClassName)|$($_.Current.Name)|h=$($_.Current.NativeWindowHandle)]" }
+        $wins = (Get-AppTopLevels $root) | ForEach-Object { $_.FindAll($script:Desc, [System.Windows.Automation.PropertyCondition]::new($script:UIA::ControlTypeProperty, [System.Windows.Automation.ControlType]::Window)) } | ForEach-Object { "[$($_.Current.ClassName)|$($_.Current.Name)|h=$($_.Current.NativeWindowHandle)]" }
+        $dw = $script:UIA::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object { "[$($_.Current.ClassName)|$($_.Current.Name)|pid=$($_.Current.ProcessId)]" }
+        Write-Host "DIAG desktop: $($dw -join ' ') apppids=$((Get-AppPids $root.Process) -join ',')"
+        Write-Host "DIAG tops: $($tops -join ' ') windows: $($wins -join ' ') main=$($root.Process.MainWindowHandle)"
+        $seen = (Find-AllByNameLike $root '.') | ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Select-Object -First 25
+        throw "file dialog did not open after pressing 新しいProjectを作成 (enabled=$($create.Current.IsEnabled)). Visible: $($seen -join ' / ')"
+    }
+    Set-DialogForeground $dlg
+    # ファイル名の欄へ ValuePattern で入力し「開く」を Invoke する。不可なら SendKeys に切り替える
+    $done = $false
+    try {
+        # 「開く」ダイアログのファイル名欄（id 1148）は UIA では Pane。Win32 で ComboBox→Edit を辿り WM_SETTEXT で入力し、「開く」(id 1) を BM_CLICK する
+        if (-not ('HubRadioSt.Dlg' -as [type])) {
+            Add-Type -Namespace HubRadioSt -Name Dlg -MemberDefinition '[DllImport("user32.dll")] public static extern System.IntPtr GetDlgItem(System.IntPtr h, int id); [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern System.IntPtr FindWindowEx(System.IntPtr p, System.IntPtr a, string cls, string title); [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern System.IntPtr SendMessage(System.IntPtr h, int m, System.IntPtr w, string l); [DllImport("user32.dll")] public static extern System.IntPtr SendMessage(System.IntPtr h, int m, System.IntPtr w, System.IntPtr l);'
+        }
+        $h = [IntPtr]$dlg.Current.NativeWindowHandle
+        $fnH = [HubRadioSt.Dlg]::GetDlgItem($h, 1148)
+        $edit = [IntPtr]::Zero
+        if ($fnH -ne [IntPtr]::Zero) {
+            $cb = [HubRadioSt.Dlg]::FindWindowEx($fnH, [IntPtr]::Zero, 'ComboBox', $null)
+            $edit = if ($cb -ne [IntPtr]::Zero) { [HubRadioSt.Dlg]::FindWindowEx($cb, [IntPtr]::Zero, 'Edit', $null) } else { [HubRadioSt.Dlg]::FindWindowEx($fnH, [IntPtr]::Zero, 'Edit', $null) }
+        }
+        $okH = [HubRadioSt.Dlg]::GetDlgItem($h, 1)
+        if ($edit -ne [IntPtr]::Zero -and $okH -ne [IntPtr]::Zero) {
+            $null = [HubRadioSt.Dlg]::SendMessage($edit, 0x0C, [IntPtr]::Zero, $videoPath)
+            Start-Sleep -Milliseconds 400
+            $null = [HubRadioSt.Dlg]::SendMessage($okH, 0xF5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $done = $true
+        } else { Write-Host "DIAG: win32 edit not found (1148=$fnH edit=$edit ok=$okH)" }
+        $idc = { param($id) [System.Windows.Automation.PropertyCondition]::new($script:UIA::AutomationIdProperty, $id) }
+        $set = $false
+        foreach ($fn in @(if ($done) { } else { $dlg.FindAll($script:Desc, (& $idc '1148')) })) {
+            try { Set-Value $fn $videoPath; if ((Get-Value $fn) -eq $videoPath) { $set = $true; break } } catch {}
+        }
+        if ($set) {
+            Start-Sleep -Milliseconds 400
+            $ob = $dlg.FindFirst($script:Desc, (& $idc '1'))
+            if ($ob) {
+                try { $ob.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke() } catch { Click-Element $ob $dlg.Current.NativeWindowHandle }
+                $done = $true
+            }
+        } else { Write-Host 'DIAG: no 1148 element accepted ValuePattern' }
+    } catch { Write-Host "DIAG value-input failed: $_" }
+    if (-not $done) {
+        Set-DialogForeground $dlg
+        [System.Windows.Forms.SendKeys]::SendWait('%n')
+        [System.Windows.Forms.SendKeys]::SendWait('^a')
+        [System.Windows.Forms.SendKeys]::SendWait((ConvertTo-SendKeysText $videoPath))
+        Start-Sleep -Milliseconds 400
+        [System.Windows.Forms.SendKeys]::SendWait('{ENTER}')
+    }
+    try { $nameBox = Find-EditByName $root 'Project名（この画面と一覧に表示される名前）' 120 }
+    catch {
+        $seen = (Find-AllByNameLike $root '.') | ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Select-Object -First 25
+        $od = Find-Dialog $root 2; if ($od) { Write-Host "DIAG dialog still open: [$($od.Current.ClassName)|$($od.Current.Name)]" }
+        $tl = (Get-AppTopLevels $root) | ForEach-Object { "[$($_.Current.ClassName)|$($_.Current.Name)|enabled=$($_.Current.IsEnabled)]" }; Write-Host "DIAG tops: $($tl -join ' ')"
+        throw "Project name field did not appear after choosing the video. Visible: $($seen -join ' / ')"
+    }
+    Set-Value $nameBox $projectName
+    Invoke-Element (Find-ByName $root 'Project名を保存')
+    # 最初の Job は「編集を開始」で作られる。完了は、その Job のサムネイルの名前（… 完了）で判定する
+    Invoke-Element (Find-ByName $root '編集を開始')
+    Wait-JobCompleted $root 1
+    # 2 つ目以降は「新しいJobを作成」→ 確認の「作成する」
+    try {
+    for ($i = 2; $i -le $jobCount; $i++) {
+        Invoke-Element (Find-ByName $root '元動画')    # 「新しいJobを作成」は「元動画」の画面にある
+        # 設定を一度確認するまで「新しいJobを作成」は押せない（AC: 「次に作成するJobの設定を開く」→「設定を閉じて戻る」）
+        Invoke-Element (Find-ByName $root '次に作成するJobの設定を開く' 60)
+        Invoke-Element (Find-ByName $root '設定を閉じて戻る' 60)
+        Start-Sleep -Seconds 2
+        # 「新しいJobを作成」は見出し（Text）とボタンが同名。ボタンだけを押す（有効になるまで待つ）
+        $sw2 = [Diagnostics.Stopwatch]::StartNew(); $nb = $null
+        do {
+            $nb = Find-AllByNameLike $root '^新しいJobを作成$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $_.Current.IsEnabled } | Select-Object -First 1
+            if (-not $nb) { Start-Sleep -Milliseconds 500 }
+        } while (-not $nb -and $sw2.Elapsed.TotalSeconds -lt 60)
+        if (-not $nb) { throw "button '新しいJobを作成' not found or disabled" }
+        Invoke-Element $nb
+        Start-Sleep -Seconds 1
+        $cb2 = Find-AllByNameLike $root '^作成する$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button } | Select-Object -First 1
+        if (-not $cb2) { Start-Sleep -Seconds 3; $cb2 = Find-AllByNameLike $root '^作成する$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button } | Select-Object -First 1 }
+        if (-not $cb2) { throw "button '作成する' not found after pressing 新しいJobを作成" }
+        Invoke-Element $cb2
+        Wait-JobCompleted $root $i
+    }
+    } catch { Write-UiaDiag; throw }
 }
+function Wait-JobCompleted($root, [int]$jobNumber, [int]$timeoutSec = 900) {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        if (@(Find-AllByNameLike $root "^サムネイル: Job $jobNumber、.*完了$").Count -gt 0) { return }
+        $failed = @(Find-AllByNameLike $root '操作を完了できませんでした|^サムネイル: Job \d+、.*(失敗|取消)$')
+        if ($failed.Count -gt 0) {
+            $msg = (Find-AllByNameLike $root '編集を開始できません|失敗') | Select-Object -First 1
+            throw "Job $jobNumber did not complete: $($msg.Current.Name)"
+        }
+        Start-Sleep -Seconds 2
+    } while ($sw.Elapsed.TotalSeconds -lt $timeoutSec)
+    throw "Job $jobNumber did not complete within $timeoutSec s"
+}
+
+
+
