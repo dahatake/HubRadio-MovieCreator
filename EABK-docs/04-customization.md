@@ -125,6 +125,7 @@ run の実行中は、hook G-7 がこの表を強制します。値のある役�
 | キー | 既定値 | 意味 |
 |---|---|---|
 | `management_files` | `docs/requirements-definition.md` など | 管理データのパス。既存のディレクトリ構成に合わせて変更できます |
+| `enterprise_data_catalog` | なし（未設定） | 任意。企業データカタログの参照元。`{"source": "<ファイルのパスまたは http(s) の URL>", "name_column": "<名前の列・項目（省略可）>", "format": "auto|csv|json|markdown|html（省略可）"}`。`scripts/entities.py check` / `todo` が読み取りだけで照合します。URL に認証情報を埋め込めません（その場合は「照合不能」）。取得の待ち時間は PARAM-016、揺れ候補の類似度は PARAM-015 です |
 | `base_branch` | `main` | マージ先のブランチ。差分の検査（CHK-12/13）と、push の拒否（G-5）に使います |
 | `work.retention_days` | 14 | `/work/runs/` の保持日数 |
 | `checks.ambiguous_words` | 適切、迅速、直感的 など | 曖昧な語のリスト（CHK-13） |
@@ -150,6 +151,15 @@ run の実行中は、hook G-7 がこの表を強制します。値のある役�
 
 `.github/workflows/ebak-verify.yml` は、pull request と main への push をトリガーに `scripts/verify.sh --show-warnings` を実行します。アプリのビルドに必要なツールチェーン（`actions/setup-node` など）は、verify の前にステップとして追加します。CodeQL や依存関係のスキャンを加える場合も、このワークフローに追記します。
 
+### データ層ワークフロー（ebak-data-layer）
+
+`.github/workflows/ebak-data-layer.yml`（ebak-data-layer）は、プルリクエスト、main への push、手動実行（workflow_dispatch）、週 1 回の定期実行（schedule）で `python scripts/verify.py --docs-only` を実行し、データ層を検査します。
+
+- 不合格のとき、共通の入口 `python scripts/rdfix.py --full --apply` で自動修復して再検査します（インストーラ・手動実行と同じ入口。独自の書き換え手順は持ちません。終了コード 0/1/2 は [05](05-scripts-reference.md)）。インストーラは既定で導入後に同じ入口を 1 回呼び、`--no-repair` で検査と計画だけ（書き込まない）、`--skip-verify` で検査も修復もしません。自動修復で要求定義書は変更しない設計です（`docs/requirements-definition.md` は修復後に元へ戻します）。合格した場合だけ修復を commit します。同一リポジトリのプルリクエストでは当該 PR のブランチへ、main への push と定期実行では修復用ブランチ `eabk/data-layer-fix` へ push して PR を作成します（既にあれば追加しません）。
+- 修復後も直らないときは、ラベル `eabk-data-layer` つきで、失敗の要約と実行へのリンクを含む Issue を作成します。同じ内容の未解決 Issue があれば、コメントを追加します。
+- 権限は contents・pull-requests・issues の write だけです。fork からのプルリクエストでは検査だけを行い、書き込みはしません。bot の修復 commit では再修復しません。
+- 無効化するには、このファイルを削除するか、GitHub の Actions 画面でこのワークフローを Disable します。インストール時に入れたくない場合は `--no-ci` を指定します。
+
 ## 4.9 計算資源とクラウド
 
 **並列度は CPU とメモリに合わせます。**
@@ -159,7 +169,7 @@ run の実行中は、hook G-7 がこの表を強制します。値のある役�
 
 **検査を同時に動かします。**
 - `verify.commands` で、連続する工程に `"parallel": true` を付けると同時に実行します（例: lint・型検査・単体テスト）。build のように前の工程が必要なものには付けません。
-- System Test は、`ledger.py run --jobs N|auto`（または設定の `system_test.jobs`）で同時に実行します。既定は 1 です（ポートや DB を共有するケースがあるため）。ケースに `"serial": true` を付けると、並列の実行が終わってから単独で動きます。canary は常に先に単独で動きます。
+- System Test は、`ledger.py run --jobs N|auto`（または設定の `system_test.jobs`）で同時に実行します。既定は `auto`（CPU 数 ÷ 4、2〜6）です。ケースに `"serial": true` を付ける、または command が `system_test.serial_patterns`（既定は `default_port`）の文字列を含むと、並列の実行が終わってから単独で動きます。同じ command のケースは 1 回だけ実行し、結果を共有します。canary は常に先に単独で動きます。
 
 **Azure は、既定では使いません。** 次の条件が揃ったときだけ、利用者が選びます（実行時のオプションとしては実装していません）。
 1. 手元のマシンが小さい（コア数が 8 未満、またはメモリが 32 GB 未満）。

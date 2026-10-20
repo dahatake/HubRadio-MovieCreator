@@ -33,6 +33,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+sys.dont_write_bytecode = True  # FR-1062: 検証は読み取り専用。利用者のリポジトリに __pycache__ を残さない
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ebaklib as h  # noqa: E402
 
@@ -253,6 +254,9 @@ def main(argv=None) -> int:
             n = 0
         if n:
             print(f"HINT rdfix: データ層の不整合のうち {n} 件は `python scripts/rdfix.py --apply` で自動修正できます（要求定義書は変更しません）")
+        # FR-1046 AC-243: the same two commands on Windows, macOS and Linux (run at the repository root)
+        print("HINT rdfix: 確認だけ `python scripts/rdfix.py --full`、確認と修復 `python scripts/rdfix.py --full --apply`"
+              "（リポジトリのルートで実行します。手動対応は検査項目 ID・位置・担当の役割つきで表示されます）")
     else:
         print("PASS rdcheck (management data)")
     if args.show_warnings:

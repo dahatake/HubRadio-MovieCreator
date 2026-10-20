@@ -19,8 +19,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-TOOLKIT_VERSION = "0.3.0"
-
+TOOLKIT_VERSION = "0.5.1"
+
+
 SPECKIT_PATHS = [".specify/**", "specs/**/*.md"]
 
 DEFAULT_CONFIG: dict = {
@@ -32,10 +33,12 @@ DEFAULT_CONFIG: dict = {
         "run_history": "docs/run-history.md",
         "ledger": "tests/system/ledger.json",
         "manual_tests": "docs/manual-tests.md",
+        "integrations": "docs/integrations.md",
     },
     "base_branch": "main",
     "work": {"dir": "work", "retention_days": 14},
     "verify": {"commands": [], "timeout_sec": 1800},
+    "system_test": {"jobs": "auto", "serial_patterns": ["default_port"]},
     "checks": {
         "ambiguous_words": [
             "適切", "適宜", "なるべく", "できるだけ", "可能な限り", "十分な", "迅速", "高速に", "簡単",
@@ -116,8 +119,36 @@ TOP_BULLET_RE = re.compile(r"^\s{0,1}[-*]\s+(.*)$")
 PARAM_REF_RE = re.compile(r"\{(PARAM-\d{3,})\}")
 
 STATES = ("承認済み", "承認待ち", "保留", "却下", "廃止")
-VERIFICATION_LEVELS = ("system", "integration", "unit", "manual")
-AC_META_KEYS = ("検証レベル", "BLOCKED", "対応する要求", "決定状態")
+
+# メタデータ定義（FR-1058）: 欄名・必須/任意・許容値は scripts/metadata.json が唯一の正本
+METADATA_PATH = Path(__file__).resolve().parent / "metadata.json"
+_METADATA_CACHE: Optional[dict] = None
+
+
+def load_metadata() -> dict:
+    global _METADATA_CACHE
+    if _METADATA_CACHE is None:
+        try:
+            _METADATA_CACHE = json.loads(METADATA_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _METADATA_CACHE = {"requirement_fields": [], "ac_fields": [], "parameters": {}}
+    return _METADATA_CACHE
+
+
+def requirement_field_defs() -> Dict[str, dict]:
+    return {f["name"]: f for f in load_metadata().get("requirement_fields", [])}
+
+
+def required_requirement_fields() -> List[str]:
+    return [f["name"] for f in load_metadata().get("requirement_fields", []) if f.get("required")]
+
+
+def _ac_field(name: str) -> dict:
+    return next((f for f in load_metadata().get("ac_fields", []) if f["name"] == name), {})
+
+
+VERIFICATION_LEVELS = tuple(_ac_field("検証レベル").get("allowed") or ("system", "integration", "unit", "manual"))
+AC_META_KEYS = tuple(f["name"] for f in load_metadata().get("ac_fields", [])) or ("検証レベル", "BLOCKED", "対応する要求", "決定状態")
 AC_TEXT_KEYS = ("内容", "判定条件", "観察できる結果", "起点", "事前条件", "対象")
 ANSWERED_RE = re.compile(r"回答済み|解決済み|取り下げ|クローズ")
 
@@ -136,6 +167,37 @@ def now_iso() -> str:
     return _dt.datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        hp = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not hp:
+            return k32.GetLastError() == 5  # access denied: the process exists
+        code = ctypes.c_ulong()
+        ok = k32.GetExitCodeProcess(hp, ctypes.byref(code))
+        k32.CloseHandle(hp)
+        return bool(ok) and code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def lock_orphaned(path: Path) -> bool:
+    """True when the lock file names a PID that is no longer running (the holder crashed or was killed)."""
+    try:
+        txt = path.read_text().strip()
+    except OSError:
+        return False
+    return txt.isdigit() and not pid_alive(int(txt))
+
+
 def new_run_id() -> str:
     return _dt.datetime.now().strftime("%Y%m%d%H%M")
 
@@ -144,12 +206,81 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8-sig")
 
 
+BOM = b"\xef\xbb\xbf"
+
+
+def _split_keep_eol(body: str) -> List[str]:
+    """Split on LF only, keeping each line's own terminator (CRLF stays CRLF)."""
+    out, start = [], 0
+    while True:
+        i = body.find("\n", start)
+        if i < 0:
+            if start < len(body):
+                out.append(body[start:])
+            return out
+        out.append(body[start:i + 1])
+        start = i + 1
+
+
+def _eol_of(line: str) -> str:
+    return "\r\n" if line.endswith("\r\n") else ("\n" if line.endswith("\n") else "")
+
+
+def render_keep_format(old: Optional[bytes], text: str) -> bytes:
+    """Bytes for `text` (LF-normalised, as read by read_text) written over a file whose current bytes are `old`.
+    NFR-REL-004 AC-252: the BOM and every unchanged line keep their original bytes (CRLF / LF / mixed);
+    changed or new lines take the line ending of the line before them (else the file's majority ending)."""
+    plain = text.encode("utf-8")
+    if not old:
+        return plain
+    bom = old.startswith(BOM)
+    try:
+        old_text = old[len(BOM):].decode("utf-8") if bom else old.decode("utf-8")
+    except UnicodeDecodeError:
+        return plain
+    if not bom and "\r" not in old_text:
+        return plain
+    old_lines = _split_keep_eol(old_text)
+    new_lines = _split_keep_eol(text)
+    crlf = sum(1 for l in old_lines if l.endswith("\r\n"))
+    default = "\r\n" if crlf * 2 > len(old_lines) else "\n"
+    old_keys = [re.sub(r"\r?\n$", "", l) for l in old_lines]
+    new_keys = [re.sub(r"\n$", "", l) for l in new_lines]
+    import difflib
+    out: List[str] = []
+    sm = difflib.SequenceMatcher(None, old_keys, new_keys, autojunk=False)
+    last_eol = default
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            for k in range(i1, i2):
+                out.append(old_lines[k])
+                last_eol = _eol_of(old_lines[k]) or last_eol
+            continue
+        if i1 > 0:
+            last_eol = _eol_of(old_lines[i1 - 1]) or last_eol
+        for k in range(j1, j2):
+            line = new_lines[k]
+            out.append(re.sub(r"\n$", last_eol, line) if line.endswith("\n") else line)
+    for k in range(len(out) - 1):  # a line that lost its terminator in the middle (old last line without one)
+        if not out[k].endswith("\n"):
+            out[k] += last_eol
+    if out and not text.endswith("\n") and out[-1].endswith("\n"):
+        out[-1] = re.sub(r"\r?\n$", "", out[-1])
+    body = "".join(out).encode("utf-8")
+    return (BOM + body) if bom else body
+
+
 def write_text_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        old = path.read_bytes()
+    except OSError:
+        old = None
+    data = render_keep_format(old, text)
     fd, tmp = tempfile.mkstemp(prefix=".tmp-", dir=str(path.parent))
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(text)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
         os.replace(tmp, path)
     except Exception:
         try:
@@ -201,7 +332,24 @@ def run(cmd, cwd: Optional[Path] = None, timeout: Optional[int] = None, shell: b
         return 124, f"{out}\nTIMEOUT after {timeout}s"
 
 
+READ_ONLY_GIT = frozenset({"ls-files", "rev-parse", "merge-base", "diff", "show", "log", "status", "cat-file",
+                           "for-each-ref", "branch", "check-ignore", "describe"})
+
+
+def is_git_repo(root: Path) -> bool:
+    """True when `root` is inside a git working tree (a `.git` directory or file at or above it). No process is started."""
+    if os.environ.get("GIT_DIR"):
+        return True
+    try:
+        start = Path(root).resolve()
+    except OSError:
+        return False
+    return any((p / ".git").exists() for p in [start, *start.parents])
+
+
 def git(args: List[str], cwd: Path) -> Tuple[int, str]:
+    if args and args[0] in READ_ONLY_GIT and not is_git_repo(cwd):
+        return 128, ""  # NFR-REL-004 AC-253: no git process for a directory that is not a repository
     try:
         proc = subprocess.run(
             ["git", *args], cwd=str(cwd), capture_output=True, text=True,
@@ -344,7 +492,10 @@ def tracked_files(root: Path, include_untracked: bool = True) -> List[str]:
             files += [f for f in out2.split("\0") if f]
         return sorted(set(f.replace("\\", "/") for f in files if (root / f).is_file()))
     for p in root.rglob("*"):
-        if p.is_file() and ".git" not in p.parts:
+        rel_parts = p.relative_to(root).parts
+        if rel_parts[0] == "work" or ".git" in rel_parts:  # /work/ is ignored by .gitignore in a repository
+            continue
+        if p.is_file():
             files.append(p.relative_to(root).as_posix())
     return sorted(files)
 
@@ -543,6 +694,11 @@ class Requirement:
     fields: Dict[str, str] = field(default_factory=dict)
     acs: List[str] = field(default_factory=list)
     body: List[str] = field(default_factory=list)
+    field_lines: Dict[str, int] = field(default_factory=dict)
+
+    @property
+    def area(self) -> str:
+        return strip_md(self.fields.get("領域", ""))
 
     @property
     def state_raw(self) -> str:
@@ -763,6 +919,7 @@ def _parse_one(doc: RequirementsDoc, rel: str, lines: List[str]) -> None:
                 cur_ac = None
                 for k, v in parse_fields(content).items():
                     cur_req.fields.setdefault(k, v)
+                    cur_req.field_lines.setdefault(k, idx)
                 cur_req.body.append(content)
             continue
         if cur_req is not None and line.strip():
@@ -952,6 +1109,116 @@ def save_ledger(root: Path, cfg: dict, data: dict) -> None:
 
 
 # --------------------------------------------------------------------------- registry
+
+# --------------------------------------------------------------------------- integration catalog (FR-1035)
+
+INT_ID_RE = re.compile(r"(?<![A-Za-z0-9\-])(INT-\d{3,})(?![0-9])")
+INT_HEADING_RE = re.compile(r"^(#{2,6})\s+\**(INT[-_A-Za-z0-9]*)\**\s*(.*)$")
+# AC-208: fields every item must have (value required)
+INT_REQUIRED = ("連携先", "方向", "方式", "データ分類", "個人情報", "認証認可", "責任分界", "状態", "関連する要求")
+# FR-1038 の 16 観点のうち、必須欄に含まれない欄（値・なし・TBD(Q-xxx) のどれかで埋める）
+INT_PERSPECTIVES = ("頻度と量", "可用性・SLA", "レート制限", "エラー・再試行・冪等性", "契約・バージョン",
+                    "変更通知", "監視", "データ保持", "障害時の代替", "法務・ライセンス")
+INT_OPTIONAL = ("秘密の保管場所", "備考")  # 秘密の「値」ではなく保管場所の名前だけ
+INT_DIRECTIONS = ("受信", "送信", "双方向")
+INT_STATES = ("検討中", "運用中", "廃止")
+INT_TBD_RE = re.compile(r"^TBD\s*[（(]\s*(Q-\d{3,})\s*[）)]\s*$")
+INT_BAD_PLACEHOLDERS = ("未定", "不明", "?", "？", "-", "—", "TODO", "tbd")
+INT_BULLET_RE = re.compile(r"^\s{0,3}[-*]\s+\**([^:：*]{1,30}?)\**\s*[:：]\s*(.*)$")
+# 認証情報の「値」らしい文字列（AC-209）
+INT_SECRET_VALUE_RES = (
+    re.compile(r"://[^/\s:@]+:[^/\s@]+@"),
+    re.compile(r"\b(?:Password|Pwd|AccountKey|SharedAccessKey|SharedAccessSignature|Server|Data Source|User ID|Uid)\s*=\s*[^;\s]+", re.I),
+    re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{12,}", re.I),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),
+    re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+    re.compile(r"\b(?:sk|pk|rk)[-_](?:live|test|proj)?[-_]?[A-Za-z0-9]{16,}"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"),
+    re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"),
+    re.compile(r"-----BEGIN [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)"),
+    re.compile(r"(?i)(?:password|passwd|pwd|secret|token|api[ _-]?key|access[ _-]?key|パスワード|パスフレーズ|トークン|シークレット|秘密鍵|APIキー|接続文字列)\s*[:：=]\s*[^\s、。,;（()）「」]{6,}"),
+    re.compile(r"(?<![A-Za-z0-9+/=_.-])(?=[A-Za-z0-9+/_]*[A-Z])(?=[A-Za-z0-9+/_]*[a-z])(?=[A-Za-z0-9+/_]*\d)[A-Za-z0-9+/_]{32,}={0,2}(?![A-Za-z0-9+/=_.-])"),
+    re.compile(r"(?<![A-Za-z0-9_.-])[0-9a-fA-F]{32,}(?![A-Za-z0-9_.-])"),
+)
+INT_SECRET_FIELD_RE = re.compile(r"パスワード|パスフレーズ|トークン|シークレット|秘密鍵|鍵の値|接続文字列|認証情報|資格情報|password|passwd|secret|token|api[ _-]?key|credential|connection[ _-]?string", re.I)
+
+
+@dataclass
+class Integration:
+    id: str
+    name: str
+    file: str
+    line: int
+    fields: Dict[str, str] = field(default_factory=dict)
+    field_lines: Dict[str, int] = field(default_factory=dict)
+    dup_fields: List[Tuple[str, int]] = field(default_factory=list)
+    bad_id: bool = False
+
+    def get(self, key: str) -> str:
+        return strip_md(self.fields.get(key, ""))
+
+
+@dataclass
+class IntegrationCatalog:
+    file: str = ""
+    exists: bool = False
+    items: List[Integration] = field(default_factory=list)
+    index_rows: List[Tuple[int, List[str], List[str]]] = field(default_factory=list)  # (line, header, cells)
+
+    def by_id(self) -> Dict[str, Integration]:
+        return {i.id: i for i in self.items if not i.bad_id}
+
+
+def parse_integrations_text(text: str, rel: str = "") -> IntegrationCatalog:
+    cat = IntegrationCatalog(file=rel, exists=True)
+    lines = strip_comments(text).splitlines()
+    cur: Optional[Integration] = None
+    cur_lvl = 0
+    in_code = False
+    for n, line in enumerate(lines, start=1):
+        if line.lstrip().startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code:
+            continue
+        hm = HEADING_RE.match(line)
+        if hm:
+            lvl = len(hm.group(1))
+            im = INT_HEADING_RE.match(line)
+            if im:
+                raw_id = im.group(2)
+                cur = Integration(id=raw_id, name=strip_md(im.group(3)), file=rel, line=n,
+                                  bad_id=not re.fullmatch(r"INT-\d{3,}", raw_id))
+                cur_lvl = lvl
+                cat.items.append(cur)
+                continue
+            if cur is not None and lvl <= cur_lvl:
+                cur = None
+        if cur is not None:
+            bm = INT_BULLET_RE.match(line)
+            if bm:
+                key = bm.group(1).strip()
+                if key in cur.fields:
+                    cur.dup_fields.append((key, n))
+                else:
+                    cur.fields[key] = bm.group(2).strip()
+                    cur.field_lines[key] = n
+    for t in parse_tables(lines):
+        ic, nc = t.col("ID"), t.col("連携先")
+        if ic is None or nc is None:
+            continue
+        for ln, cells in t.rows:
+            cat.index_rows.append((ln, t.header, cells))
+    return cat
+
+
+def parse_integrations(root: Path, cfg: dict) -> IntegrationCatalog:
+    rel = cfg.get("management_files", {}).get("integrations") or "docs/integrations.md"
+    p = root / rel
+    if not p.is_file():
+        return IntegrationCatalog(file=rel, exists=False)
+    return parse_integrations_text(read_text(p), rel)
+
 
 def parse_registry_text(text: str) -> Dict[str, Dict[str, str]]:
     out: Dict[str, Dict[str, str]] = {}

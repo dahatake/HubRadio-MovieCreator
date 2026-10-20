@@ -28,9 +28,14 @@
 | GitHub Copilot app を閉じたり PC がスリープしたりして止まった | ローカルのセッションは PC の上で動いている | アプリを起動し直し、同じセッションで「続けて」と送ります。長い run の間は、PC のスリープを無効にします。PC を離れたい場合はクラウド サンドボックスを検討します（[README](../README.md#github-copilot-app-で実行する)） |
 | 終わらない（同じ失敗を繰り返している） | `python scripts/run-state.py status` と `progress.md` で、どの項目が何回失敗しているかを確認します。`max_hours` の 85% に達すると、自動的に最終工程に進みます。急ぐ場合は、その項目を `python scripts/run-state.py queue set <ID> --status blocked` にします |
 | 「完了条件を満たしていません」で差し戻され続ける | `python scripts/run-state.py complete-check` が出力する理由を確認します。工程 6 を終えて `run-state.py stage 6 --done` を実行し、`run-report.md` を作成する必要があります。差し戻しは 40 回、または時間予算の 125% で止まります |
+| 孤児プロセス（node・ブラウザーなど）が残って重い | `python scripts/watch.py scan` で確認し、`python scripts/watch.py reap`（必要なら `--under <PATH>`）で回収します。詳細は [watch.py](05-scripts-reference.md#watchpy) |
+| 項目が 60 分を超えて `doing` のまま（`STUCK`） | `python scripts/watch.py stuck` で確認します。conductor は結果を返させるか `integrate.py abandon <item>` で todo に戻します |
 | `clean-work.py` が run を `KEEP` する | 全件完了、main 統合、統合後 verify、清掃前版 report、または所有証拠のいずれかが未達です。表示された保持理由を直してください。失敗・中止・未達 run は自動期限なく保持されます |
 | `clean-work.py` が非 0 で止まる | dirty、パス衝突、Windows のファイルロック、Git 登録の変化などで候補の削除に失敗しました。`run-report.md` の候補別結果を確認し、利用中のファイルを閉じるなど原因を除いて同じコマンドを再実行します。削除済み候補は成功済みとして扱われ、残存候補だけが再検査されます |
 | 前の run が残っていて、新しい依頼が RESUME になる | 前の run を終わらせるか、`work/current-run.txt` を削除してから依頼します |
+| `LAND-WAIT`（取り込みが待たされる） | 主の作業ツリーが base（main）をチェックアウト中で、その未コミットの変更が取り込む変更と同じファイルに重なっている。変更を commit か退避すると、同じ `run-state.py land` で取り込めます |
+| `LAND-CONFLICT`（競合したファイルの一覧つき） | 自動同期（base の取り込み直し）で解消できないファイルがある。run の worktree で `git merge main` して競合を解消し、`verify.py --quick` が通ってから `run-state.py land` を再実行します（`tests/system/ledger.json` だけの競合は自動で解消されます） |
+| `gate.log` に `UNBOUND-RUN` | hook が、どの run にもセッションを束縛できなかった（セッション ID があり、所有者のない run が見つからない）。run の worktree を cwd にしてコマンドを実行しているかと、`work/runs/<run-id>/meta.json` の `session_id` を確認します |
 
 ## 7.3 verify が失敗する
 
@@ -42,7 +47,7 @@
 | 工程 4 の後に CHK-10/11 が出る | AC が追加・変更されたのに、System Test が追従していません。conductor が test-designer に作業を割り当てます |
 | CHK-19 で、テストデータや資料の中の ID が検出される | `checks.id_scan_exclude` にそのパスを追加します |
 | CHK-08 でカタログのパスが見つからない | パスはリポジトリのルートからの相対パスで、`src/a.ts, src/b.ts` のようにカンマ区切りで書きます。ファイルの名前を変えた・削除した場合は `python scripts/rdfix.py --apply` が参照を直します |
-| マージの後にカタログ・ID 台帳・台帳・実行履歴が食い違う（CHK-07・CHK-01・CHK-11・CHK-23） | `python scripts/rdfix.py` で修正の計画を確認し、`python scripts/rdfix.py --apply` で直します。`MANUAL` の行は、表示された担当の役割が直します（[6.3](06-quality-gates.md#63-データ層の不整合の自動修正rdfix)） |
+| マージの後にカタログ・ID 台帳・台帳・実行履歴が食い違う（CHK-07・CHK-01・CHK-11・CHK-23） | `python scripts/rdfix.py --full` で確認し、`python scripts/rdfix.py --full --apply` で直します（終了コード 0 = 合格・修復済み、1 = 手動対応が残る、2 = 実行しなかった・取り消した。インストール時にも既定で実行され、`--no-repair` で止められます。同時に 2 つ適用すると後からのものが最大 30 秒待ち、超えると exit 2。要求定義書は変更しません）。`MANUAL` の行は、表示された担当の役割が直します（[6.3](06-quality-gates.md#63-データ層の不整合の自動修正rdfix)） |
 | CI でだけ失敗する | CI にアプリのツールチェーンがない可能性があります。`.github/workflows/ebak-verify.yml` にセットアップのステップを追加します |
 
 ## 7.4 Windows 固有の問題

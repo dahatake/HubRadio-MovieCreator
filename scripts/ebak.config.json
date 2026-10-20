@@ -6,7 +6,8 @@
     "id_registry": "docs/id-registry.md",
     "run_history": "docs/run-history.md",
     "ledger": "tests/system/ledger.json",
-    "manual_tests": "docs/manual-tests.md"
+    "manual_tests": "docs/manual-tests.md",
+    "integrations": "docs/integrations.md"
   },
   "base_branch": "main",
   "work": {
@@ -24,10 +25,25 @@
   },
   "checks": {
     "id_scan_exclude": [
-      "docs/**", "work/**", ".github/**", "scripts/**", "tools/**", "users-guide/**", "EABK-Studio/**",
-      "tests/toolkit/**", "templates/**", "node_modules/**", "**/node_modules/**", ".git/**",
-      "**/*.lock", "**/package-lock.json", "AGENTS.md", "README.md", "**/*.svg",
-      "tests/system/test_run_cleanup_system.py", "tests/system/e2e/test_run_owned_cleanup.py"
+      "docs/**",
+      "work/**",
+      ".github/**",
+      "scripts/**",
+      "tools/**",
+      "users-guide/**",
+      "EABK-Studio/**",
+      "tests/toolkit/**",
+      "templates/**",
+      "node_modules/**",
+      "**/node_modules/**",
+      ".git/**",
+      "**/*.lock",
+      "**/package-lock.json",
+      "AGENTS.md",
+      "README.md",
+      "**/*.svg",
+      "tests/system/test_run_cleanup_system.py",
+      "tests/system/e2e/test_run_owned_cleanup.py"
     ]
   },
   "models": {

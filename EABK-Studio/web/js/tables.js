@@ -1,10 +1,24 @@
 // Table views: every kind of record in the data layer, sortable, filterable, and linked to the map selection.
 import { t, onLang } from './i18n.js';
 import { store, norm } from './store.js';
-import { el, statusBadge, nodeChip, colorOf } from './ui.js';
+import { el, statusBadge, colorOf } from './ui.js';
+import { xrefLink, idRef, idsToNodes } from './xref.js';
+import { placeRows, listTiers } from './tierlist.js';
+
+// FR-1063 AC-348: 各表の行を FR-1062 の (種類, ID) に対応づける。階層にない行（ファイル・用語など）は表の名前の下の「未分類」に置く。
+const TIER_SPEC = {
+  goals: (r) => ({ kind: '目的', id: r.id }), reqs: (r) => ({ kind: '要求', id: r.id }), acs: (r) => ({ kind: '受入基準', id: r.id }),
+  cases: (r) => ({ kind: '試験ケース', id: r.id }), params: (r) => ({ kind: 'パラメータ', id: r.id }), questions: (r) => ({ kind: '質問', id: r.id }),
+  audits: (r) => ({ kind: '監査指摘', id: r.id }), sources: (r) => ({ kind: '出典', id: r.id }), entities: (r) => ({ kind: 'エンティティ', id: r.name }),
+  parts: (r) => ({ kind: 'カタログ', id: r.name, division: '共通部品' }), apis: (r) => ({ kind: 'カタログ', id: r.name, division: 'API・イベント' }),
+  tables: (r) => ({ kind: 'カタログ', id: r.name, division: 'テーブル' }),
+};
 
 let tab = 'reqs';
 const state = { q: '', only: false, filters: {}, sort: { reqs: { k: 'id', d: 1 }, acs: { k: 'id', d: 1 } } };
+
+// FR-1051 AC-280: every kind belongs to exactly one group (named by words, not colour).
+const GROUPS = [['req', ['goals', 'reqs', 'acs', 'params', 'questions']], ['design', ['entities', 'parts', 'apis', 'tables', 'integrations', 'terms', 'personas']], ['evidence', ['cases', 'files', 'sources']], ['ops', ['decisions', 'audits', 'runs']]];
 
 const cell = (v) => (Array.isArray(v) ? v.join(', ') : v ?? '');
 
@@ -12,6 +26,7 @@ function defs(m) {
   const nodes = store.nodes;
   const reqNode = (id) => nodes.get(id);
   return {
+    goals: { cols: [['id'], ['title'], ['reqs']], filters: [], rows: () => (m.goals || []).map((g) => ({ nodeId: g.id, id: g.id, title: g.title, reqs: m.reqs.filter((r) => r.goal === g.id).map((r) => r.id).join(', ') })) },
     reqs: {
       cols: [['id'], ['title'], ['status'], ['priority'], ['goal'], ['impl'], ['acs'], ['blocked'], ['group']],
       filters: ['status', 'priority', 'goal', 'impl', 'group'],
@@ -35,14 +50,9 @@ function defs(m) {
       filters: [],
       rows: () => m.catalog.parts.map((p) => ({ nodeId: 'part:' + p.name, name: p.name, purpose: p.purpose, files: p.files.join(', '), reqs: p.reqs.length })),
     },
-    apis: {
-      cols: [['kind'], ['name'], ['owner'], ['files'], ['reqs']],
-      filters: ['kind'],
-      rows: () => [
-        ...m.catalog.apis.map((a) => ({ nodeId: 'api:' + a.name, kind: 'API', name: a.name, owner: '', files: a.files.join(', '), reqs: a.reqs.join(', ') })),
-        ...m.catalog.tables.map((a) => ({ nodeId: 'tbl:' + a.name, kind: t('type.table'), name: a.name, owner: a.owner, files: a.files.join(', '), reqs: a.reqs.join(', ') })),
-      ],
-    },
+    apis: { cols: [['name'], ['files'], ['reqs']], filters: [], rows: () => m.catalog.apis.map((a) => ({ nodeId: 'api:' + a.name, name: a.name, files: a.files.join(', '), reqs: a.reqs.join(', ') })) },
+    tables: { cols: [['name'], ['owner'], ['files'], ['reqs']], filters: [], rows: () => m.catalog.tables.map((a) => ({ nodeId: 'tbl:' + a.name, name: a.name, owner: a.owner, files: a.files.join(', '), reqs: a.reqs.join(', ') })) },
+    entities: { cols: [['name'], ['description'], ['reqs']], filters: [], rows: () => ((m.entities && m.entities.entities) || []).map((e) => ({ nodeId: 'ent:' + e.name, name: e.name, description: e.description || '', reqs: [...new Set(e.usecases.map((u) => u.requirement))].join(', ') })) },
     files: {
       cols: [['path'], ['comp'], ['module'], ['role'], ['reqs']],
       filters: ['comp', 'role'],
@@ -75,7 +85,9 @@ export function mount(host) {
     const rows = def.rows();
     const colLabel = (k) => (tab === 'runs' ? k : t('col.' + k));
 
-    const tabBar = el('div', { class: 'tbar' }, Object.keys(D).map((k) => el('button', { class: 'tabbtn' + (k === tab ? ' on' : ''), onclick: () => { tab = k; state.filters = {}; render(); } }, t('tab.' + k), el('small', {}, D[k].rows().length))));
+    const tabBtn = (k) => el('button', { class: 'tabbtn' + (k === tab ? ' on' : ''), role: 'tab', type: 'button', 'aria-selected': k === tab ? 'true' : 'false', 'data-testid': 'table-kind', onclick: () => { tab = k; state.filters = {}; render(); } }, t('tab.' + k), el('small', {}, D[k].rows().length));
+    const tabBar = el('div', { class: 'tgroups' }, GROUPS.map(([g, keys]) => el('div', { class: 'tgroup', role: 'group', 'aria-label': t('tgrp.' + g), 'data-group': g },
+      el('span', { class: 'gh' }, t('tgrp.' + g)), el('div', { class: 'tgl', role: 'tablist', 'aria-label': t('tgrp.' + g) }, keys.filter((k) => D[k]).map(tabBtn)))));
     const input = el('input', { type: 'search', value: state.q, placeholder: t('tbl.filter'), oninput: (e) => { state.q = e.target.value; fill(); } });
     const only = el('label', { class: 'row mini', style: { cursor: 'pointer' } }, el('input', { type: 'checkbox', checked: state.only || null, onchange: (e) => { state.only = e.target.checked; fill(); } }), t('tbl.only'));
     const selects = (def.filters || []).map((k) => {
@@ -83,11 +95,11 @@ export function mount(host) {
       return el('select', { onchange: (e) => { state.filters[k] = e.target.value; fill(); } }, el('option', { value: '' }, colLabel(k) + ': ' + t('tbl.all')), vals.map((v) => el('option', { value: v, selected: state.filters[k] === v || null }, v)));
     });
     const countEl = el('span', { class: 'mini' });
-    const head = el('tr', {}, def.cols.map(([k]) => el('th', { onclick: () => { const cur = state.sort[tab]; state.sort[tab] = { k, d: cur && cur.k === k ? -cur.d : 1 }; render(); } }, colLabel(k), state.sort[tab]?.k === k ? (state.sort[tab].d > 0 ? ' ▲' : ' ▼') : '')));
-    const tbody = el('tbody');
+    const mkHead = () => el('tr', {}, def.cols.map(([k]) => el('th', { onclick: () => { const cur = state.sort[tab]; state.sort[tab] = { k, d: cur && cur.k === k ? -cur.d : 1 }; render(); } }, colLabel(k), state.sort[tab]?.k === k ? (state.sort[tab].d > 0 ? ' ▲' : ' ▼') : '')));
+    const tierHost = el('div', { class: 'tier-list-host', 'data-testid': 'table-tiers' });
     page.replaceChildren(el('h1', {}, '📋 ' + t('nav.tables')), el('p', { class: 'sub' }, t('tbl.sub')), tabBar,
       el('div', { class: 'tbar' }, input, ...selects, only, countEl, el('button', { class: 'btn ghost', onclick: () => exportCsv(def, rows, colLabel) }, '⤓ CSV')),
-      el('div', { class: 'tw' }, el('table', { class: 't' }, el('thead', {}, head), tbody)));
+      tierHost);
 
     fill = () => {
       const set = store.activeSet();
@@ -101,20 +113,29 @@ export function mount(host) {
       const s = state.sort[tab];
       if (s) list = [...list].sort((a, b) => String(cell(a[s.k])).localeCompare(String(cell(b[s.k])), undefined, { numeric: true }) * s.d);
       countEl.textContent = `${list.length} / ${rows.length}`;
-      tbody.replaceChildren(...list.slice(0, 1500).map((r) => {
+      // FR-1063 AC-348: 行を上位層（種類→区分→領域）の見出しの下にまとめる。見出しに件数、開閉は hier.js。
+      const mkRow = (r) => {
         const hl = set && r.nodeId && set.has(r.nodeId);
-        return el('tr', { class: (r.nodeId && r.nodeId === store.selected ? 'sel ' : '') + (hl && r.nodeId !== store.selected ? 'hl' : ''), onclick: () => { if (r.nodeId && store.nodes.has(r.nodeId)) store.select(r.nodeId, {}); } },
+        return el('tr', { 'data-testid': 'tier-item', 'data-id': r.nodeId || r.id || r.name || '', class: (r.nodeId && r.nodeId === store.selected ? 'sel ' : '') + (hl && r.nodeId !== store.selected ? 'hl' : ''), onclick: () => { if (r.nodeId && store.nodes.has(r.nodeId)) store.select(r.nodeId, {}); } },
           def.cols.map(([k]) => {
             const v = r[k];
             if (tab === 'reqs' && k === 'status') return el('td', {}, statusBadge(r.status, r.statusRaw));
-            if (k === 'id' && r.nodeId && store.nodes.has(r.nodeId)) return el('td', { class: 'mono' }, el('span', { style: { color: colorOf(store.node(r.nodeId)) } }, v));
-            if ((k === 'req' || k === 'goal') && store.nodes.has(v)) return el('td', {}, nodeChip(v));
+            if ((k === 'id' || (k === 'name' && !('id' in r))) && r.nodeId && store.nodes.has(r.nodeId)) { const a = xrefLink(r.nodeId, String(v)); a.style.color = colorOf(store.node(r.nodeId)); return el('td', { class: 'mono' }, a); }
+            if ((k === 'req' || k === 'goal') && v) return el('td', {}, idRef(v));
             if (tab === 'cases' && k === 'status') return el('td', {}, el('span', { class: 'badge ' + (v === 'pass' ? 'pass' : v === 'fail' ? 'fail' : '') }, v));
             if (k === 'impl') return el('td', {}, el('span', { class: 'badge ' + (v === 'done' ? 'ok' : v === 'none' ? 'bad' : '') }, t('impl.' + (v || 'unlisted'))));
-            return el('td', { class: k === 'path' || k === 'files' ? 'mono' : '' }, el('div', { class: 'clamp' }, String(cell(v)).slice(0, 400)));
+            if (k === 'path' && r.nodeId && store.nodes.has(r.nodeId)) return el('td', { class: 'mono' }, xrefLink(r.nodeId, String(v)));
+            return el('td', { class: k === 'path' || k === 'files' ? 'mono' : '' }, el('div', { class: 'clamp' }, idsToNodes(cell(v))));
           }));
+      };
+      const placed = placeRows(list.slice(0, 1500), TIER_SPEC[tab] || (() => null), t('tab.' + tab));
+      tierHost.replaceChildren(listTiers(placed, {
+        openAreas: true,
+        extra: (node) => (node.level === 'area' && node.items.length
+          ? el('div', { class: 'tw' }, el('table', { class: 't' }, el('thead', {}, mkHead()), el('tbody', {}, node.items.map((it) => mkRow(it.row)))))
+          : null),
       }));
-      const sel = tbody.querySelector('tr.sel');
+      const sel = tierHost.querySelector('tr.sel');
       if (sel) sel.scrollIntoView({ block: 'nearest' });
     };
     fill();

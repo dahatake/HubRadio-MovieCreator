@@ -5,7 +5,8 @@ Usage:
   python scripts/rdcheck.py check [--base REF] [--run RUN_ID] [--strict] [--strict-ledger] [--json]
   python scripts/rdcheck.py show ID [ID ...]        # print only the requirement / AC block (token saving)
   python scripts/rdcheck.py trace ID|名前 [...] [--json]  # links up and down (G / SRC / 用語・状態 / PARAM / AC / 台帳 / カタログ / コード)
-  python scripts/rdcheck.py list [--state 承認済み] [--level system] [--priority MUST] [--kind FR]
+  python scripts/rdcheck.py list [--state 承認済み] [--level system] [--priority MUST] [--kind FR] [--area 名 | --by-area]
+  python scripts/rdcheck.py index [ID ...] [--kind 上位|出典|参照|実装|検証|使用] [--json]  # 種類つきの関係（都度生成）
   python scripts/rdcheck.py stats                   # metrics for rd-audit
   python scripts/rdcheck.py digest [AC ...]         # current AC digests (PARAM expanded)
 
@@ -22,8 +23,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
+sys.dont_write_bytecode = True  # FR-1062 AC-343: 導出は読み取り専用。利用者のリポジトリに __pycache__ を残さない
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ebaklib as h  # noqa: E402
+import entities as ent  # noqa: E402
 
 # requirements that must have a row in the function table of the catalog (same as rdfix.CATALOG_STATES)
 CATALOG_STATES = ("承認済み", "承認待ち", "保留")
@@ -62,6 +65,7 @@ class Checker:
         self.cat_exists, self.cat_rows, self.cat_refs = h.parse_catalog(root, cfg)
         self.cat_req = h.catalog_req_rows(self.cat_rows)
         self.cat_tables = h.parse_catalog_tables(root, cfg)
+        self.integ = h.parse_integrations(root, cfg)
         self._files: Optional[List[str]] = None
         self._refs: Optional[Dict[str, List[Ref]]] = None
         self.croot = h.conductor_root(root, cfg)
@@ -128,7 +132,7 @@ class Checker:
         for fn in (self.chk01_02, self.chk03, self.chk04, self.chk05, self.chk06_22, self.chk07_08,
                    self.chk09, self.chk10_11, self.chk12, self.chk13_14_15, self.chk16, self.chk17,
                    self.chk18, self.chk19, self.chk20, self.chk21, self.chk23, self.chk25, self.chk26,
-                   self.chk27, self.chk24):
+                   self.chk27, self.chk24, self.chk28, self.chk29, self.chk30, self.chk31, self.chk32):
             fn()
         return self.findings
 
@@ -296,7 +300,7 @@ class Checker:
                          f"{rid}（{req.state}）がカタログの機能の表にありません（rdfix.py --only catalog --apply で行を追加できます）")
         files = set(self.files())
         for ln, p in self.cat_refs:
-            rel = p.lstrip("./")
+            rel = p[2:] if p.startswith("./") else p
             if rel in files or (self.root / rel).exists():
                 continue
             self.err("CHK-08", self.loc(cat, ln), f"カタログのファイル {p} が存在しません")
@@ -551,7 +555,7 @@ class Checker:
         for r in self.doc.requirements.values():
             if not r.active:
                 continue
-            missing = [k for k in ("要求", "決定状態", "優先度", "上位", "対象エンティティ", "関係する状態", "参照パラメータ") if k not in r.fields]
+            missing = [k for k in h.required_requirement_fields() if k not in r.fields]
             if missing:
                 self.err("CHK-20", self.loc(r.file, r.line), f"{r.id} に構造化欄がありません: {'、'.join(missing)}（値がなければ「なし」と書きます）")
             if r.state == "承認済み":
@@ -670,6 +674,9 @@ class Checker:
                     for s in states:
                         if s not in defined:
                             self.err("CHK-25", loc, f"{r.id} の関係する状態「{s}」が状態の表（{'、'.join(with_states)}）にありません")
+            # FR-1020 AC-152: optional fields (usage of entities / scenarios) (absent = valid)
+            for problem in ent.optional_field_problems(self.doc, r):
+                self.err("CHK-25", loc, f"{r.id} の{problem}")
             listed = set(re.findall(r"PARAM-\d{3,}", r.fields.get("参照パラメータ", "")))
             text = " ".join(r.body) + " " + " ".join(self.doc.acs[a].full_text() for a in r.acs if a in self.doc.acs)
             used = set(h.PARAM_REF_RE.findall(text))
@@ -677,6 +684,9 @@ class Checker:
                 self.err("CHK-25", loc, f"{r.id} の本文・受入基準が {{{p}}} を使っていますが、参照パラメータの欄にありません")
             for p in sorted(listed - used):
                 self.warn("CHK-25", loc, f"{r.id} の参照パラメータ {p} が本文・受入基準で {{{p}}} として使われていません")
+        # FR-1025 AC-170: the optional column definitions of the catalog (absent = valid)
+        for f, ln, msg in ent.column_problems(self.doc, self.root, self.cfg):
+            self.err("CHK-25", self.loc(f, ln), msg)
 
     # ------------------------------------------------------------------ CHK-26
     def chk26(self) -> None:
@@ -765,6 +775,274 @@ class Checker:
                              f"{r.id} の関連する既存資産 {m.group(1)}「{m.group(2)}」がカタログの{label[k]}の表にありません")
 
 
+    # ------------------------------------------------------------------ CHK-28 (FR-1035 / FR-1036)
+    def chk28(self) -> None:
+        """外部連携カタログ（任意）の形式・ID・観点の欄・秘密値・要求との対応。カタログがなければ何も報告しない。"""
+        cat = self.integ
+        # 要求定義書から INT-xxx への参照（カタログの有無にかかわらず、存在しなければ未定義参照）
+        ids = cat.by_id() if cat.exists else {}
+        for rel, text in self.doc.text.items():
+            in_code = False
+            for ln, line in enumerate(text.splitlines(), start=1):
+                if line.lstrip().startswith("```"):
+                    in_code = not in_code
+                    continue
+                if in_code:
+                    continue
+                for m in h.INT_ID_RE.finditer(re.sub(r"`[^`]*`", "", line)):
+                    if m.group(1) not in ids:
+                        self.err("CHK-28", self.loc(rel, ln), f"{m.group(1)} を参照していますが、外部連携カタログ（{cat.file}）に定義がありません（未定義参照）")
+        if not cat.exists:
+            return
+        seen: Dict[str, int] = {}
+        reg_path = self.root / h.mf(self.cfg, "id_registry")
+        reg = h.parse_registry_text(h.read_text(reg_path)) if reg_path.exists() else None
+        for it in cat.items:
+            where = self.loc(cat.file, it.line)
+            if it.bad_id:
+                self.err("CHK-28", where, f"{it.id} は ID の形式（INT-001 のように INT-<3 桁以上の番号>）に合いません。ID は next-id.py INT で採番します")
+                continue
+            if it.id in seen:
+                self.err("CHK-28", where, f"{it.id} が重複して定義されています（{seen[it.id]} 行目）")
+                continue
+            seen[it.id] = it.line
+            if reg is not None:
+                ent = reg.get(it.id)
+                if ent is None:
+                    self.warn("CHK-28", where, f"{it.id} が ID 台帳にありません。ID は scripts/next-id.py INT でだけ採番します（G-3）")
+                elif re.search(r"削除済み|欠番", ent["state"]):
+                    self.err("CHK-28", where, f"{it.id} は ID 台帳で「{ent['state']}」です。廃止・削除した ID は再利用しません")
+            if not it.name:
+                self.err("CHK-28", where, f"{it.id} の名前（見出しの ID の後ろ）がありません（AC-208）")
+            for key, ln in it.dup_fields:
+                self.err("CHK-28", self.loc(cat.file, ln), f"{it.id} の欄「{key}」が重複しています")
+            for key in it.fields:
+                if key not in h.INT_REQUIRED + h.INT_PERSPECTIVES + h.INT_OPTIONAL and h.INT_SECRET_FIELD_RE.search(key):
+                    self.err("CHK-28", self.loc(cat.file, it.field_lines[key]),
+                             f"{it.id} に認証情報の値を書く欄「{key}」があります。方式の名前と秘密の保管場所の名前だけを書きます（AC-209）")
+            for key in h.INT_REQUIRED:
+                if key not in it.fields or not it.get(key):
+                    self.err("CHK-28", where, f"{it.id} の必須欄「{key}」がありません（AC-208）")
+            for key in h.INT_PERSPECTIVES:
+                if key not in it.fields:
+                    self.err("CHK-28", where, f"{it.id} の観点の欄「{key}」がありません（値・なし・TBD（Q-xxx）のどれかで埋めます。FR-1038）")
+            for key, raw in it.fields.items():
+                ln = self.loc(cat.file, it.field_lines[key])
+                val = h.strip_md(raw)
+                if not val:
+                    if key in h.INT_PERSPECTIVES:
+                        self.err("CHK-28", ln, f"{it.id} の「{key}」が空です（値・なし・TBD（Q-xxx）のどれかで埋めます）")
+                    continue
+                if key in h.INT_PERSPECTIVES + h.INT_REQUIRED and (val in h.INT_BAD_PLACEHOLDERS or val.upper().startswith("TBD")):
+                    m = h.INT_TBD_RE.match(val)
+                    if not m:
+                        self.err("CHK-28", ln, f"{it.id} の「{key}」の値「{val}」は 値／なし／TBD（Q-xxx）の形式ではありません")
+                    elif m.group(1) not in self.doc.defs:
+                        self.err("CHK-28", ln, f"{it.id} の「{key}」の TBD が指す {m.group(1)} が質問票にありません")
+                    elif key == "状態":
+                        self.err("CHK-28", ln, f"{it.id} の状態に TBD は書けません（{'／'.join(h.INT_STATES)}）")
+                for rx in h.INT_SECRET_VALUE_RES:
+                    sm = rx.search(re.sub(r"`", "", val))
+                    if sm:
+                        self.err("CHK-28", ln, f"{it.id} の「{key}」に認証情報の値らしい文字列があります。値は書かず、方式の名前と秘密の保管場所の名前だけを書きます（AC-209）")
+                        break
+            direction = it.get("方向")
+            if direction and direction not in h.INT_DIRECTIONS and not h.INT_TBD_RE.match(direction) \
+                    and direction not in h.INT_BAD_PLACEHOLDERS and not direction.upper().startswith("TBD"):
+                self.err("CHK-28", self.loc(cat.file, it.field_lines["方向"]), f"{it.id} の方向「{direction}」は {'／'.join(h.INT_DIRECTIONS)} のどれでもありません")
+            state = it.get("状態")
+            if state and state not in h.INT_STATES and not state.upper().startswith("TBD") and state not in h.INT_BAD_PLACEHOLDERS:
+                self.err("CHK-28", self.loc(cat.file, it.field_lines["状態"]), f"{it.id} の状態「{state}」は {'／'.join(h.INT_STATES)} のどれでもありません")
+            rel_cell = it.get("関連する要求")
+            if rel_cell and "関連する要求" in it.fields:
+                rids = h.REQ_ID_RE.findall(rel_cell)
+                tbd = h.INT_TBD_RE.match(rel_cell)
+                if not rids and not tbd:
+                    self.err("CHK-28", self.loc(cat.file, it.field_lines["関連する要求"]),
+                             f"{it.id} の関連する要求に要求 ID（FR-xxx／NFR-xxx-xxx）がありません（AC-208）")
+                for rid in rids:
+                    if rid not in self.doc.requirements:
+                        self.err("CHK-28", self.loc(cat.file, it.field_lines["関連する要求"]), f"{it.id} の関連する要求 {rid} が要求定義書にありません")
+                if state == "運用中" and rids:
+                    bad = [r for r in rids if r in self.doc.requirements and self.doc.requirements[r].state != "承認済み"]
+                    if bad:
+                        self.warn("CHK-28", where, f"{it.id} は運用中ですが、関連する要求 {'、'.join(bad)} が承認済みではありません")
+        listed = {h.strip_md(c) for _, header, cells in cat.index_rows for c in cells[:1] if h.INT_ID_RE.fullmatch(h.strip_md(c))}
+        for ln, header, cells in cat.index_rows:
+            iid = h.strip_md(cells[0]) if cells else ""
+            if iid and h.INT_ID_RE.fullmatch(iid) and iid not in ids:
+                self.warn("CHK-28", self.loc(cat.file, ln), f"索引表の {iid} に対応する項目（#### {iid} …）がありません")
+        for iid, it in ids.items():
+            if cat.index_rows and iid not in listed:
+                self.warn("CHK-28", self.loc(cat.file, it.line), f"{it.id} が索引表にありません")
+
+    # ------------------------------------------------------------------ FR-1057/1058: areas and metadata
+    def rd_tables(self):
+        if getattr(self, "_rd_tables", None) is None:
+            out = []
+            for rel, text in self.doc.text.items():
+                for t in h.parse_tables(text.splitlines()):
+                    out.append((rel, t))
+            self._rd_tables = out
+        return self._rd_tables
+
+    def area_table(self) -> Dict[str, tuple]:
+        """領域の一覧表（領域名・上位 G-ID・含む要求数）-> {領域名: (file, line, G-ID cell, count cell)}"""
+        out: Dict[str, tuple] = {}
+        for rel, t in self.rd_tables():
+            c_name, c_g, c_n = t.col("領域名"), t.col("上位"), t.col("要求数")
+            if c_name is None or c_g is None:
+                continue
+            for ln, cells in t.rows:
+                if c_name < len(cells) and h.strip_md(cells[c_name]):
+                    out.setdefault(h.strip_md(cells[c_name]), (rel, ln, cells[c_g] if c_g < len(cells) else "",
+                                                               cells[c_n] if c_n is not None and c_n < len(cells) else ""))
+        return out
+
+    def area_assignment(self) -> Optional[Dict[str, tuple]]:
+        """決定記録の領域の割り当て表（要求 ID・領域）-> {要求 ID: (file, line, 領域)}。表がなければ None（FR-1060 の承認前）。"""
+        found: Optional[Dict[str, tuple]] = None
+        for rel, t in self.rd_tables():
+            if t.col("領域名") is not None:
+                continue
+            c_id, c_a = t.col("要求 ID", "要求ID"), t.col("領域")
+            if c_id is None or c_a is None:
+                continue
+            found = found if found is not None else {}
+            for ln, cells in t.rows:
+                m = h.REQ_ID_RE.search(cells[c_id]) if c_id < len(cells) else None
+                if m and c_a < len(cells):
+                    found.setdefault(m.group(1), (rel, ln, h.strip_md(cells[c_a])))
+        return found
+
+    # CHK-29 (FR-1058 AC-318/320): metadata definition (scripts/metadata.json)
+    def chk29(self) -> None:
+        defs = h.requirement_field_defs()
+        if not defs:
+            return
+        for r in self.doc.requirements.values():
+            for k, v in r.fields.items():
+                loc = self.loc(r.file, r.field_lines.get(k, r.line))
+                d = defs.get(k)
+                if d is None:
+                    self.err("CHK-29", loc, f"{r.id} の欄「{k}」がメタデータ定義（scripts/metadata.json）にありません")
+                    continue
+                pat = d.get("pattern")
+                val = v.strip()
+                if pat and val and not re.search(pat, val):
+                    self.err("CHK-29", loc, f"{r.id} の欄「{k}」の値「{val[:30]}」が許容値（{d.get('type', pat)}）の形式に合いません")
+
+    # CHK-30 (FR-1057 AC-315..317, FR-1060 AC-326): areas
+    def chk30(self) -> None:
+        areas = self.area_table()
+        assign = self.area_assignment()
+        reqs = [r for r in self.doc.requirements.values() if r.state != "廃止"]
+        for r in reqs:
+            a = r.area
+            if a and areas and a not in areas:
+                self.err("CHK-30", self.loc(r.file, r.field_lines.get("領域", r.line)),
+                         f"{r.id} の領域「{a}」が領域の一覧表にありません")
+        for name, (rel, ln, g, n) in areas.items():
+            gids = re.findall(r"G-\d{3,}", g)
+            if not gids or any(x not in self.doc.defs for x in gids):
+                self.err("CHK-30", self.loc(rel, ln), f"領域「{name}」の上位 G-ID（{g or '空'}）が目的にありません")
+            cnt = sum(1 for r in reqs if r.area == name)
+            nm = re.search(r"\d+", n or "")
+            if nm and int(nm.group(0)) != cnt:
+                self.warn("CHK-30", self.loc(rel, ln), f"領域「{name}」の含む要求数 {nm.group(0)} が実際の {cnt} 件（廃止を除く）と違います")
+        unassigned = [r for r in reqs if not r.area]
+        self.area_info = len(unassigned)
+        if assign is not None:
+            for r in unassigned:
+                self.err("CHK-30", self.loc(r.file, r.line), f"{r.id} に領域の欄がありません（領域の割り当て表の承認後は必須）")
+            for rid, (rel, ln, a) in assign.items():
+                r = self.doc.requirements.get(rid)
+                if r is None:
+                    self.err("CHK-30", self.loc(rel, ln), f"割り当て表の {rid} が要求定義書にありません")
+                elif r.state != "廃止" and r.area and r.area != a:
+                    self.err("CHK-30", self.loc(rel, ln), f"{rid} の領域が割り当て表（{a}）と欄の値（{r.area}）で一致しません")
+            for r in reqs:
+                if r.id not in assign:
+                    self.err("CHK-30", self.loc(r.file, r.line), f"{r.id} が領域の割り当て表にありません")
+        # catalog sections: 領域: <名> (AC-317)
+        for kind, t in self.cat_tables:
+            if kind != "feature":
+                continue
+            m = re.match(r"^領域\s*[:：]\s*(.+)$", t.heading.strip())
+            if not m:
+                continue
+            section = h.strip_md(m.group(1))
+            c = t.col("要求 ID", "要求ID")
+            for ln, cells in t.rows:
+                rm = h.REQ_ID_RE.search(cells[c]) if c is not None and c < len(cells) else None
+                r = self.doc.requirements.get(rm.group(1)) if rm else None
+                if r is not None and r.area and r.area != section:
+                    self.err("CHK-30", self.loc(h.mf(self.cfg, "catalog"), ln),
+                             f"{r.id} の領域がカタログの区切り（{section}）と要求定義書（{r.area}）で一致しません")
+
+    # CHK-31 (NFR-UX-014 AC-324): same kind of table, same column names and order
+    def chk31(self) -> None:
+        first: Dict[str, List[str]] = {}
+        for kind, t in self.cat_tables:
+            if not kind:
+                continue
+            norm = [re.sub(r"\s+", "", c) for c in t.header]
+            ref = first.setdefault(kind, norm)
+            if norm != ref:
+                self.warn("CHK-31", self.loc(h.mf(self.cfg, "catalog"), t.header_line),
+                          f"表「{t.heading}」の列名・列の順序が、同じ種類の先頭の表（{'|'.join(ref)}）と違います")
+
+    # CHK-32 (NFR-UX-014 AC-323): items directly under one section (PARAM-043)
+    def chk32(self) -> None:
+        if self.area_assignment() is None:
+            return  # 領域化の前の節には警告しない（段階導入）
+        meta = h.load_metadata().get("parameters", {})
+        limit = int(meta.get("section_item_limit_default", 20))
+        p = self.doc.params.get(meta.get("section_item_limit_param", "PARAM-043"))
+        if p:
+            m = re.search(r"\d+", h.strip_md(p.get("value", "")))
+            if m:
+                limit = int(m.group(0))
+        files = [(rel, text) for rel, text in self.doc.text.items()]
+        cat = h.mf(self.cfg, "catalog")
+        if self.cat_exists:
+            files.append((cat, h.strip_comments(h.read_text(self.root / cat))))
+        for rel, text in files:
+            lines = text.splitlines()
+            stack: List[list] = []  # [level, title, line, count]
+            done: List[list] = []
+            in_code, i = False, 0
+            while i < len(lines):
+                line = lines[i]
+                if line.lstrip().startswith("```"):
+                    in_code = not in_code
+                    i += 1
+                    continue
+                if in_code:
+                    i += 1
+                    continue
+                hm = h.HEADING_RE.match(line)
+                if hm:
+                    lvl = len(hm.group(1))
+                    while stack and stack[-1][0] >= lvl:
+                        done.append(stack.pop())
+                    if stack:
+                        stack[-1][3] += 1
+                    stack.append([lvl, hm.group(2), i + 1, 0])
+                elif line.lstrip().startswith("|") and i + 1 < len(lines) and re.match(r"^\s*\|?\s*:?-{2,}", lines[i + 1]):
+                    j = i + 2
+                    while j < len(lines) and lines[j].lstrip().startswith("|"):
+                        j += 1
+                    if stack:
+                        stack[-1][3] += j - (i + 2)
+                    i = j
+                    continue
+                i += 1
+            done.extend(stack)
+            for lvl, title, ln, n in done:
+                if n > limit and re.match(r"^領域\s*[:：]", title.strip()):
+                    self.warn("CHK-32", self.loc(rel, ln), f"節「{title}」の直下の項目が {n} 件で、上限 {limit} 件（PARAM-043）を超えています")
+
 # ---------------------------------------------------------------------- commands
 
 def cmd_check(args, root, cfg) -> int:
@@ -787,6 +1065,9 @@ def cmd_check(args, root, cfg) -> int:
         shown = [f for f in findings if f.level == "ERROR" or not args.errors_only]
         for f in shown:
             print(f.line())
+        if getattr(ck, "area_info", None) is not None and ck.doc.exists and not args.errors_only:
+            if ck.area_assignment() is None:
+                print(f"INFO 領域未所属の要求: {ck.area_info} 件（領域の割り当て表の承認まで任意）")
         print(f"rdcheck: errors={errors} warnings={warns} base={base or '-'} run={run_id or '-'}")
     return 1 if errors else 0
 
@@ -833,6 +1114,7 @@ def cmd_show(args, root, cfg) -> int:
 
 def cmd_list(args, root, cfg) -> int:
     doc = h.parse_requirements(root, cfg)
+    reqs: list = []
     if args.kind == "AC" or args.level:
         for ac in doc.acs.values():
             req = doc.requirements.get(ac.requirement or "")
@@ -850,7 +1132,84 @@ def cmd_list(args, root, cfg) -> int:
             continue
         if args.kind and not r.id.startswith(args.kind):
             continue
+        reqs.append(r)
+    if args.area is not None or args.by_area:
+        return _list_by_area(doc, reqs, args.area)
+    for r in reqs:
         print(f"{r.id}\t{r.state or '-'}\t{r.priority or '-'}\t{r.title}\tACs={','.join(r.acs) or '-'}")
+    return 0
+
+
+def _list_by_area(doc, reqs, area) -> int:
+    """領域別の一覧（FR-1057 AC-316）。廃止の要求は領域の件数に含めず、件数だけ別に示す。"""
+    live = [r for r in reqs if r.state != "廃止"]
+    abolished = sum(1 for r in reqs if r.state == "廃止")
+    if area is not None:
+        for r in live:
+            if r.area == area:
+                print(f"{r.id}\t{r.state or '-'}\t{r.title}")
+        if abolished:
+            print(f"(廃止は件数に含めません: {sum(1 for r in reqs if r.state == '廃止' and r.area == area)} 件)")
+        return 0
+    groups: Dict[str, list] = {}
+    for r in live:
+        groups.setdefault(r.area or "（未所属）", []).append(r)
+    for name in sorted(groups, key=lambda n: (n == "（未所属）", n)):
+        print(f"## {name}（{len(groups[name])} 件）")
+        for r in groups[name]:
+            print(f"{r.id}\t{r.state or '-'}\t{r.title}")
+    print(f"合計 {len(live)} 件（廃止 {abolished} 件は別）")
+    return 0
+
+
+# ---------------------------------------------------------------------- relation index (FR-1059)
+
+def build_index(ck: "Checker") -> List[tuple]:
+    """種類つきの関係の索引（始点 ID・種類・終点 ID）。保存せず、要求定義書・カタログ・台帳の既存の記述から都度生成する。
+    上位・出典・参照 = 要求定義書、実装・使用 = カタログ、検証 = 台帳。"""
+    out: Set[tuple] = set()
+    doc = ck.doc
+    for r in doc.requirements.values():
+        for g in re.findall(r"G-\d{3,}", r.fields.get("上位", "")):
+            out.add((r.id, "上位", g))
+        for s in h.split_values(r.fields.get("出典", "")):
+            out.add((r.id, "出典", s))
+        for p in re.findall(r"PARAM-\d{3,}", r.fields.get("参照パラメータ", "")):
+            out.add((r.id, "参照", p))
+        for e in h.split_values(r.fields.get("対象エンティティ", "")):
+            out.add((r.id, "参照", e))
+    for a in doc.acs.values():
+        for p in h.PARAM_REF_RE.findall(a.full_text()):
+            out.add((a.id, "参照", p))
+    for rid, row in ck.cat_req.items():
+        for path in h.split_paths(h.catalog_cell(row, "実装ファイル")):
+            out.add((rid, "実装", path))
+        for part in h.split_values(h.catalog_cell(row, "使っている共通部品")):
+            out.add((rid, "使用", part))
+    for c in ck.ledger.get("cases", []):
+        cid = c.get("id")
+        if not cid:
+            continue
+        for a in c.get("ac_ids", []):
+            out.add((cid, "検証", a))
+        for rid in c.get("requirement_ids", []):
+            out.add((cid, "検証", rid))
+    return sorted(out)
+
+
+def cmd_index(args, root, cfg) -> int:
+    ck = Checker(root, cfg, None, None, False, False)
+    pairs = build_index(ck)
+    if args.ids:
+        ids = set(args.ids)
+        pairs = [p for p in pairs if p[0] in ids or p[2] in ids]
+    if args.kind:
+        pairs = [p for p in pairs if p[1] == args.kind]
+    if args.json:
+        print(json.dumps([{"from": a, "kind": k, "to": b} for a, k, b in pairs], ensure_ascii=False, indent=2))
+    else:
+        for a, k, b in pairs:
+            print(f"{a}\t{k}\t{b}")
     return 0
 
 
@@ -953,6 +1312,35 @@ def trace_one(ck: "Checker", key: str, code: Dict[str, Set[str]]) -> dict:
     if key.startswith("G-") and key in doc.defs:
         reqs = [r.id for r in doc.requirements.values() if key in re.findall(r"G-\d{3,}", r.fields.get("上位", ""))]
         return {"id": key, "kind": "goal", "at": where(key), "requirements": reqs, "referenced_by": referrers(key)}
+    if h.INT_ID_RE.fullmatch(key):
+        it = ck.integ.by_id().get(key) if ck.integ.exists else None
+        if it is None:
+            return {"id": key, "kind": "not_found"}
+        mention_owners: Set[str] = set()
+        for rel, text in doc.text.items():
+            owner, owner_lvl, in_code = "", 0, False
+            for line in text.splitlines():
+                if line.lstrip().startswith("```"):
+                    in_code = not in_code
+                    continue
+                if in_code:
+                    continue
+                hm = h.HEADING_RE.match(line)
+                if hm:
+                    rm = h.REQ_HEADING_RE.match(line)
+                    if rm:
+                        owner, owner_lvl = rm.group(2), len(hm.group(1))
+                    elif owner and len(hm.group(1)) <= owner_lvl:
+                        owner = ""
+                if owner and key in h.INT_ID_RE.findall(re.sub(r"`[^`]*`", "", line)):
+                    mention_owners.add(owner)
+        related = set(h.REQ_ID_RE.findall(it.get("関連する要求"))) | mention_owners
+        reqs = sorted(r for r in related if r in doc.requirements)
+        acs = sorted({a for r in reqs for a in doc.requirements[r].acs})
+        return {"id": key, "kind": "外部連携", "title": it.name, "at": f"{it.file}:{it.line}",
+                "direction": it.get("方向"), "integration_state": it.get("状態"), "counterparty": it.get("連携先"),
+                "requirements": [f"{r}（{doc.requirements[r].state}）" for r in reqs],
+                "acs": acs and [{"id": a, "level": doc.acs[a].level or "-", "cases": [], "code": [], "blocked": ""} for a in acs if a in doc.acs]}
     if key in doc.defs:
         return {"id": key, "kind": h.id_kind(key) or "id", "at": where(key), "referenced_by": referrers(key)}
     if key in doc.entities or key in doc.glossary:
@@ -1019,6 +1407,27 @@ def cmd_digest(args, root, cfg) -> int:
     return 0
 
 
+def cmd_hierarchy(args, root, cfg) -> int:
+    """FR-1062: 種類→区分→領域→項目の階層。導出の実体は EABK-Studio/eabk_model.py（1 か所）。都度生成し、保存しない。"""
+    studio = Path(__file__).resolve().parent.parent / "EABK-Studio"
+    if not (studio / "eabk_model.py").is_file():
+        studio = root / "EABK-Studio"
+    sys.path.insert(0, str(studio))
+    sd = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        import eabk_model
+        hier = eabk_model.build_model(root)["hierarchy"]
+    finally:
+        sys.dont_write_bytecode = sd
+    if args.json:
+        print(json.dumps(hier, ensure_ascii=False, indent=2))
+    else:
+        for t in hier["tiers"]:
+            print(f"{' > '.join(t['path'])}\t{t['count']}")
+    return 0
+
+
 def main(argv=None) -> int:
     h.setup_io()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1039,17 +1448,25 @@ def main(argv=None) -> int:
     l.add_argument("--level")
     l.add_argument("--priority")
     l.add_argument("--kind")
+    l.add_argument("--area", default=None, help="領域で絞り込む（廃止は含めない）")
+    l.add_argument("--by-area", action="store_true", help="領域ごとにまとめて表示する")
+    ix = sub.add_parser("index", help="種類つきの関係の索引（要求定義書・カタログ・台帳から都度生成。保存しない）")
+    ix.add_argument("ids", nargs="*", help="指定した ID が始点か終点の組だけ表示（逆引き）")
+    ix.add_argument("--kind", choices=["上位", "出典", "参照", "実装", "検証", "使用"])
+    ix.add_argument("--json", action="store_true")
     sub.add_parser("stats")
     d = sub.add_parser("digest")
     d.add_argument("ids", nargs="*")
     tr = sub.add_parser("trace")
     tr.add_argument("ids", nargs="+")
     tr.add_argument("--json", action="store_true")
+    hi = sub.add_parser("hierarchy", help="種類→区分→領域→項目の階層（FR-1062。都度生成。保存しない）")
+    hi.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
     root = Path(args.root).resolve() if args.root else h.repo_root()
     cfg = h.load_config(root)
     return {"check": cmd_check, "show": cmd_show, "list": cmd_list, "stats": cmd_stats, "digest": cmd_digest,
-            "trace": cmd_trace}[args.cmd](args, root, cfg)
+            "trace": cmd_trace, "index": cmd_index, "hierarchy": cmd_hierarchy}[args.cmd](args, root, cfg)
 
 
 if __name__ == "__main__":

@@ -47,6 +47,7 @@ import re  # noqa: E402
 import tempfile  # noqa: E402
 import time  # noqa: E402
 import traceback  # noqa: E402
+from datetime import datetime  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Iterable, List, Optional, Tuple  # noqa: E402
 
@@ -138,9 +139,20 @@ def deny(reason: str, gate: str) -> None:
     })
 
 
+def run_is_fresh(meta: dict, minutes: int = 10) -> bool:
+    """An unowned run is claimed only shortly after it started, so a session never takes over a long-running one."""
+    try:
+        started = datetime.fromisoformat(str(meta.get("started_at")))
+        now = datetime.now(started.tzinfo) if started.tzinfo else datetime.now()
+        return (now - started).total_seconds() <= minutes * 60
+    except (TypeError, ValueError):
+        return False
+
+
 class Ctx:
-    def __init__(self, data: dict):
+    def __init__(self, data: dict, event: str = ""):
         self.data = data
+        self.event = event
         cwd = g(data, "cwd", default=os.getcwd())
         self.cwd = Path(cwd).resolve()
         self.root = h.repo_root(self.cwd)
@@ -151,6 +163,116 @@ class Ctx:
         self.run_id = h.current_run(self.croot, self.cfg)
         self.meta = h.load_meta(self.croot, self.cfg, self.run_id) if self.run_id else {}
         self.run_active = bool(self.run_id and self.meta.get("status") == "active")
+        if not self.run_active and (g(data, "toolName", "tool_name", default="") or self.sid or self.is_subagent_event):
+            self.bind_sibling_run()
+        self.land_pending: Optional[Tuple[Path, str, dict]] = None
+
+    @property
+    def is_subagent_event(self) -> bool:
+        return self.event in ("subagent-start", "subagent-stop")
+
+    @property
+    def sid(self) -> str:
+        return str(g(self.data, "sessionId", "session_id", default=""))
+
+    def pending_land(self) -> Optional[Tuple[Path, str, dict]]:
+        """A finished run of this session whose integration branch is not in the base branch yet."""
+        base = self.cfg.get("base_branch", "main")
+        cands = self.sibling_runs() or ([self.root] if (self.root / ".git").is_file() else [])
+        for p in cands:
+            rid = h.current_run(p, self.cfg)
+            runs = h.work_dir(p, self.cfg) / "runs"
+            ids = [rid] if rid else sorted(x.name for x in runs.glob("*") if (x / "meta.json").exists())[-1:]
+            for r in ids:
+                meta = h.load_meta(p, self.cfg, r)
+                owner = meta.get("session_id")
+                if meta.get("status") != "finished" or meta.get("result") != "全件完了" or meta.get("landed_commit"):
+                    continue
+                if (owner and self.sid and owner != self.sid) or (not owner and self.sid and not self.cwd_in(p)):
+                    continue
+                br = meta.get("integration_branch")
+                if br and h.ref_exists(self.root, f"refs/heads/{br}"):
+                    rc, _ = h.git(["merge-base", "--is-ancestor", br, base], self.root)
+                    if rc != 0:
+                        return p, r, meta
+        return None
+
+    def cwd_in(self, tree: Path) -> bool:
+        return os.path.normcase(str(self.cwd)).startswith(os.path.normcase(str(tree)))
+
+    def sibling_runs(self) -> List[Path]:
+        """Run worktrees (<repo>-run-<id>) that run-state.py start created next to the primary checkout."""
+        if self.croot != self.root or (self.root / ".git").is_file():
+            return []
+        try:
+            return sorted(p for p in self.root.parent.glob(f"{self.root.name}-run-*") if (p / ".git").exists())
+        except OSError:
+            return []
+
+    def bind_to(self, tree: Path) -> bool:
+        rid = h.current_run(tree, self.cfg)
+        meta = h.load_meta(tree, self.cfg, rid) if rid else {}
+        if not (rid and meta.get("status") == "active"):
+            return False
+        self.croot, self.run_id, self.meta, self.run_active = tree, rid, meta, True
+        # agent/verify state belongs to the bound run's tree; sharing the primary's would mix up concurrent sessions
+        self.state_dir = h.work_dir(tree, self.cfg) / ".ebak"
+        return True
+
+    def rebind_primary(self) -> None:
+        self.croot = self.root
+        self.state_dir = h.work_dir(self.croot, self.cfg) / ".ebak"
+        self.run_id = h.current_run(self.croot, self.cfg)
+        self.meta = h.load_meta(self.croot, self.cfg, self.run_id) if self.run_id else {}
+        self.run_active = bool(self.run_id and self.meta.get("status") == "active")
+
+    def bind_sibling_run(self) -> None:
+        # The session works inside its run worktree while the hook runs in the primary checkout. Pick the run that
+        # belongs to this session; never another session's run (several runs may be active at once).
+        owned, free, others = [], [], []
+        for p in self.sibling_runs():
+            rid = h.current_run(p, self.cfg)
+            meta = h.load_meta(p, self.cfg, rid) if rid else {}
+            if not (rid and meta.get("status") == "active"):
+                continue
+            owner = meta.get("session_id")
+            if self.sid and owner == self.sid:
+                owned.append((meta.get("started_at", ""), p))
+            elif not owner:
+                free.append((meta.get("started_at", ""), p))
+            else:
+                others.append((meta.get("started_at", ""), p))
+        if owned:
+            self.bind_to(max(owned)[1])
+            return
+        if self.is_subagent_event and not self.sid and not free and len(others) == 1:
+            # a subagent hook may carry no session id; with exactly one active run it can only belong to that run
+            self.bind_to(others[0][1])
+            return
+        if not free:
+            return
+        if not self.sid:
+            pick = free[0][1] if len(free) == 1 else max(free)[1]
+            self.bind_to(pick)
+            return
+        # R-2: a session with no run of its own takes the newest unowned active run and records its session id
+        # (re-read the meta just before recording; if another session got there first, choose again).
+        for _, p in sorted(free, reverse=True):
+            rid = h.current_run(p, self.cfg)
+            meta = h.load_meta(p, self.cfg, rid) if rid else {}
+            if not (rid and meta.get("status") == "active"):
+                continue
+            owner = meta.get("session_id")
+            if owner and owner != self.sid:
+                continue
+            if not owner and not run_is_fresh(meta):
+                continue
+            if not owner:
+                meta["session_id"] = self.sid
+                h.save_meta(p, self.cfg, rid, meta)
+            self.bind_to(p)
+            return
+        self.log(f"UNBOUND-RUN session={self.sid} free_runs={len(free)} 束縛できる run がありません")
 
     def log(self, line: str) -> None:
         try:
@@ -212,6 +334,17 @@ def classify(ctx: Ctx, p: str) -> Tuple[Optional[str], bool, Path]:
     if not ap.is_absolute():
         ap = ctx.cwd / ap
     ap = Path(os.path.normpath(str(ap)))
+    nap = os.path.normcase(str(ap))
+    in_sibling = False
+    for sib in ctx.sibling_runs():
+        if nap.startswith(os.path.normcase(str(sib)) + os.sep):
+            in_sibling = True
+            if sib != ctx.croot and not ctx.bind_to(sib):
+                ctx.croot = sib  # an inactive run worktree of this repository is still not "outside"
+            break
+    if not in_sibling and ctx.croot != ctx.root and nap.startswith(os.path.normcase(str(ctx.root)) + os.sep):
+        # a sibling run was auto-bound, but this write targets the primary tree the session is in
+        ctx.rebind_primary()
     try:
         rel = ap.resolve().relative_to(ctx.croot.resolve()).as_posix() if ap.exists() else ap.relative_to(ctx.croot).as_posix()
     except ValueError:
@@ -573,9 +706,23 @@ def on_agent_stop(ctx: Ctx) -> None:
         emit({})
         return
     if not ctx.run_active:
+        pend = ctx.pending_land()
+        if pend:
+            tree, rid, pmeta = pend
+            n = int(pmeta.get("land_blocks", 0)) + 1
+            pmeta["land_blocks"] = n
+            h.save_meta(tree, ctx.cfg, rid, pmeta)
+            limit = int(ctx.cfg["gates"].get("agent_stop_max_blocks", 40))
+            if n <= limit:
+                ctx.log(f"AGENT-STOP blocked (land {rid} {n}/{limit})")
+                emit({"decision": "block", "reason": (
+                    f"run {rid} は全件完了ですが、main への取り込みが終わっていません。`{tree}` を cwd にして "
+                    "`python scripts/run-state.py land` を実行してください（0 で終わり。2 は競合: run の worktree で main を merge して解消し、"
+                    "verify の後にもう一度実行。3 は主の作業ツリーが未整備: 待ってから再実行）。利用者は途中で応答しません。")})
+                return
         emit({})
         return
-    sid = str(g(ctx.data, "sessionId", "session_id", default=""))
+    sid = ctx.sid
     meta = ctx.meta
     if not meta.get("session_id") and sid:
         meta["session_id"] = sid
@@ -611,7 +758,7 @@ def main() -> int:
     event = sys.argv[1] if len(sys.argv) > 1 else ""
     data = payload()
     try:
-        ctx = Ctx(data)
+        ctx = Ctx(data, event)
         if not ctx.cfg["gates"].get("enabled", True):
             emit({})
             return 0

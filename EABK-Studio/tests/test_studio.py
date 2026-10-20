@@ -470,6 +470,40 @@ def test_server_switch_repo_needs_header_and_a_data_layer(server, tmp_path_facto
     assert post({"path": str(tmp_path / "nope")}, {"X-EABK-Studio": "1"}) == 400
 
 
+def _pick(server, headers, host=None):
+    h = dict(headers)
+    if host:
+        h["Host"] = host
+    req = urllib.request.Request(server + "/api/repo/pick", data=b"{}", headers=h, method="POST")
+    try:
+        with urllib.request.urlopen(req) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"{}")
+
+
+# FR-010 AC-336: only local requests carrying the Studio header open the dialog
+def test_pick_rejects_missing_header_and_foreign_host_without_opening_dialog(server, monkeypatch):
+    def boom(_):
+        raise AssertionError("dialog must not open")
+    monkeypatch.setattr(studio, "pick_folder", boom)
+    assert _pick(server, {})[0] == 403
+    assert _pick(server, {"X-EABK-Studio": "0"})[0] == 403
+    assert _pick(server, {"X-EABK-Studio": "1"}, host="evil.example")[0] == 403
+
+
+# FR-010 AC-332 AC-334 AC-335: selected path / cancel / dialog unavailable
+def test_pick_returns_path_cancel_or_501(server, monkeypatch):
+    H = {"X-EABK-Studio": "1"}
+    monkeypatch.setenv("EABK_STUDIO_PICK_PATH", "/some/where")
+    assert _pick(server, H) == (200, {"path": "/some/where"})
+    monkeypatch.setenv("EABK_STUDIO_PICK_PATH", "")
+    assert _pick(server, H) == (200, {"path": ""})
+    monkeypatch.delenv("EABK_STUDIO_PICK_PATH")
+    monkeypatch.setattr(studio, "pick_folder", lambda _: None)
+    assert _pick(server, H) == (501, {"error": "picker-unavailable"})
+
+
 def test_check_reports_found_and_missing_files(repo, capsys):
     assert studio.main(["--repo", str(repo), "--check"]) == 0
     out = capsys.readouterr().out
@@ -581,3 +615,98 @@ def test_impl_status_screen_is_wired_bilingually_with_keyboard_and_symbols():
     for key in ("nav.implstatus", "impl2.all", "impl2.goal", "impl2.priority", "impl2.kanban", "impl2.table", "impl2.stalled", "impl2.legend"):
         assert len(re.findall(rf"'{re.escape(key)}':", i18n)) == 2, key
     assert "ledger" not in src.lower() and "fetch(" not in src  # read-only view
+
+
+# FR-1061 AC-338 AC-342: bar start/end come from history[].at and last_run_at; unparsable values become undated
+def test_gantt_span_uses_min_history_and_max_of_last_run_and_history(tmp_path):
+    root = _status_repo(tmp_path)
+    cases = [
+        {"id": "E2E-1", "requirement_ids": ["FR-103"], "status": "pass", "last_run_at": "2026-10-12T00:00:00+09:00",
+         "history": [{"at": "2026-10-05T00:00:00+09:00"}, {"at": "2026-10-09T00:00:00+09:00"}]},
+        {"id": "E2E-2", "requirement_ids": ["FR-103", "FR-104"], "status": "pass", "last_run_at": "2026-10-07T00:00:00+09:00",
+         "history": [{"at": "2026-10-03T00:00:00+09:00"}]},
+        {"id": "E2E-3", "requirement_ids": ["FR-105"], "status": "pass", "last_run_at": "not a date", "history": [{"at": 5}, {}]},
+        {"id": "E2E-4", "requirement_ids": ["FR-102"], "status": "pass", "last_run_at": "2026-10-20T00:00:00+09:00", "history": "x"},
+    ]
+    (root / "tests" / "system" / "ledger.json").write_text(json.dumps({"version": 1, "cases": cases}), encoding="utf-8")
+    by = {i["id"]: i for i in m.build_model(root)["implStatus"]["items"]}
+    assert (by["FR-103"]["start"], by["FR-103"]["end"]) == ("2026-10-03T00:00:00+09:00", "2026-10-12T00:00:00+09:00")
+    assert (by["FR-104"]["start"], by["FR-104"]["end"]) == ("2026-10-03T00:00:00+09:00", "2026-10-07T00:00:00+09:00")
+    assert (by["FR-102"]["start"], by["FR-102"]["end"]) == ("2026-10-20T00:00:00+09:00", "2026-10-20T00:00:00+09:00")
+    assert by["FR-105"]["start"] is None and by["FR-105"]["end"] is None  # AC-342 unparsable -> undated
+    assert by["FR-101"]["start"] is None  # no case -> undated
+    assert "FR-108" not in by  # AC-338 non-approved excluded
+
+
+# FR-1061 AC-337 AC-339 AC-340 AC-341: Gantt view wiring (bilingual, keyboard, symbols, shared filter/selection, read-only)
+def test_gantt_view_is_wired_with_axis_legend_keyboard_and_shared_selection():
+    js = ROOT / "web" / "js"
+    src = (js / "implstatus.js").read_text(encoding="utf-8")
+    i18n = (js / "i18n.js").read_text(encoding="utf-8")
+    for tid in ("impl-gantt", "impl-gantt-axis", "impl-gantt-bar", "impl-gantt-group", "impl-gantt-undated", "impl-gantt-legend", "impl-gantt-table"):
+        assert f"'{tid}'" in src, tid
+    assert "'data-start'" in src and "'data-end'" in src and "'data-count': undated" in src
+    assert "store.setImplFilter" in src and "store.select" in src and "ArrowDown" in src and "keydown" in src  # AC-340 AC-341
+    assert "STATE_META[i]" in src and "impl2.stalled" in src  # AC-339 symbol + word + stalled mark
+    for key in ("gantt.title", "gantt.view", "gantt.axis", "gantt.undated", "gantt.legend", "gantt.sel", "gantt.start", "gantt.end"):
+        assert len(re.findall(rf"'{re.escape(key)}':", i18n)) == 2, key  # AC-341
+    assert "fetch(" not in src and "writeFile" not in src  # AC-342 read-only
+
+# --- FR-1021 / FR-1022 / NFR-COMPAT-003: entity matrix and detail ---------------------------------------------------
+SEP = "\u3000"
+
+
+def _entity_repo(tmp_path, with_entities=True):
+    (tmp_path / "docs").mkdir(parents=True)
+    ents = "| 注文 | 購入内容 | なし |\n| 在庫 | 倉庫の数量 | なし |\n" if with_entities else ""
+    states = "| 注文 | 確定 | 支払い完了時 |\n" if with_entities else ""
+    use = "注文" if with_entities else "なし"
+    uf = "- エンティティの使い方: 注文（作成）\n- 利用シナリオ: 1\n" if with_entities else ""
+    (tmp_path / "docs" / "requirements-definition.md").write_text(
+        "# 要求定義書\n\n### 3.3 用語\n\n| 用語 | 定義 | 禁止同義語 |\n|---|---|---|\n" + ents
+        + "\n### 3.4 状態\n\n| 対象エンティティ | 状態 | 遷移の条件 |\n|---|---|---|\n" + states
+        + "\n## 5. 利用シナリオ\n\n1. 利用者が注文する。\n\n## 6. 要求\n\n"
+        + f"#### FR-001 登録\n- 要求: 登録できる。\n- 決定状態: 承認済み（依頼 2026-10-14）{SEP}出自: 依頼原文{SEP}優先度: MUST\n"
+        + f"- 上位: G-001{SEP}出典: 依頼{SEP}対象エンティティ: {use}{SEP}関係する状態: なし{SEP}参照パラメータ: なし{SEP}関連する既存資産: なし\n" + uf
+        + "- 受入基準 AC-001: 登録できる。\n  - 検証レベル: system\n\n"
+        + f"#### FR-002 表示\n- 要求: 表示する。\n- 決定状態: 承認済み（依頼 2026-10-14）{SEP}出自: 依頼原文{SEP}優先度: MUST\n"
+        + f"- 上位: G-001{SEP}出典: 依頼{SEP}対象エンティティ: なし{SEP}関係する状態: なし{SEP}参照パラメータ: なし{SEP}関連する既存資産: なし\n"
+        + "- 受入基準 AC-002: 表示する。\n  - 検証レベル: system\n",
+        encoding="utf-8")
+    return tmp_path
+
+
+# FR-1021 AC-154 AC-156 FR-1022 AC-157
+def test_model_has_entity_ledger_with_usage_states_and_unused(tmp_path):
+    model = m.build_model(_entity_repo(tmp_path))
+    ents = {e["name"]: e for e in model["entities"]["entities"]}
+    assert model["entities"]["available"] is True
+    assert ents["注文"]["usecases"][0]["usages"] == ["作成"] and ents["注文"]["usecases"][0]["scenarios"] == [1]
+    assert ents["在庫"]["usecases"] == []  # unused entities are not dropped
+    sm = next(x for x in model["stateMachines"] if x["entity"] == "注文")
+    assert sm["rows"][0]["state"] == "確定" and sm["rows"][0]["condition"] == "支払い完了時"
+
+
+# NFR-COMPAT-003 AC-168
+def test_zero_entities_and_missing_derivation_do_not_fail(tmp_path, monkeypatch):
+    model = m.build_model(_entity_repo(tmp_path, with_entities=False))
+    assert model["entities"]["entities"] == [] and model["warnings"] == []
+    warnings = []
+    monkeypatch.setattr(m.Path, "is_file", lambda self: False if self.name == "entities.py" else Path.is_file(self))
+    assert m.build_entities(tmp_path, warnings) == {"available": False, "entities": [], "scenarios": {}, "relations": [], "clusters": [],
+                                                    "supplement": {"files": [], "diagnostics": []}}  # FR-1025/1026 縮退
+
+
+# FR-1021 AC-155 FR-1022 AC-158 NFR-COMPAT-003 AC-168
+def test_entity_screen_is_wired_bilingually_with_keyboard_csv_and_links():
+    js = ROOT / "web" / "js"
+    src = (js / "entities.js").read_text(encoding="utf-8")
+    app = (js / "app.js").read_text(encoding="utf-8")
+    i18n = (js / "i18n.js").read_text(encoding="utf-8")
+    drawer = (js / "drawer.js").read_text(encoding="utf-8")
+    assert "entities:" in app and "entities.js" in app
+    assert "el('button'" in src and "csvCell" in src and "download" in src and "type: 'search'" in src
+    assert "#/diagrams?kind=entities" in src and "#/diagrams?kind=layers" in src and "#/entities?entity=" in drawer
+    for key in [k for k in re.findall(r"t\('(eu\.[a-zA-Z.]+)'", src) if not k.endswith(".")] + ["nav.entities", "eu.none.h", "eu.unused", "eu.noent", "eu.used"]:
+        assert len(re.findall(rf"'{re.escape(key)}':", i18n)) == 2, key
+    assert "fetch(" not in src  # read-only view

@@ -2,6 +2,8 @@
 import { t, onLang } from './i18n.js';
 import { store, norm } from './store.js';
 import { el, svgEl, colorOf, nodeChip, showTip, hideTip, vscodeUrl } from './ui.js';
+import { placeRows, listTiers } from './tierlist.js';
+import { UNCLASSIFIED } from './hier.js';
 
 const ui = { q: '', tests: true };
 
@@ -33,7 +35,7 @@ export function mount(host) {
     for (const c of citems) {
       const r = out.get(c.key), pad = 3;
       svg.append(svgEl('rect', { x: r.x + pad, y: r.y + pad, width: Math.max(0, r.w - pad * 2), height: Math.max(0, r.h - pad * 2), rx: 10, fill: 'rgba(120,150,255,.06)', stroke: 'rgba(140,170,255,.35)' }));
-      if (r.w > 90 && r.h > 40) svg.append(svgEl('text', { x: r.x + 12, y: r.y + 22, 'font-size': 13, 'font-weight': 700, fill: '#cfe0ff' }, c.key.length > r.w / 8 ? c.key.split('/').pop() : c.key));
+      if (r.w > 90 && r.h > 40) svg.append(svgEl('text', { x: r.x + 12, y: r.y + 22, 'font-size': 13, 'font-weight': 700, fill: 'var(--viz-cluster-name)' }, c.key.length > r.w / 8 ? c.key.split('/').pop() : c.key));
       const inner = { x: r.x + 8, y: r.y + 30, w: r.w - 16, h: r.h - 38 };
       if (inner.w < 8 || inner.h < 8) continue;
       const fout = new Map();
@@ -43,8 +45,8 @@ export function mount(host) {
         const nreq = store.neighbors(f.id, ['req']).length, on = !set || set.has(f.id);
         const col = colorOf(f);
         const g = svgEl('g', { class: 'node-g', style: `opacity:${on ? 1 : 0.16}` },
-          svgEl('rect', { x: fr.x + 1, y: fr.y + 1, width: Math.max(0, fr.w - 2), height: Math.max(0, fr.h - 2), rx: 4, fill: col, 'fill-opacity': 0.18 + Math.min(0.6, nreq / 14), stroke: f.id === store.selected ? '#fff' : col, 'stroke-width': f.id === store.selected ? 2.5 : 0.8 }));
-        if (fr.w > 56 && fr.h > 18) g.append(svgEl('text', { x: fr.x + 5, y: fr.y + 14, 'font-size': 10.5, fill: '#fff' }, f.label.length * 6 > fr.w ? f.label.slice(0, Math.floor(fr.w / 6)) + '…' : f.label));
+          svgEl('rect', { x: fr.x + 1, y: fr.y + 1, width: Math.max(0, fr.w - 2), height: Math.max(0, fr.h - 2), rx: 4, fill: col, 'fill-opacity': 0.18 + Math.min(0.6, nreq / 14), stroke: f.id === store.selected ? 'var(--color-fg-default)' : col, 'stroke-width': f.id === store.selected ? 2.5 : 0.8 }));
+        if (fr.w > 56 && fr.h > 18) g.append(svgEl('text', { x: fr.x + 5, y: fr.y + 14, 'font-size': 10.5, fill: 'var(--color-fg-default)' }, f.label.length * 6 > fr.w ? f.label.slice(0, Math.floor(fr.w / 6)) + '…' : f.label));
         g.addEventListener('click', () => store.select(f.id, { fly: true }));
         g.addEventListener('mouseenter', (e) => { store.setHover(f.id); showTip(`<b style="color:${col}">${f.label}</b><div class="mini">${f.path}</div><div>${nreq} ${t('type.req')}</div>`, e.clientX, e.clientY); });
         g.addEventListener('mousemove', (e) => showTip(`<b style="color:${col}">${f.label}</b><div class="mini">${f.path}</div><div>${nreq} ${t('type.req')}</div>`, e.clientX, e.clientY));
@@ -58,17 +60,24 @@ export function mount(host) {
   function fileList(files) {
     const q = norm(ui.q);
     const list = files.filter((f) => !q || norm(f.path).includes(q));
-    const byComp = new Map();
-    for (const f of list) { if (!byComp.has(f.comp)) byComp.set(f.comp, []); byComp.get(f.comp).push(f); }
     const set = store.activeSet();
-    return el('div', {}, [...byComp.entries()].sort().map(([c, fs]) => el('details', { open: set ? fs.some((f) => set.has(f.id)) || null : null, style: { marginBottom: '8px' } },
-      el('summary', { style: { cursor: 'pointer', padding: '6px 0' } }, el('b', {}, c), el('span', { class: 'mini' }, ` · ${fs.length}`)),
-      fs.sort((a, b) => a.path.localeCompare(b.path)).map((f) => {
+    // FR-1063 AC-349: ファイルを上位層（種類→区分→領域）の見出しの下にまとめる。階層の users-guide・scripts 以外は、コンポーネント名の領域で「未分類」の区分に置く。
+    const kindOfPath = (p) => (p.startsWith('users-guide/') ? 'users-guide' : p.startsWith('scripts/') ? 'scripts' : null);
+    const placed = placeRows(list, (f) => ({ kind: kindOfPath(f.path), id: f.path }), (f) => [t('nav.source'), UNCLASSIFIED, f.comp || UNCLASSIFIED]);
+    // FR-1033: 選択・絞り込みの対象（activeSet）を含む層は開く（旧版の「選択中の項目を含むグループだけ開く」）。
+    const openPaths = new Set();
+    if (set) for (const it of placed) if (set.has(it.row.id)) for (let n = 1; n <= 3; n++) openPaths.add(JSON.stringify([it.kind, it.division, it.area].slice(0, n)));
+    return listTiers(placed, {
+      openPaths,
+      empty: placed.length ? undefined : [[t('nav.source'), UNCLASSIFIED, UNCLASSIFIED]],
+      itemNode: (it) => {
+        const f = it.row, c = f.comp;
         const reqs = store.neighbors(f.id, ['req']).length, parts = store.neighbors(f.id, ['part', 'api', 'table']);
-        return el('div', { class: 'res' + (f.id === store.selected ? ' on' : ''), style: set && !set.has(f.id) ? { opacity: 0.35 } : {}, onclick: () => store.select(f.id, { fly: true }) },
+        return el('div', { class: 'res tier-item' + (f.id === store.selected ? ' on' : ''), 'data-testid': 'tier-item', 'data-id': f.path, style: set && !set.has(f.id) ? { opacity: 0.35 } : {}, onclick: () => store.select(f.id, { fly: true }) },
           el('i', { class: 'dot', style: { background: colorOf(f) } }), el('span', { class: 't mono' }, f.path.replace(c + '/', ''), el('small', {}, `${reqs} ${t('type.req')}${parts.length ? ' · ' + parts.map((p) => store.node(p.id).label).join(', ') : ''}`)),
           el('a', { class: 'mini', href: vscodeUrl(f.path), title: 'VS Code', onclick: (e) => e.stopPropagation() }, '↗'));
-      }))));
+      },
+    });
   }
 
   function render() {
@@ -78,7 +87,7 @@ export function mount(host) {
         el('label', { class: 'row mini', style: { cursor: 'pointer' } }, el('input', { type: 'checkbox', checked: ui.tests || null, onchange: (e) => { ui.tests = e.target.checked; render(); } }), t('src.tests')),
         el('span', { class: 'mini' }, t('src.legend'))),
       files.length ? el('div', { class: 'grid', style: { gridTemplateColumns: 'minmax(0,1.6fr) minmax(300px,1fr)', alignItems: 'start' } },
-        el('div', { class: 'card', id: 'tm' }, treemap(files)), el('div', { class: 'card', id: 'fl', style: { maxHeight: '70vh', overflow: 'auto' } }, fileList(files))) : el('div', { class: 'empty' }, t('src.none')));
+        el('div', { class: 'card', id: 'tm' }, treemap(files)), el('div', { class: 'card', id: 'fl', style: { maxHeight: '70vh', overflow: 'auto' } }, fileList(files))) : el('div', {}, el('div', { class: 'empty' }, t('src.none')), el('div', { id: 'fl' }, fileList([]))));
   }
   function refresh() {
     const files = [...store.nodes.values()].filter((n) => n.type === 'file' && (ui.tests || n.role !== 'test'));

@@ -10,7 +10,7 @@ import json
 import hashlib
 import re
 from collections import Counter, OrderedDict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 STUDIO_VERSION = "1.0.0"
@@ -23,6 +23,7 @@ DEFAULT_FILES = {
     "run_history": "docs/run-history.md",
     "ledger": "tests/system/ledger.json",
     "manual_tests": "docs/manual-tests.md",
+    "integrations": "docs/integrations.md",
 }
 CONFIG_CANDIDATES = ("scripts/ebak.config.json", "scripts/hve.config.json")
 
@@ -36,10 +37,24 @@ RANGE_RE = re.compile(
     r"(?<![A-Za-z0-9\-])((?:FR|NFR-[A-Z0-9]+)-)(\d{3,})\s*[〜~～]\s*(?:(?:FR|NFR-[A-Z0-9]+)-)?(\d{3,})")
 LIST_RE = re.compile(
     r"(?<![A-Za-z0-9\-])((?:FR|NFR-[A-Z0-9]+)-)(\d{3,})((?:\s*[・,、，]\s*\d{3,}(?![0-9\-]))+)")
-KEYS = ("決定状態", "出自", "優先度", "上位", "出典", "対象エンティティ", "関係する状態", "参照パラメータ", "関連する既存資産")
-KEY_RE = re.compile(r"(?:(?<=^)|(?<=[\s　]))(" + "|".join(KEYS) + r")\s*[:：]")
+def _load_field_roles() -> "OrderedDict[str, str]":
+    """欄名 -> 役割。メタデータ定義（scripts/metadata.json, FR-1058）から読む。欄名の一覧をここに重ねて持たない。"""
+    for p in (Path(__file__).resolve().parent.parent / "scripts" / "metadata.json",):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            roles = OrderedDict((f["name"], f["role"]) for f in data.get("requirement_fields", []) if f.get("role"))
+            if roles:
+                return roles
+        except (OSError, ValueError, KeyError):
+            continue
+    return OrderedDict()  # 定義が見つからないときは構造化欄を読まない（本文は表示される）
+
+
+FIELD_ROLES = _load_field_roles()
+KEYS = tuple(FIELD_ROLES)
+KEY_RE = re.compile(r"(?:(?<=^)|(?<=[\s　]))(" + "|".join(map(re.escape, KEYS or ("\0",))) + r")\s*[:：]")
 TOP_KEY_RE = re.compile(
-    r"^[-*]\s+(要求|" + "|".join(KEYS) + r"|受入基準(?:\s+(?:AC-(?:\d{3,}|[A-Z][A-Z0-9_-]*)))?)\s*[:：]\s*(.*)$")
+    r"^[-*]\s+(要求|" + "|".join(map(re.escape, KEYS)) + r"|受入基準(?:\s+(?:AC-(?:\d{3,}|[A-Z][A-Z0-9_-]*)))?)\s*[:：]\s*(.*)$")
 AC_BULLET_RE = re.compile(r"^[-*]\s+(?:受入基準\s*)?\**(AC-(?:\d{3,}|[A-Z][A-Z0-9_-]*))\**\s*[:：]\s*(.*)$")
 SUB_RE = re.compile(r"^\s{2,}[-*]\s+(検証レベル|BLOCKED)\s*[:：]\s*(.*)$")
 NONE_WORDS = {"", "なし", "無し", "-", "—", "–", "n/a", "N/A", "未実装", "未設定", "tbd", "TBD"}
@@ -286,7 +301,7 @@ def data_layer_report(root: Path) -> dict:
 def fingerprint(root: Path) -> str:
     files = load_config(root)
     stamps = []
-    paths = [root / files[k] for k in ("requirements", "catalog", "ledger", "id_registry", "run_history")]
+    paths = [root / files[k] for k in ("requirements", "catalog", "ledger", "id_registry", "run_history", "integrations")]
     rd = root / files["requirements_dir"]
     if rd.is_dir():
         paths += sorted(rd.glob("*.md"))
@@ -301,7 +316,7 @@ def fingerprint(root: Path) -> str:
 
 def generated_at(root: Path) -> str:
     files = load_config(root)
-    paths = [root / files[k] for k in ("requirements", "catalog", "ledger", "id_registry", "run_history")]
+    paths = [root / files[k] for k in ("requirements", "catalog", "ledger", "id_registry", "run_history", "integrations")]
     rd = root / files["requirements_dir"]
     if rd.is_dir():
         paths += sorted(rd.glob("*.md"))
@@ -338,17 +353,71 @@ def parse_requirements(doc: dict) -> list[dict]:
     return reqs
 
 
+REQ_PLACEMENT_RE = re.compile(r"^[-*]\s+配置先\s*[:：]\s*(.*)$")
+
+
+def parse_req_placement(value: str) -> dict:
+    """FR-1034 AC-206: optional requirement field
+    `- 配置先: <実行場所>／保存: <場所>＝<データ名>／通信: <相手>（方向）` (items separated by 、).
+    An absent field or a 'なし' item reads as empty ('なし'); nothing is guessed."""
+    out = {"present": False, "runAt": [], "stores": [], "links": []}
+    value = strip_md(value or "")
+    if not value:
+        return out
+    out["present"] = True
+
+    def items(s: str) -> list[str]:
+        parts, depth, cur = [], 0, ""
+        for ch in s:
+            if ch in "（(":
+                depth += 1
+            elif ch in "）)":
+                depth = max(0, depth - 1)
+            if ch in "、,，" and depth == 0:
+                parts.append(cur)
+                cur = ""
+            else:
+                cur += ch
+        parts.append(cur)
+        return [p.strip() for p in parts if p.strip()]
+
+    def is_none(s: str) -> bool:
+        return re.split(r"[（(]", s.strip(), 1)[0].strip() in NONE_WORDS
+
+    for k, seg in enumerate(re.split(r"[／]", value)):
+        seg = seg.strip()
+        m = re.match(r"^(保存|通信)\s*[:：]\s*(.*)$", seg)
+        if not m:
+            if k == 0 and not is_none(seg):
+                out["runAt"] = items(seg)
+            continue
+        if is_none(m.group(2)):
+            continue
+        for it in items(m.group(2)):
+            if m.group(1) == "保存":
+                place, _, data = it.partition("＝")
+                out["stores"].append({"place": place.strip(), "data": data.strip() or "なし"})
+            else:
+                d = re.match(r"^(.*?)\s*[（(]\s*(送信|受信|双方向)\s*[）)]\s*$", it)
+                out["links"].append({"peer": (d.group(1) if d else it).strip(), "direction": d.group(2) if d else "なし"})
+    return out
+
+
 def parse_req_block(rid: str, title: str, rel: str, line: int, block: list[tuple[int, str]]) -> dict:
     kind = "FR" if rid.startswith("FR-") else "NFR"
     cat = "" if kind == "FR" else rid.split("-")[1]
     r = {"id": rid, "kind": kind, "cat": cat, "title": title, "text": "", "status": "", "statusKind": "unknown",
          "origin": "", "priority": "", "priorityNote": "", "goal": "", "sources": "", "entities": [], "states": [],
-         "params": [], "assets": "", "relation": "", "acs": [], "blocked": [], "file": rel, "line": line, "body": ""}
+         "params": [], "assets": "", "relation": "", "placement": parse_req_placement(""), "acs": [], "blocked": [], "file": rel, "line": line, "body": ""}
     cur_key, cur_ac, texts = None, None, []
     body = []
     for ln_no, raw in block:
         body.append(raw)
         line_s = raw.rstrip()
+        place = REQ_PLACEMENT_RE.match(line_s)
+        if place:
+            r["placement"] = parse_req_placement(place.group(1))
+            continue
         relation = re.match(r"^[-*]\s+関係\s*[:：]\s*(.*)$", line_s)
         if relation:
             value = strip_md(relation.group(1))
@@ -404,27 +473,30 @@ def apply_kv(r: dict, text: str) -> None:
         end = marks[k + 1].start() if k + 1 < len(marks) else len(text)
         key, val = m.group(1), text[m.end():end].strip(" 　")
         val = strip_md(val)
-        if key == "決定状態":
+        role = FIELD_ROLES.get(key)
+        if role == "status":
             r["status"] = val
-        elif key == "出自":
+        elif role == "origin":
             r["origin"] = val
-        elif key == "優先度":
+        elif role == "priority":
             mm = re.match(r"(MUST|SHOULD|MAY|COULD|WON'T)", val, re.I)
             r["priority"] = mm.group(1).upper() if mm else val.split("（")[0]
             r["priorityNote"] = val
-        elif key == "上位":
+        elif role == "goal":
             gm = re.search(r"G-\d{3,}", val)
             r["goal"] = gm.group(0) if gm else val
-        elif key == "出典":
+        elif role == "sources":
             r["sources"] = val
-        elif key == "対象エンティティ":
+        elif role == "entities":
             r["entities"] = [e for e in split_items(val, ",、，;；・/／") if e not in NONE_WORDS]
-        elif key == "関係する状態":
+        elif role == "states":
             r["states"] = [] if val in NONE_WORDS else [val]
-        elif key == "参照パラメータ":
+        elif role == "params":
             r["params"] = re.findall(r"PARAM-\d{3,}", val)
-        elif key == "関連する既存資産":
+        elif role == "assets":
             r["assets"] = "" if val in NONE_WORDS else val
+        elif role in ("area", "updated", "version"):
+            r[role] = val
 
 
 # --------------------------------------------------------------------------- states
@@ -444,6 +516,7 @@ def parse_state_machines(tables: list[dict]) -> list[dict]:
             cond = strip_md(c[ci]) if ci is not None and ci < len(c) else ""
             m = machines.setdefault(ent, {"entity": ent, "states": [], "transitions": [], "file": t["file"], "line": row["line"]})
             cell = strip_md(c[si])
+            m.setdefault("rows", []).append({"state": cell, "condition": cond, "line": row["line"]})  # FR-1022: 状態と遷移の条件
             segments = [s for s in re.split(r"[。\n]", cell) if s.strip()]
             multi = any(("→" in s or "／" in s) for s in segments)
             if multi:
@@ -501,13 +574,45 @@ def classify_impl_state(has_impl: bool, has_system_ac: bool, case_statuses: list
     return IMPL_STATES[1] if has_system_ac else IMPL_STATES[4]
 
 
+def _parse_ts(value):
+    """FR-1061 AC-342: ISO 8601 text -> aware datetime (naive = UTC); anything else -> None."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        d = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def gantt_span(cases: list) -> tuple:
+    """FR-1061 AC-338: start = min(history[].at); end = max(last_run_at, history[].at). Returns (start, end) as the
+    original ISO strings, or (None, None) when no value can be interpreted."""
+    pts, ends = [], []
+    for c in cases:
+        for h in c.get("history") or []:
+            d = _parse_ts(h)
+            if d:
+                pts.append((d, h.strip()))
+        d = _parse_ts(c.get("last_run_at"))
+        if d:
+            ends.append((d, c["last_run_at"].strip()))
+    ends = pts + ends
+    pts = pts or ends
+    if not pts:
+        return None, None
+    return min(pts, key=lambda x: x[0])[1], max(ends, key=lambda x: x[0])[1]
+
+
 def build_impl_status(model: dict, root: Path) -> dict:
     """Per-requirement implementation state + counts. Read-only; uses only the data layer."""
     feats = {f["req"]: f for f in model["catalog"]["features"]}
     cases_by_req: dict = {}
+    case_objs_by_req: dict = {}
     for c in model["cases"]:
         for rid in c.get("requirement_ids") or []:
             cases_by_req.setdefault(rid, []).append(c.get("status") or "not_run")
+            case_objs_by_req.setdefault(rid, []).append(c)
     items, excluded = [], 0
     for r in model["reqs"]:
         if r["statusKind"] != "approved":
@@ -529,10 +634,285 @@ def build_impl_status(model: dict, root: Path) -> dict:
         for s in statuses:
             breakdown[s] = breakdown.get(s, 0) + 1
         stalled = bool(r["blocked"]) or any(a.get("blocked") for a in r["acs"])
+        start, end = gantt_span(case_objs_by_req.get(r["id"], []))
         items.append({"id": r["id"], "title": r["title"], "state": classify_impl_state(has_impl, has_sys, statuses),
                       "cases": breakdown, "blocked": stalled, "goal": r["goal"] or "-",
-                      "priority": r["priority"] or "-"})
+                      "priority": r["priority"] or "-", "start": start, "end": end})
     return {"states": list(IMPL_STATES), "items": items, "excluded": excluded}
+
+
+def parse_placements(cat_doc: dict | None) -> dict:
+    """FR-1034 / Q-014 (A): optional 'Placement' section of the catalog -> execution locations, apps, data and links.
+    Lines:  - 配置先: <種別> / <ラベル>: <名前> / アプリ: a、b / データ: x、y      - 通信: <元> → <先>（送信|受信|双方向）
+    Nothing is guessed: a link whose ends are not both listed is kept as unresolved and never drawn."""
+    out: dict = {"locations": [], "links": []}
+    if not cat_doc:
+        return out
+    lines = cat_doc["lines"]
+    heads = cat_doc["headings"]
+    start = next((h for h in heads if "配置先" in h[2]), None)
+    if not start:
+        return out
+    end = next((h[0] for h in heads if h[0] > start[0] and h[1] <= start[1]), len(lines) + 1)
+    locs: OrderedDict[tuple[str, str], dict] = OrderedDict()
+    raw_links = []
+    for no in range(start[0], end - 1):
+        ln = lines[no]
+        m = re.match(r"^\s*[-*]\s*配置先[:：]\s*(.+?)\s*$", ln)
+        if m:
+            segs = [strip_md(s) for s in re.split(r"\s+/\s+", m.group(1)) if s.strip()]
+            kind = segs[0]
+            name, extra = kind, segs[1:]
+            if extra and re.match(r"^[^:：]+[:：]", extra[0]) and not re.match(r"^(アプリ|データ)[:：]", extra[0]):
+                name = re.split(r"[:：]", extra[0], 1)[1].strip() or kind
+                extra = extra[1:]
+            loc = locs.setdefault((kind, name), {"kind": kind, "name": name, "apps": [], "data": [], "links": [], "file": cat_doc["rel"], "line": no + 1})
+            for seg in extra:
+                mm = re.match(r"^(アプリ|データ)[:：]\s*(.+)$", seg)
+                if mm:
+                    key = "apps" if mm.group(1) == "アプリ" else "data"
+                    for v in re.split(r"[、,]", mm.group(2)):
+                        v = v.strip()
+                        if v and v not in loc[key]:
+                            loc[key].append(v)
+            continue
+        m = re.match(r"^\s*[-*]\s*通信[:：]\s*(.+?)\s*(?:→|->)\s*(.+?)\s*(?:[（(]\s*(送信|受信|双方向)\s*[）)])?\s*$", ln)
+        if m:
+            raw_links.append({"from": strip_md(m.group(1)), "to": strip_md(m.group(2)), "direction": m.group(3) or "なし", "line": no + 1})
+    names = {l["name"] for l in locs.values()} | {l["kind"] for l in locs.values()}
+    for lk in raw_links:
+        owner = next((l for l in locs.values() if lk["from"] == l["name"] or any(a == lk["from"] or a.startswith(lk["from"]) for a in l["apps"])), None)
+        known_to = lk["to"] in names or any(a == lk["to"] or a.startswith(lk["to"]) for l in locs.values() for a in l["apps"])
+        lk["resolved"] = bool(owner and known_to)
+        if lk["resolved"]:
+            owner["links"].append({"to": lk["to"], "direction": lk["direction"]})
+        out["links"].append(lk)
+    out["locations"] = list(locs.values())
+    return out
+
+
+def build_entities(root: Path, warnings: list[str]) -> dict:
+    """FR-1021/FR-1022/NFR-COMPAT-003: the entity ledger, derived by the toolkit's scripts/entities.py (loaded
+    dynamically; read-only).  When the script is unavailable the screen degrades to "no entities" instead of failing."""
+    empty = {"available": False, "entities": [], "scenarios": {}, "relations": [], "clusters": [], "supplement": {"files": [], "diagnostics": []}}
+    try:
+        import importlib.util
+        import sys
+        for base in (Path(__file__).resolve().parent.parent, root):
+            path = base / "scripts" / "entities.py"
+            if not path.is_file():
+                continue
+            sd = sys.dont_write_bytecode
+            sys.dont_write_bytecode = True
+            try:
+                spec = importlib.util.spec_from_file_location("eabk_entities_" + str(abs(hash(str(path)))), path)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                cfg = mod.h.load_config(root)
+                data = mod.derive(root, cfg)
+            finally:
+                sys.dont_write_bytecode = sd
+            data["available"] = True
+            # FR-1025/1026: degrade to "no columns / no relations" when the derivation predates them (every entity is its own cluster)
+            for e in data.get("entities", []):
+                e.setdefault("columns", [])
+                e.setdefault("columnsMissing", not e["columns"])
+            data.setdefault("relations", [])
+            data.setdefault("clusters", [{"id": f"C{i + 1}", "count": 1, "entities": [e["name"]]} for i, e in enumerate(data.get("entities", []))])
+            data.setdefault("supplement", {"files": [], "diagnostics": []})
+            return data
+    except Exception as e:  # noqa: BLE001 - a broken derivation must not stop Studio
+        warnings.append(f"entities: {type(e).__name__}: {e}")
+    return empty
+
+
+# FR-1042: external integration catalog (FR-1035) read-only. 16 viewpoints of FR-1038 -> catalog field names.
+INT_VIEWPOINTS = (
+    ("連携先", ("連携先",)), ("方向", ("方向",)), ("方式", ("方式",)), ("頻度と量", ("頻度と量",)),
+    ("データ分類と個人情報", ("データ分類", "個人情報")), ("認証認可", ("認証認可",)),
+    ("可用性・SLA", ("可用性・SLA",)), ("レート制限", ("レート制限",)),
+    ("エラー・再試行・冪等性", ("エラー・再試行・冪等性",)), ("契約・バージョン", ("契約・バージョン",)),
+    ("変更通知", ("変更通知",)), ("監視", ("監視",)), ("データ保持", ("データ保持",)),
+    ("障害時の代替", ("障害時の代替",)), ("責任分界", ("責任分界",)), ("法務・ライセンス", ("法務・ライセンス",)),
+)
+INT_HEADING = re.compile(r"^#{2,6}\s+\**(INT-\d{3,})\**\s*(.*)$")
+INT_BULLET = re.compile(r"^\s{0,3}[-*]\s+\**([^:：*]{1,30}?)\**\s*[:：]\s*(.*)$")
+INT_SECRET = re.compile(r"(?i)(?:://[^/\s:@]+:[^/\s@]+@|\bBearer\s+[A-Za-z0-9._~+/=-]{12,}|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"
+                        r"|\bgh[pousr]_[A-Za-z0-9]{20,}|\b(?:sk|pk)[-_][A-Za-z0-9_-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY"
+                        r"|(?:password|passwd|secret|token|api[ _-]?key|パスワード|トークン)\s*[:：=]\s*\S{6,})")
+
+
+def viewpoint_state(value: str) -> str:
+    v = (value or "").strip()
+    if not v:
+        return "missing"
+    if v == "なし":
+        return "none"
+    if re.match(r"^TBD(?:\s*[（(].*[）)])?$", v, re.I):
+        return "tbd"
+    return "filled"
+
+
+def parse_integration_catalog(root: Path, files: dict, model: dict) -> None:
+    """Fill model['integrationCatalog'] and merge same-partner rows of the requirements section 8 table (AC-231)."""
+    rel = files.get("integrations") or "docs/integrations.md"
+    p = root / rel
+    items: list[dict] = []
+    if p.is_file():
+        cur = None
+        in_code = False
+        for n, line in enumerate(read_text(p).splitlines(), 1):
+            if line.lstrip().startswith("```"):
+                in_code = not in_code
+                continue
+            if in_code:
+                continue
+            hm = INT_HEADING.match(line)
+            if hm:
+                cur = {"id": hm.group(1), "name": strip_md(hm.group(2)), "fields": {}, "file": rel, "line": n}
+                items.append(cur)
+                continue
+            if cur is not None and re.match(r"^#{1,6}\s", line):
+                cur = None
+            bm = INT_BULLET.match(line) if cur is not None else None
+            if bm and bm.group(1).strip() not in cur["fields"]:
+                val = strip_md(bm.group(2))
+                cur["fields"][bm.group(1).strip()] = "（認証情報らしい値のため非表示）" if INT_SECRET.search(val) else val
+    legacy = model["integrations"]
+    for it in items:
+        f = it["fields"]
+        it["partner"], it["direction"], it["method"] = f.get("連携先", ""), f.get("方向", ""), f.get("方式", "")
+        it["dataClass"], it["pii"], it["status"] = f.get("データ分類", ""), f.get("個人情報", ""), f.get("状態", "")
+        it["authz"], it["responsibility"] = f.get("認証認可", ""), f.get("責任分界", "")
+        it["reqs"] = list(dict.fromkeys(REQ_ID_RE.findall(f.get("関連する要求", ""))))
+        # FR-1050 AC-278: every ID written in 「関連する要求」 (FR / NFR / AC / INT …) so the UI can link it or show it as unresolved.
+        it["refs"] = list(dict.fromkeys(re.findall(r"(?<![A-Za-z0-9\-])((?:G|FR|NFR-[A-Z0-9]+|AC|Q|PARAM|SRC|INT|E2E|IT)-\d{3,})(?![0-9])", f.get("関連する要求", ""))))
+        vps = []
+        for label, keys in INT_VIEWPOINTS:
+            states = [viewpoint_state(f.get(k, "")) for k in keys]
+            st = next((s for s in ("missing", "tbd") if s in states), "none" if all(s == "none" for s in states) else "filled")
+            vps.append({"label": label, "value": " / ".join(f.get(k, "") for k in keys if f.get(k, "")), "state": st})
+        it["viewpoints"] = vps
+        it["missing"] = sum(1 for v in vps if v["state"] == "missing")
+        it["tbd"] = sum(1 for v in vps if v["state"] == "tbd")
+        it["flag"] = it["pii"].strip() not in ("なし", "") or viewpoint_state(it["authz"]) == "tbd"
+        key = norm(it["partner"]).lower()
+        merged = [x for x in legacy if key and norm(x["name"]).lower() == key]
+        it["merged"] = [{"name": x["name"], "method": x["method"], "owner": x["owner"], "file": x["file"], "line": x["line"]} for x in merged]
+        for x in merged:
+            legacy.remove(x)
+    model["integrationCatalog"] = items
+
+
+# FR-1062 AC-343 AC-344: 種類 → 区分 → 領域 → 項目 の階層を、元データから 1 か所で導出する。
+# 領域の割り当て表は持たない（要求の領域の欄・既存の節の見出しを直接読み、build_model のたびに作り直す）。
+UNCLASSIFIED = "未分類"
+HIER_KINDS = ("目的", "要求", "受入基準", "試験ケース", "カタログ", "エンティティ", "質問", "出典", "パラメータ", "監査指摘",
+              "外部連携", "users-guide", "scripts")
+HIER_SKIP_DIRS = {"__pycache__", ".git", "node_modules", "images"}
+
+
+def _section_area(section: str) -> str:
+    """表の節（見出しの並び）から既存の分類名を決める: 「領域: <名>」があればその名、なければ最も内側の見出し。"""
+    parts = [p.strip() for p in (section or "").split(" / ") if p.strip()]
+    for p in reversed(parts):
+        m = re.match(r"^領域\s*[:：]\s*(.+)$", p)
+        if m:
+            return m.group(1).strip()
+    return parts[-1] if parts else UNCLASSIFIED
+
+
+def _first_heading(path: Path) -> str:
+    try:
+        for ln in read_text(path).splitlines():
+            m = HEADING_RE.match(ln)
+            if m:
+                return strip_md(m.group(2)) or UNCLASSIFIED
+    except OSError:
+        pass
+    return UNCLASSIFIED
+
+
+def derive_hierarchy(model: dict, root: Path, docs: list[dict], cat_doc: dict | None) -> dict:
+    items: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(kind: str, division: str, area: str, iid: str, **kw) -> None:
+        iid = (iid or "").strip()
+        if not iid or (kind, iid) in seen:
+            return
+        seen.add((kind, iid))
+        items.append({"kind": kind, "division": division or UNCLASSIFIED, "area": (area or "").strip() or UNCLASSIFIED,
+                      "id": iid, **{k: v for k, v in kw.items() if v not in (None, "")}})
+
+    req_area: dict[str, str] = {}
+    for r in model["reqs"]:
+        a = (r.get("area") or "").strip()
+        req_area[r["id"]] = a or UNCLASSIFIED
+        add("要求", "機能" if r["id"].startswith("FR-") else "非機能", a, r["id"], title=r.get("title"))
+        for ac in r.get("acs", []):
+            add("受入基準", ac.get("level") or UNCLASSIFIED, a, ac["id"], title=(ac.get("text") or "")[:80])
+    sect: dict[str, str] = {}
+    for d in docs:
+        for t in d["tables"]:
+            for row in t["rows"]:
+                c0 = strip_md(row["cells"][0]) if row["cells"] else ""
+                if c0:
+                    sect.setdefault(c0, _section_area(t["section"]))
+    for kind, key in (("目的", "goals"), ("質問", "questions"), ("出典", "sources"), ("パラメータ", "params"), ("監査指摘", "audits")):
+        for x in model[key]:
+            add(kind, kind, sect.get(x["id"], UNCLASSIFIED), x["id"], title=x.get("title") or x.get("question") or x.get("name") or x.get("summary"))
+    for c in model["cases"]:
+        rids = c.get("requirement_ids") or []
+        area = next((req_area[q] for q in rids if q in req_area and req_area[q] != UNCLASSIFIED), UNCLASSIFIED)
+        add("試験ケース", c.get("layer") or UNCLASSIFIED, area, c.get("id") or "", title=c.get("title"))
+    for it in model.get("integrationCatalog", []):
+        add("外部連携", "連携カタログ", UNCLASSIFIED, it["id"], title=it.get("name"))
+    for e in model.get("entities", {}).get("entities", []):
+        add("エンティティ", "エンティティ", UNCLASSIFIED, e.get("name") or "")
+    for sm in model["stateMachines"]:
+        add("エンティティ", "状態遷移", UNCLASSIFIED, sm["entity"])
+    if cat_doc:
+        for t in cat_doc["tables"]:
+            k = t["key"]
+            if "要求ID" in k and "実装ファイル" in k:
+                div = "機能"
+            elif "テーブル名" in k:
+                div = "テーブル"
+            elif "部品名" in k:
+                div = "共通部品"
+            elif "定義ファイル" in k:
+                div = "API・イベント"
+            else:
+                div = _section_area(t["section"]) if t["section"] else "その他"
+            sec = t["section"] and any(re.match(r"^領域\s*[:：]", p.strip()) for p in t["section"].split(" / "))
+            for row in t["rows"]:
+                c0 = strip_md(row["cells"][0]) if row["cells"] else ""
+                area = _section_area(t["section"]) if sec else (req_area.get(c0) if div == "機能" else None)
+                if not area:
+                    area = _section_area(t["section"]) if t["section"] and div != "機能" else UNCLASSIFIED
+                add("カタログ", div, area, c0)
+    for sub, kind in (("users-guide", "users-guide"), ("scripts", "scripts")):
+        base = root / sub
+        if not base.is_dir():
+            continue
+        exts = {".md"} if sub == "users-guide" else {".py", ".sh", ".ps1", ".json"}
+        for p in sorted(base.rglob("*")):
+            rel = p.relative_to(root).as_posix()
+            if not p.is_file() or p.suffix.lower() not in exts or set(p.relative_to(base).parts[:-1]) & HIER_SKIP_DIRS:
+                continue
+            parts = p.relative_to(base).parts
+            div = (parts[0] if len(parts) > 1 else sub)
+            area = _first_heading(p) if sub == "users-guide" else (parts[0] if len(parts) > 1 else UNCLASSIFIED)
+            add(kind, div, area, rel)
+    order = {k: i for i, k in enumerate(HIER_KINDS)}
+    counts: OrderedDict[tuple, int] = OrderedDict()
+    for it in items:
+        key = (it["kind"], it["division"], it["area"])
+        counts[key] = counts.get(key, 0) + 1
+    tiers = [{"path": list(k), "count": n} for k, n in
+             sorted(counts.items(), key=lambda kv: (order.get(kv[0][0], 99), kv[0][1] != "機能", kv[0][1], kv[0][2] == UNCLASSIFIED, kv[0][2]))]
+    return {"items": items, "tiers": tiers, "unclassified": UNCLASSIFIED, "kinds": list(HIER_KINDS)}
 
 
 def build_model(root: Path) -> dict:
@@ -542,8 +922,9 @@ def build_model(root: Path) -> dict:
     model: dict = {
         "meta": {"repo": str(root), "name": root.name, "studio": STUDIO_VERSION,
                  "generatedAt": generated_at(root), "files": {}, "fingerprint": fingerprint(root)},
-        "goals": [], "reqs": [], "params": [], "terms": [], "stateMachines": [], "personas": [], "integrations": [],
+        "goals": [], "reqs": [], "params": [], "terms": [], "stateMachines": [], "personas": [],         "integrations": [], "integrationCatalog": [],
         "questions": [], "decisions": [], "audits": [], "sources": [], "scenarios": [], "catalog": {"features": [], "apis": [], "tables": [], "parts": []},
+        "hierarchy": {"items": [], "tiers": [], "unclassified": UNCLASSIFIED, "kinds": list(HIER_KINDS)},
         "cases": [], "caseDigests": {}, "runs": [], "registry": [], "registryRecords": [],
         "analysis": {"structure": {"layers": [], "differences": []}, "runtime": {}, "history": []},
         "graph": {"nodes": [], "edges": []}, "warnings": warnings,
@@ -665,7 +1046,10 @@ def build_model(root: Path) -> dict:
                 c = row["cells"] + [""] * 5
                 model["decisions"].append({"date": strip_md(c[0]), "target": strip_md(c[1]), "decision": strip_md(c[2]),
                                            "basis": strip_md(c[3]), "run": strip_md(c[4]), "file": t["file"], "line": row["line"]})
+    parse_integration_catalog(root, files, model)
     model["stateMachines"] = parse_state_machines(all_tables)
+    model["entities"] = build_entities(root, warnings)
+    model["placements"] = parse_placements(cat_doc)
     for d in docs[:1]:
         for ln, lvl, text in d["headings"]:
             if re.match(r"^(\d+\.\s*)?利用シナリオ", text):
@@ -739,6 +1123,7 @@ def build_model(root: Path) -> dict:
             for c in data.get("cases", []):
                 case = {k: c.get(k) for k in ("id", "requirement_ids", "ac_ids", "title", "layer", "command",
                                               "canary", "status", "last_commit", "last_run_at", "evidence")}
+                case["history"] = [h.get("at") for h in (c.get("history") or []) if isinstance(h, dict)] if isinstance(c.get("history"), list) else []
                 encoded_id = json.dumps(c.get("id"), ensure_ascii=False)
                 match = re.search(r'"id"\s*:\s*' + re.escape(encoded_id), ledger_text[search_from:])
                 if match:
@@ -778,9 +1163,14 @@ def build_model(root: Path) -> dict:
                     model["runs"].append(record)
 
     model["reqs"] = list(reqs.values())
+    # FR-1034 AC-206: per-requirement 配置先 (run location / stores / links) handed to the diagram and the list
+    model["placements"]["requirements"] = [
+        {"id": q["id"], "runAt": q["placement"]["runAt"], "stores": q["placement"]["stores"], "links": q["placement"]["links"]}
+        for q in model["reqs"] if q.get("placement", {}).get("present")]
     model["implStatus"] = build_impl_status(model, root)
     build_management_analysis(model, docs, cat_doc, files, warnings)
     build_graph(model, reqs, parts)
+    model["hierarchy"] = derive_hierarchy(model, root, docs, cat_doc)
     return model
 
 
@@ -1202,6 +1592,10 @@ def build_graph(model: dict, reqs: dict, parts: list[dict]) -> None:
         node(f"persona:{p['name']}", "persona", p["name"], title=p["work"], file=p["file"], line=p["line"])
     for it in model["integrations"]:
         node(f"ext:{it['name']}", "external", it["name"], title=it["meaning"][:160], file=it["file"], line=it["line"])
+    for it in model.get("integrationCatalog", []):
+        node(it["id"], "integration", it["id"], title=it["name"], status=it["status"], file=it["file"], line=it["line"])
+        for rid in it["reqs"]:
+            edge(rid, it["id"], "req-int")
 
     deg: Counter = Counter()
     for (a, b, _rel) in edges:

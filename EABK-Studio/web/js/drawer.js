@@ -2,6 +2,7 @@
 import { t, onLang, lang } from './i18n.js';
 import { store } from './store.js';
 import { el, colorOf, typeLabel, statusBadge, nodeChip, vscodeUrl, toast, TYPE_ORDER } from './ui.js';
+import { idRef } from './xref.js';
 
 export function initDrawer(root) {
   const render = () => {
@@ -18,7 +19,7 @@ export function initDrawer(root) {
     const rel = new Map();
     for (const a of store.adj.get(id) || []) { const ty = store.node(a.id)?.type; if (!ty) continue; if (!rel.has(ty)) rel.set(ty, []); rel.get(ty).push(a.id); }
 
-    let head = [el('div', { class: 'typ' }, el('i', { class: 'dot', style: { background: colorOf(n) } }), typeLabel(n), ' · ', el('span', { class: 'mono' }, n.id)), el('h2', {}, n.type === 'req' || n.type === 'goal' ? n.title : n.label)];
+    let head = [el('div', { class: 'typ' }, el('i', { class: 'dot', style: { background: colorOf(n) } }), typeLabel(n), ' · ', el('span', { class: 'mono' }, n.id)), el('h2', {}, n.type === 'req' || n.type === 'goal' || n.type === 'integration' ? n.title : n.label)];
     const used = new Set();
     if (n.type === 'req') {
       const r = store.reqMap.get(n.id);
@@ -30,13 +31,14 @@ export function initDrawer(root) {
         section(t('type.entity'), chips(byType(['entity']))),
         section(t('type.param'), el('div', { class: 'chips' }, byType(['param']).map((p) => nodeChip(p, store.node(p).label + ' · ' + store.node(p).title.slice(0, 30))))),
         section(t('type.question'), chips(byType(['question']))),
+        section(t('type.integration'), chips(byType(['integration']))),
         section(t('d.impl'), chips(byType(['file']).filter((f) => store.node(f).role !== 'test').map((f) => [f, store.node(f).path]).map(([f, p]) => nodeChip(f, p)))),
         section(t('d.tests'), chips([...byType(['file']).filter((f) => store.node(f).role === 'test').map((f) => [f, store.node(f).path]).map(([f, p]) => nodeChip(f, p)), ...byType(['case'])])),
         section(t('type.part') + ' / API / ' + t('type.table'), chips(byType(['part', 'api', 'table']))),
         section(t('d.refs'), chips(store.neighbors(id).filter((x) => x.rel === 'ref').map((x) => x.id))),
         section(t('d.src'), loc(n.file, n.line)),
         r.body ? el('section', {}, el('details', {}, el('summary', { class: 'mini', style: { cursor: 'pointer' } }, t('d.raw')), el('div', { class: 'pre' }, r.body))) : null);
-      ['entity', 'param', 'question', 'file', 'part', 'api', 'table', 'case', 'ac', 'goal'].forEach((x) => used.add(x));
+      ['entity', 'param', 'question', 'file', 'part', 'api', 'table', 'case', 'ac', 'goal', 'integration'].forEach((x) => used.add(x));
     } else if (n.type === 'goal') {
       const g = m.goals.find((x) => x.id === id);
       const reqs = byType(['req']);
@@ -73,6 +75,7 @@ export function initDrawer(root) {
       const sm = m.stateMachines.find((x) => 'ent:' + x.entity === id);
       kids.push(section(t('col.definition'), term?.definition || (n.title !== n.label ? n.title : '')), section(t('col.forbidden'), term?.forbidden && term.forbidden !== 'なし' ? term.forbidden : null),
         sm ? section(t('dgm.states'), el('div', {}, el('div', { class: 'chips' }, sm.states.map((s) => el('span', { class: 'badge' }, s))), el('div', { style: { marginTop: '8px' } }, el('a', { class: 'btn ghost', href: '#/diagrams', onclick: () => { } }, '▦ ' + t('dgm.states'))))) : null,
+        el('section', {}, el('a', { class: 'btn ghost', href: '#/entities?entity=' + encodeURIComponent(n.label) }, '🔗 ' + t('nav.entities'))),
         section(t('d.src'), loc(n.file, n.line)));
     } else if (n.type === 'persona') {
       const p = m.personas.find((x) => 'persona:' + x.name === id);
@@ -80,6 +83,21 @@ export function initDrawer(root) {
     } else if (n.type === 'external') {
       const p = m.integrations.find((x) => 'ext:' + x.name === id);
       kids.push(section(t('d.info'), kv([[t('col.method'), p?.method], [t('col.meaning'), p?.meaning], [t('col.owner'), p?.owner]])));
+    } else if (n.type === 'integration') {
+      // FR-1042: 16 viewpoints with words (not colour only), related requirements / ACs, responsibility split.
+      const c = (m.integrationCatalog || []).find((x) => x.id === id);
+      if (c) {
+        head.push(el('div', { class: 'row' }, c.status ? el('span', { class: 'badge' }, c.status) : '',
+          el('span', { class: 'badge ' + (c.missing ? 'bad' : '') }, `${t('int.missing')} ${c.missing}`), el('span', { class: 'badge ' + (c.tbd ? 'proposed' : '') }, `${t('int.tbd')} ${c.tbd}`)));
+        kids.push(section(t('int.resp'), el('div', {}, c.responsibility || t('int.st.missing'))),
+          section(t('int.vp'), el('dl', { class: 'kv', 'data-testid': 'int-viewpoints' }, c.viewpoints.flatMap((v) => [el('dt', {}, v.label),
+            el('dd', { 'data-state': v.state }, el('span', { class: 'badge ' + (v.state === 'missing' ? 'bad' : v.state === 'tbd' ? 'proposed' : '') }, t('int.st.' + v.state)), v.value ? ' ' + v.value : '')]))),
+          section(t('int.reqs'), (c.refs || c.reqs).length ? el('div', { class: 'chips' }, (c.refs || c.reqs).flatMap((x, i) => [i ? ', ' : '', idRef(x)])) : null),
+          section(t('int.acs'), (() => { const ids = [...new Set((c.refs || c.reqs).filter((x) => /^AC-/.test(x)).concat(c.reqs.flatMap((x) => (store.reqMap.get(x)?.acs || []).map((a) => a.id)).filter((x) => store.nodes.has(x))))]; return ids.length ? el('div', { class: 'chips' }, ids.flatMap((x, i) => [i ? ', ' : '', idRef(x)])) : null; })()),
+          c.merged?.length ? section(t('int.merged'), el('div', {}, c.merged.map((x) => el('div', { class: 'mini' }, `${x.name} · ${x.method}${x.owner ? ' · ' + x.owner : ''}`)))) : null,
+          section(t('d.src'), loc(n.file, n.line)));
+      }
+      used.add('req'); used.add('ac');
     } else if (n.type === 'api' || n.type === 'table') kids.push(section(t('d.src'), loc(n.file, n.line)));
 
     // remaining relations as chips
