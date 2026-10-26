@@ -2,7 +2,7 @@
 """run-state.py - run state under /work/runs/<run-id>/ for the conductor (plan §7.5, §7.6, §8.3).
 
 Usage:
-  python scripts/run-state.py start [--options-file F | --options "max_hours: 24\\n..."] [--new]
+  python scripts/run-state.py start [--options-file F | --options "max_hours: 2.5\\n..."] [--new]
   python scripts/run-state.py status                       # resume summary (read this first in a new context)
   python scripts/run-state.py stage N [--done]             # 0 init,1 RD,2 audit,3 plan,4 ST design,5 impl,6 final
   python scripts/run-state.py progress "text"              # append one entry (<= 3 lines) to progress.md
@@ -22,7 +22,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime as dt
+import json
 import os
 import re
 import shutil
@@ -37,7 +39,7 @@ import ebaklib as h  # noqa: E402
 
 STAGES = {0: "初期化", 1: "要求定義", 2: "独立監査", 3: "計画", 4: "System Test の設計", 5: "実装ループ", 6: "最終"}
 DEFAULT_OPTIONS = {
-    "max_hours": "24", "approval_policy": "安全範囲は推奨どおり", "parallel_workers": "auto",
+    "max_hours": "2.5", "approval_policy": "安全範囲は推奨どおり", "parallel_workers": "auto",
     "scope": "承認済みすべて", "git_push": "しない", "deploy": "しない", "external_write": "しない",
     "paid_services": "使わない", "external_exposure": "公開しない",
     "system_test": "必要最小限",
@@ -109,6 +111,55 @@ def counts(queue: dict) -> Dict[str, int]:
     return c
 
 
+def take_start_claim(root: Path, cfg: dict, locked: bool = False, ident: Optional[str] = None) -> Optional[str]:
+    """Session id the hook recorded for THIS `start` (FR-1074 AC-405/406; see gate.record_start_claim).
+
+    The claim is matched by the identifier of the start command (hash of its arguments; a child start inherits the
+    parent's through EABK_START_IDENT). A claim of another start is never taken (no oldest-first). Only when the hook
+    could not determine an identifier (claim without ident) and that claim is the only unexpired one is it used.
+    Reading and consuming happen under an exclusive lock; if the lock cannot be taken in PARAM-053 seconds the start
+    fails without writing anything."""
+    ident = ident or start_ident()
+    files = []
+    for f in (h.start_claims_file(root, cfg), h.work_dir(root, cfg) / ".ebak" / "start-claims.json"):
+        if f not in files:
+            files.append(f)
+    for f in files:
+        if not f.exists():
+            continue
+        try:
+            with (contextlib.nullcontext() if locked else h.FileLock(f.with_name("start-claims.lock"), h.CLAIM_LOCK_WAIT_SEC)):
+                now = time.time()
+                claims = [c for c in (h.read_json(f, default=[]) or [])
+                          if now - c.get("t", 0) < h.CLAIM_TTL_SEC and c.get("session")]
+                mine = [c for c in claims if c.get("ident") and c.get("ident") == ident]
+                pick = None
+                if mine:
+                    if len({c["session"] for c in mine}) == 1:
+                        pick = min(mine, key=lambda c: c.get("t", 0))
+                elif len(claims) == 1 and not claims[0].get("ident"):
+                    pick = claims[0]  # identifier unavailable on the hook side and no other start can be meant
+                if pick is None:
+                    continue
+                claims.remove(pick)
+                h.write_json(f, claims)
+                return str(pick["session"])
+        except h.LockBusy as e:
+            raise SystemExit(f"ERROR run-state: start-claim の排他を得られず、run を始めませんでした（claim・meta は書いていません）: {e}")
+    return None
+
+
+def start_ident() -> str:
+    """Identifier of this start command: inherited from the parent start (env), else from its own arguments."""
+    env = os.environ.get("EABK_START_IDENT")
+    if env:
+        return env
+    argv = sys.argv[1:]
+    if "start" in argv:
+        argv = argv[argv.index("start") + 1:]
+    return h.start_ident_from_text(" ".join(argv))
+
+
 def require_own_worktree(root: Path, cfg: dict, args) -> Optional[int]:
     """Each run must live in its own git worktree so that several runs in one VS Code never share a tree.
 
@@ -140,11 +191,15 @@ def require_own_worktree(root: Path, cfg: dict, args) -> Optional[int]:
         return 4
     # start the run inside the new worktree right away: no second VS Code window and no re-sent request
     cmd = [sys.executable, str(path / "scripts" / "run-state.py"), "start", "--run-id", rid]
+    sid = getattr(args, "session_id", None) or take_start_claim(root, cfg)
+    if sid:
+        cmd += ["--session-id", sid]
     if getattr(args, "options_file", None):
         cmd += ["--options-file", str(Path(args.options_file).resolve())]
     elif getattr(args, "options", None):
         cmd += ["--options", args.options]
-    proc = subprocess.run(cmd, cwd=str(path), capture_output=True, text=True, encoding="utf-8", errors="replace")
+    env = dict(os.environ, EABK_START_IDENT=start_ident())  # the child start inherits the parent's identifier
+    proc = subprocess.run(cmd, cwd=str(path), capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
     if proc.returncode != 0 or not (path / "scripts" / "run-state.py").exists():
         print(f"WORKTREE-REQUIRED {path}")
         print((proc.stdout + proc.stderr).strip()[:400])
@@ -437,7 +492,9 @@ def cmd_start(args) -> int:
     elif args.options:
         text = args.options.replace("\\n", "\n")
     opts = dict(DEFAULT_OPTIONS)
+    opts["max_hours"] = f"{h.time_limits(cfg)[0]:g}"
     opts.update(h.parse_options_text(text))
+    opts["max_hours"] = f"{h.effective_max_hours(opts, cfg):g}"
     pw = str(opts.get("parallel_workers", "auto")).strip()
     auto_note = ""
     if pw.lower() in ("auto", "自動", ""):
@@ -445,6 +502,17 @@ def cmd_start(args) -> int:
         opts["parallel_workers"] = str(max(1, h.auto_workers() // (others + 1)))
         auto_note = (f"parallel_workers: auto -> {opts['parallel_workers']}（CPU {os.cpu_count()} コア・メモリ {h.total_memory_gb():.0f} GB から算出"
                      f"{f'。同時に動いている別の run {others} 件と分け合う' if others else ''}）")
+    try:
+        # FR-1074 AC-405: consuming the claim and recording the owner in meta happen under one exclusive lock
+        with h.start_claims_lock(root, cfg):
+            return _start_create(args, root, cfg, opts, auto_note)
+    except h.LockBusy as e:
+        print(f"ERROR run-state: start-claim・meta の排他を {h.CLAIM_LOCK_WAIT_SEC} 秒以内に得られず、run を始めませんでした"
+              f"（claim・meta は書いていません）: {e}")
+        return 5
+
+
+def _start_create(args, root: Path, cfg: dict, opts: dict, auto_note: str) -> int:
     rid = args.run_id or h.new_run_id()
     rdir = h.run_dir(root, cfg, rid)
     n = 1
@@ -467,7 +535,8 @@ def cmd_start(args) -> int:
         "run_id": rid, "status": "active", "started_at": h.now_iso(), "finished_at": None,
         "head_at_start": h.head_commit(root), "branch_at_start": start_branch,
         "integration_branch": branch, "options": opts, "stage": 0,
-        "stages_done": [], "ledger_strict": False, "session_id": None, "toolkit": h.TOOLKIT_VERSION,
+        "stages_done": [], "ledger_strict": False, "session_id": getattr(args, "session_id", None) or take_start_claim(root, cfg, locked=True),
+        "toolkit": h.TOOLKIT_VERSION,
         "human_interventions": [{"at": h.now_iso(), "kind": "request", "note": ""}],
     }
     h.save_meta(root, cfg, rid, meta)
@@ -532,7 +601,7 @@ def cmd_status(args) -> int:
     heal = heal_integration_branch(root, cfg, rid, meta) if meta.get("status") == "active" else ""
     q = h.load_queue(root, cfg, rid)
     c = counts(q)
-    mh = float(meta.get("options", {}).get("max_hours", 24) or 24)
+    mh = h.effective_max_hours(meta.get("options"), cfg)
     el = elapsed_hours(meta)
     print(f"run: {rid} status={meta.get('status')} stage={meta.get('stage')}({STAGES.get(meta.get('stage'), '?')}) done={meta.get('stages_done')}")
     print(f"time: {el:.1f}h / {mh:g}h ({el / mh * 100:.0f}%)  branch={h.current_branch(root)} HEAD={h.head_commit(root)}")
@@ -708,11 +777,12 @@ def cmd_time(args) -> int:
     root, cfg = ctx(args)
     rid = need_run(root, cfg)
     meta = h.load_meta(root, cfg, rid)
-    mh = float(meta.get("options", {}).get("max_hours", 24) or 24)
+    mh = h.effective_max_hours(meta.get("options"), cfg)
     el = elapsed_hours(meta)
     pct = el / mh * 100
-    print(f"elapsed={el:.2f}h max_hours={mh:g} used={pct:.0f}%{' -> 新しい項目を始めず工程 6 へ' if pct >= 85 else ''}")
-    return 3 if pct >= 85 else 0
+    stop = pct >= 85 or mh - el <= h.time_limits(cfg)[2]  # 工程 6 のための残り時間
+    print(f"elapsed={el:.2f}h max_hours={mh:g} used={pct:.0f}%{' -> 新しい項目を始めず工程 6 へ' if stop else ''}")
+    return 3 if stop else 0
 
 
 def completion(root, cfg, rid) -> List[str]:
@@ -812,6 +882,38 @@ def cmd_human(args) -> int:
     return 0
 
 
+def credit_estimate(root: Path, cfg: dict, rid: str) -> str:
+    """Estimated AI credits when --credits is not given: the sum of the model multipliers (config credits.model_multipliers,
+    default credits.default_multiplier) over the `task` calls logged by hook G-7 (models.jsonl). Estimate only: the main
+    session's own calls are not visible to hooks."""
+    mp = h.run_dir(root, cfg, rid) / "models.jsonl"
+    if not mp.exists():
+        return ""
+    conf = cfg.get("credits") or {}
+    mult = {k: v for k, v in (conf.get("model_multipliers") or {}).items() if not k.startswith("_")}
+    try:
+        default = float(conf.get("default_multiplier", 1))
+    except (TypeError, ValueError):
+        default = 1.0
+    total, calls = 0.0, {}
+    for line in h.read_text(mp).splitlines():
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        model = str(rec.get("model") or "(既定)")
+        try:
+            m = float(mult.get(model, default))
+        except (TypeError, ValueError):
+            m = default
+        total += m
+        calls[model] = calls.get(model, 0) + 1
+    if not calls:
+        return ""
+    detail = ", ".join(f"{k}×{v}" for k, v in sorted(calls.items(), key=lambda kv: -kv[1]))
+    return f"推定 {total:g}（作業役 {sum(calls.values())} 回: {detail}）"
+
+
 def cmd_finish(args) -> int:
     root, cfg = ctx(args)
     rid = need_run(root, cfg)
@@ -833,6 +935,7 @@ def cmd_finish(args) -> int:
     verified, _ = h.load_script("kpi").verified_requirements(root, cfg, impl)
     human = meta.get("human_interventions")
     human_n = str(len(human)) if isinstance(human, list) else "未記録"
+    credits = args.credits or credit_estimate(root, cfg, rid) or "未取得"
     result = args.result or ("全件完了" if not blocked else "blocked あり")
     meta.update({"status": "finished", "finished_at": h.now_iso(), "result": result})
     h.save_meta(root, cfg, rid, meta)
@@ -842,7 +945,7 @@ def cmd_finish(args) -> int:
         print(f"run-history: {rid} は既に記録されています")
     else:
         row = (f"| {rid} | {meta['started_at'][:16]} | {meta['finished_at'][:16]} | {h.head_commit(root)} | {result} | "
-               f"{', '.join(impl) or '-'} | {len(blocked)} | {ac_rate} | {el:.1f}h | {first_gate} | {args.credits or '未取得'} | "
+               f"{', '.join(impl) or '-'} | {len(blocked)} | {ac_rate} | {el:.1f}h | {first_gate} | {credits} | "
                f"{human_n} | {len(verified)}/{len(impl)} |")
         if not text.endswith("\n"):
             text += "\n"
@@ -865,6 +968,7 @@ def main(argv=None) -> int:
     s.add_argument("--options")
     s.add_argument("--new", action="store_true")
     s.add_argument("--run-id", default=None, help="run ID を指定する（専用 worktree の名前と揃える。通常は使わない）")
+    s.add_argument("--session-id", default=None, help="run の持ち主の session ID（hook が記録した値を worktree 側の start に渡す。通常は使わない）")
     s.add_argument("--no-branch", action="store_true", help="main 上でも統合ブランチを作らない")
     s.add_argument("--allow-primary", action="store_true", help="主の作業ツリーでの開始を許す（run ごとの worktree 必須を外す。通常は使わない）")
     s.add_argument("--tail", type=int, default=8)

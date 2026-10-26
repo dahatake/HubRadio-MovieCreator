@@ -14,12 +14,13 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-TOOLKIT_VERSION = "0.5.1"
+TOOLKIT_VERSION = "0.5.2"
 
 
 SPECKIT_PATHS = [".specify/**", "specs/**/*.md"]
@@ -37,6 +38,12 @@ DEFAULT_CONFIG: dict = {
     },
     "base_branch": "main",
     "work": {"dir": "work", "retention_days": 14},
+    # AI クレジットの推定（run-state.py finish が --credits なしのとき、models.jsonl の task 呼び出しから算出）
+    "credits": {"default_multiplier": 1, "model_multipliers": {}},
+    # 1 run の時間。default は max_hours 未指定時の値、cap は run_options の指定を切り詰める上限（夜間実行なら引き上げる）
+    "limits": {"max_hours_default": 2.5, "max_hours_cap": 3.0, "reserve_minutes": 30},
+    # worktree の依存ディレクトリの共有（主の作業ツリーの実体への junction / symlink）
+    "worktree_share": {"enabled": True, "dirs": ["node_modules"]},
     "verify": {"commands": [], "timeout_sec": 1800},
     "system_test": {"jobs": "auto", "serial_patterns": ["default_port"]},
     "checks": {
@@ -198,6 +205,138 @@ def lock_orphaned(path: Path) -> bool:
     return txt.isdigit() and not pid_alive(int(txt))
 
 
+CLAIM_LOCK_WAIT_SEC = 10  # PARAM-053: upper bound for waiting on the start-claim / meta lock
+CLAIM_TTL_SEC = 300
+
+
+class LockBusy(RuntimeError):
+    """The exclusive lock could not be taken within the wait limit."""
+
+
+class FileLock:
+    """Exclusive lock on a lock file held with an OS byte-range / flock lock (the OS releases it when the holder
+    dies, so a crashed process never leaves a lock behind and no lock file is ever deleted by a waiter). The holder's
+    PID is written into the file for diagnosis only. `stale` is accepted for compatibility and ignored."""
+
+    LOCK_OFFSET = 1 << 30  # Windows: lock a byte far beyond EOF so that the PID text stays readable by others
+
+    def __init__(self, path: Path, wait: float = CLAIM_LOCK_WAIT_SEC, stale: float = 120):
+        self.path, self.wait, self.stale = Path(path), wait, stale
+        self._fd: Optional[int] = None
+
+    def _try_lock(self, fd: int) -> bool:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                os.lseek(fd, self.LOCK_OFFSET, 0)
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError:
+            return False
+
+    def _unlock(self, fd: int) -> None:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                os.lseek(fd, self.LOCK_OFFSET, 0)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        deadline = time.time() + self.wait
+        while True:
+            try:
+                fd = os.open(str(self.path), os.O_CREAT | os.O_RDWR)
+            except OSError as e:
+                raise LockBusy(f"{self.path.name} を開けませんでした: {e}")
+            if self._try_lock(fd):
+                self._fd = fd
+                try:
+                    os.ftruncate(fd, 0)
+                    os.lseek(fd, 0, 0)
+                    os.write(fd, str(os.getpid()).encode())
+                except OSError:
+                    pass
+                return self
+            os.close(fd)
+            if time.time() >= deadline:
+                raise LockBusy(f"{self.path.name} を {self.wait:g} 秒以内に取得できませんでした（別の start・hook が処理中）")
+            time.sleep(0.02)
+
+    def __exit__(self, *exc):
+        if self._fd is not None:
+            self._unlock(self._fd)
+            try:
+                os.close(self._fd)
+            except OSError:
+                pass
+            self._fd = None
+
+
+def primary_tree_of(root: Path) -> Path:
+    """The primary checkout of the repository that `root` belongs to (root itself when it is not a linked worktree)."""
+    g = root / ".git"
+    if g.is_file():
+        rc, out = git(["rev-parse", "--git-common-dir"], root)
+        if rc == 0 and out.strip():
+            common = Path(out.strip())
+            common = common if common.is_absolute() else root / common
+            return common.resolve().parent
+    return root
+
+
+def start_claims_file(root: Path, cfg: dict) -> Path:
+    return work_dir(primary_tree_of(root), cfg) / ".ebak" / "start-claims.json"
+
+
+def start_claims_lock(root: Path, cfg: dict, wait: float = CLAIM_LOCK_WAIT_SEC) -> FileLock:
+    return FileLock(start_claims_file(root, cfg).with_name("start-claims.lock"), wait)
+
+
+_QUOTES = "\"'`"
+
+
+def start_ident_from_text(args_text: str) -> str:
+    """Identifier of one `run-state.py start` command: hash of its arguments with quotes and blanks removed, so the
+    hook (which sees the command line) and start (which sees argv) compute the same value."""
+    norm = "".join(ch for ch in args_text if not ch.isspace() and ch not in _QUOTES)
+    return hashlib.sha1(norm.encode("utf-8")).hexdigest()[:16]
+
+
+def start_ident_from_command(cmd: str) -> Optional[str]:
+    """Identifier taken from a shell command line; None when it cannot be determined reliably (variables, substitution)."""
+    m = re.search(r"run-state\.py['\"]?\s+start\b", cmd)
+    if not m:
+        return None
+    rest, out, q = cmd[m.end():], [], ""
+    for ch in rest:
+        if q:
+            if ch == q:
+                q = ""
+            out.append(ch)
+        elif ch in "\"'":
+            q = ch
+            out.append(ch)
+        elif ch in "|;&<>\r\n":
+            if ch in "<>" and out and out[-1].isdigit() and (len(out) == 1 or out[-2].isspace()):
+                out.pop()  # file descriptor of a redirection such as 2>&1
+            break
+        else:
+            out.append(ch)
+    text = "".join(out)
+    if "$" in text or "`" in text:
+        return None
+    return start_ident_from_text(text)
+
+
 def new_run_id() -> str:
     return _dt.datetime.now().strftime("%Y%m%d%H%M")
 
@@ -281,7 +420,14 @@ def write_text_atomic(path: Path, text: str) -> None:
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(data)
-        os.replace(tmp, path)
+        for attempt in range(100):  # on Windows a replace fails while another process has the target open for reading
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if attempt == 99:
+                    raise
+                time.sleep(0.01)
     except Exception:
         try:
             os.unlink(tmp)
@@ -1282,6 +1428,113 @@ def parse_options_text(text: str) -> Dict[str, str]:
         if m:
             out[m.group(1)] = m.group(2)
     return out
+
+
+MAX_HOURS_DEFAULT = 2.5
+MAX_HOURS_CAP = 3.0
+RESERVE_MINUTES = 30
+
+
+def time_limits(cfg: Optional[dict]) -> Tuple[float, float, float]:
+    """(default hours, cap hours, reserve hours) from cfg['limits']; invalid values fall back to the built-ins."""
+    lim = (cfg or {}).get("limits") or {}
+
+    def num(key: str, fallback: float) -> float:
+        try:
+            v = float(lim.get(key))
+        except (TypeError, ValueError):
+            return fallback
+        return v if v > 0 else fallback
+
+    cap = num("max_hours_cap", MAX_HOURS_CAP)
+    return min(num("max_hours_default", MAX_HOURS_DEFAULT), cap), cap, num("reserve_minutes", RESERVE_MINUTES) / 60.0
+
+
+def effective_max_hours(options: Optional[dict], cfg: Optional[dict] = None) -> float:
+    """max_hours of a run, clamped to limits.max_hours_cap (config; default 3 h)."""
+    default, cap, _ = time_limits(cfg)
+    try:
+        v = float((options or {}).get("max_hours") or default)
+    except (TypeError, ValueError):
+        v = default
+    if v <= 0:
+        v = default
+    return min(v, cap)
+
+
+def _is_link(p: Path) -> bool:
+    if p.is_symlink():
+        return True
+    return bool(getattr(p, "is_junction", lambda: False)())
+
+
+def unshare_dirs(wt: Path, cfg: dict) -> int:
+    """Remove the share links made by share_dirs (never touches the link target). Call before deleting a worktree."""
+    n = 0
+    for rel in (cfg.get("worktree_share") or {}).get("dirs", []):
+        p = wt / rel
+        if p.exists() or p.is_symlink():
+            if _is_link(p):
+                try:
+                    p.unlink() if p.is_symlink() else os.rmdir(p)
+                    n += 1
+                except OSError:
+                    pass
+    return n
+
+
+def primary_worktree(root: Path) -> Optional[Path]:
+    rc, out = git(["worktree", "list", "--porcelain"], root)
+    if rc != 0:
+        return None
+    for line in out.splitlines():
+        if line.startswith("worktree "):
+            return Path(line.split(" ", 1)[1].strip())
+    return None
+
+
+def share_dirs(src_root: Path, wt: Path, cfg: dict) -> List[str]:
+    """Link dependency dirs (node_modules ...) of a pooled worktree to an installed copy instead of
+    installing them again (parallel `npm ci` took ~45 min each). The copy is taken from src_root, else from
+    the primary working tree. Linked only when the lock/manifest files next to the dir are identical; otherwise
+    the worktree keeps (or builds) its own copy. Returns notes."""
+    conf = cfg.get("worktree_share") or {}
+    notes: List[str] = []
+    if not conf.get("enabled", True) or src_root.resolve() == wt.resolve():
+        return notes
+    primary = primary_worktree(src_root)
+    roots = [src_root] + ([primary] if primary and primary.resolve() != src_root.resolve() else [])
+    for rel in conf.get("dirs", []):
+        dst = wt / rel
+        if _is_link(dst) or dst.exists():
+            continue  # already shared, or the worktree has its own copy
+        parent = Path(rel).parent
+        found = [r for r in roots if (r / rel).is_dir()]
+        if not found:
+            notes.append(f"NOTE: 共有元 {rel} がありません。依存の導入（npm ci など）を主の作業ツリーで 1 回だけ行ってください（worktree では行わない）")
+            continue
+        src_dir = None
+        for r in found:
+            if all(((r / parent / f).read_bytes() if (r / parent / f).exists() else b"") ==
+                   ((wt / parent / f).read_bytes() if (wt / parent / f).exists() else b"")
+                   for f in ("package.json", "package-lock.json")):
+                src_dir = r / rel
+                break
+        if src_dir is None:
+            notes.append(f"NOTE: {rel} は共有しません（package.json / package-lock.json が共有元と異なる）。この worktree の依存を導入してください")
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if os.name == "nt":
+                rc, out = run(["cmd", "/c", "mklink", "/J", str(dst), str(src_dir.resolve())])
+                if rc != 0:
+                    raise OSError(out.strip()[:120])
+            else:
+                os.symlink(src_dir.resolve(), dst, target_is_directory=True)
+            notes.append(f"SHARED: {rel} -> {src_dir.resolve()}（導入済みの依存を共有。再導入しない）")
+        except OSError as e:
+            notes.append(f"NOTE: {rel} の共有に失敗しました: {e}")
+    return notes
 
 
 def allows(value: Optional[str]) -> bool:

@@ -100,6 +100,7 @@ python scripts/ledger.py --by test-designer block E2E-001 --reason "…"        
 python scripts/ledger.py set E2E-001 blocked --reason "…"
 python scripts/ledger.py digests [--update]
 python scripts/ledger.py repair [--apply]          # 要求定義書に合わせて台帳を直す（rdfix.py から使う）
+python scripts/ledger.py preflight [--cases ID,..] [--all]   # pytest を collect-only で確認（構文・import・-k/node id の誤りで 0 件）。test-designer の終了前と工程 4 の完了前に exit 0 にする
 python scripts/ledger.py --by conductor run --select changed|failed|all [--canary-first] [--stop-on-canary-fail] [--max-minutes N]
 python scripts/ledger.py run --cases E2E-001,IT-002 --no-record   # 作業役の worktree で、台帳を更新せずに実行だけする
 ```
@@ -135,7 +136,7 @@ npm test 2>&1 | python scripts/summarize.py -
 ## run-state.py（conductor の状態管理）
 
 ```bash
-python scripts/run-state.py start --options "max_hours: 24\ngit_push: しない"   # 実行中の run があれば RESUME
+python scripts/run-state.py start --options "max_hours: 2.5\ngit_push: しない"   # 実行中の run があれば RESUME
 python scripts/run-state.py status
 python scripts/run-state.py stage 4 [--done]
 python scripts/run-state.py progress "工程 2: 直接矛盾 0。Q-012 を BLOCKED"

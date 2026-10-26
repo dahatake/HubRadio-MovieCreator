@@ -4,7 +4,15 @@ import { el, esc, colorOf, typeLabel, toast, businessIcon, statePanel, icon } fr
 import { initDrawer } from './drawer.js';
 import { installXref } from './xref.js';
 import { decorate, mountStructure, mountConsistency, mountMaintenance } from './insights.js';
-import { dimToggle, dimState, registerDim, hasDimHandler, runDim } from './dim.js';
+import { dimToggle, dimState, registerDim, hasDimHandler, runDim, headerDimToggle, publishDim, onHeaderDim } from './dim.js';
+import { cameraCommands } from './camera3d.js';
+
+// FR-1066: the header's display-mode switch is always there; each screen publishes what it supports (publishDim).
+const headerDimHost = document.getElementById('headerDim');
+const drawHeaderDim = () => headerDimHost.replaceChildren(headerDimToggle());
+onHeaderDim(drawHeaderDim);
+onLang(drawHeaderDim);
+publishDim({ dims: ['2d'], current: '2d', selected: '2d' });
 
 // FR-1041: the top navigation, organised by "what data can be viewed" (9 items, MECE).
 // Old screen ids (map2d / map3d / placement) stay as aliases and move to the item that now holds them (AC-226).
@@ -123,19 +131,22 @@ async function route() {
   document.documentElement.dataset.route = name;
   document.documentElement.classList.toggle('snapshot', isSnapshotLink());
   if (ROUTES[name].dim) dimState.map = ROUTES[name].dim;
+  // default for screens without a display mode: only 2D (the screens that have one publish their own below)
+  publishDim({ dims: ['2d'], current: '2d', selected: '2d' });
   renderNav();
   if (!store.model) return;
   const my = ++token;
-  current?.destroy?.();
-  current = null;
   const problem = problemPanel();
-  if (problem) { view.replaceChildren(problem); return; }
+  if (problem) { current?.destroy?.(); current = null; view.replaceChildren(problem); return; }
   const host = el('div', { class: 'fill' });
-  view.replaceChildren(host);
-  host.append(el('div', { class: 'sr-only', role: 'status' }, t('loading'))); // never leave the view empty while the module loads
+  // 画面の部品を読み込む間は、前の画面を残す（描画の空白を作らない）。最初の描画で view が空のときだけ読み込み中の表示を置く
+  if (!view.firstChild) { view.replaceChildren(host); host.append(el('div', { class: 'sr-only', role: 'status' }, t('loading'))); }
   try {
     const mod = ROUTES[name].mount ? { mount: ROUTES[name].mount } : await ROUTES[name].load();
     if (my !== token) return;
+    current?.destroy?.();
+    current = null;
+    view.replaceChildren(host);
     host.querySelector(':scope > [role=status].sr-only')?.remove();
     current = mod.mount(host);
     if (ROUTES[name].dim) mountMapDim(host, name, current);
@@ -147,6 +158,8 @@ async function route() {
     }
   } catch (e) {
     console.error(e);
+    if (my !== token) return;
+    view.replaceChildren(host);
     host.replaceChildren(el('div', { class: 'page' }, el('div', { class: 'warnbox' }, String((e && e.message) || e))));
   }
 }
@@ -160,6 +173,7 @@ function mountMapDim(host, name, inner) {
     location.hash = '#/' + (MAP_ROUTE[d] || 'map2d') + q;
   };
   const cur = ROUTES[name].dim;
+  publishDim({ dims: MAP_DIMS, current: cur, selected: cur });
   host.append(el('div', { class: 'dim-float' }, dimToggle({ current: cur, onPick: go, dims: MAP_DIMS })));
   const off = registerDim((d) => go(MAP_DIMS.includes(d) ? d : cur === '2d' ? '3d' : '2d'));
   const v = window.eabkView;      // every map display reports which dimension it is
@@ -201,6 +215,7 @@ function navCommands() {
     list.push({ cmd: true, id: 'cmd:dim', label: t('cmd.dim'), key: '2D 3D', run: () => runDim() });
     if (ROUTES[routeName()]?.dim) list.push({ cmd: true, id: 'cmd:dim:rpg', label: t('cmd.dim.rpg'), key: 'RPG', run: () => runDim('rpg') });
   }
+  list.push(...cameraCommands());   // FR-1070 AC-384: 3D のカメラのプリセットをコマンド検索から選ぶ
   return list;
 }
 // FR-1033 AC-197: command box. ">" followed by text lists commands; Enter runs one.

@@ -47,11 +47,13 @@ MANAGED = [
     ".github/agents/implementer.agent.md",
     ".github/agents/reviewer.agent.md",
     ".github/skills/requirement-definition/SKILL.md",
+    ".github/skills/requirement-definition/original.md",
     ".github/skills/requirement-definition/integration-checklist.md",
     ".github/skills/requirement-definition/integration-requirements.md",
     ".github/skills/implement-fr/SKILL.md",
     ".github/skills/implement-fr/ui-design.md",
     ".github/skills/implement-fr/original-rd.md",
+    ".github/skills/implement-fr/original-fr.md",
     ".github/skills/system-test-increment/SKILL.md",
     ".github/skills/rd-audit/SKILL.md",
     ".github/skills/adopt-existing/SKILL.md",
@@ -256,7 +258,21 @@ def preflight() -> None:
 
 
 def sha(path: Path) -> str:
+    """Content hash that ignores CRLF vs LF in text files: a Windows checkout (core.autocrlf) turns the same toolkit
+    file into CRLF, which must not look like a local modification (binary files, with NUL bytes, are hashed as is)."""
+    data = path.read_bytes()
+    if b"\0" not in data:
+        data = data.replace(b"\r\n", b"\n")
+    return hashlib.sha256(data).hexdigest()
+
+
+def sha_raw(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def is_recorded(path: Path, recorded) -> bool:
+    """True when `path` still has the content the manifest recorded (older manifests hold raw byte hashes)."""
+    return bool(recorded) and recorded in (sha(path), sha_raw(path))
 
 
 def toolkit_version(source: Path) -> str:
@@ -317,10 +333,11 @@ class Installer:
                 self.note("SAME", rel)
                 continue
             old = self.manifest.get("files", {}).get(rel)
-            if old == cur or self.force:
-                if old != cur and not self.dry:
+            unmodified = is_recorded(dest, old)
+            if unmodified or self.force:
+                if not unmodified and not self.dry:
                     shutil.copy2(dest, dest.with_name(dest.name + f".ebak-backup-{self.stamp}"))
-                self.note("UPDATE" if old == cur else "OVERWRITE", rel)
+                self.note("UPDATE" if unmodified else "OVERWRITE", rel)
                 self.write_bytes(rel, src.read_bytes())
             else:
                 self.note("KEEP-LOCAL", rel)
@@ -332,7 +349,7 @@ class Installer:
             old = self.manifest.get("files", {}).get(rel)
             if not p.exists() or old is None:
                 continue
-            if sha(p) == old:
+            if is_recorded(p, old):
                 self.note("REMOVE", rel)
                 if not self.dry:
                     p.unlink()
@@ -463,7 +480,7 @@ class Installer:
             p = self.target / rel
             if not p.is_file():
                 continue
-            if self.force or (h is not None and sha(p) == h):
+            if self.force or (h is not None and is_recorded(p, h)):
                 self.remove_path(rel)
             else:
                 self.note("KEEP-LOCAL", rel)
