@@ -60,6 +60,26 @@ public sealed class StandardRenderConfiguration
     /// <summary>FR-137 (6): the dialogue lines (text, time, speaker character ID) of the character dialogue.</summary>
     public IReadOnlyList<StyleTemplates.StyleTemplateFreeTelopInput> DialogueLines { get; private set; } = [];
 
+    /// <summary>FR-140: the speaker assignment of the Job (only a confirmed one reaches the output); null assigns nobody.</summary>
+    public StyleTemplates.CueSpeakerAssignmentSet? SpeakerAssignments { get; private set; }
+
+    /// <summary>FR-142: the timed ASR tokens by ID, from which the words (and their times) of each displayed cue are taken.</summary>
+    public IReadOnlyDictionary<HubRadio.Core.Identity.EntityId<HubRadio.Core.Provenance.TranscriptTokenIdTag>, HubRadio.Core.Transcripts.Token>? WordTokens { get; private set; }
+
+    /// <summary>Receives the record of what the template put on the cues (written by the caller into the Job directory).</summary>
+    public Action<StyleTemplates.StyleTemplateRenderRecord>? RecordSink { get; private set; }
+
+    internal StandardRenderConfiguration WithCueDetails(StyleTemplates.CueSpeakerAssignmentSet? assignments,
+        IReadOnlyDictionary<HubRadio.Core.Identity.EntityId<HubRadio.Core.Provenance.TranscriptTokenIdTag>, HubRadio.Core.Transcripts.Token>? tokens,
+        Action<StyleTemplates.StyleTemplateRenderRecord>? recordSink)
+    {
+        var copy = (StandardRenderConfiguration)MemberwiseClone();
+        copy.SpeakerAssignments = assignments;
+        copy.WordTokens = tokens;
+        copy.RecordSink = recordSink;
+        return copy;
+    }
+
     /// <summary>The same configuration with the registered characters and the dialogue lines of a character dialogue.</summary>
     internal StandardRenderConfiguration WithCharacterDialogue(IReadOnlyList<StyleTemplates.CharacterPortrait> characters,
         string? imageDirectory, IReadOnlyList<StyleTemplates.StyleTemplateFreeTelopInput> lines)

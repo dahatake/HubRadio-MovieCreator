@@ -401,12 +401,15 @@ public static class StandardRenderGraphFactory
         OutputQcSubtitleEvidence? subtitleEvidence = null;
         SubtitleDisplayResult display = ValidateSubtitles(plan, version, timeline, layout, profile, subtitles, font, shortFormId);
         var cueTexts = new List<StandardDisplayedCueText>();
+        var cueWords = new List<IReadOnlyList<StyleTemplates.StyleTemplateWord>>();
         foreach (SubtitleDisplayedCue displayed in display.DisplayedCues)
         {
             SubtitleCueRevision revision = subtitles.Revisions.Single(item => item.Snapshot.Cue.Id == displayed.Cue.Id);
             SubtitleFileCue exported = SubtitleDisplayMapper.MapForExport(revision.Snapshot, displayed);
             exportCues.Add(exported);
-            cueTexts.Add(new StandardDisplayedCueText(exported.Cue.Range, exported.Text, revision.Snapshot.TextOrigin));
+            var cueText = new StandardDisplayedCueText(exported.Cue.Range, exported.Text, revision.Snapshot.TextOrigin);
+            cueTexts.Add(cueText);
+            cueWords.Add(configuration?.StyleTemplate is null ? [] : TimedWords(configuration, subtitles, revision, cueText));
         }
 
         // FR-059 / FR-060: emphasis captions and sound effects follow the accepted settings and the cues
@@ -423,14 +426,25 @@ public static class StandardRenderGraphFactory
                 ? new StyleTemplates.StyleTemplateSubtitleLimits(1, StyleTemplates.StyleTemplateLayout.VerticalCaptionMaximumCharacters,
                     default, new RationalTime(7, 1))
                 : new StyleTemplates.StyleTemplateSubtitleLimits(int.MaxValue / 4, 1, default, new RationalTime(7, 1));
-            styled = StyleTemplates.StyleTemplateApplier.Apply(styleTemplate,
-                cueTexts.Select(static cue => new StyleTemplates.StyleTemplateInputCue(cue, [])).ToArray(),
-                configuration.DialogueLines,
+            // FR-140: only a confirmed assignment gives a cue a speaker; FR-142: the words come from the timed ASR tokens.
+            StyleTemplates.CueSpeakerAssignmentSet? assignment = configuration.SpeakerAssignments?
+                .Resolve(cueTexts.Count, configuration.Characters);
+            StyleTemplates.StyleTemplateFreeTelopInput[] freeLines = [.. configuration.DialogueLines,
+                .. assignment?.DialogueLines(cueTexts) ?? []];
+            var inputCues = cueTexts.Select((cue, index) => new StyleTemplates.StyleTemplateInputCue(cue, cueWords[index])).ToArray();
+            styled = StyleTemplates.StyleTemplateApplier.Apply(styleTemplate, inputCues, freeLines,
                 new StyleTemplates.StyleTemplateApplyOptions(limits,
                     configuration.EmphasisTelopAmount, configuration.SoundEffectsEnabled, cursor,
                     Characters: configuration.Characters));
             telops = styled.EmphasisTelops.Select(static item => item.Telop).ToArray();
             soundEffects = styled.SoundEffects;
+            if (configuration.RecordSink is { } sink)
+            {
+                string? directory = configuration.PortraitImageDirectory;
+                sink(StyleTemplates.StyleTemplateRenderRecord.Create(styleTemplate, styled, profile.Width, profile.Height, inputCues,
+                    assignment?.IsConfirmed == true, shot => directory is null ? null
+                        : StyleTemplates.PortraitImageCropper.MeanColor(Path.Combine(directory, Path.GetFileName(shot.ImageFile)))));
+            }
         }
         else
         {
@@ -607,6 +621,38 @@ public static class StandardRenderGraphFactory
         {
             throw Failure(StandardGenerationFailureReason.BindingMismatch);
         }
+    }
+
+    /// <summary>
+    /// FR-142: the timed words of a displayed cue, from the ASR tokens of the candidate it came from, moved onto the output timeline by
+    /// the same offset as the cue. When the tokens are unknown, untimed or do not make up the cue text (an edited cue is realigned
+    /// to the words it still matches), nothing is returned and the cue is shown as a whole (with a warning from the template).
+    /// </summary>
+    private static IReadOnlyList<StyleTemplates.StyleTemplateWord> TimedWords(StandardRenderConfiguration configuration,
+        StandardSubtitleInput subtitles, SubtitleCueRevision revision, StandardDisplayedCueText cue)
+    {
+        if (configuration.WordTokens is not { } tokens)
+        {
+            return [];
+        }
+
+        SubtitleCueCandidate candidate = subtitles.Candidates.Single(item => item.Id == revision.SourceCandidateId);
+        RationalTime offset = revision.Snapshot.Cue.Range.Start - candidate.SourceRange.Start;
+        var words = new List<StyleTemplates.StyleTemplateWord>();
+        foreach (var id in candidate.EvidenceTokenIds)
+        {
+            if (!tokens.TryGetValue(id, out HubRadio.Core.Transcripts.Token? token) || token.Range is not TimeRange range)
+            {
+                return [];
+            }
+
+            words.Add(new(token.Text, new TimeRange(range.Start + offset, range.Duration)));
+        }
+
+        StyleTemplates.CueWordTimingResult result = string.Concat(words.Select(static word => word.Text)) == cue.Text
+            ? StyleTemplates.CueWordTiming.For(cue, words)
+            : StyleTemplates.CueWordTiming.Realign(cue, words, cue.Text);
+        return result.Words;
     }
 
     private static SubtitleDisplayResult ValidateSubtitles(

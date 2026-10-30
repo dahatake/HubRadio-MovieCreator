@@ -185,6 +185,45 @@ public sealed class CharacterPortraitStore
         return Path.Combine(directory, ImageDirectoryName, Path.GetFileName(portrait.ImageFile));
     }
 
+    /// <summary>
+    /// FR-140: cuts one character out of a registered image that holds several (for example angles side by side) and registers it.
+    /// The cut-out inherits the rights confirmation of the source (status, note and time of the confirmation, NFR-BR-004); the
+    /// source image file is only read and stays byte for byte as it was.
+    /// </summary>
+    public CharacterPortrait RegisterCutout(string sourceId, string name, PortraitCropRect rect, DateTimeOffset now, string? subtitleColor = null)
+    {
+        lock (gate)
+        {
+            CharacterPortrait source = Find(sourceId) ?? throw new KeyNotFoundException("The source image is not registered.");
+            string sourcePath = ImagePath(source);
+            (int width, int height) = PortraitImageCropper.Size(sourcePath);
+            if (!rect.IsInside(width, height))
+            {
+                throw new ArgumentOutOfRangeException(nameof(rect), "The range must lie inside the image.");
+            }
+
+            string temporary = Path.Combine(Path.GetTempPath(), "hubradio-cutout-" + Guid.NewGuid().ToString("N") + ".png");
+            try
+            {
+                PortraitImageCropper.CropToPng(sourcePath, temporary, rect);
+                CharacterPortrait made = Register(name, temporary, source.Rights, now, subtitleColor,
+                    source.RightsNote ?? "切り出し元: " + source.Name);
+                List<CharacterPortrait> items = [.. Read()];
+                int index = items.FindIndex(item => item.Id == made.Id);
+                items[index] = made with { RightsRecordedAt = source.RightsRecordedAt };
+                Write(items);
+                return items[index];
+            }
+            finally
+            {
+                if (File.Exists(temporary))
+                {
+                    File.Delete(temporary);
+                }
+            }
+        }
+    }
+
     private List<CharacterPortrait> Read()
     {
         string path = Path.Combine(directory, FileName);

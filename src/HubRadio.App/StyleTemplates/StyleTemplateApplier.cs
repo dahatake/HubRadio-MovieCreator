@@ -212,9 +212,13 @@ public static class StyleTemplateApplier
             if (speaker is not null)
             {
                 // FR-137 (6): the line takes the color of its character; the standing picture is shown while it is spoken.
-                free.Add(new(input, speaker.SubtitleColor, Motion(template.FreeTelopMotion, input.Range)));
+                // FR-140: in a brand-fixed Project the brand color wins, so the characters are told apart by the position of
+                // the standing picture (and the name label), not by color.
+                int slot = options.Characters!.ToList().FindIndex(item => item.Id == speaker.Id);
+                double left = brand is null ? PortraitLeft : PortraitLeft + (slot % 3) * (PortraitWidth * 0.5);
+                free.Add(new(input, brand?.TextColor ?? speaker.SubtitleColor, Motion(template.FreeTelopMotion, input.Range)));
                 portraits.Add(new(input.Range, speaker.Id, speaker.Name, speaker.ImageFile,
-                    PortraitLeft, PortraitTop, PortraitWidth, PortraitHeight));
+                    left, PortraitTop, PortraitWidth, PortraitHeight));
                 if (speaker.Rights != PortraitRightsStatus.Confirmed)
                 {
                     warnings.Add(new(PortraitRightsUnconfirmedWarning, input.Range));
@@ -257,7 +261,9 @@ public static class StyleTemplateApplier
             or StyleTemplateFreeTelopKind.Dialogue;
         return input.Source switch
         {
-            StyleTemplateTextSource.SubtitlePart => !speech && cues.Any(cue => cue.Text.Contains(input.Text, StringComparison.Ordinal)),
+            // FR-140: a dialogue line is a part of the subtitle cue it is spoken in (nothing is written for it).
+            StyleTemplateTextSource.SubtitlePart => (!speech || input.Kind == StyleTemplateFreeTelopKind.Dialogue)
+                && cues.Any(cue => cue.Text.Contains(input.Text, StringComparison.Ordinal)),
             StyleTemplateTextSource.UserInput or StyleTemplateTextSource.ConfirmedSentence => true,
             StyleTemplateTextSource.ConfirmedSummary => input.Kind is StyleTemplateFreeTelopKind.Topic or StyleTemplateFreeTelopKind.Title,
             _ => false,
