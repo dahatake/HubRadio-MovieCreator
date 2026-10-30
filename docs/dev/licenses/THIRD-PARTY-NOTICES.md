@@ -78,7 +78,7 @@ No row in `models.csv` has release approval. Catalog-declared licenses are expli
 
 The following are tracked because they affect reproducibility and later SBOM generation, but their presence does not mean they ship:
 
-- .NET SDK 10.0.401 selected by the repository `global.json`; the Stage 0 benchmark probes remain pinned to .NET SDK 10.0.400 by `benchmarks/probes/global.json`.
+- .NET SDK 10.0.403 selected by the repository `global.json`; the Stage 0 benchmark probes remain pinned to .NET SDK 10.0.400 by `benchmarks/probes/global.json`.
 - Node.js 24.19.0 and PowerShell 7.6.5 were observed on the Stage 0 host but are not pinned by repository artifacts; their controlled-toolchain artifacts and license evidence remain pending.
 - npm 11.17.0, TypeScript 7.0.2, Vite 8.2.2, Vitest 4.1.11, `@testing-library/dom` 10.4.1, `@testing-library/user-event` 14.6.1, and the three direct `@types` packages.
 - setuptools 84.0.0 and pytest 9.0.0 are exact, hash-locked PK-001 artifacts. pytest and its test-only transitive wheels are excluded from the product runtime lock.

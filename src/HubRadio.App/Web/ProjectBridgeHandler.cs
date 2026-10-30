@@ -216,7 +216,15 @@ internal sealed class ProjectBridgeHandler
         ProjectCreationDraftView draft = service.LoadDraft(ReadDraftId(request));
         if (draft.IsFinalized && draft.SourceOnly is not null && draft.ProjectId is not null && restoreAfterReadAsync is not null)
         {
-            await restoreAfterReadAsync(EntityId<ProjectIdTag>.Parse(draft.ProjectId), cancellationToken);
+            try
+            {
+                await restoreAfterReadAsync(EntityId<ProjectIdTag>.Parse(draft.ProjectId), cancellationToken);
+            }
+            catch (Exception exception) when (exception is not (OperationCanceledException or ObjectDisposedException
+                or OutOfMemoryException or StackOverflowException or AccessViolationException))
+            {
+                // Rehydration is best-effort: a stale checkpoint must not stop the Project from opening.
+            }
         }
         return draft;
     }

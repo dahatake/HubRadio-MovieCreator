@@ -656,7 +656,8 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
     {
         try { await RestoreRuntimeAsync(projectId, cancellationToken).ConfigureAwait(false); }
         catch (Exception exception) when (exception is not (OperationCanceledException or ObjectDisposedException
-            or OutOfMemoryException or StackOverflowException or AccessViolationException)) { }
+            or OutOfMemoryException or StackOverflowException or AccessViolationException))
+        { }
     }
 
     internal static async Task<StoredSourceOnlyExecution> ReconcileAndRestoreRuntimeAsync(StoredSourceOnlyExecution execution,
