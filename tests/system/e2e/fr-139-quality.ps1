@@ -1,5 +1,5 @@
 #Requires -Version 7.0
-# FR-139 AC-159（integration）, AC-161（manual → 文面の自動走査）。AC-160 は Q-021 で BLOCKED のためケースなし。
+# FR-139 AC-159（integration）, AC-161（manual → 文面の自動走査）。AC-160 は fr-137-139-character-fonts.ps1。
 param([Parameter(Mandatory)][ValidateSet('AC-159','AC-161')][string]$Ac)
 . (Join-Path $PSScriptRoot 'StyleTemplate.common.ps1')
 

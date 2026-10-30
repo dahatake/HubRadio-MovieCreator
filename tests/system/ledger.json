@@ -37,7 +37,9 @@
     "AC-157": "sha256:080d5e80e08f533a",
     "AC-158": "sha256:47140cd8c972ad63",
     "AC-159": "sha256:a8b576d551ca0912",
-    "AC-161": "sha256:53e96432b190b2a6"
+    "AC-161": "sha256:53e96432b190b2a6",
+    "AC-155": "sha256:e5a530ba8d296bf3",
+    "AC-160": "sha256:9afb20912eb5bcba"
   },
   "cases": [
     {
@@ -1131,6 +1133,68 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        }
+      ]
+    },
+    {
+      "id": "E2E-035",
+      "requirement_ids": [
+        "FR-137"
+      ],
+      "ac_ids": [
+        "AC-155"
+      ],
+      "title": "キャラクター対話: 立ち絵 0 件では選べず、使用権確認つき登録で選べる・確認状態を記録・キャラ別字幕色・標準立ち絵の同梱なし",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-137-139-character-fonts.ps1 -Ac AC-155",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-30T19:54:55+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "AC-155 BLOCKED 解除"
+        },
+        {
+          "at": "2026-10-30T19:55:06+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。実装役の結合試験が担当。スクリプトは参考として保持"
+        }
+      ]
+    },
+    {
+      "id": "E2E-036",
+      "requirement_ids": [
+        "FR-139"
+      ],
+      "ac_ids": [
+        "AC-160"
+      ],
+      "title": "効果音は合成 2 種のみ・書体は同梱 OFL 3 種のみ・書体の名前/版/ライセンスを記録（異常系: 他書体・許諾なしは不可）",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-137-139-character-fonts.ps1 -Ac AC-160",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-30T19:54:56+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "AC-160 BLOCKED 解除"
+        },
+        {
+          "at": "2026-10-30T19:55:06+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。実装役の結合試験が担当。スクリプトは参考として保持"
         }
       ]
     }
