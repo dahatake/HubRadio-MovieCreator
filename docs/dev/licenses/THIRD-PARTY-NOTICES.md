@@ -289,3 +289,16 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
+
+
+## FR-139 production-template typefaces (SIL OFL 1.1, bundled)
+
+The three typefaces below are bundled in `packaging/template-fonts/` (copied to `TemplateFonts/` next to the app) so they can be redistributed and burned into a video. The full license text of each is kept beside the font file (`OFL-*.txt`). A typeface of the user's PC is never used. Name, version (read from the font file) and license are recorded per Job in `style-template.json` (NFR-BR-004). Not legal or release approval.
+
+| Typeface | Use | File | Version | Source | License file |
+|---|---|---|---|---|---|
+| Noto Sans JP Black (太ゴシック) | 手作り感・解説の強調 | `NotoSansJP-Black.otf` | 2.004 | `notofonts/noto-cjk` commit `523d033d6cb47f4a80c58a35753646f5c3608a78`, `Sans/SubsetOTF/JP/NotoSansJP-Black.otf` | `OFL-NotoSansJP.txt` (repository root `LICENSE` at the same commit) |
+| M PLUS Rounded 1c (丸ゴシック; family name in file: Rounded Mplus 1c) | 対談番組・縦型 3 段・キャラクター対話の字幕 | `MPLUSRounded1c-Regular.ttf` | 1.059.20150529 | `google/fonts` `ofl/mplusrounded1c` (commit `84efd8ad78c3710ad14bd909e3bc407151885628`); copyright "The Rounded M+ Project Authors" | `OFL-MPLUSRounded1c.txt` (OFL 1.1 text from `coz-m/MPLUS_FONTS`) |
+| Potta One (ポップ体) | ショート飛び出し・バラエティ | `PottaOne-Regular.ttf` | 1.000 | `google/fonts` `ofl/pottaone` (commit `8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5`); copyright "The Potta Project Authors" | `OFL-PottaOne.txt` |
+
+SHA-256: NotoSansJP-Black.otf `3aa30b0956510f4205f759ab3079a5b658310ebcda2577f290466ea51c948819`; MPLUSRounded1c-Regular.ttf `b75708b53e45b06d17d470aeeca5b766e3d1b3999f03f13ec4eb863ca846c14c`; PottaOne-Regular.ttf `bde843868b56e429e1c863da2efa76df533162b226d990efcb96d533b0ca2a93`.

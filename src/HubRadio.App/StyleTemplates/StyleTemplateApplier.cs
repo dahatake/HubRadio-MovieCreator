@@ -26,7 +26,7 @@ public enum StyleTemplateTextSource
 /// <summary>A telop other than the emphasis telop (retort, inner voice, topic, title, hook, band).</summary>
 public sealed record StyleTemplateFreeTelopInput(
     StyleTemplateFreeTelopKind Kind, string Text, TimeRange Range, StyleTemplateTextSource Source, OriginRef Origin,
-    double? X = null, double? Y = null);
+    double? X = null, double? Y = null, string? Speaker = null);
 
 /// <summary>FR-136: the brand template of a brand-fixed Project (NFR-BR-001). Its colors, fonts and logo win.</summary>
 public sealed record StyleTemplateBrand(
@@ -35,7 +35,7 @@ public sealed record StyleTemplateBrand(
 
 public sealed record StyleTemplateApplyOptions(
     StyleTemplateSubtitleLimits Limits, string? EmphasisTelopAmount, bool SoundEffectsEnabled, RationalTime OutputDuration,
-    StyleTemplateBrand? Brand = null);
+    StyleTemplateBrand? Brand = null, IReadOnlyList<CharacterPortrait>? Characters = null);
 
 public sealed record StyleTemplateMotion(StyleTemplateMotionKind Kind, TimeRange Range, double FromScale, double ToScale);
 
@@ -51,6 +51,10 @@ public sealed record StyleTemplateFreeTelop(
 
 public sealed record StyleTemplateWarning(string Code, TimeRange? Range);
 
+/// <summary>FR-137 (6): a registered character's standing picture shown while a line is spoken (a fraction of the frame, not pixels).</summary>
+public sealed record StyleTemplatePortraitShot(
+    TimeRange Range, string CharacterId, string CharacterName, string ImageFile, double Left, double Top, double Width, double Height);
+
 /// <summary>FR-136 / FR-137: everything the template adds on top of the FR-012/051/059/060 output.</summary>
 public sealed record StyleTemplatePlan(
     string TemplateReference,
@@ -65,8 +69,11 @@ public sealed record StyleTemplatePlan(
     IReadOnlyList<StyleTemplateTelop> EmphasisTelops,
     IReadOnlyList<StyleTemplateFreeTelop> FreeTelops,
     IReadOnlyList<StandardSoundEffectCue> SoundEffects,
-    IReadOnlyList<StyleTemplateWarning> Warnings)
+    IReadOnlyList<StyleTemplateWarning> Warnings,
+    IReadOnlyList<StyleTemplatePortraitShot>? PortraitShots = null)
 {
+    public IReadOnlyList<StyleTemplatePortraitShot> Portraits => PortraitShots ?? [];
+
     /// <summary>A stable text form; equal inputs and the same template give equal text (FR-136 reproducibility).</summary>
     public string ToCanonicalText()
     {
@@ -83,6 +90,7 @@ public sealed record StyleTemplatePlan(
         lines.AddRange(EmphasisTelops.Select(item => $"E|{R(item.Telop.OutputRange)}|{item.Telop.Text}|{item.Color}|{M(item.Motion)}"));
         lines.AddRange(FreeTelops.Select(item => $"F|{item.Input.Kind}|{R(item.Input.Range)}|{item.Input.Text}|{item.Color}|{M(item.Motion)}|{item.Input.X}|{item.Input.Y}"));
         lines.AddRange(SoundEffects.Select(item => $"S|{item.Kind}|{T(item.OutputStart)}"));
+        lines.AddRange(Portraits.Select(item => $"P|{item.CharacterId}|{R(item.Range)}|{item.Left},{item.Top},{item.Width},{item.Height}"));
         lines.AddRange(Warnings.Select(item => $"W|{item.Code}|{(item.Range is { } range ? R(range) : "-")}"));
         return string.Join('\n', lines);
     }
@@ -99,6 +107,13 @@ public static class StyleTemplateApplier
     public const string BelowMinimumDurationWarning = "shown-below-minimum-duration";
     public const string RejectedTelopWarning = "telop-text-source-rejected";
     public const string MissingWordTimingWarning = "word-timing-missing";
+    public const string PortraitRightsUnconfirmedWarning = "portrait-rights-unconfirmed";
+
+    /// <summary>FR-137 (6): the standing picture sits at the lower left, as fractions of the frame.</summary>
+    public const double PortraitLeft = 0.03;
+    public const double PortraitTop = 0.45;
+    public const double PortraitWidth = 0.22;
+    public const double PortraitHeight = 0.52;
 
     private const int MaximumShortWords = 3;
     private const int MaximumShortCharacters = 20;
@@ -180,12 +195,31 @@ public static class StyleTemplateApplier
         }
 
         var free = new List<StyleTemplateFreeTelop>();
+        var portraits = new List<StyleTemplatePortraitShot>();
         int freeIndex = 0;
         foreach (StyleTemplateFreeTelopInput input in freeTelops.OrderBy(static item => item.Range.Start))
         {
-            if (!Accepts(template, input, cueTexts, options.OutputDuration))
+            CharacterPortrait? speaker = input.Kind == StyleTemplateFreeTelopKind.Dialogue
+                ? options.Characters?.FirstOrDefault(item => item.Id == input.Speaker)
+                : null;
+            if (!Accepts(template, input, cueTexts, options.OutputDuration)
+                || (input.Kind == StyleTemplateFreeTelopKind.Dialogue && speaker is null))
             {
                 warnings.Add(new(RejectedTelopWarning, input.Range));
+                continue;
+            }
+
+            if (speaker is not null)
+            {
+                // FR-137 (6): the line takes the color of its character; the standing picture is shown while it is spoken.
+                free.Add(new(input, speaker.SubtitleColor, Motion(template.FreeTelopMotion, input.Range)));
+                portraits.Add(new(input.Range, speaker.Id, speaker.Name, speaker.ImageFile,
+                    PortraitLeft, PortraitTop, PortraitWidth, PortraitHeight));
+                if (speaker.Rights != PortraitRightsStatus.Confirmed)
+                {
+                    warnings.Add(new(PortraitRightsUnconfirmedWarning, input.Range));
+                }
+
                 continue;
             }
 
@@ -202,7 +236,7 @@ public static class StyleTemplateApplier
             options.SoundEffectsEnabled, cueTexts, soundTelops, options.OutputDuration);
 
         return new StyleTemplatePlan(template.Reference, textColor, outlineColor, emphasisColors, fonts,
-            brand?.LogoReference, template.Placement, minimumCount, captions, emphasis, free, sounds, warnings);
+            brand?.LogoReference, template.Placement, minimumCount, captions, emphasis, free, sounds, warnings, portraits);
     }
 
     private static bool Accepts(StyleTemplateDefinition template, StyleTemplateFreeTelopInput input,
@@ -219,7 +253,8 @@ public static class StyleTemplateApplier
             return false;
         }
 
-        bool speech = input.Kind is StyleTemplateFreeTelopKind.Retort or StyleTemplateFreeTelopKind.InnerVoice;
+        bool speech = input.Kind is StyleTemplateFreeTelopKind.Retort or StyleTemplateFreeTelopKind.InnerVoice
+            or StyleTemplateFreeTelopKind.Dialogue;
         return input.Source switch
         {
             StyleTemplateTextSource.SubtitlePart => !speech && cues.Any(cue => cue.Text.Contains(input.Text, StringComparison.Ordinal)),
