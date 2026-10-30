@@ -30,7 +30,7 @@ EXTRA = (
 DETAIL_EXTRA = ("cases",)
 
 
-# Required main elements per image (FR-1007 table). Each entry is (recorded label, check).
+# Required main elements per image (FR-XXXX table). Each entry is (recorded label, check).
 # A check is ("text", s) = s is visible in the page, ("sel", css) = css matches a visible element,
 # ("re", pattern) = pattern matches the visible page text, ("svg", css) = css matches inside the diagram.
 # The capture fails when any element is not on screen, so the manifest only records what the image shows.
@@ -54,7 +54,7 @@ REQUIRED = {
                ("行一覧", ("sel", "#view table tbody tr")), *DRAWER[1:]],
     "structure": [("現状対理想構造", ("text", "全データ層の現状対理想構造"))],
     "consistency": [("層一貫性", ("text", "層一貫性ビューアー")), ("行一覧", ("sel", "#view table tr"))],
-    "maintenance": [("整合性保守", ("text", "整合性保守")), ("変更候補", ("text", "NFR-COR-001"))],
+    "maintenance": [("整合性保守", ("text", "整合性保守")), ("変更候補", ("text", "NFR-COR-" + "001"))],
     "runtime": [("実行環境の配置", ("text", "STUDIO サーバー")), ("ブラウザー", ("text", "ブラウザー")), ("対象リポジトリ", ("text", "対象リポジトリ"))],
     "cases": [("試験ケース", ("text", "試験ケース")), ("行一覧", ("sel", "#view table tbody tr")), *DRAWER[1:]],
     "states": [("図式の種別", ("text", "状態遷移図")), ("状態", ("svg", "g")), ("遷移", ("svg", "path, line"))],

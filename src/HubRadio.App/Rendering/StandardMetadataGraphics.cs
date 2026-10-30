@@ -36,7 +36,7 @@ internal static class StandardMetadataGraphics
         StandardShortFormPlan? shortForm, EntityId<RenderNodeIdTag> target,
         RenderProfile profile, RationalTime duration, RationalTime firstCutDuration,
         RenderFontEvidence font, StandardRenderConfiguration? configuration,
-        IReadOnlyList<StandardEmphasisTelop>? telops = null)
+        IReadOnlyList<StandardEmphasisTelop>? telops = null, StyleTemplates.StyleTemplatePlan? styled = null)
     {
         var files = new List<StandardGraphicRenderFile>();
         RationalTime titleMaximum = configuration?.TitleMaximumDuration ?? new RationalTime(3, 1);
@@ -87,15 +87,18 @@ internal static class StandardMetadataGraphics
         {
             if (telop.OutputRange.Start < default(RationalTime) || telop.OutputRange.End > duration)
                 throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedPlanElement);
+            StyleTemplates.StyleTemplateTelop? styledTelop = styled?.EmphasisTelops.FirstOrDefault(item =>
+                item.Telop.OutputRange.Equals(telop.OutputRange) && item.Telop.Text == telop.Text);
             Add("EmphasisTelop", telop.Text, [telop.Origin], null, telop.OutputRange, telop.Rule,
-                StandardTextProvenanceKind.OriginalTranscript, tail: false, emphasis: true);
+                StandardTextProvenanceKind.OriginalTranscript, tail: false, emphasis: true, styledTelop: styledTelop);
         }
 
         return files.AsReadOnly();
 
         void Add(string role, string text, IReadOnlyList<OriginRef> origins,
             EntityId<LongFormElementIdTag>? elementId, TimeRange range, string timing,
-            StandardTextProvenanceKind provenance, bool tail, bool emphasis = false)
+            StandardTextProvenanceKind provenance, bool tail, bool emphasis = false,
+            StyleTemplates.StyleTemplateTelop? styledTelop = null)
         {
             if (files.Count >= 64 || Encoding.UTF8.GetByteCount(text) > 2048)
                 throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.ResourceLimit);
@@ -107,6 +110,31 @@ internal static class StandardMetadataGraphics
             int bottom = profile.Height * 3 / 10;
             if (tail) { top = profile.Height * 6 / 10; bottom = profile.Height * 3 / 4; }
             if (emphasis) { left = profile.Width / 20; right = profile.Width - left; top = profile.Height * 32 / 100; bottom = profile.Height * 46 / 100; }
+            if (styled is not null)
+            {
+                // FR-138: the title/hook sits on the top tier and the topic side telop at the top-left; PARAM-005 keeps the
+                // vertical margins free of every telop.
+                bool vertical = profile.Height > profile.Width;
+                StyleTemplates.StyleTemplateFreeTelopKind? kind = role switch
+                {
+                    "EpisodeTitle" => StyleTemplates.StyleTemplateFreeTelopKind.Title,
+                    "Topic" => StyleTemplates.StyleTemplateFreeTelopKind.Topic,
+                    _ => null,
+                };
+                if (kind is { } placed && configuration?.StyleTemplate?.FreeTelopKinds.Contains(placed) == true)
+                {
+                    StyleTemplates.StyleTemplateRect rect = StyleTemplates.StyleTemplateLayout.Rect(placed, profile.Width, profile.Height, vertical);
+                    (left, top, right, bottom) = (rect.Left, rect.Top, rect.Right, rect.Bottom);
+                }
+
+                if (vertical)
+                {
+                    StyleTemplates.StyleTemplateRect safe = StyleTemplates.StyleTemplateLayout.SafeArea(
+                        profile.Width, profile.Height, StyleTemplates.StyleTemplateMargins.Vertical);
+                    (left, top, right, bottom) = (Math.Max(left, safe.Left), Math.Max(top, safe.Top),
+                        Math.Min(right, safe.Right), Math.Min(bottom, safe.Bottom));
+                }
+            }
             if (files.Any(file => file.Evidence.OutputRange.Start < range.End && range.Start < file.Evidence.OutputRange.End
                 && left < file.Evidence.Right && file.Evidence.Left < right && top < file.Evidence.Bottom && file.Evidence.Top < bottom))
                 throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedPlanElement);
@@ -124,19 +152,31 @@ internal static class StandardMetadataGraphics
                 rendered, SubtitleFileCueStyle.Normal);
             var white = new AssColor(0, 255, 255, 255);
             var black = new AssColor(0, 0, 0, 0);
-            // Emphasis captions: bold yellow lettering with a thick black outline, no box.
-            var fill = emphasis ? new AssColor(0, 255, 221, 0) : white;
+            // Emphasis captions: bold lettering with a thick outline, no box. Without a template: yellow on black.
+            string emphasisColor = styledTelop?.Color ?? "#FFDD00";
+            var fill = emphasis ? Color(emphasisColor) : white;
+            // FR-139: the outline is the template's when the text reads on it at 4.5:1, else black or white.
+            var outline = emphasis && styledTelop is not null
+                ? Color(StyleTemplates.StyleTemplateColor.EnsureBackground(emphasisColor, styled?.OutlineColor ?? StyleTemplates.StyleTemplateColor.Black))
+                : black;
             var ass = new AssSubtitleProfile(profile.Width, profile.Height, Enum.GetValues<SubtitleFileCueStyle>()
-                .Select(style => new AssStyleDefinition(style, font.Name, size, fill, fill, black, black,
+                .Select(style => new AssStyleDefinition(style, font.Name, size, fill, fill, outline, outline,
                     true, false, false, false, 100, 100, 0, 0, emphasis ? AssBorderStyle.OutlineAndShadow : AssBorderStyle.OpaqueBox,
                     emphasis ? 6 : 3, 0, AssAlignment.MiddleCenter, new AssMargins(12, 12, 12), 1)).ToArray());
-            SubtitleExportFile file = StandardSubtitlePlacement.WriteAtBounds(cue, ass, left, top, right, bottom);
+            SubtitleExportFile file = StandardSubtitlePlacement.WriteAtBounds(cue, ass, left, top, right, bottom,
+                StandardTemplateAss.MotionTags(styledTelop?.Motion));
             var input = new RenderGraphInput(EntityId<RenderInputIdTag>.New(), RenderInputKind.Graphic,
                 file.ContentDigest, file.ByteSize, origins[0]);
             files.Add(new StandardGraphicRenderFile(input, file, new FfmpegAssGraphicBinding(input.Id, target, range),
                 new StandardTextOverlayEvidence(role, text, rendered, provenance, Array.AsReadOnly(origins.ToArray()), elementId,
                     plan.LongForm.PlanId, shortForm?.Id, settings, range, timing, left, top, right, bottom, size)));
         }
+    }
+
+    private static AssColor Color(string hex)
+    {
+        (byte red, byte green, byte blue) = StyleTemplates.StyleTemplateColor.Parse(hex);
+        return new AssColor(0, red, green, blue);
     }
 
     private static string[] TextElements(string text)

@@ -27,7 +27,17 @@
     "AC-129": "sha256:41f4cfb04982d841",
     "AC-133": "sha256:67de5e9e52870e61",
     "AC-134": "sha256:c0bf5c4a36f6d4a1",
-    "AC-135": "sha256:57ee96af9edaa7ba"
+    "AC-135": "sha256:57ee96af9edaa7ba",
+    "AC-150": "sha256:b27bf4cb59291704",
+    "AC-151": "sha256:405383872bd0d467",
+    "AC-152": "sha256:c93bc97bccf60d47",
+    "AC-153": "sha256:ae75bb787fe91cb7",
+    "AC-154": "sha256:38b0171a1fdc1053",
+    "AC-156": "sha256:3ef4de988c28ed19",
+    "AC-157": "sha256:080d5e80e08f533a",
+    "AC-158": "sha256:47140cd8c972ad63",
+    "AC-159": "sha256:a8b576d551ca0912",
+    "AC-161": "sha256:53e96432b190b2a6"
   },
   "cases": [
     {
@@ -811,6 +821,316 @@
           "by": "test-designer",
           "change": "追加",
           "reason": "受入基準からケースを作成"
+        }
+      ]
+    },
+    {
+      "id": "E2E-025",
+      "requirement_ids": [
+        "FR-136"
+      ],
+      "ac_ids": [
+        "AC-150"
+      ],
+      "title": "演出テンプレートを 1 つ選ぶだけで設定値入力なしに Job が完了し、一覧に名前・用途・縦横・例が出る",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-136-style-template.ps1 -Ac AC-150",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-30T16:46:13+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-30T16:46:51+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        }
+      ]
+    },
+    {
+      "id": "E2E-026",
+      "requirement_ids": [
+        "FR-136"
+      ],
+      "ac_ids": [
+        "AC-151"
+      ],
+      "title": "テンプレート未選択の Job は従来の既定の出力と同じ（テンプレート ID が付かない）",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-136-style-template.ps1 -Ac AC-151",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-30T16:46:15+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-30T16:46:52+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        }
+      ]
+    },
+    {
+      "id": "E2E-027",
+      "requirement_ids": [
+        "FR-136"
+      ],
+      "ac_ids": [
+        "AC-152"
+      ],
+      "title": "テンプレート ID・版を保存し同じ設定で同じ演出。調整後は「テンプレート＋変更あり」と識別",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-136-style-template.ps1 -Ac AC-152",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-30T16:46:16+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-30T16:46:52+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        }
+      ]
+    },
+    {
+      "id": "E2E-028",
+      "requirement_ids": [
+        "FR-137"
+      ],
+      "ac_ids": [
+        "AC-153"
+      ],
+      "title": "各テンプレートの強調色・書体の数、強調が字幕の一部、FR-051 上限内",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-137-template-kinds.ps1 -Ac AC-153",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-30T16:46:18+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-30T16:46:52+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        }
+      ]
+    },
+    {
+      "id": "E2E-029",
+      "requirement_ids": [
+        "FR-137"
+      ],
+      "ac_ids": [
+        "AC-154"
+      ],
+      "title": "ショート飛び出しは 1〜3 語・話す語のみ強調、バラエティは効果音と約 0.5 秒の動き、強調数は上限内",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-137-template-kinds.ps1 -Ac AC-154",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-30T16:46:19+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-30T16:46:52+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        }
+      ]
+    },
+    {
+      "id": "E2E-030",
+      "requirement_ids": [
+        "FR-138"
+      ],
+      "ac_ids": [
+        "AC-156"
+      ],
+      "title": "縦型の字幕・テロップが余白（上250・下480・右160）と字幕領域の内側に収まる",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-156",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-30T16:46:20+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-30T16:46:53+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        }
+      ]
+    },
+    {
+      "id": "E2E-031",
+      "requirement_ids": [
+        "FR-138"
+      ],
+      "ac_ids": [
+        "AC-157"
+      ],
+      "title": "対談番組: 話題が続く間だけサイドテロップ、名前・肩書き帯は入力のある話者だけ（異常系: 入力なしは出さない）",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-157",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-30T16:46:22+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-30T16:46:53+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        }
+      ]
+    },
+    {
+      "id": "E2E-032",
+      "requirement_ids": [
+        "FR-138"
+      ],
+      "ac_ids": [
+        "AC-158"
+      ],
+      "title": "縦型3段: 1080×1920、上段タイトル・フック／中段元映像／下段字幕（20字以内）、冒頭にフック",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-158",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-30T16:46:23+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-30T16:46:53+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        }
+      ]
+    },
+    {
+      "id": "E2E-033",
+      "requirement_ids": [
+        "FR-139"
+      ],
+      "ac_ids": [
+        "AC-159"
+      ],
+      "title": "各テンプレートで contrast 4.5:1 以上、色以外の強調、否定語を削らない、自動字幕は下書きで確認・修正可能",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-139-quality.ps1 -Ac AC-159",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-30T16:46:25+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-30T16:46:53+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        }
+      ]
+    },
+    {
+      "id": "E2E-034",
+      "requirement_ids": [
+        "FR-139"
+      ],
+      "ac_ids": [
+        "AC-161"
+      ],
+      "title": "テンプレートの一覧・説明・users-guide に効果の保証・断定や特定チャンネル・人物の模倣の表現がない（文面の走査）",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-139-quality.ps1 -Ac AC-161",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-30T16:46:26+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-30T16:46:54+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
         }
       ]
     }

@@ -1,8 +1,9 @@
 import { useLayoutEffect, useId, useRef, useState } from 'react'
 import type { PipelineRegenerationParams } from '../workflow/pipelineProtocol'
+import { StyleTemplatePicker } from './StyleTemplatePicker'
 
 /** FR-061: creates a new Job from the saved "next Job" settings after an explicit confirmation. */
-export function JobCreationAction({ nextJobNumber, params, disabledReason, pending, active, onOpenSettings, openSettingsDisabled = false, onConfirm }: Readonly<{
+export function JobCreationAction({ nextJobNumber, params, disabledReason, pending, active, onOpenSettings, openSettingsDisabled = false, onConfirm, styleTemplateId = null, onStyleTemplateChange }: Readonly<{
   nextJobNumber: number | null
   params: PipelineRegenerationParams | null
   disabledReason: string | null
@@ -10,7 +11,10 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
   active: boolean
   onOpenSettings: () => void
   openSettingsDisabled?: boolean
-  onConfirm: (params: PipelineRegenerationParams) => boolean
+  onConfirm: (params: PipelineRegenerationParams, styleTemplateId?: string | null) => boolean
+  /** FR-136: the selected production template (null = none). The picker is shown only when a change handler is given. */
+  styleTemplateId?: string | null
+  onStyleTemplateChange?: (id: string | null) => void
 }>) {
   const headingId = useId()
   const [confirmation, setConfirmation] = useState<PipelineRegenerationParams | null>(null)
@@ -32,6 +36,7 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
     <h2 id={headingId}>新しいJobを作成</h2>
     <p>1つの元動画から、設定を変えた複数のJobを作れます。「次に作成するJobの設定を開く」で設定を変えて保存し、「新しいJobを作成」を押してください。今までのJobと仕上がりは消えません。Jobは1つずつ順番に実行します。</p>
     <button type="button" disabled={!active || openSettingsDisabled} onClick={onOpenSettings}>次に作成するJobの設定を開く</button>
+    {onStyleTemplateChange !== undefined && <StyleTemplatePicker selectedId={styleTemplateId} onSelect={onStyleTemplateChange} disabled={!active || pending} />}
     <button ref={opener} type="button" disabled={!available || confirmation !== null} onClick={() => {
       if (available) { sending.current = false; setRejected(false); setConfirmation(Object.freeze({ ...params })) }
     }}>新しいJobを作成</button>
@@ -45,7 +50,7 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
       <button type="button" disabled={!available || !same || rejected} onClick={() => {
         if (!available || !same || sending.current) return
         sending.current = true
-        if (onConfirm(confirmation)) setConfirmation(null)
+        if (onConfirm(confirmation, styleTemplateId)) setConfirmation(null)
         else { sending.current = false; setRejected(true) }
       }}>作成する</button>
       <button ref={cancel} type="button" onClick={close}>取消</button>

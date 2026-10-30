@@ -8,7 +8,7 @@ interface PipelineContextValue {
   readonly refresh: () => boolean
   readonly cancel: () => boolean
   readonly retry: () => boolean
-  readonly regenerate: (params: PipelineRegenerationParams) => boolean
+  readonly regenerate: (params: PipelineRegenerationParams, styleTemplateId?: string | null) => boolean
   readonly restore: (params: PipelineRestoreParams) => boolean
   readonly readVersions: () => boolean
 }
@@ -35,7 +35,7 @@ export function PipelineProvider({ children, projectId, createClient = createHos
   const refresh = useCallback(() => session.current?.read() ?? false, [])
   const cancel = useCallback(() => session.current?.cancel() ?? false, [])
   const retry = useCallback(() => session.current?.retry() ?? false, [])
-  const regenerate = useCallback((params: PipelineRegenerationParams) => session.current?.regenerate(params) ?? false, [])
+  const regenerate = useCallback((params: PipelineRegenerationParams, styleTemplateId: string | null = null) => session.current?.regenerate(params, styleTemplateId) ?? false, [])
   const restore = useCallback((params: PipelineRestoreParams) => session.current?.restore(params) ?? false, [])
   const readVersions = useCallback(() => session.current?.readVersions() ?? false, [])
   const value = useMemo<PipelineContextValue>(() => ({

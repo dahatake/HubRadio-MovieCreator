@@ -188,6 +188,20 @@ describe('pipeline native v2 protocol (synthetic fixtures only)', () => {
     expect(parsePipelineResponse(pipelineResponse({ ...s, resultStatus: 'invalid', result: s.previousResult }))).toBeNull()
   })
 
+  // FR-136: the selected template ID rides on the Job-creation request; without one the request is unchanged.
+  it('adds the selected production template to the regenerate request only when one is selected', () => {
+    const base = { projectId: pipelineProjectId, expectedVersionId: pipelineVersionId, expectedVersionDigest: pipelineVersionDigest,
+      expectedSettingsRevision: 3, expectedSettingsSnapshotDigest: 'e'.repeat(64) }
+    const plain = createPipelineRegenerateRequest(fixtureId(1000), base)
+    expect(Object.keys(plain.params)).not.toContain('styleTemplateId')
+    const styled = createPipelineRegenerateRequest(fixtureId(1000), base, 'short-pop')
+    expect(styled.params).toMatchObject({ ...base, styleTemplateId: 'short-pop' })
+    expect(parsePipelineRequest(styled)).toEqual(styled)
+    expect(parsePipelineRequest(plain)).toEqual(plain)
+    expect(() => createPipelineRegenerateRequest(fixtureId(1000), base, 'Short Pop!')).toThrow()
+    expect(parsePipelineRequest({ ...styled, params: { ...styled.params, styleTemplateId: '' } })).toBeNull()
+  })
+
   it('creates closed OCC requests, rejects extended params, and correlates success and failure', () => {
     const s = createCompletedPipeline()
     const read = createPipelineReadRequest(fixtureId(1000), pipelineProjectId)

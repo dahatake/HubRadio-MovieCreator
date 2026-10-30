@@ -192,3 +192,79 @@
   opacity: 0.7;
   cursor: not-allowed;
 }
+
+/* FR-136: production template picker (tokens only; 4px grid; the sample text is template data). */
+.style-template-picker {
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  color: var(--cp-text);
+  background: var(--cp-surface);
+  border: 1px solid var(--cp-border);
+  border-radius: 0.75rem;
+}
+
+.style-template-hint {
+  margin: 0 0 0.75rem;
+  color: var(--cp-text-muted);
+}
+
+.style-template-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.style-template-card {
+  display: grid;
+  gap: 0.25rem;
+  height: 100%;
+  min-height: 2.75rem;
+  padding: 0.75rem;
+  background: var(--cp-surface-soft);
+  border: 1px solid var(--cp-border-strong);
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.style-template-card[data-selected='true'] {
+  background: var(--cp-accent-soft);
+  border-color: var(--cp-accent);
+  outline: 2px solid var(--cp-accent);
+}
+
+.style-template-card:focus-within {
+  outline: 2px solid var(--cp-link);
+  outline-offset: 2px;
+}
+
+.style-template-name {
+  font-weight: 600;
+}
+
+.style-template-orientation {
+  margin-left: 0.5rem;
+  padding: 0 0.5rem;
+  color: var(--cp-text-muted);
+  font-size: 0.875rem;
+  border: 1px solid var(--cp-border-strong);
+  border-radius: 0.5rem;
+}
+
+.style-template-purpose,
+.style-template-description {
+  color: var(--cp-text-muted);
+  font-size: 0.875rem;
+}
+
+.style-template-sample {
+  display: block;
+  padding: 0.5rem 0.75rem;
+  font-weight: 800;
+  text-align: center;
+  background: #2b2b2b;
+  border-bottom: 4px solid;
+  border-radius: 0.25rem;
+}
