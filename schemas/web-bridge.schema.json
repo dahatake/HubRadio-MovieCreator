@@ -118,9 +118,76 @@
     { "$ref": "#/$defs/stitchPickClipResponse" },
     { "$ref": "#/$defs/stitchRunResponse" },
     { "$ref": "#/$defs/jobExportRequest" },
-    { "$ref": "#/$defs/jobExportResponse" }
+    { "$ref": "#/$defs/jobExportResponse" },
+    { "$ref": "#/$defs/portraitsListRequest" },
+    { "$ref": "#/$defs/portraitsRegisterRequest" },
+    { "$ref": "#/$defs/portraitsResponse" }
   ],
   "$defs": {
+    "portraitsProtocolLimits": {
+      "$comment": "FR-137 (6). portraits.list and portraits.register use a 6 MiB (6291456) request ceiling (the image arrives as base64, at most 4 MiB of bytes) and a 16 KiB (16384) response ceiling, including envelopes. Responses always contain a closed result object, never an error envelope. The app bundles no picture: the user registers an image of their own, and the right to use it (confirmed or unconfirmed) is chosen explicitly and saved with the picture (NFR-BR-004). Registering needs the same permission as composition export; listing is read-only. A name must be unique and at most 40 characters; each character gets its own subtitle color. The response carries no path, exception text or SID.",
+      "x-maxRequestUtf8Bytes": 6291456,
+      "x-maxResponseUtf8Bytes": 16384
+    },
+    "portraitsListRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "portraits.list" }, "params": { "type": "object", "additionalProperties": false, "maxProperties": 0 }
+      }
+    },
+    "portraitsRegisterRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "portraits.register" }, "params": { "$ref": "#/$defs/portraitsRegisterParams" }
+      }
+    },
+    "portraitsRegisterParams": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "imageType", "imageBase64", "rights", "rightsNote"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "imageType": { "enum": ["png", "jpeg", "webp"] },
+        "imageBase64": { "type": "string", "minLength": 1, "maxLength": 5592404 },
+        "rights": { "$ref": "#/$defs/portraitRights" },
+        "rightsNote": { "oneOf": [{ "type": "null" }, { "type": "string", "maxLength": 200 }] }
+      }
+    },
+    "portraitRights": { "enum": ["confirmed", "unconfirmed"] },
+    "portraitsResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "enum": ["portraits.list", "portraits.register"] }, "result": { "$ref": "#/$defs/portraitsResult" }
+      }
+    },
+    "portraitsResult": {
+      "$comment": "portraitCount is the number of registered pictures (the character dialogue template can be chosen only when it is at least 1). Every status carries the current list; unavailable carries an empty list.",
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "portraitCount", "portraits"],
+      "properties": {
+        "status": { "enum": ["ok", "forbidden", "invalid", "unavailable"] },
+        "portraitCount": { "type": "integer", "minimum": 0 },
+        "portraits": {
+          "type": "array", "maxItems": 16,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["id", "name", "rights", "subtitleColor", "rightsNote"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^char-[0-9a-f]{12}$(?![\\s\\S])" },
+              "name": { "type": "string", "minLength": 1, "maxLength": 40 },
+              "rights": { "$ref": "#/$defs/portraitRights" },
+              "subtitleColor": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$(?![\\s\\S])" },
+              "rightsNote": { "oneOf": [{ "type": "null" }, { "type": "string", "maxLength": 200 }] }
+            }
+          }
+        }
+      }
+    },
     "jobExportProtocolLimits": {
       "$comment": "FR-132. results.export uses 2 KiB (2048) request and 16 KiB (16384) response UTF-8 ceilings, including envelopes. Responses always contain a closed result object, never an error envelope. The current native actor must have ExportComposition (the same permission as composition export); without it nothing is written and the status is forbidden. The folder is chosen with the FR-064 dialog (settings.workspace.browse) or typed, and arrives as destination (at most 260 characters). The Job is identified only by project and execution; the files are read from the validated stored result of that execution (long clean, long burned-in, short burned-in videos and thumbnails). Existing files are never overwritten: a numbered name is used. The response carries no path, exception text or SID; failures are closed reason codes. Only files are saved to the chosen folder; nothing is published, posted or sent.",
       "x-maxRequestUtf8Bytes": 2048,
@@ -820,7 +887,9 @@
         "pipeline.restore",
         "stitch.pickClip",
         "stitch.run",
-        "results.export"
+        "results.export",
+        "portraits.list",
+        "portraits.register"
       ]
     },
     "projectMethod": {

@@ -144,7 +144,12 @@ public sealed class StandardArtifactGenerationRequest
     public string ApplicationVersion { get; }
     public ContentDigest ApplicationDigest { get; }
     public TimeSpan ProcessTimeout { get; }
-    public StandardRenderConfiguration Configuration { get; }
+    public StandardRenderConfiguration Configuration { get; private set; }
+
+    /// <summary>FR-137 (6): hands the registered characters and the dialogue lines to the render (used only with a template that shows them).</summary>
+    internal void UseCharacterDialogue(IReadOnlyList<StyleTemplates.CharacterPortrait> characters, string? imageDirectory,
+        IReadOnlyList<StyleTemplates.StyleTemplateFreeTelopInput> lines) =>
+        Configuration = Configuration.WithCharacterDialogue(characters, imageDirectory, lines);
     public StandardMusicRenderInput? Music { get; }
 
     private static ImportedOriginal RequireCompletedOriginal(IngestWorkflowRunResult ingest)
@@ -672,6 +677,62 @@ public sealed class StandardArtifactGenerator
             held.Add(OpenHeld(fontPath));
             var localFont = new FfmpegFontBinding(request.Font.Evidence, new BinaryVerificationRequest(
                 "standard.font", fontPath, request.Font.Evidence.FileDigest, request.Font.VerificationRequest.ExpectedByteSize));
+            if (request.Configuration.StyleTemplate is not null)
+            {
+                // FR-139: the bundled typefaces of the production templates sit beside the standard font, so the renderer's
+                // font folder holds exactly the verified OFL files and never a typeface of the user's PC.
+                try
+                {
+                    foreach (StyleTemplates.StyleTemplateBundledFont bundled in StyleTemplates.StyleTemplateFonts.All)
+                    {
+                        string stagedPath = StyleTemplates.StyleTemplateFonts.CopyVerified(bundled, fontsDirectory);
+                        ownedFiles.Add(stagedPath);
+                        held.Add(OpenHeld(stagedPath));
+                    }
+                }
+                catch (Exception exception) when (exception is IOException or InvalidDataException or UnauthorizedAccessException)
+                {
+                    throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.SubtitleMismatch);
+                }
+            }
+
+            // FR-137 (6): the registered standing pictures are copied once into the owned staging directory after their digest is checked.
+            var portraitFiles = new Dictionary<string, BinaryVerificationRequest>(StringComparer.Ordinal);
+            async Task<BinaryVerificationRequest> PortraitFileAsync(StyleTemplates.StyleTemplatePortraitShot shot)
+            {
+                if (portraitFiles.TryGetValue(shot.ImageFile, out BinaryVerificationRequest? existing))
+                    return existing;
+                StyleTemplates.CharacterPortrait character = request.Configuration.Characters
+                    .FirstOrDefault(item => item.Id == shot.CharacterId && item.ImageFile == shot.ImageFile)
+                    ?? throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.BindingMismatch);
+                string directory = request.Configuration.PortraitImageDirectory
+                    ?? throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.BindingMismatch);
+                if (shot.ImageFile != Path.GetFileName(shot.ImageFile))
+                    throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.BindingMismatch);
+                byte[] bytes;
+                try
+                {
+                    bytes = await File.ReadAllBytesAsync(Path.Combine(directory, shot.ImageFile), cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.BindingMismatch);
+                }
+
+                ContentDigest portraitDigest = ContentDigest.Compute(bytes);
+                if (!string.Equals(portraitDigest.ToString(), character.ImageSha256, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes)),
+                        character.ImageSha256, StringComparison.OrdinalIgnoreCase))
+                    throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.BindingMismatch);
+                string path = Path.Combine(staging, "portrait-" + (portraitFiles.Count + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + Path.GetExtension(shot.ImageFile).ToLowerInvariant());
+                ownedFiles.Add(path);
+                await WriteNewAsync(path, bytes, cancellationToken).ConfigureAwait(false);
+                held.Add(OpenHeld(path));
+                var verification = new BinaryVerificationRequest("standard.portrait", path, portraitDigest, bytes.LongLength);
+                portraitFiles[shot.ImageFile] = verification;
+                return verification;
+            }
             // FR-060: the synthesized effects are written once per run into the owned staging directory.
             var soundEffectFiles = new Dictionary<StandardSoundEffectKind, BinaryVerificationRequest>();
             BinaryVerificationRequest SoundEffectFile(StandardSoundEffectKind kind)
@@ -690,6 +751,17 @@ public sealed class StandardArtifactGenerator
                 return verification;
             }
             var outputs = new List<StandardRenderGraphOutput>();
+            async Task<FfmpegImageOverlayBinding[]> BuildOverlaysAsync(StandardRenderGraphOutput target)
+            {
+                var overlays = new List<FfmpegImageOverlayBinding>();
+                foreach (StyleTemplates.StyleTemplatePortraitShot shot in target.PortraitShots)
+                {
+                    BinaryVerificationRequest file = await PortraitFileAsync(shot).ConfigureAwait(false);
+                    overlays.Add(new FfmpegImageOverlayBinding(file, shot.Range, shot.Left, shot.Top, shot.Width, shot.Height));
+                }
+
+                return overlays.ToArray();
+            }
             StandardRenderGraphOutput clean = StandardRenderGraphFactory.Create(request.Preparation, request.Original.Asset,
                 request.SourceDisplayGeometry, false, request.LandscapeSubtitles, request.Font.Evidence,
                 configuration: request.Configuration, music: request.Music);
@@ -762,6 +834,7 @@ public sealed class StandardArtifactGenerator
                 FfmpegSoundEffectBinding[] soundEffects = image ? [] : output.SoundEffectCues
                     .Select(cue => new FfmpegSoundEffectBinding(SoundEffectFile(cue.Kind), cue.OutputStart,
                         StandardEmphasisTelops.SoundEffectDuration, StandardSoundEffectSynthesizer.MixGainDecibels)).ToArray();
+                FfmpegImageOverlayBinding[] portraits = image || output.SubtitleFiles.Count == 0 ? [] : await BuildOverlaysAsync(output).ConfigureAwait(false);
                 if (outputEncoder?.Loudness is FfmpegLoudnessTarget singlePass)
                 {
                     // Measurement pass for loudnorm's linear mode (DEC3-1 (f)).
@@ -773,7 +846,7 @@ public sealed class StandardArtifactGenerator
                         output.Graph, output.ValidationContext, request.Tool, bindings, measurementPath, staging,
                         request.ProcessTimeout, output.VideoGeometry, output.Graph.Fonts.Count == 0 ? [] : [localFont],
                         outputEncoder, new FfmpegGeneratedScriptTarget(measurementScriptPath), graphics, null, music,
-                        loudnessMeasurement: true, soundEffects: soundEffects), cancellationToken).ConfigureAwait(false);
+                        loudnessMeasurement: true, soundEffects: soundEffects, imageOverlays: portraits), cancellationToken).ConfigureAwait(false);
                     if (!string.Equals(measurement.OutputPath, measurementPath, StringComparison.Ordinal)
                         || !string.Equals(measurement.GeneratedScriptPath, measurementScriptPath, StringComparison.Ordinal))
                     {
@@ -800,7 +873,7 @@ public sealed class StandardArtifactGenerator
                     output.Graph, output.ValidationContext, request.Tool, bindings, outputPath, staging,
                     request.ProcessTimeout, output.VideoGeometry, output.Graph.Fonts.Count == 0 ? [] : [localFont],
                     outputEncoder, new FfmpegGeneratedScriptTarget(scriptPath),
-                    graphics, output.FrameExtraction, music, soundEffects: soundEffects), cancellationToken).ConfigureAwait(false);
+                    graphics, output.FrameExtraction, music, soundEffects: soundEffects, imageOverlays: portraits), cancellationToken).ConfigureAwait(false);
                 if (!string.Equals(compilation.OutputPath, outputPath, StringComparison.Ordinal)
                     || !string.Equals(compilation.GeneratedScriptPath, scriptPath, StringComparison.Ordinal))
                 {

@@ -164,7 +164,9 @@ internal static class StandardMetadataGraphics
                     true, false, false, false, 100, 100, 0, 0, emphasis ? AssBorderStyle.OutlineAndShadow : AssBorderStyle.OpaqueBox,
                     emphasis ? 6 : 3, 0, AssAlignment.MiddleCenter, new AssMargins(12, 12, 12), 1)).ToArray());
             SubtitleExportFile file = StandardSubtitlePlacement.WriteAtBounds(cue, ass, left, top, right, bottom,
-                StandardTemplateAss.MotionTags(styledTelop?.Motion));
+                // FR-139: with a template, the emphasis caption is lettered in the bundled bold gothic (Noto Sans JP Black, OFL).
+                (emphasis && styledTelop is not null ? "\\fn" + StyleTemplates.StyleTemplateFonts.NotoSansJpBlack.AssFamily : string.Empty)
+                + StandardTemplateAss.MotionTags(styledTelop?.Motion));
             var input = new RenderGraphInput(EntityId<RenderInputIdTag>.New(), RenderInputKind.Graphic,
                 file.ContentDigest, file.ByteSize, origins[0]);
             files.Add(new StandardGraphicRenderFile(input, file, new FfmpegAssGraphicBinding(input.Id, target, range),

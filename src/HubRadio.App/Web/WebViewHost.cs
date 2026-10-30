@@ -42,6 +42,8 @@ internal sealed class WebViewHost : IDisposable
     internal WorkspaceLocationBridgeHandler? WorkspaceHandler { get; init; }
 
     internal JobExportBridgeHandler? ExportHandler { get; init; }
+
+    internal PortraitBridgeHandler? PortraitHandler { get; init; }
     private TaskCompletionSource? initialNavigation;
     private bool isStarted;
     private bool isDisposed;
@@ -311,6 +313,7 @@ internal sealed class WebViewHost : IDisposable
                 StitchHandler = StitchHandler,
                 WorkspaceHandler = WorkspaceHandler,
                 ExportHandler = ExportHandler,
+                PortraitHandler = PortraitHandler,
             };
             bridge = startedBridge;
             await StartDocumentAsync(

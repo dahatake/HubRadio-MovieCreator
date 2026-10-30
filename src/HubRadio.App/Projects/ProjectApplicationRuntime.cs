@@ -2,7 +2,9 @@ using HubRadio.App.DefaultSettings;
 using HubRadio.App.Media;
 using HubRadio.App.Reviews;
 using HubRadio.App.Security;
+using HubRadio.App.StyleTemplates;
 using HubRadio.App.Web;
+using HubRadio.Core.Security;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Provenance;
 using HubRadio.Infrastructure.Database;
@@ -34,7 +36,8 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
         SourceOnlyMediaResponseFactory? sourceOnlyMedia = null,
         BookendStitchBridgeHandler? stitch = null,
         WorkspaceLocationBridgeHandler? workspace = null,
-        JobExportBridgeHandler? export = null)
+        JobExportBridgeHandler? export = null,
+        PortraitBridgeHandler? portraits = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
@@ -66,7 +69,11 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
         Stitch = stitch;
         Workspace = workspace;
         Export = export;
+        Portraits = portraits;
     }
+
+    /// <summary>FR-137 (6): registers and lists the user's standing pictures (none is bundled).</summary>
+    internal PortraitBridgeHandler? Portraits { get; }
 
     /// <summary>FR-132 handler that saves a Job's videos and thumbnails to a user-chosen folder.</summary>
     internal JobExportBridgeHandler? Export { get; }
@@ -318,7 +325,11 @@ internal static class ProjectApplicationRuntime
                 workspaceFolderPicker),
             JobExportSources.CreateHandler(
                 services.Executions, services.Results, services.Artifacts, services.WorkspacePath,
-                actorProvider.GetCurrentSid, authorization));
+                actorProvider.GetCurrentSid, authorization),
+            new PortraitBridgeHandler(
+                new CharacterPortraitStore(Path.Combine(services.WorkspacePath, "character-portraits")),
+                () => authorization.CanPerform(actorProvider.GetCurrentSid(), AuthorizationOperation.ExportComposition),
+                TimeProvider.System));
     }
 
     // FR-035: without both bundled tools the GUI reports unavailable instead of failing later.

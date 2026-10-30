@@ -1446,6 +1446,13 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                         subtitles.Subtitles, shortInputs, runtime.ApplicationVersion, runtime.ApplicationDigest, runtime.OperationTimeout,
                         music: composition.Music,
                         styleTemplate: LoadStyleTemplate(execution.Request.RootJobId));
+                    if (generationRequest.Configuration.StyleTemplate is not null)
+                    {
+                        // FR-137 (6): the registered standing pictures reach the render; the dialogue lines come from the speaker
+                        // assignment of the Job (none is invented here).
+                        generationRequest.UseCharacterDialogue(CharacterPortraits.List(),
+                            Path.Combine(CharacterPortraits.Directory, StyleTemplates.CharacterPortraitStore.ImageDirectoryName), []);
+                    }
                     _ = SetPhase(execution.Request.ExecutionId, SourceOnlyExecutionPhase.Rendering);
                     context.ReportProgress(3, 6, "source_only.rendering");
                     var generator = new StandardArtifactGenerator(artifacts, versions, processRunner, workspace, runtime.FfprobePath);

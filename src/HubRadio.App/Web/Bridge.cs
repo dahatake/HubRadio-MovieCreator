@@ -87,6 +87,8 @@ internal enum BridgeMethod
     StitchPickClip,
     StitchRun,
     JobExport,
+    PortraitsList,
+    PortraitsRegister,
 }
 
 internal sealed class BridgeRequest
@@ -286,6 +288,10 @@ internal static class BridgeProtocol
     internal const string JobExportMethod = "results.export";
     internal const int MaxJobExportRequestUtf8Bytes = 2048;
     internal const int MaxJobExportResponseUtf8Bytes = 16 * 1024;
+    internal const string PortraitsListMethod = "portraits.list";
+    internal const string PortraitsRegisterMethod = "portraits.register";
+    internal const int MaxPortraitsRequestUtf8Bytes = 6 * 1024 * 1024;
+    internal const int MaxPortraitsResponseUtf8Bytes = 16 * 1024;
 
     private static readonly UTF8Encoding StrictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -560,6 +566,8 @@ internal static class BridgeProtocol
             BridgeMethod.StitchPickClip => StitchPickClipMethod,
             BridgeMethod.StitchRun => StitchRunMethod,
             BridgeMethod.JobExport => JobExportMethod,
+            BridgeMethod.PortraitsList => PortraitsListMethod,
+            BridgeMethod.PortraitsRegister => PortraitsRegisterMethod,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(method),
                 method,
@@ -581,6 +589,7 @@ internal static class BridgeProtocol
             _ when IsSourceOnlyMethod(method) => MaxSourceOnlyResponseUtf8Bytes,
             _ when IsStitchMethod(method) => MaxStitchResponseUtf8Bytes,
             BridgeMethod.JobExport => MaxJobExportResponseUtf8Bytes,
+            _ when IsPortraitMethod(method) => MaxPortraitsResponseUtf8Bytes,
             _ when IsLargePayloadMethod(method) => MaxProjectResponseUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewResponseUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonResponseUtf8Bytes,
@@ -645,6 +654,10 @@ internal static class BridgeProtocol
     internal static bool IsStitchMethod(BridgeMethod method) =>
         method is BridgeMethod.StitchPickClip or BridgeMethod.StitchRun;
 
+    /// <summary>FR-137 (6): registering and listing the user's standing pictures.</summary>
+    internal static bool IsPortraitMethod(BridgeMethod method) =>
+        method is BridgeMethod.PortraitsList or BridgeMethod.PortraitsRegister;
+
     internal static bool IsSettingsMethod(BridgeMethod method) =>
         method is
             BridgeMethod.SettingsRead or
@@ -676,6 +689,7 @@ internal static class BridgeProtocol
             _ when IsSourceOnlyMethod(method) => MaxSourceOnlyRequestUtf8Bytes,
             _ when IsStitchMethod(method) => MaxStitchRequestUtf8Bytes,
             BridgeMethod.JobExport => MaxJobExportRequestUtf8Bytes,
+            _ when IsPortraitMethod(method) => MaxPortraitsRequestUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewRequestUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonRequestUtf8Bytes,
             BridgeMethod.DeliveryRead => MaxDeliveryRequestUtf8Bytes,
@@ -748,6 +762,8 @@ internal static class BridgeProtocol
             StitchPickClipMethod => BridgeMethod.StitchPickClip,
             StitchRunMethod => BridgeMethod.StitchRun,
             JobExportMethod => BridgeMethod.JobExport,
+            PortraitsListMethod => BridgeMethod.PortraitsList,
+            PortraitsRegisterMethod => BridgeMethod.PortraitsRegister,
             _ => (BridgeMethod)(-1),
         };
         return Enum.IsDefined(parsedMethod);
@@ -911,6 +927,11 @@ internal static class BridgeProtocol
         if (method == BridgeMethod.JobExport)
         {
             return JobExportBridgeProtocol.HasValidParameters(parameters);
+        }
+
+        if (IsPortraitMethod(method))
+        {
+            return PortraitBridgeProtocol.HasValidParameters(method, parameters);
         }
 
         return false;
@@ -1526,6 +1547,7 @@ internal static class BridgeProtocol
             IsSettingsMethod(method) ||
             IsSourceOnlyMethod(method) ||
             IsStitchMethod(method) ||
+            IsPortraitMethod(method) ||
             method == BridgeMethod.JobExport)
         {
             if (!HasValidParameters(method, parameters))
@@ -1889,6 +1911,9 @@ internal sealed class Bridge : IDisposable
     /// <summary>FR-132 handler that saves a Job's videos and thumbnails to a folder the user chose.</summary>
     internal JobExportBridgeHandler? ExportHandler { get; init; }
 
+    /// <summary>FR-137 (6): registers and lists the user's standing pictures.</summary>
+    internal PortraitBridgeHandler? PortraitHandler { get; init; }
+
     private readonly TaskCompletionSource firstPingResponsePosted = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
     private bool isStarted;
@@ -2200,6 +2225,13 @@ internal sealed class Bridge : IDisposable
                 : await StitchHandler.HandleAsync(request, cancellationToken);
         }
 
+        if (BridgeProtocol.IsPortraitMethod(request.Method))
+        {
+            return PortraitHandler is null
+                ? PortraitBridgeJson.Unavailable(request)
+                : PortraitHandler.Handle(request);
+        }
+
         if (request.Method == BridgeMethod.JobExport)
         {
             return ExportHandler is null
@@ -2342,6 +2374,11 @@ internal sealed class Bridge : IDisposable
         if (BridgeProtocol.IsStitchMethod(request.Method))
         {
             return BookendStitchBridgeJson.Unavailable(request);
+        }
+
+        if (BridgeProtocol.IsPortraitMethod(request.Method))
+        {
+            return PortraitBridgeJson.Unavailable(request);
         }
 
         if (request.Method == BridgeMethod.JobExport)
