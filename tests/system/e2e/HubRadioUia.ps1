@@ -40,6 +40,7 @@ function New-AppSandbox {
         Config = $cfg; Portable = $portable; SavedConfig = $saved
     }
 }
+function Get-WorkspaceDir($sb) { Join-Path $sb.Work 'workspace' }   # New-AppSandbox が workspace-location.json で向ける場所
 function Remove-AppSandbox($sb) {
     if (-not $sb) { return }
     if (-not $sb.Portable) {

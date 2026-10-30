@@ -17,8 +17,9 @@ Invoke-Test -Label "FR-138 $Ac" -Sandbox $sb -Body {
                 foreach ($r in $recs) {
                     $j = $r.Text | ConvertFrom-Json -Depth 32
                     $w = [int]$j.output.width; $h = [int]$j.output.height; $area = $j.subtitleArea
-                    foreach ($t in @($j.subtitles) + @($j.emphasis)) {
-                        $b = $t.box
+                    foreach ($t in @($j.subtitles) + @($j.emphasis) + @($j.sideTelops) + @($j.nameBands) + @($j.layout.top.title) + @($j.layout.top.hook)) {
+                                            if (-not $t -or -not $t.box) { continue }
+                                            $b = $t.box
                         if ($b.y -lt 250) { throw 'text inside top margin (250px)' }
                         if (($b.y + $b.height) -gt ($h - 480)) { throw 'text inside bottom margin (480px)' }
                         if (($b.x + $b.width) -gt ($w - 160)) { throw 'text inside right margin (160px)' }
@@ -67,7 +68,9 @@ Invoke-Test -Label "FR-138 $Ac" -Sandbox $sb -Body {
                 if (-not ($L.top.y -lt $L.middle.y -and $L.middle.y -lt $L.bottom.y)) { throw 'bands not ordered top/middle/bottom' }
                 $first = @($j.timeline)[0]
                 if ($first.source -ne 'hook' -and $first.hookSegmentId -ne $j.hook.segmentId) { throw 'timeline does not start with the hook segment' }
-                foreach ($s in @($L.bottom.subtitles)) { if (([string]$s.text).Length -gt 20) { throw "bottom subtitle longer than 20 chars: $($s.text)" } }
+                foreach ($s in @($L.bottom.subtitles)) { $n = ([string]$s.text).Length; if ($n -gt 20 -or $n -lt 15) { throw "bottom subtitle not 15-20 chars (PARAM-010): $($s.text)" } }
+                # フック未選択の Job: 冒頭に足さず警告が記録される（記録にフックがない場合だけ判定）
+                if (-not $j.hook -or -not $j.hook.segmentId) { if ($first.source -eq 'hook') { throw 'hook prepended without a selected hook' }; if (-not ($rec.Text -match '(?i)(warning|警告)')) { throw 'no warning for job without hook' } }
             }
         }
     } finally { Stop-App $p }

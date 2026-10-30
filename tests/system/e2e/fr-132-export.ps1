@@ -17,7 +17,7 @@ Invoke-Test -Label 'FR-132 AC-136/AC-137' -Sandbox $sb -Body {
         Invoke-Element (Find-ByName $root '仕上がり')
 
         # 元の成果物のハッシュ（Workspace 配下。Project 名のフォルダー）
-        $ws = Join-Path $sb.AppDir 'workspace'
+        $ws = Get-WorkspaceDir $sb
         $originalsBefore = @(Get-ChildItem -LiteralPath $ws -Recurse -File -Include *.mp4, *.png, *.jpg -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -notlike "$dest*" } | ForEach-Object { "$($_.FullName)|$((Get-FileHash $_.FullName).Hash)" } | Sort-Object)
         if ($originalsBefore.Count -eq 0) { throw 'no original deliverables found under workspace' }

@@ -52,8 +52,10 @@ Invoke-Test -Label "FR-137 $Ac" -Sandbox $sb -Body {
                 $jv = $vari.Text | ConvertFrom-Json -Depth 32
                 foreach ($e in @($jv.emphasis)) {
                     if (-not $e.sfx) { throw 'variety emphasis telop has no sound effect' }
-                    if ([math]::Abs([double]$e.motionSeconds - 0.5) -gt 0.15) { throw "motion not about 0.5s: $($e.motionSeconds)" }
+                    if ([double]$e.motionSeconds -lt 0.4 -or [double]$e.motionSeconds -gt 0.6) { throw "motion not within PARAM-009 0.4-0.6s: $($e.motionSeconds)" }
                 }
+                # PARAM-008: (2) の縮む動きは開始 120〜140%（既定 130）から終了 100%
+                foreach ($e in @($js.emphasis)) { if ([double]$e.scaleStartPercent -lt 120 -or [double]$e.scaleStartPercent -gt 140 -or [double]$e.scaleEndPercent -ne 100) { throw "shrink motion not 120-140% -> 100%: $($e.scaleStartPercent)->$($e.scaleEndPercent)" } }
                 # FR-142: 単語時刻のない cue は語ごとの強調をせず（cue 全体を強調か強調なし）、警告を出す
                 $untimed = @($js.subtitles | Where-Object { @($_.words | Where-Object { $null -ne $_.start }).Count -eq 0 })
                 foreach ($c in $untimed) { if (@($c.words | Where-Object { $_.highlight }).Count -gt 0 -and -not $c.wholeCueHighlight) { throw 'per-word highlight on a cue without word timings' } }
