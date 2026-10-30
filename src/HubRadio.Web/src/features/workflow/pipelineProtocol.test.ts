@@ -202,6 +202,24 @@ describe('pipeline native v2 protocol (synthetic fixtures only)', () => {
     expect(parsePipelineRequest({ ...styled, params: { ...styled.params, styleTemplateId: '' } })).toBeNull()
   })
 
+  // FR-141 AC-168 / FR-143 AC-174: the talk-show input (JSON text, at most 8192 characters) and the subtitle adjustment ride on the request.
+  it('adds the talk-show input and the subtitle adjustment only with a production template', () => {
+    const base = { projectId: pipelineProjectId, expectedVersionId: pipelineVersionId, expectedVersionDigest: pipelineVersionDigest,
+      expectedSettingsRevision: 3, expectedSettingsSnapshotDigest: 'e'.repeat(64) }
+    const input = JSON.stringify({ topics: [{ id: 'topic-1', text: '話題', origin: 'user', confirmed: false }], speakers: [] })
+    const talk = createPipelineRegenerateRequest(fixtureId(1000), base, 'talk-show', { talkShowInput: input })
+    expect(talk.params).toMatchObject({ ...base, styleTemplateId: 'talk-show', talkShowInput: input })
+    expect(parsePipelineRequest(talk)).toEqual(talk)
+    const margin = createPipelineRegenerateRequest(fixtureId(1000), base, 'vertical-3-tier', { subtitleIntoMargin: true })
+    expect(margin.params).toMatchObject({ subtitleIntoMargin: true })
+    expect(parsePipelineRequest(margin)).toEqual(margin)
+    expect(() => createPipelineRegenerateRequest(fixtureId(1000), base, null, { talkShowInput: input })).toThrow()
+    expect(() => createPipelineRegenerateRequest(fixtureId(1000), base, 'talk-show', { talkShowInput: 'x'.repeat(8193) })).toThrow()
+    expect(() => createPipelineRegenerateRequest(fixtureId(1000), base, 'talk-show', { talkShowInput: '' })).toThrow()
+    expect(parsePipelineRequest({ ...talk, params: { ...talk.params, talkShowInput: 5 } })).toBeNull()
+    expect(parsePipelineRequest({ ...talk, params: { ...talk.params, extra: 1 } })).toBeNull()
+  })
+
   it('creates closed OCC requests, rejects extended params, and correlates success and failure', () => {
     const s = createCompletedPipeline()
     const read = createPipelineReadRequest(fixtureId(1000), pipelineProjectId)

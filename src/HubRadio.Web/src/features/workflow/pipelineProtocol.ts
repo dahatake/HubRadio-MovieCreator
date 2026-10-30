@@ -423,7 +423,22 @@ const styledRegenerationParams = object({
   projectId: id, expectedVersionId: id, expectedVersionDigest: digest, expectedSettingsRevision: integer(), expectedSettingsSnapshotDigest: digest,
   styleTemplateId: styleTemplateIdText,
 })
-export type PipelineRegenerationRequestParams = PipelineRegenerationParams & Readonly<{ styleTemplateId?: string }>
+/** FR-141 / FR-143: optional inputs of a Job created with a template (talkShowInput is JSON text of at most 8192 characters). */
+export type PipelineRegenerationExtras = Readonly<{ talkShowInput?: string, subtitleIntoMargin?: boolean }>
+export const TALK_SHOW_INPUT_MAXIMUM_LENGTH = 8192
+export type PipelineRegenerationRequestParams = PipelineRegenerationParams & Readonly<{ styleTemplateId?: string }> & PipelineRegenerationExtras
+function readStyledRegenerationParams(raw: unknown): PipelineRegenerationRequestParams {
+  requireValid(typeof raw === 'object' && raw !== null && !Array.isArray(raw))
+  const { talkShowInput, subtitleIntoMargin, ...rest } = raw as Record<string, unknown>
+  const base = styledRegenerationParams(rest)
+  if (talkShowInput !== undefined) requireValid(typeof talkShowInput === 'string' && talkShowInput.length > 0 && talkShowInput.length <= TALK_SHOW_INPUT_MAXIMUM_LENGTH)
+  if (subtitleIntoMargin !== undefined) requireValid(typeof subtitleIntoMargin === 'boolean')
+  return Object.freeze({
+    ...base,
+    ...(talkShowInput === undefined ? {} : { talkShowInput: talkShowInput as string }),
+    ...(subtitleIntoMargin === undefined ? {} : { subtitleIntoMargin: subtitleIntoMargin as boolean }),
+  })
+}
 const restoreParams = object({
   projectId: id, targetVersionId: id, targetVersionDigest: digest,
   expectedWorkingCopyRevision: integer(), expectedSettingsRevision: integer(), expectedSettingsSnapshotDigest: digest,
@@ -511,11 +526,14 @@ export type PipelineRequest = Request<'pipeline.read', ReturnType<typeof readPar
 export function createPipelineReadRequest(requestId: string, projectId: string): Extract<PipelineRequest, { method: 'pipeline.read' }> {
   return Object.freeze({ version: BRIDGE_PROTOCOL_VERSION, requestId: id(requestId), method: 'pipeline.read', params: readParams({ projectId }) })
 }
-export function createPipelineRegenerateRequest(requestId: string, params: PipelineRegenerationParams, styleTemplateId: string | null = null): Extract<PipelineRequest, { method: 'pipeline.regenerate' }> {
+export function createPipelineRegenerateRequest(requestId: string, params: PipelineRegenerationParams, styleTemplateId: string | null = null, extras: PipelineRegenerationExtras = {}): Extract<PipelineRequest, { method: 'pipeline.regenerate' }> {
+  requireValid(styleTemplateId !== null || (extras.talkShowInput === undefined && extras.subtitleIntoMargin === undefined))
   const checked = styleTemplateId === null
     ? regenerationParams(params)
-    : styledRegenerationParams({ projectId: params.projectId, expectedVersionId: params.expectedVersionId, expectedVersionDigest: params.expectedVersionDigest,
-      expectedSettingsRevision: params.expectedSettingsRevision, expectedSettingsSnapshotDigest: params.expectedSettingsSnapshotDigest, styleTemplateId })
+    : readStyledRegenerationParams({ projectId: params.projectId, expectedVersionId: params.expectedVersionId, expectedVersionDigest: params.expectedVersionDigest,
+      expectedSettingsRevision: params.expectedSettingsRevision, expectedSettingsSnapshotDigest: params.expectedSettingsSnapshotDigest, styleTemplateId,
+      ...(extras.talkShowInput === undefined ? {} : { talkShowInput: extras.talkShowInput }),
+      ...(extras.subtitleIntoMargin === undefined ? {} : { subtitleIntoMargin: extras.subtitleIntoMargin }) })
   return Object.freeze({ version: BRIDGE_PROTOCOL_VERSION, requestId: id(requestId), method: 'pipeline.regenerate', params: checked })
 }
 export function createPipelineExecutionRequest(requestId: string, method: 'pipeline.retry' | 'pipeline.cancel', params: ReturnType<typeof executionParams>): Extract<PipelineRequest, { method: 'pipeline.retry' | 'pipeline.cancel' }> {
@@ -529,8 +547,9 @@ export function parsePipelineRequest(value: unknown): PipelineRequest | null {
     if (envelope.method === 'pipeline.regenerate') {
       const raw = envelope.params as Record<string, unknown> | null
       if (typeof raw === 'object' && raw !== null && Object.hasOwn(raw, 'styleTemplateId')) {
-        const styled = styledRegenerationParams(raw)
-        return createPipelineRegenerateRequest(envelope.requestId, styled, styled.styleTemplateId)
+        const styled = readStyledRegenerationParams(raw)
+        return createPipelineRegenerateRequest(envelope.requestId, styled, styled.styleTemplateId ?? null,
+          { talkShowInput: styled.talkShowInput, subtitleIntoMargin: styled.subtitleIntoMargin })
       }
       return createPipelineRegenerateRequest(envelope.requestId, regenerationParams(envelope.params))
     }
