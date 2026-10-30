@@ -22,6 +22,34 @@ internal static class PortraitBridgeProtocol
             return parameters.ValueKind == JsonValueKind.Object && !parameters.EnumerateObject().Any();
         }
 
+        if (method == BridgeMethod.PortraitsCrop)
+        {
+            return HasValidCrop(parameters);
+        }
+
+        if (method is BridgeMethod.SpeakersGet or BridgeMethod.SpeakersConfirm)
+        {
+            return SettingsBridgeProtocol.HasExactProperties(parameters, ["projectId"]) && IsProjectId(parameters.GetProperty("projectId"));
+        }
+
+        if (method == BridgeMethod.SpeakersAssign)
+        {
+            if (!SettingsBridgeProtocol.HasExactProperties(parameters, ["projectId", "cueIndex", "speakerId"])
+                || !IsProjectId(parameters.GetProperty("projectId")))
+            {
+                return false;
+            }
+
+            JsonElement cue = parameters.GetProperty("cueIndex");
+            JsonElement speaker = parameters.GetProperty("speakerId");
+            bool cueOk = cue.ValueKind == JsonValueKind.Null
+                || (cue.ValueKind == JsonValueKind.Number && TryReadInt(cue, out int index) && index is >= 0 and < MaximumCueIndex);
+            bool speakerOk = speaker.ValueKind == JsonValueKind.Null
+                || (speaker.ValueKind == JsonValueKind.String && IsPortraitId(speaker.GetString()));
+            // A null cue asks for the system's estimate (a draft); it carries no speaker of its own.
+            return cueOk && speakerOk && (cue.ValueKind != JsonValueKind.Null || speaker.ValueKind == JsonValueKind.Null);
+        }
+
         if (method != BridgeMethod.PortraitsRegister || !SettingsBridgeProtocol.HasExactProperties(parameters, RegisterKeys))
         {
             return false;
@@ -51,6 +79,62 @@ internal static class PortraitBridgeProtocol
         return note.ValueKind == JsonValueKind.Null
             || (note.ValueKind == JsonValueKind.String && note.GetString() is { Length: <= MaximumNoteLength } noteText
                 && !noteText.Any(char.IsControl));
+    }
+
+    internal const int MaximumCueIndex = 10_000;
+    internal const int MaximumCropPixels = 32_768;
+    internal const int MaximumAssignmentsReturned = 200;
+    private static readonly string[] CropKeys = ["sourceId", "name", "x", "y", "width", "height"];
+
+    /// <summary>The request arrives in canonical JSON, where 20 is written 2e1: an integer is read through a decimal.</summary>
+    private static bool TryReadInt(JsonElement value, out int result)
+    {
+        result = 0;
+        if (!value.TryGetDecimal(out decimal number) || number != decimal.Truncate(number) || number is < 0 or > int.MaxValue)
+        {
+            return false;
+        }
+
+        result = (int)number;
+        return true;
+    }
+
+    internal static int ReadInt(JsonElement value) =>
+        TryReadInt(value, out int result) ? result : throw new ArgumentException("An integer is required.", nameof(value));
+
+    private static bool IsProjectId(JsonElement value) =>
+        value.ValueKind == JsonValueKind.String && Guid.TryParseExact(value.GetString(), "D", out _);
+
+    private static bool IsPortraitId(string? text) =>
+        text is { Length: > 0 and <= 64 } && text.All(static c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
+
+    private static bool HasValidCrop(JsonElement parameters)
+    {
+        if (!SettingsBridgeProtocol.HasExactProperties(parameters, CropKeys))
+        {
+            return false;
+        }
+
+        JsonElement source = parameters.GetProperty("sourceId");
+        JsonElement name = parameters.GetProperty("name");
+        if (source.ValueKind != JsonValueKind.String || !IsPortraitId(source.GetString())
+            || name.ValueKind != JsonValueKind.String || name.GetString() is not { } text
+            || text.Trim().Length is 0 or > CharacterPortraitStore.NameMaximumLength || text.Any(char.IsControl))
+        {
+            return false;
+        }
+
+        foreach (string key in new[] { "x", "y", "width", "height" })
+        {
+            JsonElement number = parameters.GetProperty(key);
+            if (number.ValueKind != JsonValueKind.Number || !TryReadInt(number, out int pixels)
+                || pixels < 0 || pixels > MaximumCropPixels)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool IsOneOf(JsonElement value, params string[] allowed) =>
@@ -94,6 +178,31 @@ internal static class PortraitBridgeJson
         });
 }
 
+/// <summary>FR-140: the closed result of the speaker-assignment methods (state label, draft/confirmed, assignments; no path or SID).</summary>
+internal static class SpeakerBridgeJson
+{
+    internal static string Write(BridgeRequest request, string status, CueSpeakerAssignmentSet? set) =>
+        BridgeProtocol.CreateResultResponse(request, writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("status", status);
+            writer.WriteString("state", set is null ? "none" : set.IsConfirmed ? "confirmed" : "draft");
+            writer.WriteString("label", set is null ? "未割り当て" : set.Label);
+            writer.WriteBoolean("estimated", set?.Estimated ?? false);
+            writer.WriteStartArray("assignments");
+            foreach (CueSpeakerAssignment item in (set?.Assignments ?? []).Take(PortraitBridgeProtocol.MaximumAssignmentsReturned))
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber("cueIndex", item.CueIndex);
+                writer.WriteString("speakerId", item.SpeakerId);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        });
+}
+
 /// <summary>
 /// FR-137 (6): registers and lists the standing pictures in the app's own directory (<see cref="CharacterPortraitStore"/>). The
 /// rights status the user chose (確認済み / 未確認) is saved with the picture (NFR-BR-004). Registering needs the same permission as
@@ -104,12 +213,15 @@ internal sealed class PortraitBridgeHandler
     private readonly CharacterPortraitStore store;
     private readonly Func<bool> isAuthorized;
     private readonly TimeProvider timeProvider;
+    private readonly string? speakerAssignmentRoot;
 
-    internal PortraitBridgeHandler(CharacterPortraitStore store, Func<bool> isAuthorized, TimeProvider timeProvider)
+    internal PortraitBridgeHandler(CharacterPortraitStore store, Func<bool> isAuthorized, TimeProvider timeProvider,
+        string? speakerAssignmentRoot = null)
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
         this.isAuthorized = isAuthorized ?? throw new ArgumentNullException(nameof(isAuthorized));
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+        this.speakerAssignmentRoot = speakerAssignmentRoot;
     }
 
     internal string Handle(BridgeRequest request)
@@ -119,7 +231,14 @@ internal sealed class PortraitBridgeHandler
         {
             if (!PortraitBridgeProtocol.HasValidParameters(request.Method, request.Parameters))
             {
-                return PortraitBridgeJson.Status(request, "invalid", Safe());
+                return request.Method is BridgeMethod.SpeakersGet or BridgeMethod.SpeakersAssign or BridgeMethod.SpeakersConfirm
+                    ? SpeakerBridgeJson.Write(request, "invalid", null)
+                    : PortraitBridgeJson.Status(request, "invalid", Safe());
+            }
+
+            if (request.Method is BridgeMethod.SpeakersGet or BridgeMethod.SpeakersAssign or BridgeMethod.SpeakersConfirm)
+            {
+                return HandleSpeakers(request);
             }
 
             if (request.Method == BridgeMethod.PortraitsList)
@@ -127,7 +246,7 @@ internal sealed class PortraitBridgeHandler
                 return PortraitBridgeJson.Status(request, "ok", store.List());
             }
 
-            if (request.Method != BridgeMethod.PortraitsRegister)
+            if (request.Method is not (BridgeMethod.PortraitsRegister or BridgeMethod.PortraitsCrop))
             {
                 throw new ArgumentException("A portrait request is required.", nameof(request));
             }
@@ -137,12 +256,93 @@ internal sealed class PortraitBridgeHandler
                 return PortraitBridgeJson.Status(request, "forbidden", Safe());
             }
 
-            return Register(request);
+            return request.Method == BridgeMethod.PortraitsCrop ? Crop(request) : Register(request);
         }
         catch (Exception exception) when (exception is not OperationCanceledException and not ArgumentException)
         {
-            return PortraitBridgeJson.Unavailable(request);
+            return request.Method is BridgeMethod.SpeakersGet or BridgeMethod.SpeakersAssign or BridgeMethod.SpeakersConfirm
+                ? SpeakerBridgeJson.Write(request, "unavailable", null)
+                : PortraitBridgeJson.Unavailable(request);
         }
+    }
+
+    /// <summary>FR-140: cuts one character out of a registered image; the cut-out inherits the rights confirmation of the source.</summary>
+    private string Crop(BridgeRequest request)
+    {
+        JsonElement p = request.Parameters;
+        try
+        {
+            _ = store.RegisterCutout(p.GetProperty("sourceId").GetString()!, p.GetProperty("name").GetString()!,
+                new PortraitCropRect(PortraitBridgeProtocol.ReadInt(p.GetProperty("x")), PortraitBridgeProtocol.ReadInt(p.GetProperty("y")),
+                                    PortraitBridgeProtocol.ReadInt(p.GetProperty("width")), PortraitBridgeProtocol.ReadInt(p.GetProperty("height"))), timeProvider.GetUtcNow());
+            return PortraitBridgeJson.Status(request, "ok", store.List());
+        }
+        catch (Exception exception) when (exception is ArgumentException or KeyNotFoundException)
+        {
+            // An unknown source, a duplicate name or a range outside the image.
+            return PortraitBridgeJson.Status(request, "invalid", Safe());
+        }
+    }
+
+    /// <summary>
+    /// FR-140: the speaker assignment of a Project. <c>speakers.assign</c> with no cue asks for the system's estimate (a draft);
+    /// with a cue it changes (or clears) that cue's speaker (a draft again); <c>speakers.confirm</c> is the user's confirmation.
+    /// A draft is never reported as confirmed. Changing needs the same permission as registering a portrait.
+    /// </summary>
+    private string HandleSpeakers(BridgeRequest request)
+    {
+        if (speakerAssignmentRoot is null)
+        {
+            return SpeakerBridgeJson.Write(request, "unavailable", null);
+        }
+
+        JsonElement p = request.Parameters;
+        string directory = Path.Combine(speakerAssignmentRoot, Guid.ParseExact(p.GetProperty("projectId").GetString()!, "D").ToString("D"));
+        if (request.Method != BridgeMethod.SpeakersGet && !IsAuthorized())
+        {
+            return SpeakerBridgeJson.Write(request, "forbidden", CueSpeakerAssignmentStore.Load(directory));
+        }
+
+        IReadOnlyList<CharacterPortrait> characters = store.List();
+        CueSpeakerAssignmentSet? current = CueSpeakerAssignmentStore.Load(directory);
+        if (request.Method == BridgeMethod.SpeakersGet)
+        {
+            return SpeakerBridgeJson.Write(request, "ok", current);
+        }
+
+        CueSpeakerAssignmentSet next;
+        if (request.Method == BridgeMethod.SpeakersConfirm)
+        {
+            if (current is null)
+            {
+                return SpeakerBridgeJson.Write(request, "invalid", null);
+            }
+
+            next = current.Confirm();
+        }
+        else if (p.GetProperty("cueIndex").ValueKind == JsonValueKind.Null)
+        {
+            if (characters.Count == 0)
+            {
+                return SpeakerBridgeJson.Write(request, "invalid", current);
+            }
+
+            // The cue count is known only when the Job runs: this is a draft the turn-taking estimate expands over the cues then.
+            next = CueSpeakerAssignmentSet.Estimate(0, characters);
+        }
+        else
+        {
+            string? speaker = p.GetProperty("speakerId").GetString();
+            if (speaker is not null && characters.All(item => item.Id != speaker))
+            {
+                return SpeakerBridgeJson.Write(request, "invalid", current);
+            }
+
+            next = (current ?? CueSpeakerAssignmentSet.Empty).Assign(PortraitBridgeProtocol.ReadInt(p.GetProperty("cueIndex")), speaker);
+        }
+
+        CueSpeakerAssignmentStore.Save(directory, next);
+        return SpeakerBridgeJson.Write(request, "ok", next);
     }
 
     private string Register(BridgeRequest request)

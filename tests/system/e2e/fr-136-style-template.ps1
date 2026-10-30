@@ -18,8 +18,7 @@ Invoke-Test -Label "FR-136 $Ac" -Sandbox $sb -Body {
                 if (@(Find-AllByNameLike $root '(用途|向く)').Count -lt 1) { throw 'intended use not shown in list' }
                 if (@(Find-AllByNameLike $root '(見た目|例|プレビュー)').Count -lt 1) { throw 'visual example not shown in list' }
                 Invoke-Element (Find-ByName $root '解説')
-                Invoke-Element (Find-ByName $root '実行')
-                Wait-JobCompleted $root 1 | Out-Null
+                New-TemplateJob $root 1
                 $rec = Get-TemplateJobRecord $sb
                 if (-not ($rec | Where-Object { $_.Text -match '解説' })) { throw 'selected template not applied/recorded' }
             }
@@ -38,7 +37,7 @@ Invoke-Test -Label "FR-136 $Ac" -Sandbox $sb -Body {
             'AC-152' {
                 # ID と版が保存される。同じ設定で再実行すると同じ演出。調整すると「テンプレート＋変更あり」。
                 $null = New-ProjectWithCompletedJobs $root $sb 'tpl-repro' 0 $video
-                foreach ($i in 1, 2) { Select-Template $root '解説'; Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root $i | Out-Null }
+                foreach ($i in 1, 2) { Select-Template $root '解説'; New-TemplateJob $root $i }
                 $rec = Get-TemplateJobRecord $sb
                 foreach ($r in $rec) {
                     if ($r.Text -notmatch '(?i)(templateVersion|template_version|版)') { throw "template version missing: $($r.Path)" }

@@ -15,7 +15,7 @@ Invoke-Test -Label "FR-137 $Ac" -Sandbox $sb -Body {
                 $i = 0
                 foreach ($n in '解説', 'ショート飛び出し', 'バラエティ', '対談番組', '縦型3段', '手作り感') {
                     $i++
-                    Select-Template $root $n; Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root $i | Out-Null
+                    Select-Template $root $n; New-TemplateJob $root $i
                 }
                 $recs = @(Get-WorkspaceText $sb | Where-Object { $_.Text -match '(?i)templateId|template_id' })
                 if ($recs.Count -lt 6) { throw "expected 6 job records with templates, got $($recs.Count)" }
@@ -37,7 +37,7 @@ Invoke-Test -Label "FR-137 $Ac" -Sandbox $sb -Body {
                 }
             }
             'AC-154' {
-                foreach ($n in 'ショート飛び出し', 'バラエティ') { Select-Template $root $n; Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root ([array]::IndexOf(@('ショート飛び出し', 'バラエティ'), $n) + 1) | Out-Null }
+                foreach ($n in 'ショート飛び出し', 'バラエティ') { Select-Template $root $n; New-TemplateJob $root ([array]::IndexOf(@('ショート飛び出し', 'バラエティ'), $n) + 1) }
                 $recs = @(Get-WorkspaceText $sb | Where-Object { $_.Text -match '(?i)templateId|template_id' })
                 $short = $recs | Where-Object { $_.Text -match 'ショート飛び出し' } | Select-Object -First 1
                 $vari = $recs | Where-Object { $_.Text -match 'バラエティ' } | Select-Object -First 1
@@ -54,6 +54,10 @@ Invoke-Test -Label "FR-137 $Ac" -Sandbox $sb -Body {
                     if (-not $e.sfx) { throw 'variety emphasis telop has no sound effect' }
                     if ([math]::Abs([double]$e.motionSeconds - 0.5) -gt 0.15) { throw "motion not about 0.5s: $($e.motionSeconds)" }
                 }
+                # FR-142: 単語時刻のない cue は語ごとの強調をせず（cue 全体を強調か強調なし）、警告を出す
+                $untimed = @($js.subtitles | Where-Object { @($_.words | Where-Object { $null -ne $_.start }).Count -eq 0 })
+                foreach ($c in $untimed) { if (@($c.words | Where-Object { $_.highlight }).Count -gt 0 -and -not $c.wholeCueHighlight) { throw 'per-word highlight on a cue without word timings' } }
+                if ($untimed.Count -gt 0 -and -not ($short.Text -match '(?i)(warning|警告)')) { throw 'no warning for cues without word timings' }
                 foreach ($j in $js, $jv) { if (@($j.emphasis).Count -gt $j.limits.maxEmphasisTelops) { throw 'emphasis telops exceed FR-059 limit' } }
             }
         }

@@ -329,7 +329,8 @@ internal static class ProjectApplicationRuntime
             new PortraitBridgeHandler(
                 new CharacterPortraitStore(Path.Combine(services.WorkspacePath, "character-portraits")),
                 () => authorization.CanPerform(actorProvider.GetCurrentSid(), AuthorizationOperation.ExportComposition),
-                TimeProvider.System));
+                TimeProvider.System,
+                Path.Combine(services.WorkspacePath, "project-speaker-assignments")));
     }
 
     // FR-035: without both bundled tools the GUI reports unavailable instead of failing later.

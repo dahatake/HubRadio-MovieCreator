@@ -24,12 +24,9 @@ Invoke-Test -Label "FR-137/139 $Ac" -Sandbox $sb -Body {
             # 自分の画像を使用権の確認状態つきで登録 → 選べる・確認状態が記録される
             $img = Join-Path $sb.Work 'portrait.png'
             New-SyntheticImage $img
-            Invoke-Element (Find-ByName $root '立ち絵を登録')
-            Set-Value (Find-EditByName $root '画像') $img
-            Invoke-Element (Find-ByName $root '使用権を確認した')
-            Invoke-Element (Find-ByName $root '登録')
+            Register-Portrait $root 'キャラA' $img
             Select-Template $root 'キャラクター対話'
-            Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root 1 | Out-Null
+            New-TemplateJob $root 1
             $recs = @(Get-WorkspaceText $sb | Where-Object { $_.Text -match '(?i)rightsConfirmed|usageRights' })
             if ($recs.Count -lt 1) { throw 'rights confirmation state not recorded' }
             $j = Get-TemplateJobRecord $sb

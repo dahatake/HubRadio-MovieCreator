@@ -1,8 +1,13 @@
 import { useEffect, useLayoutEffect, useId, useRef, useState } from 'react'
 import type { PipelineRegenerationParams } from '../workflow/pipelineProtocol'
 import { StyleTemplatePicker } from './StyleTemplatePicker'
+import { TalkShowInputPanel } from './TalkShowInputPanel'
+import { emptyTalkShowInput, type TalkShowInputValue } from './talkShowInput'
 import { CharacterPortraitRegistration, type PortraitRegistration, type RegisteredPortrait } from './CharacterPortraitRegistration'
-import { createHostPortraitService, portraitFileToParams, type PortraitOutcome, type PortraitService } from './portraitProtocol'
+import { createHostPortraitService, portraitFileToParams, type PortraitCropParams, type PortraitOutcome, type PortraitService } from './portraitProtocol'
+import { PortraitCropForm } from './PortraitCropForm'
+import { SpeakerAssignmentPanel } from './SpeakerAssignmentPanel'
+import { createHostSpeakerService, type SpeakerService } from './speakerProtocol'
 
 const portraitMessages = Object.freeze({
   registered: '立ち絵を登録しました。使用権の確認状態も保存しました。',
@@ -10,6 +15,8 @@ const portraitMessages = Object.freeze({
   forbidden: '立ち絵を登録する権限がありません。',
   unavailable: '立ち絵の登録を利用できません。',
   tooLarge: '画像は PNG・JPEG・WebP の 4 MiB 以下にしてください。',
+  cropped: '立ち絵を切り出して登録しました。使用権の確認状態は元の画像から引き継ぎました。',
+  cropInvalid: '切り出せませんでした。範囲が画像の内側か、名前が重複していないかを確認してください。',
 })
 
 function toRegistered(outcome: PortraitOutcome): readonly RegisteredPortrait[] | null {
@@ -17,7 +24,7 @@ function toRegistered(outcome: PortraitOutcome): readonly RegisteredPortrait[] |
 }
 
 /** FR-061: creates a new Job from the saved "next Job" settings after an explicit confirmation. */
-export function JobCreationAction({ nextJobNumber, params, disabledReason, pending, active, onOpenSettings, openSettingsDisabled = false, onConfirm, styleTemplateId = null, onStyleTemplateChange, portraitService: injectedPortraits }: Readonly<{
+export function JobCreationAction({ nextJobNumber, params, disabledReason, pending, active, onOpenSettings, openSettingsDisabled = false, onConfirm, styleTemplateId = null, onStyleTemplateChange, portraitService: injectedPortraits, speakerService: injectedSpeakers, projectId = null }: Readonly<{
   nextJobNumber: number | null
   params: PipelineRegenerationParams | null
   disabledReason: string | null
@@ -31,14 +38,19 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
   onStyleTemplateChange?: (id: string | null) => void
   /** FR-137 (6): the standing-picture registration service (the WebView2 host one is used when omitted; null hides the form). */
   portraitService?: PortraitService | null
+  /** FR-140: the speaker-assignment service (the WebView2 host one is used when omitted; null hides it) and the Project it applies to. */
+  speakerService?: SpeakerService | null
+  projectId?: string | null
 }>) {
   const headingId = useId()
+  const [speakerService] = useState<SpeakerService | null>(() => injectedSpeakers === undefined ? createHostSpeakerService() : injectedSpeakers)
   const [confirmation, setConfirmation] = useState<PipelineRegenerationParams | null>(null)
   const [rejected, setRejected] = useState(false)
   const [portraitService] = useState<PortraitService | null>(() => injectedPortraits === undefined ? createHostPortraitService() : injectedPortraits)
   const [portraits, setPortraits] = useState<readonly RegisteredPortrait[]>([])
   const [portraitNote, setPortraitNote] = useState<string | null>(null)
   const [portraitBusy, setPortraitBusy] = useState(false)
+  const [talkShow, setTalkShow] = useState<TalkShowInputValue>(emptyTalkShowInput)
   useEffect(() => {
     if (portraitService === null || onStyleTemplateChange === undefined) return
     let alive = true
@@ -62,6 +74,17 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
     } finally { setPortraitBusy(false) }
   }
   const cancel = useRef<HTMLButtonElement>(null)
+  async function cropPortrait(crop: PortraitCropParams) {
+    if (portraitService === null) return
+    setPortraitBusy(true)
+    setPortraitNote(null)
+    try {
+      const outcome = await portraitService.crop(crop)
+      const listed = toRegistered(outcome)
+      if (listed !== null) { setPortraits(listed); setPortraitNote(portraitMessages.cropped) }
+      else setPortraitNote(outcome.status === 'forbidden' ? portraitMessages.forbidden : outcome.status === 'invalid' ? portraitMessages.cropInvalid : portraitMessages.unavailable)
+    } finally { setPortraitBusy(false) }
+  }
   const opener = useRef<HTMLButtonElement>(null)
   const sending = useRef(false)
   const restoreFocus = useRef(false)
@@ -79,10 +102,14 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
     <p>1つの元動画から、設定を変えた複数のJobを作れます。「次に作成するJobの設定を開く」で設定を変えて保存し、「新しいJobを作成」を押してください。今までのJobと仕上がりは消えません。Jobは1つずつ順番に実行します。</p>
     <button type="button" disabled={!active || openSettingsDisabled} onClick={onOpenSettings}>次に作成するJobの設定を開く</button>
     {onStyleTemplateChange !== undefined && <StyleTemplatePicker selectedId={styleTemplateId} onSelect={onStyleTemplateChange} disabled={!active || pending} portraitCount={portraits.length} />}
+    {onStyleTemplateChange !== undefined && styleTemplateId === 'talk-show' && <TalkShowInputPanel value={talkShow} onChange={setTalkShow} disabled={!active || pending} />}
     {onStyleTemplateChange !== undefined && portraitService !== null && <>
       <CharacterPortraitRegistration portraits={portraits} onRegister={registration => { void registerPortrait(registration) }} disabled={!active || pending || portraitBusy} />
       {portraitNote !== null && <p role="status">{portraitNote}</p>}
+      <PortraitCropForm portraits={portraits} onCrop={crop => { void cropPortrait(crop) }} disabled={!active || pending || portraitBusy} />
     </>}
+    {onStyleTemplateChange !== undefined && speakerService !== null && styleTemplateId === 'character-dialogue' &&
+      <SpeakerAssignmentPanel projectId={projectId} service={speakerService} portraitCount={portraits.length} disabled={!active || pending} />}
     <button ref={opener} type="button" disabled={!available || confirmation !== null} onClick={() => {
       if (available) { sending.current = false; setRejected(false); setConfirmation(Object.freeze({ ...params })) }
     }}>新しいJobを作成</button>

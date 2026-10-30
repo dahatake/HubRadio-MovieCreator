@@ -119,7 +119,10 @@ Appの2,410ケースには環境依存4件とopt-in実統合4件の計8 skipを�
 | `pipeline.restore` | `projectId`、`targetVersionId`、`targetVersionDigest`、`expectedWorkingCopyRevision`、`expectedSettingsRevision`、`expectedSettingsSnapshotDigest` | **「復元」＝選んだ過去版の構成を新しい子版として作り直し、その子版から成果物を再生成すること**（`VersionService.RollbackAsChild` → `SourceOnlyPipeline.Regenerate`）。現在版・過去版・旧成果物は**一切削除も上書きもしない**。子版の作成に成功した後で再生成の受付に失敗した場合、子版は残るが旧成果物は失われない |
 | `portraits.list` | なし | **読取のみ。** 登録済みの立ち絵（FR-137）の `id`／`name`／`rights`（`confirmed`／`unconfirmed`）／`subtitleColor`／`rightsNote` と `portraitCount` を返す。画像本体・pathは返さない。`portraitCount` が 0 のあいだ、画面の「キャラクター対話」は選べない |
 | `portraits.register` | `name`（1〜40 文字）、`imageType`（`png`／`jpeg`／`webp`）、`imageBase64`（画像 4 MiB 以下）、`rights`、`rightsNote`（null か 200 文字以下） | 利用者自身の画像を立ち絵として登録し、**使用権の確認状態（確認済み／未確認）を画像と一緒に保存する**（NFR-BR-004）。`ExportComposition` 相当の権限が要る。同名・画像として不正なものは `invalid`。アプリは立ち絵を同梱しない。応答は常に閉じた `result`（`status`／`portraitCount`／`portraits`） |
-
+| `portraits.crop` | `sourceId`（登録済みの立ち絵の id）、`name`（1〜40 文字）、`x`／`y`／`width`／`height`（画素。画像の内側で幅・高さ 8 以上） | **FR-140。** 1 枚に複数のキャラクターが含まれる登録済みの画像から範囲を指定して 1 体を切り出し、新しい立ち絵として登録する。切り出した立ち絵は元の画像の使用権の確認状態（状態・メモ・確認時刻）を引き継ぎ、元の画像は変更しない（NFR-BR-004）。`portraits.register` と同じ権限が要る。範囲外・同名・不明な元は `invalid`。応答は `portraits.register` と同じ |
+| `speakers.get` | `projectId` | **読取のみ。** FR-140。Project の話者の割り当て（`state`: `none`／`draft`＝「下書き（未確認）」／`confirmed`＝「確定済み」、`label`、`estimated`、`assignments`＝`cueIndex` と `speakerId`）を返す。下書きを確定済みとは返さない |
+| `speakers.assign` | `projectId`、`cueIndex`（null か 0〜9999）、`speakerId`（null か立ち絵の id） | FR-140。`cueIndex` が null のときシステムの推定（キャラクターが順番に話す）を**下書き**として保存する（「話者を割り当てる」）。`cueIndex` があるときはその cue の話者を変更・解除し、結果は再び下書きになる。登録のない `speakerId` は `invalid`。`portraits.register` と同じ権限が要る |
+| `speakers.confirm` | `projectId` | FR-140。利用者の確認（「確認して確定」）で下書きを確定済みにする。確定した割り当てだけが成果物に反映される。割り当ての保存がなければ `invalid` |
 > [!IMPORTANT]
 > 本契約における「復元」は上表 `pipeline.restore` の定義に**一義に**従う。タブや警告の「戻る」、および `pipeline.read` が返す前回親版の結果表示は、**復元ではない**。過去版で現在版を置き換える操作は提供しない。
 
