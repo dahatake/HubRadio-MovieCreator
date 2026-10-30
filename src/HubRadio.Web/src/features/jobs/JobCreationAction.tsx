@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useId, useRef, useState } from 'react'
 import type { PipelineRegenerationParams } from '../workflow/pipelineProtocol'
 import { StyleTemplatePicker } from './StyleTemplatePicker'
+import { TalkShowInputPanel } from './TalkShowInputPanel'
+import { emptyTalkShowInput, type TalkShowInputValue } from './talkShowInput'
 import { CharacterPortraitRegistration, type PortraitRegistration, type RegisteredPortrait } from './CharacterPortraitRegistration'
 import { createHostPortraitService, portraitFileToParams, type PortraitCropParams, type PortraitOutcome, type PortraitService } from './portraitProtocol'
 import { PortraitCropForm } from './PortraitCropForm'
@@ -48,6 +50,7 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
   const [portraits, setPortraits] = useState<readonly RegisteredPortrait[]>([])
   const [portraitNote, setPortraitNote] = useState<string | null>(null)
   const [portraitBusy, setPortraitBusy] = useState(false)
+  const [talkShow, setTalkShow] = useState<TalkShowInputValue>(emptyTalkShowInput)
   useEffect(() => {
     if (portraitService === null || onStyleTemplateChange === undefined) return
     let alive = true
@@ -99,6 +102,7 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
     <p>1つの元動画から、設定を変えた複数のJobを作れます。「次に作成するJobの設定を開く」で設定を変えて保存し、「新しいJobを作成」を押してください。今までのJobと仕上がりは消えません。Jobは1つずつ順番に実行します。</p>
     <button type="button" disabled={!active || openSettingsDisabled} onClick={onOpenSettings}>次に作成するJobの設定を開く</button>
     {onStyleTemplateChange !== undefined && <StyleTemplatePicker selectedId={styleTemplateId} onSelect={onStyleTemplateChange} disabled={!active || pending} portraitCount={portraits.length} />}
+    {onStyleTemplateChange !== undefined && styleTemplateId === 'talk-show' && <TalkShowInputPanel value={talkShow} onChange={setTalkShow} disabled={!active || pending} />}
     {onStyleTemplateChange !== undefined && portraitService !== null && <>
       <CharacterPortraitRegistration portraits={portraits} onRegister={registration => { void registerPortrait(registration) }} disabled={!active || pending || portraitBusy} />
       {portraitNote !== null && <p role="status">{portraitNote}</p>}
