@@ -44,6 +44,9 @@ public sealed class StandardRenderConfiguration
     /// <summary>FR-060: true only when the accepted settings enable sound effects (profile 1.2.0 or later).</summary>
     public bool SoundEffectsEnabled { get; private init; }
 
+    /// <summary>FR-136: the production template the Job applies; null keeps the FR-059/FR-060 default output unchanged.</summary>
+    public StyleTemplates.StyleTemplateDefinition? StyleTemplate { get; init; }
+
     public static StandardRenderConfiguration FromSettings(DefaultSettingsProfile profile,
         DefaultSettingsSnapshot settings, RationalNumber sourceFrameRate, int sourceAudioChannels)
     {
