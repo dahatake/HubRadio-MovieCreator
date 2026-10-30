@@ -89,6 +89,10 @@ internal enum BridgeMethod
     JobExport,
     PortraitsList,
     PortraitsRegister,
+    PortraitsCrop,
+    SpeakersGet,
+    SpeakersAssign,
+    SpeakersConfirm,
 }
 
 internal sealed class BridgeRequest
@@ -290,6 +294,10 @@ internal static class BridgeProtocol
     internal const int MaxJobExportResponseUtf8Bytes = 16 * 1024;
     internal const string PortraitsListMethod = "portraits.list";
     internal const string PortraitsRegisterMethod = "portraits.register";
+    internal const string PortraitsCropMethod = "portraits.crop";
+    internal const string SpeakersGetMethod = "speakers.get";
+    internal const string SpeakersAssignMethod = "speakers.assign";
+    internal const string SpeakersConfirmMethod = "speakers.confirm";
     internal const int MaxPortraitsRequestUtf8Bytes = 6 * 1024 * 1024;
     internal const int MaxPortraitsResponseUtf8Bytes = 16 * 1024;
 
@@ -568,6 +576,10 @@ internal static class BridgeProtocol
             BridgeMethod.JobExport => JobExportMethod,
             BridgeMethod.PortraitsList => PortraitsListMethod,
             BridgeMethod.PortraitsRegister => PortraitsRegisterMethod,
+            BridgeMethod.PortraitsCrop => PortraitsCropMethod,
+            BridgeMethod.SpeakersGet => SpeakersGetMethod,
+            BridgeMethod.SpeakersAssign => SpeakersAssignMethod,
+            BridgeMethod.SpeakersConfirm => SpeakersConfirmMethod,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(method),
                 method,
@@ -656,7 +668,8 @@ internal static class BridgeProtocol
 
     /// <summary>FR-137 (6): registering and listing the user's standing pictures.</summary>
     internal static bool IsPortraitMethod(BridgeMethod method) =>
-        method is BridgeMethod.PortraitsList or BridgeMethod.PortraitsRegister;
+        method is BridgeMethod.PortraitsList or BridgeMethod.PortraitsRegister or BridgeMethod.PortraitsCrop
+            or BridgeMethod.SpeakersGet or BridgeMethod.SpeakersAssign or BridgeMethod.SpeakersConfirm;
 
     internal static bool IsSettingsMethod(BridgeMethod method) =>
         method is
@@ -764,6 +777,10 @@ internal static class BridgeProtocol
             JobExportMethod => BridgeMethod.JobExport,
             PortraitsListMethod => BridgeMethod.PortraitsList,
             PortraitsRegisterMethod => BridgeMethod.PortraitsRegister,
+            PortraitsCropMethod => BridgeMethod.PortraitsCrop,
+            SpeakersGetMethod => BridgeMethod.SpeakersGet,
+            SpeakersAssignMethod => BridgeMethod.SpeakersAssign,
+            SpeakersConfirmMethod => BridgeMethod.SpeakersConfirm,
             _ => (BridgeMethod)(-1),
         };
         return Enum.IsDefined(parsedMethod);

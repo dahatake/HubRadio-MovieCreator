@@ -108,6 +108,10 @@ public sealed class WebBridgeSchemaTests
                 "results.export",
                 "portraits.list",
                 "portraits.register",
+                "portraits.crop",
+                "speakers.get",
+                "speakers.assign",
+                "speakers.confirm",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -235,7 +239,12 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/jobExportResponse",
                 "#/$defs/portraitsListRequest",
                 "#/$defs/portraitsRegisterRequest",
+                "#/$defs/portraitsCropRequest",
+                "#/$defs/speakersGetRequest",
+                "#/$defs/speakersAssignRequest",
+                "#/$defs/speakersConfirmRequest",
                 "#/$defs/portraitsResponse",
+                "#/$defs/speakersResponse",
             },
             root.GetProperty("oneOf")
                 .EnumerateArray()

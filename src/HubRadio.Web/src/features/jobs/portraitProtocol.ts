@@ -3,6 +3,7 @@
 
 export const PORTRAITS_LIST_METHOD = 'portraits.list' as const
 export const PORTRAITS_REGISTER_METHOD = 'portraits.register' as const
+export const PORTRAITS_CROP_METHOD = 'portraits.crop' as const
 export const PORTRAIT_NAME_MAX_LENGTH = 40
 export const PORTRAIT_NOTE_MAX_LENGTH = 200
 /** The bridge carries at most 4 MiB of image bytes (base64 in the request). */
@@ -33,11 +34,18 @@ export type PortraitRegisterParams = Readonly<{
   rightsNote: string | null
 }>
 
-export type PortraitMethod = typeof PORTRAITS_LIST_METHOD | typeof PORTRAITS_REGISTER_METHOD
+/** FR-140: a pixel range (inside the source image) the user picked to cut one character out. */
+export type PortraitCropParams = Readonly<{ sourceId: string; name: string; x: number; y: number; width: number; height: number }>
+
+export const PORTRAIT_CROP_MIN_SIDE = 8
+export const PORTRAIT_CROP_MAX = 32_768
+
+export type PortraitMethod = typeof PORTRAITS_LIST_METHOD | typeof PORTRAITS_REGISTER_METHOD | typeof PORTRAITS_CROP_METHOD
 
 export type PortraitRequest =
   | Readonly<{ version: 1; requestId: string; method: typeof PORTRAITS_LIST_METHOD; params: Readonly<Record<string, never>> }>
   | Readonly<{ version: 1; requestId: string; method: typeof PORTRAITS_REGISTER_METHOD; params: PortraitRegisterParams }>
+  | Readonly<{ version: 1; requestId: string; method: typeof PORTRAITS_CROP_METHOD; params: PortraitCropParams }>
 
 export type PortraitResult = Readonly<{ status: PortraitStatus; portraitCount: number; portraits: readonly PortraitEntry[] }>
 
@@ -83,6 +91,20 @@ export function createPortraitRegisterRequest(requestId: string, params: Portrai
   })
 }
 
+export function createPortraitCropRequest(requestId: string, params: PortraitCropParams): PortraitRequest {
+  const name = params.name.trim()
+  const pixels = [params.x, params.y, params.width, params.height]
+  if (!isId(requestId) || !portraitIdPattern.test(params.sourceId) || name.length === 0 || name.length > PORTRAIT_NAME_MAX_LENGTH ||
+      /\p{Cc}/u.test(name) || !pixels.every(value => Number.isInteger(value) && value >= 0 && value <= PORTRAIT_CROP_MAX) ||
+      params.width < PORTRAIT_CROP_MIN_SIDE || params.height < PORTRAIT_CROP_MIN_SIDE) {
+    throw new TypeError('Invalid portrait request.')
+  }
+  return Object.freeze({
+    version: 1, requestId, method: PORTRAITS_CROP_METHOD,
+    params: Object.freeze({ sourceId: params.sourceId, name, x: params.x, y: params.y, width: params.width, height: params.height }),
+  })
+}
+
 function parseResult(value: unknown): PortraitResult | null {
   if (!exactKeys(value, ['status', 'portraitCount', 'portraits'])) return null
   const { status, portraitCount, portraits } = value
@@ -105,7 +127,7 @@ function parseResult(value: unknown): PortraitResult | null {
 
 export function parsePortraitResponse(value: unknown): PortraitResponse | null {
   if (!exactKeys(value, ['version', 'requestId', 'method', 'result']) || value.version !== 1 || !isId(value.requestId)) return null
-  if (value.method !== PORTRAITS_LIST_METHOD && value.method !== PORTRAITS_REGISTER_METHOD) return null
+  if (value.method !== PORTRAITS_LIST_METHOD && value.method !== PORTRAITS_REGISTER_METHOD && value.method !== PORTRAITS_CROP_METHOD) return null
   const result = parseResult(value.result)
   return result === null ? null : Object.freeze({ version: 1, requestId: value.requestId, method: value.method, result })
 }
@@ -121,6 +143,8 @@ export interface PortraitService {
   list(): Promise<PortraitOutcome>
   /** Registers the user's own picture; the rights status (確認済み / 未確認) is saved with it. */
   register(params: PortraitRegisterParams): Promise<PortraitOutcome>
+  /** FR-140: cuts one character out of a registered image (a pixel range) and registers it; the rights status is inherited. */
+  crop(params: PortraitCropParams): Promise<PortraitOutcome>
   dispose(): void
 }
 
@@ -138,7 +162,7 @@ export function createPortraitService(transport: PortraitTransport, options: Por
   const receive = (event: { readonly data: unknown }): void => {
     const data = event.data
     if (typeof data !== 'object' || data === null || !('method' in data) ||
-        (data.method !== PORTRAITS_LIST_METHOD && data.method !== PORTRAITS_REGISTER_METHOD)) return
+        (data.method !== PORTRAITS_LIST_METHOD && data.method !== PORTRAITS_REGISTER_METHOD && data.method !== PORTRAITS_CROP_METHOD)) return
     const response = parsePortraitResponse(data)
     if (response === null) return
     const entry = pending.get(response.requestId)
@@ -161,6 +185,7 @@ export function createPortraitService(transport: PortraitTransport, options: Por
   return Object.freeze({
     list: () => send(createPortraitListRequest(newId())),
     register: (params: PortraitRegisterParams) => send(createPortraitRegisterRequest(newId(), params)),
+    crop: (params: PortraitCropParams) => send(createPortraitCropRequest(newId(), params)),
     dispose() {
       if (disposed) return
       disposed = true

@@ -478,6 +478,11 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 StyleTemplates.JobStyleTemplateStore.Save(StyleTemplateDirectory(accepted.Request.RootJobId),
                     StyleTemplates.JobStyleTemplateRecord.For(template)
                         .WithFonts(StyleTemplates.StyleTemplateFonts.RecordsFor(template)));
+                // FR-140: the speaker assignment the user made for the Project is kept with the Job, so a rerun reproduces it.
+                if (StyleTemplates.CueSpeakerAssignmentStore.Load(SpeakerAssignmentDirectory(projectId)) is { } assignment)
+                {
+                    StyleTemplates.CueSpeakerAssignmentStore.Save(StyleTemplateDirectory(accepted.Request.RootJobId), assignment);
+                }
             }
 
             _ = Start(accepted.Request.ExecutionId);
@@ -499,6 +504,17 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
 
     internal string StyleTemplateDirectory(EntityId<JobIdTag> rootJobId) =>
         Path.Combine(workspace, "job-style-templates", rootJobId.ToString());
+
+    /// <summary>FR-140: where the speaker assignment the user is editing for a Project is kept until a Job takes a copy.</summary>
+    internal string SpeakerAssignmentDirectory(EntityId<ProjectIdTag> projectId) =>
+        Path.Combine(workspace, "project-speaker-assignments", projectId.ToString());
+
+    /// <summary>FR-140: the draft or confirmed assignment of a Project (null when nothing was assigned).</summary>
+    internal StyleTemplates.CueSpeakerAssignmentSet? LoadSpeakerAssignments(EntityId<ProjectIdTag> projectId) =>
+        StyleTemplates.CueSpeakerAssignmentStore.Load(SpeakerAssignmentDirectory(projectId));
+
+    internal void SaveSpeakerAssignments(EntityId<ProjectIdTag> projectId, StyleTemplates.CueSpeakerAssignmentSet set) =>
+        StyleTemplates.CueSpeakerAssignmentStore.Save(SpeakerAssignmentDirectory(projectId), set);
 
     /// <summary>Explicit successor acceptance through CreateRetry; never QueueRetry the root in place.</summary>
     public StoredSourceOnlyExecution Retry(EntityId<SourceOnlyExecutionIdTag> executionId,
@@ -1453,6 +1469,12 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                         // assignment of the Job (none is invented here).
                         generationRequest.UseCharacterDialogue(CharacterPortraits.List(),
                             Path.Combine(CharacterPortraits.Directory, StyleTemplates.CharacterPortraitStore.ImageDirectoryName), []);
+                        // FR-140 / FR-142: the Job's own speaker assignment (a draft reaches no output) and the timed ASR tokens.
+                        string jobStyleDirectory = StyleTemplateDirectory(execution.Request.RootJobId);
+                        generationRequest.UseCueDetails(StyleTemplates.CueSpeakerAssignmentStore.Load(jobStyleDirectory),
+                            analysis.Import.Revision.Utterances.SelectMany(static utterance => utterance.Tokens)
+                                .ToDictionary(static token => token.Id),
+                            record => StyleTemplates.StyleTemplateRenderRecord.Save(jobStyleDirectory, record));
                     }
                     _ = SetPhase(execution.Request.ExecutionId, SourceOnlyExecutionPhase.Rendering);
                     context.ReportProgress(3, 6, "source_only.rendering");

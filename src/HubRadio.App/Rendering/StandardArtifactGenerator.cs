@@ -150,6 +150,15 @@ public sealed class StandardArtifactGenerationRequest
     internal void UseCharacterDialogue(IReadOnlyList<StyleTemplates.CharacterPortrait> characters, string? imageDirectory,
         IReadOnlyList<StyleTemplates.StyleTemplateFreeTelopInput> lines) =>
         Configuration = Configuration.WithCharacterDialogue(characters, imageDirectory, lines);
+
+    /// <summary>
+    /// FR-140 / FR-142: hands the speaker assignment of the Job, the timed ASR tokens (for the words of each cue) and a sink that
+    /// receives what the render recorded (cues, speakers, colors, words, portraits) to the render.
+    /// </summary>
+    internal void UseCueDetails(StyleTemplates.CueSpeakerAssignmentSet? assignments,
+        IReadOnlyDictionary<HubRadio.Core.Identity.EntityId<HubRadio.Core.Provenance.TranscriptTokenIdTag>, HubRadio.Core.Transcripts.Token>? tokens,
+        Action<StyleTemplates.StyleTemplateRenderRecord>? recordSink) =>
+        Configuration = Configuration.WithCueDetails(assignments, tokens, recordSink);
     public StandardMusicRenderInput? Music { get; }
 
     private static ImportedOriginal RequireCompletedOriginal(IngestWorkflowRunResult ingest)
