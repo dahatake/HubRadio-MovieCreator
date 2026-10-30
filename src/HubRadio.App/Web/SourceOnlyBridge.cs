@@ -60,6 +60,8 @@ internal static class SourceOnlyBridgeProtocol
             [
                 "projectId", "expectedVersionId", "expectedVersionDigest",
                 "expectedSettingsRevision", "expectedSettingsSnapshotDigest",
+                .. (parameters.ValueKind == JsonValueKind.Object && parameters.TryGetProperty("styleTemplateId", out _)
+                    ? new[] { "styleTemplateId" } : Array.Empty<string>()),
             ],
             BridgeMethod.PipelineRetry or BridgeMethod.PipelineCancel =>
                 ["projectId", "executionId", "expectedRevision"],
@@ -85,7 +87,10 @@ internal static class SourceOnlyBridgeProtocol
                 SettingsBridgeProtocol.IsCanonicalId(parameters.GetProperty("expectedVersionId")) &&
                 SettingsBridgeProtocol.IsDigest(parameters.GetProperty("expectedVersionDigest")) &&
                 IsRevision(parameters.GetProperty("expectedSettingsRevision")) &&
-                SettingsBridgeProtocol.IsDigest(parameters.GetProperty("expectedSettingsSnapshotDigest")),
+                SettingsBridgeProtocol.IsDigest(parameters.GetProperty("expectedSettingsSnapshotDigest")) &&
+                (!parameters.TryGetProperty("styleTemplateId", out JsonElement templateId) ||
+                    (templateId.ValueKind == JsonValueKind.String &&
+                        HubRadio.App.StyleTemplates.StyleTemplateCatalog.Find(templateId.GetString()!) is not null)),
             _ => SettingsBridgeProtocol.IsCanonicalId(parameters.GetProperty("executionId")) &&
                 IsRevision(parameters.GetProperty("expectedRevision")),
         };
@@ -304,8 +309,11 @@ internal sealed class SourceOnlyBridgeHandler
                     // checks under its acceptance gate; this boundary does not own that lock.
                     DemandCurrent(actor, request.Method);
                     cancellationToken.ThrowIfCancellationRequested();
+                    string? styleTemplateId = parameters.TryGetProperty("styleTemplateId", out JsonElement selectedTemplate)
+                        ? selectedTemplate.GetString() : null;
                     execution = Invoke(() => pipeline.Regenerate(projectId, parentId, parentDigest,
-                        settings.CurrentSnapshot, settingsRevision, actor, timeProvider.GetUtcNow().ToUniversalTime()));
+                        settings.CurrentSnapshot, settingsRevision, actor, timeProvider.GetUtcNow().ToUniversalTime(),
+                        styleTemplateId));
                 }
                 else
                 {

@@ -27,7 +27,7 @@ export interface PipelineSession {
   read(): boolean
   cancel(): boolean
   retry(): boolean
-  regenerate(params: PipelineRegenerationParams): boolean
+  regenerate(params: PipelineRegenerationParams, styleTemplateId?: string | null): boolean
   restore(params: PipelineRestoreParams): boolean
   /** Reads the past-version list once. It mutates nothing and grants no media. */
   readVersions(): boolean
@@ -212,12 +212,12 @@ export function createPipelineSession(
     readVersions,
     cancel: () => command('pipeline.cancel'),
     retry: () => command('pipeline.retry'),
-    regenerate(params) {
+    regenerate(params, styleTemplateId = null) {
       const s = state.snapshot
       if (s === null || state.status !== 'available' || state.needsRefresh || uncertainMutation !== null || pending !== null || isPipelineLive(s.phase) ||
           s.resultStatus === 'invalid' || s.phase === 'ReconciliationRequired' || s.phase === 'ReselectionRequired' || s.versionId === null ||
           params.projectId !== s.projectId || params.expectedVersionId !== s.versionId || params.expectedVersionDigest !== s.versionDigest) return false
-      try { return send(createPipelineRegenerateRequest(newId(), params)) } catch { return false }
+      try { return send(createPipelineRegenerateRequest(newId(), params, styleTemplateId)) } catch { return false }
     },
     restore(params) {
       const s = state.snapshot

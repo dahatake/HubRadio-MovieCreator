@@ -35,7 +35,7 @@ internal static class StandardSubtitlePlacement
     }
 
     internal static SubtitleExportFile WriteAtBounds(SubtitleFileCue cue, AssSubtitleProfile profile,
-        int left, int top, int right, int bottom)
+        int left, int top, int right, int bottom, string extraTags = "")
     {
         if (left < 0 || top < 0 || right <= left || bottom <= top
             || right > profile.PlayResolutionWidth || bottom > profile.PlayResolutionHeight)
@@ -44,7 +44,7 @@ internal static class StandardSubtitlePlacement
         SubtitleExportFile original = AssSubtitleWriter.Write([cue], profile);
         string text = Encoding.UTF8.GetString(original.GetUtf8Bytes());
         string placement = FormattableString.Invariant(
-            $"{{\\an5\\pos({(left + (long)right) / 2m},{(top + (long)bottom) / 2m})\\clip({left},{top},{right},{bottom})\\q2}}");
+            $"{{\\an5\\pos({(left + (long)right) / 2m},{(top + (long)bottom) / 2m})\\clip({left},{top},{right},{bottom})\\q2{extraTags}}}");
         const string marker = ",,0,0,0,,";
         int dialogue = text.IndexOf("\nDialogue: ", StringComparison.Ordinal);
         int start = dialogue < 0 ? -1 : text.IndexOf(marker, dialogue, StringComparison.Ordinal);
@@ -54,7 +54,7 @@ internal static class StandardSubtitlePlacement
             new UTF8Encoding(false, true).GetBytes(text));
     }
 
-    private static (int Left, int Top, int Right, int Bottom) Bounds(
+    internal static (int Left, int Top, int Right, int Bottom) Bounds(
         AssSubtitleProfile profile, SubtitleLayoutResolution resolution)
     {
         SubtitleLayoutRect rect = resolution.Plan?.Placement.Rect

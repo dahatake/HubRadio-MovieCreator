@@ -429,7 +429,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
     public StoredSourceOnlyExecution Regenerate(EntityId<ProjectIdTag> projectId,
         EntityId<CompositionVersionIdTag> parentVersionId, ContentDigest parentDigest,
         DefaultSettingsSnapshot snapshot, int expectedSettingsRevision, string actorSid,
-        DateTimeOffset createdAt)
+        DateTimeOffset createdAt, string? styleTemplateId = null)
     {
         lock (acceptanceGate)
         {
@@ -438,6 +438,14 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             StoredSourceOnlyExecution latest = Read(projectId)
                 ?? throw new InvalidOperationException("The project has no source-only execution.");
             EnsureNoActiveExecution(latest);
+            StyleTemplates.StyleTemplateDefinition? template = null;
+            if (styleTemplateId is not null)
+            {
+                template = StyleTemplates.StyleTemplateCatalog.All.Where(item => item.Id == styleTemplateId)
+                    .OrderByDescending(static item => item.Version).FirstOrDefault()
+                    ?? throw new ArgumentException("The production template is not defined.", nameof(styleTemplateId));
+            }
+
             WorkingCopyState head = versions.GetCurrentState(projectId)
                 ?? throw new InvalidOperationException("The parent working copy is unavailable.");
             CompositionVersion parent = versions.GetVersion(parentVersionId)
@@ -459,10 +467,28 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 latest.Request.DraftId, latest.Request.SourceCandidateId, EntityId<JobIdTag>.New(),
                 latest.Request.IngestJobId, snapshot, actorSid, createdAt, parentVersionId, parentDigest, subtitleEdits);
             StoredSourceOnlyExecution accepted = executions.CreateRegeneration(request, expectedSettingsRevision);
+            if (template is not null)
+            {
+                // FR-136: the applied template (ID and version) is recorded in the Job's own directory before it runs.
+                StyleTemplates.JobStyleTemplateStore.Save(StyleTemplateDirectory(accepted.Request.RootJobId),
+                    StyleTemplates.JobStyleTemplateRecord.For(template));
+            }
+
             _ = Start(accepted.Request.ExecutionId);
             return accepted;
         }
     }
+
+    /// <summary>FR-136: the template recorded for the Job, or null (no template: the default output is unchanged).</summary>
+    private StyleTemplates.StyleTemplateDefinition? LoadStyleTemplate(EntityId<JobIdTag> rootJobId)
+    {
+        StyleTemplates.JobStyleTemplateRecord? record = StyleTemplates.JobStyleTemplateStore.Load(StyleTemplateDirectory(rootJobId));
+        return record is null ? null : StyleTemplates.StyleTemplateCatalog.Find(record.TemplateId, record.Version);
+    }
+
+    /// <summary>FR-136: where a Job's applied production template is recorded.</summary>
+    internal string StyleTemplateDirectory(EntityId<JobIdTag> rootJobId) =>
+        Path.Combine(workspace, "job-style-templates", rootJobId.ToString());
 
     /// <summary>Explicit successor acceptance through CreateRetry; never QueueRetry the root in place.</summary>
     public StoredSourceOnlyExecution Retry(EntityId<SourceOnlyExecutionIdTag> executionId,
@@ -1408,7 +1434,8 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                     var generationRequest = new StandardArtifactGenerationRequest(preparation, completedIngest, geometry,
                         profile, execution.Request.SettingsSnapshot, tool, toolEvidence, modelEvidence, runtime.Font,
                         subtitles.Subtitles, shortInputs, runtime.ApplicationVersion, runtime.ApplicationDigest, runtime.OperationTimeout,
-                        music: composition.Music);
+                        music: composition.Music,
+                        styleTemplate: LoadStyleTemplate(execution.Request.RootJobId));
                     _ = SetPhase(execution.Request.ExecutionId, SourceOnlyExecutionPhase.Rendering);
                     context.ReportProgress(3, 6, "source_only.rendering");
                     var generator = new StandardArtifactGenerator(artifacts, versions, processRunner, workspace, runtime.FfprobePath);

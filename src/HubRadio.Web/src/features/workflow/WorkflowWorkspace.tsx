@@ -501,9 +501,11 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
             : snapshot.versionId === null || snapshot.versionDigest === null ? '最新のJobの状態を確認できません。「ジョブの状態の確認」で状態を確認してください。'
               : snapshot.phase === 'ReconciliationRequired' || snapshot.phase === 'ReselectionRequired' ? '先に最新のJobの整合性・元動画を確認してください。' : null
   // FR-061.7: a new Job is a regeneration from the latest Job, sent from the source screen.
-  function createJob(params: PipelineRegenerationParams): boolean {
+  // FR-136: the production template picked for the next Job (null = none; the default output is unchanged).
+  const [styleTemplateId, setStyleTemplateId] = useState<string | null>(null)
+  function createJob(params: PipelineRegenerationParams, templateId: string | null = null): boolean {
     return screen === 'source' && draft?.isFinalized === true && !Object.values(dirtyFlags.current).some(Boolean) &&
-      jobCreationReason === null && regenerationReason === null && JSON.stringify(params) === JSON.stringify(regenerationParams) && pipeline.regenerate(params)
+      jobCreationReason === null && regenerationReason === null && JSON.stringify(params) === JSON.stringify(regenerationParams) && pipeline.regenerate(params, templateId)
   }
   const jobs = pipeline.state.versionsStatus === 'available' ? pipeline.state.versions : null
 
@@ -727,6 +729,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
                 const opener = workspace.current?.querySelector<HTMLElement>('#workflow-open-settings')
                 if (opener) openSettings(opener)
               }}
+              styleTemplateId={styleTemplateId} onStyleTemplateChange={setStyleTemplateId}
               onConfirm={createJob} />
             <ProjectJobList versions={jobs} status={pipeline.state.versionsStatus} copy={jobSettingsCopy} projectId={activeProjectId} />
           </div>}

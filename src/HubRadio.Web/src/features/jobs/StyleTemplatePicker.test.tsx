@@ -52,4 +52,16 @@ describe('StyleTemplatePicker', () => {
     expect(container.querySelector('legend')?.textContent).toContain('演出テンプレート')
     expect((container.querySelector('input[type="radio"]:checked') as HTMLInputElement).closest('label')?.textContent).toContain('手作り感')
   })
+
+  // FR-136 AC-150: the selected template goes along with the confirmed Job creation.
+  it('sends the selected template with the confirmed Job creation', () => {
+    const onConfirm = vi.fn(() => true)
+    const params = { projectId: fixtureId(1), expectedVersionId: fixtureId(5), expectedVersionDigest: 'a'.repeat(64), expectedSettingsRevision: 3, expectedSettingsSnapshotDigest: 'b'.repeat(64) }
+    act(() => root.render(<JobCreationAction nextJobNumber={2} params={params} disabledReason={null} pending={false} active onOpenSettings={vi.fn()}
+      onConfirm={onConfirm} styleTemplateId="talk-show" onStyleTemplateChange={vi.fn()} />))
+    const button = (label: string) => [...container.querySelectorAll('button')].find(item => item.textContent === label) as HTMLButtonElement
+    act(() => button('新しいJobを作成').click())
+    act(() => button('作成する').click())
+    expect(onConfirm).toHaveBeenCalledWith(params, 'talk-show')
+  })
 })
