@@ -73,8 +73,6 @@ DEFAULT_CONFIG: dict = {
         "subagent_verify_max_blocks": 3,
         "agent_stop_max_blocks": 40,
         "enforce_conductor_edit_scope": True,
-        # G-7: deny `task` calls that do not pass the model fixed in "models" (only while a run is active)
-        "enforce_models": True,
         "deploy_patterns": [
             r"\bazd\s+(up|deploy|provision)\b",
             r"\baz\s+deployment\s+\S+\s+create\b",
@@ -1252,6 +1250,18 @@ def load_ledger(root: Path, cfg: dict) -> dict:
 
 def save_ledger(root: Path, cfg: dict, data: dict) -> None:
     write_json(root / mf(cfg, "ledger"), data)
+
+
+def shared_ac_cases(data: dict) -> Dict[str, List[str]]:
+    """AC -> 有効な（blocked でない）ケースが 2 件以上あるときの、そのケース ID（System Test の重複の検出）。"""
+    by_ac: Dict[str, List[str]] = {}
+    for c in data.get("cases", []):
+        if c.get("status") == "blocked":
+            continue
+        for a in c.get("ac_ids", []):
+            by_ac.setdefault(a, []).append(c.get("id", ""))
+    return {a: ids for a, ids in by_ac.items() if len(ids) > 1}
+
 
 
 # --------------------------------------------------------------------------- registry

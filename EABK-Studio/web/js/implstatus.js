@@ -5,16 +5,18 @@ import { store } from './store.js';
 import { el } from './ui.js';
 import { xrefLink } from './xref.js';
 import { placeRows, listTiers } from './tierlist.js';
+import { region, on as vizOn } from './viz.js';
 
 // Colour is never the only cue: every state also has a symbol and a word (AC-093).
 const STATE_META = [
-  { sym: '○', color: 'var(--color-status-neutral-icon)', en: 'Not started' },
-  { sym: '◔', color: 'var(--color-status-warning-icon)', en: 'Registered · no test registered' },
-  { sym: '✖', color: 'var(--color-status-danger-icon)', en: 'Registered · test not passing' },
-  { sym: '✔', color: 'var(--color-status-success-icon)', en: 'Test passed' },
-  { sym: '◇', color: 'var(--color-status-info-icon)', en: 'Registered · outside system test' },
+  { sym: '○', color: 'var(--color-status-neutral-icon)' },
+  { sym: '◔', color: 'var(--color-status-warning-icon)' },
+  { sym: '✖', color: 'var(--color-status-danger-icon)' },
+  { sym: '✔', color: 'var(--color-status-success-icon)' },
+  { sym: '◇', color: 'var(--color-status-info-icon)' },
 ];
-const stateLabel = (i, ja) => (lang() === 'ja' ? ja[i] : STATE_META[i].en);
+// Japanese: the state names come from the model (managed data); English: the dictionary (impl.st.<n>).
+const stateLabel = (i, ja) => (lang() === 'ja' ? ja[i] : t('impl.st.' + i));
 const caseText = (cases) => {
   const e = Object.entries(cases || {});
   return e.length ? e.map(([k, n]) => `${k} ${n}`).join(' / ') : '-';
@@ -27,6 +29,9 @@ const day = (v) => (typeof v === 'string' ? v.slice(0, 10) : '-');
 export function mount(host) {
   const page = el('div', { class: 'page', 'data-testid': 'impl-status' });
   host.append(page);
+  // FR-1080: the page root is a viz region (data-viz="implstatus"); cards and bar segments are joined by key (viz.js).
+  const viz = region(page, 'implstatus', { items: '[data-testid="impl-kanban-card"], [data-testid="impl-bar-segment"]',
+    keyOf: (n) => (n.dataset.testid === 'impl-kanban-card' ? 'card:' + n.dataset.req : 'seg:' + n.dataset.scope + '|' + n.dataset.group + '|' + n.dataset.state) });
   let cardEls = [];
   // FR-1033: one filter {state, scope?, group?} drives every view; clicking a segment never navigates (AC-204).
   let filter = store.implFilter;
@@ -36,8 +41,8 @@ export function mount(host) {
   const segRef = (seg, rows) => {
     seg._rows = rows;
     const go = () => toggle({ state: seg.dataset.state, scope: seg.dataset.scope === 'all' ? null : seg.dataset.scope, group: seg.dataset.scope === 'all' ? null : seg.dataset.group });
-    seg.addEventListener('click', go);
-    seg.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+    vizOn(seg, 'click', go);
+    vizOn(seg, 'keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
     return seg;
   };
   const toggle = (f) => {
@@ -80,6 +85,7 @@ export function mount(host) {
   let items = [];
 
   const render = () => {
+    viz.snap();
     const data = store.model.implStatus || { states: [], items: [], excluded: 0 };
     const ja = data.states;
     items = data.items;
@@ -133,6 +139,7 @@ export function mount(host) {
 
     // FR-1063 AC-349: 要求を上位層（種類→区分→領域）でまとめ、各層の状態の内訳を件数で示す（内訳の合計は層の件数と一致）。
     const collect = (node) => [...node.items, ...[...node.children.values()].flatMap(collect)];
+    // i18n-data: the kind name of a hierarchy item is a managed-data value
     const placed = placeRows(items, (r) => ({ kind: '要求', id: r.id }), '要求');
     const tiers = listTiers(placed, {
       extra: (node) => {
@@ -247,6 +254,7 @@ export function mount(host) {
       el('h2', { style: { marginTop: '16px' } }, t('impl2.table')),
       el('div', { style: { overflow: 'auto' } }, table));
     if (ganttShown) refreshGantt();
+    viz.sync();
     cardEls = [...page.querySelectorAll('[data-req]')];
     mark();
     applyFilter();
@@ -264,5 +272,5 @@ export function mount(host) {
   };
   render();
   const offs = [store.on('implfilter', (f) => { filter = f; applyFilter(); }), store.on('model', render), onLang(render), store.on('select', mark)];
-  return { destroy() { offs.forEach((f) => f()); } };
+  return { destroy() { offs.forEach((f) => f()); viz.destroy(); } };
 }

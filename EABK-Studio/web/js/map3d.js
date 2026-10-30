@@ -583,15 +583,15 @@ function mountGraph(host) {
   else raf = requestAnimationFrame(frame);
   if (snapshot) {
     host.append(el('section', { class: 'snapshot-3d card' },
-      el('h2', {}, '3D レイヤー構成'),
-      el('p', {}, '目的 → 要求 → Entity / API / Table → 実装ファイル → System Test'),
+      el('h2', {}, t('map3d.layers')),
+            el('p', {}, t('map3d.chain')),
       el('div', { class: 'chips' }, [...store.nodes.values()].slice(0, 36).map((node) =>
         el('span', { class: 'badge' }, `${node.id}: ${node.label}`)))));
   }
 
   return {
     destroy() {
-      if (window.eabkView === viewApi3) delete window.eabkView;
+      if (window.eabkView === viewApi3) window.eabkView = undefined;
       if (window.__eabk3d === hook3) delete window.__eabk3d;
       dead = true; cancelAnimationFrame(raf); stopTour(); rig.destroy(); rig.el.remove(); ro.disconnect(); offs.forEach((f) => f()); hideTip();
       scene.traverse((o) => { o.geometry?.dispose?.(); o.material?.dispose?.(); });
@@ -609,7 +609,7 @@ function mountNoWebgl(host) {
     el('h2', {}, t('cam3d.nowebgl.h')), el('p', {}, t('dim.nowebgl')), el('p', { class: 'mini' }, t('cam3d.nowebgl.d')),
     el('a', { class: 'btn', href: '#/map2d' }, t('sz.to2d')),
     el('table', { 'data-testid': 'legend-table' }, el('thead', {}, el('tr', {}, el('th', {}, t('cam3d.nowebgl.kind')), el('th', {}, t('cam3d.nowebgl.shape')))), el('tbody', {}, rows))));
-  setTimeout(() => publishDim({ dims: ['2d', '3d', 'rpg'], current: '2d', selected: '3d' }), 0);   // 選んだのは 3D のまま（元の選択を保つ）
+  setTimeout(() => publishDim({ dims: ['2d', '3d', 'rpg', 'graph'], current: '2d', selected: '3d' }), 0);   // 選んだのは 3D のまま（元の選択を保つ）
   return { destroy() {} };
 }
 

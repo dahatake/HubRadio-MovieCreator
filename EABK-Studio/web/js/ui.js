@@ -55,13 +55,15 @@ const ICON_PATHS = {
   info: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 11v6M12 7.5v.5',
   rpg: 'M4 20V9h3V6h2v3h2V6h2v3h2V6h2v3h3v11zM10 20v-5h4v5',
   search: 'M10.5 4a6.5 6.5 0 1 0 0 13a6.5 6.5 0 1 0 0-13M15.5 16l5 5',
+  // FR-1079: Graph の切替アイコンと、ノードの種類の図柄（同じ様式の線画）
+  graph: 'M6 4a2 2 0 1 0 0 4a2 2 0 1 0 0-4M6 16a2 2 0 1 0 0 4a2 2 0 1 0 0-4M18 10a2 2 0 1 0 0 4a2 2 0 1 0 0-4M6 8v8M8 7l8 4M8 17l8-4',
+  ac: 'M4 6l2 2 3-3M4 14l2 2 3-3M12 7h8M12 15h8',
+  state: 'M7 5a3 3 0 1 0 0 6a3 3 0 1 0 0-6M17 13a3 3 0 1 0 0 6a3 3 0 1 0 0-6M9.5 11l5 2',
+  component: 'M4 4h7v7H4zM13 13h7v7h-7zM13 4h7v4h-7zM4 15h4v5H4z',
 };
-export const BUSINESS_ICON = {
-  dashboard: 'Dashboard', map2d: '2D relationship map', map3d: '3D relationship map', diagrams: 'Diagrams', placement: 'Data placement',
-  entities: 'Entity × use case', integrations: 'External integrations', source: 'Source', tables: 'Data tables', maintenance: 'Integrity maintenance',
-  structure: 'Data-layer structure', consistency: 'Consistency viewer', goal: 'Business goal', req: 'Requirement', entity: 'Entity', api: 'API',
-  test: 'Test', progress: 'Progress', history: 'History', risk: 'Risk',
-};
+// The icon's accessible name when no label is given: dictionary keys bizicon.<kind>.
+export const BUSINESS_ICON = Object.fromEntries(['dashboard', 'map2d', 'map3d', 'diagrams', 'placement', 'entities', 'integrations', 'source', 'tables', 'maintenance',
+  'structure', 'consistency', 'goal', 'req', 'entity', 'api', 'test', 'progress', 'history', 'risk'].map((k) => [k, 'bizicon.' + k]));
 
 // 線画のアイコン 1 つ（svg）。size は 16・20・24 のどれか。decorative のときは支援技術から隠す。
 export function icon(name, { size = 20, label = '' } = {}) {
@@ -72,7 +74,7 @@ export function icon(name, { size = 20, label = '' } = {}) {
 }
 
 export function businessIcon(kind, label) {
-  const name = label || BUSINESS_ICON[kind] || kind;
+  const name = label || (BUSINESS_ICON[kind] ? t(BUSINESS_ICON[kind]) : kind);
   return el('span', { class: 'biz-icon', role: 'img', 'aria-label': name, title: name }, icon(ICON_PATHS[kind] ? kind : 'info'));
 }
 
@@ -91,7 +93,7 @@ export function el(tag, attrs, ...kids) {
     if (k === 'class') e.className = v;
     else if (k === 'html') e.innerHTML = v;
     else if (k === 'style' && typeof v === 'object') Object.assign(e.style, v);
-    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k.startsWith('on')) { e.addEventListener(k.slice(2), v); (e._on ||= []).push([k.slice(2), v, undefined]); } // _on: 動的可視化（viz.js）が要素を再利用するときの付け替え用
     else e.setAttribute(k, v === true ? '' : v);
   }
   for (const c of kids.flat()) if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(c));
@@ -121,6 +123,7 @@ export const svgEl = (tag, attrs, ...kids) => {
 };
 
 export function statusText(kind, raw) {
+  // i18n-data: the status text is a managed-data value ("承認済み（…）" → its first part) and is shown as written in Japanese
   if (lang() === 'ja' && raw) return raw.split('（')[0];
   return t('status.' + (kind || 'unknown'));
 }
@@ -170,6 +173,7 @@ export function showTip(html, x, y) {
 }
 export function hideTip() { if (tipEl) tipEl.hidden = true; }
 export function nodeTip(n) {
+  // i18n-data: the status text is a managed-data value; only its first part is shown
   return `<b style="color:${colorOf(n)}">${esc(n.label)}</b><div class="mini">${esc(typeLabel(n))}${n.status ? ' · ' + esc(n.status.split('（')[0]) : ''}</div>${n.title ? `<div>${esc(String(n.title).slice(0, 180))}</div>` : ''}`;
 }
 

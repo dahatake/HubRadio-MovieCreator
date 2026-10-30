@@ -161,16 +161,20 @@ def test_entity_relationships_are_explicit_only(repo):
 # FR-1002 AC-044 / FR-1003 AC-045 / FR-1005 AC-048 / FR-1006 AC-049 AC-050 AC-051
 def test_decision_views_define_personas_and_evidence_renderers():
     source = (ROOT / "web" / "js" / "insights.js").read_text(encoding="utf-8")
+    # FR-011 AC-432: the words of these views live in the dictionary (web/js/i18n.js), not in insights.js
+    dictionary = (ROOT / "web" / "js" / "i18n.js").read_text(encoding="utf-8")
     for persona in ("Product Manager", "Architect", "Software Engineer"):
-        assert persona in source
+        assert persona in dictionary
+    assert "'persona.' + id" in source
     for route in ("dashboard", "map2d", "map3d", "diagrams", "placement", "source", "tables"):
         assert f"{route}:" in source
+        assert f"'ins.page.{route}.n'" in dictionary
     for term in (
         "現状", "理想", "適用規則", "判定理由", "根拠",
         "外部／クラウド境界",
         "層一貫性ビューアー", "Entity 向け ER 図", "測定時点",
     ):
-        assert term in source
+        assert term in dictionary
     assert "analysis.layers.map" in source
     assert "analysis.differences.map" in source
     assert "runtime.components.map" in source
@@ -519,7 +523,8 @@ def test_check_without_data_layer_exits_1_and_points_to_the_guide(tmp_path, caps
 def test_start_without_data_layer_does_not_serve_and_explains(tmp_path, capsys):
     assert studio.main(["--repo", str(tmp_path), "--no-open"]) == 1
     err = capsys.readouterr().err
-    assert "no EABK data layer" in err and "users-guide" in err
+    # 導入先では users-guide が EABK-docs に改名されるため、実体のガイドパス（studio.GUIDE）で確認する
+    assert "no EABK data layer" in err and studio.GUIDE in err
 
 
 def test_role_sets_the_first_screen(repo, monkeypatch, capsys):

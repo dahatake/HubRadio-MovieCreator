@@ -1,3 +1,5 @@
+**日本語** | [English](02-during-and-after-run.en.md)
+
 # 2. 実行中と終了後
 
 ## 2.1 進捗を確認する
@@ -101,6 +103,10 @@ Q-003: B
 </answers>
 ```
 
+## 2.5b 似た項目を統合する（/dedupe）
+
+要求・受入基準・System Test のケース・カタログの行に重複が溜まったときは、`/dedupe`（Agent は conductor。範囲を絞るなら続けて書く）で単独に統合できます。候補は `python scripts/rdcheck.py similar --pairs`（`--kind FR|AC|CASE|CAT`）で確認できます。rd-author が残す要求を変更してもう一方を廃止し、test-designer が対応するケースを `ledger.py` 経由で統合・停止し、`verify.py --docs-only` が exit 0 になるまで直します。新機能は実装しません。
+
 ## 2.6 /work のクリーンアップ
 
 清掃は保持期間ではなく、正常完了の証拠で許可されます。結果が「全件完了」で、完了条件、最終 verify、対象テスト、main への統合、main 上の統合後 verify が順に成功し、清掃前版 `run-report.md` が確定した run だけを清掃します。それ以外（blocked、中止、失敗、未達、report 不足）は再開できるよう自動期限なく保持します。
@@ -109,5 +115,6 @@ Q-003: B
 
 ```bash
 python scripts/clean-work.py --dry-run   # 候補・保護理由・実行予定を確認（変更なし）
-python scripts/clean-work.py             # 削除直前に所有権と状態を再検査
 ```
+
+統合ブランチ `run/<run-id>` をチェックアウトしている run 専用の worktree（主の作業ツリー以外。例 `<repo>-run-<run-id>`）も、未コミット変更がなければ最後に自動で削除します（統合ブランチは先に detach してから削除）。`work/` は worktree ごとにあるため、`work/runs/<run-id>` を主の `work/runs/<run-id>` へ退避してから削除し、候補別結果は主側の `run-report.md` に追記します。未コミット変更があれば worktree と統合ブランチを保持します。

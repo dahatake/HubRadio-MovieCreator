@@ -8,10 +8,12 @@
 import { t, lang, onLang } from './i18n.js';
 import { store, norm } from './store.js';
 import { el } from './ui.js';
+import { region } from './viz.js';
 
 export const MIN_SCALE = 0.1;
 export const MAX_SCALE = 64;
 export const L = { CELL_W: 300, BOX_W: 260, HEAD_H: 32, ROW_H: 17, MAX_ROWS: 14, USE_ROW: 16, MAX_USES: 4, GAP_Y: 34, PAD: 40, CL_GAP: 70, TITLE_H: 24 };
+// i18n-data: the relation kinds are managed-data values
 export const KINDS = ['外部キー', '参照', '使用'];
 const CLICK_DRAG_PX = 6;
 
@@ -35,7 +37,8 @@ export function thresholds(m) {
 }
 
 // Words: Japanese UI shows the data word; English UI shows the English word followed by the data word (data is shown as written).
-export const kindLabel = (k) => (lang() === 'ja' ? k : `${t('sz.k.' + k)} (${k})`);
+export const kindLabel = (k) => t('sz.k.' + k);   // the label comes from the dictionary in both languages
+// i18n-data: the key kinds are managed-data values
 export const keyMark = (k) => (k === '主キー' ? 'PK' : k === '外部キー' ? 'FK' : '');
 
 // ---------------------------------------------------------------------------------------------- data + layout
@@ -64,7 +67,8 @@ function build(m, arch = false) {
       edges.push({ from: r.from, to: r.to, kind: r.kind, sources: r.sources || [] });
       nbr.get(r.from).add(r.to); nbr.get(r.to).add(r.from);
     } else if (r.scope === 'usage' && r.toType === 'table' && byName.has(r.from)) {
-      const e = { from: r.from, to: r.to, kind: '使用', sources: r.sources || [], usage: true };
+      // i18n-data: "使用" is the managed-data relation kind
+    const e = { from: r.from, to: r.to, kind: '使用', sources: r.sources || [], usage: true };
       edges.push(e); uses.get(r.from).push(e);
     } else if (r.scope === 'column' && byName.has(r.from) && byName.has(r.to)) colEdges.push(r);
   }
@@ -83,7 +87,7 @@ function build(m, arch = false) {
       clusters.push({ id: `${l.kind} · ${l.name}`, count: es.length, entities: es, lines, location: l });
     }
     const rest = names.filter((n) => !seen.has(n));
-    if (rest.length || !clusters.length) clusters.push({ id: 'なし', count: rest.length, entities: rest, lines: rest.map((n) => `▪ ${n}`), none: true });
+    if (rest.length || !clusters.length) clusters.push({ id: t('common.none'), count: rest.length, entities: rest, lines: rest.map((n) => `▪ ${n}`), none: true });
     rest.forEach((n) => seen.add(n));
   } else {
     for (const c of ent.clusters || []) {
@@ -144,6 +148,7 @@ export function stateOf(d, th) {
     columns: {},
     arch: !!d.arch,
     locations: d.locations.map((l) => ({ kind: l.kind, name: l.name, apps: [...l.apps], data: [...l.data], links: l.links.map((x) => ({ ...x })) })),
+    // i18n-data: getState() reports the managed-data sentinel "なし" (no storage); the screen shows the dictionary word instead
     storage: Object.fromEntries(d.names.map((n) => [n, d.storage.get(n).length ? d.storage.get(n).map((s) => `${s.kind} · ${s.name}`) : 'なし'])),
     totals: { entities: d.names.length, columns: d.totalColumns },
   };
@@ -209,6 +214,14 @@ export function mountShell(host, opts) {
   }
   for (const lk of opts.links || []) bar.append(el('a', { class: 'btn ghost sz-btn', href: lk.href, 'data-testid': lk.id || null }, lk.label()));
   if (opts.onSwitch) bar.append(btn(t('sz.graph'), t('sz.graph'), opts.onSwitch));
+  const vizReg = region(root, 'semzoom-' + opts.mode, { items: '[data-viz-key]' });   // FR-1080: data-viz / data-reduced-motion for the semantic zoom
+  const pubZP = () => {   // FR-1080 AC-442: the current zoom (scale) and pan (px from the centred view)
+    const c = worldCenter(d), k = ctx.k() || 1;
+    viewport.dataset.zoom = String(+view.scale.toFixed(3));
+    viewport.dataset.pan = view.cx == null ? '0,0' : `${Math.round((view.cx - c.x) * k)},${Math.round((view.cy - c.y) * k)}`;
+  };
+  const resetBtn = btn(t('viz.reset'), t('viz.reset'), () => setScale(1), { 'data-testid': 'viz-reset' });
+  bar.append(resetBtn);
   const main = el('div', { class: 'sz-main' }, viewport, side);
   root.append(bar, main, note, hint, altBox, live);
   host.append(root);
@@ -218,12 +231,14 @@ export function mountShell(host, opts) {
   function label() {
     const lv = levelNow();
     const sel = view.selected ? `${t('sz.sel')}: ${view.selected}${view.column ? '.' + view.column : ''}` : t('sz.none');
-    return `${t('sz.title')} — ${t('sz.level')}: ${t('sz.level.' + lv)}（${t('sz.lv.' + lv)}） / ${t('sz.scale')}: ${fmt(view.scale)} / ${sel}`;
+    return `${t('sz.title')} — ${t('sz.level')}: ${t('sz.level.' + lv)}${t('common.paren', { v: t('sz.lv.' + lv) })} / ${t('sz.scale')}: ${fmt(view.scale)} / ${sel}`;
   }
   const fmt = (n) => (Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : n.toFixed(2));
   function sync() {
     const lv = levelNow();
     root.dataset.scale = String(view.scale);
+    root.dataset.vizCount = String(d.clusters.flatMap((c) => c.entities).filter((n) => matches(n, d)).length);
+    pubZP();
     root.dataset.level = lv;
     root.dataset.selected = view.selected || '';
     root.setAttribute('aria-label', label());
@@ -250,13 +265,14 @@ export function mountShell(host, opts) {
         el('td', {}, c.type || '—'),
         el('td', {}, c.key ? `${keyMark(c.key) ? keyMark(c.key) + ' ' : ''}${kindLabel(c.key)}` : '—'),
         el('td', {}, c.ref ? (r && d.byName.has(r.entity) ? el('button', { type: 'button', class: 'eu-h', 'aria-label': `${t('sz.goto')}: ${c.ref}`, onclick: () => gotoRef(c.ref) }, '→ ' + c.ref) : c.ref) : '—'),
+        // i18n-data: "補完" is the managed-data origin value
         el('td', {}, (c.description || '') + (c.origin === '補完' ? ` (${t('sz.supp')})` : '') + (c.mismatch && c.mismatch.length ? ` ≠ ${t('sz.mismatch')}: ` + c.mismatch.map((x) => `${x.field}=${x.supplement}`).join(', ') : '')));
     });
     side.replaceChildren(
       el('h3', {}, e.name, ' ', el('span', { class: 'badge' }, `${t('sz.badge.selected')}`)),
       e.description ? el('p', { class: 'mini' }, e.description) : null,
       el('p', { class: 'mini' }, d.clusterOf.get(n) ? t('sz.cluster', { id: d.clusterOf.get(n).id, n: d.clusterOf.get(n).count }) : ''),
-      el('p', { class: 'mini', 'data-testid': 'sz-storage' }, `${t('arch.storage')}: ${d.storage.get(n).length ? d.storage.get(n).map((s) => `${s.kind} · ${s.name}`).join(' / ') : 'なし'}`),
+      el('p', { class: 'mini', 'data-testid': 'sz-storage' }, `${t('arch.storage')}: ${d.storage.get(n).length ? d.storage.get(n).map((s) => `${s.kind} · ${s.name}`).join(' / ') : t('common.none')}`),
       rels.length ? el('ul', { class: 'sz-rels' }, rels.map((x) => { const o = x.from === n ? x.to : x.from; return el('li', {}, `${x.from} → ${x.to} · ${kindLabel(x.kind)} `, el('button', { type: 'button', class: 'eu-h', onclick: () => select(o) }, o)); })) : null,
       e.columns.length ? tb([t('sz.c.name'), t('sz.c.type'), t('sz.c.key'), t('sz.c.ref'), t('sz.c.desc')], colRows) : el('p', { class: 'sz-nocols' }, '⚠ ' + t('sz.nocols')));
   }
@@ -277,16 +293,16 @@ export function mountShell(host, opts) {
       if (colRows.length > LIM) break;
     }
     body.replaceChildren(
-      d.arch ? caption(`${t('arch.locations')}（${d.locations.length}）`) : null,
+      d.arch ? caption(`${t('arch.locations')}${t('common.paren', { v: d.locations.length })}`) : null,
       d.arch ? tbl([t('arch.kind'), t('arch.place'), t('arch.apps'), t('arch.data'), t('arch.links')], d.locations.map((l) => el('tr', { 'data-alt-location': `${l.kind}|${l.name}` },
-        el('td', {}, l.kind), el('td', {}, l.name), el('td', {}, l.apps.join('、') || 'なし'), el('td', {}, l.data.join('、') || 'なし'),
-        el('td', {}, l.links.map((x) => `→ ${x.to}（${x.direction}）`).join(' / ') || 'なし')))) : null,
+        el('td', {}, l.kind), el('td', {}, l.name),         el('td', {}, l.apps.join(', ') || t('common.none')), el('td', {}, l.data.join(', ') || t('common.none')),
+        el('td', {}, l.links.map((x) => `→ ${x.to} (${x.direction})`).join(' / ') || t('common.none'))))) : null,
       d.arch ? caption(t('arch.storage')) : null,
-      d.arch ? tbl([t('eu.entity'), t('arch.storage')], d.names.map((n) => el('tr', { 'data-alt-storage': n }, el('td', {}, n), el('td', {}, d.storage.get(n).map((s) => `${s.kind} · ${s.name}`).join(' / ') || 'なし')))) : null,
-      caption(`${t('sz.alt.clusters')}（${t('sz.entities', { n: d.names.length })}）`), tbl(['ID', '#', t('eu.entity')], clusterRows),
-      caption(`${t('sz.alt.edges')}（${d.edges.length}）`), tbl([t('sz.from'), t('sz.to'), t('sz.kind'), t('sz.src')], edgeRows),
+      d.arch ? tbl([t('eu.entity'), t('arch.storage')], d.names.map((n) => el('tr', { 'data-alt-storage': n }, el('td', {}, n), el('td', {}, d.storage.get(n).map((s) => `${s.kind} · ${s.name}`)      .join(' / ') || t('common.none'))))) : null,
+      caption(`${t('sz.alt.clusters')}${t('common.paren', { v: t('sz.entities', { n: d.names.length }) })}`), tbl(['ID', '#', t('eu.entity')], clusterRows),
+            caption(`${t('sz.alt.edges')}${t('common.paren', { v: d.edges.length })}`), tbl([t('sz.from'), t('sz.to'), t('sz.kind'), t('sz.src')], edgeRows),
       d.edges.length > LIM ? el('p', { class: 'mini' }, t('sz.moreuses', { n: d.edges.length - LIM })) : null,
-      caption(`${t('sz.alt.cols')}（${d.totalColumns}）`), tbl([t('eu.entity'), t('sz.c.name'), t('sz.c.type'), t('sz.c.key'), t('sz.c.ref')], colRows.slice(0, LIM)),
+      caption(`${t('sz.alt.cols')}${t('common.paren', { v: d.totalColumns })}`), tbl([t('eu.entity'), t('sz.c.name'), t('sz.c.type'), t('sz.c.key'), t('sz.c.ref')], colRows.slice(0, LIM)),
       colRows.length > LIM ? el('p', { class: 'mini' }, t('sz.more', { n: colRows.length - LIM })) : null);
   }
 
@@ -446,6 +462,7 @@ export function mountShell(host, opts) {
     else if (view.scale > 1.0001) {
       const a = renderer.toWorld(p.x - dx, p.y - dy), b = renderer.toWorld(p.x, p.y);
       view.cx += a.x - b.x; view.cy += a.y - b.y;
+      pubZP();
     }
     schedule();
   }
@@ -540,7 +557,7 @@ export function mountShell(host, opts) {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
       cancelAnimationFrame(raf);
-      if (window.eabkView === eabkView) delete window.eabkView;
+      if (window.eabkView === eabkView) window.eabkView = undefined;
       renderer.destroy?.();
     },
   };

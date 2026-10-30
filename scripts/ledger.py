@@ -4,6 +4,7 @@
 Usage:
   python scripts/ledger.py summary
   python scripts/ledger.py add --req FR-012 --ac AC-031 --title "..." --layer e2e --command "npx playwright test ..." [--canary] [--reason "..."]
+                               # 同じ AC の有効なケースがあれば拒否（update で拡張する。例外は --new-case-reason "理由"）
   python scripts/ledger.py update ID [--command ...] [--title ...] [--ac ...] [--req ...] [--canary true|false] --reason "..."
   python scripts/ledger.py block ID --reason "..."          # never delete a case; block it with a reason
   python scripts/ledger.py set ID pass|fail|blocked|not_run [--evidence PATH] [--reason ...]
@@ -77,14 +78,31 @@ def cmd_add(args, root, cfg) -> int:
         if r not in doc.requirements:
             raise SystemExit(f"ERROR ledger: {r} が要求定義書にありません")
     kind = "E2E" if args.layer == "e2e" else "IT"
-    cid = h.load_script("next-id").allocate(root, cfg, kind, 1, args.title[:40], False)[0]
     data = h.load_ledger(root, cfg)
+    # 似た System Test を増やさない: 同じ AC を保証する有効なケースがあれば、新規に作らず既存を拡張する
+    covering = {}
+    for c in data["cases"]:
+        if c.get("status") == "blocked":
+            continue
+        for a in acs:
+            if a in c.get("ac_ids", []):
+                covering.setdefault(a, []).append(c["id"])
+    if covering and not args.new_case_reason:
+        hits = "、".join(f"{a}: {'、'.join(ids)}" for a, ids in covering.items())
+        first = next(iter(covering.values()))[0]
+        raise SystemExit(
+            f"ERROR ledger: 同じ受入基準を保証する有効なケースがあります（{hits}）。新しいケースを足さず、"
+            f"`python scripts/ledger.py update {first} --command ... --ac ... --reason \"...\"` で既存のケースを拡張します。"
+            "層（e2e と api など）が違い、別のケースが本当に必要なときだけ --new-case-reason \"理由\" を付けます")
+    cid = h.load_script("next-id").allocate(root, cfg, kind, 1, args.title[:40], False)[0]
     case = {
         "id": cid, "requirement_ids": reqs, "ac_ids": acs, "title": args.title, "layer": args.layer,
         "command": args.command, "canary": bool(args.canary), "status": "not_run",
         "last_commit": None, "last_run_at": None, "evidence": None, "history": [],
     }
     history(case, "追加", args.reason or "受入基準からケースを作成", args.by)
+    if covering:
+        history(case, "同じ AC の既存ケースと別に追加", args.new_case_reason, args.by)
     data["cases"].append(case)
     for a in acs:
         data["ac_digests"][a] = h.ac_digest(doc.acs[a], doc.params)
@@ -316,8 +334,107 @@ def changed_files(root: Path, base: Optional[str]) -> List[str]:
     return sorted(set(f for f in files if f))
 
 
-def select_cases(root: Path, cfg: dict, data: dict, mode: str, base: Optional[str], retry_failed: bool = True) -> List[dict]:
-    """retry_failed=False: status "fail" cases are picked only by ID / command-file match (not_run is still picked)."""
+# Shared (execution-base) code: a change here can affect any case, so the selection is widened (AC-451).
+# A file that appears in a case's command is not treated as shared (it is matched by command as before).
+SHARED_CODE_RE = re.compile(
+    r"^(scripts/[^/]+\.(py|ps1|sh|cmd|json)|tools/install\.py|\.github/.+|(.*/)?conftest\.py|"
+    r"(.*/)?(package(-lock)?\.json|pyproject\.toml|requirements[^/]*\.txt|pytest\.ini|tox\.ini))$")
+
+
+def added_lines_by_file(root: Path, base: Optional[str], files: List[str]) -> Optional[Dict[str, str]]:
+    """Text of the added/changed lines per file (git diff -U0 vs base; untracked files count fully). None = cannot analyse."""
+    res: Dict[str, List[str]] = {}
+    if base:
+        rc, out = h.git(["diff", "-U0", "--no-color", "--no-renames", base], root)
+        if rc != 0:
+            return None
+        cur = None
+        for line in out.splitlines():
+            if line.startswith("+++ "):
+                cur = line[4:].strip()
+                cur = cur[2:] if cur.startswith("b/") else (None if cur == "/dev/null" else cur)
+                if cur is not None:
+                    res.setdefault(cur, [])
+            elif line.startswith("+") and cur is not None:
+                res[cur].append(line[1:])
+    for f in files:
+        if f in res:
+            continue
+        p = root / f
+        if p.is_file() and p.stat().st_size < 2_000_000:
+            try:
+                tracked = h.git(["ls-files", "--error-unmatch", f], root)[0] == 0
+            except Exception:
+                return None
+            if not tracked:
+                res[f] = p.read_text(encoding="utf-8", errors="replace").splitlines()
+    return {k: "\n".join(v) for k, v in res.items()}
+
+
+def select_cases(root: Path, cfg: dict, data: dict, mode: str, base: Optional[str], retry_failed: bool = True,
+                 reasons: Optional[Dict[str, str]] = None) -> List[dict]:
+    """retry_failed=False: status "fail" cases are picked only by ID / command-file match (not_run is still picked).
+    reasons (optional dict) receives {case id: why it was selected}. For `changed`, IDs are taken from the changed lines
+    only; when that is not safe (shared code, unparsable diff, a changed file without IDs) the legacy selection is used
+    ("広げた"), which always includes the narrow one."""
+    legacy = _select_legacy(root, cfg, data, mode, base, retry_failed)
+    if mode != "changed":
+        if reasons is not None:
+            for c in legacy:
+                reasons[c["id"]] = f"--select {mode}"
+        return legacy
+    files = changed_files(root, base)
+    if not files:
+        if reasons is not None:
+            for c in legacy:
+                reasons[c["id"]] = "ledger status (not_run/fail)" if c.get("status") in ("not_run", "fail") else "従来の選択"
+        return legacy
+    cases = data["cases"]
+    cmds = [c.get("command") or "" for c in cases]
+    in_cmd = {f: any(f in cm for cm in cmds) for f in files}
+    shared = [f for f in files if SHARED_CODE_RE.match(f) and not in_cmd[f]]
+    added = added_lines_by_file(root, base, files)
+    why_wide = ""
+    ids_by_file: Dict[str, set] = {}
+    if added is not None:
+        for f in files:
+            ids_by_file[f] = set(h.CODE_ID_RE.findall(added.get(f, "")))
+    if shared:
+        why_wide = "共通コードの変更: " + ", ".join(shared[:3]) + (" ほか" if len(shared) > 3 else "")
+    elif added is None:
+        why_wide = "diff を解析できない"
+    else:
+        bare = [f for f in files if not ids_by_file[f] and not in_cmd[f]]
+        if bare:
+            why_wide = "変更行に ID がない: " + ", ".join(bare[:3]) + (" ほか" if len(bare) > 3 else "")
+    ids = set().union(*ids_by_file.values()) if ids_by_file else set()
+    narrow: Dict[str, str] = {}
+    for c in cases:
+        if c.get("status") == "blocked":
+            continue
+        hit = sorted(ids & set(c.get("requirement_ids", []) + c.get("ac_ids", [])))
+        if c.get("status") == "not_run" or (retry_failed and c.get("status") == "fail"):
+            narrow[c["id"]] = f"ledger status {c.get('status')}"
+        elif hit:
+            narrow[c["id"]] = "変更行の ID: " + ",".join(hit[:5])
+        else:
+            fm = [f for f in files if f and f in (c.get("command") or "")]
+            if fm:
+                narrow[c["id"]] = "command に変更ファイル: " + fm[0]
+    if not why_wide:
+        out = [c for c in cases if c["id"] in narrow]
+        if reasons is not None:
+            reasons.update(narrow)
+        return out
+    out = []
+    for c in legacy:
+        out.append(c)
+        if reasons is not None:
+            reasons[c["id"]] = narrow.get(c["id"]) or f"広げた（{why_wide}）"
+    return out
+
+
+def _select_legacy(root: Path, cfg: dict, data: dict, mode: str, base: Optional[str], retry_failed: bool = True) -> List[dict]:
     cases = data["cases"]
     if mode == "all":
         return [c for c in cases if c.get("status") != "blocked"]
@@ -400,7 +517,7 @@ def _kmatcher(names):
     return lambda ident, **kw: any(ident.lower() in n for n in low)
 
 
-def plan_batches(reps, groups, is_serial, is_canary):
+def plan_batches(reps, groups, is_serial, is_canary, jobs=1, durs=None):
     """Group the System Test commands that run the same pytest file into one process each (>= 2 distinct commands).
     Every case pays for the process start, the imports and the browser tool's start-up once per command; one
     process per file pays it once. Returns (units, batched_reps) where each unit is a virtual case with "_batch" members."""
@@ -408,7 +525,7 @@ def plan_batches(reps, groups, is_serial, is_canary):
         from _pytest.mark.expression import Expression  # the same -k grammar as pytest
     except Exception:
         return [], set()
-    by_file: dict = {}
+    members = []
     for c in reps:
         if is_serial(c) or is_canary(c):
             continue
@@ -420,23 +537,102 @@ def plan_batches(reps, groups, is_serial, is_canary):
                 Expression.compile(p[2])
         except Exception:
             continue
-        by_file.setdefault(p[0], []).append((c, p))
-    units, used = [], set()
-    for f, members in by_file.items():
-        if len(members) < 2:
-            continue
-        if any(not p[1] and not p[2] for _, p in members):
-            sel = ""
-        elif all(p[1] for _, p in members):
-            sel = " ".join(f'"{f}::{p[1]}"' for _, p in members)
-        else:
-            exprs = [f"({p[2]})" if p[2] else p[1].split("::")[-1].split("[")[0] for _, p in members]
-            sel = '-k "' + " or ".join(exprs) + '"'
-        target = f if (sel == "" or sel.startswith("-k")) else ""
-        units.append({"id": "BATCH:" + f, "command": f"BATCH {f} {sel}", "_batch": {"file": f, "target": target, "sel": sel,
-                                                                           "members": members}})
-        used.update(c["command"] for c, _ in members)
+        members.append((c, (re.sub(r"^\./", "", p[0]), p[1], p[2])))
+    if len(members) < 2:
+        return [], set()
+    used = {c["command"] for c, _ in members}
+    parts = split_members(members, jobs, durs)
+    units = [_make_unit(ms, i if len(parts) > 1 else None) for i, ms in enumerate(parts)]
     return units, used
+
+
+def split_members(members, jobs=1, durs=None):
+    """Split compatible members into at most `jobs` balanced parts (jobs <= 1: one part). Known durations (longest
+    first) balance the parts, else the case count does; members of one file stay together as far as possible."""
+    n = min(max(1, int(jobs or 1)), len(members))
+    if n <= 1:
+        return [list(members)]
+    durs = durs or {}
+    known = all(float(durs.get(c["command"], 0) or 0) > 0 for c, _ in members)
+    w = (lambda m: float(durs[m[0]["command"]])) if known else (lambda m: 1.0)
+    byfile: dict = {}
+    for m in members:
+        byfile.setdefault(m[1][0], []).append(m)
+    items = list(byfile.values())
+    while len(items) < n:  # fewer files than processes: split the heaviest multi-case file
+        cand = [it for it in items if len(it) > 1]
+        if not cand:
+            break
+        big = max(cand, key=lambda it: sum(w(m) for m in it))
+        items.remove(big)
+        big = sorted(big, key=lambda m: -w(m))
+        half = [big[i] for i in range(0, len(big), 2)], [big[i] for i in range(1, len(big), 2)]
+        items += [list(half[0]), list(half[1])]
+    items.sort(key=lambda it: -sum(w(m) for m in it))
+    bins = [[] for _ in range(min(n, len(items)))]
+    load = [0.0] * len(bins)
+    for it in items:
+        i = load.index(min(load))
+        bins[i].extend(it)
+        load[i] += sum(w(m) for m in it)
+    return [b for b in bins if b]
+
+
+def _make_unit(members, idx=None):
+    # One process for the compatible cases of any test files (no project-specific path is assumed).
+    files = list(dict.fromkeys(p[0] for _, p in members))
+    if not any(p[2] for _, p in members):
+        whole = {p[0] for _, p in members if not p[1]}
+        tg = [f for f in files if f in whole]
+        tg += list(dict.fromkeys(f"{p[0]}::{p[1]}" for _, p in members if p[1] and p[0] not in whole))
+        target, sel = " ".join(f'"{t}"' for t in tg), ""
+    else:
+        exprs = []
+        for _, p in members:
+            e = f"({p[2]})" if p[2] else (p[1].split("::")[-1].split("[")[0] if p[1] else Path(p[0]).stem)
+            if e not in exprs:
+                exprs.append(e)
+        target, sel = " ".join(f'"{f}"' for f in files), '-k "' + " or ".join(exprs) + '"'
+    label = files[0] if len(files) == 1 else f"{files[0]}+{len(files) - 1}files"
+    sfx = "" if idx is None else f"#{idx + 1}"
+    return {"id": "BATCH:" + label + sfx, "command": f"BATCH {label}{sfx} {sel}",
+            "_batch": {"file": label + sfx, "target": target, "sel": sel, "members": members}}
+
+
+def kill_tree(proc):
+    """Kill a process and every descendant (Popen.kill() alone leaves browser/pytest children behind)."""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+        else:
+            import signal
+            os.killpg(proc.pid, signal.SIGKILL)
+    except Exception:
+        pass
+    try:
+        proc.kill()
+    except Exception:
+        pass
+
+
+def run_shell(cmd, cwd, timeout):
+    """Run a shell command; on timeout, error or interrupt the whole process tree is killed. Returns (rc, output); rc 124 = timeout."""
+    kw = {"start_new_session": True} if os.name != "nt" else {}
+    proc = subprocess.Popen(cmd, cwd=cwd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                            encoding="utf-8", errors="replace", **kw)
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+        return proc.returncode, out or ""
+    except subprocess.TimeoutExpired:
+        kill_tree(proc)
+        try:
+            proc.communicate(timeout=10)
+        except Exception:
+            pass
+        return 124, f"TIMEOUT after {timeout}s"
+    except BaseException:
+        kill_tree(proc)
+        raise
 
 
 def run_batch(unit, root, logs_dir, timeout, execute_single):
@@ -450,12 +646,8 @@ def run_batch(unit, root, logs_dir, timeout, execute_single):
     junit = logs_dir / f"BATCH-{re.sub(r'[^A-Za-z0-9]+', '_', b['file'])}-{stamp}.xml"
     cmd = f'python -m pytest {b["target"]} {b["sel"]} -q --junitxml="{junit}"'
     t0 = time.time()
-    try:
-        proc = subprocess.run(cmd, cwd=str(root), shell=True, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=timeout)
-        out = (proc.stdout or "") + (proc.stderr or "")
-    except subprocess.TimeoutExpired:
-        out = f"TIMEOUT after {timeout}s"
+    # the merged run's timeout scales with the number of cases it carries
+    _rc, out = run_shell(cmd, str(root), timeout * max(1, len(b["members"])) if timeout else timeout)
     mlog = logs_dir / f"BATCH-{re.sub(r'[^A-Za-z0-9]+', '_', b['file'])}-{stamp}.log"
     mlog.write_text(out, encoding="utf-8")
     tcs = []
@@ -472,17 +664,19 @@ def run_batch(unit, root, logs_dir, timeout, execute_single):
         if not tcs:
             rerun.append(c)
             continue
+        mod = re.sub(r"\.py$", "", f).replace("/", ".")
+        ftcs = [t for t in tcs if ".".join(t[1]) == mod or ".".join(t[1]).startswith(mod + ".")]
         if not node and not k:
-            hit = tcs
+            hit = ftcs
         elif node:
             parts = node.split("::")
             fn = parts[-1]
             base = fn.split("[")[0]
-            hit = [t for t in tcs if (t[0] == fn if "[" in fn else (t[0] == base or t[0].startswith(base + "[")))
+            hit = [t for t in ftcs if (t[0] == fn if "[" in fn else (t[0] == base or t[0].startswith(base + "[")))
                    and (len(parts) == 1 or parts[-2] in t[1])]
         else:
             ex = Expression.compile(k)
-            hit = [t for t in tcs if ex.evaluate(_kmatcher([t[0], *t[1], Path(f).name, Path(f).stem]))]
+            hit = [t for t in ftcs if ex.evaluate(_kmatcher([t[0], *t[1], Path(f).name, Path(f).stem]))]
         if not hit or any(t[3] for t in hit):
             rerun.append(c)
             continue
@@ -503,7 +697,12 @@ def cmd_run(args, root, cfg) -> int:
         sel = [find(data, cid) for cid in want]
     else:
         base = args.base or h.default_base(root, cfg)
-        sel = select_cases(root, cfg, data, args.select, base)
+        why = {}
+        sel = select_cases(root, cfg, data, args.select, base, reasons=why)
+        for c in sel:
+            print(f"select {c['id']}: {why.get(c['id'], '')}")
+        if args.select == "changed":
+            print(f"select: {len(sel)}/{len(data['cases'])} cases")
     sel = [c for c in sel if c.get("status") != "blocked" or args.cases]
     if args.canary_first:
         sel.sort(key=lambda c: not c.get("canary"))
@@ -526,12 +725,7 @@ def cmd_run(args, root, cfg) -> int:
             return c, None
         t0 = time.time()
         log = logs_dir / f"{c['id']}-{h.new_run_id()}.log"
-        try:
-            proc = subprocess.run(c["command"], cwd=str(root), shell=True, capture_output=True, text=True,
-                                  encoding="utf-8", errors="replace", timeout=args.case_timeout)
-            rc, out = proc.returncode, (proc.stdout or "") + (proc.stderr or "")
-        except subprocess.TimeoutExpired:
-            rc, out = 124, f"TIMEOUT after {args.case_timeout}s"
+        rc, out = run_shell(c["command"], str(root), args.case_timeout)
         dur = round(time.time() - t0, 1)
         log.write_text(out, encoding="utf-8")
         return c, (rc, dur, log)
@@ -579,7 +773,7 @@ def cmd_run(args, root, cfg) -> int:
     rest = [c for c in reps if c not in first]
     batched = 0
     if not args.no_batch and (cfg.get("system_test") or {}).get("batch_pytest", True):
-        units, used = plan_batches(rest, groups, is_serial, is_canary)
+        units, used = plan_batches(rest, groups, is_serial, is_canary, jobs, durs)
         for u in units:
             groups[u["command"]] = [x for m, _ in u["_batch"]["members"] for x in groups[m["command"]]]
         rest = [c for c in rest if c["command"] not in used] + units
@@ -714,6 +908,8 @@ def main(argv=None) -> int:
     a.add_argument("--command", required=True)
     a.add_argument("--canary", action="store_true")
     a.add_argument("--reason", default="")
+    a.add_argument("--new-case-reason", default="",
+                   help="同じ AC の有効なケースがあっても別のケースにする理由（既定では拒否し、update での拡張を促す）")
     u = sub.add_parser("update")
     u.add_argument("id")
     u.add_argument("--command")

@@ -35,13 +35,18 @@ input[type=checkbox],input[type=radio]{width:var(--size-icon-lg);height:var(--si
 .brand{display:flex;align-items:center;gap:var(--space-2);color:var(--color-fg-default);text-decoration:none;font-size:var(--font-size-subtitle);white-space:nowrap;padding:var(--space-1);border-radius:var(--radius-md)}
 .brand b{color:var(--color-fg-link)}
 .tabs{display:flex;flex-wrap:wrap;gap:var(--space-1);flex:1 1 0;min-width:0}
-/* FR-1072 AC-391/392: ヘッダーは常に 1 本の横一列の帯。溢れたら帯だけが横スクロール（ページ本体は不可） */
-.top{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;max-width:100%;scrollbar-width:thin}
-.top>*{flex:0 0 auto}
-.top .row,.top .hdr-dim,.top .hdr-dim-host,.top .theme-toggle{flex-wrap:nowrap}
-.tabs{flex:0 0 auto;flex-wrap:nowrap}
-.top .search{margin-left:auto}
+/* FR-1072 AC-391/392: ヘッダーは幅に応じて複数段に自動で折り返し、高さは自動で伸びる（横スクロール・切り取りなし） */
+.top{flex-wrap:wrap;overflow:visible;max-width:100%;box-sizing:border-box}
+.top>*{flex:0 0 auto;max-width:100%}
+.top .row,.top .hdr-dim,.top .hdr-dim-host,.top .theme-toggle{flex-wrap:wrap}
+.tabs{flex:1 1 auto;flex-wrap:wrap;min-width:0}
+.top .search{margin-left:auto;max-width:100%}
 .top .chip,.top #personaBar button,.top #lang{white-space:nowrap}
+/* NFR-UX-002: 配置の切替（data-layout は layout.js が設定。default は何も上書きしない） */
+.layout-ctl{display:inline-flex;gap:var(--space-1);flex-wrap:nowrap}
+html[data-layout=compact] #view{padding:var(--space-2)}
+html[data-layout=compact] .top{padding:var(--space-1) var(--space-2)}
+html[data-layout=wide] #view{padding-inline:var(--space-6)}
 .draw{animation:draw var(--duration-slow) var(--ease-decelerate) both;stroke-dasharray:var(--len)}
 @keyframes draw{from{stroke-dashoffset:var(--len)}to{stroke-dashoffset:0}}
 .tabs a{padding:var(--space-1) var(--space-3);min-height:var(--size-control);border-radius:var(--radius-md);color:var(--color-fg-muted);text-decoration:none;white-space:nowrap;transition:background var(--duration-fast),color var(--duration-fast);display:flex;gap:var(--space-2);align-items:center}
@@ -71,6 +76,32 @@ input[type=checkbox],input[type=radio]{width:var(--size-icon-lg);height:var(--si
 @keyframes dim-bob{50%{transform:translateY(calc(var(--stroke-focus) * -1))}}
 .dgmtabs .dim-toggle{margin-left:auto}
 .dim-float{position:absolute;right:var(--space-4);bottom:var(--space-4);z-index:8}
+/* FR-1079: Graph 表示。色はトークンだけ。種類は図柄と語でも示し、選択は太い枠で示す。動きは使わない（動きの軽減の設定にも自動で従う）。 */
+.gv{display:flex;flex-direction:column;gap:var(--space-3)}
+.gv-scroll{overflow:auto;max-height:calc(100vh - 280px);min-height:240px;border:var(--stroke-container) solid var(--color-border-default);border-radius:var(--radius-container);background:var(--color-bg-surface)}
+.gv-svg{display:block}
+.gv-edge{stroke:var(--color-border-strong);stroke-width:1.5}
+.gv-edge.hi{stroke:var(--color-accent);stroke-width:3}
+.gv-arrowhead{fill:var(--color-border-strong)}
+.gv-node{cursor:pointer}
+.gv-box{fill:var(--color-bg-raised);stroke:var(--color-border-strong);stroke-width:1}
+.gv-bar{fill:currentColor}
+.gv-ico{color:inherit;stroke:currentColor}
+.gv-id{fill:var(--color-fg-default);font:600 11px var(--font-mono)}
+.gv-title{fill:var(--color-fg-muted);font-size:11px}
+.gv-node:hover .gv-box{fill:var(--color-bg-hover)}
+.gv-node.sel .gv-box{fill:var(--color-bg-selected);stroke:var(--color-accent);stroke-width:3}
+.gv-node.sel .gv-title{fill:var(--color-fg-default);font-weight:600}
+.gv-node:focus{outline:none}
+.gv-node:focus-visible .gv-box{stroke:var(--color-focus);stroke-width:3;stroke-dasharray:6 3}
+.gv-legend{display:flex;flex-wrap:wrap;gap:var(--space-3);margin:0;padding:0;list-style:none;font-size:var(--font-size-caption);color:var(--color-fg-muted)}
+.gv-legend li{display:inline-flex;align-items:center;gap:var(--space-1)}
+.gv-key{display:inline-flex}.gv-key .icon{stroke:currentColor}
+.gv-filter{padding:var(--space-3);border:var(--stroke-container) solid var(--color-border-default);border-radius:var(--radius-container);background:var(--color-bg-raised)}
+.gv-filter p{margin:0 0 var(--space-2)}
+.gv-chips{display:flex;flex-wrap:wrap;gap:var(--space-2)}
+.gv-chips .btn.on{background:var(--color-accent);color:var(--color-on-accent)}
+.gv-page{display:flex;flex-direction:column;gap:var(--space-3)}
 .hdr-dim-host{display:flex;align-items:center}.hdr-dim .dim-btn:disabled{opacity:.5;cursor:not-allowed}.hdr-dim-reason{max-width:16ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dgm3d{position:relative;height:min(68vh,720px);min-height:320px}
 .dgm3d-stage{position:absolute;inset:0 0 24px 0;border:var(--stroke-thin) solid var(--color-border-default);border-radius:var(--radius-md);background:var(--scene-stage-bg);touch-action:none}
@@ -97,6 +128,7 @@ main{flex:1;min-height:0;position:relative;z-index:0;overflow:hidden}
 .page h1{margin:0 0 var(--space-1);font-size:var(--font-size-title);line-height:var(--line-height-title)}
 .page .sub{color:var(--color-fg-muted);margin:0 0 var(--space-5)}
 .fill{position:absolute;inset:0}
+canvas.fill{width:100%;height:100%}
 .grid{display:grid;gap:var(--space-4)}
 .card{background:var(--color-bg-surface);border:var(--stroke-container) solid var(--color-border-default);border-radius:var(--radius-container);padding:var(--space-4);box-shadow:var(--elevation-card)}
 .card h3{margin:0 0 var(--space-3);font-size:var(--font-size-body);color:var(--color-fg-muted);font-weight:var(--font-weight-semibold);text-transform:uppercase}
@@ -417,3 +449,10 @@ i[data-testid=chart-segment]{min-width:var(--space-6)}
 .cam3d button:focus-visible{outline:2px solid var(--color-accent);outline-offset:1px}
 .nowebgl{margin:var(--space-4)}
 .dgm3d .cam3d{bottom:32px;max-height:60%}
+/* 動的な可視化（FR-1080）: ホバー・フォーカスの強調、ほかの減光、ツールチップ（js/viz.js）。動きの軽減では即時（--duration-instant）。 */
+[data-viz] [data-dim="true"]{opacity:.45}
+[data-viz] [data-hover="true"]{outline:2px solid var(--color-accent);outline-offset:1px}
+[data-viz] [data-viz-key]{transition:opacity var(--duration-fast)}
+.viz-tooltip{position:fixed;z-index:90;pointer-events:none;transform:translate(-50%,-100%);background:var(--color-bg-surface);color:var(--color-fg-default);border:var(--stroke-overlay) solid var(--color-border-strong);border-radius:var(--radius-tooltip);padding:var(--space-1) var(--space-3);max-width:360px;font-size:var(--font-size-caption);line-height:var(--line-height-caption);box-shadow:var(--elevation-flyout)}
+.viz-tooltip[hidden]{display:none}
+@media (prefers-reduced-motion: reduce){[data-viz] [data-viz-key]{transition-duration:var(--duration-instant)}}

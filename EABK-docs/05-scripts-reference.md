@@ -1,3 +1,5 @@
+**日本語** | [English](05-scripts-reference.en.md)
+
 # 5. スクリプトリファレンス
 
 すべてのスクリプトは、Python 3.9 以上の標準ライブラリだけで動きます。リポジトリのどこから実行しても、git のルートを基準に動作します。詳しい使い方は `--help` で表示できます。出力は短く、LLM がそのまま読める形式です（1 行に 1 指摘、最後に 1 行の要約）。
@@ -29,7 +31,10 @@ python scripts/rdcheck.py list --state 承認済み --priority MUST
 python scripts/rdcheck.py list --level system          # System Test の対象になる AC
 python scripts/rdcheck.py list --area 受付              # 領域で絞る（--by-area で領域ごとにまとめる。廃止は件数に含めない）
 python scripts/rdcheck.py index FR-012 [--kind 検証] [--json]   # 種類（上位・出典・参照・実装・検証・使用）つきの関係。保存せず都度生成。ID を渡すと逆引き
-python scripts/rdcheck.py stats                        # 監査のメトリクス（JSON）
+python scripts/rdcheck.py stats                        # 監査のメトリクス（JSON。similar_pairs = 似た要求・AC の組、ledger_shared_acs = 同じ AC の重複ケース）
+python scripts/rdcheck.py similar "入力を中断して再開できる"   # 新規に作る前に、似た既存の要求・AC を類似度の高い順に表示（--kind FR|AC|CASE|CAT、--top N、--min 0.2）
+python scripts/rdcheck.py similar FR-012               # 既存の項目に似た項目
+python scripts/rdcheck.py similar --pairs [--min 0.35] [--kind CASE] [--json] # 似た要求・AC・System Test のケース・カタログの行の組（統合の候補。同じ要求の中の AC どうし、同じ要求に紐づくケースどうしは除く）。統合は `/dedupe` で行う
 python scripts/rdcheck.py digest AC-031                # AC のダイジェスト
 python scripts/rdcheck.py trace FR-012 [--json]        # 要求の上流（G・出典）・横（用語・状態・PARAM）・下流（AC・台帳のケース・カタログ・コード）をたどる
 python scripts/rdcheck.py trace G-002 申請 PARAM-004 下書き保存   # 目的・エンティティ・PARAM・共通部品から、関係する要求を逆にたどる（影響分析）
@@ -105,6 +110,8 @@ python scripts/ledger.py --by conductor run --select changed|failed|all [--canar
 python scripts/ledger.py run --cases E2E-001,IT-002 --no-record   # 作業役の worktree で、台帳を更新せずに実行だけする
 ```
 
+`--select changed` は git diff の追加・変更行に現れる要求 ID・AC ID に対応するケースを優先して選び、ケースごとに `select <ケース ID>: <理由>` を出力します。共通コードの変更・diff を解析できない・変更行に ID がない場合は従来どおり広げ、理由に「広げた」と出します（広げた集合は従来の選択を必ず含みます）。
+
 `run` の出力は、元の Prompt が定める報告形式（`<id> <requirement_ids> <pass|fail> <秒> <証跡>` と `結果: …`）です。結果の詳細は `work/runs/<run-id>/results.json` にあります。
 
 ## select-tests.py（影響範囲のテスト選択）
@@ -159,7 +166,7 @@ python scripts/run-state.py land [--wait 1800]    # 全件完了の run を main
 ## integrate.py（worktree のプールと統合。実装ループ）
 
 ```bash
-python scripts/integrate.py prepare I-01                       # プールの worktree を割り当て、work/<run-id>/I-01 を作り、doing にする
+python scripts/integrate.py prepare I-01                       # プールの worktree を割り当て、work/<run-id>/I-01 を作り、doing にする（主の性能基準証跡は commit・sha256 が一致するときだけ配置）
 python scripts/integrate.py merge I-01 --summary "…"           # 統合: merge → verify --quick → System Test → 台帳の commit → 解放 → done
 python scripts/integrate.py merge I-01 --full                  # verify の slow なコマンドも実行する（5 項目ごとに自動）
 python scripts/integrate.py abandon I-01 [--blocked] [--reason "…"]   # todo（または blocked）に戻し、worktree を解放する
@@ -182,7 +189,7 @@ python scripts/kpi.py history                      # docs/run-history.md 全体�
 
 North Star は「人の介入 1 回あたりの検証済み要求」です。**検証済み要求**は、実装した要求のうち、承認済みで、カタログの行があり、BLOCKED の AC がなく、system の AC がすべて台帳で `pass` のものです。検証済みにならなかった要求は、理由（「カタログの行がない」など）を表示します。指標と目標は [08-roadmap.md の 8.2](08-roadmap.md#82-kpi) にあります。
 
-流れ（速さ）の指標として、工程ごとの時間、実装ループの実効の並列度（項目の作業時間の合計 ÷ ループの経過時間）、項目 1 件あたりの作業時間、統合の直列時間とその割合、実際に使ったモデル（hook G-7 が記録する `work/runs/<run-id>/models.jsonl`）も出力します。遅い run では、まずこの表で、並列度が低いのか（作業役の待ち）、統合の直列時間が長いのか（verify・System Test の重さ）を切り分けます。
+流れ（速さ）の指標として、工程ごとの時間、実装ループの実効の並列度（項目の作業時間の合計 ÷ ループの経過時間）、項目 1 件あたりの作業時間、統合の直列時間とその割合、実際に使ったモデル（hook が記録する `work/runs/<run-id>/models.jsonl`）も出力します。遅い run では、まずこの表で、並列度が低いのか（作業役の待ち）、統合の直列時間が長いのか（verify・System Test の重さ）を切り分けます。
 
 ## import-speckit.py（GitHub Spec Kit からの取り込み）
 
@@ -210,7 +217,7 @@ python scripts/adopt.py golden record|check|list [NAME] [--update]
 python scripts/clean-work.py [--days 14] [--dry-run]
 ```
 
-全件完了 run を main に統合し、統合後 verify と清掃前版 run-report の確定まで成功した場合だけ、run 所有の pool worktree、作業ブランチ、統合ブランチ、一時資産を清掃します。`--dry-run` は候補・保護理由・予定操作を表示します。`--days` は互換性のため受け付けますが、失敗・中止・未達 run は自動期限なく保持されます。削除直前に run 記録、Git 登録、正規化した実体パス、dirty/lock/保護状態を再検査します。部分失敗は診断を report に残して非 0 となり、再実行時は削除済みを成功済みとして残存候補だけを扱います。
+全件完了 run を main に統合し、統合後 verify と清掃前版 run-report の確定まで成功した場合だけ、run 所有の pool worktree、作業ブランチ、統合ブランチ、一時資産、および統合ブランチをチェックアウトしている run 専用 worktree（`run-worktree`。未コミット変更があれば保持。`work/runs/<id>` は主へ退避）を清掃します。`--dry-run` は候補・保護理由・予定操作を表示します。`--days` は互換性のため受け付けますが、失敗・中止・未達 run は自動期限なく保持されます。削除直前に run 記録、Git 登録、正規化した実体パス、dirty/lock/保護状態を再検査します。部分失敗は診断を report に残して非 0 となり、再実行時は削除済みを成功済みとして残存候補だけを扱います。
 
 ## watch.py（run の監視。残留プロセスと項目の時間超過）
 
