@@ -70,7 +70,8 @@ public sealed record StyleTemplatePlan(
     IReadOnlyList<StyleTemplateFreeTelop> FreeTelops,
     IReadOnlyList<StandardSoundEffectCue> SoundEffects,
     IReadOnlyList<StyleTemplateWarning> Warnings,
-    IReadOnlyList<StyleTemplatePortraitShot>? PortraitShots = null)
+    IReadOnlyList<StyleTemplatePortraitShot>? PortraitShots = null,
+    bool NameLabels = false)
 {
     public IReadOnlyList<StyleTemplatePortraitShot> Portraits => PortraitShots ?? [];
 
@@ -240,7 +241,8 @@ public static class StyleTemplateApplier
             options.SoundEffectsEnabled, cueTexts, soundTelops, options.OutputDuration);
 
         return new StyleTemplatePlan(template.Reference, textColor, outlineColor, emphasisColors, fonts,
-            brand?.LogoReference, template.Placement, minimumCount, captions, emphasis, free, sounds, warnings, portraits);
+            brand?.LogoReference, template.Placement, minimumCount, captions, emphasis, free, sounds, warnings, portraits,
+            NameLabels: brand is not null);
     }
 
     private static bool Accepts(StyleTemplateDefinition template, StyleTemplateFreeTelopInput input,

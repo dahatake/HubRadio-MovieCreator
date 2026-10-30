@@ -729,7 +729,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
                 const opener = workspace.current?.querySelector<HTMLElement>('#workflow-open-settings')
                 if (opener) openSettings(opener)
               }}
-              styleTemplateId={styleTemplateId} onStyleTemplateChange={setStyleTemplateId}
+              styleTemplateId={styleTemplateId} onStyleTemplateChange={setStyleTemplateId} projectId={activeProjectId}
               onConfirm={createJob} />
             <ProjectJobList versions={jobs} status={pipeline.state.versionsStatus} copy={jobSettingsCopy} projectId={activeProjectId} />
           </div>}

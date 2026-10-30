@@ -121,7 +121,12 @@
     { "$ref": "#/$defs/jobExportResponse" },
     { "$ref": "#/$defs/portraitsListRequest" },
     { "$ref": "#/$defs/portraitsRegisterRequest" },
-    { "$ref": "#/$defs/portraitsResponse" }
+    { "$ref": "#/$defs/portraitsCropRequest" },
+    { "$ref": "#/$defs/speakersGetRequest" },
+    { "$ref": "#/$defs/speakersAssignRequest" },
+    { "$ref": "#/$defs/speakersConfirmRequest" },
+    { "$ref": "#/$defs/portraitsResponse" },
+    { "$ref": "#/$defs/speakersResponse" }
   ],
   "$defs": {
     "portraitsProtocolLimits": {
@@ -162,7 +167,99 @@
       "required": ["version", "requestId", "method", "result"],
       "properties": {
         "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
-        "method": { "enum": ["portraits.list", "portraits.register"] }, "result": { "$ref": "#/$defs/portraitsResult" }
+        "method": { "enum": ["portraits.list", "portraits.register", "portraits.crop"] }, "result": { "$ref": "#/$defs/portraitsResult" }
+      }
+    },
+    "portraitsCropRequest": {
+      "$comment": "FR-140. Cuts one character out of a registered image (a pixel range inside it). The cut-out is registered as a new standing picture that inherits the rights confirmation of the source (NFR-BR-004); the source image is never changed. The response is the portraitsResult. Needs the same permission as portraits.register.",
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "portraits.crop" }, "params": { "$ref": "#/$defs/portraitsCropParams" }
+      }
+    },
+    "portraitsCropParams": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sourceId", "name", "x", "y", "width", "height"],
+      "properties": {
+        "sourceId": { "type": "string", "pattern": "^char-[0-9a-f]{12}$(?![\\s\\S])" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "x": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "y": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "width": { "type": "integer", "minimum": 0, "maximum": 32768 },
+        "height": { "type": "integer", "minimum": 0, "maximum": 32768 }
+      }
+    },
+    "speakersGetRequest": {
+      "$comment": "FR-140. Reads the speaker assignment of a Project (read-only).",
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "speakers.get" }, "params": { "$ref": "#/$defs/speakersProjectParams" }
+      }
+    },
+    "speakersConfirmRequest": {
+      "$comment": "FR-140. The user's confirmation (確認して確定) of the draft; only a confirmed assignment reaches the output.",
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "speakers.confirm" }, "params": { "$ref": "#/$defs/speakersProjectParams" }
+      }
+    },
+    "speakersProjectParams": {
+      "type": "object", "additionalProperties": false,
+      "required": ["projectId"],
+      "properties": { "projectId": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\\s\\S])" } }
+    },
+    "speakersAssignRequest": {
+      "$comment": "FR-140. With cueIndex null the system estimates the speakers (話者を割り当てる): a draft that reaches no output until confirmed. With a cueIndex the speaker of that displayed cue is changed (speakerId null clears it); the result is a draft again.",
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "speakers.assign" }, "params": { "$ref": "#/$defs/speakersAssignParams" }
+      }
+    },
+    "speakersAssignParams": {
+      "type": "object", "additionalProperties": false,
+      "required": ["projectId", "cueIndex", "speakerId"],
+      "properties": {
+        "projectId": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\\s\\S])" },
+        "cueIndex": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0, "maximum": 9999 }] },
+        "speakerId": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^char-[0-9a-f]{12}$(?![\\s\\S])" }] }
+      }
+    },
+    "speakersResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "enum": ["speakers.get", "speakers.assign", "speakers.confirm"] }, "result": { "$ref": "#/$defs/speakersResult" }
+      }
+    },
+    "speakersResult": {
+      "$comment": "state is none (nothing assigned), draft (下書き（未確認）) or confirmed (確定済み). A draft is never reported as confirmed. At most 200 assignments are returned. No path, exception text or SID.",
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "state", "label", "estimated", "assignments"],
+      "properties": {
+        "status": { "enum": ["ok", "forbidden", "invalid", "unavailable"] },
+        "state": { "enum": ["none", "draft", "confirmed"] },
+        "label": { "type": "string", "maxLength": 40 },
+        "estimated": { "type": "boolean" },
+        "assignments": {
+          "type": "array", "maxItems": 200,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["cueIndex", "speakerId"],
+            "properties": {
+              "cueIndex": { "type": "integer", "minimum": 0, "maximum": 9999 },
+              "speakerId": { "type": "string", "pattern": "^char-[0-9a-f]{12}$(?![\\s\\S])" }
+            }
+          }
+        }
       }
     },
     "portraitsResult": {
@@ -889,7 +986,11 @@
         "stitch.run",
         "results.export",
         "portraits.list",
-        "portraits.register"
+        "portraits.register",
+        "portraits.crop",
+        "speakers.get",
+        "speakers.assign",
+        "speakers.confirm"
       ]
     },
     "projectMethod": {

@@ -138,6 +138,31 @@ internal static class StandardTemplateSubtitles
                 .Append(SubtitleWriterContract.EscapeAssText(line.Input.Text)).Append('\n');
         }
 
+        if (plan.NameLabels)
+        {
+            // FR-140: a brand-fixed Project keeps the brand color, so each character is also told apart by a name label above the
+            // standing picture (the registered name, never text written for the line).
+            foreach (StyleTemplatePortraitShot shot in plan.Portraits.Where(item =>
+                item.Range.Start >= cue.Cue.Range.Start && item.Range.Start < cue.Cue.Range.End).OrderBy(static item => item.Range.Start))
+            {
+                long start = StandardTemplateAss.Centiseconds(shot.Range.Start);
+                long end = StandardTemplateAss.Centiseconds(shot.Range.End);
+                int frameWidth = right - left;
+                int frameHeight = bottom - top;
+                int labelLeft = left + (int)Math.Round(frameWidth * shot.Left);
+                int labelRight = left + (int)Math.Round(frameWidth * (shot.Left + shot.Width));
+                int labelBottom = top + (int)Math.Round(frameHeight * shot.Top);
+                int labelTop = Math.Max(top, labelBottom - (int)Math.Round(frameHeight * 0.06));
+                string labelBackground = StyleTemplateColor.EnsureBackground(plan.TextColor, plan.OutlineColor);
+                string labelPlacement = FormattableString.Invariant(
+                    $"\\an5\\pos({(labelLeft + (long)labelRight) / 2m},{(labelTop + (long)labelBottom) / 2m})\\clip({labelLeft},{labelTop},{labelRight},{labelBottom})\\q2");
+                _ = lines.Append("Dialogue: 0,").Append(StandardTemplateAss.Timestamp(start)).Append(',')
+                    .Append(StandardTemplateAss.Timestamp(end)).Append(',').Append(style).Append(Marker)
+                    .Append('{').Append(labelPlacement).Append(font).Append(StandardTemplateAss.Colors(plan.TextColor, labelBackground)).Append('}')
+                    .Append(SubtitleWriterContract.EscapeAssText(shot.CharacterName)).Append('\n');
+            }
+        }
+
         string result = document[..(dialogue + 1)] + lines.ToString().TrimEnd('\n') + "\n";
         return new SubtitleExportFile(plain.Format, plain.CueCount, plain.TimestampRuleVersion,
             new UTF8Encoding(false, true).GetBytes(result));

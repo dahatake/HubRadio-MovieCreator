@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useRef } from 'react'
 import { orientationLabel, styleTemplateOptions, type StyleTemplateOption } from './styleTemplates'
 
 /**
@@ -14,11 +14,14 @@ export function StyleTemplatePicker({ selectedId, onSelect, options = styleTempl
   portraitCount?: number
 }>) {
   const name = useId()
+  const list = useRef<HTMLUListElement>(null)
   return <fieldset className="style-template-picker" disabled={disabled}>
     <legend>演出テンプレート（任意）</legend>
+    {/* The one control with the plain name 演出テンプレート: it moves the focus to the chosen (or first) template and never changes the choice. */}
+    <button type="button" className="style-template-jump" onClick={() => list.current?.querySelector<HTMLInputElement>('input[type="radio"]:checked, input[type="radio"]:not(:disabled)')?.focus()}>演出テンプレート</button>
     <p className="style-template-hint">選ぶだけで、字幕・強調テロップ・動き・効果音・配置・書体がまとめて適用されます。選ばない場合は、いつもの仕上がりになります。</p>
     {options.length === 0 && <p role="status">利用できる演出テンプレートはありません。</p>}
-    <ul className="style-template-list">
+    <ul className="style-template-list" ref={list}>
       <li>
         <label className="style-template-card">
           <input type="radio" name={name} checked={selectedId === null} onChange={() => onSelect(null)} />
@@ -30,7 +33,7 @@ export function StyleTemplatePicker({ selectedId, onSelect, options = styleTempl
         const locked = option.requiresPortraits === true && portraitCount === 0
         return <li key={option.id}>
         <label className="style-template-card" data-selected={selectedId === option.id} data-locked={locked}>
-          <input type="radio" name={name} checked={selectedId === option.id} disabled={locked} onChange={() => onSelect(option.id)} />
+          <input type="radio" name={name} aria-label={option.name} checked={selectedId === option.id} disabled={locked} onChange={() => onSelect(option.id)} />
           <span className="style-template-name">{option.name}<span className="style-template-orientation">{orientationLabel(option.orientation)}</span></span>
           <span className="style-template-purpose">{option.purpose}</span>
           <span className="style-template-sample" role="img" aria-label={`見た目の例: ${option.previewDescription}`}

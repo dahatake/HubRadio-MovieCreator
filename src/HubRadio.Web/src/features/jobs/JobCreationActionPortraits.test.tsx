@@ -24,7 +24,7 @@ describe('JobCreationAction standing-picture registration', () => {
   it('locks the character dialogue template while nothing is registered and unlocks it from the registered list, showing the saved rights state', async () => {
     const list = vi.fn(() => Promise.resolve(listed([])))
     const register = vi.fn(() => Promise.resolve(listed([entry])))
-    render({ list, register, dispose: vi.fn() })
+    render({ list, register, crop: vi.fn(), dispose: vi.fn() })
     await flush()
     expect(list).toHaveBeenCalledTimes(1)
     expect(dialogueRadio().disabled).toBe(true)
@@ -50,7 +50,7 @@ describe('JobCreationAction standing-picture registration', () => {
   })
 
   it('shows a closed message when registration is refused and keeps the template locked', async () => {
-    render({ list: vi.fn(() => Promise.resolve(listed([]))), register: vi.fn(() => Promise.resolve({ status: 'invalid', portraitCount: 0, portraits: [] } as PortraitOutcome)), dispose: vi.fn() })
+    render({ list: vi.fn(() => Promise.resolve(listed([]))), register: vi.fn(() => Promise.resolve({ status: 'invalid', portraitCount: 0, portraits: [] } as PortraitOutcome)), crop: vi.fn(), dispose: vi.fn() })
     await flush()
     expect(dialogueRadio().disabled).toBe(true)
   })
