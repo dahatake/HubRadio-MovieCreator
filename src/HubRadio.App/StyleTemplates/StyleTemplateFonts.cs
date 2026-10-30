@@ -80,6 +80,18 @@ public static class StyleTemplateFonts
     public static string ReadFamily(StyleTemplateBundledFont font, string? directory = null) =>
         ReadName(Verified(font, directory ?? DefaultDirectory), 1) ?? throw new InvalidDataException("The font file has no family.");
 
+    /// <summary>
+    /// FR-139: copies a bundled typeface (after its SHA-256 and license are checked) into the renderer's font folder and returns the
+    /// copied path. A missing or altered file fails closed.
+    /// </summary>
+    public static string CopyVerified(StyleTemplateBundledFont font, string destinationDirectory, string? sourceDirectory = null)
+    {
+        byte[] bytes = Verified(font, sourceDirectory ?? DefaultDirectory);
+        string path = Path.Combine(destinationDirectory, font.FileName);
+        File.WriteAllBytes(path, bytes);
+        return path;
+    }
+
     private static byte[] Verified(StyleTemplateBundledFont font, string directory)
     {
         string path = Path.Combine(directory, font.FileName);

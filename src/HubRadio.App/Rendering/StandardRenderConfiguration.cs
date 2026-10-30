@@ -49,6 +49,28 @@ public sealed class StandardRenderConfiguration
 
     private StyleTemplates.StyleTemplateDefinition? styleTemplate;
 
+    /// <summary>
+    /// FR-137 (6): the registered characters (standing pictures) and the folder holding their image files. Used only with a template
+    /// that has the dialogue free telop; the app bundles no picture.
+    /// </summary>
+    public IReadOnlyList<StyleTemplates.CharacterPortrait> Characters { get; private set; } = [];
+
+    public string? PortraitImageDirectory { get; private set; }
+
+    /// <summary>FR-137 (6): the dialogue lines (text, time, speaker character ID) of the character dialogue.</summary>
+    public IReadOnlyList<StyleTemplates.StyleTemplateFreeTelopInput> DialogueLines { get; private set; } = [];
+
+    /// <summary>The same configuration with the registered characters and the dialogue lines of a character dialogue.</summary>
+    internal StandardRenderConfiguration WithCharacterDialogue(IReadOnlyList<StyleTemplates.CharacterPortrait> characters,
+        string? imageDirectory, IReadOnlyList<StyleTemplates.StyleTemplateFreeTelopInput> lines)
+    {
+        var copy = (StandardRenderConfiguration)MemberwiseClone();
+        copy.Characters = characters ?? [];
+        copy.PortraitImageDirectory = imageDirectory;
+        copy.DialogueLines = lines ?? [];
+        return copy;
+    }
+
     /// <summary>The same resolved settings with a production template (null removes it).</summary>
     internal StandardRenderConfiguration WithStyleTemplate(StyleTemplates.StyleTemplateDefinition? template)
     {

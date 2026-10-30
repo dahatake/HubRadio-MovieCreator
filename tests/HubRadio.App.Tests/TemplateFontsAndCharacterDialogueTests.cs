@@ -4,6 +4,7 @@ using HubRadio.App.Rendering;
 using HubRadio.App.StyleTemplates;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Provenance;
+using HubRadio.Core.Rendering;
 using HubRadio.Core.Time;
 using HubRadio.Infrastructure.Subtitles;
 
@@ -284,6 +285,118 @@ public sealed class TemplateFontsAndCharacterDialogueTests
             .Any(file => images.Contains(Path.GetExtension(file).ToLowerInvariant())));
         Assert.IsFalse(Directory.Exists(Path.Combine(AppContext.BaseDirectory, "Portraits")));
         Assert.AreEqual(0, new CharacterPortraitStore(Path.Combine(Path.GetTempPath(), "hubradio-none-" + Guid.NewGuid().ToString("N"))).Count);
+    }
+
+    // AC-160: the renderer's font folder receives the verified bundled typefaces (so \fn is really drawn); an altered file fails closed.
+    [TestMethod]
+    [TestCategory("FR-139")]
+    public void AC160_TheBundledTypefacesAreCopiedVerifiedIntoTheRendererFontFolderAndAnAlteredOneFailsClosed()
+    {
+        string root = TempDirectory();
+        try
+        {
+            string output = Directory.CreateDirectory(Path.Combine(root, "fonts")).FullName;
+            foreach (StyleTemplateBundledFont font in StyleTemplateFonts.All)
+            {
+                string copied = StyleTemplateFonts.CopyVerified(font, output);
+                Assert.AreEqual(Path.Combine(output, font.FileName), copied);
+                Assert.AreEqual(font.Sha256, Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(copied))));
+            }
+
+            string altered = Directory.CreateDirectory(Path.Combine(root, "altered")).FullName;
+            foreach (string file in Directory.GetFiles(StyleTemplateFonts.DefaultDirectory))
+            {
+                File.Copy(file, Path.Combine(altered, Path.GetFileName(file)));
+            }
+
+            File.AppendAllText(Path.Combine(altered, StyleTemplateFonts.PottaOne.FileName), "x");
+            _ = Assert.ThrowsExactly<InvalidDataException>(() => StyleTemplateFonts.CopyVerified(StyleTemplateFonts.PottaOne, output, altered));
+            File.Delete(Path.Combine(altered, StyleTemplateFonts.NotoSansJpBlack.LicenseFileName));
+            _ = Assert.ThrowsExactly<FileNotFoundException>(() => StyleTemplateFonts.CopyVerified(StyleTemplateFonts.NotoSansJpBlack, output, altered));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    // AC-160: the emphasis telop of a template is lettered in Noto Sans JP Black (a bundled family); without a template nothing changes.
+    [TestMethod]
+    [TestCategory("FR-139")]
+    public async Task AC160_TheEmphasisTelopUsesNotoSansJpBlackOnlyWithATemplate()
+    {
+        using StandardGenerationFixture fixture = await StandardGenerationFixture.CreateAsync();
+        StandardRenderConfiguration configuration = fixture.Request().Configuration;
+        StandardRenderGraphOutput output = StandardRenderGraphFactory.Create(fixture.Preparation, fixture.Asset, fixture.Geometry, true,
+            fixture.Subtitles, fixture.Font.Evidence, configuration: configuration);
+        RenderNode video = output.Graph.Nodes.First(static node => node.Kind == RenderNodeKind.Video);
+        RationalTime duration = output.Graph.Nodes.Single(node => node.Id == output.Graph.OutputNodeId).OutputRange.Duration;
+        var range = new TimeRange(duration - new RationalTime(1, 1), new RationalTime(1, 1));
+        var telop = new StandardEmphasisTelop(range, "すごい！", OriginRef.FromSourceSpan(EntityId<SourceSpanIdTag>.New()), "test");
+
+        string Lettering(StyleTemplatePlan? styled)
+        {
+            IReadOnlyList<StandardGraphicRenderFile> files = StandardMetadataGraphics.Create(fixture.Preparation.Plan, null, video.Id,
+                output.ValidationContext.Profile, duration, duration, fixture.Font.Evidence, configuration, [telop], styled);
+            return string.Concat(files.Where(static file => file.Evidence.Role == "EmphasisTelop")
+                .Select(static file => Encoding.UTF8.GetString(file.File.GetUtf8Bytes())));
+        }
+
+        string plain = Lettering(null);
+        Assert.IsTrue(plain.Contains("すごい", StringComparison.Ordinal));
+        Assert.IsFalse(plain.Contains(@"\fn", StringComparison.Ordinal));
+        foreach (StyleTemplateDefinition template in StyleTemplateCatalog.All)
+        {
+            var styled = new StyleTemplatePlan(template.Reference, template.TextColor, template.OutlineColor, template.EmphasisColors,
+                template.FontFamilies, null, template.Placement, 0, [], [new StyleTemplateTelop(telop, template.EmphasisColors[0], null)], [], [], []);
+            string ass = Lettering(styled);
+            Assert.IsTrue(ass.Contains("すごい", StringComparison.Ordinal), template.Id);
+            StringAssert.Contains(ass, @"\fn" + StyleTemplateFonts.NotoSansJpBlack.AssFamily);
+            Assert.IsTrue(StyleTemplateFonts.IsBundledFamily(StyleTemplateFonts.NotoSansJpBlack.AssFamily));
+        }
+    }
+
+    // AC-155: the output carries the standing pictures exactly where the plan puts them (time and box); no dialogue, no picture.
+    [TestMethod]
+    [TestCategory("FR-137")]
+    public async Task AC155_TheRenderOutputCarriesThePlannedPortraitShots()
+    {
+        string root = TempDirectory();
+        try
+        {
+            var store = new CharacterPortraitStore(Path.Combine(root, "store"));
+            CharacterPortrait a = store.Register("コパ", SyntheticImage(root), PortraitRightsStatus.Confirmed, Now);
+            StyleTemplateDefinition template = StyleTemplateCatalog.Find(StyleTemplateCatalog.CharacterDialogueId)!;
+            using StandardGenerationFixture fixture = await StandardGenerationFixture.CreateAsync();
+            SubtitleFileCue cue = fixture.Graph(true).DisplayCues[0];
+            OriginRef origin = OriginRef.FromSourceSpan(EntityId<SourceSpanIdTag>.New());
+            var range = new TimeRange(cue.Cue.Range.Start, new RationalTime(1, 2));
+            StyleTemplateFreeTelopInput[] lines =
+                [new(StyleTemplateFreeTelopKind.Dialogue, "こんにちは", range, StyleTemplateTextSource.UserInput, origin, Speaker: a.Id)];
+            StandardRenderConfiguration configuration = fixture.Request().Configuration.WithStyleTemplate(template);
+
+            StandardRenderGraphOutput without = StandardRenderGraphFactory.Create(fixture.Preparation, fixture.Asset, fixture.Geometry, true,
+                fixture.Subtitles, fixture.Font.Evidence, configuration: configuration);
+            Assert.AreEqual(0, without.PortraitShots.Count);
+
+            StandardRenderGraphOutput output = StandardRenderGraphFactory.Create(fixture.Preparation, fixture.Asset, fixture.Geometry, true,
+                fixture.Subtitles, fixture.Font.Evidence,
+                configuration: configuration.WithCharacterDialogue(store.List(), Path.Combine(store.Directory, CharacterPortraitStore.ImageDirectoryName), lines));
+            StyleTemplatePortraitShot shot = output.PortraitShots.Single();
+            Assert.AreEqual(a.Id, shot.CharacterId);
+            Assert.AreEqual(range, shot.Range);
+            Assert.AreEqual(a.ImageFile, shot.ImageFile);
+            Assert.AreEqual(StyleTemplateApplier.PortraitLeft, shot.Left);
+            Assert.AreEqual(StyleTemplateApplier.PortraitTop, shot.Top);
+            Assert.AreEqual(StyleTemplateApplier.PortraitWidth, shot.Width);
+            Assert.AreEqual(StyleTemplateApplier.PortraitHeight, shot.Height);
+            Assert.IsTrue(File.Exists(Path.Combine(store.Directory, CharacterPortraitStore.ImageDirectoryName, shot.ImageFile)));
+            Assert.IsTrue(output.SubtitleFiles.Any(static file => Encoding.UTF8.GetString(file.File.GetUtf8Bytes()).Contains("こんにちは", StringComparison.Ordinal)));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 
     private static string Ass(StandardGenerationFixture fixture, StyleTemplateDefinition template)

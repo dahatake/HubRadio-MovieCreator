@@ -319,6 +319,40 @@ public sealed class FfmpegCompilerTests
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new FfmpegSoundEffectBinding(effect, new RationalTime(1, 1), new RationalTime(3, 10), 3));
     }
 
+    // FR-137 (6) AC-160: a standing picture is verified, fitted into its box and shown only while its line is spoken.
+    [TestMethod]
+    [TestCategory("FR-137")]
+    public async Task StandingPicturesAreVerifiedFittedIntoTheirBoxAndShownOnlyWhileTheLineIsSpoken()
+    {
+        using Fixture fixture = Fixture.Create();
+        var picture = new BinaryVerificationRequest("portrait", Path.Combine(fixture.RootPath, "copa [1].png"), Digest('6'), 100);
+        FfmpegCompileRequest Request(TimeRange range, BinaryVerificationRequest? file = null) => new(fixture.Graph, fixture.Context, fixture.Tool,
+            fixture.Bindings, fixture.OutputPath, fixture.RootPath, TimeSpan.FromMinutes(1),
+            imageOverlays: [new FfmpegImageOverlayBinding(file ?? picture, range, 0.03, 0.45, 0.22, 0.52)]);
+        var verified = new List<BinaryVerificationRequest>();
+        FfmpegCompilation compiled = await FfmpegCompiler.CompileAsync(Request(Range(2, 1)), (binding, _) =>
+        {
+            verified.Add(binding);
+            return Task.FromResult(BinaryVerificationResult.Verified(binding, binding.ExpectedByteSize, binding.ExpectedDigest));
+        });
+        CollectionAssert.Contains(verified, picture);
+        CollectionAssert.Contains(InputPathTokens(compiled.ProcessRequest.ArgumentList), picture.FilePath);
+        Assert.IsFalse(compiled.FilterScript.Contains(picture.FilePath, StringComparison.Ordinal));
+        StringAssert.Contains(compiled.FilterScript, "force_original_aspect_ratio=decrease");
+        StringAssert.Contains(compiled.FilterScript, ":enable='between(t,2,3)':eof_action=repeat[portrait_0]");
+        // Without a standing picture the script is exactly the default one.
+        FfmpegCompilation plain = await CompileAsync(fixture, fixture.Request());
+        Assert.IsFalse(plain.FilterScript.Contains("portrait_", StringComparison.Ordinal));
+        await AssertFailureAsync(() => FfmpegCompiler.CompileAsync(Request(Range(2, 1)), (binding, _) => Task.FromResult(
+            binding == picture ? BinaryVerificationResult.Failed(binding, BinaryVerificationFailureReason.DigestMismatch,
+                binding.ExpectedByteSize, Digest('9')) : BinaryVerificationResult.Verified(binding, binding.ExpectedByteSize, binding.ExpectedDigest))),
+            FfmpegCompilerFailureReason.InputNotVerified);
+        await AssertFailureBeforeVerificationAsync(Request(Range(3, 2)), FfmpegCompilerFailureReason.InputBindingMismatch);
+        await AssertFailureBeforeVerificationAsync(Request(Range(2, 1), new BinaryVerificationRequest("portrait", Path.Combine(fixture.RootPath, "a.gif"), Digest('6'), 100)),
+            FfmpegCompilerFailureReason.InputBindingMismatch);
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new FfmpegImageOverlayBinding(picture, Range(2, 1), 0.9, 0.45, 0.22, 0.52));
+    }
+
     private static RenderGraphValidationContext ContextForInputs(Fixture fixture, IReadOnlyList<RenderGraphInput> inputs) => new(
         fixture.Context.Project, fixture.Context.CompositionVersion, fixture.Context.TimelineMap, fixture.Context.TimelineMapDigest,
         fixture.Context.Profile, fixture.Context.LayoutSpec, fixture.Context.LayoutSpecDigest, fixture.Context.Template,

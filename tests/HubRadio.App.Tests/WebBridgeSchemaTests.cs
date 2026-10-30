@@ -106,6 +106,8 @@ public sealed class WebBridgeSchemaTests
                 "stitch.pickClip",
                 "stitch.run",
                 "results.export",
+                "portraits.list",
+                "portraits.register",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -231,6 +233,9 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/stitchRunResponse",
                 "#/$defs/jobExportRequest",
                 "#/$defs/jobExportResponse",
+                "#/$defs/portraitsListRequest",
+                "#/$defs/portraitsRegisterRequest",
+                "#/$defs/portraitsResponse",
             },
             root.GetProperty("oneOf")
                 .EnumerateArray()

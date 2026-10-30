@@ -203,6 +203,9 @@ public sealed class StandardRenderGraphOutput
 
     /// <summary>FR-060: the sound effects this output plays (empty when disabled or before profile 1.2.0).</summary>
     public IReadOnlyList<StandardSoundEffectCue> SoundEffectCues { get; init; } = [];
+
+    /// <summary>FR-137 (6): the standing pictures to lay over this output (empty without the character dialogue template).</summary>
+    public IReadOnlyList<StyleTemplates.StyleTemplatePortraitShot> PortraitShots { get; init; } = [];
 }
 
 public enum StandardGenerationFailureReason
@@ -421,9 +424,11 @@ public static class StandardRenderGraphFactory
                     default, new RationalTime(7, 1))
                 : new StyleTemplates.StyleTemplateSubtitleLimits(int.MaxValue / 4, 1, default, new RationalTime(7, 1));
             styled = StyleTemplates.StyleTemplateApplier.Apply(styleTemplate,
-                cueTexts.Select(static cue => new StyleTemplates.StyleTemplateInputCue(cue, [])).ToArray(), [],
+                cueTexts.Select(static cue => new StyleTemplates.StyleTemplateInputCue(cue, [])).ToArray(),
+                configuration.DialogueLines,
                 new StyleTemplates.StyleTemplateApplyOptions(limits,
-                    configuration.EmphasisTelopAmount, configuration.SoundEffectsEnabled, cursor));
+                    configuration.EmphasisTelopAmount, configuration.SoundEffectsEnabled, cursor,
+                    Characters: configuration.Characters));
             telops = styled.EmphasisTelops.Select(static item => item.Telop).ToArray();
             soundEffects = styled.SoundEffects;
         }
@@ -520,6 +525,7 @@ public static class StandardRenderGraphFactory
         {
             SubtitleProjection = subtitles.Projection,
             SoundEffectCues = soundEffects,
+            PortraitShots = styled?.Portraits ?? [],
         };
     }
 
