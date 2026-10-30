@@ -46,9 +46,9 @@ public sealed class StyleTemplateTests
     [TestMethod]
     [TestCategory("FR-136")]
     [TestCategory("FR-137")]
-    public void CatalogListsTheSixDefinitionsWithinTheColorAndFontLimits()
+    public void CatalogListsTheSevenDefinitionsWithinTheColorAndFontLimits()
     {
-        string[] expected = ["explainer", "short-pop", "variety", "talk-show", "vertical-3-tier", "handmade"];
+        string[] expected = ["explainer", "short-pop", "variety", "talk-show", "vertical-3-tier", "handmade", "character-dialogue"];
         CollectionAssert.AreEqual(expected, StyleTemplateCatalog.All.Select(static item => item.Id).ToArray());
         foreach (StyleTemplateDefinition template in StyleTemplateCatalog.All)
         {
@@ -70,7 +70,7 @@ public sealed class StyleTemplateTests
         Assert.AreEqual(StyleTemplateOrientation.Vertical, Template("vertical-3-tier").Orientation);
         Assert.IsTrue(Template("talk-show").LayoutDefinedOnly && Template("vertical-3-tier").LayoutDefinedOnly);
         Assert.AreEqual(2, Template("variety").FontFamilies.Count is >= 2 and <= 3 ? 2 : 0);
-        Assert.IsFalse(StyleTemplateCatalog.All.Any(static item => item.Id.Contains("character", StringComparison.Ordinal)));
+        Assert.IsFalse(StyleTemplateCatalog.IsSelectable(Template("character-dialogue"), 0));
     }
 
     // FR-136 AC-150: choosing a template needs no setting values and still yields captions, telops and a placement.

@@ -81,7 +81,11 @@ internal static class StandardTemplateSubtitles
         StyleTemplateCaption[] captions = plan.Captions
             .Where(item => item.Range.Start >= cue.Cue.Range.Start && item.Range.End <= cue.Cue.Range.End)
             .OrderBy(static item => item.Range.Start).ToArray();
-        if (captions.Length == 0)
+        StyleTemplateFreeTelop[] dialogues = plan.FreeTelops
+            .Where(item => item.Input.Kind == StyleTemplateFreeTelopKind.Dialogue
+                && item.Input.Range.Start >= cue.Cue.Range.Start && item.Input.Range.Start < cue.Cue.Range.End)
+            .OrderBy(static item => item.Input.Range.Start).ToArray();
+        if (captions.Length == 0 && dialogues.Length == 0)
         {
             return plain;
         }
@@ -98,6 +102,8 @@ internal static class StandardTemplateSubtitles
         string style = head[3];
         string placement = FormattableString.Invariant(
             $"\\an5\\pos({(left + (long)right) / 2m},{(top + (long)bottom) / 2m})\\clip({left},{top},{right},{bottom})\\q2");
+        // FR-139: only a bundled typeface is named (\fn); a family of the user's PC never reaches the subtitle.
+        string font = FontTag(plan);
         var lines = new StringBuilder();
         foreach (StyleTemplateCaption caption in captions)
         {
@@ -107,14 +113,40 @@ internal static class StandardTemplateSubtitles
             string background = StyleTemplateColor.EnsureBackground(foregrounds, plan.OutlineColor);
             _ = lines.Append("Dialogue: 0,").Append(StandardTemplateAss.Timestamp(start)).Append(',')
                 .Append(StandardTemplateAss.Timestamp(end)).Append(',').Append(style).Append(Marker)
-                .Append('{').Append(placement).Append(StandardTemplateAss.Colors(plan.TextColor, background))
+                .Append('{').Append(placement).Append(font).Append(StandardTemplateAss.Colors(plan.TextColor, background))
                 .Append(StandardTemplateAss.MotionTags(caption.Motion)).Append('}')
                 .Append(CaptionText(caption, plan.TextColor, start)).Append('\n');
+        }
+
+        foreach (StyleTemplateFreeTelop line in dialogues)
+        {
+            // FR-137 (6): the line sits to the right of the standing picture and takes the color of its character.
+            long start = StandardTemplateAss.Centiseconds(line.Input.Range.Start);
+            long end = StandardTemplateAss.Centiseconds(line.Input.Range.End);
+            int width = right - left;
+            int height = bottom - top;
+            int textLeft = left + (int)Math.Round(width * (StyleTemplateApplier.PortraitLeft + StyleTemplateApplier.PortraitWidth + 0.02));
+            int textTop = top + (int)Math.Round(height * StyleTemplateApplier.PortraitTop);
+            int textBottom = top + (int)Math.Round(height * (StyleTemplateApplier.PortraitTop + StyleTemplateApplier.PortraitHeight));
+            string dialogueBackground = StyleTemplateColor.EnsureBackground(line.Color, plan.OutlineColor);
+            string dialoguePlacement = FormattableString.Invariant(
+                $"\\an5\\pos({(textLeft + (long)right) / 2m},{(textTop + (long)textBottom) / 2m})\\clip({textLeft},{textTop},{right},{textBottom})\\q2");
+            _ = lines.Append("Dialogue: 0,").Append(StandardTemplateAss.Timestamp(start)).Append(',')
+                .Append(StandardTemplateAss.Timestamp(end)).Append(',').Append(style).Append(Marker)
+                .Append('{').Append(dialoguePlacement).Append(font).Append(StandardTemplateAss.Colors(line.Color, dialogueBackground))
+                .Append(StandardTemplateAss.MotionTags(line.Motion)).Append('}')
+                .Append(SubtitleWriterContract.EscapeAssText(line.Input.Text)).Append('\n');
         }
 
         string result = document[..(dialogue + 1)] + lines.ToString().TrimEnd('\n') + "\n";
         return new SubtitleExportFile(plain.Format, plain.CueCount, plain.TimestampRuleVersion,
             new UTF8Encoding(false, true).GetBytes(result));
+    }
+
+    private static string FontTag(StyleTemplatePlan plan)
+    {
+        string? family = plan.FontFamilies.FirstOrDefault(StyleTemplateFonts.IsBundledFamily);
+        return family is null ? string.Empty : "\\fn" + family;
     }
 
     private static string CaptionText(StyleTemplateCaption caption, string baseColor, long dialogueStart)

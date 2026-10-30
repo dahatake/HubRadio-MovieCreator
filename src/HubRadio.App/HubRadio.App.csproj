@@ -29,6 +29,12 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
+    <!-- FR-139: the SIL OFL typefaces of the production templates and their licenses (not the runtime payload Fonts folder). -->
+    <Content Include="..\..\packaging\template-fonts\*.otf;..\..\packaging\template-fonts\*.ttf;..\..\packaging\template-fonts\OFL-*.txt">
+      <Link>TemplateFonts\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
     <Content Include="..\..\packaging\models\catalog.json">
       <Link>ModelCatalog\catalog.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

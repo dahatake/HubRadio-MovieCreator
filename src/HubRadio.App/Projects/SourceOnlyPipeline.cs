@@ -444,6 +444,11 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 template = StyleTemplates.StyleTemplateCatalog.All.Where(item => item.Id == styleTemplateId)
                     .OrderByDescending(static item => item.Version).FirstOrDefault()
                     ?? throw new ArgumentException("The production template is not defined.", nameof(styleTemplateId));
+                // FR-137 (6): the character dialogue template cannot be chosen until the user registered a standing picture.
+                if (!CharacterPortraits.IsSelectable(template))
+                {
+                    throw new ArgumentException("The character dialogue template needs a registered portrait.", nameof(styleTemplateId));
+                }
             }
 
             WorkingCopyState head = versions.GetCurrentState(projectId)
@@ -471,7 +476,8 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             {
                 // FR-136: the applied template (ID and version) is recorded in the Job's own directory before it runs.
                 StyleTemplates.JobStyleTemplateStore.Save(StyleTemplateDirectory(accepted.Request.RootJobId),
-                    StyleTemplates.JobStyleTemplateRecord.For(template));
+                    StyleTemplates.JobStyleTemplateRecord.For(template)
+                        .WithFonts(StyleTemplates.StyleTemplateFonts.RecordsFor(template)));
             }
 
             _ = Start(accepted.Request.ExecutionId);
@@ -487,6 +493,10 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
     }
 
     /// <summary>FR-136: where a Job's applied production template is recorded.</summary>
+    /// <summary>FR-137 (6): the standing pictures the user registered (none is bundled).</summary>
+    internal StyleTemplates.CharacterPortraitStore CharacterPortraits =>
+        new(Path.Combine(workspace, "character-portraits"));
+
     internal string StyleTemplateDirectory(EntityId<JobIdTag> rootJobId) =>
         Path.Combine(workspace, "job-style-templates", rootJobId.ToString());
 

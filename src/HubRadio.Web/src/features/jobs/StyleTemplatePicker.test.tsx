@@ -14,18 +14,23 @@ describe('StyleTemplatePicker', () => {
   beforeEach(() => { container = document.createElement('div'); document.body.append(container); root = createRoot(container) })
   afterEach(() => { act(() => root.unmount()); container.remove() })
 
-  it('lists name, purpose, orientation and a preview example for every template, without a character dialogue one', () => {
+  it('lists name, purpose, orientation and a preview example for every template; the character dialogue one is locked until a portrait is registered (AC-155)', () => {
     act(() => root.render(<StyleTemplatePicker selectedId={null} onSelect={vi.fn()} />))
-    expect(styleTemplateOptions.map(option => option.id)).toEqual(['explainer', 'short-pop', 'variety', 'talk-show', 'vertical-3-tier', 'handmade'])
+    expect(styleTemplateOptions.map(option => option.id)).toEqual(['explainer', 'short-pop', 'variety', 'talk-show', 'vertical-3-tier', 'handmade', 'character-dialogue'])
     for (const option of styleTemplateOptions) {
       expect(container.textContent).toContain(option.name)
       expect(container.textContent).toContain(option.purpose)
       expect(container.textContent).toContain(option.orientation === 'vertical' ? '縦型' : '横長')
       expect(container.querySelector(`[aria-label="見た目の例: ${option.previewDescription}"]`)?.textContent).toBe(option.sampleText)
     }
-    expect(container.textContent).not.toContain('キャラクター')
-    // 7 radios: "no template" plus the six
-    expect(container.querySelectorAll('input[type="radio"]')).toHaveLength(7)
+    // 8 radios: "no template" plus the seven; the character one cannot be chosen while no portrait is registered
+    const radios = [...container.querySelectorAll('input[type="radio"]')] as HTMLInputElement[]
+    expect(radios).toHaveLength(8)
+    expect(radios[7].disabled).toBe(true)
+    expect(container.textContent).toContain('立ち絵が 1 つも登録されていないため')
+    act(() => root.render(<StyleTemplatePicker selectedId={null} onSelect={vi.fn()} portraitCount={1} />))
+    expect((container.querySelectorAll('input[type="radio"]')[7] as HTMLInputElement).disabled).toBe(false)
+    act(() => root.render(<StyleTemplatePicker selectedId={null} onSelect={vi.fn()} />))
     expect((container.querySelector('input[type="radio"]') as HTMLInputElement).checked).toBe(true)
   })
 
