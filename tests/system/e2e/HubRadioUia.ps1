@@ -278,6 +278,66 @@ function New-SyntheticVideo($sb, [string]$dir) {
     if ($LASTEXITCODE -ne 0) { throw 'ffmpeg failed to create synthetic video' }
     $out
 }
+function Get-TestFfmpeg($sb) {
+    $ff = Join-Path $sb.AppDir 'Tools\ffmpeg.exe'
+    if (Test-Path $ff) { return $ff }
+    $cmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
+    if (-not $cmd) { throw 'ffmpeg not found (Tools\ffmpeg.exe in app folder or ffmpeg on PATH)' }
+    $cmd.Source
+}
+# --- 合成画像（System.Drawing の PNG）。$Characters >= 2 なら、人物に見立てた色違いの楕円を横に並べた 1 枚画像にする ---
+function New-SyntheticImage([string]$Path, [int]$Width = 640, [int]$Height = 640, [int]$Characters = 1, [string]$Color1 = '#3366CC', [string]$Color2 = '#CC9933') {
+    Add-Type -AssemblyName System.Drawing
+    $bmp = New-Object System.Drawing.Bitmap $Width, $Height
+    try {
+        $g = [System.Drawing.Graphics]::FromImage($bmp)
+        try {
+            $c1 = [System.Drawing.ColorTranslator]::FromHtml($Color1); $c2 = [System.Drawing.ColorTranslator]::FromHtml($Color2)
+            $rect = New-Object System.Drawing.Rectangle 0, 0, $Width, $Height
+            $br = New-Object System.Drawing.Drawing2D.LinearGradientBrush $rect, $c1, $c2, 90.0
+            $g.FillRectangle($br, $rect); $br.Dispose()
+            $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+            $n = [Math]::Max(1, $Characters)
+            $palette = @('#E74C3C', '#2ECC71', '#F1C40F', '#9B59B6', '#ECF0F1', '#1ABC9C')
+            $slot = $Width / $n
+            for ($i = 0; $i -lt $n; $i++) {
+                $fc = [System.Drawing.ColorTranslator]::FromHtml($palette[$i % $palette.Count])
+                $b = New-Object System.Drawing.SolidBrush $fc
+                $cw = [int]($slot * 0.6); $cx = [int]($slot * $i + ($slot - $cw) / 2)
+                $g.FillEllipse($b, $cx, [int]($Height * 0.12), $cw, [int]($Height * 0.76))   # 人物のシルエット相当
+                $b.Dispose()
+            }
+        } finally { $g.Dispose() }
+        $dir = Split-Path -Parent $Path
+        if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        $bmp.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally { $bmp.Dispose() }
+    $Path
+}
+# --- 発話入りの合成動画（System.Speech の音声合成 → ffmpeg）。ASR が単語を認識できる明瞭な発話。利用可能な音声から英語を優先（無ければ既定の音声） ---
+function New-SyntheticSpeechWav([string]$Path, [string]$Text = 'Hello and welcome to the radio show. Today we talk about music and movies. Thank you for listening.') {
+    Add-Type -AssemblyName System.Speech
+    $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+    try {
+        $en = $s.GetInstalledVoices() | Where-Object { $_.Enabled -and $_.VoiceInfo.Culture.Name -like 'en*' } | Select-Object -First 1
+        if ($en) { $s.SelectVoice($en.VoiceInfo.Name) }
+        $s.Rate = -1
+        $fmt = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(16000, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, [System.Speech.AudioFormat.AudioChannel]::Mono)
+        $s.SetOutputToWaveFile($Path, $fmt)
+        $s.Speak($Text)
+    } finally { $s.Dispose() }
+    $Path
+}
+function New-SyntheticSpeechVideo($sb, [string]$dir, [string]$Text = 'Hello and welcome to the radio show. Today we talk about music and movies. Thank you for listening.') {
+    $ff = Get-TestFfmpeg $sb
+    $wav = New-SyntheticSpeechWav (Join-Path $dir 'speech.wav') $Text
+    $out = Join-Path $dir 'source-speech.mp4'
+    foreach ($vc in @('libx264', 'mpeg4')) {
+        & $ff -y -f lavfi -i 'testsrc=size=1920x1080:rate=30' -i $wav -c:v $vc -pix_fmt yuv420p -c:a aac -shortest $out 2>$null
+        if ($LASTEXITCODE -eq 0) { return $out }
+    }
+    throw 'ffmpeg failed to create synthetic speech video'
+}
 function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jobCount, [string]$videoPath) {
     # 「新しいProjectを作成」は OS の「開く」ダイアログで動画を 1 本選ぶ。選ぶとそのまま「かんたん編集」の画面になる。
     $create = Find-ByName $root '新しいProjectを作成'
