@@ -45,10 +45,21 @@ public sealed class StandardRenderConfiguration
     public bool SoundEffectsEnabled { get; private init; }
 
     /// <summary>FR-136: the production template the Job applies; null keeps the FR-059/FR-060 default output unchanged.</summary>
-    public StyleTemplates.StyleTemplateDefinition? StyleTemplate { get; init; }
+    public StyleTemplates.StyleTemplateDefinition? StyleTemplate { get => styleTemplate; init => styleTemplate = value; }
+
+    private StyleTemplates.StyleTemplateDefinition? styleTemplate;
+
+    /// <summary>The same resolved settings with a production template (null removes it).</summary>
+    internal StandardRenderConfiguration WithStyleTemplate(StyleTemplates.StyleTemplateDefinition? template)
+    {
+        var copy = (StandardRenderConfiguration)MemberwiseClone();
+        copy.styleTemplate = template;
+        return copy;
+    }
 
     public static StandardRenderConfiguration FromSettings(DefaultSettingsProfile profile,
-        DefaultSettingsSnapshot settings, RationalNumber sourceFrameRate, int sourceAudioChannels)
+        DefaultSettingsSnapshot settings, RationalNumber sourceFrameRate, int sourceAudioChannels,
+        StyleTemplates.StyleTemplateDefinition? styleTemplate = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(settings);
@@ -132,6 +143,7 @@ public sealed class StandardRenderConfiguration
             {
                 EmphasisTelopAmount = telops,
                 SoundEffectsEnabled = soundEffects,
+                StyleTemplate = styleTemplate,
             };
         }
         catch (Exception exception) when (exception is ArgumentException or OverflowException)

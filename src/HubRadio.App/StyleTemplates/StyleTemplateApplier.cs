@@ -154,7 +154,9 @@ public static class StyleTemplateApplier
             foreach (List<Token> part in parts)
             {
                 TimeRange range = parts.Count == 1 ? cue.Cue.OutputRange : PartRange(part, cue.Cue.OutputRange);
-                captions.Add(new(range, string.Concat(part.Select(static token => token.Text)), [], null));
+                // Without word timing the whole screen still pops in (130% to 100%); only the spoken word cannot be singled out.
+                captions.Add(new(range, string.Concat(part.Select(static token => token.Text)), [],
+                    template.CaptionMode == StyleTemplateCaptionMode.ShortWords ? Motion(template.EmphasisMotion, range) : null));
                 if (range.Duration < options.Limits.CueMinimumDuration)
                 {
                     warnings.Add(new(BelowMinimumDurationWarning, range));

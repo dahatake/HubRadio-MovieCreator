@@ -11,7 +11,7 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
   active: boolean
   onOpenSettings: () => void
   openSettingsDisabled?: boolean
-  onConfirm: (params: PipelineRegenerationParams) => boolean
+  onConfirm: (params: PipelineRegenerationParams, styleTemplateId?: string | null) => boolean
   /** FR-136: the selected production template (null = none). The picker is shown only when a change handler is given. */
   styleTemplateId?: string | null
   onStyleTemplateChange?: (id: string | null) => void
@@ -50,7 +50,7 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
       <button type="button" disabled={!available || !same || rejected} onClick={() => {
         if (!available || !same || sending.current) return
         sending.current = true
-        if (onConfirm(confirmation)) setConfirmation(null)
+        if (onConfirm(confirmation, styleTemplateId)) setConfirmation(null)
         else { sending.current = false; setRejected(true) }
       }}>作成する</button>
       <button ref={cancel} type="button" onClick={close}>取消</button>

@@ -276,7 +276,8 @@
         "expectedVersionId": { "$ref": "#/$defs/entityId" },
         "expectedVersionDigest": { "$ref": "#/$defs/contentDigest" },
         "expectedSettingsRevision": { "$ref": "#/$defs/nonnegativeInt32" },
-        "expectedSettingsSnapshotDigest": { "$ref": "#/$defs/contentDigest" }
+        "expectedSettingsSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
+        "styleTemplateId": { "$comment": "FR-136: the production template selected for the new Job; absent when none is selected (the default output is unchanged).", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$", "maxLength": 64 }
       }
     },
     "pipelineCommandParams": {

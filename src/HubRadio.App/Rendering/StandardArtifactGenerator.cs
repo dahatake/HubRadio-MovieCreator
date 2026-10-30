@@ -47,10 +47,11 @@ public sealed class StandardArtifactGenerationRequest
         string applicationVersion,
         ContentDigest applicationDigest,
         TimeSpan processTimeout,
-        StandardMusicRenderInput? music = null)
+        StandardMusicRenderInput? music = null,
+        StyleTemplates.StyleTemplateDefinition? styleTemplate = null)
         : this(preparation, RequireCompletedOriginal(ingest), ingest.SourcePtsIndex!, sourceDisplayGeometry,
             settingsProfile, settings, tool, toolEvidence, modelEvidence, font, landscapeSubtitles,
-            shortForms, applicationVersion, applicationDigest, processTimeout, music)
+            shortForms, applicationVersion, applicationDigest, processTimeout, music, styleTemplate)
     {
     }
 
@@ -70,7 +71,8 @@ public sealed class StandardArtifactGenerationRequest
         string applicationVersion,
         ContentDigest applicationDigest,
         TimeSpan processTimeout,
-        StandardMusicRenderInput? music = null)
+        StandardMusicRenderInput? music = null,
+        StyleTemplates.StyleTemplateDefinition? styleTemplate = null)
     {
         Preparation = preparation ?? throw new ArgumentNullException(nameof(preparation));
         Original = original ?? throw new ArgumentNullException(nameof(original));
@@ -120,7 +122,8 @@ public sealed class StandardArtifactGenerationRequest
         Configuration = StandardRenderConfiguration.FromSettings(SettingsProfile, Settings,
             Plan.LongForm.Profile.Profile.FrameRate,
             Original.MediaInfo.Streams.Single(static item => item.Kind == MediaStreamType.Audio).Channels
-                ?? throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedSetting));
+                ?? throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedSetting),
+            styleTemplate);
     }
 
     public StandardCompositionPreparation Preparation { get; }
