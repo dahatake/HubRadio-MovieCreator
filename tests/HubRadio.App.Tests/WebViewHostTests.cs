@@ -268,17 +268,18 @@ public sealed class WebViewHostTests
         ConstructorInfo constructor = type.GetConstructors(
             BindingFlags.Instance | BindingFlags.NonPublic).Single();
         ParameterInfo[] parameters = constructor.GetParameters();
-        // FR-035 added the optional trailing stitch handler; FR-062 the workspace location handler.
-        Assert.AreEqual(17, parameters.Length);
+        // FR-035 added the optional trailing stitch handler; FR-062 the workspace location handler; FR-132 the export handler;
+        // FR-137 (6) the standing-picture handler.
+        Assert.AreEqual(19, parameters.Length);
         CollectionAssert.AreEqual(
             new[] { typeof(SettingsBridgeRequestHandler), typeof(GlobalSettingsBridgeRequestHandler), typeof(SettingsFileBridgeRequestHandler) },
             parameters.Skip(9).Take(3).Select(static parameter => parameter.ParameterType).ToArray());
         Assert.IsTrue(parameters.Take(12).All(static parameter => !parameter.HasDefaultValue));
-        CollectionAssert.AreEqual(new[] { "sourceOnlyRuntime", "sourceOnly", "sourceOnlyMedia", "stitch", "workspace" },
+        CollectionAssert.AreEqual(new[] { "sourceOnlyRuntime", "sourceOnly", "sourceOnlyMedia", "stitch", "workspace", "export", "portraits" },
             parameters.Skip(12).Select(static parameter => parameter.Name).ToArray());
         Assert.IsTrue(parameters.Skip(12).All(static parameter => parameter.HasDefaultValue && parameter.DefaultValue is null));
         PropertyInfo[] properties = type.GetProperties(BindingFlags.Instance | BindingFlags.NonPublic);
-        Assert.AreEqual(19, properties.Length);
+        Assert.AreEqual(21, properties.Length);
         Assert.IsTrue(properties.All(static property => property.SetMethod is null));
         Assert.AreEqual(typeof(GlobalSettingsBridgeRequestHandler),
             properties.Single(static property => property.Name == "GlobalSettings").PropertyType);

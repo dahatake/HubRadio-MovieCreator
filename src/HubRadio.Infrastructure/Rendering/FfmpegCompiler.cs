@@ -60,7 +60,8 @@ public sealed class FfmpegCompileRequest
         FfmpegFrameExtraction? frameExtraction = null,
         IReadOnlyList<FfmpegMusicBinding>? music = null,
         bool loudnessMeasurement = false,
-        IReadOnlyList<FfmpegSoundEffectBinding>? soundEffects = null)
+        IReadOnlyList<FfmpegSoundEffectBinding>? soundEffects = null,
+        IReadOnlyList<FfmpegImageOverlayBinding>? imageOverlays = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
         ArgumentNullException.ThrowIfNull(validationContext);
@@ -102,6 +103,9 @@ public sealed class FfmpegCompileRequest
         Music = Array.AsReadOnly((music ?? []).ToArray());
         LoudnessMeasurement = loudnessMeasurement;
         SoundEffects = Array.AsReadOnly((soundEffects ?? []).ToArray());
+        ImageOverlays = Array.AsReadOnly((imageOverlays ?? []).ToArray());
+        if (ImageOverlays.Count > MaximumImageOverlays || ImageOverlays.Any(static item => item is null))
+            throw new ArgumentException("Image overlay bindings must be bounded and non-null.", nameof(imageOverlays));
         if (Music.Count > 16 || Music.Any(static item => item is null))
             throw new ArgumentException("Music bindings must be bounded and non-null.", nameof(music));
         if (SoundEffects.Count > MaximumSoundEffects || SoundEffects.Any(static item => item is null))
@@ -150,6 +154,40 @@ public sealed class FfmpegCompileRequest
     public IReadOnlyList<FfmpegSoundEffectBinding> SoundEffects { get; }
 
     public const int MaximumSoundEffects = 32;
+
+    /// <summary>FR-137 (6): the standing pictures laid over the output (each its own timed box).</summary>
+    public IReadOnlyList<FfmpegImageOverlayBinding> ImageOverlays { get; }
+
+    public const int MaximumImageOverlays = 64;
+}
+
+/// <summary>
+/// FR-137 (6): a verified standing picture (PNG / JPEG / WebP) laid over the picture while <see cref="OutputRange"/> lasts. The box is a
+/// fraction of the output frame (left, top, width, height); the picture is fitted inside it and stands on the bottom of the box.
+/// </summary>
+public sealed class FfmpegImageOverlayBinding
+{
+    public FfmpegImageOverlayBinding(BinaryVerificationRequest verificationRequest, TimeRange outputRange,
+        double left, double top, double width, double height)
+    {
+        VerificationRequest = verificationRequest ?? throw new ArgumentNullException(nameof(verificationRequest));
+        if (outputRange.Start < default(RationalTime) || outputRange.Duration <= default(RationalTime))
+            throw new ArgumentOutOfRangeException(nameof(outputRange));
+        if (!(left >= 0 && top >= 0 && width > 0 && height > 0 && left + width <= 1.0001 && top + height <= 1.0001))
+            throw new ArgumentOutOfRangeException(nameof(left), "The picture box must lie inside the frame.");
+        OutputRange = outputRange;
+        Left = left;
+        Top = top;
+        Width = width;
+        Height = height;
+    }
+
+    public BinaryVerificationRequest VerificationRequest { get; }
+    public TimeRange OutputRange { get; }
+    public double Left { get; }
+    public double Top { get; }
+    public double Width { get; }
+    public double Height { get; }
 }
 
 /// <summary>FR-060: a verified short WAV file played once from <see cref="OutputStart"/> at <see cref="GainDecibels"/>.</summary>
@@ -529,6 +567,7 @@ public static class FfmpegCompiler
                 request.Music,
                 request.LoudnessMeasurement,
                 request.SoundEffects,
+                request.ImageOverlays,
                 cancellationToken);
             List<string> arguments = BuildArguments(
                 request.ValidationContext.Profile,
@@ -585,6 +624,9 @@ public static class FfmpegCompiler
                 throw Failure(FfmpegCompilerFailureReason.InputBindingMismatch);
             }
 
+            foreach (FfmpegImageOverlayBinding overlay in request.ImageOverlays)
+                await VerifyExactAsync(overlay.VerificationRequest, verifyAsync,
+                    FfmpegCompilerFailureReason.InputNotVerified, cancellationToken).ConfigureAwait(false);
             foreach (FfmpegMusicBinding music in request.Music)
                 await VerifyExactAsync(music.VerificationRequest, verifyAsync,
                     FfmpegCompilerFailureReason.InputNotVerified, cancellationToken).ConfigureAwait(false);
@@ -906,6 +948,20 @@ public static class FfmpegCompiler
         if (request.LoudnessMeasurement && request.EncoderSettings?.Loudness is not { IsMeasured: false })
             throw Failure(FfmpegCompilerFailureReason.InputBindingMismatch);
 
+        foreach (FfmpegImageOverlayBinding overlay in request.ImageOverlays)
+        {
+            string overlayExtension = Path.GetExtension(overlay.VerificationRequest.FilePath);
+            if (request.FrameExtraction is not null
+                || overlay.OutputRange.End > output.OutputRange.End
+                || !IsSafeProcessPathText(overlay.VerificationRequest.FilePath)
+                || !Path.IsPathFullyQualified(overlay.VerificationRequest.FilePath)
+                || !(string.Equals(overlayExtension, ".png", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(overlayExtension, ".jpg", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(overlayExtension, ".jpeg", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(overlayExtension, ".webp", StringComparison.OrdinalIgnoreCase)))
+                throw Failure(FfmpegCompilerFailureReason.InputBindingMismatch);
+        }
+
         foreach (FfmpegMusicBinding music in request.Music)
         {
             if (request.EncoderSettings is null || request.FrameExtraction is not null
@@ -947,6 +1003,7 @@ public static class FfmpegCompiler
         IReadOnlyList<FfmpegMusicBinding> music,
         bool loudnessMeasurement,
         IReadOnlyList<FfmpegSoundEffectBinding> soundEffects,
+        IReadOnlyList<FfmpegImageOverlayBinding> imageOverlays,
         CancellationToken cancellationToken)
     {
         Dictionary<EntityId<RenderNodeIdTag>, RenderNode> nodes =
@@ -1247,6 +1304,31 @@ public static class FfmpegCompiler
             ? null
             : terminals.SingleOrDefault(static node => node.Kind == RenderNodeKind.Subtitle);
         string videoLabel = streamLabels[visual.Id];
+        if (!loudnessMeasurement)
+        {
+            // FR-137 (6): each standing picture is fitted into its box and shown only while its line is spoken.
+            for (int i = 0; i < imageOverlays.Count; i++)
+            {
+                FfmpegImageOverlayBinding overlay = imageOverlays[i];
+                int inputIndex = nextInputIndex++;
+                arguments.AddRange(["-loop", "1", "-i", overlay.VerificationRequest.FilePath]);
+                int boxLeft = (int)Math.Round(overlay.Left * context.Profile.Width);
+                int boxTop = (int)Math.Round(overlay.Top * context.Profile.Height);
+                int boxWidth = Math.Max(2, (int)Math.Round(overlay.Width * context.Profile.Width) & ~1);
+                int boxHeight = Math.Max(2, (int)Math.Round(overlay.Height * context.Profile.Height) & ~1);
+                string raw = FormattableString.Invariant($"portrait_raw_{i}");
+                string next = FormattableString.Invariant($"portrait_{i}");
+                filters.Add(FormattableString.Invariant(
+                    $"[{inputIndex}:v:0]scale={boxWidth}:{boxHeight}:force_original_aspect_ratio=decrease:flags=bilinear,format=rgba[{raw}]"));
+                filters.Add(string.Concat(
+                    "[", videoLabel, "][", raw, "]overlay=x=",
+                    FormattableString.Invariant($"{boxLeft}+({boxWidth}-w)/2:y={boxTop}+{boxHeight}-h"),
+                    ":enable='between(t,", FormatTime(overlay.OutputRange.Start), ",", FormatTime(overlay.OutputRange.End),
+                    ")':eof_action=repeat[", next, "]"));
+                videoLabel = next;
+            }
+        }
+
         if (encoderSettings is not null)
         {
             filters.Add(string.Concat("[", videoLabel,

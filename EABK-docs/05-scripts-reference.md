@@ -66,7 +66,7 @@ python scripts/rdfix.py --full --apply --json     # 同じ結果を JSON で（�
 ## entities.py（エンティティ台帳と企業データカタログとの整合）
 
 ```bash
-python scripts/entities.py list  [--repo DIR] [--json]          # エンティティ台帳（名前・説明・管理テーブル・ユースケース・使い方・列）と関係・クラスター・DDL/スキーマの補完（FR-1025/1026/1030）
+python scripts/entities.py list  [--repo DIR] [--json]          # エンティティ台帳（名前・説明・管理テーブル・ユースケース・使い方・列）と関係・クラスター・DDL/スキーマの補完（FR-XXXX）
 python scripts/entities.py check [--repo DIR] [--json] [--strict] # 企業データカタログとの照合（一致／EABK のみ／企業カタログのみ／名称の揺れ候補）
 python scripts/entities.py todo  [--repo DIR] [--json]          # 覆われていないエンティティの ToDo（質問票の行の形式）
 ```
@@ -77,8 +77,8 @@ python scripts/entities.py todo  [--repo DIR] [--json]          # 覆われて�
 
 ```bash
 python scripts/next-id.py FR                    # FR-013
-python scripts/next-id.py NFR-SEC               # NFR-SEC-004
-python scripts/next-id.py AC --count 3          # AC-041 AC-042 AC-043
+python scripts/next-id.py NFR-SEC               # 例: NFR-SEC-XXX の次の番号
+python scripts/next-id.py AC --count 3          # 例: 連続した 3 つの AC 番号
 python scripts/next-id.py Q | PARAM | G | SRC | E2E | IT
 python scripts/next-id.py INT                   # INT-001（外部連携カタログ docs/integrations.md の ID）
 python scripts/next-id.py INT                   # INT-001（外部連携カタログ docs/integrations.md の ID。[11 章](11-integration-catalog.md)）

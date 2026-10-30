@@ -203,6 +203,9 @@ public sealed class StandardRenderGraphOutput
 
     /// <summary>FR-060: the sound effects this output plays (empty when disabled or before profile 1.2.0).</summary>
     public IReadOnlyList<StandardSoundEffectCue> SoundEffectCues { get; init; } = [];
+
+    /// <summary>FR-137 (6): the standing pictures to lay over this output (empty without the character dialogue template).</summary>
+    public IReadOnlyList<StyleTemplates.StyleTemplatePortraitShot> PortraitShots { get; init; } = [];
 }
 
 public enum StandardGenerationFailureReason
@@ -408,12 +411,35 @@ public static class StandardRenderGraphFactory
 
         // FR-059 / FR-060: emphasis captions and sound effects follow the accepted settings and the cues
         // this output actually displays; settings without the 1.2.0 keys produce neither.
-        IReadOnlyList<StandardEmphasisTelop> telops = StandardEmphasisTelops.Select(cueTexts,
-            configuration?.EmphasisTelopAmount, cursor);
-        IReadOnlyList<StandardSoundEffectCue> soundEffects = StandardEmphasisTelops.PlanSoundEffects(
-            configuration?.SoundEffectsEnabled == true, cueTexts, telops, cursor);
+        IReadOnlyList<StandardEmphasisTelop> telops;
+        IReadOnlyList<StandardSoundEffectCue> soundEffects;
+        StyleTemplates.StyleTemplatePlan? styled = null;
+        bool verticalOutput = profile.Height > profile.Width;
+        if (configuration?.StyleTemplate is { } styleTemplate)
+        {
+            // FR-136: the template drives the same FR-059 / FR-060 rules (verbatim telops, sounds only when enabled).
+            // FR-138: a vertical screen holds at most 20 characters of subtitle.
+            var limits = verticalOutput
+                ? new StyleTemplates.StyleTemplateSubtitleLimits(1, StyleTemplates.StyleTemplateLayout.VerticalCaptionMaximumCharacters,
+                    default, new RationalTime(7, 1))
+                : new StyleTemplates.StyleTemplateSubtitleLimits(int.MaxValue / 4, 1, default, new RationalTime(7, 1));
+            styled = StyleTemplates.StyleTemplateApplier.Apply(styleTemplate,
+                cueTexts.Select(static cue => new StyleTemplates.StyleTemplateInputCue(cue, [])).ToArray(),
+                configuration.DialogueLines,
+                new StyleTemplates.StyleTemplateApplyOptions(limits,
+                    configuration.EmphasisTelopAmount, configuration.SoundEffectsEnabled, cursor,
+                    Characters: configuration.Characters));
+            telops = styled.EmphasisTelops.Select(static item => item.Telop).ToArray();
+            soundEffects = styled.SoundEffects;
+        }
+        else
+        {
+            telops = StandardEmphasisTelops.Select(cueTexts, configuration?.EmphasisTelopAmount, cursor);
+            soundEffects = StandardEmphasisTelops.PlanSoundEffects(
+                configuration?.SoundEffectsEnabled == true, cueTexts, telops, cursor);
+        }
         IReadOnlyList<StandardGraphicRenderFile> graphicFiles = StandardMetadataGraphics.Create(plan,
-            shortForm, visual!, profile, cursor, timeline.Entries[0].OutputRange.Duration, font, configuration, telops);
+            shortForm, visual!, profile, cursor, timeline.Entries[0].OutputRange.Duration, font, configuration, telops, styled);
         inputs.AddRange(graphicFiles.Select(static file => file.Input));
 
         if (burnedIn)
@@ -426,8 +452,9 @@ public static class StandardRenderGraphFactory
             foreach (SubtitleFileCue cue in exportCues)
             {
                 SubtitleCueRevision revision = subtitles.Revisions.Single(item => item.Snapshot.Cue.Id == cue.Cue.Id);
-                SubtitleExportFile file = StandardSubtitlePlacement.Write(cue, subtitles.AssProfile,
-                    revision.Snapshot.LayoutResolution);
+                SubtitleExportFile file = styled is null
+                    ? StandardSubtitlePlacement.Write(cue, subtitles.AssProfile, revision.Snapshot.LayoutResolution)
+                    : StandardTemplateSubtitles.Write(cue, subtitles.AssProfile, revision.Snapshot.LayoutResolution, styled, verticalOutput);
                 var input = new RenderGraphInput(EntityId<RenderInputIdTag>.New(), RenderInputKind.Subtitle,
                     file.ContentDigest, file.ByteSize, revision.Snapshot.TextOrigin);
                 inputs.Add(input);
@@ -498,6 +525,7 @@ public static class StandardRenderGraphFactory
         {
             SubtitleProjection = subtitles.Projection,
             SoundEffectCues = soundEffects,
+            PortraitShots = styled?.Portraits ?? [],
         };
     }
 

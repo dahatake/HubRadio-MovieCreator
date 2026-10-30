@@ -417,6 +417,13 @@ const readParams = object({ projectId: id })
 const executionParams = object({ projectId: id, executionId: id, expectedRevision: integer() })
 const regenerationParams = object({ projectId: id, expectedVersionId: id, expectedVersionDigest: digest, expectedSettingsRevision: integer(), expectedSettingsSnapshotDigest: digest })
 export type PipelineRegenerationParams = ReturnType<typeof regenerationParams>
+// FR-136: a Job created with a production template also names it (the key is absent when none is selected).
+const styleTemplateIdText = text(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$(?![\s\S])/, 64)
+const styledRegenerationParams = object({
+  projectId: id, expectedVersionId: id, expectedVersionDigest: digest, expectedSettingsRevision: integer(), expectedSettingsSnapshotDigest: digest,
+  styleTemplateId: styleTemplateIdText,
+})
+export type PipelineRegenerationRequestParams = PipelineRegenerationParams & Readonly<{ styleTemplateId?: string }>
 const restoreParams = object({
   projectId: id, targetVersionId: id, targetVersionDigest: digest,
   expectedWorkingCopyRevision: integer(), expectedSettingsRevision: integer(), expectedSettingsSnapshotDigest: digest,
@@ -499,13 +506,17 @@ export function parsePipelineVersionsResponse(value: unknown): PipelineVersionsR
 }
 type Request<M extends PipelineMethod, P> = Readonly<{ version: typeof BRIDGE_PROTOCOL_VERSION; requestId: string; method: M; params: P }>
 export type PipelineRequest = Request<'pipeline.read', ReturnType<typeof readParams>> |
-  Request<'pipeline.retry' | 'pipeline.cancel', ReturnType<typeof executionParams>> | Request<'pipeline.regenerate', PipelineRegenerationParams> |
+  Request<'pipeline.retry' | 'pipeline.cancel', ReturnType<typeof executionParams>> | Request<'pipeline.regenerate', PipelineRegenerationRequestParams> |
   Request<'pipeline.restore', PipelineRestoreParams>
 export function createPipelineReadRequest(requestId: string, projectId: string): Extract<PipelineRequest, { method: 'pipeline.read' }> {
   return Object.freeze({ version: BRIDGE_PROTOCOL_VERSION, requestId: id(requestId), method: 'pipeline.read', params: readParams({ projectId }) })
 }
-export function createPipelineRegenerateRequest(requestId: string, params: PipelineRegenerationParams): Extract<PipelineRequest, { method: 'pipeline.regenerate' }> {
-  return Object.freeze({ version: BRIDGE_PROTOCOL_VERSION, requestId: id(requestId), method: 'pipeline.regenerate', params: regenerationParams(params) })
+export function createPipelineRegenerateRequest(requestId: string, params: PipelineRegenerationParams, styleTemplateId: string | null = null): Extract<PipelineRequest, { method: 'pipeline.regenerate' }> {
+  const checked = styleTemplateId === null
+    ? regenerationParams(params)
+    : styledRegenerationParams({ projectId: params.projectId, expectedVersionId: params.expectedVersionId, expectedVersionDigest: params.expectedVersionDigest,
+      expectedSettingsRevision: params.expectedSettingsRevision, expectedSettingsSnapshotDigest: params.expectedSettingsSnapshotDigest, styleTemplateId })
+  return Object.freeze({ version: BRIDGE_PROTOCOL_VERSION, requestId: id(requestId), method: 'pipeline.regenerate', params: checked })
 }
 export function createPipelineExecutionRequest(requestId: string, method: 'pipeline.retry' | 'pipeline.cancel', params: ReturnType<typeof executionParams>): Extract<PipelineRequest, { method: 'pipeline.retry' | 'pipeline.cancel' }> {
   requireValid(method === 'pipeline.retry' || method === 'pipeline.cancel')
@@ -515,7 +526,14 @@ export function parsePipelineRequest(value: unknown): PipelineRequest | null {
   try {
     const envelope = object({ version: enumeration([BRIDGE_PROTOCOL_VERSION] as const), requestId: id, method: enumeration(PIPELINE_METHODS), params: (v: unknown) => v })(value)
     if (envelope.method === 'pipeline.read') return createPipelineReadRequest(envelope.requestId, readParams(envelope.params).projectId)
-    if (envelope.method === 'pipeline.regenerate') return createPipelineRegenerateRequest(envelope.requestId, regenerationParams(envelope.params))
+    if (envelope.method === 'pipeline.regenerate') {
+      const raw = envelope.params as Record<string, unknown> | null
+      if (typeof raw === 'object' && raw !== null && Object.hasOwn(raw, 'styleTemplateId')) {
+        const styled = styledRegenerationParams(raw)
+        return createPipelineRegenerateRequest(envelope.requestId, styled, styled.styleTemplateId)
+      }
+      return createPipelineRegenerateRequest(envelope.requestId, regenerationParams(envelope.params))
+    }
     if (envelope.method === 'pipeline.restore') return createPipelineRestoreRequest(envelope.requestId, restoreParams(envelope.params))
     return createPipelineExecutionRequest(envelope.requestId, envelope.method, executionParams(envelope.params))
   } catch { return null }

@@ -106,6 +106,8 @@ public sealed class WebBridgeSchemaTests
                 "stitch.pickClip",
                 "stitch.run",
                 "results.export",
+                "portraits.list",
+                "portraits.register",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -231,6 +233,9 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/stitchRunResponse",
                 "#/$defs/jobExportRequest",
                 "#/$defs/jobExportResponse",
+                "#/$defs/portraitsListRequest",
+                "#/$defs/portraitsRegisterRequest",
+                "#/$defs/portraitsResponse",
             },
             root.GetProperty("oneOf")
                 .EnumerateArray()
@@ -1946,7 +1951,13 @@ public sealed class WebBridgeSchemaTests
         CollectionAssert.AreEqual(Enum.GetNames<SourceOnlyExecutionPhase>(), GetStrings(definitions
             .GetProperty("sourceOnlyVersionEntry").GetProperty("properties").GetProperty("phase").GetProperty("enum")));
         AssertClosedProperties(definitions.GetProperty("pipelineReadParams"), "projectId");
-        AssertClosedProperties(definitions.GetProperty("pipelineRegenerateParams"), "projectId", "expectedVersionId", "expectedVersionDigest", "expectedSettingsRevision", "expectedSettingsSnapshotDigest");
+        // FR-136: the optional styleTemplateId is the only property that is not required.
+        JsonElement regenerateParams = definitions.GetProperty("pipelineRegenerateParams");
+        Assert.IsFalse(regenerateParams.GetProperty("additionalProperties").GetBoolean());
+        CollectionAssert.AreEquivalent(new[] { "projectId", "expectedVersionId", "expectedVersionDigest", "expectedSettingsRevision", "expectedSettingsSnapshotDigest" },
+            GetStrings(regenerateParams.GetProperty("required")));
+        CollectionAssert.AreEquivalent(new[] { "projectId", "expectedVersionId", "expectedVersionDigest", "expectedSettingsRevision", "expectedSettingsSnapshotDigest", "styleTemplateId" },
+            regenerateParams.GetProperty("properties").EnumerateObject().Select(static property => property.Name).ToArray());
         AssertClosedProperties(definitions.GetProperty("pipelineCommandParams"), "projectId", "executionId", "expectedRevision");
         JsonElement result = definitions.GetProperty("sourceOnlyBridgeResult");
         AssertClosedProperties(result, "status", "snapshot");

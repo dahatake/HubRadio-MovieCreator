@@ -112,11 +112,13 @@ Appの2,410ケースには環境依存4件とopt-in実統合4件の計8 skipを�
 | method | params | 操作境界 |
 |---|---|---|
 | `pipeline.read` | `projectId` | 最新実行のphase、実`rootJobId`／`ingestJobId`、設定digest、実版と親版、結果・前回親版の結果、失敗codeを返す |
-| `pipeline.regenerate` | `projectId`、`expectedVersionId`、`expectedVersionDigest`、`expectedSettingsRevision`、`expectedSettingsSnapshotDigest` | 現行親版・保存設定・整合性を再照合して子版生成を受け付ける。字幕の子版を主レンダー親版へ代用しない |
+| `pipeline.regenerate` | `projectId`、`expectedVersionId`、`expectedVersionDigest`、`expectedSettingsRevision`、`expectedSettingsSnapshotDigest`、（任意）`styleTemplateId` | 現行親版・保存設定・整合性を再照合して子版生成を受け付ける。字幕の子版を主レンダー親版へ代用しない。`styleTemplateId`（FR-136）は定義済みの演出テンプレート ID のときだけ受け付け、Job に ID と版を記録する（省略時は既定の出力） |
 | `pipeline.retry` | `projectId`、`executionId`、`expectedRevision` | 最新の失敗・取消済み実行で、結果も版もまだない場合だけ再試行 |
 | `pipeline.cancel` | `projectId`、`executionId`、`expectedRevision` | 対象・revisionを照合し、pipeline所有処理の終了・後始末を待つ。合成した取消成功を保存しない |
 | `pipeline.versions` | `projectId` | **読取のみ。** 当該案件の過去版を新しい順に列挙する（`versionId`／`versionDigest`／`parentVersionId`／`executionId`／`phase`／結果の有無）。成果物本文・pathは返さない |
 | `pipeline.restore` | `projectId`、`targetVersionId`、`targetVersionDigest`、`expectedWorkingCopyRevision`、`expectedSettingsRevision`、`expectedSettingsSnapshotDigest` | **「復元」＝選んだ過去版の構成を新しい子版として作り直し、その子版から成果物を再生成すること**（`VersionService.RollbackAsChild` → `SourceOnlyPipeline.Regenerate`）。現在版・過去版・旧成果物は**一切削除も上書きもしない**。子版の作成に成功した後で再生成の受付に失敗した場合、子版は残るが旧成果物は失われない |
+| `portraits.list` | なし | **読取のみ。** 登録済みの立ち絵（FR-137）の `id`／`name`／`rights`（`confirmed`／`unconfirmed`）／`subtitleColor`／`rightsNote` と `portraitCount` を返す。画像本体・pathは返さない。`portraitCount` が 0 のあいだ、画面の「キャラクター対話」は選べない |
+| `portraits.register` | `name`（1〜40 文字）、`imageType`（`png`／`jpeg`／`webp`）、`imageBase64`（画像 4 MiB 以下）、`rights`、`rightsNote`（null か 200 文字以下） | 利用者自身の画像を立ち絵として登録し、**使用権の確認状態（確認済み／未確認）を画像と一緒に保存する**（NFR-BR-004）。`ExportComposition` 相当の権限が要る。同名・画像として不正なものは `invalid`。アプリは立ち絵を同梱しない。応答は常に閉じた `result`（`status`／`portraitCount`／`portraits`） |
 
 > [!IMPORTANT]
 > 本契約における「復元」は上表 `pipeline.restore` の定義に**一義に**従う。タブや警告の「戻る」、および `pipeline.read` が返す前回親版の結果表示は、**復元ではない**。過去版で現在版を置き換える操作は提供しない。
