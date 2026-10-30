@@ -40,7 +40,7 @@ Invoke-Test -Label "FR-139 $Ac" -Sandbox $sb -Body {
         $null = New-ProjectWithCompletedJobs $root $sb 'tpl-quality' 0 $video
         $i = 0
         foreach ($n in '解説', 'ショート飛び出し', 'バラエティ', '対談番組', '縦型3段', '手作り感') {
-            $i++; Select-Template $root $n; Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root $i | Out-Null
+            $i++; Select-Template $root $n; New-TemplateJob $root $i
         }
         $recs = @(Get-WorkspaceText $sb | Where-Object { $_.Text -match '(?i)templateId|template_id' })
         if ($recs.Count -lt 6) { throw "expected 6 template job records, got $($recs.Count)" }

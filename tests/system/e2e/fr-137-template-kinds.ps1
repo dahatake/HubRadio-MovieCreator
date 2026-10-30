@@ -15,7 +15,7 @@ Invoke-Test -Label "FR-137 $Ac" -Sandbox $sb -Body {
                 $i = 0
                 foreach ($n in '解説', 'ショート飛び出し', 'バラエティ', '対談番組', '縦型3段', '手作り感') {
                     $i++
-                    Select-Template $root $n; Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root $i | Out-Null
+                    Select-Template $root $n; New-TemplateJob $root $i
                 }
                 $recs = @(Get-WorkspaceText $sb | Where-Object { $_.Text -match '(?i)templateId|template_id' })
                 if ($recs.Count -lt 6) { throw "expected 6 job records with templates, got $($recs.Count)" }
@@ -37,7 +37,7 @@ Invoke-Test -Label "FR-137 $Ac" -Sandbox $sb -Body {
                 }
             }
             'AC-154' {
-                foreach ($n in 'ショート飛び出し', 'バラエティ') { Select-Template $root $n; Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root ([array]::IndexOf(@('ショート飛び出し', 'バラエティ'), $n) + 1) | Out-Null }
+                foreach ($n in 'ショート飛び出し', 'バラエティ') { Select-Template $root $n; New-TemplateJob $root ([array]::IndexOf(@('ショート飛び出し', 'バラエティ'), $n) + 1) }
                 $recs = @(Get-WorkspaceText $sb | Where-Object { $_.Text -match '(?i)templateId|template_id' })
                 $short = $recs | Where-Object { $_.Text -match 'ショート飛び出し' } | Select-Object -First 1
                 $vari = $recs | Where-Object { $_.Text -match 'バラエティ' } | Select-Object -First 1

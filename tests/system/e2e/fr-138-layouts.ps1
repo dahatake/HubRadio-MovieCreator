@@ -11,7 +11,7 @@ Invoke-Test -Label "FR-138 $Ac" -Sandbox $sb -Body {
         $null = New-ProjectWithCompletedJobs $root $sb 'tpl-layout' 0 $video
         switch ($Ac) {
             'AC-156' {
-                foreach ($n in 'ショート飛び出し', '縦型3段') { Select-Template $root $n; Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root ([int](@('ショート飛び出し', '縦型3段').IndexOf($n)) + 1) | Out-Null }
+                foreach ($n in 'ショート飛び出し', '縦型3段') { Select-Template $root $n; New-TemplateJob $root ([int](@('ショート飛び出し', '縦型3段').IndexOf($n)) + 1) }
                 $recs = @(Get-WorkspaceText $sb | Where-Object { $_.Text -match '(?i)templateId|template_id' })
                 if ($recs.Count -lt 2) { throw 'portrait job records missing' }
                 foreach ($r in $recs) {
@@ -32,7 +32,7 @@ Invoke-Test -Label "FR-138 $Ac" -Sandbox $sb -Body {
                 Select-Template $root '対談番組'
                 Set-Value (Find-EditByName $root '話者1の名前') '山田太郎'
                 Set-Value (Find-EditByName $root '話者1の肩書き') '代表取締役'
-                Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root 1 | Out-Null
+                New-TemplateJob $root 1
                 $rec = Get-TemplateJobRecord $sb | Select-Object -First 1
                 $j = $rec.Text | ConvertFrom-Json -Depth 32
                 $topics = @($j.topics | Sort-Object start)
@@ -56,7 +56,7 @@ Invoke-Test -Label "FR-138 $Ac" -Sandbox $sb -Body {
             }
             'AC-158' {
                 Select-Template $root '縦型3段'
-                Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root 1 | Out-Null
+                New-TemplateJob $root 1
                 $rec = Get-TemplateJobRecord $sb | Select-Object -First 1
                 $j = $rec.Text | ConvertFrom-Json -Depth 32
                 if ([int]$j.output.width -ne 1080 -or [int]$j.output.height -ne 1920) { throw "output is $($j.output.width)x$($j.output.height), expected 1080x1920" }

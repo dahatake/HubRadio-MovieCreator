@@ -5,7 +5,7 @@ param([Parameter(Mandatory)][ValidateSet('AC-165','AC-169','AC-172','AC-174')][s
 . (Join-Path $PSScriptRoot 'StyleTemplate.common.ps1')
 
 function Get-DeliverableVideo($sb) {
-    $ws = Join-Path $sb.AppDir 'workspace'
+    $ws = Get-WorkspaceDir $sb
     $v = Get-ChildItem -LiteralPath $ws -Recurse -File -Filter *.mp4 -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if (-not $v) { throw 'deliverable video (mp4) not found under workspace' }
     return $v.FullName
@@ -44,22 +44,18 @@ Invoke-Test -Label "FR-140-143 $Ac" -Sandbox $sb -Body {
             'AC-165' {
                 # FR-140: 割り当てた話者の立ち絵が該当 cue の間だけ映り、字幕色がキャラごとに異なる。割り当てなしの Job では映らない。
                 $img = Join-Path $sb.Work 'portrait-a.png'; New-SyntheticImage $img
-                Invoke-Element (Find-ByName $root '立ち絵を登録')
-                Set-Value (Find-EditByName $root '画像') $img
-                Invoke-Element (Find-ByName $root '使用権を確認した'); Invoke-Element (Find-ByName $root '登録')
+                Register-Portrait $root 'キャラA' $img
                 # 異常系（先に）: 話者の割り当てなし → 立ち絵は映らない
                 Select-Template $root 'キャラクター対話'
-                Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root 1 | Out-Null
-                $j0 = Get-TemplateJobRecord $sb | Select-Object -First 1
-                $none = $j0.Text | ConvertFrom-Json -Depth 32
+                New-TemplateJob $root 1
+                $none = Get-RenderRecord $sb 1
                 if (@($none.portraits | Where-Object { $_.shown }).Count -gt 0) { throw 'portrait shown without any speaker assignment' }
                 # 割り当てあり
                 Select-Template $root 'キャラクター対話'
                 Invoke-Element (Find-ByName $root '話者を割り当てる')
                 Invoke-Element (Find-ByName $root '確認して確定')
-                Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root 2 | Out-Null
-                $rec = @(Get-WorkspaceText $sb | Where-Object { $_.Text -match 'speaker' -and $_.Text -match '(?i)templateId' }) | Sort-Object { (Get-Item $_.Path).LastWriteTime } -Descending | Select-Object -First 1
-                $j = $rec.Text | ConvertFrom-Json -Depth 32
+                New-TemplateJob $root 2
+                $j = Get-RenderRecord $sb 0
                 $assigned = @($j.subtitles | Where-Object { $_.speaker })
                 $unassigned = @($j.subtitles | Where-Object { -not $_.speaker })
                 if ($assigned.Count -lt 1) { throw 'no cue has an assigned speaker' }
@@ -86,7 +82,7 @@ Invoke-Test -Label "FR-140-143 $Ac" -Sandbox $sb -Body {
                 Invoke-Element (Find-ByName $root '肩書きを確認した')
                 Set-Value (Find-EditByName $root '話者2の名前') '佐藤花子'
                 Set-Value (Find-EditByName $root '話者2の肩書き') '取締役'   # 肩書きは未確認のまま
-                Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root 1 | Out-Null
+                New-TemplateJob $root 1
                 $j = (Get-TemplateJobRecord $sb | Select-Object -First 1).Text | ConvertFrom-Json -Depth 32
                 $bands = @($j.nameBands)
                 $b1 = $bands | Where-Object { $_.name -eq '山田太郎' }
@@ -108,8 +104,8 @@ Invoke-Test -Label "FR-140-143 $Ac" -Sandbox $sb -Body {
             'AC-172' {
                 # FR-142: 各語の話している間だけその語が強調色。他の語は通常色。
                 Select-Template $root 'ショート飛び出し'
-                Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root 1 | Out-Null
-                $j = (Get-TemplateJobRecord $sb | Select-Object -First 1).Text | ConvertFrom-Json -Depth 32
+                New-TemplateJob $root 1
+                $j = Get-RenderRecord $sb 0
                 $mp4 = Get-DeliverableVideo $sb; $png = Join-Path $sb.Work 'f172.png'
                 $hl = $j.highlightColor; $normal = $j.normalColor
                 if (-not $hl -or -not $normal -or $hl -eq $normal) { throw 'highlight and normal colors must be defined and differ' }
@@ -126,13 +122,16 @@ Invoke-Test -Label "FR-140-143 $Ac" -Sandbox $sb -Body {
                     Save-Frame $mp4 $gap $png
                     if ((Get-ColorPixels $png $hl).Count -ge 30) { throw 'a word stays highlighted after it was spoken' }
                 }
-                # 異常系: 同時に強調色なのは 1 語だけ（話している語以外は通常色）
-                foreach ($c in @($j.subtitles)) { if (@($c.words | Where-Object { $_.highlight }).Count -gt 1) { throw 'more than one word highlighted at once' } }
+                # 異常系: 同時に強調色なのは 1 語だけ（記録に強調の旗は無いので、各 cue の語の時間帯が重ならない＝同時に話している語は 1 語だけ、を確かめる）
+                foreach ($c in @($j.subtitles)) {
+                    $ws = @($c.words | Where-Object { $null -ne $_.start } | Sort-Object { [double]$_.start })
+                    for ($i = 1; $i -lt $ws.Count; $i++) { if ([double]$ws[$i].start -lt [double]$ws[$i - 1].end - 0.001) { throw 'more than one word highlighted at once' } }
+                }
             }
             'AC-174' {
                 # FR-143: 縦型・テンプレートありの Job は PARAM-005 の余白と字幕領域の両方の内側にあるときだけ合格。外にはみ出すと不合格。
                 Select-Template $root '縦型3段'
-                Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root 1 | Out-Null
+                New-TemplateJob $root 1
                 $j = (Get-TemplateJobRecord $sb | Select-Object -First 1).Text | ConvertFrom-Json -Depth 32
                 $w = [int]$j.output.width; $h = [int]$j.output.height
                 if ($h -le $w) { throw 'deliverable is not vertical' }
@@ -148,8 +147,7 @@ Invoke-Test -Label "FR-140-143 $Ac" -Sandbox $sb -Body {
                 if ($insp.Text -notmatch '(?i)(pass|合格)') { throw 'inspection did not pass for a job inside both regions' }
                 # 異常系: 余白の内側に食い込む字幕位置では不合格になる
                 Invoke-Element (Find-ByName $root '字幕位置を余白内に動かす')
-                Invoke-Element (Find-ByName $root '実行'); Wait-JobCompleted $root 2 | Out-Null
-                $bad = @(Get-WorkspaceText $sb | Where-Object { $_.Text -match '(?i)inspection|出力検査' } | Where-Object { $_.Text -match '(?i)(fail|不合格)' })
+                New-TemplateJob $root 2 = @(Get-WorkspaceText $sb | Where-Object { $_.Text -match '(?i)inspection|出力検査' } | Where-Object { $_.Text -match '(?i)(fail|不合格)' })
                 if ($bad.Count -lt 1) { throw 'inspection passed although text was inside the margin' }
             }
         }
