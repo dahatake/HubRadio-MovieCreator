@@ -147,7 +147,7 @@ Invoke-Test -Label "FR-140-143 $Ac" -Sandbox $sb -Body {
                 if ($insp.Text -notmatch '(?i)(pass|合格)') { throw 'inspection did not pass for a job inside both regions' }
                 # 異常系: 余白の内側に食い込む字幕位置では不合格になる
                 Invoke-Element (Find-ByName $root '字幕位置を余白内に動かす')
-                New-TemplateJob $root 2 = @(Get-WorkspaceText $sb | Where-Object { $_.Text -match '(?i)inspection|出力検査' } | Where-Object { $_.Text -match '(?i)(fail|不合格)' })
+                New-TemplateJob $root 2; $bad = @(Get-WorkspaceText $sb | Where-Object { $_.Text -match '(?i)inspection|出力検査' } | Where-Object { $_.Text -match '(?i)(fail|不合格)' })
                 if ($bad.Count -lt 1) { throw 'inspection passed although text was inside the margin' }
             }
         }
