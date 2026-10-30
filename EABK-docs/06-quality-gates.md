@@ -19,7 +19,7 @@
 | 再開の案内 | 全エージェント | セッション開始時に、実行中の run があれば run-id と再開手順を表示します |
 | `/build template` | 全エージェント | Prompt が `/build template` だけのターンでは、読み取りと skill 以外のツール（コマンド・書き込み・作業役の呼び出し）を拒否し、実行中の run があってもターンの終了を差し戻しません。雛形の表示が run の開始・再開に変わるのを防ぎます（`userPromptSubmitted` イベントで判定し、session ごとに `work/.ebak/template-request-<session>.json` に記録し、他の session の発話では消えません。session 識別子のない入力は、他の session の記録を消しません） |
 
-### 6.1.1 主ツリーで run を置いたときの別 session（FR-1076）
+### 6.1.1 主ツリーで run を置いたときの別 session（FR-XXXX）
 
 `require_worktree: false`・`--allow-primary`・`EABK_ALLOW_PRIMARY=1` で主の作業ツリーに run を置くと、run の持ち主ではない chat も同じ tree で作業します。hook は、`meta.json` の `session_id` が呼び出し元の session と異なる（かつ呼び出しに session 識別子がある）ときだけ、**run を前提にしたゲートを外します**。持ち主の chat、所有者のない run、session 識別子のない呼び出しは、従来どおり全ゲートが掛かります。
 
@@ -36,7 +36,7 @@
 | G-6 一時ファイルの置き場所・`/work` の削除の制限 | **残す** | 常時のゲート |
 | 完了判定（ターン終了の差し戻し） | **掛けない**（別 session の終了は差し戻されない） | 持ち主の run の完了条件 |
 
-**所有者なし run の救済（FR-1075）**: hook は、所有者のない run を session に束縛する（R-2）のは、候補の run が 1 つだけ・session 識別子がある・他の session の未消費の start-claim がないときだけです。候補が複数、識別子なしのときは、どの run も束縛しません。start-claim で持ち主が確定した run は、別の session に束縛し直しません。`meta.json` の書き込みは start と同じ排他（`work/.ebak/start-claims.lock`、待ちは最大 10 秒）の中で行います。
+**所有者なし run の救済（FR-XXXX）**: hook は、所有者のない run を session に束縛する（R-2）のは、候補の run が 1 つだけ・session 識別子がある・他の session の未消費の start-claim がないときだけです。候補が複数、識別子なしのときは、どの run も束縛しません。start-claim で持ち主が確定した run は、別の session に束縛し直しません。`meta.json` の書き込みは start と同じ排他（`work/.ebak/start-claims.lock`、待ちは最大 10 秒）の中で行います。
 
 **エージェントの識別方法**: Copilot の hook の `preToolUse` イベントには、呼び出し元のエージェント名が含まれません。そこで、`subagentStart` / `subagentStop` イベントで実行中の custom agent を `work/.ebak/active-agents.json` に記録し、書き込み先のパス、作業役の worktree（`work/worktrees/…`）、ブランチ（`work/<run-id>/<item>`）と合わせて判定します。
 
