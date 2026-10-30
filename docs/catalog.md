@@ -94,8 +94,8 @@
 | NFR-UX-002 | レイアウトの保存・復元と既定への復元 | 承認済み | 未確認（AU-002） | 未確認（AU-002） | なし |
 | NFR-UX-005 | 画面のコンポーネントの配置を利用者が変更できる | 承認済み | 未実装 | 未実装 | なし |
 | NFR-UX-003 | ペルソナ別の既定の情報表現 | 承認済み | 未確認（AU-002） | 未確認（AU-002） | なし |
-| FR-136 | 演出テンプレートを選ぶだけで、字幕・テロップ・強調・効果音・配置が一括で適用される | 承認済み | 未実装 | 未実装 | - |
-| FR-137 | 演出テンプレートの種類と、各テンプレートの見せ方 | 承認済み | 未実装 | 未実装 | - |
+| FR-136 | 演出テンプレートを選ぶだけで、字幕・テロップ・強調・効果音・配置が一括で適用される | 承認済み | src/HubRadio.App/StyleTemplates/StyleTemplateApplier.cs、src/HubRadio.App/StyleTemplates/JobStyleTemplateRecord.cs、src/HubRadio.App/Rendering/StandardRenderConfiguration.cs、src/HubRadio.App/Rendering/StandardRenderGraphFactory.cs、src/HubRadio.Web/src/features/jobs/StyleTemplatePicker.tsx、src/HubRadio.Web/src/features/jobs/JobCreationAction.tsx、src/HubRadio.Web/src/features/jobs/jobs.css | tests/HubRadio.App.Tests/StyleTemplateTests.cs、src/HubRadio.Web/src/features/jobs/StyleTemplatePicker.test.tsx | 演出テンプレート定義、デザイン基盤 |
+| FR-137 | 演出テンプレートの種類と、各テンプレートの見せ方 | 承認済み | src/HubRadio.App/StyleTemplates/StyleTemplateCatalog.cs、src/HubRadio.App/StyleTemplates/StyleTemplateDefinition.cs、src/HubRadio.App/StyleTemplates/StyleTemplateApplier.cs、src/HubRadio.Web/src/features/jobs/styleTemplates.ts | tests/HubRadio.App.Tests/StyleTemplateTests.cs、src/HubRadio.Web/src/features/jobs/StyleTemplatePicker.test.tsx | 演出テンプレート定義 |
 | FR-138 | 対談番組と縦型 3 段のレイアウト、縦型の余白 | 承認済み | 未実装 | 未実装 | - |
 | FR-139 | 演出テンプレートの品質・権利・表現の制約 | 承認済み | 未実装 | 未実装 | - |
 
@@ -119,3 +119,5 @@
 | Job 書き出し | src/HubRadio.App/Web/JobExportBridge.cs | Job の動画・サムネイルを選んだフォルダーへ上書きなしで保存（連番・件数・失敗理由）。フォルダー選択は FR-064 の `settings.workspace.browse` を再利用 | FR-132 |
 | Job サムネイル | src/HubRadio.Web/src/features/jobs/JobThumbnail.tsx | Job 単位のサムネイル・代替表示・代替テキスト・選択可否（Project 単位の FR-045/053 の画像参照を再利用） | FR-131 |
 | UI スレッド実行 | src/HubRadio.App/Media/UiThreadInvoker.cs | OS のファイル・フォルダー選択ダイアログを必ず UI スレッドで開く（初回起動の新規 Workspace で別スレッドから開いて異常終了する不具合の修正） | FR-061, FR-064 |
+| 演出テンプレート定義 | src/HubRadio.App/StyleTemplates/StyleTemplateCatalog.cs | 演出テンプレート（ID・版・用途・縦横・見た目の例・色・書体・動き・効果音・配置）を宣言的な定義として持ち、FR-059/FR-060 の規則の上に適用する（PARAM-006/007 の上限つき） | FR-136, FR-137 |
+| デザイン基盤 | src/HubRadio.Web/src/styles.css | `--cp-*` デザイントークンとテーマ（ライト・ダーク）。新しい画面は値を直書きせずこれを使う | FR-136 |

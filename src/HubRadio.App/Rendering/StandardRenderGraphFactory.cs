@@ -408,10 +408,25 @@ public static class StandardRenderGraphFactory
 
         // FR-059 / FR-060: emphasis captions and sound effects follow the accepted settings and the cues
         // this output actually displays; settings without the 1.2.0 keys produce neither.
-        IReadOnlyList<StandardEmphasisTelop> telops = StandardEmphasisTelops.Select(cueTexts,
-            configuration?.EmphasisTelopAmount, cursor);
-        IReadOnlyList<StandardSoundEffectCue> soundEffects = StandardEmphasisTelops.PlanSoundEffects(
-            configuration?.SoundEffectsEnabled == true, cueTexts, telops, cursor);
+        IReadOnlyList<StandardEmphasisTelop> telops;
+        IReadOnlyList<StandardSoundEffectCue> soundEffects;
+        if (configuration?.StyleTemplate is { } styleTemplate)
+        {
+            // FR-136: the template drives the same FR-059 / FR-060 rules (verbatim telops, sounds only when enabled).
+            StyleTemplates.StyleTemplatePlan styled = StyleTemplates.StyleTemplateApplier.Apply(styleTemplate,
+                cueTexts.Select(static cue => new StyleTemplates.StyleTemplateInputCue(cue, [])).ToArray(), [],
+                new StyleTemplates.StyleTemplateApplyOptions(new StyleTemplates.StyleTemplateSubtitleLimits(
+                    int.MaxValue / 4, 1, default, new RationalTime(7, 1)),
+                    configuration.EmphasisTelopAmount, configuration.SoundEffectsEnabled, cursor));
+            telops = styled.EmphasisTelops.Select(static item => item.Telop).ToArray();
+            soundEffects = styled.SoundEffects;
+        }
+        else
+        {
+            telops = StandardEmphasisTelops.Select(cueTexts, configuration?.EmphasisTelopAmount, cursor);
+            soundEffects = StandardEmphasisTelops.PlanSoundEffects(
+                configuration?.SoundEffectsEnabled == true, cueTexts, telops, cursor);
+        }
         IReadOnlyList<StandardGraphicRenderFile> graphicFiles = StandardMetadataGraphics.Create(plan,
             shortForm, visual!, profile, cursor, timeline.Entries[0].OutputRange.Duration, font, configuration, telops);
         inputs.AddRange(graphicFiles.Select(static file => file.Input));
