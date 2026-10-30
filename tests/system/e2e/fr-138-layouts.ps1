@@ -22,6 +22,7 @@ Invoke-Test -Label "FR-138 $Ac" -Sandbox $sb -Body {
                         if ($b.y -lt 250) { throw 'text inside top margin (250px)' }
                         if (($b.y + $b.height) -gt ($h - 480)) { throw 'text inside bottom margin (480px)' }
                         if (($b.x + $b.width) -gt ($w - 160)) { throw 'text inside right margin (160px)' }
+                        if ($b.x -lt 160) { throw 'text inside left margin (160px)' }
                         if ($b.x -lt $area.x -or $b.y -lt $area.y -or ($b.x + $b.width) -gt ($area.x + $area.width) -or ($b.y + $b.height) -gt ($area.y + $area.height)) { throw 'text outside FR-014 subtitle area' }
                     }
                 }
@@ -46,6 +47,10 @@ Invoke-Test -Label "FR-138 $Ac" -Sandbox $sb -Body {
                 $bands = @($j.nameBands)
                 if (-not ($bands | Where-Object { $_.name -eq '山田太郎' })) { throw 'name band missing for speaker with input' }
                 foreach ($b in $bands) { if (-not $b.name) { throw 'name band shown without name' } }
+                # 肩書きが未確認の話者には肩書きが出ない・匿名ラベルは帯に出ない
+                foreach ($b in $bands) { if ($b.title -and -not $b.titleConfirmed) { throw 'unconfirmed title shown in band' }; if (([string]$b.name) -match '(話者\s*[0-9A-Z]+|Speaker\s*\d+|SPEAKER_\d+)') { throw 'anonymous speaker label in band' } }
+                # 話題が変わると前の話題のサイドテロップが消える
+                for ($k = 0; $k -lt $topics.Count - 1; $k++) { foreach ($m in @($side | Where-Object { $_.topicId -eq $topics[$k].id })) { if ($m.end -gt $topics[$k + 1].start) { throw 'previous topic side telop remains after topic change' } } }
                 $others = @($j.speakers | Where-Object { -not $_.name })
                 foreach ($s in $others) { if ($bands | Where-Object { $_.speakerId -eq $s.id }) { throw "name band invented for speaker without input: $($s.id)" } }
             }

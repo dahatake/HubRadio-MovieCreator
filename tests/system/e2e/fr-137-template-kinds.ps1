@@ -54,6 +54,10 @@ Invoke-Test -Label "FR-137 $Ac" -Sandbox $sb -Body {
                     if (-not $e.sfx) { throw 'variety emphasis telop has no sound effect' }
                     if ([math]::Abs([double]$e.motionSeconds - 0.5) -gt 0.15) { throw "motion not about 0.5s: $($e.motionSeconds)" }
                 }
+                # FR-142: 単語時刻のない cue は語ごとの強調をせず（cue 全体を強調か強調なし）、警告を出す
+                $untimed = @($js.subtitles | Where-Object { @($_.words | Where-Object { $null -ne $_.start }).Count -eq 0 })
+                foreach ($c in $untimed) { if (@($c.words | Where-Object { $_.highlight }).Count -gt 0 -and -not $c.wholeCueHighlight) { throw 'per-word highlight on a cue without word timings' } }
+                if ($untimed.Count -gt 0 -and -not ($short.Text -match '(?i)(warning|警告)')) { throw 'no warning for cues without word timings' }
                 foreach ($j in $js, $jv) { if (@($j.emphasis).Count -gt $j.limits.maxEmphasisTelops) { throw 'emphasis telops exceed FR-059 limit' } }
             }
         }
