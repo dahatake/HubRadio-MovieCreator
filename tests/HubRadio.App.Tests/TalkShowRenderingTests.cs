@@ -188,4 +188,55 @@ public sealed class TalkShowRenderingTests
         Assert.IsTrue(safe.Contains(HubRadio.App.Rendering.StandardTemplateSubtitles.VerticalBox(1080, 1920, null, false)));
         Assert.IsFalse(safe.Contains(HubRadio.App.Rendering.StandardTemplateSubtitles.VerticalBox(1080, 1920, null, true)));
     }
+
+    // FR-138 AC-158: a vertical 3-tier record states the three tiers top to bottom, the title tier from the top margin, the source
+    // in the middle, and (no hook is selected here) adds nothing at the start and records a warning.
+    [TestMethod]
+    public void VerticalThreeTierRecordStatesTheTiersAndWarnsWithoutAHook()
+    {
+        StyleTemplateRect caption = StyleTemplateLayout.VerticalFrame().CaptionTier;
+        var record = new StyleTemplateRenderRecord("vertical-3-tier", 1, 1080, 1920, "#FFFFFF", "#FFFF00", "#FFFFFF", false,
+            [new RecordedCue(0, 2, "字幕", null, null, "#FFFFFF", null, [])], [], [])
+            .WithPlacement(null, [new("Title", "題名", 0, 2, TalkShowBox.From(StyleTemplateLayout.Rect(StyleTemplateFreeTelopKind.Title, 1080, 1920, true)))],
+                TalkShowBox.From(caption), StyleTemplateMargins.Vertical, platformUiConfirmed: false);
+        RecordedVerticalLayout layout = record.Layout!;
+        Assert.IsTrue(layout.Top.Y >= 250 && layout.Top.Y < layout.Middle.Y && layout.Middle.Y < layout.Bottom.Y);
+        Assert.IsNotNull(layout.Top.Title);
+        Assert.AreEqual(1080, layout.Middle.Source.Width);
+        Assert.AreEqual("字幕", layout.Bottom.Subtitles.Single().Text);
+        Assert.IsFalse(record.Hook!.Selected);
+        Assert.IsNull(record.Hook.SegmentId);
+        Assert.AreEqual("program", record.Timeline[0].Source);
+        Assert.IsTrue(record.Warnings.Contains(StyleTemplateRenderRecord.HookNotSelectedWarning));
+        Assert.AreEqual("pass", record.OutputInspection!.Verdict);
+
+        // Another template (or a landscape output) has no tiers and no hook warning.
+        StyleTemplateRenderRecord plain = Record(1920, 1080).WithPlacement(null, [], null, null, platformUiConfirmed: false);
+        Assert.IsNull(plain.Layout);
+        Assert.AreEqual(0, plain.Timeline.Count);
+        Assert.IsFalse(plain.Warnings.Contains(StyleTemplateRenderRecord.HookNotSelectedWarning));
+    }
+
+    // FR-143 (c) AC-175: OutputQc carries the inspection evidence; a position outside the rule fails the inspection.
+    [TestMethod]
+    public void OutputQcPlacementEvidenceCarriesTheRuleRegionMarginsPositionsAndVerdict()
+    {
+        StyleTemplateRenderRecord passed = Record(1080, 1920).WithPlacement(null, [],
+            TalkShowBox.From(StyleTemplateLayout.VerticalFrame().CaptionTier), StyleTemplateMargins.Vertical, platformUiConfirmed: true);
+        HubRadio.Infrastructure.Rendering.OutputQcPlacementEvidence ok = HubRadio.App.Rendering.StandardRenderGraphFactory.OutputQcPlacement(passed.OutputInspection!);
+        Assert.IsTrue(ok.Passed);
+        Assert.AreEqual("pass", ok.Verdict);
+        Assert.AreEqual("template-margins-and-region", ok.Rule);
+        Assert.AreEqual(250, ok.Margins!.Top);
+        Assert.AreEqual(480, ok.Margins.Bottom);
+        Assert.AreEqual(1920, ok.Region.Height);
+        Assert.AreEqual("subtitle", ok.Items.Single().Id);
+
+        StyleTemplateRenderRecord failed = Record(1080, 1920).WithPlacement(null, [],
+            TalkShowBox.From(new(160, 1480, 920, 1600)), StyleTemplateMargins.Vertical, platformUiConfirmed: true);
+        HubRadio.Infrastructure.Rendering.OutputQcPlacementEvidence bad = HubRadio.App.Rendering.StandardRenderGraphFactory.OutputQcPlacement(failed.OutputInspection!);
+        Assert.IsFalse(bad.Passed);
+        Assert.AreEqual("fail", bad.Verdict);
+        Assert.IsFalse(bad.Items.Single().InsideMargins);
+    }
 }

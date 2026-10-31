@@ -131,7 +131,8 @@ internal static class StandardCompositionEvidenceCodec
                     : ThumbnailEvidenceDto.From(request.ThumbnailEvidence),
                 request.ActorSid,
                 Timestamp(request.CreatedAt),
-                request.ChangeReason),
+                request.ChangeReason,
+                StandardRenderProfileFactory.IsPortraitLongForm(replayLongFormRequest.Profile)),
             new ExpectedDto(
                 applicationDigest.Hex,
                 plan.Id.ToString(),
@@ -367,7 +368,8 @@ internal static class StandardCompositionEvidenceCodec
                 measuredLandscape,
                 measuredVertical,
                 sourceFrameRate,
-                sourceGeometry);
+                sourceGeometry,
+                input.PortraitLongForm);
         LongFormCompositionRequest longForm = input.LongFormRequest.ToDomain(
             landscapeProfile);
         WorkingCopy workingCopy = input.WorkingCopy.ToDomain(parent);
@@ -679,7 +681,8 @@ internal static class StandardCompositionEvidenceCodec
         ThumbnailEvidenceDto? ThumbnailEvidence,
         string ActorSid,
         string CreatedAt,
-        string ChangeReason);
+        string ChangeReason,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool PortraitLongForm = false);
 
     private sealed record ExpectedDto(
         string ApplicationDigest,

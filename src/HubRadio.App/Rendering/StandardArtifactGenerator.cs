@@ -973,7 +973,8 @@ public sealed class StandardArtifactGenerator
                     [request.ToolEvidence], [request.ModelEvidence], item.Output.Graph.Fonts,
                     [new ManifestArtifact(item.ArtifactType, item.MediaType, null, item.Size, item.Digest, validated.StorageReference)]);
                 OutputQcRequest? qc = item.ArtifactType == "video" ? new OutputQcRequest(item.Id, manifest,
-                    item.Output.Graph, context, item.Output.SubtitleEvidence, request.ProcessTimeout) : null;
+                    item.Output.Graph, context, item.Output.SubtitleEvidence, request.ProcessTimeout)
+                    { PlacementEvidence = item.Output.PlacementEvidence } : null;
                 promoted.Add(new StandardGeneratedArtifact(validated, item.Output.Graph, manifest, evidence,
                     context, item.Output.DisplayCues, item.Output.SubtitleFiles, item.Output.SubtitleEvidence, qc,
                     item.Output.GraphicFiles)

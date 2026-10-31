@@ -132,6 +132,8 @@ public static class StandardRenderProfileFactory
     /// FR-058: the long-form profile for this source. A portrait source keeps a portrait 1080x1920
     /// long form only when the accepted settings say <c>followSource</c>; settings without the key
     /// (profiles before 1.2.0) always build the 1920x1080 landscape long form, so saved results replay.
+    /// FR-138 (5): <paramref name="forcePortrait"/> is set when the Job applied a vertical production template, whose
+    /// deliverable is a 1080x1920 output whatever the source orientation (a Job without a template never sets it).
     /// </summary>
     public static BundledRenderProfileDefinition CreateLongForm(
         DefaultSettingsProfile settingsProfile,
@@ -139,8 +141,9 @@ public static class StandardRenderProfileFactory
         BundledRenderProfileDefinition measuredLandscapeReference,
         BundledRenderProfileDefinition measuredVerticalReference,
         RationalNumber sourceFrameRate,
-        SourceDisplayGeometry sourceGeometry) =>
-        UsesPortraitLongForm(settings, sourceGeometry)
+        SourceDisplayGeometry sourceGeometry,
+        bool forcePortrait = false) =>
+        forcePortrait || UsesPortraitLongForm(settings, sourceGeometry)
             ? CreatePortraitLongForm(settingsProfile, settings, measuredLandscapeReference,
                 measuredVerticalReference, sourceFrameRate)
             : CreateLandscape(settingsProfile, settings, measuredLandscapeReference, sourceFrameRate);

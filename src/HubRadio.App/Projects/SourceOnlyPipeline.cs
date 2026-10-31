@@ -2701,7 +2701,8 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             ?? throw new PipelineFailure(SourceOnlyExecutionPhase.Failed, "source_only.source_frame_rate_unavailable");
         BundledRenderProfileDefinition landscape = StandardRenderProfileFactory.CreateLongForm(profile,
             execution.Request.SettingsSnapshot, BundledRenderProfileLoader.Load(runtime.LandscapeProfileJson.Span),
-            BundledRenderProfileLoader.Load(runtime.VerticalProfileJson.Span), frameRate, geometry);
+            BundledRenderProfileLoader.Load(runtime.VerticalProfileJson.Span), frameRate, geometry,
+            forcePortrait: LoadStyleTemplate(execution.Request.RootJobId)?.Orientation == StyleTemplates.StyleTemplateOrientation.Vertical);
         int? audioSampleRate = ingest.Original.MediaInfo.Streams.Where(item => item.Kind == MediaStreamType.Audio)
             .OrderBy(item => item.Index).FirstOrDefault()?.SampleRate;
         ValidateSourceTiming(ingest.Original.MediaInfo, ingest.SourcePtsIndex!, landscape.Profile, analysis.Import.AudioTimeline);
