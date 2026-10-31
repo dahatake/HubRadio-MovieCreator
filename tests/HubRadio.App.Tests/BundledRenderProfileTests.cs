@@ -794,6 +794,30 @@ public sealed class BundledRenderProfileTests
             latest, latest.CreateSnapshot(), measuredVertical, measuredVertical, rate, portrait));
     }
 
+    // FR-138 (5) AC-158: a vertical production template makes the deliverable a 1080x1920 output whatever the source orientation;
+    // without it (the default output) the long form stays as before.
+    [TestMethod]
+    [TestCategory("FR-138")]
+    public void AVerticalTemplateForcesThePortraitLongFormForALandscapeSource()
+    {
+        DefaultSettingsProfile latest = BundledDefaultSettingsProfileLoader.Load(File.ReadAllBytes(
+            ResolveRepositoryPath("src/HubRadio.App/DefaultSettings/Profiles/1.2.0.json")));
+        BundledRenderProfileDefinition measuredLandscape = LoadSource("16x9/long-form.json");
+        BundledRenderProfileDefinition measuredVertical = LoadSource("9x16/vertical-short.json");
+        var rate = new RationalNumber(30, 1);
+        var landscapeSource = new SourceDisplayGeometry(1920, 1080);
+
+        BundledRenderProfileDefinition forced = StandardRenderProfileFactory.CreateLongForm(
+            latest, latest.CreateSnapshot(), measuredLandscape, measuredVertical, rate, landscapeSource, forcePortrait: true);
+        Assert.IsTrue(StandardRenderProfileFactory.IsPortraitLongForm(forced));
+        Assert.AreEqual(1080, forced.Profile.Width);
+        Assert.AreEqual(1920, forced.Profile.Height);
+        BundledRenderProfileDefinition regular = StandardRenderProfileFactory.CreateLongForm(
+            latest, latest.CreateSnapshot(), measuredLandscape, measuredVertical, rate, landscapeSource);
+        Assert.IsFalse(StandardRenderProfileFactory.IsPortraitLongForm(regular));
+        Assert.AreEqual(1920, regular.Profile.Width);
+    }
+
     private static BundledRenderProfileDefinition LoadSource(string relativePath) =>
         BundledRenderProfileLoader.Load(ReadSourceBytes(relativePath));
 

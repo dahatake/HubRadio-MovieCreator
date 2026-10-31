@@ -21,6 +21,14 @@ public sealed record JobStyleTemplateRecord(string TemplateId, int Version, IRea
     public const string AppliedLabel = "テンプレート";
     public const string ModifiedLabel = "テンプレート＋変更あり";
 
+    /// <summary>FR-143: the adjustment target and value of a subtitle the user moved into the PARAM-005 margin.</summary>
+    public const string SubtitleTarget = "subtitle";
+    public const string MarginPosition = "margin";
+
+    /// <summary>FR-143: true when the user moved the subtitle into the margin (an explicit adjustment, never a default).</summary>
+    public bool SubtitleIntoMargin => Adjustments.Any(static item =>
+        item.TargetId == SubtitleTarget && item.Property == "position" && item.Value == MarginPosition);
+
     public bool IsModified => Adjustments.Count > 0;
 
     /// <summary>FR-139: a font may be used only when it is recorded with a version and a license that permit burning it in.</summary>

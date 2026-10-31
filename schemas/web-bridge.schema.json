@@ -441,7 +441,9 @@
         "expectedVersionDigest": { "$ref": "#/$defs/contentDigest" },
         "expectedSettingsRevision": { "$ref": "#/$defs/nonnegativeInt32" },
         "expectedSettingsSnapshotDigest": { "$ref": "#/$defs/contentDigest" },
-        "styleTemplateId": { "$comment": "FR-136: the production template selected for the new Job; absent when none is selected (the default output is unchanged).", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$", "maxLength": 64 }
+        "styleTemplateId": { "$comment": "FR-136: the production template selected for the new Job; absent when none is selected (the default output is unchanged).", "type": "string", "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$", "maxLength": 64 },
+        "talkShowInput": { "$comment": "FR-141: JSON text of the talk-show topics and speakers' names and titles the user entered or confirmed (only with styleTemplateId); saved as talk-show-input.json in the Job directory.", "type": "string", "minLength": 1, "maxLength": 8192 },
+        "subtitleIntoMargin": { "$comment": "FR-143: the user's explicit adjustment that moves the subtitle into the PARAM-005 margin (only with a vertical styleTemplateId); the output inspection then fails.", "type": "boolean" }
       }
     },
     "pipelineCommandParams": {

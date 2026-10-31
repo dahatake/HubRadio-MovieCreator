@@ -151,6 +151,10 @@ public sealed class StandardArtifactGenerationRequest
         IReadOnlyList<StyleTemplates.StyleTemplateFreeTelopInput> lines) =>
         Configuration = Configuration.WithCharacterDialogue(characters, imageDirectory, lines);
 
+    /// <summary>FR-141 / FR-143: hands the user's talk-show input and the subtitle-into-margin adjustment of the Job to the render.</summary>
+    internal void UseTalkShow(StyleTemplates.TalkShowInput? input, bool subtitleIntoMargin) =>
+        Configuration = Configuration.WithTalkShow(input, subtitleIntoMargin);
+
     /// <summary>
     /// FR-140 / FR-142: hands the speaker assignment of the Job, the timed ASR tokens (for the words of each cue) and a sink that
     /// receives what the render recorded (cues, speakers, colors, words, portraits) to the render.
@@ -969,7 +973,8 @@ public sealed class StandardArtifactGenerator
                     [request.ToolEvidence], [request.ModelEvidence], item.Output.Graph.Fonts,
                     [new ManifestArtifact(item.ArtifactType, item.MediaType, null, item.Size, item.Digest, validated.StorageReference)]);
                 OutputQcRequest? qc = item.ArtifactType == "video" ? new OutputQcRequest(item.Id, manifest,
-                    item.Output.Graph, context, item.Output.SubtitleEvidence, request.ProcessTimeout) : null;
+                    item.Output.Graph, context, item.Output.SubtitleEvidence, request.ProcessTimeout)
+                    { PlacementEvidence = item.Output.PlacementEvidence } : null;
                 promoted.Add(new StandardGeneratedArtifact(validated, item.Output.Graph, manifest, evidence,
                     context, item.Output.DisplayCues, item.Output.SubtitleFiles, item.Output.SubtitleEvidence, qc,
                     item.Output.GraphicFiles)

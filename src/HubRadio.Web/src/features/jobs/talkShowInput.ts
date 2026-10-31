@@ -72,3 +72,20 @@ export function updateSpeaker(value: TalkShowInputValue, id: string, patch: Part
 export function updateTopic(value: TalkShowInputValue, id: string, patch: Partial<TalkShowTopicEntry>): TalkShowInputValue {
   return { ...value, topics: value.topics.map(item => item.id === id ? { ...item, ...patch } : item) }
 }
+
+/** FR-141: the most topics one Job may hold (the same limit the app applies when it reads the input). */
+export const maximumTopics = 20
+
+/** FR-141 / FR-138 (4): adds an empty topic entry after the last one (each topic is shown while it continues). */
+export function addTopic(value: TalkShowInputValue): TalkShowInputValue {
+  if (value.topics.length >= maximumTopics) return value
+  let number = value.topics.length + 1
+  while (value.topics.some(item => item.id === `topic-${number}`)) number += 1
+  return { ...value, topics: [...value.topics, { id: `topic-${number}`, text: '', origin: 'user', confirmed: false }] }
+}
+
+/** Removes a topic entry; at least one entry always stays so the field is never lost. */
+export function removeTopic(value: TalkShowInputValue, id: string): TalkShowInputValue {
+  if (value.topics.length <= 1) return value
+  return { ...value, topics: value.topics.filter(item => item.id !== id) }
+}

@@ -53,6 +53,8 @@ public sealed record TalkShowPlan(
     public const string TitleUnconfirmedWarning = "title-unconfirmed";
     public const string TitleDateMissingWarning = "title-confirmation-date-missing";
     public const string TopicUnconfirmedWarning = "topic-draft-unconfirmed";
+    public const string TopicTooLongWarning = "topic-too-long";
+    public const string BandTooLongWarning = "band-too-long";
 }
 
 /// <summary>FR-141 / FR-138: turns the user's input into the topics and speakers the layout may show.</summary>

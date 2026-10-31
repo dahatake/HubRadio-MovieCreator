@@ -271,6 +271,9 @@ public sealed class OutputQcRequest
 
     public OutputQcSubtitleEvidence? SubtitleEvidence { get; }
 
+    /// <summary>FR-143 (c): the placement inspection of a vertical output (null when none was made).</summary>
+    public OutputQcPlacementEvidence? PlacementEvidence { get; init; }
+
     public TimeSpan ProcessTimeout { get; }
 }
 
@@ -740,6 +743,7 @@ public sealed class OutputQcResult
         TemplateVersionDigest = request.RenderManifest.TemplateVersionDigest;
         SubtitleLayoutProfileDigest = request.SubtitleEvidence?.LayoutProfileDigest;
         SubtitleDisplayProfileDigest = request.SubtitleEvidence?.DisplayProfileDigest;
+        PlacementInspection = request.PlacementEvidence;
         ProbeEvidenceDigest = probeEvidenceDigest;
         VideoStreamIndex = videoStreamIndex;
         AudioStreamIndex = audioStreamIndex;
@@ -823,6 +827,8 @@ public sealed class OutputQcResult
 
     public ContentDigest? SubtitleDisplayProfileDigest { get; }
 
+    /// <summary>FR-143 (c): the placement inspection evidence of a vertical output (null when none was made).</summary>
+    public OutputQcPlacementEvidence? PlacementInspection { get; }
     public ContentDigest ProbeEvidenceDigest { get; }
 
     public int VideoStreamIndex { get; }
@@ -851,7 +857,7 @@ public sealed class OutputQcResult
 
     public OutputQcRemediationPolicy RemediationPolicy { get; }
 
-    public bool MachineChecksPassed => true;
+    public bool MachineChecksPassed => PlacementInspection?.Passed ?? true;
 
     public bool HumanReviewRequired => true;
 

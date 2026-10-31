@@ -48,7 +48,7 @@ import {
 } from './workflowNavigation'
 import { PipelineProvider, usePipeline } from './PipelineProvider'
 import { GeneratedResultPreview, PipelineProgress, toWorkflowWarningTarget, type GeneratedPreviewSeek } from './pipelinePresentation'
-import { isPipelineLive, pipelineRegistrationRefreshKey, sameResultBinding, sourceOnlyMediaUrl, type PipelineRegenerationParams, type PipelineVersionEntry, type SourceOnlyResultBinding, type SourceOnlyResultWarning } from './pipelineProtocol'
+import { isPipelineLive, pipelineRegistrationRefreshKey, sameResultBinding, sourceOnlyMediaUrl, type PipelineRegenerationParams, type PipelineRegenerationExtras, type PipelineVersionEntry, type SourceOnlyResultBinding, type SourceOnlyResultWarning } from './pipelineProtocol'
 // Import the shell after feature components so its local layout rules win.
 import { WorkflowTabs } from './WorkflowTabs'
 import './workflow.css'
@@ -503,9 +503,9 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
   // FR-061.7: a new Job is a regeneration from the latest Job, sent from the source screen.
   // FR-136: the production template picked for the next Job (null = none; the default output is unchanged).
   const [styleTemplateId, setStyleTemplateId] = useState<string | null>(null)
-  function createJob(params: PipelineRegenerationParams, templateId: string | null = null): boolean {
+  function createJob(params: PipelineRegenerationParams, templateId: string | null = null, extras: PipelineRegenerationExtras = {}): boolean {
     return screen === 'source' && draft?.isFinalized === true && !Object.values(dirtyFlags.current).some(Boolean) &&
-      jobCreationReason === null && regenerationReason === null && JSON.stringify(params) === JSON.stringify(regenerationParams) && pipeline.regenerate(params, templateId)
+      jobCreationReason === null && regenerationReason === null && JSON.stringify(params) === JSON.stringify(regenerationParams) && pipeline.regenerate(params, templateId, extras)
   }
   const jobs = pipeline.state.versionsStatus === 'available' ? pipeline.state.versions : null
 

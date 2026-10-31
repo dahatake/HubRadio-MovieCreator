@@ -1965,8 +1965,11 @@ public sealed class WebBridgeSchemaTests
         Assert.IsFalse(regenerateParams.GetProperty("additionalProperties").GetBoolean());
         CollectionAssert.AreEquivalent(new[] { "projectId", "expectedVersionId", "expectedVersionDigest", "expectedSettingsRevision", "expectedSettingsSnapshotDigest" },
             GetStrings(regenerateParams.GetProperty("required")));
-        CollectionAssert.AreEquivalent(new[] { "projectId", "expectedVersionId", "expectedVersionDigest", "expectedSettingsRevision", "expectedSettingsSnapshotDigest", "styleTemplateId" },
+        CollectionAssert.AreEquivalent(new[] { "projectId", "expectedVersionId", "expectedVersionDigest", "expectedSettingsRevision", "expectedSettingsSnapshotDigest", "styleTemplateId", "talkShowInput", "subtitleIntoMargin" },
             regenerateParams.GetProperty("properties").EnumerateObject().Select(static property => property.Name).ToArray());
+        // FR-141: the talk-show input is JSON text of at most 8192 characters.
+        Assert.AreEqual(8192, regenerateParams.GetProperty("properties").GetProperty("talkShowInput").GetProperty("maxLength").GetInt32());
+        Assert.AreEqual("boolean", regenerateParams.GetProperty("properties").GetProperty("subtitleIntoMargin").GetProperty("type").GetString());
         AssertClosedProperties(definitions.GetProperty("pipelineCommandParams"), "projectId", "executionId", "expectedRevision");
         JsonElement result = definitions.GetProperty("sourceOnlyBridgeResult");
         AssertClosedProperties(result, "status", "snapshot");

@@ -271,7 +271,8 @@ internal static class SourceOnlyResultInputValidation
                 byte[] expected = StandardSubtitlePlacement.WriteAtBounds(cue, ass, left, top,
                     checked(left + Pixel(rect.Width, profile.Width)), checked(top + Pixel(rect.Height, profile.Height))).GetUtf8Bytes();
                 // Entire bytes, including the parsed Dialogue start/end/style/text and placement.
-                SourceOnlyResultCodec.Require(file.CueCount == 1 && actual.AsSpan().SequenceEqual(expected));
+                SourceOnlyResultCodec.Require(file.CueCount == 1 &&
+                    StandardTemplateSubtitleBytes.Matches(actual, expected, profile.Width, profile.Height));
             }
             measured.Add(SourceOnlyResultObservationBuilder.MeasureCue(cue, safe));
         }
