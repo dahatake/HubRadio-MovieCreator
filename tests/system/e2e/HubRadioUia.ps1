@@ -475,11 +475,32 @@ function New-SyntheticSpeechVideo($sb, [string]$dir, [string]$Text = 'Hello and 
     $ff = Get-TestFfmpeg $sb
     $wav = New-SyntheticSpeechWav (Join-Path $dir 'speech.wav') $Text
     $out = Join-Path $dir 'source-speech.mp4'
+    # 映像の長さを音声（WAV）の再生時間に合わせる。アプリの取り込み検証は、音声が映像より 250 ms を超えて短い素材を拒否するため
+    $fs = [IO.File]::OpenRead($wav)
+    try {
+        $hdr = New-Object byte[] 44; [void]$fs.Read($hdr, 0, 44)
+        $byteRate = [BitConverter]::ToInt32($hdr, 28)
+        $dataLen = $fs.Length - 44
+    } finally { $fs.Dispose() }
+    if ($byteRate -le 0) { throw "invalid wav header: $wav" }
+    $dur = [Math]::Round($dataLen / $byteRate, 3).ToString([Globalization.CultureInfo]::InvariantCulture)
     foreach ($vc in @('libx264', 'mpeg4')) {
-        & $ff -y -f lavfi -i 'testsrc=size=1920x1080:rate=30' -i $wav -c:v $vc -pix_fmt yuv420p -c:a aac -shortest $out 2>$null
-        if ($LASTEXITCODE -eq 0) { return $out }
+        & $ff -y -f lavfi -i "testsrc=size=1920x1080:rate=30:duration=$dur" -i $wav -c:v $vc -pix_fmt yuv420p -c:a aac -af apad -t $dur $out 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $a = Get-StreamDecodedSeconds $ff $out '0:a:0'
+            $v = Get-StreamDecodedSeconds $ff $out '0:v:0'
+            if ([Math]::Abs($a - $v) -gt 0.150) { throw ("synthetic speech video audio/video length mismatch: audio={0:N3}s video={1:N3}s" -f $a, $v) }
+            return $out
+        }
     }
     throw 'ffmpeg failed to create synthetic speech video'
+}
+function Get-StreamDecodedSeconds([string]$ff, [string]$Path, [string]$Map) {
+    $log = (& $ff -v info -i $Path -map $Map -f null - 2>&1 | Out-String)
+    $m = [regex]::Matches($log, 'time=(\d+):(\d+):(\d+\.\d+)')
+    if ($m.Count -eq 0) { throw "cannot measure $Map of $Path" }
+    $l = $m[$m.Count - 1]
+    [int]$l.Groups[1].Value * 3600 + [int]$l.Groups[2].Value * 60 + [double]::Parse($l.Groups[3].Value, [Globalization.CultureInfo]::InvariantCulture)
 }
 function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jobCount, [string]$videoPath) {
     # 「新しいProjectを作成」は OS の「開く」ダイアログで動画を 1 本選ぶ。選ぶとそのまま「かんたん編集」の画面になる。
