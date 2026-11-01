@@ -1,7 +1,8 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # 要求: FR-001/FR-002/FR-009 ほか。AC-049 AC-001 AC-057 AC-002 AC-060 AC-079（system）
 # 期待値は受入基準だけから決める。実装が未完成なら失敗する（not_run から開始）。
 param([Parameter(Mandatory)][ValidateSet('AC-049','AC-001','AC-057','AC-002','AC-060','AC-079')][string]$Ac)
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'HubRadioUia.ps1')
 $sb = New-AppSandbox
 $p = $null

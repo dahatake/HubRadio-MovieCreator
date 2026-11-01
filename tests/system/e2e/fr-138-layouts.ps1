@@ -1,6 +1,7 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-138 AC-156 AC-157 AC-158（integration）。余白 PARAM-005: 上 250・下 480・右 160 px（AC-156 の記述値）。
 param([Parameter(Mandatory)][ValidateSet('AC-156','AC-157','AC-158')][string]$Ac)
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'StyleTemplate.common.ps1')
 $sb = New-AppSandbox
 $p = $null

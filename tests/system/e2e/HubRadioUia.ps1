@@ -489,7 +489,7 @@ function Wait-JobCompleted($root, [int]$jobNumber, [int]$timeoutSec = 900) {
             Write-JobWaitDiag "app exited while waiting for Job $jobNumber (after $([int]$sw.Elapsed.TotalSeconds) s)"
             throw "Job $jobNumber did not complete within $timeoutSec s (app exited: $($script:AppProc.ExitCode))"
         }
-        if (@(Find-AllByNameLike $root "^サムネイル: Job $jobNumber、.*完了$")        .Count -gt 0) { return }
+        if (@(Find-AllByNameLike $root "^サムネイル: Job $jobNumber、.*完了$").Count -gt 0) { return }
                 $failed = @(Find-AllByNameLike $root '操作を完了できませんでした|^サムネイル: Job \d+、.*(失敗|取消)$')
                 if ($failed.Count -gt 0) {
                     $msg = (Find-AllByNameLike $root '編集を開始できません|失敗') | Select-Object -First 1

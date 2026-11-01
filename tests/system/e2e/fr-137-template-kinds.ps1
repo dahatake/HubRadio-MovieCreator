@@ -1,6 +1,7 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-137 AC-153 AC-154（integration）。AC-155 は Q-022 で BLOCKED のためケースなし。
 param([Parameter(Mandatory)][ValidateSet('AC-153','AC-154')][string]$Ac)
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'StyleTemplate.common.ps1')
 $sb = New-AppSandbox
 $p = $null

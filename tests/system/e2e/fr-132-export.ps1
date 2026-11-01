@@ -1,7 +1,8 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-132 AC-136 AC-137 (system): 仕上がり画面で書き出し先を選んで保存 → 動画とサムネイルが保存され、
 # ファイル名に Project 名・Job 名（または作成日時）・種類を含む。元の成果物は不変。
 # 同名ファイルがあるときは既存を変えず、連番の別名で保存する。
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'HubRadioUia.ps1')
 $sb = New-AppSandbox
 $p = $null

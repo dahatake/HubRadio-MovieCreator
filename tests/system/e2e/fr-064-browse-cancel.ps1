@@ -1,5 +1,6 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-064 AC-040 AC-042 (system): 取り消し・二重押下の防止・キーボード操作・読み上げ名・直接入力。
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'HubRadioUia.ps1')
 $sb = New-AppSandbox
 $p = $null

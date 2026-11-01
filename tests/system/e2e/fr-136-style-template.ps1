@@ -1,6 +1,7 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-136 AC-150 AC-151 AC-152（integration）。期待値は受入基準だけから決める。
 param([Parameter(Mandatory)][ValidateSet('AC-150','AC-151','AC-152')][string]$Ac)
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'StyleTemplate.common.ps1')
 $sb = New-AppSandbox
 $p = $null

@@ -1,6 +1,7 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-131 AC-132 (system): Job が複数ある Project で、Job を表示・選択する各画面に Job ごとのサムネイルが
 # Job の名前または作成日時とともに表示され、どの Job か識別できる。
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'HubRadioUia.ps1')
 $sb = New-AppSandbox
 $p = $null

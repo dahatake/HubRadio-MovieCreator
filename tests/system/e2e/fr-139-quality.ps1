@@ -1,6 +1,7 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-139 AC-159（integration）, AC-161（manual → 文面の自動走査）。AC-160 は fr-137-139-character-fonts.ps1。
 param([Parameter(Mandatory)][ValidateSet('AC-159','AC-161')][string]$Ac)
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'StyleTemplate.common.ps1')
 
 function Get-Luminance([string]$hex) {

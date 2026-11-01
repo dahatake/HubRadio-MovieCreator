@@ -1,6 +1,7 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-131 AC-133 AC-134 AC-135（integration）。期待値は受入基準だけから決める。
 param([Parameter(Mandatory)][ValidateSet('AC-133','AC-134','AC-135')][string]$Ac)
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'HubRadioUia.ps1')
 $sb = New-AppSandbox
 $p = $null

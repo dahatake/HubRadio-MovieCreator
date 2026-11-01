@@ -1,6 +1,7 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-137 AC-155（integration）, FR-139 AC-160（integration）。参考スクリプト: 台帳では blocked（結合試験は実装役が担当）。
 param([Parameter(Mandatory)][ValidateSet('AC-155','AC-160')][string]$Ac)
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'StyleTemplate.common.ps1')
 
 $sb = New-AppSandbox
