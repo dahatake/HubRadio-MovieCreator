@@ -29,6 +29,59 @@ public static class CueWordTiming
         return IsValid(cue, inside) ? new(inside, null) : new([], MissingWarning);
     }
 
+    /// <summary>
+    /// The ASR tokens are trimmed, but the cue text keeps what lay between them (a space between the words of a spaced language,
+    /// punctuation). This attaches each gap to the word before it so the words concatenate to the cue text exactly, without adding
+    /// or changing a character. Returns null when a gap holds anything but white space or punctuation, or a word is not found in order
+    /// (the text was corrected: <see cref="Realign"/> decides).
+    /// </summary>
+    public static IReadOnlyList<StyleTemplateWord>? WithSeparators(string cueText, IReadOnlyList<StyleTemplateWord> words)
+    {
+        ArgumentNullException.ThrowIfNull(cueText);
+        ArgumentNullException.ThrowIfNull(words);
+        if (words.Count == 0)
+        {
+            return null;
+        }
+
+        static bool IsSeparator(string gap) => gap.All(static c => char.IsWhiteSpace(c) || char.IsPunctuation(c) || char.IsSymbol(c));
+        var result = new List<StyleTemplateWord>(words.Count);
+        int position = 0;
+        string pending = string.Empty;
+        for (int index = 0; index < words.Count; index++)
+        {
+            StyleTemplateWord word = words[index];
+            int at = word.Text.Length == 0 ? -1 : cueText.IndexOf(word.Text, position, StringComparison.Ordinal);
+            if (at < 0 || !IsSeparator(cueText[position..at]))
+            {
+                return null;
+            }
+
+            string gap = cueText[position..at];
+            if (index == 0)
+            {
+                pending = gap;
+            }
+            else
+            {
+                result[^1] = result[^1] with { Text = result[^1].Text + gap };
+            }
+
+            result.Add(word with { Text = pending + word.Text });
+            pending = string.Empty;
+            position = at + word.Text.Length;
+        }
+
+        string trailer = cueText[position..];
+        if (!IsSeparator(trailer))
+        {
+            return null;
+        }
+
+        result[^1] = result[^1] with { Text = result[^1].Text + trailer };
+        return result;
+    }
+
     /// <summary>True when the words are in order, do not overlap, lie inside the cue and concatenate to its text.</summary>
     public static bool IsValid(StandardDisplayedCueText cue, IReadOnlyList<StyleTemplateWord> words)
     {

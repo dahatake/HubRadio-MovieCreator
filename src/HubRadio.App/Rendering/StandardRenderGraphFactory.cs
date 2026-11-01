@@ -383,7 +383,12 @@ public static class StandardRenderGraphFactory
             nodes.Add(video);
             nodes.Add(sound);
             audio.Add(sound.Id);
-            geometry.Add(new FfmpegVideoGeometryBinding(video.Id, sourceDisplayGeometry, shortForm?.Layout));
+            // FR-138 (5): the vertical 3-tier template puts the source video into the middle tier of the 1080x1920 frame.
+            StyleTemplates.StyleTemplateRect? middle = shortForm is not null && configuration?.StyleTemplate?.Id == StyleTemplates.StyleTemplateCatalog.Vertical3TierId
+                && profile.Width == StyleTemplates.StyleTemplateLayout.VerticalWidth && profile.Height == StyleTemplates.StyleTemplateLayout.VerticalHeight
+                ? StyleTemplates.StyleTemplateLayout.VerticalFrame().VideoTier : null;
+            geometry.Add(new FfmpegVideoGeometryBinding(video.Id, sourceDisplayGeometry, shortForm?.Layout,
+                middle?.Top, middle?.Height));
             if (visual is not null)
             {
                 RenderNode cut = RenderNode.TransitionEffect(EntityId<RenderNodeIdTag>.New(),
@@ -490,7 +495,9 @@ public static class StandardRenderGraphFactory
                     (double)file.Evidence.OutputRange.Start.Value / file.Evidence.OutputRange.Start.Rate,
                     (double)file.Evidence.OutputRange.End.Value / file.Evidence.OutputRange.End.Rate,
                     new(file.Evidence.Left, file.Evidence.Top, file.Evidence.Right - file.Evidence.Left, file.Evidence.Bottom - file.Evidence.Top)))],
-                subtitleBox, verticalOutput ? StyleTemplates.StyleTemplateMargins.Vertical : null, platformUiConfirmed: false);
+                subtitleBox, verticalOutput ? StyleTemplates.StyleTemplateMargins.Vertical : null, platformUiConfirmed: false,
+                hookSegmentId: shortForm?.Hook?.SourceSpan.Id.ToString(),
+                hookEnd: (double)timeline.Entries[0].OutputRange.Duration.Value / timeline.Entries[0].OutputRange.Duration.Rate);
             recordSink(placed);
             placement = placed.OutputInspection is { } recorded ? OutputQcPlacement(recorded) : null;
         }
@@ -699,9 +706,21 @@ public static class StandardRenderGraphFactory
             words.Add(new(token.Text, new TimeRange(range.Start + offset, range.Duration)));
         }
 
-        StyleTemplates.CueWordTimingResult result = string.Concat(words.Select(static word => word.Text)) == cue.Text
-            ? StyleTemplates.CueWordTiming.For(cue, words)
-            : StyleTemplates.CueWordTiming.Realign(cue, words, cue.Text);
+        StyleTemplates.CueWordTimingResult result;
+        if (string.Concat(words.Select(static word => word.Text)) == cue.Text)
+        {
+            result = StyleTemplates.CueWordTiming.For(cue, words);
+        }
+        else if (StyleTemplates.CueWordTiming.WithSeparators(cue.Text, words) is { } spaced)
+        {
+            // The tokens are trimmed; the cue keeps the space / punctuation between them (a spaced language such as English).
+            result = StyleTemplates.CueWordTiming.For(cue, spaced);
+        }
+        else
+        {
+            result = StyleTemplates.CueWordTiming.Realign(cue, words, cue.Text);
+        }
+
         return result.Words;
     }
 

@@ -6,8 +6,9 @@ namespace HubRadio.App.Rendering;
 /// <summary>
 /// FR-136 / FR-138 / FR-141: the stored subtitle file of a template Job differs from the plain standard file only in the
 /// override tags of the Dialogue line (the template's color, typeface and motion, and the place inside the margins). This check
-/// accepts exactly that: every other byte (header, styles, times, style name, text) must equal the plain file, and the override
-/// block may hold only the closed set of template tags, with a clip inside the output frame.
+/// accepts exactly that: every other byte (header, styles, style name, times inside the plain cue's) must equal the plain file,
+/// the override block may hold only the closed set of template tags with a clip inside the output frame, and the cue's own text
+/// must be shown in full (as one line or as its consecutive words) — only a short name label may be added.
 /// </summary>
 internal static partial class StandardTemplateSubtitleBytes
 {
@@ -18,6 +19,9 @@ internal static partial class StandardTemplateSubtitleBytes
 
     [GeneratedRegex(@"\\clip\((\d+),(\d+),(\d+),(\d+)\)")]
     private static partial Regex Clip();
+
+    [GeneratedRegex(@"^\\1c&H[0-9A-Fa-f]{6}&(?:\\t\(-?\d+,-?\d+,(?:\\(?:1c&H[0-9A-Fa-f]{6}&|fscx\d+|fscy\d+))+\))*$")]
+    private static partial Regex InlineOverrides();
 
     internal static bool Matches(byte[] actual, byte[] expected, int width, int height)
     {
@@ -30,41 +34,54 @@ internal static partial class StandardTemplateSubtitleBytes
 
         string[] left = new UTF8Encoding(false, true).GetString(actual).Split('\n');
         string[] right = new UTF8Encoding(false, true).GetString(expected).Split('\n');
-        if (left.Length != right.Length)
+        static bool IsDialogue(string line) => line.StartsWith("Dialogue: ", StringComparison.Ordinal);
+        int firstL = Array.FindIndex(left, IsDialogue), firstR = Array.FindIndex(right, IsDialogue);
+        int lastL = Array.FindLastIndex(left, IsDialogue), lastR = Array.FindLastIndex(right, IsDialogue);
+        if (firstL < 0 || firstR < 0 || firstR != lastR)
         {
             return false;
         }
 
-        int dialogues = 0;
-        for (int index = 0; index < left.Length; index++)
+        // Everything before and after the Dialogue lines (header, styles, trailer) must equal the plain file.
+        if (firstL != firstR || left.Length - lastL != right.Length - lastR
+            || !left.Take(firstL).SequenceEqual(right.Take(firstR)) || !left.Skip(lastL + 1).SequenceEqual(right.Skip(lastR + 1)))
         {
-            if (!left[index].StartsWith("Dialogue: ", StringComparison.Ordinal) || !right[index].StartsWith("Dialogue: ", StringComparison.Ordinal))
-            {
-                if (left[index] != right[index])
-                {
-                    return false;
-                }
+            return false;
+        }
 
-                continue;
-            }
+        if (!TryParse(right[firstR], out string[] plainHead, out string plainTail, out _))
+        {
+            return false;
+        }
 
-            int a = left[index].IndexOf(Marker, StringComparison.Ordinal);
-            int b = right[index].IndexOf(Marker, StringComparison.Ordinal);
-            if (a < 0 || b < 0 || left[index][..a] != right[index][..b])
+        int plainClose = plainTail.IndexOf('}', StringComparison.Ordinal);
+        long plainStart = 0, plainEnd = 0;
+        if (!plainTail.StartsWith('{') || plainClose < 0
+            || !TryCentiseconds(plainHead[1], out plainStart) || !TryCentiseconds(plainHead[2], out plainEnd))
+        {
+            return false;
+        }
+
+        string plainText = plainTail[(plainClose + 1)..];
+        var texts = new List<(string Text, bool Label)>();
+        for (int index = firstL; index <= lastL; index++)
+        {
+            // The template may replace the one Dialogue line by several: the caption words, the dialogue line, a name label.
+            if (!IsDialogue(left[index]) || !TryParse(left[index], out string[] head, out string tail, out _)
+                || head[3] != plainHead[3] || head[0] != plainHead[0]
+                || !TryCentiseconds(head[1], out long start) || !TryCentiseconds(head[2], out long end)
+                || start < plainStart || end > plainEnd || start >= end)
             {
                 return false;
             }
 
-            string tailA = left[index][(a + Marker.Length)..];
-            string tailB = right[index][(b + Marker.Length)..];
-            int closeA = tailA.IndexOf('}', StringComparison.Ordinal);
-            int closeB = tailB.IndexOf('}', StringComparison.Ordinal);
-            if (!tailA.StartsWith('{') || !tailB.StartsWith('{') || closeA < 0 || closeB < 0 || tailA[(closeA + 1)..] != tailB[(closeB + 1)..])
+            int close = tail.IndexOf('}', StringComparison.Ordinal);
+            if (!tail.StartsWith('{') || close < 0)
             {
                 return false;
             }
 
-            string block = tailA[1..closeA];
+            string block = tail[1..close];
             Match clip = Clip().Match(block);
             if (!Overrides().IsMatch(block) || !clip.Success
                 || int.Parse(clip.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture) > width
@@ -73,9 +90,66 @@ internal static partial class StandardTemplateSubtitleBytes
                 return false;
             }
 
-            dialogues++;
+            // The text may carry inline override blocks (the highlight of the spoken word); only the closed set is accepted.
+            string rest = tail[(close + 1)..];
+            var visible = new StringBuilder();
+            while (rest.Length > 0)
+            {
+                int open = rest.IndexOf('{', StringComparison.Ordinal);
+                if (open < 0)
+                {
+                    _ = visible.Append(rest);
+                    break;
+                }
+
+                int end2 = rest.IndexOf('}', open + 1);
+                if (end2 < 0 || !InlineOverrides().IsMatch(rest[(open + 1)..end2]))
+                {
+                    return false;
+                }
+
+                _ = visible.Append(rest, 0, open);
+                rest = rest[(end2 + 1)..];
+            }
+
+            texts.Add((visible.ToString(), !plainText.Contains(visible.ToString(), StringComparison.Ordinal)));
         }
 
-        return dialogues == 1;
+        // The cue's own text must be shown in full, once as one line or as the consecutive words of it; nothing else may be
+        // shown unless it is a name label (a short line of the registered character name, shown with the picture).
+        bool whole = texts.Any(item => !item.Label && item.Text == plainText)
+            || string.Concat(texts.Where(static item => !item.Label).Select(static item => item.Text)) == plainText;
+        return whole && texts.Where(static item => item.Label).All(static item => item.Text.Length is > 0 and <= 64);
+    }
+
+    private static bool TryParse(string line, out string[] head, out string tail, out string before)
+    {
+        head = [];
+        tail = string.Empty;
+        before = string.Empty;
+        int marker = line.IndexOf(Marker, StringComparison.Ordinal);
+        if (marker < 0)
+        {
+            return false;
+        }
+
+        before = line[..marker];
+        head = before.Split(',');
+        tail = line[(marker + Marker.Length)..];
+        return head.Length == 4;
+    }
+
+    private static bool TryCentiseconds(string stamp, out long value)
+    {
+        value = 0;
+        string[] parts = stamp.Split(':', '.');
+        if (parts.Length != 4 || !long.TryParse(parts[0], out long h) || !long.TryParse(parts[1], out long m)
+            || !long.TryParse(parts[2], out long s) || !long.TryParse(parts[3], out long c))
+        {
+            return false;
+        }
+
+        value = (((h * 60) + m) * 60 + s) * 100 + c;
+        return true;
     }
 }

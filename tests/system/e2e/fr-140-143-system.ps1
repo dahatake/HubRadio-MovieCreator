@@ -1,7 +1,8 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-140 AC-165 / FR-141 AC-169 / FR-142 AC-172 / FR-143 AC-174（system）。
 # 期待値は受入基準だけから決める。成果物の映像（mp4）はフレームを取り出して画素で確認し、Job の記録（JSON）は補助に使う。
 param([Parameter(Mandatory)][ValidateSet('AC-165','AC-169','AC-172','AC-174')][string]$Ac)
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'StyleTemplate.common.ps1')
 
 function Get-DeliverableVideo($sb) {
@@ -37,7 +38,8 @@ $sb = New-AppSandbox
 $p = $null
 Invoke-Test -Label "FR-140-143 $Ac" -Sandbox $sb -Body {
     try {
-        $video = New-SyntheticVideo $sb $sb.Work
+        # AC-172 だけは ASR が 3 語以上の時刻付き単語を返す音声（英文の合成音声）が必要
+        $video = if ($Ac -eq 'AC-172') { New-SyntheticSpeechVideo $sb $sb.Work } else { New-SyntheticVideo $sb $sb.Work }
         $p = Start-App $sb; $root = Get-Root $p
         $null = New-ProjectWithCompletedJobs $root $sb 'tpl-sys' 0 $video
         switch ($Ac) {

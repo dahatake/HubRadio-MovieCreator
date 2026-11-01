@@ -1,6 +1,7 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-136〜FR-139 の System Test 共通部品。期待値は受入基準だけから決める。
 # UI 名は受入基準の語（演出テンプレート）を使う。Job の保存内容は Workspace 配下の JSON を文字列として調べる。
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'HubRadioUia.ps1')
 
 $script:TemplateNames = @('解説', 'ショート飛び出し', 'バラエティ', '対談番組', '縦型3段', 'キャラクター対話', '手作り感')

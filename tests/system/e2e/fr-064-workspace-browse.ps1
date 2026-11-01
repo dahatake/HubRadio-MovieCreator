@@ -1,6 +1,7 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-064 AC-039 (system): 「参照…」でフォルダーを選ぶ → 入力欄に反映 → 選んだだけでは
 # workspace-location.json が変わらない → 「保存」で成功の案内と、選んだパスの保存（再起動後は AC の範囲外）。
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'HubRadioUia.ps1')
 $sb = New-AppSandbox
 $target = Join-Path $sb.Work 'picked-empty-folder'

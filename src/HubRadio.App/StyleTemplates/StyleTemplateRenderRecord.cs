@@ -105,7 +105,7 @@ public sealed record StyleTemplateRenderRecord(
     /// the placement inspection against the PARAM-005 margins and the FR-014 region.
     /// </summary>
     public StyleTemplateRenderRecord WithPlacement(TalkShowRenderPlan? talkShow, IReadOnlyList<RecordedTelop> overlays,
-        TalkShowBox? subtitleBox, StyleTemplateMargins? margins, bool platformUiConfirmed)
+        TalkShowBox? subtitleBox, StyleTemplateMargins? margins, bool platformUiConfirmed, string? hookSegmentId = null, double hookEnd = 0)
     {
         ArgumentNullException.ThrowIfNull(overlays);
         var region = new StyleTemplateRect(0, 0, Width, Height);
@@ -142,8 +142,21 @@ public sealed record StyleTemplateRenderRecord(
                 new(frame.VideoTier.Top, frame.VideoTier.Height, TalkShowBox.From(frame.VideoTier)),
                 new(frame.CaptionTier.Top, frame.CaptionTier.Height, cues));
             double end = Math.Max(cues.Count == 0 ? 0 : cues.Max(static cue => cue.End), overlays.Count == 0 ? 0 : overlays.Max(static item => item.End));
-            timeline = [new("program", null, 0, end)];
-            hook = new(null, false);
+            // FR-138 AC-158: the bottom tier shows 15-20 characters per screen.
+            layout = layout with { Bottom = layout.Bottom with { Subtitles = StyleTemplateLayout.BottomScreens(cues) } };
+            if (hookSegmentId is not null && hookEnd > 0)
+            {
+                // FR-011: the selected strongest moment opens the output; the rest follows.
+                timeline = end > hookEnd
+                    ? [new("hook", hookSegmentId, 0, hookEnd), new("program", null, hookEnd, end)]
+                    : [new("hook", hookSegmentId, 0, Math.Min(hookEnd, end))];
+                hook = new(hookSegmentId, true);
+            }
+            else
+            {
+                timeline = [new("program", null, 0, end)];
+                hook = new(null, false);
+            }
         }
 
         return this with
@@ -163,7 +176,7 @@ public sealed record StyleTemplateRenderRecord(
             OutputInspection = inspection,
             Warnings = [.. Warnings, .. show.Warnings,
                 .. inspection is { Verdict: "fail" } ? ["字幕・テロップが余白または字幕領域の外にあります（出力検査 不合格）"] : Array.Empty<string>(),
-                .. threeTier ? [HookNotSelectedWarning] : Array.Empty<string>()],
+                .. threeTier && hookSegmentId is null ? [HookNotSelectedWarning] : Array.Empty<string>()],
         };
     }
 

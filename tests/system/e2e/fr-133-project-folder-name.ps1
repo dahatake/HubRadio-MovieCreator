@@ -1,6 +1,7 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-133 AC-142 (system): 新しく作った Project の Workspace 配下のフォルダー名が GUID ではなく Project 名と一致し、
 # そのフォルダーに Project のファイルが保存され、Job の作成・実行・仕上がりの確認ができる。
+$ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'HubRadioUia.ps1')
 $sb = New-AppSandbox
 $p = $null
