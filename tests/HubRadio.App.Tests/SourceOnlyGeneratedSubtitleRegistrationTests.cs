@@ -46,6 +46,16 @@ public sealed class SourceOnlyGeneratedSubtitleRegistrationTests
     private const string Actor = "S-1-5-21-111-222-333-1001";
     private static readonly DateTimeOffset At = new(2026, 9, 9, 0, 0, 0, TimeSpan.Zero);
 
+    // Hang-probe: the real ASR shape (18 English words in ~8 s, word times, leading-space tokens) must compose.
+    [TestMethod]
+    public async Task RealisticEnglishSpeechTranscriptBuildsRegistersAndCheckpointsItsGeneratedSubtitles()
+    {
+        await using var fixture = new Fixture(0, realisticEnglish: true);
+        SourceOnlyApplicationRegistrations registrations = fixture.LegacyRegistrations;
+        SourceOnlyGeneratedRuntimeEvidence generated = await fixture.RegisterGeneratedAsync(registrations);
+        Assert.IsNotEmpty(generated.LandscapeSubtitles.Subtitles.Revisions);
+    }
+
     [TestMethod]
     [DataRow(0, 1920, 1080)]
     [DataRow(3, 1080, 1920)]
@@ -690,7 +700,7 @@ public sealed class SourceOnlyGeneratedSubtitleRegistrationTests
 
     private sealed class Fixture : IAsyncDisposable
     {
-        internal Fixture(int shortCount, int sourceWidth = 1920, int sourceHeight = 1080, bool empty = false)
+        internal Fixture(int shortCount, int sourceWidth = 1920, int sourceHeight = 1080, bool empty = false, bool realisticEnglish = false)
         {
             Root = Path.Combine(Path.GetTempPath(), "HubRadio.GeneratedSubtitleRegistration", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Root);
@@ -707,7 +717,7 @@ public sealed class SourceOnlyGeneratedSubtitleRegistrationTests
                 ContentDigest.Compute([1, 2, 3]), 100, EntityId<ArtifactIdTag>.New(), ContentDigest.Compute([4, 5, 6]), 0, 1,
                 new RationalTime(1, 48000), default, 0, 1024, EntityId<ArtifactIdTag>.New(), ContentDigest.Compute([7, 8, 9]),
                 1920044, 960000, EntityId<ArtifactIdTag>.New());
-            AsrWorkerSegment[] segments = empty ? [] : Enumerable.Range(0, 3).Select(ordinal =>
+            AsrWorkerSegment[] segments = empty ? [] : realisticEnglish ? RealisticEnglishSegments() : Enumerable.Range(0, 3).Select(ordinal =>
             {
                 double start = 2 + ordinal * 20;
                 return new AsrWorkerSegment(ordinal, 0, "実測。 確認。 結論。", start, start + 15, -0.1, 0.01,
@@ -717,18 +727,24 @@ public sealed class SourceOnlyGeneratedSubtitleRegistrationTests
             }).ToArray();
             var worker = new AsrWorkerResult("Systran/faster-whisper-small", "536b0662742c02347bc0e980a01041f333bce120",
                 new ContentDigest("4e924b13871cadaa18f24bf888a6388e45d15da56e06b0b90141dc27d96e951f"),
-                new AsrWorkerConfiguration("cpu", "int8", "ja", "transcribe", 5, true, false, true),
-                audio.AnalysisAudioDigest, audio.AnalysisAudioByteSize, 60, "ja", 0.9, 60, segments);
+                new AsrWorkerConfiguration("cpu", "int8", realisticEnglish ? LocalAnalysisWorker.AutoLanguagePolicy : "ja", "transcribe", 5, true, false, true),
+                audio.AnalysisAudioDigest, audio.AnalysisAudioByteSize, 60, realisticEnglish ? "en" : "ja", 0.9, 60, segments);
             Import = SourceOnlyPipeline.RebindImportedIds(TranscriptImporter.Import(worker, audio,
                 EntityId<TranscriptRevisionIdTag>.New(), EntityId<TranscriptSpeakerIdTag>.New(), At));
             var index = new PtsIndex(audio.SourceAssetId, audio.ProjectId, EntityId<JobIdTag>.New(), "source.mov", audio.SourceContentDigest,
                 audio.SourceByteSize, 0, new RationalTime(1, 30), Enumerable.Range(0, 1800)
                     .Select(frame => new PtsIndexEntry(frame, new RationalTime(frame, 30), new RationalTime(1, 30), frame == 0)).ToArray());
             SourceSpan full = SourceOnlyPipeline.CreateFullSourceSpan(index, Import);
-            var element = new CompositionElement(EntityId<CompositionElementIdTag>.New(), new TimeRange(default, full.Range.Duration),
-                OriginRef.FromSourceSpan(full.Id), sourceRange: full.Range);
+            CompositionElement[] elements = realisticEnglish
+                // What the automatic silence cuts leave: the lead-in silence and the pause between the sentences are gone.
+                ? [new CompositionElement(EntityId<CompositionElementIdTag>.New(), new TimeRange(default, new RationalTime(111, 30)),
+                        OriginRef.FromSourceSpan(full.Id), sourceRange: new TimeRange(new RationalTime(12, 30), new RationalTime(111, 30))),
+                    new CompositionElement(EntityId<CompositionElementIdTag>.New(), new TimeRange(new RationalTime(111, 30), new RationalTime(125, 30)),
+                        OriginRef.FromSourceSpan(full.Id), sourceRange: new TimeRange(new RationalTime(139, 30), new RationalTime(125, 30)))]
+                : [new CompositionElement(EntityId<CompositionElementIdTag>.New(), new TimeRange(default, full.Range.Duration),
+                    OriginRef.FromSourceSpan(full.Id), sourceRange: full.Range)];
             var parent = new CompositionVersion(EntityId<CompositionVersionIdTag>.New(), audio.ProjectId, null, Actor, At,
-                "Synthetic machine-source fixture; no media approval", RenderGraphCanonicalEvidence.ComputeCompositionDigest([element]), [element]);
+                "Synthetic machine-source fixture; no media approval", RenderGraphCanonicalEvidence.ComputeCompositionDigest(elements), elements);
             var copy = new WorkingCopy(EntityId<WorkingCopyIdTag>.New(), parent.ProjectId, parent.Id, At, At, parent.Elements);
             BundledRenderProfileDefinition landscape = StandardRenderProfileFactory.CreateLandscape(Profile, Settings,
                 BundledRenderProfileLoader.Load(File.ReadAllBytes(RepositoryPath("src/HubRadio.App/Profiles/16x9/long-form.json"))), new RationalNumber(30, 1));
@@ -777,6 +793,23 @@ public sealed class SourceOnlyGeneratedSubtitleRegistrationTests
                 new MusicPlanningService().Plan(MusicCatalog.CreateUnavailable(MusicLibraryState.Absent, MusicCatalogWarning.LibraryAbsent), [], MusicPlanningOptions.Default),
                 Analysis.TopicMetadata, candidates, [], Actor, At.AddSeconds(2), "Create actual plan from synthetic unapproved source evidence"));
             Assert.HasCount(shortCount, Preparation.Plan.ShortForms);
+        }
+
+        /// <summary>The real faster-whisper shape: 18 English words in ~8 s, word times, every token but the first with a leading space.</summary>
+        private static AsrWorkerSegment[] RealisticEnglishSegments()
+        {
+            string[] words = ["Hello", "and", "welcome", "to", "the", "Hub", "Radio", "movie", "creator.", "Today", "we", "are",
+                "testing", "the", "speech", "recognition", "in", "English."];
+            AsrWorkerSegment Segment(int ordinal, int from, int count)
+            {
+                // A 0.6 s pause between the two sentences.
+                static double Start(int i) => 0.5 + i * 0.4 + (i >= 9 ? 0.6 : 0);
+                AsrWorkerToken[] tokens = Enumerable.Range(from, count).Select(i => new AsrWorkerToken(
+                    (i == from ? "" : " ") + words[i], Start(i), Start(i) + 0.36, 0.9, false)).ToArray();
+                return new AsrWorkerSegment(ordinal, 0, string.Concat(tokens.Select(static t => t.Text)).Trim(),
+                    tokens[0].StartSeconds!.Value, tokens[^1].EndSeconds!.Value, -0.1, 0.01, tokens);
+            }
+            return [Segment(0, 0, 18)];
         }
 
         internal string Root { get; }
