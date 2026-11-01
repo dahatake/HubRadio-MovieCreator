@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { SettingInspector } from './SettingInspector'
+import { ArrangeablePanels } from '../arrange/ArrangeablePanels'
 import { SettingsFileActions } from './SettingsFileActions'
 import { SettingsList } from './SettingsList'
 import { SettingsOutcomePreview } from './SettingsOutcomePreview'
@@ -343,7 +344,8 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, project
                 onFocus={() => setFocusedGroup(group)} onClick={() => { setActiveGroup(group); setMissingKey(null); setDetailView('setting') }}
                 onKeyDown={event => moveGroup(event, group)}>{groupNames[group]}</button>)}
             </div>
-            <div className="settings-workspace">
+            <ArrangeablePanels screenId="settings" className="settings-workspace" panels={[
+              { id: 'list', label: '設定の一覧', children: (
               <div className="settings-list-pane">
                 {visibleGroups.length === 0 && <p>変更できる設定はありません。</p>}
                 {visibleGroups.map(group => <div id={`${id}-panel-${group}`} key={group} role="tabpanel" aria-labelledby={`${id}-tab-${group}`} hidden={activeGroup !== group} tabIndex={0}>
@@ -353,7 +355,8 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, project
                       onSelect={key => { setSelectedKeys(keys => ({ ...keys, [group]: key })); setMissingKey(null); setDetailView('setting') }} />
                   ))}
                 </div>)}
-              </div>
+              </div>) },
+              { id: 'detail', label: '設定の詳細', children: (
               <div ref={detailPane} className="settings-detail-pane">
                 <div id={`${id}-detail-setting`} ref={inspector} hidden={detailView !== 'setting'} inert={!isActive || detailView !== 'setting'} tabIndex={-1} role="region" aria-label="選択した設定の詳細">
                   {definition !== undefined && current !== undefined && initial !== undefined ? (
@@ -385,8 +388,8 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, project
                   {oldProject ? <p>対象を切り替えてから設定ファイルを操作してください。</p>
                     : <SettingsFileActions active={isActive && detailView === 'file'} onReturnToDraft={returnToDraft} />}
                 </div>
-              </div>
-            </div>
+              </div>) },
+            ]} />
           </>
         )}
       </div>

@@ -51,6 +51,7 @@ import { GeneratedResultPreview, PipelineProgress, toWorkflowWarningTarget, type
 import { isPipelineLive, pipelineRegistrationRefreshKey, sameResultBinding, sourceOnlyMediaUrl, type PipelineRegenerationParams, type PipelineRegenerationExtras, type PipelineVersionEntry, type SourceOnlyResultBinding, type SourceOnlyResultWarning } from './pipelineProtocol'
 // Import the shell after feature components so its local layout rules win.
 import { WorkflowTabs } from './WorkflowTabs'
+import { ArrangeablePanels } from '../arrange/ArrangeablePanels'
 import './workflow.css'
 
 const toolLabels: Readonly<Record<WorkflowTool, string>> = {
@@ -764,7 +765,8 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
               <button id={`workflow-tool-${tool}`} key={tool} type="button" aria-pressed={navigation.activeTool === tool} aria-controls={`workflow-tool-panel-${tool}`} onClick={() => selectTool(tool)}>{toolLabels[tool]}</button>
             ))}
           </div>
-          <div className={`workflow-results-content${comparing ? ' is-comparing' : ''}`}>
+          <ArrangeablePanels screenId="results" className={`workflow-results-content${comparing ? ' is-comparing' : ''}`} panels={[
+            { id: 'preview', label: 'プレビュー', suppressed: comparing, children: (
             <div className="workflow-preview" hidden={comparing}>
               {result !== null && selectedArtifact !== null && <>
                 <div role="group" aria-label="プレビューの対象">
@@ -781,7 +783,8 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
                 <summary>表示モード</summary>
                 <PreviewModeControls context={ingestContext} active={resultsActive && !showGenerated && !comparing} selection={selection} />
               </details>
-            </div>
+            </div>) },
+            { id: 'tools', label: '仕上がりの内容', children: (
             <div className="workflow-tool-panels">
               <WorkflowSurface id="workflow-tool-panel-overview" labelledBy="workflow-tool-overview" role="region" className="workflow-tool-panel" active={resultsActive && navigation.activeTool === null}>
                 {summary === null && result === null ? (
@@ -849,8 +852,8 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
                 </section>}
                 <BoundDeliveryPanel binding={editorVersion} context={versionContext} active={toolActive('evidence') && result === null} />
               </WorkflowSurface>
-            </div>
-          </div>
+            </div>) },
+          ]} />
         </WorkflowSurface>
 
         <WorkflowSurface id="workflow-settings" className="workflow-screen workflow-settings-screen" active={settingsOpen}>
