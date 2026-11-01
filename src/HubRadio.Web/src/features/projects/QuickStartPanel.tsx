@@ -9,6 +9,7 @@ import type {
 import { SettingsOutcomePreview } from '../settings/SettingsOutcomePreview'
 import { ProjectActivityNotice } from './ProjectActivityNotice'
 import { ProjectNameEditor } from './ProjectNameEditor'
+import { SourceMediaDetails } from './SourceMediaDetails'
 import {
   getProjectDisplayName,
   getProjectInputSourceStatus,
@@ -97,6 +98,8 @@ export function QuickStartPanel({
           )}
         </div>
       </div>
+
+      {draft.sourceMedia != null && <SourceMediaDetails media={draft.sourceMedia} />}
 
       {renameProject !== undefined && (
         <ProjectNameEditor draft={draft} disabled={isPending} onRename={renameProject} />

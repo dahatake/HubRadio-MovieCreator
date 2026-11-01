@@ -239,6 +239,26 @@ describe('project bridge responses', () => {
     }
   })
 
+  // FR-001 AC-049
+  it('accepts the recorded source metadata of a draft and rejects malformed or identifying ones', () => {
+    const response = draftResponse(PROJECT_LOAD_DRAFT_METHOD)
+    const media = {
+      fileName: 'clip.mp4', durationSeconds: 12.5, width: 1920, height: 1080, frameRate: 30, hasAudio: true,
+      sizeBytes: 1024, createdAt: '2026-10-01T00:00:00Z', registeredBy: 'taro', warnings: [],
+    }
+    const withMedia = (value: unknown) => ({ ...response, result: { draft: { ...response.result.draft, sourceMedia: value } } })
+    expect(parseProjectBridgeResponse(withMedia(media))).toEqual(withMedia(media))
+    expect(parseProjectBridgeResponse(withMedia(null))).toEqual(withMedia(null))
+    const unreadable = { ...media, durationSeconds: null, width: null, height: null, frameRate: null, hasAudio: null, warnings: ['x'] }
+    expect(parseProjectBridgeResponse(withMedia(unreadable))).toEqual(withMedia(unreadable))
+    for (const forged of [
+      { ...media, accountSid: 'S-1-5-21' }, { ...media, sizeBytes: -1 }, { ...media, width: 0 },
+      { ...media, registeredBy: '' }, { ...media, warnings: [''] }, 'text',
+    ]) {
+      expect(parseProjectBridgeResponse(withMedia(forged))).toBeNull()
+    }
+  })
+
   // FR-053 AC-028.6
   it('accepts a digest-only poster for drafts and Projects and rejects anything else', () => {
     const base = listResponse()

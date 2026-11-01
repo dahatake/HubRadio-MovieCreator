@@ -1901,6 +1901,24 @@ public sealed class WebBridgeSchemaTests
         Assert.IsFalse(schema.Contains("actorSid", StringComparison.OrdinalIgnoreCase));
     }
 
+    // FR-001 AC-049: the draft carries the source metadata, with a display name only (no account id).
+    [TestMethod]
+    public void DraftSchemaCarriesSourceMediaWithoutAccountIdentifiers()
+    {
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(
+            ResolveRepositoryPath("schemas/web-bridge.schema.json")));
+        JsonElement draft = document.RootElement.GetProperty("$defs").GetProperty("draft");
+        CollectionAssert.Contains(GetStrings(draft.GetProperty("required")), "sourceMedia");
+        string media = draft.GetProperty("properties").GetProperty("sourceMedia").GetRawText();
+        foreach (string key in new[] { "fileName", "durationSeconds", "width", "height", "frameRate", "hasAudio", "sizeBytes", "createdAt", "registeredBy", "warnings" })
+        {
+            StringAssert.Contains(media, "\"" + key + "\"");
+        }
+
+        Assert.IsFalse(media.Contains("actorSid", StringComparison.OrdinalIgnoreCase));
+        Assert.IsFalse(media.Contains("path\"", StringComparison.OrdinalIgnoreCase));
+    }
+
     [TestMethod]
     public void PipelineSchemaPinsExactMethodsScopesStatusesPhasesAndTransportLimits()
     {

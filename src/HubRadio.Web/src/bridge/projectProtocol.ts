@@ -149,6 +149,22 @@ export interface ProjectDraft {
   readonly sourceOnly: SourceOnlyProjectSummary | null
   /** FR-054: settings the built-in preset chose for this video; omitted by hosts that predate FR-054. */
   readonly autoSettings?: readonly ProjectAutoSetting[] | null
+  /** FR-001 AC-049: metadata of the registered source video; omitted by hosts that predate it. */
+  readonly sourceMedia?: ProjectSourceMedia | null
+}
+
+export interface ProjectSourceMedia {
+  readonly fileName: string
+  readonly durationSeconds: number | null
+  readonly width: number | null
+  readonly height: number | null
+  readonly frameRate: number | null
+  readonly hasAudio: boolean | null
+  readonly sizeBytes: number
+  readonly createdAt: string
+  /** Display name only; never an account identifier. */
+  readonly registeredBy: string
+  readonly warnings: readonly string[]
 }
 
 export interface ProjectAutoSetting {
@@ -829,6 +845,7 @@ function parseProjectDraft(value: unknown): ProjectDraft | null {
       'updatedAt',
       'sourceOnly',
       ...(isRecord(value) && 'autoSettings' in value ? ['autoSettings'] : []),
+      ...(isRecord(value) && 'sourceMedia' in value ? ['sourceMedia'] : []),
     ])) ||
     !isEntityId(value.draftId) ||
     !isNonnegativeInt32(value.revision) ||
@@ -850,6 +867,7 @@ function parseProjectDraft(value: unknown): ProjectDraft | null {
     !isNativeTimestamp(value.updatedAt) ||
     !isNullOrSourceOnlyProjectSummary(value.sourceOnly) ||
     ('autoSettings' in value && value.autoSettings !== null && !isAutoSettingArray(value.autoSettings)) ||
+    ('sourceMedia' in value && value.sourceMedia !== null && !isSourceMedia(value.sourceMedia)) ||
     (value.isFinalized && value.projectId === null) ||
     (!value.isFinalized && value.projectId !== null)
   ) {
@@ -880,7 +898,31 @@ function parseProjectDraft(value: unknown): ProjectDraft | null {
       ? { autoSettings: value.autoSettings === null ? null : Object.freeze((value.autoSettings as readonly ProjectAutoSetting[])
           .map(item => Object.freeze({ key: item.key, label: item.label, valueText: item.valueText, reason: item.reason }))) }
       : {}),
+    ...('sourceMedia' in value
+      ? { sourceMedia: value.sourceMedia === null ? null : freezeSourceMedia(value.sourceMedia as ProjectSourceMedia) }
+      : {}),
   })
+}
+
+function isSourceMedia(value: unknown): value is ProjectSourceMedia {
+  const text = (item: unknown): boolean => typeof item === 'string' && item.length > 0 && item.length <= 512
+  const positiveOrNull = (item: unknown): boolean =>
+    item === null || (typeof item === 'number' && Number.isFinite(item) && item > 0)
+  const dimensionOrNull = (item: unknown): boolean =>
+    item === null || (typeof item === 'number' && Number.isInteger(item) && item > 0)
+  return isRecordWithExactKeys(value, [
+    'fileName', 'durationSeconds', 'width', 'height', 'frameRate', 'hasAudio', 'sizeBytes', 'createdAt', 'registeredBy', 'warnings',
+  ]) &&
+    text(value.fileName) && positiveOrNull(value.durationSeconds) && dimensionOrNull(value.width) &&
+    dimensionOrNull(value.height) && positiveOrNull(value.frameRate) &&
+    (value.hasAudio === null || typeof value.hasAudio === 'boolean') &&
+    typeof value.sizeBytes === 'number' && Number.isInteger(value.sizeBytes) && value.sizeBytes >= 0 &&
+    text(value.createdAt) && text(value.registeredBy) &&
+    Array.isArray(value.warnings) && value.warnings.length <= 32 && value.warnings.every(text)
+}
+
+function freezeSourceMedia(value: ProjectSourceMedia): ProjectSourceMedia {
+  return Object.freeze({ ...value, warnings: Object.freeze([...value.warnings]) })
 }
 
 function isAutoSettingArray(value: unknown): value is readonly ProjectAutoSetting[] {

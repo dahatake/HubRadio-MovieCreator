@@ -135,9 +135,66 @@ public sealed class BuzzEditingPresetTests
             Assert.IsNull(SourceMediaProbe.Parse(bad), bad);
         }
 
-        CollectionAssert.AreEqual(new[] { "-v", "error", "-select_streams", "v:0", "-show_entries",
-            "stream=width,height:stream_side_data=rotation:stream_tags=rotate:format=duration", "-of", "json", @"C:\a.mp4" },
+        CollectionAssert.AreEqual(new[] { "-v", "error", "-show_entries",
+            "stream=codec_type,width,height,avg_frame_rate,r_frame_rate:stream_side_data=rotation:stream_tags=rotate:format=duration", "-of", "json", @"C:\a.mp4" },
             SourceMediaProbe.BuildArguments(@"C:\a.mp4").ToArray());
+    }
+
+    // FR-001 AC-049: frame rate and audio presence come from the same probe; the first video stream is used.
+    [TestMethod]
+    public void ProbeParsesFrameRateAndAudioPresence()
+    {
+        SourceMediaFacts withAudio = SourceMediaProbe.Parse(
+            """{"streams":[{"codec_type":"audio"},{"codec_type":"video","width":1920,"height":1080,"avg_frame_rate":"30000/1001","r_frame_rate":"30/1"}],"format":{"duration":"5"}}""")!;
+        Assert.AreEqual(29.97, withAudio.FrameRate!.Value, 0.001);
+        Assert.IsTrue(withAudio.HasAudio);
+        SourceMediaFacts silent = SourceMediaProbe.Parse(
+            """{"streams":[{"codec_type":"video","width":640,"height":360,"avg_frame_rate":"0/0","r_frame_rate":"25/1"}],"format":{"duration":"5"}}""")!;
+        Assert.AreEqual(25.0, silent.FrameRate!.Value, 1e-9);
+        Assert.IsFalse(silent.HasAudio);
+        Assert.IsNull(SourceMediaProbe.Parse(
+            """{"streams":[{"codec_type":"audio"}],"format":{"duration":"5"}}"""));
+    }
+
+    // FR-001 AC-049: the registered-source record (name, size, created, registrant, warnings) round-trips; damage reads as absent.
+    [TestMethod]
+    public void SourceMediaRecordRoundTripsAndWarns()
+    {
+        string workspace = Path.Combine(Path.GetTempPath(), "hubradio-srcmeta-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workspace);
+        try
+        {
+            var store = new ProjectAutoSettingsStore(workspace);
+            var draftId = EntityId<ProjectCreationDraftIdTag>.New();
+            Assert.IsNull(store.ReadSource(draftId));
+            string file = Path.Combine(workspace, "clip.mp4");
+            File.WriteAllBytes(file, new byte[2048]);
+            SourceMediaNote note = SourceMediaNote.Create(file, new SourceMediaFacts(12.5, 320, 240, 24, false), "Taro");
+            Assert.AreEqual("clip.mp4", note.FileName);
+            Assert.AreEqual(2048, note.SizeBytes);
+            Assert.HasCount(2, note.Warnings);
+            store.SaveSource(draftId, note);
+            SourceMediaNote read = store.ReadSource(draftId)!;
+            Assert.AreEqual("Taro", read.RegisteredBy);
+            Assert.AreEqual(note.Warnings.Count, read.Warnings.Count);
+            Assert.AreEqual(false, read.HasAudio);
+            Assert.AreEqual(24.0, read.FrameRate!.Value);
+
+            SourceMediaNote broken = SourceMediaNote.Create(file, null, "Taro");
+            Assert.IsNull(broken.DurationSeconds);
+            Assert.HasCount(1, broken.Warnings);
+            SourceMediaNote fine = SourceMediaNote.Create(file, new SourceMediaFacts(10, 1920, 1080, 30, true), "Taro");
+            Assert.HasCount(0, fine.Warnings);
+
+            File.WriteAllText(store.SourcePathFor(draftId), "{");
+            Assert.IsNull(store.ReadSource(draftId));
+            store.Delete(draftId);
+            Assert.IsFalse(File.Exists(store.SourcePathFor(draftId)));
+        }
+        finally
+        {
+            Directory.Delete(workspace, recursive: true);
+        }
     }
 
     // FR-054 AC-029.4: the explanation record round-trips and an unreadable record is treated as absent.
