@@ -213,36 +213,57 @@ public static partial class StyleTemplateLayout
     public static IReadOnlyList<RecordedCue> BottomScreens(IReadOnlyList<RecordedCue> cues)
     {
         ArgumentNullException.ThrowIfNull(cues);
-        var chars = new List<(string Text, double Start, double End, RecordedCue Cue)>();
+        var result = new List<RecordedCue>();
         foreach (RecordedCue cue in cues.OrderBy(static item => item.Start))
         {
-            string[] elements = Elements(System.Globalization.StringInfo.GetTextElementEnumerator(cue.Text));
-            for (int index = 0; index < elements.Length; index++)
-            {
-                double length = (cue.End - cue.Start) / elements.Length;
-                chars.Add((elements[index], cue.Start + (length * index), cue.Start + (length * (index + 1)), cue));
-            }
+            result.AddRange(CueScreens(cue));
         }
 
-        if (chars.Count == 0)
+        return result;
+    }
+
+    /// <summary>FR-012 / FR-051: the shortest time a cue (and so a screen cut out of it) is shown — 5/6 second. It wins over the 15-20 split.</summary>
+    public const double MinimumScreenSeconds = 5d / 6d;
+
+    /// <summary>
+    /// FR-138 AC-158: the screens of one cue. A text shorter than the minimum is not split; the split is not made when a screen
+    /// would be shown shorter than the FR-012 / FR-051 minimum (that lower bound has priority). The same split is burned into the ASS.
+    /// </summary>
+    public static IReadOnlyList<RecordedCue> CueScreens(RecordedCue cue)
+    {
+        ArgumentNullException.ThrowIfNull(cue);
+        string[] elements = Elements(System.Globalization.StringInfo.GetTextElementEnumerator(cue.Text));
+        if (elements.Length == 0)
         {
             return [];
         }
 
-        int screens = Math.Max(1, (chars.Count + VerticalCaptionMaximumCharacters - 1) / VerticalCaptionMaximumCharacters);
+        int screens = Math.Max(1, (elements.Length + VerticalCaptionMaximumCharacters - 1) / VerticalCaptionMaximumCharacters);
         // Fewer screens of 15 or more characters when the balanced size of the most screens would fall below the minimum.
-        while (screens > 1 && chars.Count / screens < VerticalCaptionMinimumCharacters
-            && (chars.Count + screens - 2) / (screens - 1) <= VerticalCaptionMaximumCharacters)
+        while (screens > 1 && elements.Length / screens < VerticalCaptionMinimumCharacters
+            && (elements.Length + screens - 2) / (screens - 1) <= VerticalCaptionMaximumCharacters)
         {
             screens--;
         }
 
-        int size = (chars.Count + screens - 1) / screens;
-        var result = new List<RecordedCue>();
-        foreach (var chunk in chars.Chunk(size))
+        if (screens > 1 && (cue.End - cue.Start) / screens < MinimumScreenSeconds - 1e-9)
         {
-            RecordedCue first = chunk[0].Cue;
-            result.Add(first with { Start = chunk[0].Start, End = chunk[^1].End, Text = string.Concat(chunk.Select(static item => item.Text)), Words = [] });
+            screens = 1;
+        }
+
+        if (screens == 1)
+        {
+            return [cue with { Words = [] }];
+        }
+
+        int size = (elements.Length + screens - 1) / screens;
+        double length = (cue.End - cue.Start) / elements.Length;
+        var result = new List<RecordedCue>();
+        int at = 0;
+        foreach (string[] chunk in elements.Chunk(size))
+        {
+            result.Add(cue with { Start = cue.Start + (length * at), End = cue.Start + (length * (at + chunk.Length)), Text = string.Concat(chunk), Words = [] });
+            at += chunk.Length;
         }
 
         return result;
