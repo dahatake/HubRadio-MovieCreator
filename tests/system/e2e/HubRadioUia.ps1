@@ -63,6 +63,47 @@ function Start-App($sb) {
     $script:AppSb = $sb
     $p
 }
+# 失敗時の保全: sandbox の workspace の job/ と hubradio.db（-wal/-shm）と logs を work/runs/<run-id>/e2e-failure-<case>/ にコピーする（後片付けで消えないように）
+function Save-E2eFailureArtifacts([string]$case) {
+    try {
+        if (-not $script:AppSb) { return }
+        $ws = Join-Path ([string]$script:AppSb.Work) 'workspace'
+        if (-not (Test-Path -LiteralPath $ws)) { return }
+        if (-not $case) { $case = $script:E2eCase }
+        if (-not $case) { $case = 'unknown' }
+        $case = $case -replace '[^\w\.-]', '_'
+        $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+        $rid = if ($env:RUN_ID) { $env:RUN_ID } elseif ($repo -match 'run-(\d+)') { $Matches[1] } else { '_diag' }
+        $dest = Join-Path $repo "work\runs\$rid\e2e-failure-$case"
+        $null = New-Item -ItemType Directory -Force -Path $dest
+        foreach ($n in 'hubradio.db', 'hubradio.db-wal', 'hubradio.db-shm') {
+            $f = Join-Path $ws $n
+            if (Test-Path -LiteralPath $f) { Copy-Item -LiteralPath $f -Destination (Join-Path $dest $n) -Force -ErrorAction SilentlyContinue }
+        }
+        foreach ($d in 'job', 'logs') {
+            $s = Join-Path $ws $d
+            if (Test-Path -LiteralPath $s) { Copy-Item -LiteralPath $s -Destination (Join-Path $dest $d) -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+        $sl = Join-Path ([string]$script:AppSb.Work) 'logs'
+        if (Test-Path -LiteralPath $sl) { Copy-Item -LiteralPath $sl -Destination (Join-Path $dest 'sandbox-logs') -Recurse -Force -ErrorAction SilentlyContinue }
+        Write-Host "DIAG-JOBWAIT: saved failure artifacts to $dest"
+    } catch { Write-Host "DIAG-JOBWAIT: save artifacts failed: $_" }
+}
+# workspace/hubradio.db に state=failed の Job があればその行（id|state）を返す（無ければ $null）
+function Get-FailedJobFromDb {
+    try {
+        if (-not $script:AppSb) { return $null }
+        $db = Join-Path (Join-Path ([string]$script:AppSb.Work) 'workspace') 'hubradio.db'
+        if (-not (Test-Path -LiteralPath $db)) { return $null }
+        $tmp = Join-Path ([IO.Path]::GetTempPath()) ('hr-fail-' + [guid]::NewGuid().ToString('N') + '.db')
+        Copy-Item -LiteralPath $db -Destination $tmp -Force
+        foreach ($x in "$db-wal", "$db-shm") { if (Test-Path -LiteralPath $x) { Copy-Item -LiteralPath $x -Destination ($tmp + $x.Substring($db.Length)) -Force } }
+        $py = "import sqlite3,sys`ncon=sqlite3.connect(sys.argv[1])`nfor r in con.execute(`"SELECT id, state FROM jobs WHERE lower(state)='failed' ORDER BY created_at LIMIT 1`"): print('|'.join(str(c) for c in r))"
+        $out = (& python -c $py $tmp 2>$null | Select-Object -First 1)
+        Remove-Item "$tmp*" -Force -ErrorAction SilentlyContinue
+        if ($out) { return [string]$out } else { return $null }
+    } catch { return $null }
+}
 # 診断: Job 完了待ちのタイムアウト／アプリ終了時の情報を work/runs/<run-id>/ のログ（と標準出力）に出す（失敗判定は変えない）
 function Write-JobWaitDiag([string]$reason) {
     $lines = [System.Collections.Generic.List[string]]::new()
@@ -111,7 +152,12 @@ function Write-JobWaitDiag([string]$reason) {
             # Job 履歴 JSON（JobHistoryLog: workspace/job/job-*.json）
             $hist = if ($ws) { @(Get-ChildItem -LiteralPath (Join-Path $ws 'job') -Filter 'job-*.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 20) } else { @() }
             foreach ($h in $hist) {
-                try { $hj = Get-Content -LiteralPath $h.FullName -Raw | ConvertFrom-Json -Depth 32; $lines.Add("DIAG-JOBWAIT: history $($h.Name) state=$($hj.job.state) updated=$($hj.job.updatedAt) attempts=$(@($hj.job.attempts).Count)") }
+                # 生の JSON をそのまま出す（スキーマ前提にしない。exceptionType などの失敗情報が見える）
+                try {
+                    $raw = Get-Content -LiteralPath $h.FullName -Raw -ErrorAction Stop
+                    if ($raw.Length -gt 4000) { $raw = $raw.Substring(0, 4000) + '...(truncated)' }
+                    $lines.Add("DIAG-JOBWAIT: history $($h.Name) raw: $raw")
+                }
                 catch { $lines.Add("DIAG-JOBWAIT: history $($h.Name) (read failed: $_)") }
             }
         } catch { $lines.Add("DIAG-JOBWAIT: job state failed: $_") }
@@ -147,6 +193,7 @@ function Write-JobWaitDiag([string]$reason) {
         } catch { $lines.Add("DIAG-JOBWAIT: eventlog failed: $_") }
     } catch { $lines.Add("DIAG-JOBWAIT failed: $_") }
     $lines | ForEach-Object { Write-Host $_ }
+    Save-E2eFailureArtifacts
     try {
         $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
         $rid = if ($env:RUN_ID) { $env:RUN_ID } elseif ($repo -match 'run-(\d+)') { $Matches[1] } else { '_diag' }
@@ -345,9 +392,11 @@ function Write-UiaDiag {
 }
 function Invoke-Test([scriptblock]$Body, [string]$Label, $Sandbox) {
     $failed = $null
+    $script:E2eCase = $Label
     try { & $Body } catch {
         $failed = $_
-        Write-UiaDiag   # アプリがまだ生きていれば（Body 内で Stop-App 済みでなければ）列挙する
+        Save-E2eFailureArtifacts $Label
+        Write-UiaDiag    # アプリがまだ生きていれば（Body 内で Stop-App 済みでなければ）列挙する
     }
     finally { Remove-AppSandbox $Sandbox }
     if ($failed) { Write-Error "$Label failed: $failed"; exit 1 }
@@ -543,10 +592,14 @@ function Wait-JobCompleted($root, [int]$jobNumber, [int]$timeoutSec = 900) {
             throw "Job $jobNumber did not complete within $timeoutSec s (app exited: $($script:AppProc.ExitCode))"
         }
         if (@(Find-AllByNameLike $root "^サムネイル: Job $jobNumber、.*完了$").Count -gt 0) { return }
-                $failed = @(Find-AllByNameLike $root '操作を完了できませんでした|^サムネイル: Job \d+、.*(失敗|取消)$')
-                if ($failed.Count -gt 0) {
+                # 失敗の検知: UIA の行（「状態: 失敗」の形でも、「失敗」だけの行でも）か、hubradio.db の jobs.state=failed
+                $failed = @(Find-AllByNameLike $root '操作を完了できませんでした|^サムネイル: Job \d+、.*(失敗|取消)$|^Job \d+.*失敗|状態: ?失敗|^失敗$')
+                $dbFailed = Get-FailedJobFromDb
+                if ($failed.Count -gt 0 -or $dbFailed) {
+                    Write-JobWaitDiag "Job $jobNumber failed (uia=$($failed.Count) db=$dbFailed) after $([int]$sw.Elapsed.TotalSeconds) s"
                     $msg = (Find-AllByNameLike $root '編集を開始できません|失敗') | Select-Object -First 1
-                    throw "Job $jobNumber did not complete: $($msg.Current.Name)"
+                    $why = if ($msg) { $msg.Current.Name } else { "状態: 失敗 (db: $dbFailed)" }
+                    throw "Job $jobNumber did not complete: $why"
                 }
                 Start-Sleep -Seconds 2
     } while ($sw.Elapsed.TotalSeconds -lt $timeoutSec)
