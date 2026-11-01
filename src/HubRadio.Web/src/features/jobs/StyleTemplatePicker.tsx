@@ -33,7 +33,8 @@ export function StyleTemplatePicker({ selectedId, onSelect, options = styleTempl
         const locked = option.requiresPortraits === true && portraitCount === 0
         return <li key={option.id}>
         <label className="style-template-card" data-selected={selectedId === option.id} data-locked={locked}>
-          <input type="radio" name={name} aria-label={option.name} checked={selectedId === option.id} disabled={locked} onChange={() => onSelect(option.id)} />
+          {/* The accessible name is the template name without the spaces of its display form (縦型 3 段 → 縦型3段), the name the screen tests use. */}
+          <input type="radio" name={name} aria-label={option.name.replace(/\s+/gu, '')} checked={selectedId === option.id} disabled={locked} onChange={() => onSelect(option.id)} />
           <span className="style-template-name">{option.name}<span className="style-template-orientation">{orientationLabel(option.orientation)}</span></span>
           <span className="style-template-purpose">{option.purpose}</span>
           <span className="style-template-sample" role="img" aria-label={`見た目の例: ${option.previewDescription}`}

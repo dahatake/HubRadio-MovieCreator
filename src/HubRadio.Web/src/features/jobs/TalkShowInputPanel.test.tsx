@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { TalkShowInputPanel } from './TalkShowInputPanel'
-import { bandText, emptyTalkShowInput, titleState, topicIsShown, updateSpeaker, updateTopic, type TalkShowInputValue } from './talkShowInput'
+import { addTopic, bandText, emptyTalkShowInput, removeTopic, titleState, topicIsShown, updateSpeaker, updateTopic, type TalkShowInputValue } from './talkShowInput'
 
 // FR-141 AC-168 / AC-170
 describe('TalkShowInputPanel', () => {
@@ -49,6 +49,27 @@ describe('TalkShowInputPanel', () => {
     render(changed)
     expect(container.textContent).not.toContain('山田太郎')
     expect(container.textContent).not.toContain('代表取締役')
+  })
+
+  it('AC-157: topics can be added and removed; each topic keeps its own text and at least one entry stays', () => {
+    let value = updateTopic(emptyTalkShowInput, 'topic-1', { text: '最初の話題' })
+    const changes: TalkShowInputValue[] = []
+    render(value, next => { changes.push(next); value = next })
+    const add = Array.from(container.querySelectorAll('button')).find(item => item.textContent === '話題を追加')!
+    act(() => add.click())
+    value = changes.at(-1)!
+    expect(value.topics.map(item => item.id)).toEqual(['topic-1', 'topic-2'])
+    value = updateTopic(value, 'topic-2', { text: '次の話題' })
+    render(value, next => { changes.push(next); value = next })
+    expect((container.querySelector('input[aria-label="話題2のサイドテロップ"]') as HTMLInputElement).value).toBe('次の話題')
+    expect((container.querySelector('input[aria-label="話題1のサイドテロップ"]') as HTMLInputElement).value).toBe('最初の話題')
+    const remove = Array.from(container.querySelectorAll('button')).find(item => item.textContent === '話題1を削除')!
+    act(() => remove.click())
+    expect(changes.at(-1)!.topics.map(item => item.text)).toEqual(['次の話題'])
+    expect(removeTopic(changes.at(-1)!, 'topic-2').topics).toHaveLength(1)
+    let full = emptyTalkShowInput
+    for (let i = 0; i < 30; i += 1) full = addTopic(full)
+    expect(full.topics).toHaveLength(20)
   })
 
   it('never shows anonymous labels, a title without confirmation or date, or an unconfirmed draft topic', () => {

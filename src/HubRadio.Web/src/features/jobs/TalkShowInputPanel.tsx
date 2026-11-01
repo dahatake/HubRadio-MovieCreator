@@ -1,4 +1,4 @@
-import { bandText, nameIsShown, titleState, titleWarning, topicIsShown, updateSpeaker, updateTopic, type TalkShowInputValue } from './talkShowInput'
+import { addTopic, bandText, maximumTopics, nameIsShown, removeTopic, titleState, titleWarning, topicIsShown, updateSpeaker, updateTopic, type TalkShowInputValue } from './talkShowInput'
 
 /**
  * FR-141: input and confirmation of the talk-show side telop (topic) and each speaker's name band. Drafts are labelled as drafts
@@ -21,7 +21,9 @@ export function TalkShowInputPanel({ value, onChange, disabled = false }: Readon
         <input type="checkbox" checked={topic.confirmed} onChange={event => onChange(updateTopic(value, topic.id, { confirmed: event.target.checked }))} />話題の下書きを確認した
       </label>}
       <span role="status">{topic.text.trim() === '' ? '未入力（映像には出しません）' : topicIsShown(topic) ? (topic.origin === 'draft' ? '確認済み' : '入力済み') : '下書き（未確認のため映像には出しません）'}</span>
+      {value.topics.length > 1 && <button type="button" onClick={() => onChange(removeTopic(value, topic.id))}>{`話題${index + 1}を削除`}</button>}
     </div>)}
+    {value.topics.length < maximumTopics && <button type="button" onClick={() => onChange(addTopic(value))}>話題を追加</button>}
     {value.speakers.map((speaker, index) => {
       const n = index + 1
       const warning = titleWarning(speaker)

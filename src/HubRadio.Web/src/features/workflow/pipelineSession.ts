@@ -2,7 +2,7 @@ import type { BridgeClient } from '../../bridge'
 import {
   createPipelineExecutionRequest, createPipelineReadRequest, createPipelineRegenerateRequest, createPipelineRestoreRequest,
   isPipelineLive, parsePipelineRequest, pipelineResponseMatchesRequest, revokePipelineMedia, verifiedPipelineResponse,
-  type PipelineMethod, type PipelineRegenerationParams, type PipelineRequest, type PipelineResponse, type PipelineRestoreParams, type PipelineSnapshot,
+  type PipelineMethod, type PipelineRegenerationExtras, type PipelineRegenerationParams, type PipelineRequest, type PipelineResponse, type PipelineRestoreParams, type PipelineSnapshot,
   type PipelineVersionEntry, type PipelineVersionsResponse,
 } from './pipelineProtocol'
 
@@ -27,7 +27,7 @@ export interface PipelineSession {
   read(): boolean
   cancel(): boolean
   retry(): boolean
-  regenerate(params: PipelineRegenerationParams, styleTemplateId?: string | null): boolean
+  regenerate(params: PipelineRegenerationParams, styleTemplateId?: string | null, extras?: PipelineRegenerationExtras): boolean
   restore(params: PipelineRestoreParams): boolean
   /** Reads the past-version list once. It mutates nothing and grants no media. */
   readVersions(): boolean
@@ -212,12 +212,12 @@ export function createPipelineSession(
     readVersions,
     cancel: () => command('pipeline.cancel'),
     retry: () => command('pipeline.retry'),
-    regenerate(params, styleTemplateId = null) {
+    regenerate(params, styleTemplateId = null, extras = {}) {
       const s = state.snapshot
       if (s === null || state.status !== 'available' || state.needsRefresh || uncertainMutation !== null || pending !== null || isPipelineLive(s.phase) ||
           s.resultStatus === 'invalid' || s.phase === 'ReconciliationRequired' || s.phase === 'ReselectionRequired' || s.versionId === null ||
           params.projectId !== s.projectId || params.expectedVersionId !== s.versionId || params.expectedVersionDigest !== s.versionDigest) return false
-      try { return send(createPipelineRegenerateRequest(newId(), params, styleTemplateId)) } catch { return false }
+      try { return send(createPipelineRegenerateRequest(newId(), params, styleTemplateId, extras)) } catch { return false }
     },
     restore(params) {
       const s = state.snapshot

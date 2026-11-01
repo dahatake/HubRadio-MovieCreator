@@ -56,18 +56,32 @@ internal static class StandardTemplateSubtitles
 {
     private const string Marker = ",,0,0,0,,";
 
+    /// <summary>
+    /// FR-138 / FR-143: the box of a vertical template subtitle — the lower tier inside the PARAM-005 margins and the FR-014
+    /// region (the standard layouts' subtitle region is the whole frame). With <paramref name="intoMargin"/> (the user's explicit
+    /// adjustment) it lies in the bottom margin instead, which the output inspection reports as a failure.
+    /// </summary>
+    internal static StyleTemplateRect VerticalBox(int width, int height, StyleTemplateMargins? margins = null, bool intoMargin = false)
+    {
+        StyleTemplateMargins m = margins ?? StyleTemplateMargins.Vertical;
+        if (intoMargin)
+        {
+            int top = height - m.Bottom + 40;
+            return new(m.Left, top, width - m.Right, Math.Min(height, top + 120));
+        }
+
+        return StyleTemplateLayout.AllowedArea(width, height, m, new StyleTemplateRect(0, 0, width, height))
+            .Intersect(StyleTemplateLayout.VerticalFrame(margins).CaptionTier);
+    }
+
     internal static SubtitleExportFile Write(SubtitleFileCue cue, AssSubtitleProfile profile, SubtitleLayoutResolution resolution,
-        StyleTemplatePlan plan, bool vertical, StyleTemplateMargins? margins = null)
+        StyleTemplatePlan plan, bool vertical, StyleTemplateMargins? margins = null, bool intoMargin = false)
     {
         StandardSubtitlePlacement.Validate(profile, resolution);
         (int left, int top, int right, int bottom) = StandardSubtitlePlacement.Bounds(profile, resolution);
         if (vertical)
         {
-            // FR-138: the vertical subtitle sits on the lower tier, inside the PARAM-005 margins and inside the subtitle region
-            // (the standard layouts' subtitle region is the whole frame).
-            StyleTemplateRect allowed = StyleTemplateLayout.AllowedArea(profile.PlayResolutionWidth, profile.PlayResolutionHeight,
-                margins ?? StyleTemplateMargins.Vertical, new StyleTemplateRect(0, 0, profile.PlayResolutionWidth, profile.PlayResolutionHeight))
-                .Intersect(StyleTemplateLayout.VerticalFrame(margins).CaptionTier);
+            StyleTemplateRect allowed = VerticalBox(profile.PlayResolutionWidth, profile.PlayResolutionHeight, margins, intoMargin);
             if (allowed.IsEmpty || profile.PlayResolutionWidth != StyleTemplateLayout.VerticalWidth
                 || profile.PlayResolutionHeight != StyleTemplateLayout.VerticalHeight)
             {

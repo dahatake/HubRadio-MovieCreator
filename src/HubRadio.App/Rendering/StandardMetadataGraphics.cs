@@ -36,7 +36,8 @@ internal static class StandardMetadataGraphics
         StandardShortFormPlan? shortForm, EntityId<RenderNodeIdTag> target,
         RenderProfile profile, RationalTime duration, RationalTime firstCutDuration,
         RenderFontEvidence font, StandardRenderConfiguration? configuration,
-        IReadOnlyList<StandardEmphasisTelop>? telops = null, StyleTemplates.StyleTemplatePlan? styled = null)
+        IReadOnlyList<StandardEmphasisTelop>? telops = null, StyleTemplates.StyleTemplatePlan? styled = null,
+        StyleTemplates.TalkShowRenderPlan? talkShow = null, OriginRef? userInputOrigin = null)
     {
         var files = new List<StandardGraphicRenderFile>();
         RationalTime titleMaximum = configuration?.TitleMaximumDuration ?? new RationalTime(3, 1);
@@ -93,12 +94,38 @@ internal static class StandardMetadataGraphics
                 StandardTextProvenanceKind.OriginalTranscript, tail: false, emphasis: true, styledTelop: styledTelop);
         }
 
+        // FR-141: the topic side telops and name bands the user entered or confirmed (nothing the system guessed). They are
+        // burned into the boxes the plan fixed (inside the PARAM-005 margins for a vertical output). The Job has no source text for
+        // them, so the evidence carries the origin of the first source cut the input was made for.
+        if (talkShow is not null && userInputOrigin is not null && shortForm is null)
+        {
+            foreach (StyleTemplates.TalkShowSideTelopRecord side in talkShow.SideTelops)
+            {
+                Add("TalkShowSideTelop", side.Text, [userInputOrigin], null, SecondsRange(side.Start, side.End, duration),
+                    "user-topic-span", StandardTextProvenanceKind.PlannedMetadata, tail: false, fixedRect: side.Box.ToRect());
+            }
+
+            foreach (StyleTemplates.TalkShowNameBandRecord band in talkShow.NameBands)
+            {
+                Add("TalkShowNameBand", band.Text, [userInputOrigin], null, SecondsRange(band.Start, band.End, duration),
+                    "user-speaker-introduction", StandardTextProvenanceKind.PlannedMetadata, tail: false, fixedRect: band.Box.ToRect());
+            }
+        }
+
         return files.AsReadOnly();
+
+        static TimeRange SecondsRange(double start, double end, RationalTime duration)
+        {
+            RationalTime from = new((long)Math.Round(start * 1000), 1000);
+            RationalTime to = new((long)Math.Round(end * 1000), 1000);
+            if (to > duration) to = duration;
+            return new TimeRange(from, to - from);
+        }
 
         void Add(string role, string text, IReadOnlyList<OriginRef> origins,
             EntityId<LongFormElementIdTag>? elementId, TimeRange range, string timing,
             StandardTextProvenanceKind provenance, bool tail, bool emphasis = false,
-            StyleTemplates.StyleTemplateTelop? styledTelop = null)
+            StyleTemplates.StyleTemplateTelop? styledTelop = null, StyleTemplates.StyleTemplateRect? fixedRect = null)
         {
             if (files.Count >= 64 || Encoding.UTF8.GetByteCount(text) > 2048)
                 throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.ResourceLimit);
@@ -135,7 +162,11 @@ internal static class StandardMetadataGraphics
                         Math.Min(right, safe.Right), Math.Min(bottom, safe.Bottom));
                 }
             }
-            if (files.Any(file => file.Evidence.OutputRange.Start < range.End && range.Start < file.Evidence.OutputRange.End
+            if (fixedRect is { } fixedBox)
+            {
+                (left, top, right, bottom) = (fixedBox.Left, fixedBox.Top, fixedBox.Right, fixedBox.Bottom);
+            }
+            if (fixedRect is null && files.Any(file => file.Evidence.OutputRange.Start < range.End && range.Start < file.Evidence.OutputRange.End
                 && left < file.Evidence.Right && file.Evidence.Left < right && top < file.Evidence.Bottom && file.Evidence.Top < bottom))
                 throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedPlanElement);
             // Reject literal ASS controls before wrapping could split the sequence.

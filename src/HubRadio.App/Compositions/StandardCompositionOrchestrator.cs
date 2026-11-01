@@ -343,7 +343,8 @@ public static class StandardCompositionOrchestrator
                 measuredLandscape,
                 measuredVertical,
                 request.SourceFrameRate,
-                request.SourceDisplayGeometry);
+                request.SourceDisplayGeometry,
+                StandardRenderProfileFactory.IsPortraitLongForm(request.LongFormRequest.Profile));
             verticalProfile = StandardRenderProfileFactory.CreateVerticalShort(
                 request.SettingsProfile,
                 request.Settings,

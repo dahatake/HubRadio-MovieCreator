@@ -429,7 +429,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
     public StoredSourceOnlyExecution Regenerate(EntityId<ProjectIdTag> projectId,
         EntityId<CompositionVersionIdTag> parentVersionId, ContentDigest parentDigest,
         DefaultSettingsSnapshot snapshot, int expectedSettingsRevision, string actorSid,
-        DateTimeOffset createdAt, string? styleTemplateId = null)
+        DateTimeOffset createdAt, string? styleTemplateId = null, string? talkShowInputJson = null, bool subtitleIntoMargin = false)
     {
         lock (acceptanceGate)
         {
@@ -449,6 +449,23 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 {
                     throw new ArgumentException("The character dialogue template needs a registered portrait.", nameof(styleTemplateId));
                 }
+            }
+
+            // FR-141: the talk-show input is checked before anything is accepted (it is the user's own text, never trusted).
+            StyleTemplates.TalkShowInput? talkShowInput = null;
+            if (talkShowInputJson is not null)
+            {
+                if (template is null || !StyleTemplates.TalkShowInputJson.TryParse(talkShowInputJson, out StyleTemplates.TalkShowInput parsed))
+                {
+                    throw new ArgumentException("The talk-show input is not valid.", nameof(talkShowInputJson));
+                }
+
+                talkShowInput = parsed;
+            }
+
+            if (subtitleIntoMargin && template is null)
+            {
+                throw new ArgumentException("The subtitle adjustment needs a production template.", nameof(subtitleIntoMargin));
             }
 
             WorkingCopyState head = versions.GetCurrentState(projectId)
@@ -475,9 +492,21 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             if (template is not null)
             {
                 // FR-136: the applied template (ID and version) is recorded in the Job's own directory before it runs.
-                StyleTemplates.JobStyleTemplateStore.Save(StyleTemplateDirectory(accepted.Request.RootJobId),
-                    StyleTemplates.JobStyleTemplateRecord.For(template)
-                        .WithFonts(StyleTemplates.StyleTemplateFonts.RecordsFor(template)));
+                StyleTemplates.JobStyleTemplateRecord appliedRecord = StyleTemplates.JobStyleTemplateRecord.For(template)
+                    .WithFonts(StyleTemplates.StyleTemplateFonts.RecordsFor(template));
+                if (subtitleIntoMargin)
+                {
+                    // FR-014 / FR-143: the user moved the subtitle (position) into the margin; it is kept as an adjustment of the Job.
+                    appliedRecord = appliedRecord.Adjust(StyleTemplates.JobStyleTemplateRecord.SubtitleTarget, "position",
+                        StyleTemplates.JobStyleTemplateRecord.MarginPosition);
+                }
+
+                StyleTemplates.JobStyleTemplateStore.Save(StyleTemplateDirectory(accepted.Request.RootJobId), appliedRecord);
+                if (talkShowInput is not null)
+                {
+                    // FR-141: the user's input is kept with the Job so a rerun reproduces it, and a changed value takes effect on the next Job.
+                    StyleTemplates.TalkShowInputStore.Save(StyleTemplateDirectory(accepted.Request.RootJobId), talkShowInput);
+                }
                 // FR-140: the speaker assignment the user made for the Project is kept with the Job, so a rerun reproduces it.
                 if (StyleTemplates.CueSpeakerAssignmentStore.Load(SpeakerAssignmentDirectory(projectId)) is { } assignment)
                 {
@@ -1471,10 +1500,25 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                             Path.Combine(CharacterPortraits.Directory, StyleTemplates.CharacterPortraitStore.ImageDirectoryName), []);
                         // FR-140 / FR-142: the Job's own speaker assignment (a draft reaches no output) and the timed ASR tokens.
                         string jobStyleDirectory = StyleTemplateDirectory(execution.Request.RootJobId);
+                        StyleTemplates.StyleTemplateDefinition appliedTemplate = generationRequest.Configuration.StyleTemplate!;
+                        bool preferVertical = appliedTemplate.Orientation == StyleTemplates.StyleTemplateOrientation.Vertical;
+                        bool wroteMatching = false;
+                        generationRequest.UseTalkShow(StyleTemplates.TalkShowInputStore.Load(jobStyleDirectory),
+                            StyleTemplates.JobStyleTemplateStore.Load(jobStyleDirectory)?.SubtitleIntoMargin == true);
                         generationRequest.UseCueDetails(StyleTemplates.CueSpeakerAssignmentStore.Load(jobStyleDirectory),
                             analysis.Import.Revision.Utterances.SelectMany(static utterance => utterance.Tokens)
                                 .ToDictionary(static token => token.Id),
-                            record => StyleTemplates.StyleTemplateRenderRecord.Save(jobStyleDirectory, record));
+                            record =>
+                            {
+                                // The record describes the output of the template's own orientation (a vertical template: the
+                                // vertical output); an output of the other orientation never replaces it.
+                                bool matching = (record.Height > record.Width) == preferVertical;
+                                if (matching || !wroteMatching)
+                                {
+                                    StyleTemplates.StyleTemplateRenderRecord.Save(jobStyleDirectory, record);
+                                    wroteMatching |= matching;
+                                }
+                            });
                     }
                     _ = SetPhase(execution.Request.ExecutionId, SourceOnlyExecutionPhase.Rendering);
                     context.ReportProgress(3, 6, "source_only.rendering");
@@ -2657,7 +2701,8 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             ?? throw new PipelineFailure(SourceOnlyExecutionPhase.Failed, "source_only.source_frame_rate_unavailable");
         BundledRenderProfileDefinition landscape = StandardRenderProfileFactory.CreateLongForm(profile,
             execution.Request.SettingsSnapshot, BundledRenderProfileLoader.Load(runtime.LandscapeProfileJson.Span),
-            BundledRenderProfileLoader.Load(runtime.VerticalProfileJson.Span), frameRate, geometry);
+            BundledRenderProfileLoader.Load(runtime.VerticalProfileJson.Span), frameRate, geometry,
+            forcePortrait: LoadStyleTemplate(execution.Request.RootJobId)?.Orientation == StyleTemplates.StyleTemplateOrientation.Vertical);
         int? audioSampleRate = ingest.Original.MediaInfo.Streams.Where(item => item.Kind == MediaStreamType.Audio)
             .OrderBy(item => item.Index).FirstOrDefault()?.SampleRate;
         ValidateSourceTiming(ingest.Original.MediaInfo, ingest.SourcePtsIndex!, landscape.Profile, analysis.Import.AudioTimeline);

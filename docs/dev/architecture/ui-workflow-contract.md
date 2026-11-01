@@ -112,7 +112,7 @@ Appの2,410ケースには環境依存4件とopt-in実統合4件の計8 skipを�
 | method | params | 操作境界 |
 |---|---|---|
 | `pipeline.read` | `projectId` | 最新実行のphase、実`rootJobId`／`ingestJobId`、設定digest、実版と親版、結果・前回親版の結果、失敗codeを返す |
-| `pipeline.regenerate` | `projectId`、`expectedVersionId`、`expectedVersionDigest`、`expectedSettingsRevision`、`expectedSettingsSnapshotDigest`、（任意）`styleTemplateId` | 現行親版・保存設定・整合性を再照合して子版生成を受け付ける。字幕の子版を主レンダー親版へ代用しない。`styleTemplateId`（FR-136）は定義済みの演出テンプレート ID のときだけ受け付け、Job に ID と版を記録する（省略時は既定の出力） |
+| `pipeline.regenerate` | `projectId`、`expectedVersionId`、`expectedVersionDigest`、`expectedSettingsRevision`、`expectedSettingsSnapshotDigest`、（任意）`styleTemplateId`、（任意・`styleTemplateId` があるときだけ）`talkShowInput`、`subtitleIntoMargin` | 現行親版・保存設定・整合性を再照合して子版生成を受け付ける。字幕の子版を主レンダー親版へ代用しない。`styleTemplateId`（FR-136）は定義済みの演出テンプレート ID のときだけ受け付け、Job に ID と版を記録する（省略時は既定の出力）。`talkShowInput`（FR-141）は対談番組の話題・話者の名前・肩書きの入力を表す JSON 文字列（1〜8192 文字。`topics` と `speakers` だけを持つ閉じた形で、不正なら受け付けない）で、Job のフォルダーに `talk-show-input.json` として保存し、入力・確認済みの値だけを映像に焼き込む。`subtitleIntoMargin`（FR-143）は縦型テンプレートで字幕を PARAM-005 の余白へ動かす利用者の明示の操作（真偽値）で、Job に位置の変更として記録し、出力検査は不合格になる |
 | `pipeline.retry` | `projectId`、`executionId`、`expectedRevision` | 最新の失敗・取消済み実行で、結果も版もまだない場合だけ再試行 |
 | `pipeline.cancel` | `projectId`、`executionId`、`expectedRevision` | 対象・revisionを照合し、pipeline所有処理の終了・後始末を待つ。合成した取消成功を保存しない |
 | `pipeline.versions` | `projectId` | **読取のみ。** 当該案件の過去版を新しい順に列挙する（`versionId`／`versionDigest`／`parentVersionId`／`executionId`／`phase`／結果の有無）。成果物本文・pathは返さない |

@@ -69,6 +69,20 @@ public sealed class StandardRenderConfiguration
     /// <summary>Receives the record of what the template put on the cues (written by the caller into the Job directory).</summary>
     public Action<StyleTemplates.StyleTemplateRenderRecord>? RecordSink { get; private set; }
 
+    /// <summary>FR-141: what the user entered or confirmed for the talk-show side telops and name bands (null: nothing).</summary>
+    public StyleTemplates.TalkShowInput? TalkShow { get; private set; }
+
+    /// <summary>FR-143: the user's explicit adjustment that moves the vertical subtitle into the bottom margin.</summary>
+    public bool SubtitleIntoMargin { get; private set; }
+
+    internal StandardRenderConfiguration WithTalkShow(StyleTemplates.TalkShowInput? input, bool subtitleIntoMargin)
+    {
+        var copy = (StandardRenderConfiguration)MemberwiseClone();
+        copy.TalkShow = input;
+        copy.SubtitleIntoMargin = subtitleIntoMargin;
+        return copy;
+    }
+
     internal StandardRenderConfiguration WithCueDetails(StyleTemplates.CueSpeakerAssignmentSet? assignments,
         IReadOnlyDictionary<HubRadio.Core.Identity.EntityId<HubRadio.Core.Provenance.TranscriptTokenIdTag>, HubRadio.Core.Transcripts.Token>? tokens,
         Action<StyleTemplates.StyleTemplateRenderRecord>? recordSink)

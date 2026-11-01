@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useId, useRef, useState } from 'react'
-import type { PipelineRegenerationParams } from '../workflow/pipelineProtocol'
+import type { PipelineRegenerationExtras, PipelineRegenerationParams } from '../workflow/pipelineProtocol'
 import { StyleTemplatePicker } from './StyleTemplatePicker'
 import { TalkShowInputPanel } from './TalkShowInputPanel'
 import { emptyTalkShowInput, type TalkShowInputValue } from './talkShowInput'
@@ -32,7 +32,7 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
   active: boolean
   onOpenSettings: () => void
   openSettingsDisabled?: boolean
-  onConfirm: (params: PipelineRegenerationParams, styleTemplateId?: string | null) => boolean
+  onConfirm: (params: PipelineRegenerationParams, styleTemplateId?: string | null, extras?: PipelineRegenerationExtras) => boolean
   /** FR-136: the selected production template (null = none). The picker is shown only when a change handler is given. */
   styleTemplateId?: string | null
   onStyleTemplateChange?: (id: string | null) => void
@@ -51,6 +51,8 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
   const [portraitNote, setPortraitNote] = useState<string | null>(null)
   const [portraitBusy, setPortraitBusy] = useState(false)
   const [talkShow, setTalkShow] = useState<TalkShowInputValue>(emptyTalkShowInput)
+  const [subtitleIntoMargin, setSubtitleIntoMargin] = useState(false)
+  const verticalTemplate = styleTemplateId === 'vertical-3-tier' || styleTemplateId === 'short-pop'
   useEffect(() => {
     if (portraitService === null || onStyleTemplateChange === undefined) return
     let alive = true
@@ -110,6 +112,12 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
     </>}
     {onStyleTemplateChange !== undefined && speakerService !== null && styleTemplateId === 'character-dialogue' &&
       <SpeakerAssignmentPanel projectId={projectId} service={speakerService} portraitCount={portraits.length} disabled={!active || pending} />}
+    {onStyleTemplateChange !== undefined && verticalTemplate && <div>
+      <button type="button" aria-pressed={subtitleIntoMargin} disabled={!active || pending} onClick={() => setSubtitleIntoMargin(value => !value)}>字幕位置を余白内に動かす</button>
+      <p role="status">{subtitleIntoMargin
+        ? '字幕を上下左右の余白の内側（置かない領域）へ動かして作成します。出力検査は不合格になります。'
+        : '字幕は余白と字幕領域の内側に置きます（既定）。'}</p>
+    </div>}
     <button ref={opener} type="button" disabled={!available || confirmation !== null} onClick={() => {
       if (available) { sending.current = false; setRejected(false); setConfirmation(Object.freeze({ ...params })) }
     }}>新しいJobを作成</button>
@@ -123,7 +131,9 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
       <button type="button" disabled={!available || !same || rejected} onClick={() => {
         if (!available || !same || sending.current) return
         sending.current = true
-        if (onConfirm(confirmation, styleTemplateId)) setConfirmation(null)
+        const entered = styleTemplateId === 'talk-show' && (talkShow.topics.some(item => item.text.trim() !== '') || talkShow.speakers.some(item => item.name.trim() !== ''))
+        const extras: PipelineRegenerationExtras = styleTemplateId === 'talk-show' ? (entered ? { talkShowInput: JSON.stringify(talkShow) } : {}) : verticalTemplate && subtitleIntoMargin ? { subtitleIntoMargin: true } : {}
+        if (Object.keys(extras).length === 0 ? onConfirm(confirmation, styleTemplateId) : onConfirm(confirmation, styleTemplateId, extras)) setConfirmation(null)
         else { sending.current = false; setRejected(true) }
       }}>作成する</button>
       <button ref={cancel} type="button" onClick={close}>取消</button>

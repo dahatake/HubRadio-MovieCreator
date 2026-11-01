@@ -62,6 +62,10 @@ internal static class SourceOnlyBridgeProtocol
                 "expectedSettingsRevision", "expectedSettingsSnapshotDigest",
                 .. (parameters.ValueKind == JsonValueKind.Object && parameters.TryGetProperty("styleTemplateId", out _)
                     ? new[] { "styleTemplateId" } : Array.Empty<string>()),
+                .. (parameters.ValueKind == JsonValueKind.Object && parameters.TryGetProperty("talkShowInput", out _)
+                    ? new[] { "talkShowInput" } : Array.Empty<string>()),
+                .. (parameters.ValueKind == JsonValueKind.Object && parameters.TryGetProperty("subtitleIntoMargin", out _)
+                    ? new[] { "subtitleIntoMargin" } : Array.Empty<string>()),
             ],
             BridgeMethod.PipelineRetry or BridgeMethod.PipelineCancel =>
                 ["projectId", "executionId", "expectedRevision"],
@@ -90,7 +94,13 @@ internal static class SourceOnlyBridgeProtocol
                 SettingsBridgeProtocol.IsDigest(parameters.GetProperty("expectedSettingsSnapshotDigest")) &&
                 (!parameters.TryGetProperty("styleTemplateId", out JsonElement templateId) ||
                     (templateId.ValueKind == JsonValueKind.String &&
-                        HubRadio.App.StyleTemplates.StyleTemplateCatalog.Find(templateId.GetString()!) is not null)),
+                        HubRadio.App.StyleTemplates.StyleTemplateCatalog.Find(templateId.GetString()!) is not null)) &&
+                (!parameters.TryGetProperty("talkShowInput", out JsonElement talkShow) ||
+                    (parameters.TryGetProperty("styleTemplateId", out _) && talkShow.ValueKind == JsonValueKind.String &&
+                        HubRadio.App.StyleTemplates.TalkShowInputJson.TryParse(talkShow.GetString()!, out _))) &&
+                (!parameters.TryGetProperty("subtitleIntoMargin", out JsonElement intoMargin) ||
+                    (parameters.TryGetProperty("styleTemplateId", out _) &&
+                        intoMargin.ValueKind is JsonValueKind.True or JsonValueKind.False)),
             _ => SettingsBridgeProtocol.IsCanonicalId(parameters.GetProperty("executionId")) &&
                 IsRevision(parameters.GetProperty("expectedRevision")),
         };
@@ -311,9 +321,12 @@ internal sealed class SourceOnlyBridgeHandler
                     cancellationToken.ThrowIfCancellationRequested();
                     string? styleTemplateId = parameters.TryGetProperty("styleTemplateId", out JsonElement selectedTemplate)
                         ? selectedTemplate.GetString() : null;
+                    string? talkShowInput = parameters.TryGetProperty("talkShowInput", out JsonElement talkShowText)
+                        ? talkShowText.GetString() : null;
+                    bool subtitleIntoMargin = parameters.TryGetProperty("subtitleIntoMargin", out JsonElement marginFlag) && marginFlag.GetBoolean();
                     execution = Invoke(() => pipeline.Regenerate(projectId, parentId, parentDigest,
                         settings.CurrentSnapshot, settingsRevision, actor, timeProvider.GetUtcNow().ToUniversalTime(),
-                        styleTemplateId));
+                        styleTemplateId, talkShowInput, subtitleIntoMargin));
                 }
                 else
                 {

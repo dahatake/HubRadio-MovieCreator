@@ -206,6 +206,9 @@ public sealed class StandardRenderGraphOutput
 
     /// <summary>FR-137 (6): the standing pictures to lay over this output (empty without the character dialogue template).</summary>
     public IReadOnlyList<StyleTemplates.StyleTemplatePortraitShot> PortraitShots { get; init; } = [];
+
+    /// <summary>FR-143 (c): the placement inspection of a vertical output, carried into its <see cref="OutputQcRequest"/>.</summary>
+    public OutputQcPlacementEvidence? PlacementEvidence { get; init; }
 }
 
 public enum StandardGenerationFailureReason
@@ -417,6 +420,8 @@ public static class StandardRenderGraphFactory
         IReadOnlyList<StandardEmphasisTelop> telops;
         IReadOnlyList<StandardSoundEffectCue> soundEffects;
         StyleTemplates.StyleTemplatePlan? styled = null;
+        StyleTemplates.StyleTemplateRenderRecord? renderRecord = null;
+        StyleTemplates.TalkShowRenderPlan? talkShow = null;
         bool verticalOutput = profile.Height > profile.Width;
         if (configuration?.StyleTemplate is { } styleTemplate)
         {
@@ -438,12 +443,19 @@ public static class StandardRenderGraphFactory
                     Characters: configuration.Characters));
             telops = styled.EmphasisTelops.Select(static item => item.Telop).ToArray();
             soundEffects = styled.SoundEffects;
-            if (configuration.RecordSink is { } sink)
+            if (configuration.RecordSink is not null)
             {
                 string? directory = configuration.PortraitImageDirectory;
-                sink(StyleTemplates.StyleTemplateRenderRecord.Create(styleTemplate, styled, profile.Width, profile.Height, inputCues,
+                renderRecord = StyleTemplates.StyleTemplateRenderRecord.Create(styleTemplate, styled, profile.Width, profile.Height, inputCues,
                     assignment?.IsConfirmed == true, shot => directory is null ? null
-                        : StyleTemplates.PortraitImageCropper.MeanColor(Path.Combine(directory, Path.GetFileName(shot.ImageFile)))));
+                        : StyleTemplates.PortraitImageCropper.MeanColor(Path.Combine(directory, Path.GetFileName(shot.ImageFile))));
+            }
+
+            // FR-141: the side telops and name bands come only from what the user entered or confirmed.
+            if (styleTemplate.Id == StyleTemplates.StyleTemplateCatalog.TalkShowId && configuration.TalkShow is { } talkInput)
+            {
+                talkShow = StyleTemplates.TalkShowRenderPlanner.Plan(talkInput, (double)cursor.Value / cursor.Rate, profile.Width, profile.Height,
+                    "#FFFFFF");
             }
         }
         else
@@ -453,8 +465,35 @@ public static class StandardRenderGraphFactory
                 configuration?.SoundEffectsEnabled == true, cueTexts, telops, cursor);
         }
         IReadOnlyList<StandardGraphicRenderFile> graphicFiles = StandardMetadataGraphics.Create(plan,
-            shortForm, visual!, profile, cursor, timeline.Entries[0].OutputRange.Duration, font, configuration, telops, styled);
+            shortForm, visual!, profile, cursor, timeline.Entries[0].OutputRange.Duration, font, configuration, telops, styled,
+            talkShow, timeline.Entries[0].Origin);
         inputs.AddRange(graphicFiles.Select(static file => file.Input));
+        StyleTemplates.StyleTemplateRect? verticalSubtitleBox = null;
+        OutputQcPlacementEvidence? placement = null;
+        if (renderRecord is not null && configuration?.RecordSink is { } recordSink)
+        {
+            // FR-143: the record states where each subtitle and telop was burned in and the output inspection of a vertical output.
+            if (verticalOutput)
+            {
+                verticalSubtitleBox = StandardTemplateSubtitles.VerticalBox(profile.Width, profile.Height, null, configuration.SubtitleIntoMargin);
+            }
+
+            StyleTemplates.TalkShowBox? subtitleBox = verticalSubtitleBox is { } vertical ? StyleTemplates.TalkShowBox.From(vertical) : null;
+            if (subtitleBox is null && subtitles.Revisions.Count > 0)
+            {
+                (int left, int top, int right, int bottom) = StandardSubtitlePlacement.Bounds(subtitles.AssProfile, subtitles.Revisions[0].Snapshot.LayoutResolution);
+                subtitleBox = new(left, top, right - left, bottom - top);
+            }
+
+            StyleTemplates.StyleTemplateRenderRecord placed = renderRecord.WithPlacement(talkShow,
+                [.. graphicFiles.Select(static file => new StyleTemplates.RecordedTelop(file.Evidence.Role, file.Evidence.RenderedText,
+                    (double)file.Evidence.OutputRange.Start.Value / file.Evidence.OutputRange.Start.Rate,
+                    (double)file.Evidence.OutputRange.End.Value / file.Evidence.OutputRange.End.Rate,
+                    new(file.Evidence.Left, file.Evidence.Top, file.Evidence.Right - file.Evidence.Left, file.Evidence.Bottom - file.Evidence.Top)))],
+                subtitleBox, verticalOutput ? StyleTemplates.StyleTemplateMargins.Vertical : null, platformUiConfirmed: false);
+            recordSink(placed);
+            placement = placed.OutputInspection is { } recorded ? OutputQcPlacement(recorded) : null;
+        }
 
         if (burnedIn)
         {
@@ -468,7 +507,8 @@ public static class StandardRenderGraphFactory
                 SubtitleCueRevision revision = subtitles.Revisions.Single(item => item.Snapshot.Cue.Id == cue.Cue.Id);
                 SubtitleExportFile file = styled is null
                     ? StandardSubtitlePlacement.Write(cue, subtitles.AssProfile, revision.Snapshot.LayoutResolution)
-                    : StandardTemplateSubtitles.Write(cue, subtitles.AssProfile, revision.Snapshot.LayoutResolution, styled, verticalOutput);
+                    : StandardTemplateSubtitles.Write(cue, subtitles.AssProfile, revision.Snapshot.LayoutResolution, styled, verticalOutput,
+                        intoMargin: configuration?.SubtitleIntoMargin == true);
                 var input = new RenderGraphInput(EntityId<RenderInputIdTag>.New(), RenderInputKind.Subtitle,
                     file.ContentDigest, file.ByteSize, revision.Snapshot.TextOrigin);
                 inputs.Add(input);
@@ -540,8 +580,18 @@ public static class StandardRenderGraphFactory
             SubtitleProjection = subtitles.Projection,
             SoundEffectCues = soundEffects,
             PortraitShots = styled?.Portraits ?? [],
+            PlacementEvidence = placement,
         };
     }
+
+    /// <summary>FR-143 (c): the OutputQc form of the placement inspection the render record states.</summary>
+    internal static OutputQcPlacementEvidence OutputQcPlacement(StyleTemplates.RecordedInspection inspection) => new(
+        inspection.Rule, inspection.Width, inspection.Height,
+        inspection.Margins is { } margins ? new OutputQcPlacementMargins(margins.Top, margins.Bottom, margins.Left, margins.Right) : null,
+        new(inspection.Region.X, inspection.Region.Y, inspection.Region.Width, inspection.Region.Height),
+        [.. inspection.Items.Select(static item => new OutputQcPlacementItem(item.Id,
+            new(item.Box.X, item.Box.Y, item.Box.Width, item.Box.Height), item.InsideMargins, item.InsideRegion, item.Ok))],
+        inspection.Warnings);
 
     internal static void ValidateSubtitleProjection(StandardCompositionPreparation preparation,
         StandardSubtitleInput subtitles, EntityId<StandardShortFormPlanIdTag>? shortFormId = null)
