@@ -19,6 +19,7 @@ import {
 export const jobExportKindLabels: Readonly<Record<JobExportKind, string>> = {
   longClean: '長尺（クリーン版）',
   longBurnIn: '長尺（字幕焼き込み版）',
+  shortClean: '短尺（クリーン版）',
   shortBurnIn: '短尺（字幕焼き込み版）',
   thumbnailLandscape: 'サムネイル（横長）',
   thumbnailVertical: 'サムネイル（縦型）',

@@ -79,8 +79,8 @@ public sealed class SourceOnlyOutputEvaluationTests
         });
         CollectionAssert.AreEquivalent(f.Generated.Artifacts.Where(a => a.QualityControlRequest is not null)
             .Select(a => a.Artifact.Id).ToArray(), calls.ToArray());
-        Assert.HasCount(3, calls);
-        Assert.HasCount(5, result.Artifacts);
+        Assert.HasCount(4, calls);
+        Assert.HasCount(6, result.Artifacts);
         Assert.IsEmpty(result.Failures);
         Assert.IsNotNull(result.PrimaryWorkflow);
         Assert.AreEqual(result.Artifacts.Single(a => a.Role == SourceOnlyResultRole.LandscapeClean).ArtifactId, result.PrimaryWorkflow.ArtifactId);

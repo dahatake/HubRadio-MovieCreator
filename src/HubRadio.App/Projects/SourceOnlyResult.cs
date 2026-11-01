@@ -16,7 +16,13 @@ using HubRadio.Infrastructure.Rendering;
 
 namespace HubRadio.App.Projects;
 
-public enum SourceOnlyResultRole { LandscapeClean, LandscapeBurnIn, VerticalBurnIn, SubRip, WebVtt, LandscapeThumbnail, VerticalThumbnail }
+public enum SourceOnlyResultRole { LandscapeClean, LandscapeBurnIn, VerticalBurnIn, SubRip, WebVtt, LandscapeThumbnail, VerticalThumbnail, VerticalClean }
+
+internal static class SourceOnlyResultRoleExtensions
+{
+    /// <summary>FR-132: a short (vertical) video, with or without burned-in subtitles. Carries a short-form rendition id.</summary>
+    public static bool IsShortVideo(this SourceOnlyResultRole role) => role is SourceOnlyResultRole.VerticalBurnIn or SourceOnlyResultRole.VerticalClean;
+}
 public enum SourceOnlyResultEvidenceKind { Graph, Manifest, RenderingInputs, QualityControl, DeliveryReceipt, Transcript, UsedSourceRanges }
 public enum SourceOnlyResultQcApplicability { VideoOutputQc, SubtitleFileOnly, ImageFileOnly }
 public enum SourceOnlyResultFailureCode
@@ -202,10 +208,12 @@ public sealed class SourceOnlyResultArtifact
         SourceOnlyResultRole.SubRip => "application/x-subrip",
         SourceOnlyResultRole.WebVtt => "text/vtt",
         SourceOnlyResultRole.LandscapeThumbnail or SourceOnlyResultRole.VerticalThumbnail => "image/png",
-        SourceOnlyResultRole.LandscapeClean or SourceOnlyResultRole.LandscapeBurnIn or SourceOnlyResultRole.VerticalBurnIn => "video/mp4",
+        SourceOnlyResultRole.LandscapeClean or SourceOnlyResultRole.LandscapeBurnIn or SourceOnlyResultRole.VerticalBurnIn
+            or SourceOnlyResultRole.VerticalClean => "video/mp4",
         _ => throw SourceOnlyResultCodec.Invalid(),
     };
-    public bool IsVideo => Role is SourceOnlyResultRole.LandscapeClean or SourceOnlyResultRole.LandscapeBurnIn or SourceOnlyResultRole.VerticalBurnIn;
+    public bool IsVideo => Role is SourceOnlyResultRole.LandscapeClean or SourceOnlyResultRole.LandscapeBurnIn or SourceOnlyResultRole.VerticalBurnIn
+        or SourceOnlyResultRole.VerticalClean;
     public bool IsImage => Role is SourceOnlyResultRole.LandscapeThumbnail or SourceOnlyResultRole.VerticalThumbnail;
     public SourceOnlyResultQcApplicability QcApplicability => IsVideo ? SourceOnlyResultQcApplicability.VideoOutputQc :
         IsImage ? SourceOnlyResultQcApplicability.ImageFileOnly : SourceOnlyResultQcApplicability.SubtitleFileOnly;

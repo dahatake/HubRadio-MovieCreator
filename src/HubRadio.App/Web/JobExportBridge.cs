@@ -17,6 +17,7 @@ internal enum JobExportKind
     ShortBurnIn,
     ThumbnailLandscape,
     ThumbnailVertical,
+    ShortClean,
 }
 
 internal enum JobExportFailureReason
@@ -83,6 +84,7 @@ internal static class JobExportBridgeProtocol
         JobExportKind.LongClean => "longClean",
         JobExportKind.LongBurnIn => "longBurnIn",
         JobExportKind.ShortBurnIn => "shortBurnIn",
+        JobExportKind.ShortClean => "shortClean",
         JobExportKind.ThumbnailLandscape => "thumbnailLandscape",
         JobExportKind.ThumbnailVertical => "thumbnailVertical",
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
@@ -467,6 +469,7 @@ internal static class JobExportSources
     [
         (SourceOnlyResultRole.LandscapeClean, JobExportKind.LongClean, "長尺クリーン"),
         (SourceOnlyResultRole.LandscapeBurnIn, JobExportKind.LongBurnIn, "長尺焼き込み"),
+        (SourceOnlyResultRole.VerticalClean, JobExportKind.ShortClean, "短尺クリーン"),
         (SourceOnlyResultRole.VerticalBurnIn, JobExportKind.ShortBurnIn, "短尺焼き込み"),
         (SourceOnlyResultRole.LandscapeThumbnail, JobExportKind.ThumbnailLandscape, "サムネイル"),
         (SourceOnlyResultRole.VerticalThumbnail, JobExportKind.ThumbnailVertical, "サムネイル縦型"),

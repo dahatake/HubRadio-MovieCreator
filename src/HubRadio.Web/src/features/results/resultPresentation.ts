@@ -225,7 +225,7 @@ function derivePipelinePresentation(input: ResultPresentationInput, pipeline: Pi
   const result = current ?? pipeline.previousResult
   const kinds: Readonly<Record<SourceOnlyResultArtifact['role'], ResultKind>> = {
     LandscapeClean: 'videoLong', LandscapeBurnIn: 'videoLong', VerticalBurnIn: 'videoShort',
-    SubRip: 'text', WebVtt: 'text', LandscapeThumbnail: 'thumbnail', VerticalThumbnail: 'thumbnail',
+    SubRip: 'text', WebVtt: 'text', LandscapeThumbnail: 'thumbnail', VerticalThumbnail: 'thumbnail', VerticalClean: 'videoShort',
   }
   const cards = groups.flatMap(({ kind, title }): ResultCard[] => {
     const planned = plan.cards.find(card => card.kind === kind)
