@@ -343,7 +343,7 @@ public static class StandardRenderGraphFactory
         TemplateReference template = shortForm is null ? plan.LongForm.Profile.TemplateReference : plan.ShortFormProfile.TemplateReference;
         ContentDigest layoutDigest = shortForm is null ? plan.LongForm.Profile.LayoutDigest : Digest(layout);
         ContentDigest timelineDigest = RenderGraphCanonicalEvidence.ComputeTimelineMapDigest(timeline);
-        string role = shortForm is null ? (burnedIn ? "landscape-burn-in" : "landscape-clean") : $"vertical-burn-in-{shortForm.Id}";
+        string role = shortForm is null ? (burnedIn ? "landscape-burn-in" : "landscape-clean") : (burnedIn ? $"vertical-burn-in-{shortForm.Id}" : $"vertical-clean-{shortForm.Id}");
         var inputs = new List<RenderGraphInput>();
         var nodes = new List<RenderNode>();
         var audio = new List<EntityId<RenderNodeIdTag>>();

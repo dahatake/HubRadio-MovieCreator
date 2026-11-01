@@ -47,6 +47,26 @@ public sealed class SourceOnlyOutputEvaluationTests
         }
     }
 
+    // FR-063 AC-038: a transient store failure on one evaluation append (seen on the 5th consecutive Job) is retried;
+    // a deterministic rejection is not.
+    [TestMethod]
+    [TestCategory("FR-063")]
+    public async Task TransientEvaluationAppendFailure_IsRetriedButInvalidEvidenceIsNot()
+    {
+        int calls = 0;
+        int value = await SourceOnlyOutputEvaluation.RetryTransientAsync(() =>
+        {
+            if (++calls < 3) throw new IOException("transient");
+            return 7;
+        }, CancellationToken.None);
+        Assert.AreEqual(7, value);
+        Assert.AreEqual(3, calls);
+        int invalidCalls = 0;
+        await Assert.ThrowsExactlyAsync<ArgumentException>(async () => await SourceOnlyOutputEvaluation.RetryTransientAsync<int>(
+            () => { invalidCalls++; throw new ArgumentException("invalid"); }, CancellationToken.None));
+        Assert.AreEqual(1, invalidCalls);
+    }
+
     [TestMethod]
     public async Task EveryVideoGetsIndependentQcAndOnlyPrimaryGetsWorkflow()
     {
@@ -59,8 +79,8 @@ public sealed class SourceOnlyOutputEvaluationTests
         });
         CollectionAssert.AreEquivalent(f.Generated.Artifacts.Where(a => a.QualityControlRequest is not null)
             .Select(a => a.Artifact.Id).ToArray(), calls.ToArray());
-        Assert.HasCount(3, calls);
-        Assert.HasCount(5, result.Artifacts);
+        Assert.HasCount(4, calls);
+        Assert.HasCount(6, result.Artifacts);
         Assert.IsEmpty(result.Failures);
         Assert.IsNotNull(result.PrimaryWorkflow);
         Assert.AreEqual(result.Artifacts.Single(a => a.Role == SourceOnlyResultRole.LandscapeClean).ArtifactId, result.PrimaryWorkflow.ArtifactId);

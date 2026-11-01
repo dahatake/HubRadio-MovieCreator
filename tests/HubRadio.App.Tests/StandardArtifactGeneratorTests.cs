@@ -53,8 +53,8 @@ public sealed class StandardArtifactGeneratorTests
         Assert.IsFalse(result.Omissions.Any(item => item.Role == "EpisodeTitle"));
         Assert.IsTrue(result.Warnings.Any(item => item.Code == "LibraryAbsent"));
         Assert.IsTrue(result.Warnings.Any(item => item.Code == "NoEligibleNonDialogueCues"));
-        Assert.HasCount(5, result.Artifacts); // clean + landscape burn-in + real short + SRT + VTT
-        Assert.AreEqual(3, calls);
+        Assert.HasCount(6, result.Artifacts); // clean + landscape burn-in + real short (burn-in + clean) + SRT + VTT
+        Assert.AreEqual(4, calls);
         Assert.IsFalse(result.StagingCleanupRequired);
         Assert.IsEmpty(result.ReconciliationArtifactIds);
         foreach (StandardGeneratedArtifact output in result.Artifacts)
@@ -91,7 +91,7 @@ public sealed class StandardArtifactGeneratorTests
             }
         }
 
-        Assert.HasCount(3, result.Artifacts.Where(static item => item.QualityControlRequest is not null).ToArray());
+        Assert.HasCount(4, result.Artifacts.Where(static item => item.QualityControlRequest is not null).ToArray());
         StandardGeneratedArtifact srt = result.Artifacts.Single(item => item.BindingEvidence.Role == "landscape-srt");
         StandardGeneratedArtifact vtt = result.Artifacts.Single(item => item.BindingEvidence.Role == "landscape-vtt");
         Assert.AreEqual(srt.BindingEvidence.DisplayCueDigest, vtt.BindingEvidence.DisplayCueDigest);
@@ -101,6 +101,15 @@ public sealed class StandardArtifactGeneratorTests
         StandardGeneratedArtifact shortOutput = result.Artifacts.Single(item => item.TypedArtifact.Role == StandardArtifactRole.VerticalBurnInVideo);
         Assert.AreEqual(fixture.Preparation.Child.Id, shortOutput.Context.CompositionVersion.ParentVersionId);
         Assert.IsTrue(result.CompositionVersions.Any(version => version.Id == shortOutput.Context.CompositionVersion.Id));
+        // FR-132 AC-136: the short is also produced without burned-in subtitles (clean), 1080x1920 like the burned-in short (FR-010 AC-002).
+        StandardGeneratedArtifact shortClean = result.Artifacts.Single(item => item.TypedArtifact.Role == StandardArtifactRole.VerticalCleanVideo);
+        StringAssert.StartsWith(shortClean.BindingEvidence.Role, "vertical-clean-");
+        Assert.AreEqual(1080, shortClean.Context.Profile.Width);
+        Assert.AreEqual(1920, shortClean.Context.Profile.Height);
+        Assert.IsFalse(shortClean.Context.Profile.SubtitleBurnIn);
+        Assert.IsNull(shortClean.SubtitleEvidence);
+        Assert.AreEqual(1080, shortOutput.Context.Profile.Width);
+        Assert.AreEqual(1920, shortOutput.Context.Profile.Height);
         Assert.AreEqual(fixture.Preparation.Child.Id, fixture.Versions.GetCurrentState(fixture.Project.Id)!.WorkingCopy.BaseVersionId);
     }
 
@@ -892,7 +901,7 @@ public sealed class StandardArtifactGeneratorTests
         CollectionAssert.AreEquivalent(new[]
         {
             StandardArtifactRole.LandscapeCleanVideo, StandardArtifactRole.LandscapeBurnInVideo,
-            StandardArtifactRole.VerticalBurnInVideo, StandardArtifactRole.LandscapeSubRip,
+            StandardArtifactRole.VerticalBurnInVideo, StandardArtifactRole.VerticalCleanVideo, StandardArtifactRole.LandscapeSubRip,
             StandardArtifactRole.LandscapeWebVtt, StandardArtifactRole.LandscapeThumbnail,
             StandardArtifactRole.VerticalThumbnail,
         }, result.Artifacts.Select(static item => item.TypedArtifact.Role).ToArray());
@@ -1033,7 +1042,7 @@ public sealed class StandardArtifactGeneratorTests
 
         Assert.AreEqual(StandardArtifactGenerationDisposition.Completed, result.Disposition,
             $"{result.FailureReason}/{result.CompilerFailureReason}");
-        Assert.HasCount(7, result.Artifacts);
+        Assert.HasCount(8, result.Artifacts);
         Assert.AreEqual(originalIndex, fixture.Index.CanonicalJson);
         Assert.AreEqual(originalVersion, CompositionSnapshotJson.WriteVersion(fixture.Versions.GetVersion(fixture.Preparation.Child.Id)!));
     }

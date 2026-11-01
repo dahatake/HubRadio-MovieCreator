@@ -373,12 +373,15 @@ public enum StandardArtifactRole
     LandscapeWebVtt,
     LandscapeThumbnail,
     VerticalThumbnail,
+    /// <summary>FR-132: the short without burned-in subtitles.</summary>
+    VerticalCleanVideo,
 }
 
 public sealed record StandardTypedArtifact(StandardArtifactRole Role, StoredArtifact Artifact)
 {
     public bool IsVideo => Role is StandardArtifactRole.LandscapeCleanVideo
-        or StandardArtifactRole.LandscapeBurnInVideo or StandardArtifactRole.VerticalBurnInVideo;
+        or StandardArtifactRole.LandscapeBurnInVideo or StandardArtifactRole.VerticalBurnInVideo
+        or StandardArtifactRole.VerticalCleanVideo;
 }
 
 public sealed record StandardRenderExecutionEvidence(FfmpegEncoderSettings? EncoderSettings,
@@ -452,6 +455,7 @@ public sealed record StandardGeneratedArtifact(
         "landscape-srt" => StandardArtifactRole.LandscapeSubRip,
         "landscape-vtt" => StandardArtifactRole.LandscapeWebVtt,
         string role when role.StartsWith("vertical-burn-in-", StringComparison.Ordinal) => StandardArtifactRole.VerticalBurnInVideo,
+        string role when role.StartsWith("vertical-clean-", StringComparison.Ordinal) => StandardArtifactRole.VerticalCleanVideo,
         string role when role.StartsWith("thumbnail-landscape-", StringComparison.Ordinal) => StandardArtifactRole.LandscapeThumbnail,
         string role when role.StartsWith("thumbnail-vertical-", StringComparison.Ordinal) => StandardArtifactRole.VerticalThumbnail,
         _ => throw new InvalidOperationException("Unknown standard artifact role."),
@@ -801,6 +805,10 @@ public sealed class StandardArtifactGenerator
 
                 outputs.Add(StandardRenderGraphFactory.Create(request.Preparation, request.Original.Asset,
                     request.SourceDisplayGeometry, true, shortInput.Subtitles, request.Font.Evidence, shortInput.ShortFormId,
+                    request.Configuration, request.Music));
+                // FR-132: the short without burned-in subtitles (clean), from the same short plan.
+                outputs.Add(StandardRenderGraphFactory.Create(request.Preparation, request.Original.Asset,
+                    request.SourceDisplayGeometry, false, shortInput.Subtitles, request.Font.Evidence, shortInput.ShortFormId,
                     request.Configuration, request.Music));
             }
 

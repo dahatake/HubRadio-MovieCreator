@@ -152,6 +152,7 @@ internal sealed class BookendStitchBridgeHandler
         SourceOnlyResultRole.LandscapeClean => "hubradio-long-clean-bookend.mp4",
         SourceOnlyResultRole.LandscapeBurnIn => "hubradio-long-subtitled-bookend.mp4",
         SourceOnlyResultRole.VerticalBurnIn => "hubradio-short-subtitled-bookend.mp4",
+        SourceOnlyResultRole.VerticalClean => "hubradio-short-clean-bookend.mp4",
         _ => throw new ArgumentOutOfRangeException(nameof(role)),
     };
 

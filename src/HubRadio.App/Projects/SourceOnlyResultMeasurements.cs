@@ -231,7 +231,7 @@ internal static class SourceOnlyResultObservationBuilder
             }
         }
 
-        if (artifact.Role == SourceOnlyResultRole.LandscapeClean)
+        if (artifact.Role is SourceOnlyResultRole.LandscapeClean or SourceOnlyResultRole.VerticalClean)
         {
             foreach (AutomatedEvaluationRuleId rule in SubtitleRules)
                 rules[rule] = AutomatedEvaluationRuleObservation.NotEvaluated(rule, "source_only.intentional_subtitle_free_rendition");
@@ -251,7 +251,7 @@ internal static class SourceOnlyResultObservationBuilder
                 if (bad is null) Pass(AutomatedEvaluationRuleId.SubtitleReadingSpeed, "source_only.display_text_reading_speed_verified");
                 else Warn(AutomatedEvaluationRuleId.SubtitleReadingSpeed, "source_only.subtitle_reading_speed_exceeded", Preview(bad.Start));
             }
-            string lineKey = artifact.Role == SourceOnlyResultRole.VerticalBurnIn ? "subtitles.verticalLineLengthMaximum" : "subtitles.horizontalLineLengthMaximum";
+            string lineKey = artifact.Role.IsShortVideo() ? "subtitles.verticalLineLengthMaximum" : "subtitles.horizontalLineLengthMaximum";
             if (Nonnegative(AutomatedEvaluationRuleId.SubtitleLineLength, lineKey, DefaultSettingUnit.FullWidthCharacters, out Fraction lineLength))
             {
                 if (cues.All(c => new Fraction(c.MaximumLineCharacters, 1) <= lineLength)) Pass(AutomatedEvaluationRuleId.SubtitleLineLength, "source_only.conservative_full_width_line_length_verified");

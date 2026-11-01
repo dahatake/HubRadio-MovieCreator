@@ -1,0 +1,33 @@
+/* NFR-UX-005 / NFR-UX-002: component arrangement. Uses the --cp-* design tokens only. */
+.arrange { display: grid; gap: 0.5rem; min-width: 0; min-height: 0; }
+/* Visual order: toolbar, confirmation, components (DOM order puts the components first for keyboard focus). */
+.arrange-toolbar { order: -2; }
+.arrange-confirm { order: -1; }
+.arrange-panel { display: flex; flex-direction: column; }
+.arrange-panel-bar { order: -1; }
+.arrange-toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.arrange-direction { display: inline-flex; gap: 0.25rem; }
+.arrange-status { font-size: 0.875rem; color: var(--cp-text-muted); }
+.arrange-status:empty { display: none; }
+.arrange-confirm { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.5rem 0.75rem; background: var(--cp-surface); border: 1px solid var(--cp-border); border-radius: 0.5rem; }
+.arrange-confirm p { margin: 0; flex: 1 1 16rem; }
+.arrange :where(button):focus-visible { outline: 3px solid var(--cp-accent); outline-offset: 2px; }
+.arrange :where(.arrange-toolbar, .arrange-panel-bar, .arrange-tabs) button { min-height: 2rem; padding: 0.125rem 0.625rem; font-size: 0.875rem; }
+.arrange :where(button)[aria-pressed='true'], .arrange-tabs [aria-selected='true'] { border-color: var(--cp-accent); background: var(--cp-accent-soft); }
+.arrange-panel-bar { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; padding-bottom: 0.25rem; }
+.arrange-panel-title { margin-inline-end: auto; font-size: 0.875rem; font-weight: 700; color: var(--cp-text-muted); }
+.arrange-tabs { display: flex; gap: 0.25rem; flex: 0 0 auto; }
+.arrange-panel { min-width: 0; min-height: 0; }
+.arrange-panel[hidden] { display: none; }
+.arrange-container { min-width: 0; min-height: 0; }
+.arrange-container[data-customized='true'], .arrange-container[data-direction='row'], .arrange-container[data-direction='column'] { display: flex; gap: 0.75rem; }
+.arrange-container[data-direction='column'] { flex-direction: column; }
+.arrange-container[data-customized='true']:not([data-direction='column']), .arrange-container[data-direction='row'] { flex-direction: row; }
+.arrange-container[data-customized='true'] > .arrange-panel { flex-basis: 0; }
+.arrange-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* AC-131: narrower than 1280 CSS px, or zoomed above 100%, stacks the components vertically (nothing is dropped). */
+@media (max-width: 1279px) {
+  .arrange-container, .arrange-container[data-customized='true'], .arrange-container[data-direction] { display: flex; flex-direction: column; }
+  .arrange-container > .arrange-panel { flex: 0 0 auto; }
+}

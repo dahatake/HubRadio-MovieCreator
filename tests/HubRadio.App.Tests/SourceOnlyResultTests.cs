@@ -31,7 +31,7 @@ public sealed class SourceOnlyResultTests
         Assert.AreEqual(expected.CanonicalJson, parsed.CanonicalJson);
         Assert.AreEqual(expected.CanonicalDigest, parsed.CanonicalDigest);
         Assert.AreEqual(expected.Binding, parsed.Binding);
-        Assert.HasCount(5, parsed.Artifacts);
+        Assert.HasCount(6, parsed.Artifacts);
         Assert.HasCount(1, parsed.TranscriptReferences);
         var restarted = new SourceOnlyResultService(new ArtifactStore(f.Generation.DatabasePath, f.Generation.Root),
             new AutomatedEvaluationStore(f.Generation.DatabasePath), new QuickStartWorkflowStore(f.Generation.DatabasePath),

@@ -259,7 +259,7 @@ public sealed class SourceOnlyResultService
                     var asset = preparation.Plan.LongForm.Project.Assets.Single(a => a.Id == execution.Request.SourceCandidateId);
                     SourceOnlyResultCodec.Require(source.ContentDigest == asset.ContentDigest && source.ByteSize == asset.ByteSize);
                     CompositionVersion expected = artifact.IsImage ? SourceOnlyResultImageValidation.Expected(preparation, artifact,
-                        execution.Request.SettingsSnapshot).Version : artifact.Role == SourceOnlyResultRole.VerticalBurnIn
+                        execution.Request.SettingsSnapshot).Version :                         artifact.Role.IsShortVideo()
                             ? StandardRenderGraphFactory.CreateShortVersion(preparation, artifact.RenditionId!) : preparation.Child;
                     StoredCompositionVersion? stored = _projects.GetCompositionVersion(artifact.VersionId);
                     if (stored is null) failures.Add(new(SourceOnlyResultFailureCode.VersionNotPersisted, artifact.ArtifactId));

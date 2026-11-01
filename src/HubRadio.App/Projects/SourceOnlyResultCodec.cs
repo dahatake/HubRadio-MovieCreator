@@ -290,9 +290,10 @@ public static class SourceOnlyResultCodec
         Require(result.Artifacts.Select(a => a.ArtifactId).Distinct().Count() == result.Artifacts.Count);
         Require(result.Artifacts.Select(a => (a.Role, a.RenditionId, a.ThumbnailPlanId)).Distinct().Count() == result.Artifacts.Count);
         Require(result.Artifacts.Count(a => a.Role == SourceOnlyResultRole.VerticalBurnIn) <= StandardCompositionPlan.MaximumShortFormCount);
+        Require(result.Artifacts.Count(a => a.Role == SourceOnlyResultRole.VerticalClean) <= StandardCompositionPlan.MaximumShortFormCount);
         foreach (SourceOnlyResultArtifact a in result.Artifacts)
         {
-            Require(Enum.IsDefined(a.Role) && (a.Role == SourceOnlyResultRole.VerticalBurnIn) == (a.RenditionId is not null));
+            Require(Enum.IsDefined(a.Role) && a.Role.IsShortVideo() == (a.RenditionId is not null));
             Require(a.IsImage == (a.ThumbnailPlanId is not null) && (a.FrameEvidence is null || a.IsImage) &&
                 (a.ProfileId is null) == (a.ProfileDigest is null));
             if (a.FrameEvidence is SourceOnlyResultFrameEvidence frame)
@@ -308,7 +309,7 @@ public static class SourceOnlyResultCodec
             Require(a.VersionId is not null && a.VersionDigest is not null && a.GraphDigest is not null &&
                 a.ArtifactId != a.Source.ArtifactId && a.Evidence.Count <= 4 && a.Evidence.Select(e => e.Kind).Distinct().Count() == a.Evidence.Count);
             if (a.ManifestDigest is null) Require(a.FailureCode is not null && a.Evidence.Count == 0 && a.Evaluation is null);
-            if (a.Role != SourceOnlyResultRole.VerticalBurnIn && !a.IsImage) Require(a.VersionId == b!.VersionId && a.VersionDigest == b.VersionDigest);
+            if (!a.Role.IsShortVideo() && !a.IsImage) Require(a.VersionId == b!.VersionId && a.VersionDigest == b.VersionDigest);
             foreach (SourceOnlyResultEvidenceReference evidence in a.Evidence)
             {
                 Require(Enum.IsDefined(evidence.Kind) && evidence.Kind != SourceOnlyResultEvidenceKind.DeliveryReceipt);

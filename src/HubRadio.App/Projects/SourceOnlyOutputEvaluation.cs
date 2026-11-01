@@ -213,7 +213,7 @@ public sealed class SourceOnlyOutputEvaluation
                         preparation.Plan.LongForm.Provenance.TranscriptRevisionDigest, source.ArtifactId));
 
                 StoredCompositionVersion? storedVersion = _projects.GetCompositionVersion(record.VersionId);
-                if (storedVersion is null && (role == SourceOnlyResultRole.VerticalBurnIn || record.IsImage))
+                if (storedVersion is null && (role.IsShortVideo() || record.IsImage))
                 {
                     // The generator already created this exact short version and bound its graph
                     // and manifest to it. Persist it unchanged; never rebind a landscape output.
@@ -319,7 +319,8 @@ public sealed class SourceOnlyOutputEvaluation
                     EnvironmentVersion, item.Manifest.ApplicationDigest, toolDigest, modelDigest, item.Manifest.TemplateVersionDigest, null,
                     startedAt, completedAt, completedAt, inputDigest, record.ArtifactDigest, observations);
                 AutomatedEvaluationRun evaluated = new AutomatedEvaluationEngine().Evaluate(request);
-                try { run = _evaluations.Append(evaluated); }
+                try { run = await AppendEvaluationWithRetryAsync(evaluated, ct).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception e) when (Recoverable(e)) { failure ??= SourceOnlyResultFailureCode.EvaluationPersistenceFailed; }
                 if (run is not null && evaluating is not null)
                 {
@@ -362,7 +363,7 @@ public sealed class SourceOnlyOutputEvaluation
     {
         StandardGeneratedArtifact? primary = generated.Artifacts.FirstOrDefault(a => a.BindingEvidence.Role == "landscape-clean") ?? generated.Artifacts.FirstOrDefault();
         EntityId<CompositionVersionIdTag>? id = execution.VersionId ?? (primary is not null &&
-            (ParseRole(primary.BindingEvidence.Role).Role == SourceOnlyResultRole.VerticalBurnIn || ParseRole(primary.BindingEvidence.Role).ThumbnailPlanId is not null)
+            (ParseRole(primary.BindingEvidence.Role).Role.IsShortVideo() || ParseRole(primary.BindingEvidence.Role).ThumbnailPlanId is not null)
             ? primary.ValidationContext.CompositionVersion.ParentVersionId : primary?.Graph.CompositionVersionId);
         ContentDigest? digest = execution.VersionDigest ?? (id == primary?.Graph.CompositionVersionId
             ? primary?.Graph.CompositionVersionDigest : id is null ? null : _projects.GetCompositionVersion(id)?.ContentDigest);
@@ -410,6 +411,7 @@ public sealed class SourceOnlyOutputEvaluation
             SourceOnlyResultRole.LandscapeClean => StandardArtifactRole.LandscapeCleanVideo,
             SourceOnlyResultRole.LandscapeBurnIn => StandardArtifactRole.LandscapeBurnInVideo,
             SourceOnlyResultRole.VerticalBurnIn => StandardArtifactRole.VerticalBurnInVideo,
+            SourceOnlyResultRole.VerticalClean => StandardArtifactRole.VerticalCleanVideo,
             SourceOnlyResultRole.SubRip => StandardArtifactRole.LandscapeSubRip,
             SourceOnlyResultRole.WebVtt => StandardArtifactRole.LandscapeWebVtt,
             SourceOnlyResultRole.LandscapeThumbnail => StandardArtifactRole.LandscapeThumbnail,
@@ -427,7 +429,7 @@ public sealed class SourceOnlyOutputEvaluation
             item.ValidationContext.Project.Assets.Single().Id == execution.Request.SourceCandidateId &&
             RenderGraphValidator.Validate(item.Graph, item.ValidationContext).IsValid);
         SourceOnlyResultImageExpected? image = record.IsImage ? SourceOnlyResultImageValidation.Expected(preparation!, record, settings) : null;
-        CompositionVersion expected = image?.Version ?? (record.Role == SourceOnlyResultRole.VerticalBurnIn
+        CompositionVersion expected = image?.Version ?? (record.Role.IsShortVideo()
             ? StandardRenderGraphFactory.CreateShortVersion(preparation!, record.RenditionId!) : preparation!.Child);
         SourceOnlyResultCodec.Require(CompositionSnapshotJson.WriteVersion(expected) == CompositionSnapshotJson.WriteVersion(item.ValidationContext.CompositionVersion));
         RenderProfile expectedProfile = image?.Profile ?? StandardRenderGraphFactory.GetProfile(preparation!.Plan,
@@ -459,6 +461,8 @@ public sealed class SourceOnlyOutputEvaluation
         "landscape-vtt" => new(SourceOnlyResultRole.WebVtt),
         _ when role?.StartsWith("vertical-burn-in-", StringComparison.Ordinal) == true =>
             new(SourceOnlyResultRole.VerticalBurnIn, SourceOnlyResultCodec.Id<StandardShortFormPlanIdTag>(role["vertical-burn-in-".Length..])),
+        _ when role?.StartsWith("vertical-clean-", StringComparison.Ordinal) == true =>
+            new(SourceOnlyResultRole.VerticalClean, SourceOnlyResultCodec.Id<StandardShortFormPlanIdTag>(role["vertical-clean-".Length..])),
         _ when role?.StartsWith("thumbnail-landscape-", StringComparison.Ordinal) == true =>
             new(SourceOnlyResultRole.LandscapeThumbnail, ThumbnailPlanId: SourceOnlyResultCodec.Id<StandardThumbnailPlanIdTag>(role["thumbnail-landscape-".Length..])),
         _ when role?.StartsWith("thumbnail-vertical-", StringComparison.Ordinal) == true =>
@@ -504,5 +508,26 @@ public sealed class SourceOnlyOutputEvaluation
         }
         return new(role, reason, renditionId);
     }
+    // FR-063 AC-038: while several Jobs are created in a row the database can be briefly locked by
+    // another writer (the 5th Job's first evaluation append failed once with identical inputs).
+    // Append is idempotent for the same evaluation id and bytes, so a transient failure is retried
+    // a few times. Deterministic rejections (invalid evidence, id conflict) are not retried.
+    private Task<AutomatedEvaluationRun> AppendEvaluationWithRetryAsync(AutomatedEvaluationRun evaluated, CancellationToken ct) =>
+        RetryTransientAsync(() => _evaluations.Append(evaluated), ct);
+
+    internal static async Task<T> RetryTransientAsync<T>(Func<T> operation, CancellationToken ct)
+    {
+        const int attempts = 4;
+        for (int attempt = 1; ; attempt++)
+        {
+            try { return operation(); }
+            catch (Exception e) when (attempt < attempts && Recoverable(e) &&
+                e is not (ArgumentException or AutomatedEvaluationConflictException or OperationCanceledException))
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), ct).ConfigureAwait(false);
+            }
+        }
+    }
+
     internal static bool Recoverable(Exception e) => e is not (OutOfMemoryException or StackOverflowException or AccessViolationException);
 }

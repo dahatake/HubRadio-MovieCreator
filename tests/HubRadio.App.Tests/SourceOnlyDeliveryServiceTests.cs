@@ -54,7 +54,7 @@ public sealed class SourceOnlyDeliveryServiceTests
         // Same delegate/validation contract as the coordinator, without running native media stages.
         SourceOnlyResult delivered = await SourceOnlyPipeline.DeliverResultAsync(execution, basis, Service(f).DeliverAsync,
             (value, ct) => f.Service.ValidateAsync(value, execution, ct), CancellationToken.None);
-        Assert.HasCount(7, delivered.Artifacts);
+        Assert.HasCount(8, delivered.Artifacts);
         Assert.IsFalse(delivered.HasBlockingFailures);
         Assert.IsTrue(delivered.HasWarnings);
         Assert.AreEqual(basis.CanonicalJson, SourceOnlyDeliveryReceipt.WithoutDelivery(delivered).CanonicalJson);
