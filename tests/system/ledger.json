@@ -1265,9 +1265,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-140-143-system.ps1 -Ac AC-172",
       "canary": false,
       "status": "fail",
-      "last_commit": "45de2f6",
-      "last_run_at": "2026-11-01T19:26:43+09:00",
-      "evidence": "work/runs/202611011838/logs/system-test/E2E-039-202611011907.log",
+      "last_commit": "94d4dde",
+      "last_run_at": "2026-11-01T20:01:18+09:00",
+      "evidence": "work/runs/202611011838/logs/system-test/E2E-039-202611011956.log",
       "history": [
         {
           "at": "2026-10-30T22:49:12+09:00",
