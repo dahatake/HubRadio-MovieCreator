@@ -510,7 +510,8 @@ function Get-StreamDecodedSeconds([string]$ff, [string]$Path, [string]$Map) {
     $l = $m[$m.Count - 1]
     [int]$l.Groups[1].Value * 3600 + [int]$l.Groups[2].Value * 60 + [double]::Parse($l.Groups[3].Value, [Globalization.CultureInfo]::InvariantCulture)
 }
-function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jobCount, [string]$videoPath) {
+function New-ProjectDraft($root, $sb, [string]$projectName, [string]$videoPath, [switch]$KeepInitialName) {
+    # Project を作る手順の前半（動画を 1 本選ぶ → かんたん編集の画面 → Project 名）。「編集を開始」は押さない。初期値の名前を返す。
     # 「新しいProjectを作成」は OS の「開く」ダイアログで動画を 1 本選ぶ。選ぶとそのまま「かんたん編集」の画面になる。
     $create = Find-ByName $root '新しいProjectを作成'
     $sw0 = [Diagnostics.Stopwatch]::StartNew()
@@ -583,8 +584,34 @@ function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jo
         $tl = (Get-AppTopLevels $root) | ForEach-Object { "[$($_.Current.ClassName)|$($_.Current.Name)|enabled=$($_.Current.IsEnabled)]" }; Write-Host "DIAG tops: $($tl -join ' ')"
         throw "Project name field did not appear after choosing the video. Visible: $($seen -join ' / ')"
     }
-    Set-Value $nameBox $projectName
-    Invoke-Element (Find-ByName $root 'Project名を保存')
+    $initialName = [string](Get-Value $nameBox)
+    if (-not $KeepInitialName) {
+        Set-Value $nameBox $projectName
+        Invoke-Element (Find-ByName $root 'Project名を保存')
+    }
+    $initialName
+}
+function Test-TabSelected($root, [string]$name) {
+    # タブ（role=tab）の選択状態。同名の文章と区別するため TabItem だけを見る。
+    $t = @(Find-AllByNameLike $root ('^' + [regex]::Escape($name) + '$') | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::TabItem })
+    foreach ($e in $t) { try { if ($e.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Current.IsSelected) { return $true } } catch {} }
+    $false
+}
+function Answer-ConfirmDialog($root, [bool]$Accept, [int]$timeoutSec = 20) {
+    # 削除の確認（ブラウザーの確認ダイアログ）。OK（確認）または キャンセル を押す。ボタンが見つからなければキーで答える。
+    $re = if ($Accept) { '^(OK|確認|削除|削除する|はい)$' } else { '^(キャンセル|Cancel|いいえ)$' }
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $dlg = Find-Dialog $root 2
+        $scope = if ($dlg) { $dlg } else { $root }
+        $btn = Find-AllByNameLike $scope $re | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button } | Select-Object -First 1
+        if ($btn) { Invoke-Element $btn; return }
+        if ($dlg) { Set-DialogForeground $dlg; [System.Windows.Forms.SendKeys]::SendWait($(if ($Accept) { '{ENTER}' } else { '{ESC}' })); return }
+    } while ($sw.Elapsed.TotalSeconds -lt $timeoutSec)
+    throw 'confirmation dialog did not appear'
+}
+function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jobCount, [string]$videoPath) {
+    New-ProjectDraft $root $sb $projectName $videoPath | Out-Null
     # 最初の Job は「編集を開始」で作られる。完了は、その Job のサムネイルの名前（… 完了）で判定する
     Invoke-Element (Find-ByName $root '編集を開始')
     Wait-JobCompleted $root 1

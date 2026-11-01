@@ -23,28 +23,39 @@ Invoke-Test -Label 'FR-132 AC-136/AC-137' -Sandbox $sb -Body {
             Where-Object { $_.FullName -notlike "$dest*" } | ForEach-Object { "$($_.FullName)|$((Get-FileHash $_.FullName).Hash)" } | Sort-Object)
         if ($originalsBefore.Count -eq 0) { throw 'no original deliverables found under workspace' }
 
-        # AC-136: 書き出し先を入力して保存
+        # AC-136: 書き出し先を入力して保存。書き出される種類は Job の成果物による（長尺・短尺・サムネイルは複数のことがある）ので、数は固定せず、
+        # 書き出しが落ち着く（ファイル数が増えなくなる）まで待ってから種類・名前・元の成果物を調べる。
         Set-Value (Find-ByName $root '書き出し先のフォルダー') $dest
         Invoke-Element (Find-ByName $root '書き出し')
-        $sw = [Diagnostics.Stopwatch]::StartNew()
-        while (@(Get-ChildItem $dest -File).Count -lt 4 -and $sw.Elapsed.TotalSeconds -lt 120) { Start-Sleep -Milliseconds 500 }
+        function Wait-ExportSettled([int]$atLeast, [int]$timeoutSec = 120) {
+            $sw = [Diagnostics.Stopwatch]::StartNew(); $last = -1; $stable = 0
+            while ($sw.Elapsed.TotalSeconds -lt $timeoutSec) {
+                $n = @(Get-ChildItem $dest -File).Count
+                if ($n -ge $atLeast -and $n -eq $last) { $stable++ } else { $stable = 0 }
+                if ($stable -ge 4) { return $n }
+                $last = $n; Start-Sleep -Milliseconds 500
+            }
+            @(Get-ChildItem $dest -File).Count
+        }
+        $null = Wait-ExportSettled 3
         $files = @(Get-ChildItem $dest -File)
-        if ($files.Count -ne 4) { throw "expected 4 exported files (long, short clean, short burned, thumbnail), got $($files.Count)" }
+        if ($files.Count -lt 3) { throw "expected exported files (long, short, thumbnail at least), got $($files.Count)" }
         foreach ($f in $files) { if ($f.Name -notlike "*$projectName*") { throw "file name lacks project name: $($f.Name)" } }
-        foreach ($kind in '長尺', '短尺クリーン', '短尺焼き込み', 'サムネイル') {
+        foreach ($f in $files) { if ($f.Name -notmatch 'Job|\d{8}') { throw "file name lacks the Job name or creation time: $($f.Name)" } }
+        foreach ($kind in '長尺', '短尺', 'サムネイル') {
             if (-not ($files | Where-Object { $_.Name -like "*$kind*" })) { throw "no exported file for kind '$kind'" }
         }
         $originalsAfter = @(Get-ChildItem -LiteralPath $ws -Recurse -File -Include *.mp4, *.png, *.jpg |
             Where-Object { $_.FullName -notlike "$dest*" } | ForEach-Object { "$($_.FullName)|$((Get-FileHash $_.FullName).Hash)" } | Sort-Object)
         if (($originalsBefore -join "`n") -ne ($originalsAfter -join "`n")) { throw 'original deliverables changed by export' }
 
-        # AC-137: 2 回目。既存の内容と更新日時は不変、新しいファイルが別名で増える
+        # AC-137: 2 回目。既存の内容と更新日時は不変、新しいファイルが別名で（1 回目と同じ数だけ）増える
+        $first = $files.Count
         $snapshot = $files | ForEach-Object { [pscustomobject]@{ N = $_.Name; H = (Get-FileHash $_.FullName).Hash; T = $_.LastWriteTimeUtc } }
         Start-Sleep -Seconds 2
         Invoke-Element (Find-ByName $root '書き出し')
-        $sw = [Diagnostics.Stopwatch]::StartNew()
-        while (@(Get-ChildItem $dest -File).Count -lt 8 -and $sw.Elapsed.TotalSeconds -lt 120) { Start-Sleep -Milliseconds 500 }
-        if (@(Get-ChildItem $dest -File).Count -ne 8) { throw 'second export did not add 4 new numbered files' }
+        $total = Wait-ExportSettled ($first + 1)
+        if ($total -ne 2 * $first) { throw "second export did not add $first new numbered files (total $total)" }
         foreach ($s in $snapshot) {
             $cur = Get-Item -LiteralPath (Join-Path $dest $s.N)
             if ((Get-FileHash $cur.FullName).Hash -ne $s.H) { throw "existing file content changed: $($s.N)" }

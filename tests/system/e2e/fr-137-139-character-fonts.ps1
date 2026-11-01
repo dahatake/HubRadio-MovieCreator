@@ -34,10 +34,16 @@ Invoke-Test -Label "FR-137/139 $Ac" -Sandbox $sb -Body {
             if (-not $j.portraits -or -not $j.subtitles) { throw 'portrait / dialogue subtitles missing in deliverable' }
             $colors = @($j.subtitles | ForEach-Object { "$($_.speaker):$($_.color)" } | Sort-Object -Unique)
             $bySpeaker = $j.subtitles | Group-Object speaker
-            if ($bySpeaker.Count -ge 2 -and (@($j.subtitles.color | Sort-Object -Unique)).Count -lt 2) { throw "subtitle colors not separated per character: $colors" }
+            $brandLocked = ($null -ne $j.PSObject.Properties['brandLocked']) -and [bool]$j.brandLocked
+            if ($brandLocked) {
+                # ブランド固定: 字幕色はブランドのまま。キャラは名前ラベル・位置で区別する。
+                if ((@($j.subtitles.color | Sort-Object -Unique)).Count -ne 1) { throw "brand-locked: subtitle colors must stay the brand color: $colors" }
+                if ($bySpeaker.Count -ge 2 -and (@($j.subtitles | ForEach-Object { "$($_.nameLabel)|$($_.position)" } | Sort-Object -Unique)).Count -lt 2) { throw 'brand-locked: characters not distinguished by name label / position' }
+            }
+            elseif ($bySpeaker.Count -ge 2 -and (@($j.subtitles.color | Sort-Object -Unique)).Count -lt 2) { throw "subtitle colors not separated per character: $colors" }
         }
         else {
-            # AC-160: 効果音は FR-060 の合成 2 種だけ／書体は同梱 3 種だけ。名前・版・ライセンスの記録
+            # AC-160: 効果音は FR-060 の合成 2 種だけ／書体は（ブランド固定でなければ）同梱 3 種だけ。名前・版・ライセンスの記録
             $null = New-JobWithTemplate $root $sb 'キャラクター対話' $video 1
             $j = Get-TemplateJobRecord $sb
             $se = @($j.soundEffects | ForEach-Object { $_.kind } | Sort-Object -Unique)
@@ -45,9 +51,17 @@ Invoke-Test -Label "FR-137/139 $Ac" -Sandbox $sb -Body {
             if (@($j.soundEffects | Where-Object { $_.synthetic -ne $true }).Count -gt 0) { throw 'non-synthetic sound effect used' }
             $allowed = 'Noto Sans JP Black', 'M PLUS Rounded 1c', 'Potta One'
             if (-not $j.fonts -or @($j.fonts).Count -lt 1) { throw 'font records missing' }
+            $brandLocked = ($null -ne $j.PSObject.Properties['brandLocked']) -and [bool]$j.brandLocked
             foreach ($f in $j.fonts) {
-                if ($f.name -notin $allowed) { throw "non-bundled / unlicensed font used: $($f.name)" }
-                if (-not $f.version -or $f.license -notmatch 'OFL') { throw "font version/license not recorded: $($f.name)" }
+                if (-not $f.version) { throw "font version not recorded: $($f.name)" }
+                if ($brandLocked) {
+                    # ブランド固定: ブランドテンプレートの書体が優先。その書体の権利（NFR-BR-004）を確認・記録する。
+                    if (-not $f.license -or -not $f.rightsConfirmed) { throw "brand font rights not confirmed/recorded: $($f.name)" }
+                }
+                else {
+                    if ($f.name -notin $allowed) { throw "non-bundled / unlicensed font used: $($f.name)" }
+                    if ($f.license -notmatch 'OFL') { throw "font license not recorded: $($f.name)" }
+                }
             }
         }
     } finally { Stop-App $p }

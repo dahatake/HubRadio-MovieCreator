@@ -34,6 +34,18 @@ Invoke-Test -Label "FR-137 $Ac" -Sandbox $sb -Body {
                         if ($s.lines -gt $j.limits.maxLines) { throw 'subtitle lines exceed FR-051 limit' }
                         if ($s.maxLineChars -gt $j.limits.maxLineChars) { throw 'line length exceeds FR-051 limit' }
                         if (($s.end - $s.start) -gt $j.limits.maxCueSeconds) { throw 'cue length exceeds FR-051 limit' }
+                        # 最短 cue の下限（FR-012・FR-051）: 元の素材の cue が最初から下限未満の箇所だけ例外（警告つき）。テンプレートの分割で下限を割らない
+                        if ($null -ne $j.limits.PSObject.Properties['minCueSeconds'] -and ($s.end - $s.start) -lt $j.limits.minCueSeconds) {
+                            if (-not (($null -ne $s.PSObject.Properties['sourceCueBelowMinimum']) -and $s.sourceCueBelowMinimum)) { throw "cue shorter than the minimum created by the template split: $($s.text)" }
+                        }
+                    }
+                    if ($null -ne $j.limits.PSObject.Properties['minSubtitleCount'] -and $subs.Count -lt $j.limits.minSubtitleCount) { throw 'fewer subtitles than the minimum count' }
+                    # 強調以外のテロップの文字は、字幕の一部・利用者の入力・確認済みの要約のいずれか
+                    if ($null -ne $j.PSObject.Properties['telops']) {
+                        $inputs = @($j.userInputs) + @($j.confirmedSummaries)
+                        foreach ($t in @($j.telops)) {
+                            if (-not $all.Contains([string]$t.text) -and -not ($inputs | Where-Object { ([string]$_).Contains([string]$t.text) })) { throw "telop text not from subtitles / user input / confirmed summary: $($t.text)" }
+                        }
                     }
                 }
             }
@@ -49,6 +61,10 @@ Invoke-Test -Label "FR-137 $Ac" -Sandbox $sb -Body {
                     if ($w -lt 1 -or $w -gt 3) { throw "short template shows $w words at once" }
                     $hl = @($c.words | Where-Object { $_.highlight })
                     if ($hl.Count -gt 1) { throw 'more than the currently spoken word is highlighted' }
+                    # 最短 cue の下限を割る分割は行わない（警告は元の cue が最初から下限未満のときだけ）
+                    if ($null -ne $js.limits.PSObject.Properties['minCueSeconds'] -and ([double]$c.end - [double]$c.start) -lt $js.limits.minCueSeconds) {
+                        if (-not (($null -ne $c.PSObject.Properties['sourceCueBelowMinimum']) -and $c.sourceCueBelowMinimum)) { throw "split created a cue below the minimum length: $($c.text)" }
+                    }
                 }
                 $jv = $vari.Text | ConvertFrom-Json -Depth 32
                 foreach ($e in @($jv.emphasis)) {

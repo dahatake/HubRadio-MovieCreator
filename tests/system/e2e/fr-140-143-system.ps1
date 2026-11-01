@@ -98,7 +98,16 @@ Invoke-Test -Label "FR-140-143 $Ac" -Sandbox $sb -Body {
                 foreach ($u in $unassigned) { Save-Frame $mp4 (Get-Midpoint $u) $png; if ((Get-ColorPixels $png $c.portraitProbeColor).Count -ge 50) { throw 'portrait shown for unassigned cue' } }
                 $colors = @($assigned | ForEach-Object { $_.color } | Sort-Object -Unique)
                 $speakers = @($assigned | ForEach-Object { $_.speaker } | Sort-Object -Unique)
-                if ($speakers.Count -ge 2 -and $colors.Count -lt 2) { throw 'subtitle colors not separated per character' }
+                $brandLocked = ($null -ne $j.PSObject.Properties['brandLocked']) -and [bool]$j.brandLocked
+                if ($brandLocked) {
+                    # ブランド固定の Project: 字幕色はブランドのまま（キャラごとに変えない）。キャラは名前ラベル・位置で区別する。
+                    if ($colors.Count -ne 1) { throw "brand-locked project must keep the brand subtitle color, got: $($colors -join ',')" }
+                    if ($speakers.Count -ge 2) {
+                        $labels = @($assigned | ForEach-Object { if ($null -ne $_.PSObject.Properties['nameLabel']) { "$($_.nameLabel)|$($_.position)" } } | Sort-Object -Unique)
+                        if ($labels.Count -lt 2) { throw 'characters are not distinguished by name label / position in a brand-locked project' }
+                    }
+                }
+                elseif ($speakers.Count -ge 2 -and $colors.Count -lt 2) { throw 'subtitle colors not separated per character' }
                 foreach ($u in $unassigned) { if ($u.color -ne $j.defaultSubtitleColor) { throw 'unassigned cue not using default subtitle color' } }
             }
             'AC-169' {

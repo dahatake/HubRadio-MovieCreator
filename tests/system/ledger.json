@@ -31,16 +31,16 @@
     "AC-150": "sha256:b27bf4cb59291704",
     "AC-151": "sha256:405383872bd0d467",
     "AC-152": "sha256:c93bc97bccf60d47",
-    "AC-153": "sha256:ae75bb787fe91cb7",
-    "AC-154": "sha256:273c5f52ff2ada95",
+    "AC-153": "sha256:eca00b1c7537bbfe",
+    "AC-154": "sha256:0f7879dc839dcd3b",
     "AC-156": "sha256:6041c868c9b49763",
     "AC-157": "sha256:080d5e80e08f533a",
     "AC-158": "sha256:8e2186e112f366f8",
     "AC-159": "sha256:a8b576d551ca0912",
     "AC-161": "sha256:53e96432b190b2a6",
-    "AC-155": "sha256:e5a530ba8d296bf3",
-    "AC-160": "sha256:9afb20912eb5bcba",
-    "AC-165": "sha256:57595914f489fe1a",
+    "AC-155": "sha256:3f2ee8f84ef35a49",
+    "AC-160": "sha256:8e6b6c7f0750b23e",
+    "AC-165": "sha256:d45a36499959dd2b",
     "AC-169": "sha256:f00da269ff6903f2",
     "AC-172": "sha256:8c1e5c8f0571af58",
     "AC-174": "sha256:7fc8975df9e117fe"
@@ -226,9 +226,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-132-export.ps1",
       "canary": false,
       "status": "fail",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-006-202610302231.log",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-006-202611012221.log",
       "history": [
         {
           "at": "2026-10-13T05:43:44+09:00",
@@ -251,9 +251,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-132-export.ps1",
       "canary": false,
       "status": "fail",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-006-202610302231.log",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-006-202611012221.log",
       "history": [
         {
           "at": "2026-10-13T05:43:46+09:00",
@@ -332,9 +332,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-media-output.ps1 -Ac AC-049",
       "canary": false,
       "status": "fail",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-010-202610302231.log",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-010-202611012226.log",
       "history": [
         {
           "at": "2026-10-13T07:45:13+09:00",
@@ -357,9 +357,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-media-output.ps1 -Ac AC-001",
       "canary": false,
       "status": "fail",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-011-202610302231.log",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-011-202611012228.log",
       "history": [
         {
           "at": "2026-10-13T07:45:15+09:00",
@@ -382,9 +382,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-media-output.ps1 -Ac AC-057",
       "canary": false,
       "status": "fail",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-012-202610302231.log",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-012-202611012230.log",
       "history": [
         {
           "at": "2026-10-13T07:45:18+09:00",
@@ -407,9 +407,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-media-output.ps1 -Ac AC-002",
       "canary": false,
       "status": "fail",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-013-202610302231.log",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-013-202611012231.log",
       "history": [
         {
           "at": "2026-10-13T07:45:21+09:00",
@@ -431,10 +431,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-media-output.ps1 -Ac AC-060",
       "canary": false,
-      "status": "fail",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-014-202610302231.log",
+      "status": "pass",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-014-202611012233.log",
       "history": [
         {
           "at": "2026-10-13T07:45:24+09:00",
@@ -457,9 +457,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-media-output.ps1 -Ac AC-079",
       "canary": false,
       "status": "fail",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-015-202610302231.log",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-015-202611012234.log",
       "history": [
         {
           "at": "2026-10-13T07:45:27+09:00",
@@ -482,9 +482,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-009",
       "canary": false,
       "status": "fail",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-016-202610302233.log",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-016-202611012236.log",
       "history": [
         {
           "at": "2026-10-13T07:45:29+09:00",
@@ -507,9 +507,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-010",
       "canary": false,
       "status": "fail",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-017-202610302238.log",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-017-202611012237.log",
       "history": [
         {
           "at": "2026-10-13T07:45:31+09:00",
@@ -532,9 +532,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-017",
       "canary": false,
       "status": "fail",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-018-202610302238.log",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-018-202611012238.log",
       "history": [
         {
           "at": "2026-10-13T07:45:34+09:00",
@@ -557,9 +557,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-030",
       "canary": false,
       "status": "fail",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-019-202610302238.log",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-019-202611012240.log",
       "history": [
         {
           "at": "2026-10-13T07:45:37+09:00",
@@ -581,10 +581,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-036",
       "canary": false,
-      "status": "fail",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-020-202610302238.log",
+      "status": "pass",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-020-202611012243.log",
       "history": [
         {
           "at": "2026-10-13T07:45:40+09:00",
@@ -606,10 +606,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-038",
       "canary": false,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "fail",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-021-202611012245.log",
       "history": [
         {
           "at": "2026-10-13T07:45:43+09:00",
@@ -631,10 +631,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-launch-layout.ps1 -Ac AC-007",
       "canary": false,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "fail",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-022-202611012250.log",
       "history": [
         {
           "at": "2026-10-13T07:45:47+09:00",
@@ -656,10 +656,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-launch-layout.ps1 -Ac AC-127",
       "canary": false,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "fail",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-023-202611012251.log",
       "history": [
         {
           "at": "2026-10-13T07:45:52+09:00",
@@ -681,10 +681,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-launch-layout.ps1 -Ac AC-129",
       "canary": false,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "fail",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:53:43+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-024-202611012252.log",
       "history": [
         {
           "at": "2026-10-13T07:45:58+09:00",
@@ -998,9 +998,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-156",
       "canary": false,
       "status": "blocked",
-      "last_commit": "c0e5da2",
-      "last_run_at": "2026-11-01T22:13:21+09:00",
-      "evidence": "work/runs/202611012140/logs/system-test/E2E-030-202611012202.log",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:20:21+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-030-202611012216.log",
       "history": [
         {
           "at": "2026-10-30T16:46:20+09:00",
@@ -1025,6 +1025,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "対応する AC の検証レベルは integration で System Test の対象外（CHK-10）。スクリプトは保持し、integration 側の確認に使う"
+        },
+        {
+          "at": "2026-11-01T22:16:42+09:00",
+          "by": "conductor",
+          "change": "status -> not_run",
+          "reason": "再実行"
+        },
+        {
+          "at": "2026-11-01T22:20:59+09:00",
+          "by": "conductor",
+          "change": "blocked",
+          "reason": "AC は integration のため System Test 対象外。手動の E2E 実行は pass（work/runs/202611012140/logs/system-test/E2E-030-202611012216.log）"
         }
       ]
     },
@@ -1041,8 +1053,8 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-157",
       "canary": false,
       "status": "blocked",
-      "last_commit": "c0e5da2",
-      "last_run_at": "2026-11-01T22:13:21+09:00",
+      "last_commit": "3468f5d",
+      "last_run_at": "2026-11-01T22:20:47+09:00",
       "evidence": "work/runs/202611012140/logs/system-test/E2E-031-202611012208.log",
       "history": [
         {
@@ -1068,6 +1080,12 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "対応する AC の検証レベルは integration で System Test の対象外（CHK-10）。スクリプトは保持し、integration 側の確認に使う"
+        },
+        {
+          "at": "2026-11-01T22:20:59+09:00",
+          "by": "conductor",
+          "change": "blocked",
+          "reason": "AC は integration のため System Test 対象外。手動の E2E 実行は pass（work/runs/202611012140/logs/system-test/E2E-031-202611012208.log）"
         }
       ]
     },
