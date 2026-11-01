@@ -485,11 +485,19 @@ function New-SyntheticSpeechVideo($sb, [string]$dir, [string]$Text = 'Hello and 
     if ($byteRate -le 0) { throw "invalid wav header: $wav" }
     $dur = [Math]::Round($dataLen / $byteRate, 3).ToString([Globalization.CultureInfo]::InvariantCulture)
     foreach ($vc in @('libx264', 'mpeg4')) {
-        & $ff -y -f lavfi -i "testsrc=size=1920x1080:rate=30:duration=$dur" -i $wav -c:v $vc -pix_fmt yuv420p -c:a aac -af apad -t $dur $out 2>$null
+        & $ff -y -f lavfi -i "testsrc=size=1920x1080:rate=30:duration=$dur" -i $wav -c:v $vc -pix_fmt yuv420p -c:a aac -ar 48000 -af apad -t $dur $out 2>$null
         if ($LASTEXITCODE -eq 0) {
             $a = Get-StreamDecodedSeconds $ff $out '0:a:0'
             $v = Get-StreamDecodedSeconds $ff $out '0:v:0'
             if ([Math]::Abs($a - $v) -gt 0.150) { throw ("synthetic speech video audio/video length mismatch: audio={0:N3}s video={1:N3}s" -f $a, $v) }
+            $info = (& $ff -hide_banner -i $out 2>&1 | Out-String)
+            if ($info -notmatch 'Audio:.*\b48000 Hz') { throw 'synthetic speech video audio is not 48000 Hz' }
+            $vlog = (& $ff -v info -i $out -map 0:v:0 -f null - 2>&1 | Out-String)
+            $fm = [regex]::Matches($vlog, 'frame=\s*(\d+)')
+            if ($fm.Count -gt 0) {
+                $frames = [int64]$fm[$fm.Count - 1].Groups[1].Value
+                if (($frames * 48000) % 30 -ne 0) { throw "synthetic speech video frames x 48000/30 is not an integer: frames=$frames" }
+            }
             return $out
         }
     }
