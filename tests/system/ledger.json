@@ -1214,10 +1214,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-140-143-system.ps1 -Ac AC-165",
       "canary": false,
-      "status": "not_run",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "fail",
+      "last_commit": "baa6bc7",
+      "last_run_at": "2026-11-01T18:34:48+09:00",
+      "evidence": "work/runs/202611011543/logs/system-test/E2E-037-202611011812.log",
       "history": [
         {
           "at": "2026-10-30T22:49:08+09:00",
