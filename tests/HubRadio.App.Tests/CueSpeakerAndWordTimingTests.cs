@@ -382,4 +382,23 @@ public sealed class CueSpeakerAndWordTimingTests
         Assert.IsFalse(CueWordTiming.Realign(cue, [], "今日は晴れ").HasWordTiming);
         Assert.IsFalse(CueWordTiming.Realign(cue, words, string.Empty).HasWordTiming);
     }
+
+    // FR-142 AC-172: the ASR tokens are trimmed ("Hello", "and") while the cue text keeps the spaces between them; the spaced
+    // words still concatenate to the cue text, and a corrected (different) word still makes the cue cue-level.
+    [TestMethod]
+    [TestCategory("FR-142")]
+    public void AC172_TrimmedTokensOfASpacedLanguageAreTimedWithTheirSeparators()
+    {
+        StandardDisplayedCueText cue = Cue(0, 1800, "Hello, and welcome.");
+        StyleTemplateWord[] words = Words(0, ("Hello,", 600), ("and", 400), ("welcome.", 800));
+        Assert.IsFalse(CueWordTiming.IsValid(cue, words), "the bare tokens do not make up the text");
+
+        IReadOnlyList<StyleTemplateWord>? spaced = CueWordTiming.WithSeparators(cue.Text, words);
+        Assert.IsNotNull(spaced);
+        Assert.AreEqual(cue.Text, string.Concat(spaced.Select(static word => word.Text)));
+        CollectionAssert.AreEqual(words.Select(static word => word.Range).ToArray(), spaced.Select(static word => word.Range).ToArray());
+        Assert.IsTrue(CueWordTiming.For(cue, spaced).HasWordTiming);
+        Assert.IsNull(CueWordTiming.WithSeparators("Hello, but welcome.", words), "a changed word is not timed");
+        Assert.IsNull(CueWordTiming.WithSeparators("Hello, and welcome. Again", words), "an added word is not timed");
+    }
 }

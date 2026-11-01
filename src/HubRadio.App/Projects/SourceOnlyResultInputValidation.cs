@@ -409,7 +409,7 @@ internal static class SourceOnlyResultInputValidation
         return result;
     }
 
-    private static AssSubtitleProfile ReadAssProfile(byte[] bytes)
+    internal static AssSubtitleProfile ReadAssProfile(byte[] bytes)
     {
         string[] lines = SourceOnlyResultCodec.Utf8.GetString(bytes).Split('\n');
         int Number(string text) => int.Parse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
@@ -431,7 +431,8 @@ internal static class SourceOnlyResultInputValidation
                 Number(f[11]), Number(f[12]), Number(f[13]), Number(f[14]), (AssBorderStyle)Number(f[15]), Number(f[16]), Number(f[17]),
                 (AssAlignment)Number(f[18]), new AssMargins(Number(f[19]), Number(f[20]), Number(f[21])), Number(f[22]));
         }).ToArray();
-        SourceOnlyResultCodec.Require(lines.Count(l => l.StartsWith("Dialogue: ", StringComparison.Ordinal)) == 1);
+        // A template may replace the one Dialogue line by several (caption words, a dialogue line, a name label); at least one remains.
+        SourceOnlyResultCodec.Require(lines.Any(l => l.StartsWith("Dialogue: ", StringComparison.Ordinal)));
         return new(width, height, styles);
     }
 
