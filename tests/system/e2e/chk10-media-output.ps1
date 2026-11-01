@@ -34,13 +34,17 @@ Invoke-Test -Label "CHK10 $Ac" -Sandbox $sb -Body {
         switch ($Ac) {
             'AC-049' {
                 # FR-006 AC-049: 登録した元素材のメタデータが記録・表示される。異常系: 破損動画で警告。
-                Start-QuickStart $root $video
+                # 「元動画の情報」は Quick start（かんたん編集）画面に出る。元動画を選んだ直後の画面（Job 作成前）で探す。
+                $null = New-ProjectDraft $root $sb 'chk10-meta' $video -KeepInitialName
                 foreach ($k in 'ファイル名','再生時間','解像度','縦横比','フレームレート','音声','容量','作成日時','登録者') {
                     $null = Find-ByName $root $k 10
                 }
                 $bad = Join-Path $sb.Work 'broken.mp4'
                 [IO.File]::WriteAllBytes($bad, [byte[]](1..64))
-                Start-QuickStart $root $bad
+                # 一覧へ戻る操作に依存しないよう、再起動して一覧から新しい Project（破損動画）を作る
+                Stop-App $p
+                $p = Start-App $sb; $root = Get-Root $p
+                $null = New-ProjectDraft $root $sb 'chk10-broken' $bad -KeepInitialName
                 $null = Find-ByName $root '警告' 10
             }
             'AC-001' {
