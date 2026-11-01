@@ -37,7 +37,8 @@ $sb = New-AppSandbox
 $p = $null
 Invoke-Test -Label "FR-140-143 $Ac" -Sandbox $sb -Body {
     try {
-        $video = New-SyntheticVideo $sb $sb.Work
+        # AC-172 だけは ASR が 3 語以上の時刻付き単語を返す音声（英文の合成音声）が必要
+        $video = if ($Ac -eq 'AC-172') { New-SyntheticSpeechVideo $sb $sb.Work } else { New-SyntheticVideo $sb $sb.Work }
         $p = Start-App $sb; $root = Get-Root $p
         $null = New-ProjectWithCompletedJobs $root $sb 'tpl-sys' 0 $video
         switch ($Ac) {
