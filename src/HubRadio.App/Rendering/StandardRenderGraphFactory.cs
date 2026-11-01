@@ -699,9 +699,21 @@ public static class StandardRenderGraphFactory
             words.Add(new(token.Text, new TimeRange(range.Start + offset, range.Duration)));
         }
 
-        StyleTemplates.CueWordTimingResult result = string.Concat(words.Select(static word => word.Text)) == cue.Text
-            ? StyleTemplates.CueWordTiming.For(cue, words)
-            : StyleTemplates.CueWordTiming.Realign(cue, words, cue.Text);
+        StyleTemplates.CueWordTimingResult result;
+        if (string.Concat(words.Select(static word => word.Text)) == cue.Text)
+        {
+            result = StyleTemplates.CueWordTiming.For(cue, words);
+        }
+        else if (StyleTemplates.CueWordTiming.WithSeparators(cue.Text, words) is { } spaced)
+        {
+            // The tokens are trimmed; the cue keeps the space / punctuation between them (a spaced language such as English).
+            result = StyleTemplates.CueWordTiming.For(cue, spaced);
+        }
+        else
+        {
+            result = StyleTemplates.CueWordTiming.Realign(cue, words, cue.Text);
+        }
+
         return result.Words;
     }
 
