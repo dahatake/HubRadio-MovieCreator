@@ -60,7 +60,47 @@ function Start-App($sb) {
     while (-not (Test-ByName $root '設定' 2) -and -not $p.HasExited -and $sw.Elapsed.TotalSeconds -lt 360) { }
     if ($p.HasExited) { throw "app exited: $($p.ExitCode)" }
     $script:AppProc = $p
+    $script:AppSb = $sb
     $p
+}
+# 診断: Job 完了待ちのタイムアウト／アプリ終了時の情報を work/runs/<run-id>/ のログ（と標準出力）に出す（失敗判定は変えない）
+function Write-JobWaitDiag([string]$reason) {
+    $lines = [System.Collections.Generic.List[string]]::new()
+    try {
+        $lines.Add("DIAG-JOBWAIT: reason=$reason at $((Get-Date).ToString('o'))")
+        $p = $script:AppProc
+        if ($p) {
+            try { $p.Refresh() } catch {}
+            if ($p.HasExited) { $lines.Add("DIAG-JOBWAIT: app pid=$($p.Id) exited exitCode=$($p.ExitCode) (0x$('{0:X}' -f [int]$p.ExitCode)) exitTime=$($p.ExitTime.ToString('o'))") }
+            else { $lines.Add("DIAG-JOBWAIT: app pid=$($p.Id) still running") }
+        } else { $lines.Add('DIAG-JOBWAIT: no app process recorded') }
+        $work = if ($script:AppSb) { [string]$script:AppSb.Work } else { $null }
+        if ($work -and (Test-Path -LiteralPath $work)) {
+            $items = @(Get-ChildItem -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue)
+            $lines.Add("DIAG-JOBWAIT: work=$work entries=$($items.Count)")
+            $items | Where-Object { $_.PSIsContainer -and $_.FullName -match '(?i)job' } | Select-Object -First 50 | ForEach-Object { $lines.Add("DIAG-JOBWAIT: jobdir $($_.FullName)") }
+            $logs = @($items | Where-Object { -not $_.PSIsContainer -and $_.Extension -in '.log', '.txt', '.jsonl' } | Sort-Object LastWriteTime -Descending | Select-Object -First 30)
+            foreach ($f in $logs) { $lines.Add("DIAG-JOBWAIT: file $($f.FullName) size=$($f.Length) mtime=$($f.LastWriteTime.ToString('o'))") }
+            foreach ($f in ($logs | Select-Object -First 5)) {
+                $lines.Add("DIAG-JOBWAIT: ---- tail 80 of $($f.FullName) ----")
+                try { Get-Content -LiteralPath $f.FullName -Tail 80 -ErrorAction Stop | ForEach-Object { $lines.Add($_) } } catch { $lines.Add("(read failed: $_)") }
+            }
+        } else { $lines.Add("DIAG-JOBWAIT: work dir not found ($work)") }
+        try {
+            $since = (Get-Date).AddMinutes(-10)
+            $ev = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = '.NET Runtime', 'Application Error', 'Windows Error Reporting'; StartTime = $since } -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'HubRadio' } | Select-Object -First 10)
+            $lines.Add("DIAG-JOBWAIT: eventlog (HubRadio, last 10 min) count=$($ev.Count)")
+            foreach ($e in $ev) { $lines.Add("DIAG-JOBWAIT: [$($e.TimeCreated.ToString('o'))] $($e.ProviderName) id=$($e.Id): $($e.Message)") }
+        } catch { $lines.Add("DIAG-JOBWAIT: eventlog failed: $_") }
+    } catch { $lines.Add("DIAG-JOBWAIT failed: $_") }
+    $lines | ForEach-Object { Write-Host $_ }
+    try {
+        $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+        $rid = if ($env:RUN_ID) { $env:RUN_ID } elseif ($repo -match 'run-(\d+)') { $Matches[1] } else { '_diag' }
+        $dir = Join-Path $repo "work\runs\$rid"
+        $null = New-Item -ItemType Directory -Force -Path $dir
+        $lines | Add-Content -LiteralPath (Join-Path $dir 'e2e-jobwait-diag.log') -Encoding UTF8
+    } catch { Write-Host "DIAG-JOBWAIT: log write failed: $_" }
 }
 function Stop-App($p) { if ($p -and -not $p.HasExited) { $null = $p.CloseMainWindow(); if (-not $p.WaitForExit(10000)) { $p.Kill($true) } } }
 # WinUI3+WebView2 では画面の中身が MainWindowHandle の子孫ではなく、UIA のデスクトップ直下の別のトップレベル要素
@@ -445,14 +485,19 @@ function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jo
 function Wait-JobCompleted($root, [int]$jobNumber, [int]$timeoutSec = 900) {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     do {
-        if (@(Find-AllByNameLike $root "^サムネイル: Job $jobNumber、.*完了$").Count -gt 0) { return }
-        $failed = @(Find-AllByNameLike $root '操作を完了できませんでした|^サムネイル: Job \d+、.*(失敗|取消)$')
-        if ($failed.Count -gt 0) {
-            $msg = (Find-AllByNameLike $root '編集を開始できません|失敗') | Select-Object -First 1
-            throw "Job $jobNumber did not complete: $($msg.Current.Name)"
+        if ($script:AppProc -and $script:AppProc.HasExited) {
+            Write-JobWaitDiag "app exited while waiting for Job $jobNumber (after $([int]$sw.Elapsed.TotalSeconds) s)"
+            throw "Job $jobNumber did not complete within $timeoutSec s (app exited: $($script:AppProc.ExitCode))"
         }
-        Start-Sleep -Seconds 2
+        if (@(Find-AllByNameLike $root "^サムネイル: Job $jobNumber、.*完了$")        .Count -gt 0) { return }
+                $failed = @(Find-AllByNameLike $root '操作を完了できませんでした|^サムネイル: Job \d+、.*(失敗|取消)$')
+                if ($failed.Count -gt 0) {
+                    $msg = (Find-AllByNameLike $root '編集を開始できません|失敗') | Select-Object -First 1
+                    throw "Job $jobNumber did not complete: $($msg.Current.Name)"
+                }
+                Start-Sleep -Seconds 2
     } while ($sw.Elapsed.TotalSeconds -lt $timeoutSec)
+    Write-JobWaitDiag "timeout waiting for Job $jobNumber"
     throw "Job $jobNumber did not complete within $timeoutSec s"
 }
 
