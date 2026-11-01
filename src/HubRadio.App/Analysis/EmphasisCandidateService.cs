@@ -19,6 +19,13 @@ public enum EmphasisReasonKind
     Keyword,
     AnswerAfterExplicitQuestion,
     TopicTransitionSummary,
+
+    /// <summary>
+    /// FR-010: a run of consecutive recognized sentences whose duration lies in
+    /// the vertical short search range (15-60 s). Evidence is the original
+    /// transcript text and timing only; it asserts no editorial importance.
+    /// </summary>
+    SpeechSegment,
 }
 
 public enum EmphasisTextSourceKind
@@ -401,6 +408,12 @@ public static class EmphasisCandidateService
                 productTerms,
                 specifications,
                 cancellationToken);
+            AddSpeechSegmentCandidates(
+                revision,
+                spans,
+                topicRange,
+                specifications,
+                cancellationToken);
             skippedMetadata += AddMetadataCandidates(
                 topicMetadataRevision.Metadata,
                 metadataSupport,
@@ -560,6 +573,110 @@ public static class EmphasisCandidateService
                     []));
             }
         }
+    }
+
+    private static readonly RationalTime SpeechSegmentMinimum = new(15, 1);
+    private static readonly RationalTime SpeechSegmentTarget = new(30, 1);
+    private static readonly RationalTime SpeechSegmentMaximum = new(60, 1);
+    private static readonly RationalTime SpeechSegmentMaximumGap = new(3, 1);
+
+    /// <summary>
+    /// FR-010 AC-002: proposes 15-60 s runs of consecutive recognized sentences
+    /// (target 30 s, split at sentence boundaries and at pauses over 3 s) so that a
+    /// long speech recording yields grounded short-form candidates even when it has
+    /// no numbers, product terms or manual emphasis metadata. The rule is language
+    /// neutral: it uses only sentence boundaries and recognized timing.
+    /// </summary>
+    private static void AddSpeechSegmentCandidates(
+        TranscriptRevision revision,
+        IReadOnlyList<SourceSpan> spans,
+        TimeRange topicRange,
+        List<CandidateSpecification> specifications,
+        CancellationToken cancellationToken)
+    {
+        var units = new List<(Sentence Sentence, TimeRange Range, SourceSpan Span)>();
+        for (int utteranceIndex = 0;
+            utteranceIndex < revision.Utterances.Count;
+            utteranceIndex++)
+        {
+            Utterance utterance = revision.Utterances[utteranceIndex];
+            if (!IsFullyContained(utterance.Range, topicRange))
+            {
+                continue;
+            }
+
+            foreach (Sentence sentence in utterance.Sentences)
+            {
+                TimeRange range = sentence.Tokens.All(static token => token.Range is not null)
+                    ? new TimeRange(
+                        sentence.Tokens[0].Range!.Value.Start,
+                        sentence.Tokens[^1].Range!.Value.End
+                            - sentence.Tokens[0].Range!.Value.Start)
+                    : utterance.Range;
+                units.Add((sentence, range, spans[utteranceIndex]));
+            }
+        }
+
+        var window = new List<(Sentence Sentence, TimeRange Range, SourceSpan Span)>();
+
+        void Flush()
+        {
+            if (window.Count > 0)
+            {
+                RationalTime start = window[0].Range.Start;
+                RationalTime end = window[^1].Range.End;
+                SourceSpan first = window[0].Span;
+                if (end - start >= SpeechSegmentMinimum
+                    && end - start <= SpeechSegmentMaximum
+                    && window.All(item => item.Span.AssetId == first.AssetId
+                        && item.Span.SourceDigest == first.SourceDigest
+                        && string.Equals(
+                            item.Span.StreamId,
+                            first.StreamId,
+                            StringComparison.Ordinal)))
+                {
+                    var span = new SourceSpan(
+                        EntityId<SourceSpanIdTag>.New(),
+                        first.AssetId,
+                        first.StreamId,
+                        new TimeRange(start, end - start),
+                        first.SourceDigest,
+                        first.TranscriptRevisionId,
+                        window.SelectMany(static item => item.Sentence.Tokens)
+                            .Select(static token => token.Id)
+                            .ToArray());
+                    specifications.Add(new CandidateSpecification(
+                        span,
+                        string.Join(
+                            " ",
+                            window.Select(static item => item.Sentence.Text.Trim())),
+                        EmphasisTextSourceKind.OriginalTranscript,
+                        [EmphasisReasonKind.SpeechSegment],
+                        []));
+                }
+            }
+
+            window.Clear();
+        }
+
+        foreach (var unit in units)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (window.Count > 0
+                && (unit.Range.Start - window[^1].Range.End > SpeechSegmentMaximumGap
+                    || unit.Range.End - window[0].Range.Start > SpeechSegmentMaximum))
+            {
+                Flush();
+            }
+
+            window.Add(unit);
+            if (window[^1].Range.End - window[0].Range.Start >= SpeechSegmentTarget)
+            {
+                Flush();
+            }
+        }
+
+        Flush();
     }
 
     private static int AddMetadataCandidates(
@@ -772,6 +889,8 @@ public static class EmphasisCandidateService
                 EmphasisReasonKind.AnswerAfterExplicitQuestion =>
                     "utterance immediately after explicit question punctuation",
                 EmphasisReasonKind.TopicTransitionSummary => "manual topic summary",
+                EmphasisReasonKind.SpeechSegment =>
+                    "consecutive recognized sentences within the short-form duration range",
                 _ => throw new ArgumentOutOfRangeException(nameof(reasons)),
             })),
             ".");

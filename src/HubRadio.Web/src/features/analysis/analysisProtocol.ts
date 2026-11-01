@@ -306,6 +306,7 @@ export interface AnalysisEmphasisPayload {
     | 'keyword'
     | 'answerAfterExplicitQuestion'
     | 'topicTransitionSummary'
+    | 'speechSegment'
   )[]
   readonly termEvidence: readonly Readonly<{
     termEntryId: string
@@ -1580,7 +1581,7 @@ const contextPositions: readonly AnalysisContextPayload['features']['position'][
 ]
 const emphasisReasons: readonly AnalysisEmphasisPayload['reasons'][number][] = [
   'importantStatement', 'number', 'productName', 'publicationCaution', 'keyword',
-  'answerAfterExplicitQuestion', 'topicTransitionSummary',
+  'answerAfterExplicitQuestion', 'topicTransitionSummary', 'speechSegment',
 ]
 const sensitivityKinds: readonly AnalysisSensitivity['findings'][number]['kind'][] = [
   'emailAddress', 'internalNetworkLocation', 'credentialPattern', 'dictionaryTerm',
