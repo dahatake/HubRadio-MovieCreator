@@ -5,11 +5,34 @@ param([Parameter(Mandatory)][ValidateSet('AC-165','AC-169','AC-172','AC-174')][s
 $ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'StyleTemplate.common.ps1')
 
-function Get-DeliverableVideo($sb) {
+function Get-DeliverableVideo($sb, [string]$Role = '') {
+    # -Role: renders/<run>/<role>/ のフォルダー名（'landscape-burn-in'＝字幕焼き込み・立ち絵 overlay、'landscape-clean'＝字幕なし）。既定は従来どおり最新の mp4。
     $ws = Get-WorkspaceDir $sb
-    $v = Get-ChildItem -LiteralPath $ws -Recurse -File -Filter *.mp4 -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if (-not $v) { throw 'deliverable video (mp4) not found under workspace' }
+    $all = Get-ChildItem -LiteralPath $ws -Recurse -File -Filter *.mp4 -ErrorAction SilentlyContinue
+    if ($Role) { $all = $all | Where-Object { (Split-Path -Leaf (Split-Path -Parent $_.FullName)) -eq $Role } }
+    $v = $all | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $v) { throw "deliverable video (mp4) not found under workspace (role='$Role')" }
     return $v.FullName
+}
+function Save-FrameDiag($sb, [string]$case, [string]$mp4, [string]$png, [string]$probe) {
+    # フレーム検査の失敗時: mp4 のパス・寸法/長さ・probe 色・Get-ColorPixels の結果・フレーム PNG・style-template-render.json を保全する。
+    try {
+        $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+        $rid = if ($env:RUN_ID) { $env:RUN_ID } elseif ($repo -match 'run-(\d+)') { $Matches[1] } else { '_diag' }
+        $dest = Join-Path $repo "work\runs\$rid\e2e-failure-$case"
+        $null = New-Item -ItemType Directory -Force -Path $dest
+        $lines = @("mp4: $mp4", "portraitProbeColor: $probe")
+        $fp = Get-Command ffprobe -ErrorAction SilentlyContinue
+        if ($fp -and $mp4) { $lines += (& $fp.Source -v error -show_entries stream=width,height,duration,r_frame_rate -show_entries format=duration -of default=nw=1 $mp4 2>&1) }
+        if ($png -and (Test-Path -LiteralPath $png)) {
+            Copy-Item -LiteralPath $png -Destination (Join-Path $dest 'frame.png') -Force
+            if ($probe) { $r = Get-ColorPixels $png $probe; $lines += "ColorPixels: Count=$($r.Count) MinX=$($r.MinX) MaxX=$($r.MaxX) MinY=$($r.MinY) MaxY=$($r.MaxY) Size=$($r.Width)x$($r.Height)" }
+        }
+        $lines | Set-Content -LiteralPath (Join-Path $dest 'frame-diag.txt') -Encoding utf8
+        $ws = Get-WorkspaceDir $sb
+        Get-ChildItem -LiteralPath $ws -Recurse -File -Filter 'style-template-render.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | ForEach-Object -Begin { $i = 0 } -Process { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $dest ("style-template-render.$i.json")) -Force; $i++ }
+        Write-Host "DIAG-FRAME: saved to $dest"
+    } catch { Write-Host "DIAG-FRAME: save failed: $_" }
 }
 function Save-Frame([string]$video, [double]$t, [string]$png) {
     $ff = Get-Command ffmpeg -ErrorAction SilentlyContinue
@@ -61,12 +84,12 @@ Invoke-Test -Label "FR-140-143 $Ac" -Sandbox $sb -Body {
                 $assigned = @($j.subtitles | Where-Object { $_.speaker })
                 $unassigned = @($j.subtitles | Where-Object { -not $_.speaker })
                 if ($assigned.Count -lt 1) { throw 'no cue has an assigned speaker' }
-                $mp4 = Get-DeliverableVideo $sb
+                $mp4 = Get-DeliverableVideo $sb 'landscape-burn-in'
                 $png = Join-Path $sb.Work 'f165.png'
                 $c = $assigned[0]; $pt = Get-Midpoint $c
                 Save-Frame $mp4 $pt $png
                 $fa = Get-ColorPixels $png $c.portraitProbeColor
-                if ($fa.Count -lt 50) { throw "assigned speaker's portrait not visible during its cue (${pt}s)" }
+                if ($fa.Count -lt 50) { Save-FrameDiag $sb 'E2E-037' $mp4 $png $c.portraitProbeColor; throw "assigned speaker's portrait not visible during its cue (${pt}s)" }
                 # 該当 cue の外では映らない
                 $outside = @($j.subtitles | Where-Object { $_.speaker -ne $c.speaker })
                 if ($outside.Count -gt 0) { Save-Frame $mp4 (Get-Midpoint $outside[0]) $png; if ((Get-ColorPixels $png $c.portraitProbeColor).Count -ge 50 -and -not $outside[0].speaker) { throw 'portrait visible outside its cue' } }
@@ -99,7 +122,7 @@ Invoke-Test -Label "FR-140-143 $Ac" -Sandbox $sb -Body {
                 if ($all -match '(話者\s*[0-9A-Z一-九]+|Speaker\s*\d+|SPEAKER_\d+)') { throw 'anonymous speaker label shown' }
                 foreach ($t in @($j.sideTelops)) { if (-not $t.confirmed) { throw 'unconfirmed side telop shown' }; if (-not $t.text) { throw 'empty side telop shown' } }
                 # 映像にも出ている（帯の位置のフレームに文字色の画素がある）
-                $mp4 = Get-DeliverableVideo $sb; $png = Join-Path $sb.Work 'f169.png'
+                $mp4 = Get-DeliverableVideo $sb 'landscape-burn-in'; $png = Join-Path $sb.Work 'f169.png'
                 Save-Frame $mp4 (Get-Midpoint $b1) $png
                 if ((Get-ColorPixels $png $b1.textColor).Count -lt 30) { throw 'name band not visible in the video' }
             }
@@ -108,7 +131,7 @@ Invoke-Test -Label "FR-140-143 $Ac" -Sandbox $sb -Body {
                 Select-Template $root 'ショート飛び出し'
                 New-TemplateJob $root 1
                 $j = Get-RenderRecord $sb 0
-                $mp4 = Get-DeliverableVideo $sb; $png = Join-Path $sb.Work 'f172.png'
+                $mp4 = Get-DeliverableVideo $sb 'landscape-burn-in'; $png = Join-Path $sb.Work 'f172.png'
                 $hl = $j.highlightColor; $normal = $j.normalColor
                 if (-not $hl -or -not $normal -or $hl -eq $normal) { throw 'highlight and normal colors must be defined and differ' }
                 $words = @($j.subtitles | ForEach-Object { $_.words } | Where-Object { $null -ne $_.start })

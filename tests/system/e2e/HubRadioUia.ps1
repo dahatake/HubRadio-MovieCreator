@@ -63,6 +63,47 @@ function Start-App($sb) {
     $script:AppSb = $sb
     $p
 }
+# 失敗時の保全: sandbox の workspace の job/ と hubradio.db（-wal/-shm）と logs を work/runs/<run-id>/e2e-failure-<case>/ にコピーする（後片付けで消えないように）
+function Save-E2eFailureArtifacts([string]$case) {
+    try {
+        if (-not $script:AppSb) { return }
+        $ws = Join-Path ([string]$script:AppSb.Work) 'workspace'
+        if (-not (Test-Path -LiteralPath $ws)) { return }
+        if (-not $case) { $case = $script:E2eCase }
+        if (-not $case) { $case = 'unknown' }
+        $case = $case -replace '[^\w\.-]', '_'
+        $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+        $rid = if ($env:RUN_ID) { $env:RUN_ID } elseif ($repo -match 'run-(\d+)') { $Matches[1] } else { '_diag' }
+        $dest = Join-Path $repo "work\runs\$rid\e2e-failure-$case"
+        $null = New-Item -ItemType Directory -Force -Path $dest
+        foreach ($n in 'hubradio.db', 'hubradio.db-wal', 'hubradio.db-shm') {
+            $f = Join-Path $ws $n
+            if (Test-Path -LiteralPath $f) { Copy-Item -LiteralPath $f -Destination (Join-Path $dest $n) -Force -ErrorAction SilentlyContinue }
+        }
+        foreach ($d in 'job', 'logs') {
+            $s = Join-Path $ws $d
+            if (Test-Path -LiteralPath $s) { Copy-Item -LiteralPath $s -Destination (Join-Path $dest $d) -Recurse -Force -ErrorAction SilentlyContinue }
+        }
+        $sl = Join-Path ([string]$script:AppSb.Work) 'logs'
+        if (Test-Path -LiteralPath $sl) { Copy-Item -LiteralPath $sl -Destination (Join-Path $dest 'sandbox-logs') -Recurse -Force -ErrorAction SilentlyContinue }
+        Write-Host "DIAG-JOBWAIT: saved failure artifacts to $dest"
+    } catch { Write-Host "DIAG-JOBWAIT: save artifacts failed: $_" }
+}
+# workspace/hubradio.db に state=failed の Job があればその行（id|state）を返す（無ければ $null）
+function Get-FailedJobFromDb {
+    try {
+        if (-not $script:AppSb) { return $null }
+        $db = Join-Path (Join-Path ([string]$script:AppSb.Work) 'workspace') 'hubradio.db'
+        if (-not (Test-Path -LiteralPath $db)) { return $null }
+        $tmp = Join-Path ([IO.Path]::GetTempPath()) ('hr-fail-' + [guid]::NewGuid().ToString('N') + '.db')
+        Copy-Item -LiteralPath $db -Destination $tmp -Force
+        foreach ($x in "$db-wal", "$db-shm") { if (Test-Path -LiteralPath $x) { Copy-Item -LiteralPath $x -Destination ($tmp + $x.Substring($db.Length)) -Force } }
+        $py = "import sqlite3,sys`ncon=sqlite3.connect(sys.argv[1])`nfor r in con.execute(`"SELECT id, state FROM jobs WHERE lower(state)='failed' ORDER BY created_at LIMIT 1`"): print('|'.join(str(c) for c in r))"
+        $out = (& python -c $py $tmp 2>$null | Select-Object -First 1)
+        Remove-Item "$tmp*" -Force -ErrorAction SilentlyContinue
+        if ($out) { return [string]$out } else { return $null }
+    } catch { return $null }
+}
 # 診断: Job 完了待ちのタイムアウト／アプリ終了時の情報を work/runs/<run-id>/ のログ（と標準出力）に出す（失敗判定は変えない）
 function Write-JobWaitDiag([string]$reason) {
     $lines = [System.Collections.Generic.List[string]]::new()
@@ -86,6 +127,64 @@ function Write-JobWaitDiag([string]$reason) {
                 try { Get-Content -LiteralPath $f.FullName -Tail 80 -ErrorAction Stop | ForEach-Object { $lines.Add($_) } } catch { $lines.Add("(read failed: $_)") }
             }
         } else { $lines.Add("DIAG-JOBWAIT: work dir not found ($work)") }
+        # Job の状態: workspace/hubradio.db（jobs / job_attempts / job_progress）。sqlite3 があれば使い、無ければ python の sqlite3 で読む
+        try {
+            $ws = if ($work) { Join-Path $work 'workspace' } else { $null }
+            $db = if ($ws) { Join-Path $ws 'hubradio.db' } else { $null }
+            if ($db -and (Test-Path -LiteralPath $db)) {
+                $q = "SELECT j.id, j.state, j.kind, j.current_attempt_number, j.created_at, j.updated_at, a.state, a.started_at, a.completed_at, a.error_code, (SELECT phase FROM job_progress p WHERE p.job_attempt_id = a.id ORDER BY p.sequence_number DESC LIMIT 1) AS phase FROM jobs j LEFT JOIN job_attempts a ON a.job_id = j.id AND a.sequence_number = j.current_attempt_number ORDER BY j.created_at;"
+                $q2 = "SELECT p.recorded_at, p.job_id, p.sequence_number, p.phase, p.completed_units, p.total_units, p.message FROM job_progress p ORDER BY p.recorded_at DESC LIMIT 20;"
+                $tmp = Join-Path ([IO.Path]::GetTempPath()) ('hr-diag-' + [guid]::NewGuid().ToString('N') + '.db')
+                Copy-Item -LiteralPath $db -Destination $tmp -Force
+                foreach ($x in "$db-wal", "$db-shm") { if (Test-Path -LiteralPath $x) { Copy-Item -LiteralPath $x -Destination ($tmp + $x.Substring($db.Length)) -Force } }
+                $sqlite = Get-Command sqlite3 -ErrorAction SilentlyContinue
+                $lines.Add('DIAG-JOBWAIT: jobs (id|state|kind|attempt|created|updated|attemptState|started|completed|errorCode|phase)')
+                if ($sqlite) {
+                    & $sqlite.Source -readonly $tmp $q 2>&1 | ForEach-Object { $lines.Add("DIAG-JOBWAIT: job $_") }
+                    $lines.Add('DIAG-JOBWAIT: recent 20 progress (recordedAt|jobId|seq|phase|done|total|message)')
+                    & $sqlite.Source -readonly $tmp $q2 2>&1 | ForEach-Object { $lines.Add("DIAG-JOBWAIT: progress $_") }
+                } else {
+                    $py = "import sqlite3,sys`ncon=sqlite3.connect(sys.argv[1])`nfor q in sys.argv[2:]:`n    print('--')`n    [print('|'.join(str(c) for c in r)) for r in con.execute(q)]"
+                    & python -c $py $tmp $q $q2 2>&1 | ForEach-Object { $lines.Add("DIAG-JOBWAIT: sql $_") }
+                }
+                Remove-Item "$tmp*" -Force -ErrorAction SilentlyContinue
+            } else { $lines.Add("DIAG-JOBWAIT: hubradio.db not found ($db)") }
+            # Job 履歴 JSON（JobHistoryLog: workspace/job/job-*.json）
+            $hist = if ($ws) { @(Get-ChildItem -LiteralPath (Join-Path $ws 'job') -Filter 'job-*.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 20) } else { @() }
+            foreach ($h in $hist) {
+                # 生の JSON をそのまま出す（スキーマ前提にしない。exceptionType などの失敗情報が見える）
+                try {
+                    $raw = Get-Content -LiteralPath $h.FullName -Raw -ErrorAction Stop
+                    if ($raw.Length -gt 4000) { $raw = $raw.Substring(0, 4000) + '...(truncated)' }
+                    $lines.Add("DIAG-JOBWAIT: history $($h.Name) raw: $raw")
+                }
+                catch { $lines.Add("DIAG-JOBWAIT: history $($h.Name) (read failed: $_)") }
+            }
+        } catch { $lines.Add("DIAG-JOBWAIT: job state failed: $_") }
+        # UIA 上の Job 行（サムネイル名に状態、工程名の表示）
+        try {
+            if ($p -and -not $p.HasExited) {
+                $uroot = Get-Root $p
+                $texts = @(Find-AllByNameLike $uroot '^サムネイル: Job |Job \d+|工程|処理中|待機|実行中|失敗|完了|取消' | ForEach-Object { [string]$_.Current.Name } | Select-Object -Unique -First 40)
+                $lines.Add("DIAG-JOBWAIT: uia job texts count=$($texts.Count)")
+                foreach ($t in $texts) { $lines.Add("DIAG-JOBWAIT: uia '$t'") }
+            }
+        } catch { $lines.Add("DIAG-JOBWAIT: uia texts failed: $_") }
+        # アプリ配下の子プロセス（ffmpeg・python/Worker）
+        try {
+            if ($p) {
+                $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+                $ids = [System.Collections.Generic.HashSet[int]]::new(); $null = $ids.Add([int]$p.Id)
+                do { $n = $ids.Count; foreach ($c in $all) { if ($ids.Contains([int]$c.ParentProcessId)) { $null = $ids.Add([int]$c.ProcessId) } } } while ($ids.Count -ne $n)
+                $kids = @($all | Where-Object { $ids.Contains([int]$_.ProcessId) -and $_.ProcessId -ne $p.Id })
+                $lines.Add("DIAG-JOBWAIT: child processes count=$($kids.Count)")
+                foreach ($k in $kids) {
+                    $age = if ($k.CreationDate) { [int]((Get-Date) - $k.CreationDate).TotalSeconds } else { -1 }
+                    $cl = [string]$k.CommandLine; if ($cl.Length -gt 200) { $cl = $cl.Substring(0, 200) }
+                    $lines.Add("DIAG-JOBWAIT: child pid=$($k.ProcessId) name=$($k.Name) runSec=$age cmd=$cl")
+                }
+            }
+        } catch { $lines.Add("DIAG-JOBWAIT: child processes failed: $_") }
         try {
             $since = (Get-Date).AddMinutes(-10)
             $ev = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = '.NET Runtime', 'Application Error', 'Windows Error Reporting'; StartTime = $since } -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'HubRadio' } | Select-Object -First 10)
@@ -94,6 +193,7 @@ function Write-JobWaitDiag([string]$reason) {
         } catch { $lines.Add("DIAG-JOBWAIT: eventlog failed: $_") }
     } catch { $lines.Add("DIAG-JOBWAIT failed: $_") }
     $lines | ForEach-Object { Write-Host $_ }
+    Save-E2eFailureArtifacts
     try {
         $repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
         $rid = if ($env:RUN_ID) { $env:RUN_ID } elseif ($repo -match 'run-(\d+)') { $Matches[1] } else { '_diag' }
@@ -292,9 +392,11 @@ function Write-UiaDiag {
 }
 function Invoke-Test([scriptblock]$Body, [string]$Label, $Sandbox) {
     $failed = $null
+    $script:E2eCase = $Label
     try { & $Body } catch {
         $failed = $_
-        Write-UiaDiag   # アプリがまだ生きていれば（Body 内で Stop-App 済みでなければ）列挙する
+        Save-E2eFailureArtifacts $Label
+        Write-UiaDiag    # アプリがまだ生きていれば（Body 内で Stop-App 済みでなければ）列挙する
     }
     finally { Remove-AppSandbox $Sandbox }
     if ($failed) { Write-Error "$Label failed: $failed"; exit 1 }
@@ -373,11 +475,40 @@ function New-SyntheticSpeechVideo($sb, [string]$dir, [string]$Text = 'Hello and 
     $ff = Get-TestFfmpeg $sb
     $wav = New-SyntheticSpeechWav (Join-Path $dir 'speech.wav') $Text
     $out = Join-Path $dir 'source-speech.mp4'
+    # 映像の長さを音声（WAV）の再生時間に合わせる。アプリの取り込み検証は、音声が映像より 250 ms を超えて短い素材を拒否するため
+    $fs = [IO.File]::OpenRead($wav)
+    try {
+        $hdr = New-Object byte[] 44; [void]$fs.Read($hdr, 0, 44)
+        $byteRate = [BitConverter]::ToInt32($hdr, 28)
+        $dataLen = $fs.Length - 44
+    } finally { $fs.Dispose() }
+    if ($byteRate -le 0) { throw "invalid wav header: $wav" }
+    $dur = [Math]::Round($dataLen / $byteRate, 3).ToString([Globalization.CultureInfo]::InvariantCulture)
     foreach ($vc in @('libx264', 'mpeg4')) {
-        & $ff -y -f lavfi -i 'testsrc=size=1920x1080:rate=30' -i $wav -c:v $vc -pix_fmt yuv420p -c:a aac -shortest $out 2>$null
-        if ($LASTEXITCODE -eq 0) { return $out }
+        & $ff -y -f lavfi -i "testsrc=size=1920x1080:rate=30:duration=$dur" -i $wav -c:v $vc -pix_fmt yuv420p -c:a aac -ar 48000 -af apad -t $dur $out 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            $a = Get-StreamDecodedSeconds $ff $out '0:a:0'
+            $v = Get-StreamDecodedSeconds $ff $out '0:v:0'
+            if ([Math]::Abs($a - $v) -gt 0.150) { throw ("synthetic speech video audio/video length mismatch: audio={0:N3}s video={1:N3}s" -f $a, $v) }
+            $info = (& $ff -hide_banner -i $out 2>&1 | Out-String)
+            if ($info -notmatch 'Audio:.*\b48000 Hz') { throw 'synthetic speech video audio is not 48000 Hz' }
+            $vlog = (& $ff -v info -i $out -map 0:v:0 -f null - 2>&1 | Out-String)
+            $fm = [regex]::Matches($vlog, 'frame=\s*(\d+)')
+            if ($fm.Count -gt 0) {
+                $frames = [int64]$fm[$fm.Count - 1].Groups[1].Value
+                if (($frames * 48000) % 30 -ne 0) { throw "synthetic speech video frames x 48000/30 is not an integer: frames=$frames" }
+            }
+            return $out
+        }
     }
     throw 'ffmpeg failed to create synthetic speech video'
+}
+function Get-StreamDecodedSeconds([string]$ff, [string]$Path, [string]$Map) {
+    $log = (& $ff -v info -i $Path -map $Map -f null - 2>&1 | Out-String)
+    $m = [regex]::Matches($log, 'time=(\d+):(\d+):(\d+\.\d+)')
+    if ($m.Count -eq 0) { throw "cannot measure $Map of $Path" }
+    $l = $m[$m.Count - 1]
+    [int]$l.Groups[1].Value * 3600 + [int]$l.Groups[2].Value * 60 + [double]::Parse($l.Groups[3].Value, [Globalization.CultureInfo]::InvariantCulture)
 }
 function New-ProjectWithCompletedJobs($root, $sb, [string]$projectName, [int]$jobCount, [string]$videoPath) {
     # 「新しいProjectを作成」は OS の「開く」ダイアログで動画を 1 本選ぶ。選ぶとそのまま「かんたん編集」の画面になる。
@@ -490,10 +621,14 @@ function Wait-JobCompleted($root, [int]$jobNumber, [int]$timeoutSec = 900) {
             throw "Job $jobNumber did not complete within $timeoutSec s (app exited: $($script:AppProc.ExitCode))"
         }
         if (@(Find-AllByNameLike $root "^サムネイル: Job $jobNumber、.*完了$").Count -gt 0) { return }
-                $failed = @(Find-AllByNameLike $root '操作を完了できませんでした|^サムネイル: Job \d+、.*(失敗|取消)$')
-                if ($failed.Count -gt 0) {
+                # 失敗の検知: UIA の行（「状態: 失敗」の形でも、「失敗」だけの行でも）か、hubradio.db の jobs.state=failed
+                $failed = @(Find-AllByNameLike $root '操作を完了できませんでした|^サムネイル: Job \d+、.*(失敗|取消)$|^Job \d+.*失敗|状態: ?失敗|^失敗$')
+                $dbFailed = Get-FailedJobFromDb
+                if ($failed.Count -gt 0 -or $dbFailed) {
+                    Write-JobWaitDiag "Job $jobNumber failed (uia=$($failed.Count) db=$dbFailed) after $([int]$sw.Elapsed.TotalSeconds) s"
                     $msg = (Find-AllByNameLike $root '編集を開始できません|失敗') | Select-Object -First 1
-                    throw "Job $jobNumber did not complete: $($msg.Current.Name)"
+                    $why = if ($msg) { $msg.Current.Name } else { "状態: 失敗 (db: $dbFailed)" }
+                    throw "Job $jobNumber did not complete: $why"
                 }
                 Start-Sleep -Seconds 2
     } while ($sw.Elapsed.TotalSeconds -lt $timeoutSec)
