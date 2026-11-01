@@ -55,6 +55,9 @@ public sealed class CueSpeakerStoredSubtitleTests
                 int width = fixture.Subtitles.AssProfile.PlayResolutionWidth, height = fixture.Subtitles.AssProfile.PlayResolutionHeight;
                 Assert.IsTrue(StandardTemplateSubtitleBytes.Matches(styled, plain, width, height),
                     "brand=" + brand + Environment.NewLine + Encoding.UTF8.GetString(styled));
+                // The evidence capture of the stored file (HubRadio.App.Projects.SourceOnlyResultInputValidation.File) reads the same bytes.
+                Assert.IsTrue(HubRadio.App.Projects.SourceOnlyResultInputValidation.ReadAssProfile(styled).Styles.Count > 0,
+                    "the stored styled file must be readable as evidence (several Dialogue lines)");
             }
         }
         finally
