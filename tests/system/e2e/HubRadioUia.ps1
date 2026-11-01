@@ -86,6 +86,59 @@ function Write-JobWaitDiag([string]$reason) {
                 try { Get-Content -LiteralPath $f.FullName -Tail 80 -ErrorAction Stop | ForEach-Object { $lines.Add($_) } } catch { $lines.Add("(read failed: $_)") }
             }
         } else { $lines.Add("DIAG-JOBWAIT: work dir not found ($work)") }
+        # Job の状態: workspace/hubradio.db（jobs / job_attempts / job_progress）。sqlite3 があれば使い、無ければ python の sqlite3 で読む
+        try {
+            $ws = if ($work) { Join-Path $work 'workspace' } else { $null }
+            $db = if ($ws) { Join-Path $ws 'hubradio.db' } else { $null }
+            if ($db -and (Test-Path -LiteralPath $db)) {
+                $q = "SELECT j.id, j.state, j.kind, j.current_attempt_number, j.created_at, j.updated_at, a.state, a.started_at, a.completed_at, a.error_code, (SELECT phase FROM job_progress p WHERE p.job_attempt_id = a.id ORDER BY p.sequence_number DESC LIMIT 1) AS phase FROM jobs j LEFT JOIN job_attempts a ON a.job_id = j.id AND a.sequence_number = j.current_attempt_number ORDER BY j.created_at;"
+                $q2 = "SELECT p.recorded_at, p.job_id, p.sequence_number, p.phase, p.completed_units, p.total_units, p.message FROM job_progress p ORDER BY p.recorded_at DESC LIMIT 20;"
+                $tmp = Join-Path ([IO.Path]::GetTempPath()) ('hr-diag-' + [guid]::NewGuid().ToString('N') + '.db')
+                Copy-Item -LiteralPath $db -Destination $tmp -Force
+                foreach ($x in "$db-wal", "$db-shm") { if (Test-Path -LiteralPath $x) { Copy-Item -LiteralPath $x -Destination ($tmp + $x.Substring($db.Length)) -Force } }
+                $sqlite = Get-Command sqlite3 -ErrorAction SilentlyContinue
+                $lines.Add('DIAG-JOBWAIT: jobs (id|state|kind|attempt|created|updated|attemptState|started|completed|errorCode|phase)')
+                if ($sqlite) {
+                    & $sqlite.Source -readonly $tmp $q 2>&1 | ForEach-Object { $lines.Add("DIAG-JOBWAIT: job $_") }
+                    $lines.Add('DIAG-JOBWAIT: recent 20 progress (recordedAt|jobId|seq|phase|done|total|message)')
+                    & $sqlite.Source -readonly $tmp $q2 2>&1 | ForEach-Object { $lines.Add("DIAG-JOBWAIT: progress $_") }
+                } else {
+                    $py = "import sqlite3,sys`ncon=sqlite3.connect(sys.argv[1])`nfor q in sys.argv[2:]:`n    print('--')`n    [print('|'.join(str(c) for c in r)) for r in con.execute(q)]"
+                    & python -c $py $tmp $q $q2 2>&1 | ForEach-Object { $lines.Add("DIAG-JOBWAIT: sql $_") }
+                }
+                Remove-Item "$tmp*" -Force -ErrorAction SilentlyContinue
+            } else { $lines.Add("DIAG-JOBWAIT: hubradio.db not found ($db)") }
+            # Job 履歴 JSON（JobHistoryLog: workspace/job/job-*.json）
+            $hist = if ($ws) { @(Get-ChildItem -LiteralPath (Join-Path $ws 'job') -Filter 'job-*.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 20) } else { @() }
+            foreach ($h in $hist) {
+                try { $hj = Get-Content -LiteralPath $h.FullName -Raw | ConvertFrom-Json -Depth 32; $lines.Add("DIAG-JOBWAIT: history $($h.Name) state=$($hj.job.state) updated=$($hj.job.updatedAt) attempts=$(@($hj.job.attempts).Count)") }
+                catch { $lines.Add("DIAG-JOBWAIT: history $($h.Name) (read failed: $_)") }
+            }
+        } catch { $lines.Add("DIAG-JOBWAIT: job state failed: $_") }
+        # UIA 上の Job 行（サムネイル名に状態、工程名の表示）
+        try {
+            if ($p -and -not $p.HasExited) {
+                $uroot = Get-Root $p
+                $texts = @(Find-AllByNameLike $uroot '^サムネイル: Job |Job \d+|工程|処理中|待機|実行中|失敗|完了|取消' | ForEach-Object { [string]$_.Current.Name } | Select-Object -Unique -First 40)
+                $lines.Add("DIAG-JOBWAIT: uia job texts count=$($texts.Count)")
+                foreach ($t in $texts) { $lines.Add("DIAG-JOBWAIT: uia '$t'") }
+            }
+        } catch { $lines.Add("DIAG-JOBWAIT: uia texts failed: $_") }
+        # アプリ配下の子プロセス（ffmpeg・python/Worker）
+        try {
+            if ($p) {
+                $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+                $ids = [System.Collections.Generic.HashSet[int]]::new(); $null = $ids.Add([int]$p.Id)
+                do { $n = $ids.Count; foreach ($c in $all) { if ($ids.Contains([int]$c.ParentProcessId)) { $null = $ids.Add([int]$c.ProcessId) } } } while ($ids.Count -ne $n)
+                $kids = @($all | Where-Object { $ids.Contains([int]$_.ProcessId) -and $_.ProcessId -ne $p.Id })
+                $lines.Add("DIAG-JOBWAIT: child processes count=$($kids.Count)")
+                foreach ($k in $kids) {
+                    $age = if ($k.CreationDate) { [int]((Get-Date) - $k.CreationDate).TotalSeconds } else { -1 }
+                    $cl = [string]$k.CommandLine; if ($cl.Length -gt 200) { $cl = $cl.Substring(0, 200) }
+                    $lines.Add("DIAG-JOBWAIT: child pid=$($k.ProcessId) name=$($k.Name) runSec=$age cmd=$cl")
+                }
+            }
+        } catch { $lines.Add("DIAG-JOBWAIT: child processes failed: $_") }
         try {
             $since = (Get-Date).AddMinutes(-10)
             $ev = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = '.NET Runtime', 'Application Error', 'Windows Error Reporting'; StartTime = $since } -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'HubRadio' } | Select-Object -First 10)

@@ -34,10 +34,14 @@ Invoke-Test -Label "FR-138 $Ac" -Sandbox $sb -Body {
                 Select-Template $root '対談番組'
                 Set-Value (Find-EditByName $root '話者1の名前') '山田太郎'
                 Set-Value (Find-EditByName $root '話者1の肩書き') '代表取締役'
+                # 話題を 2 件入力する（TalkShowInputPanel: 「話題Nのサイドテロップ」入力欄、「話題を追加」ボタン）。AC の判定（2 話題以上）は弱めない
+                if (-not (Test-ByName $root '話題2のサイドテロップ' 2)) { Invoke-Element (Find-ByName $root '話題を追加') }
+                Set-Value (Find-EditByName $root '話題1のサイドテロップ') '最初の話題'
+                Set-Value (Find-EditByName $root '話題2のサイドテロップ') '次の話題'
                 New-TemplateJob $root 1
                 $rec = Get-TemplateJobRecord $sb | Select-Object -First 1
                 $j = $rec.Text | ConvertFrom-Json -Depth 32
-                $topics = @($j.topics | Sort-Object start)
+                $topics =  @($j.topics | Sort-Object start)
                 if ($topics.Count -lt 2) { throw 'need at least two topics in the sample' }
                 $side = @($j.sideTelops)
                 foreach ($t in $topics) {
