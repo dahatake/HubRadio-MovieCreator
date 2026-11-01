@@ -319,7 +319,8 @@ public sealed class SourceOnlyOutputEvaluation
                     EnvironmentVersion, item.Manifest.ApplicationDigest, toolDigest, modelDigest, item.Manifest.TemplateVersionDigest, null,
                     startedAt, completedAt, completedAt, inputDigest, record.ArtifactDigest, observations);
                 AutomatedEvaluationRun evaluated = new AutomatedEvaluationEngine().Evaluate(request);
-                try { run = _evaluations.Append(evaluated); }
+                try { run = await AppendEvaluationWithRetryAsync(evaluated, ct).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                 catch (Exception e) when (Recoverable(e)) { failure ??= SourceOnlyResultFailureCode.EvaluationPersistenceFailed; }
                 if (run is not null && evaluating is not null)
                 {
@@ -504,5 +505,26 @@ public sealed class SourceOnlyOutputEvaluation
         }
         return new(role, reason, renditionId);
     }
+    // FR-063 AC-038: while several Jobs are created in a row the database can be briefly locked by
+    // another writer (the 5th Job's first evaluation append failed once with identical inputs).
+    // Append is idempotent for the same evaluation id and bytes, so a transient failure is retried
+    // a few times. Deterministic rejections (invalid evidence, id conflict) are not retried.
+    private Task<AutomatedEvaluationRun> AppendEvaluationWithRetryAsync(AutomatedEvaluationRun evaluated, CancellationToken ct) =>
+        RetryTransientAsync(() => _evaluations.Append(evaluated), ct);
+
+    internal static async Task<T> RetryTransientAsync<T>(Func<T> operation, CancellationToken ct)
+    {
+        const int attempts = 4;
+        for (int attempt = 1; ; attempt++)
+        {
+            try { return operation(); }
+            catch (Exception e) when (attempt < attempts && Recoverable(e) &&
+                e is not (ArgumentException or AutomatedEvaluationConflictException or OperationCanceledException))
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), ct).ConfigureAwait(false);
+            }
+        }
+    }
+
     internal static bool Recoverable(Exception e) => e is not (OutOfMemoryException or StackOverflowException or AccessViolationException);
 }
