@@ -6,7 +6,8 @@ using HubRadio.Infrastructure.Processes;
 namespace HubRadio.App.Projects;
 
 /// <summary>FR-054: facts read from the selected source video before the Project is created.</summary>
-internal sealed record SourceMediaFacts(double DurationSeconds, int DisplayWidth, int DisplayHeight)
+internal sealed record SourceMediaFacts(double DurationSeconds, int DisplayWidth, int DisplayHeight,
+    double? FrameRate = null, bool? HasAudio = null)
 {
     internal bool IsVertical => DisplayHeight > DisplayWidth;
 }
@@ -132,8 +133,8 @@ internal static class SourceMediaProbe
 
     internal static IReadOnlyList<string> BuildArguments(string sourcePath) =>
     [
-        "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=width,height:stream_side_data=rotation:stream_tags=rotate:format=duration",
+        "-v", "error",
+        "-show_entries", "stream=codec_type,width,height,avg_frame_rate,r_frame_rate:stream_side_data=rotation:stream_tags=rotate:format=duration",
         "-of", "json", sourcePath,
     ];
 
@@ -163,7 +164,31 @@ internal static class SourceMediaProbe
         {
             using JsonDocument document = JsonDocument.Parse(json);
             JsonElement root = document.RootElement;
-            JsonElement stream = root.GetProperty("streams")[0];
+            JsonElement streams = root.GetProperty("streams");
+            JsonElement stream = default;
+            bool foundVideo = false;
+            bool? hasAudio = null;
+            foreach (JsonElement candidate in streams.EnumerateArray())
+            {
+                string? type = candidate.TryGetProperty("codec_type", out JsonElement typeValue) ? typeValue.GetString() : null;
+                if (type is not null)
+                {
+                    hasAudio = (hasAudio ?? false) || type == "audio";
+                }
+
+                if (!foundVideo && (type is null || type == "video"))
+                {
+                    stream = candidate;
+                    foundVideo = true;
+                }
+            }
+
+            if (!foundVideo)
+            {
+                return null;
+            }
+
+            double? frameRate = ParseRate(stream, "avg_frame_rate") ?? ParseRate(stream, "r_frame_rate");
             int width = stream.GetProperty("width").GetInt32();
             int height = stream.GetProperty("height").GetInt32();
             double duration = double.Parse(root.GetProperty("format").GetProperty("duration").GetString()!,
@@ -187,7 +212,7 @@ internal static class SourceMediaProbe
 
             bool quarterTurn = Math.Abs(rotation % 180) == 90;
             return width > 0 && height > 0 && double.IsFinite(duration) && duration > 0
-                ? new SourceMediaFacts(duration, quarterTurn ? height : width, quarterTurn ? width : height)
+                ? new SourceMediaFacts(duration, quarterTurn ? height : width, quarterTurn ? width : height, frameRate, hasAudio)
                 : null;
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException
@@ -195,5 +220,26 @@ internal static class SourceMediaProbe
         {
             return null;
         }
+    }
+
+    private static double? ParseRate(JsonElement stream, string name)
+    {
+        if (!stream.TryGetProperty(name, out JsonElement value) || value.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        string[] parts = value.GetString()!.Split('/');
+        if (parts.Length == 2 &&
+            double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double numerator) &&
+            double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double denominator) &&
+            denominator > 0 && numerator > 0)
+        {
+            return numerator / denominator;
+        }
+
+        return parts.Length == 1 &&
+            double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double plain) && plain > 0
+            ? plain : null;
     }
 }

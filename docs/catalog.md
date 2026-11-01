@@ -8,7 +8,7 @@
 
 | 要求 ID | 題名 | 決定状態 | 実装ファイル | テスト | 使っている共通部品 |
 |---|---|---|---|---|---|
-| FR-001 | 動画取り込み | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
+| FR-001 | 動画取り込み | 承認済み（依頼 2026-08-26） | src/HubRadio.App/Projects/BuzzEditingPreset.cs; src/HubRadio.App/Projects/ProjectAutoSettingsStore.cs; src/HubRadio.App/Projects/ProjectCreationService.cs; src/HubRadio.App/Web/ProjectBridgeHandler.cs; src/HubRadio.Web/src/features/projects/SourceMediaDetails.tsx; src/HubRadio.Web/src/features/projects/QuickStartPanel.tsx; src/HubRadio.Web/src/bridge/projectProtocol.ts | tests/HubRadio.App.Tests/BuzzEditingPresetTests.cs; tests/HubRadio.App.Tests/WebBridgeSchemaTests.cs; src/HubRadio.Web/src/features/projects/QuickStartPanel.test.tsx; src/HubRadio.Web/src/bridge/projectProtocol.test.ts; tests/system/e2e/chk10-media-output.ps1 | なし |
 | FR-002 | 文字起こし | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-003 | 話者識別 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-004 | 用語辞書 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
@@ -38,7 +38,7 @@
 | FR-028 | 複数案比較 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-029 | 任意確認と自動代理評価 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-030 | バージョン管理 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
-| FR-031 | 出力 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
+| FR-031 | 出力 | 承認済み（依頼 2026-08-26） | src/HubRadio.App/Projects/SourceOnlyDeliveryService.cs | tests/HubRadio.App.Tests/SourceOnlyDeliveryServiceTests.cs; tests/system/e2e/chk10-media-output.ps1 | なし |
 | FR-032 | 元動画との追跡性 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-033 | 設定管理 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-034 | 自動代理評価 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
