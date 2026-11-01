@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import { getProjectDisplayName, isProjectInputDirty } from './projectState'
 import { LegacyProjectDraftPanel } from './LegacyProjectDraftPanel'
 import { ProjectListCards } from './ProjectListCards'
+import { ArrangeablePanels } from '../arrange/ArrangeablePanels'
 import {
   useProjectState,
   type ProjectStateContextValue,
@@ -183,6 +184,8 @@ export function ProjectWorkspaceView({
 
       {state.draft === null ? (
         <section className="project-panel project-list-panel" aria-labelledby="projects-title">
+          <ArrangeablePanels screenId="project-list" className="project-list-arrange" panels={[
+            { id: 'actions', label: 'Projectの操作', children: (<>
           <div className="section-heading-row">
             <div>
               <p className="section-kicker">Projects</p>
@@ -214,7 +217,8 @@ export function ProjectWorkspaceView({
               Projectを作成する権限がありません。一覧の閲覧権限はProjectごとに適用されます。
             </p>
           )}
-
+            </>) },
+            { id: 'cards', label: 'Projectのカード', children: (<>
           {state.projects.length === 0 ? (
             <div className="project-list-cards">
               <div className="empty-state project-list-cards-empty" role="status">
@@ -230,6 +234,8 @@ export function ProjectWorkspaceView({
               onDelete={state.canCreate ? requestDeleteProject : undefined}
             />
           )}
+            </>) },
+          ]} />
         </section>
       ) : (
         <>
