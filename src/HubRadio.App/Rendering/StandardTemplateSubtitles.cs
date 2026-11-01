@@ -101,7 +101,8 @@ internal static class StandardTemplateSubtitles
             .OrderBy(static item => item.Input.Range.Start).ToArray();
         if (captions.Length == 0 && dialogues.Length == 0)
         {
-            return plain;
+            return vertical && plan.TemplateReference.StartsWith(StyleTemplateCatalog.Vertical3TierId + "@", StringComparison.Ordinal)
+                ? SplitIntoScreens(plain, cue) : plain;
         }
 
         string document = Encoding.UTF8.GetString(plain.GetUtf8Bytes());
@@ -178,6 +179,59 @@ internal static class StandardTemplateSubtitles
         }
 
         string result = document[..(dialogue + 1)] + lines.ToString().TrimEnd('\n') + "\n";
+        return new SubtitleExportFile(plain.Format, plain.CueCount, plain.TimestampRuleVersion,
+            new UTF8Encoding(false, true).GetBytes(result));
+    }
+
+    /// <summary>
+    /// FR-138 AC-158: the burned-in subtitle of the vertical 3-tier template shows the same 15-20 character screens as the render
+    /// record (<see cref="StyleTemplateLayout.CueScreens"/>): the one Dialogue line is replaced by consecutive lines inside the
+    /// cue's time, which together show the cue text in full. A text under 15 characters, and a cue too short to give each screen the
+    /// FR-012 / FR-051 minimum time, stays one line.
+    /// </summary>
+    private static SubtitleExportFile SplitIntoScreens(SubtitleExportFile plain, SubtitleFileCue cue)
+    {
+        string document = Encoding.UTF8.GetString(plain.GetUtf8Bytes());
+        int dialogue = document.IndexOf("\nDialogue: ", StringComparison.Ordinal);
+        int markerAt = dialogue < 0 ? -1 : document.IndexOf(Marker, dialogue, StringComparison.Ordinal);
+        if (markerAt < 0)
+        {
+            return plain;
+        }
+
+        string[] head = document[(dialogue + 1)..markerAt].Split(',');
+        string tail = document[(markerAt + Marker.Length)..];
+        int close = tail.IndexOf('}', StringComparison.Ordinal);
+        int lineEnd = tail.IndexOf('\n', StringComparison.Ordinal);
+        if (head.Length != 4 || !tail.StartsWith('{') || close < 0 || lineEnd < close)
+        {
+            return plain;
+        }
+
+        long start = StandardTemplateAss.Centiseconds(cue.Cue.Range.Start);
+        long end = StandardTemplateAss.Centiseconds(cue.Cue.Range.End);
+        var whole = new RecordedCue(start / 100d, end / 100d, cue.Text, null, null, "#FFFFFF", null, []);
+        IReadOnlyList<RecordedCue> screens = StyleTemplateLayout.CueScreens(whole);
+        if (screens.Count < 2 || end <= start)
+        {
+            return plain;
+        }
+
+        string overrides = tail[..(close + 1)];
+        string afterLine = tail[lineEnd..];
+        var lines = new StringBuilder();
+        long previous = start;
+        for (int index = 0; index < screens.Count; index++)
+        {
+            long from = previous;
+            long to = index + 1 == screens.Count ? end : Math.Clamp((long)Math.Round(screens[index].End * 100), from + 1, end);
+            previous = to;
+            _ = lines.Append(head[0]).Append(',').Append(StandardTemplateAss.Timestamp(from)).Append(',')
+                .Append(StandardTemplateAss.Timestamp(to)).Append(',').Append(head[3]).Append(Marker).Append(overrides)
+                .Append(SubtitleWriterContract.EscapeAssText(screens[index].Text)).Append('\n');
+        }
+
+        string result = document[..(dialogue + 1)] + lines.ToString().TrimEnd('\n') + afterLine;
         return new SubtitleExportFile(plain.Format, plain.CueCount, plain.TimestampRuleVersion,
             new UTF8Encoding(false, true).GetBytes(result));
     }
