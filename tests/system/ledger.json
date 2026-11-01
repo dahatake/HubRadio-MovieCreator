@@ -998,9 +998,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-156",
       "canary": false,
       "status": "blocked",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "last_commit": "c0e5da2",
+      "last_run_at": "2026-11-01T22:13:21+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-030-202611012202.log",
       "history": [
         {
           "at": "2026-10-30T16:46:20+09:00",
@@ -1013,6 +1013,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        },
+        {
+          "at": "2026-11-01T22:02:06+09:00",
+          "by": "conductor",
+          "change": "status -> not_run",
+          "reason": "再実行"
+        },
+        {
+          "at": "2026-11-01T22:15:52+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "対応する AC の検証レベルは integration で System Test の対象外（CHK-10）。スクリプトは保持し、integration 側の確認に使う"
         }
       ]
     },
@@ -1029,9 +1041,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-157",
       "canary": false,
       "status": "blocked",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "last_commit": "c0e5da2",
+      "last_run_at": "2026-11-01T22:13:21+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-031-202611012208.log",
       "history": [
         {
           "at": "2026-10-30T16:46:22+09:00",
@@ -1044,6 +1056,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        },
+        {
+          "at": "2026-11-01T22:02:18+09:00",
+          "by": "conductor",
+          "change": "status -> not_run",
+          "reason": "再実行"
+        },
+        {
+          "at": "2026-11-01T22:15:53+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "対応する AC の検証レベルは integration で System Test の対象外（CHK-10）。スクリプトは保持し、integration 側の確認に使う"
         }
       ]
     },
@@ -1060,9 +1084,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-158",
       "canary": false,
       "status": "blocked",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "last_commit": "c0e5da2",
+      "last_run_at": "2026-11-01T22:13:21+09:00",
+      "evidence": "work/runs/202611012140/logs/system-test/E2E-032-202611012211.log",
       "history": [
         {
           "at": "2026-10-30T16:46:23+09:00",
@@ -1075,6 +1099,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        },
+        {
+          "at": "2026-11-01T22:02:18+09:00",
+          "by": "conductor",
+          "change": "status -> not_run",
+          "reason": "再実行"
+        },
+        {
+          "at": "2026-11-01T22:15:53+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "対応する AC の検証レベルは integration で System Test の対象外（CHK-10）。スクリプトは保持し、integration 側の確認に使う"
         }
       ]
     },
