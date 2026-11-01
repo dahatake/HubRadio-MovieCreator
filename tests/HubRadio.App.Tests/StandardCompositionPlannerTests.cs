@@ -63,6 +63,29 @@ public sealed class StandardCompositionPlannerTests
         Assert.HasCount(17, plan.InputDigests);
     }
 
+    // FR-010 AC-002 / FR-132 AC-136: a grounded speech-segment candidate (15-60 s) becomes a
+    // short-form plan (the clean variant is generated per short plan, see
+    // StandardArtifactGeneratorTests); without an explicit question it carries no hook.
+    [TestMethod]
+    public void SpeechSegmentCandidateBecomesGroundedShortWithoutHook()
+    {
+        Fixture fixture = new();
+        EmphasisSuggestionCandidate speech = fixture.CreateCandidate(
+            ordinal: 1,
+            start: 0,
+            duration: 28,
+            tokenOrdinal: 1,
+            reason: EmphasisReasonKind.SpeechSegment);
+
+        StandardCompositionPlan plan = StandardCompositionPlanner.Create(
+            fixture.CreateRequest([speech], adoptedHighlights: []));
+
+        Assert.HasCount(1, plan.ShortForms);
+        Assert.IsEmpty(plan.ShortCandidateExclusions);
+        Assert.AreEqual(StandardShortSelectionKind.GroundedCandidate, plan.ShortForms[0].SelectionKind);
+        Assert.IsNull(plan.ShortForms[0].Hook);
+    }
+
     [TestMethod]
     public void ExplicitlyAdoptedHighlightProducesOneGroundedShortOnly()
     {

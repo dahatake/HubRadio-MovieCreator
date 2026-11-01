@@ -2648,6 +2648,58 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         }
     }
 
+    /// <summary>
+    /// FR-010: the recognizer's times are not on the source frame grid, so a 15-60 s speech
+    /// segment would never be "exactly representable". Align only SpeechSegment candidates to
+    /// source frame PTS values that are also on the audio sample grid (outward when the topic
+    /// range allows it, inward otherwise); everything else is returned unchanged.
+    /// </summary>
+    internal static EmphasisSuggestionCandidate[] SnapSpeechSegments(string seed,
+        IReadOnlyList<EmphasisSuggestionCandidate> candidates, IReadOnlyList<TopicMetadataRevision> topics,
+        PtsIndex index, int sampleRate)
+    {
+        RationalTime[] frames = index.Entries.Select(item => item.PresentationTime)
+            .Where(time => FfmpegCompiler.IsOnSampleGrid(time, sampleRate)).Distinct().Order().ToArray();
+        var result = new List<EmphasisSuggestionCandidate>(candidates.Count);
+        for (int position = 0; position < candidates.Count; position++)
+        {
+            EmphasisSuggestionCandidate candidate = candidates[position];
+            EmphasisCandidate payload = candidate.Payload;
+            TopicMetadataRevision? topic = topics.FirstOrDefault(item => item.Id == payload.TopicMetadataRevisionId);
+            if (!payload.Reasons.Contains(EmphasisReasonKind.SpeechSegment) || topic is null || frames.Length == 0)
+            {
+                result.Add(candidate);
+                continue;
+            }
+            TimeRange raw = payload.SourceSpan.Range;
+            RationalTime? start = frames.Where(time => time <= raw.Start && time >= topic.TopicRange.Start)
+                .Select(time => (RationalTime?)time).LastOrDefault()
+                ?? frames.Where(time => time >= raw.Start).Select(time => (RationalTime?)time).FirstOrDefault();
+            RationalTime? end = frames.Where(time => time >= raw.End && time <= topic.TopicRange.End)
+                .Select(time => (RationalTime?)time).FirstOrDefault()
+                ?? frames.Where(time => time <= raw.End).Select(time => (RationalTime?)time).LastOrDefault();
+            if (start is not RationalTime snappedStart || end is not RationalTime snappedEnd || snappedEnd <= snappedStart
+                || (snappedStart == raw.Start && snappedEnd == raw.End))
+            {
+                result.Add(candidate);
+                continue;
+            }
+            string label = position.ToString(CultureInfo.InvariantCulture);
+            SourceSpan old = payload.SourceSpan;
+            var span = new SourceSpan(StableId<SourceSpanIdTag>(seed, "speech-span:" + label), old.AssetId, old.StreamId,
+                new TimeRange(snappedStart, snappedEnd - snappedStart), old.SourceDigest, old.TranscriptRevisionId,
+                old.TranscriptTokenIds);
+            Suggestion source = payload.Suggestion;
+            var suggestion = new Suggestion(StableId<SuggestionIdTag>(seed, "speech-suggestion:" + label), source.ModelRunId,
+                source.Kind, source.Status, OriginRef.FromSourceSpan(span.Id), source.Reason, source.Confidence,
+                source.MissingContext, source.Warning);
+            result.Add(SuggestionService.Register(new EmphasisCandidate(suggestion, span, payload.SourceRevisionId,
+                payload.SourceRevisionDigest, payload.TopicMetadataRevisionId, payload.RuleVersion, payload.Text,
+                payload.TextSource, payload.Reasons, payload.TermEvidence), []));
+        }
+        return result.ToArray();
+    }
+
     private async Task<CompositionState> ComposeAsync(StoredSourceOnlyExecution execution,
         IngestWorkflowRunResult ingest, Project project, AnalysisState analysis, SourceOnlyAnalysisEvidence evidence,
         DefaultSettingsProfile profile, SourceDisplayGeometry geometry, CancellationToken token)
@@ -2707,7 +2759,9 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             .OrderBy(item => item.Index).FirstOrDefault()?.SampleRate;
         ValidateSourceTiming(ingest.Original.MediaInfo, ingest.SourcePtsIndex!, landscape.Profile, analysis.Import.AudioTimeline);
         bool Representable(TimeRange range) => IsExactSourceRange(range, ingest.SourcePtsIndex!, landscape.Profile, audioSampleRate!.Value);
-        EmphasisSuggestionCandidate[] representableCandidates = evidence.EmphasisCandidates
+        EmphasisSuggestionCandidate[] emphasisCandidates = SnapSpeechSegments(seed, evidence.EmphasisCandidates,
+            evidence.TopicMetadata, ingest.SourcePtsIndex!, audioSampleRate!.Value);
+        EmphasisSuggestionCandidate[] representableCandidates = emphasisCandidates
             .Where(item => Representable(item.Payload.SourceSpan.Range)).ToArray();
         _ = await SaveJsonAsync(execution, StableId<ArtifactIdTag>(seed, "render-preflight"),
             CanonicalJson.Canonicalize(JsonSerializer.Serialize(new
@@ -2716,13 +2770,13 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 executionId = seed,
                 settingsDigest = execution.Request.SettingsSnapshot.ContentDigest.Hex,
                 rule = "retain-exact-frame-and-audio-sample-boundaries-no-retiming",
-                excludedHighlightCandidateIds = evidence.EmphasisCandidates
+                excludedHighlightCandidateIds = emphasisCandidates
                     .Where(item => !Representable(item.Payload.SourceSpan.Range)).Select(item => item.Id.ToString()).ToArray(),
                 reason = "source_only.candidate_timing_requires_review",
             })), "render-preflight", token).ConfigureAwait(false);
         SourceSpan[] spans = analysis.Import.SourceSpans.Append(fullSource)
             .Concat(evidence.EditorialCandidates.Select(item => item.Payload.SourceSpan))
-            .Concat(evidence.EmphasisCandidates.Select(item => item.Payload.SourceSpan))
+            .Concat(emphasisCandidates.Select(item => item.Payload.SourceSpan))
             .DistinctBy(item => item.Id).ToArray();
         AutomaticEvidence measured = await MeasureAutomaticEvidenceAsync(execution, analysis, evidence,
             PauseCutPoints(ingest.SourcePtsIndex!, landscape.Profile, audioSampleRate!.Value), token).ConfigureAwait(false);
