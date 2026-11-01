@@ -3,6 +3,9 @@
 param([Parameter(Mandatory)][ValidateSet('AC-156','AC-157','AC-158')][string]$Ac)
 $ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'StyleTemplate.common.ps1')
+# Job の記録は種類により欄が無い（縦型 3 段以外は layout なし等）。欠けた欄は $null として扱い、AC の判定は各所の明示的な throw で行う。
+Set-StrictMode -Off
+function Get-Opt($o, [string[]]$Path) { foreach ($k in $Path) { if ($null -eq $o -or -not $o.PSObject.Properties[$k]) { return $null }; $o = $o.PSObject.Properties[$k].Value }; $o }
 $sb = New-AppSandbox
 $p = $null
 Invoke-Test -Label "FR-138 $Ac" -Sandbox $sb -Body {
@@ -18,7 +21,7 @@ Invoke-Test -Label "FR-138 $Ac" -Sandbox $sb -Body {
                 foreach ($r in $recs) {
                     $j = $r.Text | ConvertFrom-Json -Depth 32
                     $w = [int]$j.output.width; $h = [int]$j.output.height; $area = $j.subtitleArea
-                    foreach ($t in @($j.subtitles) + @($j.emphasis) + @($j.sideTelops) + @($j.nameBands) + @($j.layout.top.title) + @($j.layout.top.hook)) {
+                    foreach ($t in @($j.subtitles) + @($j.emphasis) + @($j.sideTelops) + @($j.nameBands) + @(Get-Opt $j 'layout','top','title') + @(Get-Opt $j 'layout','top','hook')) {
                                             if (-not $t -or -not $t.box) { continue }
                                             $b = $t.box
                         if ($b.y -lt 250) { throw 'text inside top margin (250px)' }

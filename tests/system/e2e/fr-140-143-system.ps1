@@ -4,6 +4,8 @@
 param([Parameter(Mandatory)][ValidateSet('AC-165','AC-169','AC-172','AC-174')][string]$Ac)
 $ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'StyleTemplate.common.ps1')
+# Job の記録は欄が無いことがある（割り当てなしの Job の portraits 等）。欠けた欄は $null として扱い、AC の判定は各所の明示的な throw で行う。
+Set-StrictMode -Off
 
 function Get-DeliverableVideo($sb, [string]$Role = '') {
     # -Role: renders/<run>/<role>/ のフォルダー名（'landscape-burn-in'＝字幕焼き込み・立ち絵 overlay、'landscape-clean'＝字幕なし）。既定は従来どおり最新の mp4。
