@@ -169,6 +169,49 @@ describe('QuickStartPanel', () => {
     expect(within(container).queryByRole('region', { name: '動画に合わせて自動で設定した項目' })).toBeNull()
   })
 
+  // FR-001 AC-049: the registered source's metadata and warnings are shown; nothing is shown without a record.
+  it('shows the registered source metadata and warnings only when the host recorded them', () => {
+    renderPanel(panelProps({
+      draft: {
+        ...draft,
+        sourceMedia: {
+          fileName: 'clip.mp4', durationSeconds: 30, width: 1920, height: 1080, frameRate: 29.97, hasAudio: false,
+          sizeBytes: 5 * 1024 * 1024, createdAt: '2026-10-01T00:00:00Z', registeredBy: 'taro',
+          warnings: ['音声トラックがありません。'],
+        },
+      },
+    }))
+    const terms = [...container.querySelectorAll('.source-media-metadata dt')].map(term => term.textContent)
+    expect(terms).toEqual(['ファイル名', '再生時間', '解像度', '縦横比', 'フレームレート', '音声', '容量', '作成日時', '登録者'])
+    const text = container.querySelector('.source-media-metadata')!.textContent!
+    expect(text).toContain('clip.mp4')
+    expect(text).toContain('1920×1080')
+    expect(text).toContain('16:9')
+    expect(text).toContain('29.97 fps')
+    expect(text).toContain('5 MB')
+    expect(text).toContain('taro')
+    expect(within(container).getByRole('heading', { name: '警告' })).not.toBeNull()
+    expect(container.textContent).toContain('音声トラックがありません。')
+
+    renderPanel(panelProps({ draft: { ...draft, sourceMedia: null } }))
+    expect(container.querySelector('.source-media-details')).toBeNull()
+  })
+
+  it('shows no warning heading when the source has no problem', () => {
+    renderPanel(panelProps({
+      draft: {
+        ...draft,
+        sourceMedia: {
+          fileName: 'ok.mp4', durationSeconds: 75, width: 1080, height: 1920, frameRate: 30, hasAudio: true,
+          sizeBytes: 100, createdAt: '2026-10-01T00:00:00Z', registeredBy: 'taro', warnings: [],
+        },
+      },
+    }))
+    expect(within(container).queryByRole('heading', { name: '警告' })).toBeNull()
+    expect(container.querySelector('.source-media-metadata')!.textContent).toContain('1分15秒')
+    expect(container.querySelector('.source-media-metadata')!.textContent).toContain('9:16')
+  })
+
   it('keeps provenance in one initially closed disclosure instead of an overview review-list', () => {
     renderPanel(panelProps())
 

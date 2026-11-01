@@ -29,6 +29,24 @@ namespace HubRadio.App.Tests;
 [TestClass]
 public sealed class SourceOnlyOutputEvaluationTests
 {
+    // FR-138 / FR-136: two Jobs of one Project that use different production templates (short-pop, then vertical 3-tier) must both
+    // evaluate without BindingMismatch, as two Jobs of the same template do.
+    [TestMethod]
+    [TestCategory("FR-138")]
+    public async Task TwoTemplateJobsInARow_ShortPopThenVertical3Tier_DoNotFailWithBindingMismatch()
+    {
+        using SourceOnlyEvaluationFixture f = await SourceOnlyEvaluationFixture.CreateAsync(includeShort: true);
+        foreach (string? template in new[] { StyleTemplates.StyleTemplateCatalog.ShortPopId, StyleTemplates.StyleTemplateCatalog.Vertical3TierId })
+        {
+            StandardArtifactGenerationResult generated = await f.GenerateWithTemplateAsync(template);
+            Assert.AreEqual(StandardArtifactGenerationDisposition.Completed, generated.Disposition, $"{template}: {generated.FailureReason}/{generated.CompilerFailureReason}");
+            SourceOnlyResult result = await f.EvaluateAsync(generated: generated);
+            Assert.IsFalse(result.Failures.Any(x => x.Code == SourceOnlyResultFailureCode.BindingMismatch), $"{template}: BindingMismatch");
+            Assert.IsFalse(result.Artifacts.Any(a => a.FailureCode == SourceOnlyResultFailureCode.BindingMismatch),
+                $"{template}: " + string.Join(",", result.Artifacts.Select(a => $"{a.Role}:{a.FailureCode}")));
+        }
+    }
+
     [TestMethod]
     public async Task EveryVideoGetsIndependentQcAndOnlyPrimaryGetsWorkflow()
     {
@@ -592,6 +610,31 @@ internal sealed class SourceOnlyEvaluationFixture : IDisposable
         }
         catch { generation.Dispose(); throw; }
     }
+    /// <summary>FR-138: a second (or later) generation of the same Project's short with a production template, as a Regenerate does.</summary>
+    internal async Task<StandardArtifactGenerationResult> GenerateWithTemplateAsync(string? styleTemplateId)
+    {
+        StandardGenerationFixture g = Generation;
+        StandardRenderConfiguration configuration = g.Request().Configuration;
+        var generator = new StandardArtifactGenerator(g.Store, g.Versions, g.Root,
+            async (process, ct) =>
+            {
+                bool image = process.ArgumentList.Contains("png");
+                bool vertical = image && imageCount++ % 2 == 1;
+                byte[] bytes = image ? PngBytes(vertical ? configuration.VerticalThumbnailWidth : configuration.LandscapeThumbnailWidth,
+                    vertical ? configuration.VerticalThumbnailHeight : configuration.LandscapeThumbnailHeight)
+                    : Encoding.UTF8.GetBytes("synthetic:" + Path.GetFileName(process.ArgumentList[^1]));
+                await File.WriteAllBytesAsync(process.ArgumentList[^1], bytes, ct);
+                return new ProcessRunResult(0, "", StandardGenerationFixture.LoudnessReport, false, TimeSpan.Zero);
+            }, StandardGenerationFixture.CompileAsync, g.ProbeGeometryAsync);
+        var request = new StandardArtifactGenerationRequest(g.Preparation, g.Original, g.Index, g.Geometry, g.SettingsProfile, g.Settings,
+            g.Tool, g.ToolEvidence, g.Model, g.Font, g.Subtitles, g.Shorts, "test-1", StandardGenerationFixture.Hash("application"),
+            TimeSpan.FromMinutes(2), g.Music,
+            styleTemplateId is null ? null : StyleTemplates.StyleTemplateCatalog.Find(styleTemplateId));
+        return await generator.GenerateAsync(request);
+    }
+
+    private int imageCount;
+
     internal async Task<SourceOnlyResult> EvaluateAsync(Func<OutputQcRequest, CancellationToken, Task<OutputQcResult>>? qc = null,
         CancellationToken ct = default, StandardArtifactGenerationResult? generated = null,
         Func<ArtifactPromotionRequest, CancellationToken, Task<StoredArtifact>>? promoteEvidence = null)

@@ -183,20 +183,27 @@ internal static class StandardMetadataGraphics
                 rendered, SubtitleFileCueStyle.Normal);
             var white = new AssColor(0, 255, 255, 255);
             var black = new AssColor(0, 0, 0, 0);
+            // FR-138 (5): the title / hook band of the vertical 3-tier template is its own look — bold lettering in the template's
+            // emphasis color on an opaque band of the template's outline color (4.5:1), never the plain subtitle box.
+            bool threeTierTitle = styled is not null && profile.Height > profile.Width && role == "EpisodeTitle"
+                && configuration?.StyleTemplate?.Id == StyleTemplates.StyleTemplateCatalog.Vertical3TierId;
+            string threeTierText = styled?.EmphasisColors.FirstOrDefault() ?? styled?.TextColor ?? "#FFFFFF";
             // Emphasis captions: bold lettering with a thick outline, no box. Without a template: yellow on black.
             string emphasisColor = styledTelop?.Color ?? "#FFDD00";
-            var fill = emphasis ? Color(emphasisColor) : white;
+            var fill = threeTierTitle ? Color(threeTierText) : emphasis ? Color(emphasisColor) : white;
             // FR-139: the outline is the template's when the text reads on it at 4.5:1, else black or white.
-            var outline = emphasis && styledTelop is not null
+            var outline = threeTierTitle
+                ? Color(StyleTemplates.StyleTemplateColor.EnsureBackground(threeTierText, styled!.OutlineColor))
+                : emphasis && styledTelop is not null
                 ? Color(StyleTemplates.StyleTemplateColor.EnsureBackground(emphasisColor, styled?.OutlineColor ?? StyleTemplates.StyleTemplateColor.Black))
                 : black;
             var ass = new AssSubtitleProfile(profile.Width, profile.Height, Enum.GetValues<SubtitleFileCueStyle>()
                 .Select(style => new AssStyleDefinition(style, font.Name, size, fill, fill, outline, outline,
                     true, false, false, false, 100, 100, 0, 0, emphasis ? AssBorderStyle.OutlineAndShadow : AssBorderStyle.OpaqueBox,
-                    emphasis ? 6 : 3, 0, AssAlignment.MiddleCenter, new AssMargins(12, 12, 12), 1)).ToArray());
+                    emphasis ? 6 : threeTierTitle ? 10 : 3, 0, AssAlignment.MiddleCenter, new AssMargins(12, 12, 12), 1)).ToArray());
             SubtitleExportFile file = StandardSubtitlePlacement.WriteAtBounds(cue, ass, left, top, right, bottom,
                 // FR-139: with a template, the emphasis caption is lettered in the bundled bold gothic (Noto Sans JP Black, OFL).
-                (emphasis && styledTelop is not null ? "\\fn" + StyleTemplates.StyleTemplateFonts.NotoSansJpBlack.AssFamily : string.Empty)
+                (threeTierTitle || (emphasis && styledTelop is not null) ? "\\fn" + StyleTemplates.StyleTemplateFonts.NotoSansJpBlack.AssFamily : string.Empty)
                 + StandardTemplateAss.MotionTags(styledTelop?.Motion));
             var input = new RenderGraphInput(EntityId<RenderInputIdTag>.New(), RenderInputKind.Graphic,
                 file.ContentDigest, file.ByteSize, origins[0]);

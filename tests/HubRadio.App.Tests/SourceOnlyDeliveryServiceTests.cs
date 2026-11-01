@@ -23,6 +23,26 @@ namespace HubRadio.App.Tests;
 [TestClass]
 public sealed class SourceOnlyDeliveryServiceTests
 {
+    // FR-031 AC-079: a rename that a scanner briefly blocks is retried instead of leaving the delivery half-moved.
+    [TestMethod]
+    public async Task TransientRenameBlockIsRetriedButOtherFailuresAndExhaustionStillSurface()
+    {
+        int calls = 0;
+        await SourceOnlyDeliveryService.MoveWithRetryAsync(() => { if (++calls < 3) throw new IOException("blocked"); },
+            CancellationToken.None, attempts: 4, delayMilliseconds: 1);
+        Assert.AreEqual(3, calls);
+
+        calls = 0;
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => SourceOnlyDeliveryService.MoveWithRetryAsync(
+            () => { calls++; throw new UnauthorizedAccessException(); }, CancellationToken.None, attempts: 3, delayMilliseconds: 1));
+        Assert.AreEqual(3, calls);
+
+        calls = 0;
+        await Assert.ThrowsAsync<DirectoryNotFoundException>(() => SourceOnlyDeliveryService.MoveWithRetryAsync(
+            () => { calls++; throw new DirectoryNotFoundException(); }, CancellationToken.None, attempts: 3, delayMilliseconds: 1));
+        Assert.AreEqual(1, calls);
+    }
+
     [TestMethod]
     public async Task PipelineDelegateCopiesEveryVideoSidecarAndImageAndRestartValidatesOneExactReceipt()
     {

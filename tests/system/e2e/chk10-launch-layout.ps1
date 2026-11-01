@@ -16,7 +16,7 @@ Invoke-Test -Label "CHK10 $Ac" -Sandbox $sb -Body {
                 $null = Find-ByName $root '設定' 60
                 $sw.Stop()
                 if ($p.StartInfo.Verb -eq 'runas') { throw 'elevation requested' }
-                $null = Find-ByName $root '元動画' 10
+                $null = Find-ByName $root 'Project一覧' 10   # 起動直後のタブ（Project を開くと「元動画」になる）
                 Write-Host "first visible UI: $($sw.Elapsed.TotalSeconds)s"
                 Stop-App $p
                 $p = Start-App $sb   # 再起動後も設定・Project を失わない

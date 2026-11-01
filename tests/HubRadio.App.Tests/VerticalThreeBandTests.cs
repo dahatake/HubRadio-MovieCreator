@@ -9,21 +9,29 @@ public sealed class VerticalThreeBandTests
     private static RecordedCue Cue(double start, double end, string text) =>
         new(start, end, text, null, null, "#FFFFFF", null, []);
 
-    // FR-138 AC-158
+    // FR-138 AC-158: the same 15-20 split is used by the record and by the burned-in ASS (cue by cue).
     [TestMethod]
     public void BottomScreens_AreFifteenToTwentyCharacters_AndKeepTheText()
     {
-        RecordedCue[] cues = [Cue(0, 4, "あいうえおかきくけこ"), Cue(4, 8, "さしすせそたちつてとなにぬねの"), Cue(8, 12, "はひふへほまみむめもやゆよ")];
+        RecordedCue[] cues = [Cue(0, 8, "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほ"), Cue(8, 16, "はひふへほまみむめもやゆよらりるれろわをんあいうえおかきくけこ"), Cue(16, 20, "さしすせそたちつてとなにぬねのは")];
         string all = string.Concat(cues.Select(static cue => cue.Text));
         IReadOnlyList<RecordedCue> screens = StyleTemplateLayout.BottomScreens(cues);
         Assert.AreEqual(all, string.Concat(screens.Select(static item => item.Text)));
         Assert.IsTrue(screens.All(static item => item.Text.Length is >= 15 and <= 20), string.Join("|", screens.Select(static item => item.Text)));
         Assert.AreEqual(0, screens[0].Start, 1e-9);
-        Assert.AreEqual(12, screens[^1].End, 1e-9);
+        Assert.AreEqual(20, screens[^1].End, 1e-9);
         for (int i = 1; i < screens.Count; i++)
         {
             Assert.IsTrue(screens[i].Start >= screens[i - 1].End - 1e-9);
         }
+    }
+
+    // FR-138 AC-158 / FR-012: a cue too short to give every screen 5/6 second is not split (the lower bound wins).
+    [TestMethod]
+    public void CueScreens_TooShortToSplit_StaysOneScreen()
+    {
+        IReadOnlyList<RecordedCue> screens = StyleTemplateLayout.CueScreens(Cue(0, 1.2, "あいうえおかきくけこさしすせそたちつてとなにぬねの"));
+        Assert.AreEqual(1, screens.Count);
     }
 
     // FR-138 AC-158: a text shorter than the minimum cannot be made longer; it is kept.

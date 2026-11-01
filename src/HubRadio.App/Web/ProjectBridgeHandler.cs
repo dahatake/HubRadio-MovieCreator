@@ -427,9 +427,42 @@ internal sealed class ProjectBridgeHandler
                     writer.WriteEndArray();
                 }
 
+                // FR-001 AC-049: metadata of the registered source video (registrant is a display name only).
+                if (draft.SourceMedia is null)
+                {
+                    writer.WriteNull("sourceMedia");
+                }
+                else
+                {
+                    SourceMediaNote media = draft.SourceMedia;
+                    writer.WriteStartObject("sourceMedia");
+                    writer.WriteString("fileName", media.FileName);
+                    WriteNullableNumber(writer, "durationSeconds", media.DurationSeconds);
+                    if (media.Width is { } mediaWidth) { writer.WriteNumber("width", mediaWidth); } else { writer.WriteNull("width"); }
+                    if (media.Height is { } mediaHeight) { writer.WriteNumber("height", mediaHeight); } else { writer.WriteNull("height"); }
+                    WriteNullableNumber(writer, "frameRate", media.FrameRate);
+                    if (media.HasAudio is { } audio) { writer.WriteBoolean("hasAudio", audio); } else { writer.WriteNull("hasAudio"); }
+                    writer.WriteNumber("sizeBytes", media.SizeBytes);
+                    writer.WriteString("createdAt", media.CreatedAt);
+                    writer.WriteString("registeredBy", media.RegisteredBy);
+                    writer.WriteStartArray("warnings");
+                    foreach (string warning in media.Warnings)
+                    {
+                        writer.WriteStringValue(warning);
+                    }
+
+                    writer.WriteEndArray();
+                    writer.WriteEndObject();
+                }
+
                 writer.WriteEndObject();
                 writer.WriteEndObject();
             });
+
+    private static void WriteNullableNumber(Utf8JsonWriter writer, string name, double? value)
+    {
+        if (value is { } number) { writer.WriteNumber(name, number); } else { writer.WriteNull(name); }
+    }
 
     private static string WritePickedSource(
         BridgeRequest request,

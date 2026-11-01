@@ -96,7 +96,8 @@ internal sealed record ProjectCreationDraftView(
     string UpdatedAt,
     SourceOnlyProjectSummary? SourceOnly,
     string? DisplayName = null,
-    IReadOnlyList<AutoSettingNote>? AutoSettings = null);
+    IReadOnlyList<AutoSettingNote>? AutoSettings = null,
+    SourceMediaNote? SourceMedia = null);
 
 internal sealed record SourceOnlyProjectSummary(
     string ProfileId,
@@ -259,6 +260,7 @@ internal sealed class ProjectCreationService
         StoredProjectCreationDraft stored;
         var draftId = EntityId<ProjectCreationDraftIdTag>.New();
         SourceMediaFacts? facts = null;
+        string? probedPath = null;
         IReadOnlyList<AutoSettingRecommendation> autoApplied = [];
         using (reservation)
         {
@@ -275,6 +277,7 @@ internal sealed class ProjectCreationService
                 if (global is not null && sourceOnlyCoordinator is not null)
                 {
                     // FR-054: tune the new Project to its own video with the built-in preset (no network).
+                    probedPath = reservation.SelectedPath;
                     facts = await ProbeSourceQuietlyAsync(sourceOnlyCoordinator, reservation.SelectedPath, cancellationToken)
                         .ConfigureAwait(true);
                     HubRadio.Core.Settings.DefaultSettingsSnapshot snapshot = global.Snapshot;
@@ -320,6 +323,18 @@ internal sealed class ProjectCreationService
         {
             // FR-053: best effort in the background; a missing poster never blocks or fails Project creation.
             _ = EnsurePosterInBackgroundAsync(sourceOnlyCoordinator, draftId);
+        }
+
+        if (probedPath is not null)
+        {
+            try
+            {
+                // FR-001 AC-049: the registered source's metadata (and warnings) are kept even when it cannot be read.
+                SourceMediaRecorder?.Invoke(draftId, probedPath, facts);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+            }
         }
 
         if (facts is not null)
@@ -370,6 +385,12 @@ internal sealed class ProjectCreationService
 
     /// <summary>FR-054: what the preset changed for a Project; null when nothing was recorded.</summary>
     internal Func<EntityId<ProjectCreationDraftIdTag>, IReadOnlyList<AutoSettingNote>?>? AutoSettingsReader { get; set; }
+
+    /// <summary>FR-001 AC-049: keeps the registered source's metadata; the facts are null when ffprobe could not read the file.</summary>
+    internal Action<EntityId<ProjectCreationDraftIdTag>, string, SourceMediaFacts?>? SourceMediaRecorder { get; set; }
+
+    /// <summary>FR-001 AC-049: the registered source's metadata; null when nothing was recorded.</summary>
+    internal Func<EntityId<ProjectCreationDraftIdTag>, SourceMediaNote?>? SourceMediaReader { get; set; }
 
     /// <returns>False when the project is hidden but some of its workspace files could not be removed.</returns>
     internal bool DeleteProject(
@@ -848,7 +869,8 @@ internal sealed class ProjectCreationService
                     sourceOnly.SettingsSnapshot,
                     sourceOnly.ArtifactSet),
             stored.DisplayName,
-            sourceOnly is null ? null : AutoSettingsReader?.Invoke(draft.Id));
+            sourceOnly is null ? null : AutoSettingsReader?.Invoke(draft.Id),
+            sourceOnly is null ? null : SourceMediaReader?.Invoke(draft.Id));
     }
 
     private StoredProjectPayload ParseStored(StoredProjectCreationDraft stored)

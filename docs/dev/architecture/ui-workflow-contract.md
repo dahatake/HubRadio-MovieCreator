@@ -10,6 +10,7 @@
 - `draftId`、実`projectId`、存在する`jobId`、実`versionId`を区別し、未取得はnull。placeholder IDや初期値から処理成功を推測しない。
 - rootの既存providerを維持。stateful editorは必要に応じmountedのままhiddenにし、visible時だけfocusする。非表示videoはpause・時刻保持。
 - 通常のID入力は選択contextへ置換。未取得のtargetでは読み込みを実行せず、短い未選択／未接続表示にする。単独componentの既存テスト経路は維持する。
+- 元動画のメタデータ（FR-001 AC-049）: `project.createDraft`/`project.loadDraft` の`draft.sourceMedia`（`fileName`・`durationSeconds`・`width`・`height`・`frameRate`・`hasAudio`・`sizeBytes`・`createdAt`・`registeredBy`・`warnings`、未記録は`null`）を、`source`タブのQuick start画面「元動画の情報」に表示する。`registeredBy`は表示名のみでアカウントID・SIDは含めない。読み取れない値は`null`で、`warnings`に破損・音声なし・極端な低解像度（短辺360px未満）を載せる。
 - source-onlyは下書きへ固定した設定を使う。`project.finalizeDraft`のnative経路はcoordinatorへ受付を委譲し、案件・下書き・実行・実jobを同一transactionで確定して処理を開始する。フロントから別のjob開始要求は送らず、`pipeline.read`の実snapshotで受付・進行を確認する。finalizeの応答だけを処理完了とはしない。
 - warning移動先はpreview時刻、setting key、evidence、editorの有限集合。targetの案件・版・digestがなければ移動不可の理由を表示する。
 

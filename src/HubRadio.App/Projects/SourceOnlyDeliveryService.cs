@@ -223,10 +223,10 @@ public sealed class SourceOnlyDeliveryService
             // This is not filesystem/DB atomicity; uncertain failures retain reconciliation.
             foreach (FileStream stream in copyHandles) await stream.DisposeAsync().ConfigureAwait(false);
             copyHandles.Clear();
-            Directory.Move(stagedFiles, finalDirectory); // One set rename, never a sequence of visible individual promotions.
+            await MoveWithRetryAsync(() => Directory.Move(stagedFiles, finalDirectory), ct).ConfigureAwait(false); // One set rename, never a sequence of visible individual promotions.
             _afterFilesFinalized?.Invoke();
             ct.ThrowIfCancellationRequested();
-            File.Move(attempts[^1].StagingPath, receiptDestination, overwrite: false);
+            await MoveWithRetryAsync(() => File.Move(attempts[^1].StagingPath, receiptDestination, overwrite: false), ct).ConfigureAwait(false);
             _ = SourceOnlySourceLocator.RequirePath(staging, directory: true);
             Directory.Delete(staging, recursive: false); // Only the now EMPTY directory that this invocation created.
 
@@ -267,6 +267,28 @@ public sealed class SourceOnlyDeliveryService
         {
             foreach (ValidatedArtifactReadStream stream in finalHandles) await stream.DisposeAsync().ConfigureAwait(false);
             foreach (FileStream stream in copyHandles) await stream.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// A rename fails atomically (nothing moved) when a virus scanner or the search indexer briefly holds a
+    /// freshly written file open. Retrying the same rename a few times is therefore safe; any other failure
+    /// (or the last attempt) still surfaces and is treated as a partial side effect needing reconciliation.
+    /// </summary>
+    internal static async Task MoveWithRetryAsync(Action move, CancellationToken ct, int attempts = 6, int delayMilliseconds = 250)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                move();
+                return;
+            }
+            catch (Exception exception) when (attempt < attempts && exception is IOException or UnauthorizedAccessException
+                && exception is not FileNotFoundException and not DirectoryNotFoundException)
+            {
+                await Task.Delay(delayMilliseconds * attempt, ct).ConfigureAwait(false);
+            }
         }
     }
 

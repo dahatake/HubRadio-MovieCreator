@@ -1446,7 +1446,8 @@
         "missingFields",
         "updatedAt",
         "sourceOnly",
-        "autoSettings"
+        "autoSettings",
+        "sourceMedia"
       ],
       "properties": {
         "draftId": { "$ref": "#/$defs/entityId" },
@@ -1505,6 +1506,33 @@
                   "label": { "type": "string", "minLength": 1, "maxLength": 512 },
                   "valueText": { "type": "string", "minLength": 1, "maxLength": 512 },
                   "reason": { "type": "string", "minLength": 1, "maxLength": 512 }
+                }
+              }
+            }
+          ]
+        },
+        "sourceMedia": {
+          "description": "FR-001 AC-049: metadata of the registered source video; null when none was recorded. registeredBy is a display name only (never an account id).",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["fileName", "durationSeconds", "width", "height", "frameRate", "hasAudio", "sizeBytes", "createdAt", "registeredBy", "warnings"],
+              "properties": {
+                "fileName": { "type": "string", "minLength": 1, "maxLength": 512 },
+                "durationSeconds": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+                "width": { "type": ["integer", "null"], "minimum": 1 },
+                "height": { "type": ["integer", "null"], "minimum": 1 },
+                "frameRate": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+                "hasAudio": { "type": ["boolean", "null"] },
+                "sizeBytes": { "type": "integer", "minimum": 0 },
+                "createdAt": { "type": "string", "minLength": 1, "maxLength": 512 },
+                "registeredBy": { "type": "string", "minLength": 1, "maxLength": 512 },
+                "warnings": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": { "type": "string", "minLength": 1, "maxLength": 512 }
                 }
               }
             }
