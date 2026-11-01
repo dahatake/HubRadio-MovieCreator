@@ -36,7 +36,7 @@ export interface JobResultsBrowserProps {
 const maxComparedJobs = 4
 
 /** FR-063.4: the order media outputs are listed and the first one used as a Job's picture. */
-const outputOrder: readonly PipelineVersionOutput['role'][] = ['LandscapeBurnIn', 'LandscapeClean', 'VerticalBurnIn', 'LandscapeThumbnail', 'VerticalThumbnail']
+const outputOrder: readonly PipelineVersionOutput['role'][] = ['LandscapeBurnIn', 'LandscapeClean', 'VerticalBurnIn', 'VerticalClean', 'LandscapeThumbnail', 'VerticalThumbnail']
 
 interface JobOutputItem {
   readonly key: string

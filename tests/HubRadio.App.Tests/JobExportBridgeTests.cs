@@ -106,6 +106,24 @@ public sealed class JobExportBridgeTests
         Assert.AreEqual("video-1", File.ReadAllText(Directory.GetFiles(_dest, "*長尺クリーン*")[0]));
     }
 
+    // FR-132 AC-136: the short without burned-in subtitles (短尺クリーン) is a deliverable of its own and is saved with its own kind in the name.
+    [TestMethod]
+    public async Task SavesTheShortCleanVersionAlongsideTheBurnedInShort()
+    {
+        string clean = Write("short-clean.mp4", "video-clean");
+        JobExportItem[] items = [.. Items(out _),
+            new(JobExportKind.ShortClean, "短尺クリーン", ".mp4", _ => Task.FromResult<Stream?>(File.OpenRead(clean)))];
+
+        JsonElement result = Result(await Handler(items).HandleAsync(Request(_dest, "Job 1"), CancellationToken.None), "completed");
+
+        Assert.AreEqual(5, result.GetProperty("savedCount").GetInt32());
+        Assert.AreEqual("shortClean", JobExportBridgeProtocol.WireName(JobExportKind.ShortClean));
+        string[] names = Directory.GetFiles(_dest).Select(Path.GetFileName).Select(static n => n!).ToArray();
+        Assert.AreEqual(1, names.Count(n => n.Contains("短尺クリーン", StringComparison.Ordinal)));
+        Assert.AreEqual(1, names.Count(n => n.Contains("短尺焼き込み", StringComparison.Ordinal)));
+        Assert.AreEqual("video-clean", File.ReadAllText(Directory.GetFiles(_dest, "*短尺クリーン*")[0]));
+    }
+
     // FR-132 AC-136: with no Job name the creation time is used.
     [TestMethod]
     public async Task UsesTheCreationTimeWhenTheJobHasNoName()

@@ -261,7 +261,7 @@ function ResultWarning({ warning, onFollowWarning, selected }: Readonly<{
 
 export const pipelineArtifactLabels: Readonly<Record<SourceOnlyResultArtifact['role'], string>> = {
   LandscapeClean: '長尺・クリーン版', LandscapeBurnIn: '長尺・字幕焼き込み版', VerticalBurnIn: '短尺・字幕焼き込み版',
-  SubRip: 'SRT 字幕', WebVtt: 'WebVTT 字幕', LandscapeThumbnail: '横長サムネイル', VerticalThumbnail: '縦型サムネイル',
+  SubRip: 'SRT 字幕', WebVtt: 'WebVTT 字幕', LandscapeThumbnail: '横長サムネイル', VerticalThumbnail: '縦型サムネイル', VerticalClean: '短尺・クリーン版',
 }
 type AncillaryKind = SourceOnlyResultDto['ancillaryArtifacts'][number]['kind']
 export const ancillaryArtifactLabels: Readonly<Record<AncillaryKind, string>> = {

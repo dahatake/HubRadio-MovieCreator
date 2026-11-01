@@ -317,7 +317,7 @@
       }
     },
     "jobExportKind": {
-      "enum": ["longClean", "longBurnIn", "shortBurnIn", "thumbnailLandscape", "thumbnailVertical"]
+      "enum": ["longClean", "longBurnIn", "shortBurnIn", "thumbnailLandscape", "thumbnailVertical", "shortClean"]
     },
     "jobExportResult": {
       "$comment": "completed carries savedCount, the saved files (bare file names) and the per-file failures; destinationInvalid carries destinationReason; every other status has destinationReason null, savedCount 0 and empty lists.",
@@ -587,7 +587,7 @@
             "type": "object", "additionalProperties": false,
             "required": ["role", "artifactId", "contentDigest", "mediaType"],
             "properties": {
-              "role": { "enum": ["LandscapeClean", "LandscapeBurnIn", "VerticalBurnIn", "SubRip", "WebVtt", "LandscapeThumbnail", "VerticalThumbnail"] },
+              "role": { "enum": ["LandscapeClean", "LandscapeBurnIn", "VerticalBurnIn", "SubRip", "WebVtt", "LandscapeThumbnail", "VerticalThumbnail", "VerticalClean"] },
               "artifactId": { "$ref": "#/$defs/entityId" },
               "contentDigest": { "$ref": "#/$defs/contentDigest" },
               "mediaType": { "enum": ["video/mp4", "image/png"] }
@@ -822,7 +822,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["role", "renditionId", "artifact", "mediaType", "versionId", "versionDigest", "source", "graphDigest", "manifestDigest", "evidence", "evaluation", "evaluationDigest", "measurements", "failureCode", "qcFailureReason", "qcFailureStage", "warnings", "delivered", "delivery", "thumbnailPlanId", "frameEvidence", "qcApplicability", "profileId", "profileDigest"],
       "properties": {
-        "role": { "enum": ["LandscapeClean", "LandscapeBurnIn", "VerticalBurnIn", "SubRip", "WebVtt", "LandscapeThumbnail", "VerticalThumbnail"] },
+        "role": { "enum": ["LandscapeClean", "LandscapeBurnIn", "VerticalBurnIn", "SubRip", "WebVtt", "LandscapeThumbnail", "VerticalThumbnail", "VerticalClean"] },
         "renditionId": { "$ref": "#/$defs/nullableId" }, "artifact": { "$ref": "#/$defs/sourceOnlyReference", "properties": { "kind": { "const": "Render" } } },
         "mediaType": { "enum": ["video/mp4", "image/png", "application/x-subrip", "text/vtt"] },
         "versionId": { "$ref": "#/$defs/entityId" }, "versionDigest": { "$ref": "#/$defs/contentDigest" },

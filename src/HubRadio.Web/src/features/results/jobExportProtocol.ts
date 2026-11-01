@@ -6,7 +6,7 @@ export const JOB_EXPORT_MAX_JOB_NAME_LENGTH = 40
 /** Copying large videos can take a while; the native side answers only when every file is done. */
 export const JOB_EXPORT_TIMEOUT_MS = 30 * 60_000
 
-export const JOB_EXPORT_KINDS = ['longClean', 'longBurnIn', 'shortBurnIn', 'thumbnailLandscape', 'thumbnailVertical'] as const
+export const JOB_EXPORT_KINDS = ['longClean', 'longBurnIn', 'shortClean', 'shortBurnIn', 'thumbnailLandscape', 'thumbnailVertical'] as const
 export type JobExportKind = typeof JOB_EXPORT_KINDS[number]
 
 export const JOB_EXPORT_FAILURE_REASONS = ['missing', 'notWritable', 'diskFull', 'unavailable'] as const

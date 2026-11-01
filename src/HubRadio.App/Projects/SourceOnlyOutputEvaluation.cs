@@ -213,7 +213,7 @@ public sealed class SourceOnlyOutputEvaluation
                         preparation.Plan.LongForm.Provenance.TranscriptRevisionDigest, source.ArtifactId));
 
                 StoredCompositionVersion? storedVersion = _projects.GetCompositionVersion(record.VersionId);
-                if (storedVersion is null && (role == SourceOnlyResultRole.VerticalBurnIn || record.IsImage))
+                if (storedVersion is null && (role.IsShortVideo() || record.IsImage))
                 {
                     // The generator already created this exact short version and bound its graph
                     // and manifest to it. Persist it unchanged; never rebind a landscape output.
@@ -362,7 +362,7 @@ public sealed class SourceOnlyOutputEvaluation
     {
         StandardGeneratedArtifact? primary = generated.Artifacts.FirstOrDefault(a => a.BindingEvidence.Role == "landscape-clean") ?? generated.Artifacts.FirstOrDefault();
         EntityId<CompositionVersionIdTag>? id = execution.VersionId ?? (primary is not null &&
-            (ParseRole(primary.BindingEvidence.Role).Role == SourceOnlyResultRole.VerticalBurnIn || ParseRole(primary.BindingEvidence.Role).ThumbnailPlanId is not null)
+            (ParseRole(primary.BindingEvidence.Role).Role.IsShortVideo() || ParseRole(primary.BindingEvidence.Role).ThumbnailPlanId is not null)
             ? primary.ValidationContext.CompositionVersion.ParentVersionId : primary?.Graph.CompositionVersionId);
         ContentDigest? digest = execution.VersionDigest ?? (id == primary?.Graph.CompositionVersionId
             ? primary?.Graph.CompositionVersionDigest : id is null ? null : _projects.GetCompositionVersion(id)?.ContentDigest);
@@ -410,6 +410,7 @@ public sealed class SourceOnlyOutputEvaluation
             SourceOnlyResultRole.LandscapeClean => StandardArtifactRole.LandscapeCleanVideo,
             SourceOnlyResultRole.LandscapeBurnIn => StandardArtifactRole.LandscapeBurnInVideo,
             SourceOnlyResultRole.VerticalBurnIn => StandardArtifactRole.VerticalBurnInVideo,
+            SourceOnlyResultRole.VerticalClean => StandardArtifactRole.VerticalCleanVideo,
             SourceOnlyResultRole.SubRip => StandardArtifactRole.LandscapeSubRip,
             SourceOnlyResultRole.WebVtt => StandardArtifactRole.LandscapeWebVtt,
             SourceOnlyResultRole.LandscapeThumbnail => StandardArtifactRole.LandscapeThumbnail,
@@ -427,7 +428,7 @@ public sealed class SourceOnlyOutputEvaluation
             item.ValidationContext.Project.Assets.Single().Id == execution.Request.SourceCandidateId &&
             RenderGraphValidator.Validate(item.Graph, item.ValidationContext).IsValid);
         SourceOnlyResultImageExpected? image = record.IsImage ? SourceOnlyResultImageValidation.Expected(preparation!, record, settings) : null;
-        CompositionVersion expected = image?.Version ?? (record.Role == SourceOnlyResultRole.VerticalBurnIn
+        CompositionVersion expected = image?.Version ?? (record.Role.IsShortVideo()
             ? StandardRenderGraphFactory.CreateShortVersion(preparation!, record.RenditionId!) : preparation!.Child);
         SourceOnlyResultCodec.Require(CompositionSnapshotJson.WriteVersion(expected) == CompositionSnapshotJson.WriteVersion(item.ValidationContext.CompositionVersion));
         RenderProfile expectedProfile = image?.Profile ?? StandardRenderGraphFactory.GetProfile(preparation!.Plan,
@@ -459,6 +460,8 @@ public sealed class SourceOnlyOutputEvaluation
         "landscape-vtt" => new(SourceOnlyResultRole.WebVtt),
         _ when role?.StartsWith("vertical-burn-in-", StringComparison.Ordinal) == true =>
             new(SourceOnlyResultRole.VerticalBurnIn, SourceOnlyResultCodec.Id<StandardShortFormPlanIdTag>(role["vertical-burn-in-".Length..])),
+        _ when role?.StartsWith("vertical-clean-", StringComparison.Ordinal) == true =>
+            new(SourceOnlyResultRole.VerticalClean, SourceOnlyResultCodec.Id<StandardShortFormPlanIdTag>(role["vertical-clean-".Length..])),
         _ when role?.StartsWith("thumbnail-landscape-", StringComparison.Ordinal) == true =>
             new(SourceOnlyResultRole.LandscapeThumbnail, ThumbnailPlanId: SourceOnlyResultCodec.Id<StandardThumbnailPlanIdTag>(role["thumbnail-landscape-".Length..])),
         _ when role?.StartsWith("thumbnail-vertical-", StringComparison.Ordinal) == true =>

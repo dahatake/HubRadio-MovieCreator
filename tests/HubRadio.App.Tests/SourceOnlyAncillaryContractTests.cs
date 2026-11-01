@@ -24,6 +24,7 @@ public sealed class SourceOnlyAncillaryContractTests
                 SourceOnlyResultRole.WebVtt,
                 SourceOnlyResultRole.LandscapeThumbnail,
                 SourceOnlyResultRole.VerticalThumbnail,
+                SourceOnlyResultRole.VerticalClean,
             },
             Enum.GetValues<SourceOnlyResultRole>());
     }

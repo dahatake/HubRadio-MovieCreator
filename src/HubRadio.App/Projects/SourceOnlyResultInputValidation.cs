@@ -137,9 +137,9 @@ internal static class SourceOnlyResultInputValidation
         }
         else
         {
-            version = artifact.Role == SourceOnlyResultRole.VerticalBurnIn
+            version = artifact.Role.IsShortVideo()
                 ? StandardRenderGraphFactory.CreateShortVersion(preparation, artifact.RenditionId!) : preparation.Child;
-            timeline = artifact.Role == SourceOnlyResultRole.VerticalBurnIn
+            timeline = artifact.Role.IsShortVideo()
                 ? TimelineMapBuilder.Build(NativeId<TimelineMapIdTag>(graphJson, "TimelineMapId"), version) : preparation.ChildTimelineMap;
             profile = StandardRenderGraphFactory.GetProfile(preparation.Plan,
                 artifact.Role is SourceOnlyResultRole.LandscapeBurnIn or SourceOnlyResultRole.VerticalBurnIn, artifact.RenditionId);
@@ -172,11 +172,11 @@ internal static class SourceOnlyResultInputValidation
         RenderFontEvidence[] fonts = proof.Fonts.EnumerateArray().Select(f => new RenderFontEvidence(
             f.GetProperty("Name").GetString()!, Digest(f, "FileDigest"))).ToArray();
         RenderGraph graph = ReadGraph(graphJson);
-        ContentDigest layoutDigest = artifact.IsImage || artifact.Role == SourceOnlyResultRole.VerticalBurnIn
+        ContentDigest layoutDigest = artifact.IsImage || artifact.Role.IsShortVideo()
             ? StandardRenderGraphFactory.Digest(layout) : preparation.Plan.LongForm.Profile.LayoutDigest;
         var context = new RenderGraphValidationContext(preparation.Plan.LongForm.Project, version, timeline,
             RenderGraphCanonicalEvidence.ComputeTimelineMapDigest(timeline), profile, layout, layoutDigest,
-            artifact.Role == SourceOnlyResultRole.VerticalBurnIn ? preparation.Plan.ShortFormProfile.TemplateReference : preparation.Plan.LongForm.Profile.TemplateReference,
+            artifact.Role.IsShortVideo() ? preparation.Plan.ShortFormProfile.TemplateReference : preparation.Plan.LongForm.Profile.TemplateReference,
             spans, trustedEditorialIds,
             graph.Inputs.Select(i => new RenderArtifactEvidence(i.Id, i.ContentDigest, i.ByteSize)).ToArray(), fonts);
         SourceOnlyResultCodec.Require(RenderGraphValidator.Validate(graph, context).IsValid && artifact.ProfileId == profile.Id && artifact.ProfileDigest == profile.ProfileDigest);

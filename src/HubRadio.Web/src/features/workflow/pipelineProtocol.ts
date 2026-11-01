@@ -18,7 +18,7 @@ export const PIPELINE_PHASES = [
 export type PipelinePhase = typeof PIPELINE_PHASES[number]
 export type PipelineMethod = typeof PIPELINE_METHODS[number]
 export const SOURCE_ONLY_ROLES = [
-  'LandscapeClean', 'LandscapeBurnIn', 'VerticalBurnIn', 'SubRip', 'WebVtt', 'LandscapeThumbnail', 'VerticalThumbnail',
+  'LandscapeClean', 'LandscapeBurnIn', 'VerticalBurnIn', 'SubRip', 'WebVtt', 'LandscapeThumbnail', 'VerticalThumbnail', 'VerticalClean',
 ] as const
 export const EVALUATION_RULES = [
   'codec', 'fullDecode', 'duration', 'avSync', 'subtitlePresence', 'subtitleReadingSpeed',
@@ -328,6 +328,7 @@ function readResult(value: unknown): SourceOnlyResultDto {
   unique(r.reconciliationArtifacts, a => a.artifactId)
   unique(r.transcriptReferences, t => t.revisionId)
   requireValid(r.artifacts.filter(a => a.role === 'VerticalBurnIn').length <= 3)
+  requireValid(r.artifacts.filter(a => a.role === 'VerticalClean').length <= 3)
   const versions = new Map([[r.binding.versionId, r.binding.versionDigest]])
   const references = new Map<string, ReturnType<typeof reference>>()
   function remember(ref: ReturnType<typeof reference>): void {
@@ -337,13 +338,13 @@ function readResult(value: unknown): SourceOnlyResultDto {
   }
   for (const a of r.artifacts) {
     const image = a.role === 'LandscapeThumbnail' || a.role === 'VerticalThumbnail'
-    const video = a.role === 'LandscapeClean' || a.role === 'LandscapeBurnIn' || a.role === 'VerticalBurnIn'
+    const video = a.role === 'LandscapeClean' || a.role === 'LandscapeBurnIn' || a.role === 'VerticalBurnIn' || a.role === 'VerticalClean'
     requireValid(a.mediaType === (video ? 'video/mp4' : image ? 'image/png' : a.role === 'SubRip' ? 'application/x-subrip' : 'text/vtt') &&
       a.qcApplicability === (video ? 'VideoOutputQc' : image ? 'ImageFileOnly' : 'SubtitleFileOnly') &&
-      (a.role === 'VerticalBurnIn') === (a.renditionId !== null) && image === (a.thumbnailPlanId !== null) &&
+      (a.role === 'VerticalBurnIn' || a.role === 'VerticalClean') === (a.renditionId !== null) && image === (a.thumbnailPlanId !== null) &&
       (a.frameEvidence === null || image) && (a.profileId === null) === (a.profileDigest === null) &&
       a.artifact.kind === 'Render' && a.source.kind === 'Original' && a.artifact.artifactId !== a.source.artifactId)
-    if (!image && a.role !== 'VerticalBurnIn') requireValid(a.versionId === r.binding.versionId && a.versionDigest === r.binding.versionDigest)
+    if (!image && a.role !== 'VerticalBurnIn' && a.role !== 'VerticalClean') requireValid(a.versionId === r.binding.versionId && a.versionDigest === r.binding.versionDigest)
     requireValid(!versions.has(a.versionId) || versions.get(a.versionId) === a.versionDigest)
     versions.set(a.versionId, a.versionDigest)
     remember(a.artifact); remember(a.source)
