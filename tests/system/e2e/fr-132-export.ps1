@@ -8,7 +8,7 @@ $sb = New-AppSandbox
 $p = $null
 Invoke-Test -Label 'FR-132 AC-136/AC-137' -Sandbox $sb -Body {
     try {
-        $video = New-SyntheticVideo $sb $sb.Work
+        $video = New-SyntheticLongSpeechVideo $sb $sb.Work   # 短尺候補（15〜60 秒）を作れる長さ
         $dest = Join-Path $sb.Work 'export-dest'
         New-Item -ItemType Directory -Path $dest | Out-Null
         $projectName = 'export-sample'
@@ -42,7 +42,8 @@ Invoke-Test -Label 'FR-132 AC-136/AC-137' -Sandbox $sb -Body {
         if ($files.Count -lt 3) { throw "expected exported files (long, short, thumbnail at least), got $($files.Count)" }
         foreach ($f in $files) { if ($f.Name -notlike "*$projectName*") { throw "file name lacks project name: $($f.Name)" } }
         foreach ($f in $files) { if ($f.Name -notmatch 'Job|\d{8}') { throw "file name lacks the Job name or creation time: $($f.Name)" } }
-        foreach ($kind in '長尺', '短尺', 'サムネイル') {
+        # FR-132 AC-136: 長尺クリーン・短尺クリーン（shortClean。UI 名「短尺（クリーン版）」、ファイル名は「短尺クリーン」）・サムネイルを含む
+        foreach ($kind in '長尺', '短尺クリーン', 'サムネイル') {
             if (-not ($files | Where-Object { $_.Name -like "*$kind*" })) { throw "no exported file for kind '$kind'" }
         }
         $originalsAfter = @(Get-ChildItem -LiteralPath $ws -Recurse -File -Include *.mp4, *.png, *.jpg |

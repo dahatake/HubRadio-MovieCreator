@@ -503,6 +503,40 @@ function New-SyntheticSpeechVideo($sb, [string]$dir, [string]$Text = 'Hello and 
     }
     throw 'ffmpeg failed to create synthetic speech video'
 }
+# --- 長尺（20〜30 秒）の発話入り合成動画。短尺候補（FR-010 AC-002: 15〜60 秒）を作れるよう、文境界の明瞭な英語の文を重複なく並べる。自己検査: 長さ 20〜30 秒・1920x1080・48000 Hz ---
+function New-SyntheticLongSpeechVideo($sb, [string]$dir) {
+    $sentences = @(
+        'Hello and welcome to the radio show.',
+        'Today we talk about music and movies.',
+        'First, let us talk about the music of the nineteen eighties.',
+        'Many listeners love the bright sound of the synthesizer.',
+        'Next, we turn to the movies that people watched last summer.',
+        'The best film was a quiet story about a small town.',
+        'Our guest explains how a good song can change a scene.',
+        'She says that silence is as important as sound.',
+        'Now we will answer a question from a listener.',
+        'The question is about how to choose a movie for the weekend.',
+        'Our advice is to start with a story that you already love.',
+        'Thank you for listening, and see you next time.'
+    )
+    $ff = Get-TestFfmpeg $sb
+    $text = $sentences -join ' '
+    $out = $null
+    for ($n = $sentences.Count; $n -ge 6; $n--) {
+        $out = New-SyntheticSpeechVideo $sb $dir ($sentences[0..($n - 1)] -join ' ')
+        $v = Get-StreamDecodedSeconds $ff $out '0:v:0'
+        if ($v -ge 20 -and $v -le 30) { break }
+        if ($v -lt 20) { break }   # 短すぎるなら下の検査で失敗させる
+    }
+    $info = (& $ff -hide_banner -i $out 2>&1 | Out-String)
+    $dm = [regex]::Match($info, 'Duration: (\d+):(\d+):(\d+\.\d+)')
+    if (-not $dm.Success) { throw 'cannot read duration of long synthetic speech video' }
+    $len = [int]$dm.Groups[1].Value * 3600 + [int]$dm.Groups[2].Value * 60 + [double]::Parse($dm.Groups[3].Value, [Globalization.CultureInfo]::InvariantCulture)
+    if ($len -lt 20 -or $len -gt 30) { throw ("long synthetic speech video length {0:N1}s is outside 20-30 s" -f $len) }
+    if ($info -notmatch 'Video:.*\b1920x1080\b') { throw 'long synthetic speech video is not 1920x1080' }
+    if ($info -notmatch 'Audio:.*\b48000 Hz') { throw 'long synthetic speech video audio is not 48000 Hz' }
+    $out
+}
 function Get-StreamDecodedSeconds([string]$ff, [string]$Path, [string]$Map) {
     $log = (& $ff -v info -i $Path -map $Map -f null - 2>&1 | Out-String)
     $m = [regex]::Matches($log, 'time=(\d+):(\d+):(\d+\.\d+)')
