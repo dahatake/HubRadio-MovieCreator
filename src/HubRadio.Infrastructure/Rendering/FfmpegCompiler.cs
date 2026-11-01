@@ -377,16 +377,30 @@ public sealed class FfmpegVideoGeometryBinding
     public FfmpegVideoGeometryBinding(
         EntityId<RenderNodeIdTag> nodeId,
         SourceDisplayGeometry geometry,
-        ManualLayoutPlan? layout = null)
+        ManualLayoutPlan? layout = null,
+        int? middleTierTop = null,
+        int? middleTierHeight = null)
     {
         NodeId = nodeId ?? throw new ArgumentNullException(nameof(nodeId));
         Geometry = geometry ?? throw new ArgumentNullException(nameof(geometry));
         Layout = layout;
+        if ((middleTierTop is null) != (middleTierHeight is null) || (middleTierTop is { } top && (top < 0 || top % 2 != 0))
+            || (middleTierHeight is { } height && (height <= 0 || height % 2 != 0)))
+        {
+            throw new ArgumentException("The middle tier needs an even top and height.", nameof(middleTierTop));
+        }
+
+        MiddleTierTop = middleTierTop;
+        MiddleTierHeight = middleTierHeight;
     }
 
     public EntityId<RenderNodeIdTag> NodeId { get; }
     public SourceDisplayGeometry Geometry { get; }
     public ManualLayoutPlan? Layout { get; }
+
+    /// <summary>FR-138 (5): when set, the source video is fitted into the middle tier (full width) of the vertical frame; the rest stays black.</summary>
+    public int? MiddleTierTop { get; }
+    public int? MiddleTierHeight { get; }
 }
 
 public sealed class FfmpegFontBinding
@@ -1520,6 +1534,14 @@ public static class FfmpegCompiler
         string suffix = frameExtraction is null ? FormattableString.Invariant(
             $",fps={profile.FrameRateNumerator}/{profile.FrameRateDenominator},format=yuv420p[{label}]")
             : $",format=rgb24[{label}]";
+        if (binding.MiddleTierTop is int tierTop && binding.MiddleTierHeight is int tierHeight)
+        {
+            // FR-138 (5): 3 bands — the source video is fitted (not stretched) into the middle tier; the title tier above
+            // and the subtitle tier below are left black for the title/hook and the subtitle.
+            return string.Concat(prefix, FormattableString.Invariant(
+                $",scale={profile.Width}:{tierHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad={profile.Width}:{profile.Height}:(ow-iw)/2:{tierTop}+2*trunc(({tierHeight}-ih)/4):color=black"), suffix);
+        }
+
         if (binding.Layout is not ManualLayoutPlan layout)
         {
             // Fit rather than stretch; both dimensions are even for yuv420p.

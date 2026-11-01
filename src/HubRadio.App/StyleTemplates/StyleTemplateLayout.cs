@@ -63,6 +63,9 @@ public static partial class StyleTemplateLayout
     /// <summary>FR-138: one vertical screen of subtitle holds at most this many characters.</summary>
     public const int VerticalCaptionMaximumCharacters = 20;
 
+    /// <summary>FR-138 AC-158 (PARAM-010 range): the bottom tier shows at least this many characters per screen where the text allows.</summary>
+    public const int VerticalCaptionMinimumCharacters = 15;
+
     private const int TitleTierHeight = 300;
     private const int TitleTextHeight = 195;
     private const int VideoTierHeight = 580;
@@ -200,6 +203,50 @@ public static partial class StyleTemplateLayout
     /// <summary>The telops of this kind shown at this time.</summary>
     public static IReadOnlyList<T> ShownAt<T>(IEnumerable<T> items, Func<T, TimeRange> range, RationalTime time) =>
         items.Where(item => range(item).Start <= time && time < range(item).End).ToArray();
+
+    /// <summary>
+    /// FR-138 AC-158: the subtitle screens of the bottom tier — the displayed cue text joined in time order and cut into screens
+    /// of <see cref="VerticalCaptionMinimumCharacters"/>–<see cref="VerticalCaptionMaximumCharacters"/> characters (the text is
+    /// kept as it is; only a text shorter than the minimum, which cannot be longer, stays as one short screen). Each screen is
+    /// shown for the time its characters take in the cues that hold them.
+    /// </summary>
+    public static IReadOnlyList<RecordedCue> BottomScreens(IReadOnlyList<RecordedCue> cues)
+    {
+        ArgumentNullException.ThrowIfNull(cues);
+        var chars = new List<(string Text, double Start, double End, RecordedCue Cue)>();
+        foreach (RecordedCue cue in cues.OrderBy(static item => item.Start))
+        {
+            string[] elements = Elements(System.Globalization.StringInfo.GetTextElementEnumerator(cue.Text));
+            for (int index = 0; index < elements.Length; index++)
+            {
+                double length = (cue.End - cue.Start) / elements.Length;
+                chars.Add((elements[index], cue.Start + (length * index), cue.Start + (length * (index + 1)), cue));
+            }
+        }
+
+        if (chars.Count == 0)
+        {
+            return [];
+        }
+
+        int screens = Math.Max(1, (chars.Count + VerticalCaptionMaximumCharacters - 1) / VerticalCaptionMaximumCharacters);
+        // Fewer screens of 15 or more characters when the balanced size of the most screens would fall below the minimum.
+        while (screens > 1 && chars.Count / screens < VerticalCaptionMinimumCharacters
+            && (chars.Count + screens - 2) / (screens - 1) <= VerticalCaptionMaximumCharacters)
+        {
+            screens--;
+        }
+
+        int size = (chars.Count + screens - 1) / screens;
+        var result = new List<RecordedCue>();
+        foreach (var chunk in chars.Chunk(size))
+        {
+            RecordedCue first = chunk[0].Cue;
+            result.Add(first with { Start = chunk[0].Start, End = chunk[^1].End, Text = string.Concat(chunk.Select(static item => item.Text)), Words = [] });
+        }
+
+        return result;
+    }
 
     /// <summary>FR-138: the vertical subtitle split so that no screen holds more than 20 characters (the text is kept as it is).</summary>
     public static IReadOnlyList<string> VerticalScreens(string text)
