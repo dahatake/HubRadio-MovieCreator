@@ -111,7 +111,12 @@ Invoke-Test -Label "CHK10 $Ac" -Sandbox $sb -Body {
                 if ($manifests.Count -eq 0) { throw 'no manifest (including published Manifest/<artifact-id>.json evidence)' }
                 foreach ($manifest in $manifests) {
                     $document = Get-Content -LiteralPath $manifest.FullName -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
-                    if (-not $document.PSObject.Properties['outputs'] -or @($document.outputs).Count -eq 0) {
+                    # 証跡ラッパー (source-only.artifact-evidence.v2) は出力情報を Payload.Outputs に持つ
+                    $body = $document
+                    $wrap = $document.PSObject.Properties | Where-Object { $_.Name -ieq 'payload' } | Select-Object -First 1
+                    if ($wrap -and $wrap.Value) { $body = $wrap.Value }
+                    $outProp = $body.PSObject.Properties | Where-Object { $_.Name -ieq 'outputs' } | Select-Object -First 1
+                    if (-not $outProp -or @($outProp.Value).Count -eq 0) {
                         throw "manifest has no output evidence: $($manifest.FullName)"
                     }
                 }

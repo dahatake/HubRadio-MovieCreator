@@ -504,10 +504,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-media-output.ps1 -Ac AC-079",
       "canary": false,
-      "status": "fail",
-      "last_commit": "201dc85",
-      "last_run_at": "2026-11-02T19:02:34+09:00",
-      "evidence": "work\\runs\\202611021738\\logs\\system-test\\E2E-015-202611021848.log",
+      "status": "pass",
+      "last_commit": "71f8d15",
+      "last_run_at": "2026-11-02T20:35:53+09:00",
+      "evidence": "work/runs/202611021957/logs/system-test/E2E-015-202611022033.log",
       "history": [
         {
           "at": "2026-10-13T07:45:27+09:00",
