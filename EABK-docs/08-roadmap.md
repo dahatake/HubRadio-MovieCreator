@@ -1,3 +1,5 @@
+**日本語** | [English](08-roadmap.en.md)
+
 # 8. 導入ロードマップと KPI
 
 ## 8.1 導入の段取り
@@ -7,7 +9,7 @@
 | Phase | 目安 | 内容 | 完了条件 | 利用者の作業 |
 |---|---|---|---|---|
 | 0 診断 | 2〜4 時間（無人） | 既存のリポジトリに対して rd-auditor を履歴モードで実行し、過去の矛盾がどの commit・どの Prompt から生まれたかを調べます | 矛盾ごとに、原因の commit・Prompt・仮説が挙がっている | Prompt 1 回 |
-| 1 基盤 | 1〜2 日（大半は無人） | toolkit をインストールし（[README の「インストール」](../README.md#インストール)）、[README の「初回に確認すること」](../README.md#初回に確認すること) の各項目を確認します。代表的な作業（要求 3 件分）を、モデルの組み合わせ 2〜3 通り × 2 回で実行し、使うモデルを決めます | 各項目の結果が記録され、`models` が決まっている | Prompt 数回、結果の確認 |
+| 1 基盤 | 1〜2 日（大半は無人） | toolkit をインストールし（[README の「インストール」](../README.md#インストール)）、[README の「初回に確認すること」](../README.md#初回に確認すること) の各項目を確認します。代表的な作業（要求 3 件分）を実行します | 各項目の結果が記録されている | Prompt 数回、結果の確認 |
 | 2 要求定義 v1.0 | 2〜6 時間＋回答 | ドラフトを `<request>` に貼り付け、`approval_policy: 厳格`、`max_hours` を短めにして、工程 1〜2 を中心に実行します | 承認待ちのない MUST 要求群があり、直接矛盾が 0 件 | Prompt 1 回、回答 1 回 |
 | 3 初回の長時間 run | 24〜48 時間（無人） | `approval_policy: 安全範囲は推奨どおり` で全工程を実行します | run-report の結果が「全件完了」か「blocked あり（理由つき）」。verify が exit 0 | Prompt 1 回、報告の確認、マージ |
 | 4 チューニング | 継続 | KPI を見ながら、モデルの振り分け、`parallel_workers`、節目の間隔、skills の文面を調整します | KPI が改善している | 改善案の採否を Prompt で回答 |
@@ -67,8 +69,6 @@ external_exposure: 公開しない
 | Token | 要求 1 件・AC 1 件あたりの AI クレジット | Phase 1 の計測値を基準に削減 | Agent Debug Logs と使用量の表示（`run-state.py finish --credits` で記録） |
 | Token | subagent が使った Token の割合 | 記録し、増え続けるなら委譲の範囲を見直す | 同上 |
 | 人 | 1 回の依頼で利用者が書く Prompt の回数 | 1 回（回答があれば 2 回） | `run-state.py human` の記録（run-history の「人の介入」） |
-
-GitHub Spec Kit など、ほかの進め方と同じ課題で比べる手順は [bench/README.md](../bench/README.md) にあります。
 
 ## 8.3 リスクと対策
 

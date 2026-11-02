@@ -6,11 +6,15 @@ import { el, svgEl, colorOf, TYPE_COLOR, STATUS_COLOR, showTip, hideTip, nodeTip
 import { entityER } from './insights.js';
 import { runtimePlacement } from './insights.js';
 import { dimToggle, dimState, registerDim, publishDim } from './dim.js';
+import { graphView } from './graph.js';
 import { mount as mountPlacement } from './placement.js';
 import { placeRows, listTiers } from './tierlist.js';
 import { UNCLASSIFIED } from './hier.js';
+import { region, zoomPan } from './viz.js';
 
 const KINDS = ['ctx', 'goals', 'states', 'entities', 'components', 'layers'];
+// FR-1079: Graph is offered for the relation-centred kinds only (goals / states: layered, entities / components: force). layers (matrix) and ctx are not.
+const GRAPH_KINDS = { goals: 'layered', states: 'layered', entities: 'force', components: 'force' };
 let kind = 'ctx';
 let entThreshold = 0;
 let goalColor = 'impl';
@@ -31,6 +35,7 @@ function defs() {
 function bindNode(g, id) {
   g.classList.add('node-g');
   g.dataset.id = id;
+  g.setAttribute('data-dgm-key', id);   // FR-1080: the key of the data join (viz.js region on the diagram body)
   g.addEventListener('click', (e) => { e.stopPropagation(); store.select(id, { fly: true }); });
   g.addEventListener('mouseenter', (e) => { const n = store.node(id); store.setHover(id); if (n) showTip(nodeTip(n), e.clientX, e.clientY); });
   g.addEventListener('mousemove', (e) => { const n = store.node(id); if (n) showTip(nodeTip(n), e.clientX, e.clientY); });
@@ -368,6 +373,21 @@ function componentData() {
   return { comps, list, links };
 }
 
+// FR-1079: the Graph of the components shows what each component holds and serves — component → requirement it implements (the reference direction),
+// component → module it contains — so that a component with no shared requirement still shows its structure. (The shared-requirement co-use stays in the 2D / 3D view.)
+const MOD_CAP_PER_COMP = 6;
+function componentRelationGraph() {
+  const { list } = componentData();
+  const nodes = [], edges = [], seen = new Set();
+  const add = (id, label, type) => { if (!seen.has(id)) { seen.add(id); nodes.push({ id, label, type }); } };
+  for (const e of list) {
+    add(e.c.id, e.c.label, e.c.kind === 'test' ? 'test' : 'component');
+    for (const r of e.reqs) { add(r, r, 'req'); edges.push({ from: e.c.id, to: r }); }
+    [...e.mods.keys()].slice(0, MOD_CAP_PER_COMP).forEach((mod) => { const id = `mod:${e.c.id}:${mod}`; add(id, mod.replace(e.c.path, '') || '/', 'file'); edges.push({ from: e.c.id, to: id }); });
+  }
+  return { nodes, edges };
+}
+
 function componentDiagram(m) {
   const { comps, list, links } = componentData();
   if (!comps.length) return el('div', { class: 'empty' }, t('none'));
@@ -448,6 +468,7 @@ export function graphOf(k, m) {
 // FR-1063 AC-349: 図式の要素を上位層（種類→区分→領域）でまとめて、見出しに件数を示す（図そのものは変えない）。階層にない要素は「未分類」。
 function diagramTiers(k, m) {
   const g = graphOf(k, m);
+  // i18n-data: the kind name of a hierarchy item is a managed-data value
   const spec = (e) => (e.type === 'req' ? { kind: '要求', id: e.id } : e.type === 'goal' ? { kind: '目的', id: e.id } : e.type === 'entity' ? { kind: 'エンティティ', id: e.label } : null);
   const placed = placeRows(g.elements, spec, (e) => [t('dgm.' + k), e.type, UNCLASSIFIED]);
   return el('section', { class: 'dgm-tiers', 'data-testid': 'dgm-tiers', 'aria-label': t('dgm.tiers') }, el('h2', {}, t('dgm.tiers')),
@@ -464,27 +485,45 @@ export function mount(host) {
   if (KINDS.includes(hk)) kind = hk;
   const viewOpt = qs.get('view');   // 'runtime' | 'matrix' (旧「配置」の見方。FR-1041 AC-226)
   const dm = dimState.diagrams;
-  dimState.diagrams = qs.has('dim') ? (qs.get('dim') === '3d' ? '3d' : '2d') : dm;
+  dimState.diagrams = qs.has('dim') ? (['3d', 'graph'].includes(qs.get('dim')) ? qs.get('dim') : '2d') : dm;
   let dim = dimState.diagrams;
   const tabs = el('div', { class: 'dgmtabs' });
   const body = el('div', { class: 'dgm' });
   host.append(tabs, body);
-  let current = null, erLink = null, three = null, renderToken = 0;
+  const vz = region(body, 'diagrams', { items: '[data-dgm-key]', keyOf: (n) => n.getAttribute('data-dgm-key') });   // FR-1080 data-viz root
+  const zstate = { z: 1, x: 0, y: 0 };
+  let zp = null;
+  let current = null, erLink = null, three = null, gv = null, renderToken = 0;
   const diagramState = () => ({ ...graphOf(kind, store.model), dim });
   const view = { mode: 'diagrams', getState: () => ({ diagram: diagramState() }), setDim: (d) => setDim(d) };
   window.eabkView = view;
-  const setDim = (d) => { if (d !== '2d' && d !== '3d') return; wanted = d; if (d === dim) { publishDim({ dims: ['2d', '3d'], current: dim, selected: wanted }); return; } dim = dimState.diagrams = d; render(); };
+  const dimsFor = () => (kind in GRAPH_KINDS ? ['2d', '3d', 'graph'] : ['2d', '3d']);
+  const setDim = (d) => { if (!dimsFor().includes(d)) return; wanted = d; if (d === dim) { publishDim({ dims: dimsFor(), current: dim, selected: wanted }); return; } dim = dimState.diagrams = d; render(); };
   let wanted = dim;   // what the user chose; differs from `dim` only when 3D could not be drawn (AC-370)
   const offDim = registerDim((d) => (d ? setDim(d) : setDim(dim === '2d' ? '3d' : '2d')));
+  let freshKind = false;
   const render = () => {
     const m = store.model;
-    three?.destroy?.(); three = null;
+    vz.snap();
+    if (freshKind) { vz.old = new Map(); freshKind = false; }   // 図の種類の切替は別の図: 前の図の要素を enter/exit の補間に持ち込まない
+    three?.destroy?.(); three = null; gv?.destroy(); gv = null;
+    if (dim === 'graph' && !(kind in GRAPH_KINDS)) dim = wanted = dimState.diagrams = '2d';   // layers / ctx have no Graph (the button is disabled with its reason)
     const my = ++renderToken;
-    publishDim({ dims: ['2d', '3d'], current: dim, selected: wanted });
-    const toggle = dimToggle({ current: dim, onPick: setDim });
-    tabs.replaceChildren(...KINDS.map((k) => el('button', { class: 'tabbtn' + (k === kind ? ' on' : ''), onclick: () => { kind = k; render(); } }, t('dgm.' + k))), toggle);
+    publishDim({ dims: dimsFor(), current: dim, selected: wanted });
+    const toggle = dimToggle({ current: dim, onPick: setDim, dims: dimsFor() });
+    tabs.replaceChildren(...KINDS.map((k) => el('button', { class: 'tabbtn' + (k === kind ? ' on' : ''), onclick: () => { kind = k; freshKind = true; render(); } }, t('dgm.' + k))), toggle);
     const note = el('div', { class: 'mini', style: { marginBottom: '10px', maxWidth: '900px' } }, t('dgm.' + kind + '.note'));
     let content;
+    if (dim === 'graph') {   // FR-1079: relations as nodes and directed edges
+      const g = graphOf(kind, m);
+      const data = kind === 'components' ? componentRelationGraph()
+        : { nodes: g.elements.map((e) => ({ id: e.id, label: e.label, type: e.type })), edges: g.relations.map((r) => ({ from: r.from, to: r.to, label: r.label })) };
+      gv = graphView({ name: 'dgm-' + kind, layout: GRAPH_KINDS[kind], note: t('graph.note.' + GRAPH_KINDS[kind]), nodes: data.nodes, edges: data.edges });
+      current = el('div', {}, note, gv.el);
+      body.replaceChildren(current);
+      vz.sync();
+      return;
+    }
     if (dim === '3d') {
       const g = graphOf(kind, m);
       const stage = el('div', { class: 'dgm3d', 'data-testid': 'dgm-3d' });
@@ -509,6 +548,7 @@ export function mount(host) {
       });
       current = el('div', {}, note, content, el('details', { class: 'sz-alt' }, el('summary', {}, t('dim.alt')), table()), diagramTiers(kind, m));
       body.replaceChildren(current);
+      vz.sync();
       return;
     }
     if (kind === 'ctx') content = el('div', { style: { overflow: 'auto' } }, contextDiagram(m));
@@ -526,15 +566,22 @@ export function mount(host) {
     }
     else { erLink = null; content = componentDiagram(m); }
     if (kind !== 'layers') erLink = null;
-    current = el('div', {}, note, content, diagramTiers(kind, m));
+    // FR-1080 AC-442: wheel zoom / drag pan / reset around the 2D diagram; data-zoom / data-pan on the host
+    const zhost = el('div', { class: 'viz-zoom', style: 'overflow:hidden;touch-action:none' });
+    const zworld = el('div', { class: 'viz-world', style: 'transform-origin:0 0' }, content);
+    zhost.append(zworld);
+    zp = zoomPan(zhost, (z, x, y) => { zworld.style.transform = `translate(${x}px,${y}px) scale(${z})`; }, zstate);
+    const zreset = el('button', { type: 'button', class: 'btn ghost', 'data-testid': 'viz-reset', 'data-action': 'reset-view', onclick: () => zp.reset() }, t('viz.reset'));
+    current = el('div', {}, note, el('div', { class: 'row', style: { marginBottom: '6px' } }, zreset), zhost, diagramTiers(kind, m));
     body.replaceChildren(current);
     applyDim(body);
+    vz.sync();
   };
   let embedded = null;
   render();
   const refresh = () => { applyDim(body); if (erLink) erLink(); three?.setSelected?.(store.selected); };
   const offs = [store.on('select', refresh), store.on('hover', refresh), store.on('model', render), onLang(render), offDim];
   body.addEventListener('click', (e) => { if (e.target === body || e.target.tagName === 'svg') store.clear(); });
-  return { destroy() { offs.forEach((f) => f()); three?.destroy?.(); embedded?.destroy?.(); hideTip(); if (window.eabkView === view) delete window.eabkView; } };
+  return { destroy() { offs.forEach((f) => f()); three?.destroy?.(); gv?.destroy(); vz.destroy(); embedded?.destroy?.(); hideTip(); if (window.eabkView === view) window.eabkView = undefined; } };
 }
 

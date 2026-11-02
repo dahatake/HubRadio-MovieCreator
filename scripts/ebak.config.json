@@ -71,7 +71,8 @@
     },
     "subagent_verify_max_blocks": 3,
     "agent_stop_max_blocks": 40,
-    "enforce_conductor_edit_scope": true
+    "enforce_conductor_edit_scope": true,
+    "allow_hook_edit": false
   },
   "credits": {
     "_note": "AI クレジットの推定。run-state.py finish が --credits なしのとき、作業役（task）の呼び出し 1 回を、モデルの倍率で数えて run-history に「推定」として記録する。倍率は契約・課金表に合わせて書く（未記載のモデルは default_multiplier）。進行役自身の呼び出しは hook から見えないため含まない。",

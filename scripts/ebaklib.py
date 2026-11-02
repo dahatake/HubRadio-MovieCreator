@@ -57,7 +57,7 @@ DEFAULT_CONFIG: dict = {
             "docs/**", "work/**", ".github/**", "scripts/**", "tools/**", "users-guide/**", "EABK-docs/**", "EABK-Studio/**",
             "tests/toolkit/**", "templates/**", "node_modules/**", "**/node_modules/**", ".git/**",
             "**/*.lock", "**/package-lock.json", "AGENTS.md", "README.md", "**/*.svg",
-            # GitHub Spec Kit artifacts use their own FR-/SC- numbering (imported via scripts/import-speckit.py)
+            # GitHub Spec Kit artifacts use their own FR-/SC- numbering
             *SPECKIT_PATHS,
         ],
         "test_path_pattern": r"(^|/)(tests?|__tests__|spec|specs|e2e)(/|$)|(^|/)(test_[^/]*|[^/]*_test\.[^/]+|[^/]*\.(test|spec)\.[^/]+|[^/]*Tests?\.[^/]+)$",
@@ -73,8 +73,6 @@ DEFAULT_CONFIG: dict = {
         "subagent_verify_max_blocks": 3,
         "agent_stop_max_blocks": 40,
         "enforce_conductor_edit_scope": True,
-        # G-7: deny `task` calls that do not pass the model fixed in "models" (only while a run is active)
-        "enforce_models": True,
         "deploy_patterns": [
             r"\bazd\s+(up|deploy|provision)\b",
             r"\baz\s+deployment\s+\S+\s+create\b",
@@ -1254,6 +1252,18 @@ def save_ledger(root: Path, cfg: dict, data: dict) -> None:
     write_json(root / mf(cfg, "ledger"), data)
 
 
+def shared_ac_cases(data: dict) -> Dict[str, List[str]]:
+    """AC -> 有効な（blocked でない）ケースが 2 件以上あるときの、そのケース ID（System Test の重複の検出）。"""
+    by_ac: Dict[str, List[str]] = {}
+    for c in data.get("cases", []):
+        if c.get("status") == "blocked":
+            continue
+        for a in c.get("ac_ids", []):
+            by_ac.setdefault(a, []).append(c.get("id", ""))
+    return {a: ids for a, ids in by_ac.items() if len(ids) > 1}
+
+
+
 # --------------------------------------------------------------------------- registry
 
 # --------------------------------------------------------------------------- integration catalog (FR-1035)
@@ -1404,6 +1414,50 @@ def load_meta(root: Path, cfg: dict, run_id: str) -> dict:
 
 def save_meta(root: Path, cfg: dict, run_id: str, meta: dict) -> None:
     write_json(run_dir(root, cfg, run_id) / "meta.json", meta)
+
+
+IDLE_GAP_MINUTES = 45.0
+
+
+def idle_gap_seconds(cfg: Optional[dict]) -> float:
+    try:
+        v = float(((cfg or {}).get("limits") or {}).get("idle_gap_minutes", IDLE_GAP_MINUTES))
+    except (TypeError, ValueError):
+        v = IDLE_GAP_MINUTES
+    return v * 60 if v > 0 else 0.0
+
+
+def touch_heartbeat(root: Path, cfg: dict, run_id: str, now: Optional[float] = None) -> float:
+    """Mark the run as alive (called by the hooks on every tool call; only a utime on one file). When the previous
+    mark is older than limits.idle_gap_minutes (default 45; 0 = off) the machine was asleep or the host app suspended
+    (or nobody was working), so the gap is added to meta.idle_sec and elapsed_hours() does not count it against
+    max_hours. Returns the seconds added."""
+    now = time.time() if now is None else now
+    p = run_dir(root, cfg, run_id) / ".heartbeat"
+    try:
+        prev = p.stat().st_mtime
+    except OSError:
+        prev = None
+    try:
+        if prev is None:
+            p.write_text("", encoding="utf-8")
+        os.utime(p, (now, now))
+    except OSError:
+        return 0.0
+    thr = idle_gap_seconds(cfg)
+    if prev is None or not thr or now - prev < thr:
+        return 0.0
+    meta = load_meta(root, cfg, run_id)
+    if not meta or meta.get("status") != "active":
+        return 0.0
+    gap = round(now - prev)
+    meta["idle_sec"] = int(meta.get("idle_sec", 0) or 0) + gap
+    gaps = meta.setdefault("idle_gaps", [])
+    if len(gaps) < 50:
+        fmt = lambda t: _dt.datetime.fromtimestamp(t).astimezone().isoformat(timespec="seconds")
+        gaps.append({"from": fmt(prev), "to": fmt(now), "sec": gap})
+    save_meta(root, cfg, run_id, meta)
+    return float(gap)
 
 
 def load_queue(root: Path, cfg: dict, run_id: str) -> dict:

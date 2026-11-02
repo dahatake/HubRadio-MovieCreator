@@ -1,3 +1,5 @@
+**日本語** | [English](06-quality-gates.en.md)
+
 # 6. 品質ゲートと検査項目
 
 品質ゲートは 2 層です。hook がツール実行の前と終了前に規則を強制し、verify が同じ規則を決定的に検査します（[README の「2 層の品質ゲート」](../README.md#2-層の品質ゲート)）。
@@ -13,13 +15,12 @@
 | **G-3** ID の採番 | 全エージェント | `docs/id-registry.md` の直接編集を拒否します（`next-id.py` を使う）。手で振った ID は CHK-01 が検出します |
 | **G-4** 終了前の検証 | implementer、test-designer、rd-author | 作業役の終了前に verify を実行し、失敗していれば差し戻します（最大 3 回）。implementer の場合は、結果に含まれる `WORKTREE:` の worktree で検査します |
 | **G-5** 危険な操作の拒否 | 全エージェント | main への push、force push、履歴の書き換え、run 実行中の main への直接 commit、`deploy: しない` の間のデプロイ、`git_push: しない` の間の push、作業ディレクトリ外への書き込み、実行中の hook の変更、実行中のブランチ名の変更（GitHub Copilot app の `rename_branch`）を拒否します。あわせて役割ごとの書き込み範囲を強制します（conductor は `work/` と run-history、rd-author は `docs/`、test-designer は `tests/system/`、rd-auditor・reviewer は読み取り専用）。利用者が設定した MCP Server・plugin・拡張機能のツールによる外部のシステムの変更（名前に `create`・`update`・`delete`・`send` などを含むツール）は、run 中は `external_write: する` のときだけ、デプロイ・公開（`deploy`・`publish` など）は `deploy: する` のときだけ許可します。rd-auditor・reviewer の外部の変更は常に拒否します（[4.4](04-customization.md#44-mcp-serverplugin拡張機能を使う)） |
-| **G-7** モデルの強制 | conductor | run の実行中、`scripts/ebak.config.json` の `models` に値のある作業役を、`task` の `model` 引数なし、または違うモデルで呼ぶことを拒否します（`implementer` は `implementer-escalation` のモデルも可）。呼び出しはすべて `work/runs/<run-id>/models.jsonl` に記録します。`gates.enforce_models: false` で無効にできます |
 | **G-6** 一時ファイルの置き場所 | 全エージェント | ログ・証跡・実行結果（`*.log`、`*.har`、`*.trace`、`trace*.zip`、`results*.json`、`evidence/`、`screenshots/`、`test-results/`、`playwright-report/`）を `/work` 以外に書くことを拒否します。`/work` の削除は、`clean-work.py` と `git worktree remove` にだけ許可します |
 | 完了判定 | conductor | 完了条件（queue に todo・doing がない、工程 6 が完了、run-report.md がある）を満たすまで、ターンの終了を差し戻します（最大 40 回。時間予算の 125% を超えたら差し戻しません） |
 | 再開の案内 | 全エージェント | セッション開始時に、実行中の run があれば run-id と再開手順を表示します |
 | `/build template` | 全エージェント | Prompt が `/build template` だけのターンでは、読み取りと skill 以外のツール（コマンド・書き込み・作業役の呼び出し）を拒否し、実行中の run があってもターンの終了を差し戻しません。雛形の表示が run の開始・再開に変わるのを防ぎます（`userPromptSubmitted` イベントで判定し、session ごとに `work/.ebak/template-request-<session>.json` に記録し、他の session の発話では消えません。session 識別子のない入力は、他の session の記録を消しません） |
 
-### 6.1.1 主ツリーで run を置いたときの別 session（FR-XXXX）
+### 6.1.1 主ツリーで run を置いたときの別 session（FR-1076）
 
 `require_worktree: false`・`--allow-primary`・`EABK_ALLOW_PRIMARY=1` で主の作業ツリーに run を置くと、run の持ち主ではない chat も同じ tree で作業します。hook は、`meta.json` の `session_id` が呼び出し元の session と異なる（かつ呼び出しに session 識別子がある）ときだけ、**run を前提にしたゲートを外します**。持ち主の chat、所有者のない run、session 識別子のない呼び出しは、従来どおり全ゲートが掛かります。
 
@@ -30,13 +31,12 @@
 | G-5 実行中の main への直接 commit・merge の禁止 | **外す** | run の統合ブランチの保護 |
 | G-5 `deploy`・`git_push`・`external_write` の run_options に依存する拒否、実行中のブランチ名変更の禁止 | **外す** | run_options は run の持ち主への指示 |
 | G-1 要求定義書は rd-author だけ（run 実行中の conductor に対する拒否） | **外す**（作業役の worktree・`work/<run-id>/<item>` ブランチからの編集の拒否は残る） | run の持ち主の規則 |
-| G-7 モデルの強制 | **外す** | run の `task` 呼び出し |
 | G-1（作業役）・G-2 System Test と台帳の直接編集の禁止・G-3 ID 台帳の直接編集の禁止 | **残す** | 役割境界。run と無関係に常に掛かる |
 | G-5 force push・履歴の書き換え・main への push・作業ディレクトリ外への書き込み | **残す** | 常時のゲート |
 | G-6 一時ファイルの置き場所・`/work` の削除の制限 | **残す** | 常時のゲート |
 | 完了判定（ターン終了の差し戻し） | **掛けない**（別 session の終了は差し戻されない） | 持ち主の run の完了条件 |
 
-**所有者なし run の救済（FR-XXXX）**: hook は、所有者のない run を session に束縛する（R-2）のは、候補の run が 1 つだけ・session 識別子がある・他の session の未消費の start-claim がないときだけです。候補が複数、識別子なしのときは、どの run も束縛しません。start-claim で持ち主が確定した run は、別の session に束縛し直しません。`meta.json` の書き込みは start と同じ排他（`work/.ebak/start-claims.lock`、待ちは最大 10 秒）の中で行います。
+**所有者なし run の救済（FR-1075）**: hook は、所有者のない run を session に束縛する（R-2）のは、候補の run が 1 つだけ・session 識別子がある・他の session の未消費の start-claim がないときだけです。候補が複数、識別子なしのときは、どの run も束縛しません。start-claim で持ち主が確定した run は、別の session に束縛し直しません。`meta.json` の書き込みは start と同じ排他（`work/.ebak/start-claims.lock`、待ちは最大 10 秒）の中で行います。
 
 **エージェントの識別方法**: Copilot の hook の `preToolUse` イベントには、呼び出し元のエージェント名が含まれません。そこで、`subagentStart` / `subagentStop` イベントで実行中の custom agent を `work/.ebak/active-agents.json` に記録し、書き込み先のパス、作業役の worktree（`work/worktrees/…`）、ブランチ（`work/<run-id>/<item>`）と合わせて判定します。
 
@@ -78,6 +78,7 @@ hook の速さ: pre-tool は 1 回の run で数千回呼ばれます。読み�
 | CHK-25 | 構造化欄が定義を指していない: 対象エンティティが用語の表にも状態の表にもない。関係する状態が、その対象エンティティの状態の表にない。本文・受入基準の `{PARAM-xxx}` が参照パラメータの欄にない（欄にあるのに使っていない PARAM は warn） | error / warn | 用語・状態の表に定義するか、欄を直す |
 | CHK-26 | 孤立した定義: どこからも参照されない PARAM・出典（SRC）、どの要求の対象エンティティでもない状態の表のエンティティ | warn | 参照を足すか、不要なら廃止する |
 | CHK-27 | カタログの表どうしの不整合: 機能の表の「使っている共通部品」が共通部品の表にない。共通部品の表の「使っている要求 ID」が機能の表と一致しない。部品名・API 名・テーブル名の重複。要求の「関連する既存資産」に書いた 共通部品「…」・API「…」・テーブル「…」がカタログにない | error | 共通部品の表の要求 ID は `rdfix.py --only catalog --apply` で機能の表に合わせる。それ以外は表に行を足す |
+| CHK-33 | System Test の重複: 同じ受入基準を、blocked でない台帳のケースが 2 件以上保証している | warn | 残す 1 件に `ledger.py update` で command・AC を寄せ、残りを `ledger.py block --reason "<残した ID> に統合"` で停止する |
 
 CHK-24〜27 は、要求定義書とカタログを「体系として」保つための検査です。目的（G）→ 要求 → 受入基準 → System Test の台帳 → 実装・テストという縦のつながり（CHK-03・04・09・10）に加えて、要求と用語・状態・PARAM・出典・カタログの資産という横のつながりも、参照先が実在し、双方向で一致していることを保証します。つながりは `python scripts/rdcheck.py trace <ID または名前>` で上流・下流ともにたどれます（[5. スクリプト](05-scripts-reference.md)）。
 出力は 1 行に 1 指摘（`ERROR CHK-07 docs/catalog.md:12 …`）で、最後に `rdcheck: errors=N warnings=M` の 1 行が出力されます。
