@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using HubRadio.App.Audit;
 using HubRadio.Core.Evaluation;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Workflow;
@@ -98,6 +99,11 @@ public sealed class SourceOnlyDeliveryService
                     ? SourceOnlyExecutionPhase.ReconciliationRequired : SourceOnlyExecutionPhase.Failed, "source_only.delivery_blocked", result);
             Require(result.Artifacts.All(a => a.Delivery is null) || result.Artifacts.All(a => a.Delivery is not null));
             _artifacts.RequireLocalBinding(_databasePath, _workspacePath);
+            // NFR-BR-005 / AC-126: labels registered for this destination travel with the delivery set as ai-disclosure.txt.
+            // Nothing is added when no label/AI element exists for the destination (the default).
+            AiDisclosure aiDisclosure = new AiGenerationDisclosureService(new ReviewStore(_databasePath))
+                .BuildDisclosure(basis.Binding.ProjectId, SourceOnlyDeliveryReceipt.DisclosureDestination);
+            byte[]? disclosureBytes = aiDisclosure.HasContent ? Utf8.GetBytes(aiDisclosure.ToText()) : null;
 
             using SqliteConnection connection = SqliteStoreSupport.OpenConnection(_databasePath);
             using SqliteTransaction transaction = connection.BeginTransaction(deferred: false);
@@ -118,6 +124,11 @@ public sealed class SourceOnlyDeliveryService
                     artifact.ByteSize, ArtifactKind.Delivery), basis.Binding.ProjectId,
                     Path.Combine(stagedFiles, SourceOnlyDeliveryReceipt.FileName(basis.Binding, artifact)),
                     $"projects/{basis.Binding.ProjectId}/deliveries/{SourceOnlyDeliveryReceipt.DeliveryRelativeRoot(basis.Binding)}/{SourceOnlyDeliveryReceipt.FileName(basis.Binding, artifact)}"));
+            if (disclosureBytes is not null)
+                attempts.Add(new(new(SourceOnlyDeliveryReceipt.DisclosureId(basis.Binding), ContentDigest.Compute(disclosureBytes),
+                    disclosureBytes.Length, ArtifactKind.Delivery), basis.Binding.ProjectId,
+                    Path.Combine(stagedFiles, AiDisclosure.ArtifactFileName),
+                    $"projects/{basis.Binding.ProjectId}/deliveries/{SourceOnlyDeliveryReceipt.DeliveryRelativeRoot(basis.Binding)}/{AiDisclosure.ArtifactFileName}"));
 
             StoredArtifact? prior = _artifacts.GetArtifact(SourceOnlyDeliveryReceipt.ReceiptId(basis.Binding));
             if (prior is not null)
@@ -208,7 +219,19 @@ public sealed class SourceOnlyDeliveryService
                 }
                 copyHandles.Add(await HoldCopiedFileAsync(attempts[i], ct).ConfigureAwait(false));
             }
-            Require(attempts.Take(ordered.Length).Select(a => a.StagingPath).ToHashSet(WorkspacePathSafety.PathComparer)
+            if (disclosureBytes is not null)
+            {
+                ct.ThrowIfCancellationRequested();
+                SourceOnlyResultPromotionAttempt disclosureAttempt = attempts[ordered.Length];
+                await using (var output = NewFile(disclosureAttempt.StagingPath))
+                {
+                    await output.WriteAsync(disclosureBytes, ct).ConfigureAwait(false);
+                    await output.FlushAsync(ct).ConfigureAwait(false);
+                    output.Flush(flushToDisk: true);
+                }
+                copyHandles.Add(await HoldCopiedFileAsync(disclosureAttempt, ct).ConfigureAwait(false));
+            }
+            Require(attempts.Take(attempts.Count - 1).Select(a => a.StagingPath).ToHashSet(WorkspacePathSafety.PathComparer)
                 .SetEquals(Directory.EnumerateFileSystemEntries(stagedFiles)));
             SourceOnlySourceLocator.CreateDirectory(_workspacePath, Path.GetDirectoryName(finalDirectory)!);
             SourceOnlySourceLocator.CreateDirectory(_workspacePath, Path.GetDirectoryName(receiptDestination)!);

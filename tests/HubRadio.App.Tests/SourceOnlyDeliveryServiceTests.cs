@@ -3,6 +3,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HubRadio.App.Projects;
+using HubRadio.Core.Analysis;
+using HubRadio.Core.Audit;
+using HubRadio.Core.Reviews;
 using HubRadio.Core.Evaluation;
 using HubRadio.Core.Identity;
 using HubRadio.Core.Projects;
@@ -113,6 +116,33 @@ public sealed class SourceOnlyDeliveryServiceTests
         Assert.IsFalse(web.Contains("storageReference", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(web.Contains("stagingPath", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(web.Contains(f.Generation.Root, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [TestMethod]
+    // NFR-BR-005 AC-126: 公開先ラベルがあるとき ai-disclosure.txt が納品ファイル一式に入り、復元検証も通る。
+    public async Task DestinationLabelAddsAiDisclosureFileToTheDeliverySetAndRecoveryStillValidates()
+    {
+        using SourceOnlyEvaluationFixture f = await SourceOnlyEvaluationFixture.CreateAsync();
+        (SourceOnlyResult basis, StoredSourceOnlyExecution execution) = await PrepareAsync(f);
+        var disclosure = new HubRadio.App.Audit.AiGenerationDisclosureService(new ReviewStore(f.Generation.DatabasePath));
+        DateTimeOffset at = new(2033, 4, 5, 6, 7, 8, TimeSpan.Zero);
+        ContentDigest D(char c) => new(new string(c, 64));
+        var run = new ModelRun(EntityId<ModelRunIdTag>.New(), "local-provider", "local-model", "1.2.3", D('a'),
+            ModelHashAvailability.Available, D('b'), D('c'), D('d'), ModelRunOutcome.Succeeded, null,
+            ModelExecutionLocation.Local, null, null, null, null, at.AddMinutes(-2), at.AddMinutes(-1));
+        _ = disclosure.RecordAiElement(EntityId<AuditEventIdTag>.New(), basis.Binding.ProjectId,
+            HubRadio.App.Audit.AiGeneratedElementKind.AutoSubtitle, "subtitle-track", run, "S-1-5-21-1000",
+            HubRadio.Core.Reviews.ReviewActorRole.Editor, at);
+        _ = disclosure.AddDestinationLabel(EntityId<AuditEventIdTag>.New(), basis.Binding.ProjectId, "local-internal",
+            "AI 生成の字幕を含みます", "S-1-5-21-1000", HubRadio.Core.Reviews.ReviewActorRole.Editor, at.AddMinutes(1));
+
+        SourceOnlyResult delivered = await Service(f).DeliverAsync(execution, basis);
+        string directory = Path.GetDirectoryName(DeliveryPaths(f, delivered)[0])!;
+        string text = File.ReadAllText(Path.Combine(directory, "ai-disclosure.txt"));
+        StringAssert.Contains(text, "AI 生成の字幕を含みます");
+        StringAssert.Contains(text, "AutoSubtitle subtitle-track local-model 1.2.3");
+        Assert.HasCount(basis.Artifacts.Count + 1, Directory.GetFileSystemEntries(directory));
+        Assert.IsTrue((await f.Service.ValidateAsync(delivered, execution)).IsValid);
     }
 
     [TestMethod]

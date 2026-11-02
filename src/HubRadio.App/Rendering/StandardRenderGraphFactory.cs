@@ -210,6 +210,9 @@ public sealed class StandardRenderGraphOutput
     /// <summary>FR-137 (6): the standing pictures to lay over this output (empty without the character dialogue template).</summary>
     public IReadOnlyList<StyleTemplates.StyleTemplatePortraitShot> PortraitShots { get; init; } = [];
 
+    /// <summary>FR-015 / AC-063: the permitted logo image laid over the long opening (null without a permitted logo image).</summary>
+    public StandardOpenerLogoOverlay? OpenerLogo { get; init; }
+
     /// <summary>FR-143 (c): the placement inspection of a vertical output, carried into its <see cref="OutputQcRequest"/>.</summary>
     public OutputQcPlacementEvidence? PlacementEvidence { get; init; }
 }
@@ -590,6 +593,7 @@ public static class StandardRenderGraphFactory
             SubtitleProjection = subtitles.Projection,
             SoundEffectCues = soundEffects,
             JingleBindings = OpenerJingle(configuration, shortForm is not null, graphicFiles),
+            OpenerLogo = OpenerLogoOverlay(configuration, shortForm is not null, graphicFiles),
             PortraitShots = styled?.Portraits ?? [],
             PlacementEvidence = placement,
         };
@@ -603,6 +607,16 @@ public static class StandardRenderGraphFactory
         [.. inspection.Items.Select(static item => new OutputQcPlacementItem(item.Id,
             new(item.Box.X, item.Box.Y, item.Box.Width, item.Box.Height), item.InsideMargins, item.InsideRegion, item.Ok))],
         inspection.Warnings);
+
+    private static StandardOpenerLogoOverlay? OpenerLogoOverlay(StandardRenderConfiguration? configuration, bool shortForm,
+        IReadOnlyList<StandardGraphicRenderFile> graphicFiles)
+    {
+        if (shortForm || configuration?.LongOpenerEnabled != true
+            || configuration.Opener?.Logo is not { Permitted: true, File: { } file })
+            return null;
+        StandardGraphicRenderFile? opening = graphicFiles.FirstOrDefault(static item => item.Evidence.Role == "Opening");
+        return opening is null ? null : new StandardOpenerLogoOverlay(file, opening.Evidence.OutputRange);
+    }
 
     private static IReadOnlyList<FfmpegMusicBinding> OpenerJingle(StandardRenderConfiguration? configuration, bool shortForm,
         IReadOnlyList<StandardGraphicRenderFile> graphicFiles)
