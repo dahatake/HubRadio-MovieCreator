@@ -1021,7 +1021,15 @@ public sealed class StandardArtifactGenerator
                     if (File.Exists(path))
                     {
                         WorkspacePathSafety.ValidateExistingPathChain(_workspace, path, targetIsDirectory: false);
-                        File.Delete(path);
+                        for (int attempt = 1; ; attempt++)
+                        {
+                            try { File.Delete(path); break; }
+                            catch (Exception retry) when (attempt < 6 && retry is IOException or UnauthorizedAccessException)
+                            {
+                                // Transient sharing violation (scanner/indexer/child process).
+                                Thread.Sleep(150 * attempt);
+                            }
+                        }
                     }
                 }
                 catch (Exception)
@@ -1037,7 +1045,14 @@ public sealed class StandardArtifactGenerator
                     if (Directory.Exists(directory))
                     {
                         WorkspacePathSafety.ValidateExistingDirectoryAncestorChain(directory);
-                        Directory.Delete(directory, recursive: false);
+                        for (int attempt = 1; ; attempt++)
+                        {
+                            try { Directory.Delete(directory, recursive: false); break; }
+                            catch (Exception retry) when (attempt < 6 && retry is IOException or UnauthorizedAccessException)
+                            {
+                                Thread.Sleep(150 * attempt);
+                            }
+                        }
                     }
                 }
                 catch (Exception)

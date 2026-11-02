@@ -2433,16 +2433,47 @@ public sealed class AncillaryArtifactExporter
                     _workspacePath,
                     path,
                     targetIsDirectory: false);
-                File.Delete(path);
+                // A just-written file can be held briefly by a scanner/indexer
+                // (sharing violation); retry before demanding reconciliation.
+                for (int attempt = 1; ; attempt++)
+                {
+                    try
+                    {
+                        File.Delete(path);
+                        break;
+                    }
+                    catch (IOException) when (attempt < 6)
+                    {
+                        System.Threading.Thread.Sleep(150 * attempt);
+                    }
+                    catch (UnauthorizedAccessException) when (attempt < 6)
+                    {
+                        System.Threading.Thread.Sleep(150 * attempt);
+                    }
+                }
+
                 if (AncillaryArtifactPath.EntryExistsConservatively(path))
                 {
                     return false;
                 }
             }
 
-            return AncillaryArtifactPath.TryDeleteOwnedEmptyDirectory(
-                _workspacePath,
-                staging.DirectoryPath);
+            for (int attempt = 1; ; attempt++)
+            {
+                if (AncillaryArtifactPath.TryDeleteOwnedEmptyDirectory(
+                    _workspacePath,
+                    staging.DirectoryPath))
+                {
+                    return true;
+                }
+
+                if (attempt >= 5)
+                {
+                    return false;
+                }
+
+                System.Threading.Thread.Sleep(150 * attempt);
+            }
         }
         catch (Exception)
         {
