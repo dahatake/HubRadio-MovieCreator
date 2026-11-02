@@ -1354,6 +1354,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                             ? "source_only.audio_stream_absent"
                         : "source_only.execution_failed";
                     SourceOnlyResult? failedResult = classified?.Result;
+                    await TrySaveFailureDiagnosticsAsync(current, exception, phase, code, failedResult).ConfigureAwait(false);
                     if (failedResult is not null)
                     {
                         failedResult.ValidateBinding(current);
@@ -3507,6 +3508,45 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
     {
         if (Utf8.GetByteCount(json) > MaximumTranscriptBytes) { throw new InvalidOperationException("Native evidence exceeds its byte limit."); }
         return await SaveBytesAsync(execution, id, Utf8.GetBytes(CanonicalJson.Canonicalize(json)), role, token).ConfigureAwait(false);
+    }
+
+    // Best-effort, no-secret failure evidence: exception type, ArtifactStore reason, IOException HResult,
+    // phase/code and result flags. Never paths, messages or personal data. Failure to save is ignored.
+    private async Task TrySaveFailureDiagnosticsAsync(StoredSourceOnlyExecution current, Exception exception,
+        SourceOnlyExecutionPhase phase, string? code, SourceOnlyResult? failedResult)
+    {
+        try
+        {
+            Exception? inner = exception is PipelineFailure ? exception.InnerException ?? exception : exception;
+            var entries = new List<object>();
+            for (Exception? e = inner; e is not null && entries.Count < 4; e = e.InnerException)
+            {
+                entries.Add(new
+                {
+                    type = e.GetType().FullName,
+                    reason = e is ArtifactStoreException a ? a.Reason.ToString() : null,
+                    reconciliationRequired = e is ArtifactStoreException b ? b.ReconciliationRequired : (bool?)null,
+                    hresult = e is IOException ? "0x" + e.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture) : null,
+                });
+            }
+            string json = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                schema = "source-only-failure-diagnostics/1",
+                phase = phase.ToString(),
+                code,
+                stage = current.Phase.ToString(),
+                resultReconciliationRequired = failedResult?.ReconciliationRequired,
+                resultStagingCleanupRequired = failedResult?.StagingCleanupRequired,
+                resultFailures = failedResult?.Failures.Select(item => item.Code.ToString()).ToArray(),
+                exceptions = entries,
+            });
+            _ = await SaveJsonAsync(current, StableId<ArtifactIdTag>(current.Request.ExecutionId.ToString(), "failure-diagnostics"),
+                json, "failure-diagnostics", CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // diagnostics must never change the failure outcome
+        }
     }
 
     private async Task<StoredArtifact> SaveBytesAsync(StoredSourceOnlyExecution execution, EntityId<ArtifactIdTag> id,
