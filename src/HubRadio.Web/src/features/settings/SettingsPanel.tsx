@@ -450,17 +450,16 @@ function canonicalProjectId(value: string | null): string | null {
 /** FR-010 AC-002: the short target duration is shown as a product decision, read from the saved setting (never hard-coded). */
 export function ShortTargetNote({ snapshot }: { readonly snapshot: AnySettingsSnapshot }) {
   const key = 'output.shortTargetDuration'
-  const value = snapshot.values.find(selection => selection.key === key)?.value
+  const definition = snapshot.definitions.find(item => item.key === key)
+  const value = snapshot.values.find(selection => selection.key === key)?.value ?? definition?.defaultValue
   if (value === undefined || value.kind !== 'integer' || !/^(0|[1-9][0-9]*)(\.0+)?$/.test(value.integerValue)) return null
   const seconds = value.integerValue.replace(/\.0+$/, '')
-  const definition = snapshot.definitions.find(item => item.key === key)
   const num = (v: { kind: string; integerValue?: string } | null | undefined) => v?.kind === 'integer' && v.integerValue !== undefined ? v.integerValue.replace(/\.0+$/, '') : null
   const min = num(definition?.minimum)
   const max = num(definition?.maximum)
+  const text = `短尺動画の目標時間：${seconds} 秒${min !== null && max !== null ? `（探索範囲 ${min}〜${max} 秒）` : ''}。配信先の必須値ではなく製品判断です。`
   return (
-    <p className="settings-short-target" data-setting-key={key}>
-      短尺動画の目標時間：{seconds} 秒{min !== null && max !== null ? `（探索範囲 ${min}〜${max} 秒）` : ''}。配信先の必須値ではなく製品判断です。
-    </p>
+    <p className="settings-short-target" data-setting-key={key} role="note" aria-label={text}>{text}</p>
   )
 }
 

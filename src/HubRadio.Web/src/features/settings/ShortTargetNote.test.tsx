@@ -31,6 +31,14 @@ describe('FR-010 AC-002 short target duration is shown as a product decision', (
     expect(renderToStaticMarkup(<ShortTargetNote snapshot={snapshot('45', false)} />)).not.toMatch(/30\s*秒/)
   })
 
+  it('FR-010 AC-002 falls back to the definition default when no value is saved, with a UIA-visible name', () => {
+    const base = snapshot('30', true)
+    const text = renderToStaticMarkup(<ShortTargetNote snapshot={{ ...base, values: [] } as unknown as AnySettingsSnapshot} />)
+    expect(text).toMatch(/30\s*秒/)
+    expect(text).toContain('role="note"')
+    expect(text).toMatch(/aria-label="[^"]*30 秒/)
+  })
+
   it('renders nothing when the setting is not available', () => {
     expect(renderToStaticMarkup(<ShortTargetNote snapshot={{ definitions: [], values: [] } as unknown as AnySettingsSnapshot} />)).toBe('')
   })
