@@ -964,9 +964,12 @@ public sealed class StandardArtifactGenerator
                         break;
                     }
                     // A clean refusal (nothing moved, transaction rolled back, no reconciliation) from a transient
-                    // file-level cause (scanner holding the fresh file) is safe to repeat for the same item.
-                    catch (ArtifactStoreException refused) when (promoteAttempt < 4 && !refused.ReconciliationRequired &&
-                        refused.Reason is ArtifactStoreFailureReason.UnsafePath or ArtifactStoreFailureReason.NotRegularFile &&
+                    // file-level or database-lock cause (scanner holding the fresh file; SQLITE_BUSY from a concurrent
+                    // heartbeat/UI read after earlier items were already promoted) is safe to repeat for the same item.
+                    // Without this one transient lock demoted an otherwise complete run to ReconciliationRequired.
+                    catch (ArtifactStoreException refused) when (promoteAttempt < 5 && !refused.ReconciliationRequired &&
+                        refused.Reason is ArtifactStoreFailureReason.UnsafePath or ArtifactStoreFailureReason.NotRegularFile
+                            or ArtifactStoreFailureReason.DatabaseRejected &&
                         File.Exists(item.Path))
                     {
                         await Task.Delay(300 * promoteAttempt, cancellationToken).ConfigureAwait(false);
