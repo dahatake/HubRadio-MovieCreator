@@ -126,8 +126,10 @@ export function ArrangeablePanels({ screenId, panels, className, storage, preset
                   onClick={() => setMoving(current => current === id ? null : id)} onKeyDown={event => moveByKey(event, id)}>移動</button>
                 <button type="button" aria-pressed={tabbed} aria-describedby={`arrange-desc-${screenId}-${id}`}
                   onClick={() => act({ type: 'toggleTab', id }, tabbed ? `${panel.label}のタブ化を解除しました` : `${panel.label}をタブにまとめました`)}>タブ化</button>
-                <button type="button" disabled={visibleCount <= 1} aria-describedby={`arrange-desc-${screenId}-${id}`}
-                  onClick={() => act({ type: 'hide', id }, `${panel.label}を非表示にしました`)}>非表示</button>
+                <button type="button" aria-disabled={visibleCount <= 1 || undefined} aria-describedby={`arrange-desc-${screenId}-${id}`}
+                  onClick={() => visibleCount <= 1
+                    ? setAnnouncement('最後に残った表示中のコンポーネントは非表示にできません')
+                    : act({ type: 'hide', id }, `${panel.label}を非表示にしました`)}>非表示</button>
                 <button type="button" aria-pressed={maximized} aria-describedby={`arrange-desc-${screenId}-${id}`}
                   onClick={() => act({ type: 'toggleMaximize', id }, maximized ? `${panel.label}の最大化を戻しました` : `${panel.label}を最大化しました`)}>最大化</button>
                 <span id={`arrange-desc-${screenId}-${id}`} className="arrange-sr-only">{panel.label}</span>

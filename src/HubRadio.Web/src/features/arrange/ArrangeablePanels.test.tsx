@@ -48,6 +48,26 @@ describe('ArrangeablePanels', () => {
     expect(buttons('二つ目を表示')).toHaveLength(1)
   })
 
+  // NFR-UX-005 AC-129: E2E-024 sequence — each operation is looked up by name (first reachable one) and pressed once, in order.
+  it('keeps every operation reachable and the input intact for 移動→タブ化→非表示→最大化 (AC-129)', () => {
+    show(memoryStorage())
+    const input = container.querySelector('input')!
+    input.value = 'typed-in-progress'
+    const reachable = (name: string) => buttons(name).find(b => !b.closest('[hidden]') && !b.disabled)
+    for (const op of ['移動', 'タブ化', '非表示', '最大化']) {
+      const target = reachable(op)
+      expect(target, `${op} reachable`).toBeDefined()
+      click(target)
+      expect(input.value).toBe('typed-in-progress')
+    }
+    expect(container.querySelector('input')).toBe(input)
+    for (const op of ['移動', 'タブ化', '非表示', '最大化', '配置を変更', '既定に戻す']) expect(reachable(op), `${op} still reachable`).toBeDefined()
+    // The last visible panel cannot be hidden, but its button stays present and pressable (no state change, announced).
+    click(reachable('非表示'))
+    expect(container.querySelectorAll('[data-panel-id]:not([hidden])')).toHaveLength(1)
+    expect(container.querySelector('[role="status"]')!.textContent).toContain('非表示にできません')
+  })
+
   it('moves with the keyboard without dragging (AC-130)', () => {
     show(memoryStorage())
     const move = buttons('移動')[0]!
