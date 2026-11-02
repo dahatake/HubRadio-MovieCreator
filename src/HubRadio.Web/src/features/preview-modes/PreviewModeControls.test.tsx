@@ -288,6 +288,46 @@ describe('PreviewModeControls', () => {
     ).toBe('')
   })
 
+  it('FR-026 AC-074: reaches all 8 preview states and jumps to the timeline', async () => {
+    const opened: PlayerExactFrameSelection[] = []
+    const selection = createSelection()
+    renderControls(selection, { onOpenTimeline: (s) => opened.push(s) })
+    const card = requiredElement<HTMLElement>('.preview-mode-card')
+
+    clickInput('input[name="preview-orientation"][value="landscape"]')
+    expect(card.dataset.previewOrientation).toBe('landscape')
+    clickInput('input[name="preview-orientation"][value="portrait"]')
+    expect(card.dataset.previewOrientation).toBe('portrait')
+
+    const toggle = (label: string): HTMLInputElement => {
+      const input = [...container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+        .find((i) => i.closest('label')?.textContent?.startsWith(label))
+      if (input === undefined) throw new Error(`missing toggle ${label}`)
+      return input
+    }
+    act(() => toggle('字幕を表示').click())
+    expect(card.dataset.subtitlesVisible).toBe('false')
+    act(() => toggle('字幕を表示').click())
+    expect(card.dataset.subtitlesVisible).toBe('true')
+    act(() => toggle('汎用 UI mask').click())
+    expect(card.dataset.genericMask).toBe('true')
+    act(() => toggle('サムネイル縮小').click())
+    expect(card.dataset.thumbnailReduced).toBe('true')
+    act(() => toggle('mobile 配置').click())
+    expect(card.dataset.mobilePreview).toBe('true')
+    act(() => toggle('音声のみ').click())
+    expect(card.dataset.audioOnly).toBe('true')
+
+    const jump = requiredElement<HTMLButtonElement>('.preview-open-timeline')
+    act(() => jump.click())
+    expect(opened).toEqual([selection])
+  })
+
+  it('FR-026 AC-074: timeline jump is disabled without media evidence', () => {
+    renderControls(null, { onOpenTimeline: () => undefined })
+    expect(requiredElement<HTMLButtonElement>('.preview-open-timeline').disabled).toBe(true)
+  })
+
   it('contains no bridge, seek, network, dynamic HTML, or Azure dependency', () => {
     const sources = [
       './GenericUiMask.tsx',

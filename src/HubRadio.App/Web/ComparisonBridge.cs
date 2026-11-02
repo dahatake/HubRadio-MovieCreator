@@ -214,10 +214,8 @@ internal static class ComparisonBridgeJson
 {
     private static readonly string[] UnavailableFeatureNames =
     [
-        "openingHook",
         "subtitleStyle",
         "telopCount",
-        "transitions",
         "effects",
         "callToAction",
         "destination",
@@ -317,9 +315,52 @@ internal static class ComparisonBridgeJson
             writer.WriteString(featureName, "unavailable");
         }
 
+        WriteDerivedFeatures(writer, version);
         writer.WriteEndObject();
         writer.WriteEndObject();
     }
+
+    // FR-028 AC-076: 版が実際に持つ事実から導ける項目（冒頭フック・トランジション）を
+    // 記録済みとして出し、版に記録のない項目だけを "unavailable" のままにする。
+    private static void WriteDerivedFeatures(
+        Utf8JsonWriter writer,
+        CompositionVersion version)
+    {
+        CompositionElement[] ordered = version.Elements
+            .OrderBy(static element => element.OutputRange.Start)
+            .ToArray();
+
+        if (ordered.Length == 0)
+        {
+            writer.WriteString("openingHook", "unavailable");
+            writer.WriteString("transitions", "unavailable");
+            return;
+        }
+
+        CompositionElement first = ordered[0];
+        writer.WriteStartObject("openingHook");
+        writer.WriteString("status", "recorded");
+        writer.WriteString("elementId", first.Id.ToString());
+        writer.WriteString("origin", FormatOrigin(first.Origin.Kind));
+        WriteRationalTime(writer, "outputStart", first.OutputRange.Start);
+        WriteRationalTime(writer, "outputDuration", first.OutputRange.Duration);
+        writer.WriteBoolean("adopted", first.AdoptedSuggestion is not null);
+        writer.WriteEndObject();
+
+        writer.WriteStartObject("transitions");
+        writer.WriteString("status", "recorded");
+        writer.WriteNumber("cutCount", ordered.Length - 1);
+        writer.WriteEndObject();
+    }
+
+    private static string FormatOrigin(OriginKind kind) =>
+        kind switch
+        {
+            OriginKind.SourceSpan => "sourceSpan",
+            OriginKind.Asset => "asset",
+            OriginKind.EditorialRecord => "editorialRecord",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
 
     private static RationalTime GetPlaybackDuration(
         CompositionVersion version)

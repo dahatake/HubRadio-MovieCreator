@@ -103,6 +103,34 @@ describe('comparison protocol', () => {
     expect(Object.isFrozen(comparison.adoptionChanges[0])).toBe(true)
   })
 
+  it('FR-028 AC-076: parses recorded opening hook and transitions per plan', () => {
+    const value = createComparisonResponseValue()
+    const hook = {
+      status: 'recorded',
+      elementId: comparisonAddedElementId,
+      origin: 'sourceSpan',
+      outputStart: { value: '0', rate: '1' },
+      outputDuration: { value: '2', rate: '1' },
+      adopted: true,
+    }
+    value.result.comparison.left.features.openingHook = hook as never
+    value.result.comparison.right.features.transitions =
+      { status: 'recorded', cutCount: 3 } as never
+    const response = parseComparisonReadResponse(value)
+    if (response?.result.status !== 'available') {
+      throw new Error('Expected an available comparison response.')
+    }
+    const { left, right } = response.result.comparison
+    expect(left.features.openingHook).toEqual(hook)
+    expect(right.features.transitions).toEqual({ status: 'recorded', cutCount: 3 })
+    expect(Object.keys(left.features)).toHaveLength(8)
+
+    const bad = createComparisonResponseValue()
+    bad.result.comparison.left.features.transitions =
+      { status: 'recorded', cutCount: -1 } as never
+    expect(parseComparisonReadResponse(bad)).toBeNull()
+  })
+
   it('accepts only closed private-safe failure statuses', () => {
     const statuses: ComparisonFailureStatus[] = [
       'forbidden',

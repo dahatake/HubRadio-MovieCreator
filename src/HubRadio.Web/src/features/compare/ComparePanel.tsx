@@ -678,7 +678,18 @@ function formatRationalTime(time: ComparisonRationalTime): string {
 function formatAvailability(
   availability: ComparisonFeatureAvailability[keyof ComparisonFeatureAvailability],
 ): string {
-  return availability === 'unavailable' ? 'データ未提供' : availability
+  if (availability === 'unavailable') {
+    return 'データ未提供'
+  }
+  if ('cutCount' in availability) {
+    return `カット ${availability.cutCount} 箇所（効果の記録なし）`
+  }
+  const origins = {
+    sourceSpan: '元動画の区間',
+    asset: '素材',
+    editorialRecord: '編集記録',
+  } as const
+  return `${origins[availability.origin]}（${formatRationalTime(availability.outputStart)} から ${formatRationalTime(availability.outputDuration)}${availability.adopted ? '・提案採用' : ''}）`
 }
 
 function formatUtc(value: string): string {

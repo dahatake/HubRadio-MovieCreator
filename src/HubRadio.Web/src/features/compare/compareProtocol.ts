@@ -21,11 +21,25 @@ export interface UsedSourceRange {
   readonly outputRange: ComparisonTimeRange
 }
 
+export interface ComparisonOpeningHook {
+  readonly status: 'recorded'
+  readonly elementId: string
+  readonly origin: 'sourceSpan' | 'asset' | 'editorialRecord'
+  readonly outputStart: ComparisonRationalTime
+  readonly outputDuration: ComparisonRationalTime
+  readonly adopted: boolean
+}
+
+export interface ComparisonTransitions {
+  readonly status: 'recorded'
+  readonly cutCount: number
+}
+
 export interface ComparisonFeatureAvailability {
-  readonly openingHook: 'unavailable'
+  readonly openingHook: 'unavailable' | ComparisonOpeningHook
   readonly subtitleStyle: 'unavailable'
   readonly telopCount: 'unavailable'
-  readonly transitions: 'unavailable'
+  readonly transitions: 'unavailable' | ComparisonTransitions
   readonly effects: 'unavailable'
   readonly callToAction: 'unavailable'
   readonly destination: 'unavailable'
@@ -354,17 +368,74 @@ function parseUsedSourceRanges(
 function parseFeatureAvailability(
   value: unknown,
 ): ComparisonFeatureAvailability | null {
-  if (
-    !isRecordWithExactKeys(value, featureNames) ||
-    featureNames.some((name) => value[name] !== 'unavailable')
-  ) {
+  if (!isRecordWithExactKeys(value, featureNames)) {
     return null
   }
+  const plain = [
+    'subtitleStyle',
+    'telopCount',
+    'effects',
+    'callToAction',
+    'destination',
+    'warnings',
+  ] as const
+  if (plain.some((name) => value[name] !== 'unavailable')) {
+    return null
+  }
+  let openingHook: ComparisonFeatureAvailability['openingHook'] = 'unavailable'
+  if (value.openingHook !== 'unavailable') {
+    const hook = value.openingHook
+    if (
+      !isRecordWithExactKeys(hook, [
+        'status',
+        'elementId',
+        'origin',
+        'outputStart',
+        'outputDuration',
+        'adopted',
+      ]) ||
+      hook.status !== 'recorded' ||
+      !isEntityId(hook.elementId) ||
+      (hook.origin !== 'sourceSpan' &&
+        hook.origin !== 'asset' &&
+        hook.origin !== 'editorialRecord') ||
+      typeof hook.adopted !== 'boolean'
+    ) {
+      return null
+    }
+    const outputStart = parseRationalTime(hook.outputStart, false, true)
+    const outputDuration = parseRationalTime(hook.outputDuration, false, false)
+    if (outputStart === null || outputDuration === null) {
+      return null
+    }
+    openingHook = Object.freeze({
+      status: 'recorded',
+      elementId: hook.elementId,
+      origin: hook.origin,
+      outputStart,
+      outputDuration,
+      adopted: hook.adopted,
+    })
+  }
+  let transitions: ComparisonFeatureAvailability['transitions'] = 'unavailable'
+  if (value.transitions !== 'unavailable') {
+    const t = value.transitions
+    if (
+      !isRecordWithExactKeys(t, ['status', 'cutCount']) ||
+      t.status !== 'recorded' ||
+      typeof t.cutCount !== 'number' ||
+      !Number.isInteger(t.cutCount) ||
+      t.cutCount < 0
+    ) {
+      return null
+    }
+    transitions = Object.freeze({ status: 'recorded', cutCount: t.cutCount })
+  }
   return Object.freeze({
-    openingHook: 'unavailable',
+    openingHook,
     subtitleStyle: 'unavailable',
     telopCount: 'unavailable',
-    transitions: 'unavailable',
+    transitions,
     effects: 'unavailable',
     callToAction: 'unavailable',
     destination: 'unavailable',

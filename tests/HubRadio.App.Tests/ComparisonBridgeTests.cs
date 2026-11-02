@@ -387,6 +387,92 @@ public sealed class ComparisonBridgeTests
     }
 
     [TestMethod]
+    // FR-028 AC-076: 同じ元動画の 2 案で、9 項目が案ごとに並べて返る。
+    public void NineComparisonItemsAreProjectedPerPlan()
+    {
+        EntityId<ProjectIdTag> projectId = EntityId<ProjectIdTag>.New();
+        EntityId<SourceSpanIdTag> spanId = EntityId<SourceSpanIdTag>.New();
+        OriginRef origin = OriginRef.FromSourceSpan(spanId);
+        CompositionElement a1 = new(
+            EntityId<CompositionElementIdTag>.New(),
+            new TimeRange(default, new RationalTime(2, 1)),
+            origin,
+            null,
+            new TimeRange(new RationalTime(5, 1), new RationalTime(2, 1)));
+        CompositionElement a2 = new(
+            EntityId<CompositionElementIdTag>.New(),
+            new TimeRange(new RationalTime(2, 1), new RationalTime(3, 1)),
+            origin,
+            null,
+            new TimeRange(new RationalTime(9, 1), new RationalTime(3, 1)));
+        CompositionElement b1 = new(
+            EntityId<CompositionElementIdTag>.New(),
+            new TimeRange(default, new RationalTime(4, 1)),
+            origin,
+            null,
+            new TimeRange(new RationalTime(1, 1), new RationalTime(4, 1)));
+        CompositionVersion planA = CreateVersion(
+            EntityId<CompositionVersionIdTag>.New(), projectId, null,
+            "plan A", [a1, a2], CreatedAt);
+        CompositionVersion planB = CreateVersion(
+            EntityId<CompositionVersionIdTag>.New(), projectId, null,
+            "plan B", [b1], CreatedAt.AddMinutes(1));
+        var versions = new Dictionary<
+            EntityId<CompositionVersionIdTag>, StoredCompositionVersion>
+        {
+            [planA.Id] = Store(planA),
+            [planB.Id] = Store(planB),
+        };
+        var handler = new ComparisonBridgeRequestHandler(
+            id => versions.GetValueOrDefault(id),
+            new RecordingAuthorization());
+
+        using JsonDocument response = JsonDocument.Parse(handler.Handle(
+            ParseRequest(
+                planA.Id, planA.ContentDigest.Hex,
+                planB.Id, planB.ContentDigest.Hex)));
+        JsonElement comparison = response.RootElement
+            .GetProperty("result").GetProperty("comparison");
+        JsonElement left = comparison.GetProperty("left");
+        JsonElement right = comparison.GetProperty("right");
+
+        // 使用区間・再生時間
+        Assert.AreEqual(2, left.GetProperty("usedSourceRanges").GetArrayLength());
+        Assert.AreEqual(1, right.GetProperty("usedSourceRanges").GetArrayLength());
+        AssertRationalTime(left.GetProperty("playbackDuration"), "5", "1");
+        AssertRationalTime(right.GetProperty("playbackDuration"), "4", "1");
+        // 冒頭フック・トランジション（版が持つ事実から導出）
+        JsonElement leftFeatures = left.GetProperty("features");
+        JsonElement rightFeatures = right.GetProperty("features");
+        Assert.AreEqual(
+            a1.Id.ToString(),
+            leftFeatures.GetProperty("openingHook")
+                .GetProperty("elementId").GetString());
+        Assert.AreEqual(
+            b1.Id.ToString(),
+            rightFeatures.GetProperty("openingHook")
+                .GetProperty("elementId").GetString());
+        Assert.AreEqual(
+            1,
+            leftFeatures.GetProperty("transitions")
+                .GetProperty("cutCount").GetInt32());
+        Assert.AreEqual(
+            0,
+            rightFeatures.GetProperty("transitions")
+                .GetProperty("cutCount").GetInt32());
+        // 版に記録のない項目は、案ごとに「未提供」として並ぶ（推測で埋めない）。
+        foreach (string name in new[]
+        {
+            "subtitleStyle", "telopCount", "callToAction",
+            "destination", "warnings",
+        })
+        {
+            Assert.AreEqual("unavailable", leftFeatures.GetProperty(name).GetString());
+            Assert.AreEqual("unavailable", rightFeatures.GetProperty(name).GetString());
+        }
+    }
+
+    [TestMethod]
     public void SameVersionIsAvailableWithoutInventedChanges()
     {
         EntityId<ProjectIdTag> projectId = EntityId<ProjectIdTag>.New();
@@ -631,8 +717,17 @@ public sealed class ComparisonBridgeTests
             "callToAction",
             "destination",
             "warnings");
-        Assert.IsTrue(features.EnumerateObject().All(static property =>
-            property.Value.GetString() == "unavailable"));
+        Assert.IsTrue(features.EnumerateObject()
+            .Where(static property =>
+                property.Name is not "openingHook" and not "transitions")
+            .All(static property =>
+                property.Value.GetString() == "unavailable"));
+        Assert.AreEqual(
+            "recorded",
+            features.GetProperty("openingHook").GetProperty("status").GetString());
+        Assert.AreEqual(
+            version.Elements.Count - 1,
+            features.GetProperty("transitions").GetProperty("cutCount").GetInt32());
     }
 
     private static void AssertClosedFailure(
