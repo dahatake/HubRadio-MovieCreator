@@ -26,6 +26,7 @@ public sealed class AC004_Security_UnapprovedFinal
         new(2046, 4, 4, 6, 7, 8, TimeSpan.Zero);
 
     [TestMethod]
+    // NFR-SEC-001 AC-004: 最終出力は承認・digest が揃わない限り render・昇格へ進まない。
     public async Task MissingApprovalOrDigestMismatchStopsBeforeRenderProcessAndPromotion()
     {
         (string Name, Func<FinalRenderFixture, FinalRenderRequest> Create)[] cases =

@@ -22,6 +22,7 @@ public sealed class TermCandidateServiceTests
     private static readonly DateTimeOffset DecidedAt = CreatedAt.AddMinutes(2);
 
     [TestMethod]
+    // FR-004 AC-052: 辞書の語と異なる語を含む文字起こしから修正候補が提示される。
     public void FindCandidates_CreatesOnlyExactDeterministicCorrectionCandidates()
     {
         Fixture fixture = new();
@@ -145,6 +146,7 @@ public sealed class TermCandidateServiceTests
     }
 
     [TestMethod]
+    // FR-004 AC-052: 辞書は Project またはシリーズ単位で保持され、別の単位の語は適用されない。
     public void FindCandidates_RejectsScopeDuplicateAndSourceSpanMismatch()
     {
         Fixture fixture = new();
@@ -275,6 +277,7 @@ public sealed class TermCandidateServiceTests
     }
 
     [TestMethod]
+    // FR-004 AC-052: 自動修正が行われた箇所は、利用者の明示的な決定として修正前後が確認できる。
     public void AdoptCandidate_CreatesHumanChildOnlyAfterExplicitDecision()
     {
         Fixture fixture = new();

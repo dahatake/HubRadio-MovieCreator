@@ -40,6 +40,7 @@ public sealed class DurableSubtitleEditServiceTests
     }
 
     [TestMethod]
+    // NFR-PERF-001 AC-114: 字幕の修正は修正した cue の差分だけを版として保存し、全体を再解析しない。
     public void SiblingAThenBThenASurvivesRestartWithExactIdsTimesChangesAndKnownVersions()
     {
         using var fixture = new Fixture();

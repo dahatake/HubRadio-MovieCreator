@@ -40,6 +40,7 @@ public sealed class JobRecoveryTests
     }
 
     [TestMethod]
+    // NFR-REL-001 AC-115: 中断された処理は interrupted として復旧され、記録が残る。
     public async Task RecoverAsyncChangesRunningAttemptToExactInterruptedSnapshot()
     {
         using JobRecoveryFixture fixture = new();

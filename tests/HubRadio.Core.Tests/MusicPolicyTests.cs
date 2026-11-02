@@ -51,6 +51,7 @@ public sealed class MusicPolicyTests
     }
 
     [TestMethod]
+    // FR-019 AC-067: 会話中の BGM は既定で無効、有効化時の duck は -20 dB。
     public void DialogueDefaultsOffAndExplicitEnableRecordsNegativeTwentyDbGain()
     {
         MusicCueEligibility disabled = MusicPolicy.Evaluate(

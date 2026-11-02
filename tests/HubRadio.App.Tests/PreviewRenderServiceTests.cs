@@ -26,6 +26,7 @@ public sealed class PreviewRenderServiceTests
     private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(10);
 
     [TestMethod]
+    // NFR-PERF-001 AC-114: プレビューは選択した区間だけを最終書き出しとは別に処理する。
     public async Task RenderAsync_ClipsRebasesValidatesPromotesAndReturnsExactMapping()
     {
         using PreviewFixture fixture = new();

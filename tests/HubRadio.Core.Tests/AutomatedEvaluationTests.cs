@@ -68,6 +68,7 @@ public sealed class AutomatedEvaluationTests
         new(2030, 1, 2, 3, 4, 5, TimeSpan.Zero);
 
     [TestMethod]
+    // FR-034 AC-006: 判定対象（規則）の閉じた一覧と分類が定義されている。
     public void ClosedCatalogHasExactCanonicalIdsCategoriesScopesAndImmutableViews()
     {
         string[] expected =
@@ -173,6 +174,7 @@ public sealed class AutomatedEvaluationTests
     }
 
     [TestMethod]
+    // FR-034 AC-006: 判定は PASS になり得るが、人の評価ではない制限が表示され続ける。
     public void CompleteArtifactBoundMachineSurfaceCanPassWhileLimitationsStayVisible()
     {
         AutomatedEvaluationRun run = new AutomatedEvaluationEngine().Evaluate(
@@ -196,6 +198,7 @@ public sealed class AutomatedEvaluationTests
     }
 
     [TestMethod]
+    // FR-034 AC-006: 規則ごとの PASS・WARNING・FAIL・未評価が集約される。
     public void AggregatePrecedenceIsFailThenNotEvaluatedThenWarningThenPass()
     {
         var engine = new AutomatedEvaluationEngine();

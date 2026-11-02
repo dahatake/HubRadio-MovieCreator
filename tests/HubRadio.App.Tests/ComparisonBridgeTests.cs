@@ -187,6 +187,7 @@ public sealed class ComparisonBridgeTests
     }
 
     [TestMethod]
+    // FR-027 AC-075: 版どうしの適用前後の差分（変更・採用の変更）が表示用に射影される。
     public void ReadProjectsExactEvidenceOrderedChangesAndAdoptionChanges()
     {
         EntityId<ProjectIdTag> projectId = EntityId<ProjectIdTag>.New();

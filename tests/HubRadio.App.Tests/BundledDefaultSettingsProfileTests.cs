@@ -42,6 +42,8 @@ public sealed class BundledDefaultSettingsProfileTests
         ];
 
     [TestMethod]
+    // FR-016 AC-064: quick start 既定は hardCutDuration 0 ms・crossfade 無効・有効時 250 ms。
+    // FR-024 AC-072: quick start 既定の CTA は「本編を見る」のみで URL 等を推測しない。
     public void ProfileLoadsWithPinnedIdentityInventoryEvidenceAndCriticalDefaults()
     {
         DefaultSettingsProfile profile = LoadSource();

@@ -730,6 +730,7 @@ public sealed class StandardCompositionPlannerTests
     }
 
     [TestMethod]
+    // FR-021 AC-069: サムネイル候補は元動画の実 frame から既定枚数作られ、品質を主張しない。
     public void PreviewEvidenceProducesThreeActualFrameCandidatesWithoutQualityClaim()
     {
         Fixture fixture = new();

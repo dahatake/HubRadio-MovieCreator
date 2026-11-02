@@ -67,6 +67,7 @@ public sealed class StandardCompositionOrchestratorTests
     }
 
     [TestMethod]
+    // FR-024 AC-072: quick start では CTA が省略される（長尺版が無い場合の側のみ）。
     public void PrepareAppliesSourceOnlyLongFormSafeDefaults()
     {
         Fixture fixture = new();

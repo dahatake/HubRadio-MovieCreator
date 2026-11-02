@@ -31,6 +31,7 @@ public sealed class AC004_Security_ExternalMisoutput
         new(2046, 4, 4, 5, 6, 7, TimeSpan.Zero);
 
     [TestMethod]
+    // NFR-SEC-001 AC-004: 社内限定の成果物は外部 destination への出力・投稿の前に拒否される。
     public void InternalOnlyAndExternalRightsBlockExternalAuthorizationBeforePosting()
     {
         using var fixture = new ExternalPolicyFixture(

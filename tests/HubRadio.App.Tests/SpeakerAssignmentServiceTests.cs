@@ -19,6 +19,7 @@ public sealed class SpeakerAssignmentServiceTests
         new(2038, 1, 2, 3, 4, 5, TimeSpan.Zero);
 
     [TestMethod]
+    // FR-003 AC-051: 仮名を出演者名へ変更し、4 つの表示形式の選択どおりに解決される。
     public void SetAssignment_ResolvesAllFourExplicitDisplayFormats()
     {
         Fixture fixture = new();
@@ -59,6 +60,7 @@ public sealed class SpeakerAssignmentServiceTests
     }
 
     [TestMethod]
+    // FR-003 AC-051: 未割り当ての話者は「話者N」などの仮名のまま表示される。
     public void UnassignedDisplayRetainsAnonymousLabelWithoutInventingAPerson()
     {
         Fixture fixture = new();
