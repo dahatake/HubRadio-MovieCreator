@@ -981,7 +981,17 @@ public sealed class ArtifactStore
 
         try
         {
-            return new FileStream(stagingPath, options);
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    return new FileStream(stagingPath, options);
+                }
+                catch (Exception transient) when (attempt < MoveRetryAttempts && IsTransientSharing(transient))
+                {
+                    Thread.Sleep(MoveRetryDelayMilliseconds * attempt);
+                }
+            }
         }
         catch (Exception exception)
             when (exception is FileNotFoundException or DirectoryNotFoundException)
@@ -1149,11 +1159,34 @@ public sealed class ArtifactStore
         }
     }
 
+    private const int MoveRetryAttempts = 6;
+    private const int MoveRetryDelayMilliseconds = 150;
+
+    /// <summary>Sharing violation (0x80070020/0x80070021) or access denied on a path that still exists.</summary>
+    internal static bool IsTransientSharing(Exception exception) =>
+        exception is UnauthorizedAccessException ||
+        (exception is IOException io && exception is not (FileNotFoundException or DirectoryNotFoundException) &&
+            ((io.HResult & 0xFFFF) is 0x20 or 0x21 or 0x5 || io.GetType() == typeof(IOException)));
+
     private static void MoveToDestination(string stagingPath, string destinationPath)
     {
         try
         {
-            File.Move(stagingPath, destinationPath, overwrite: false);
+            // A just-written file can be held briefly by a scanner/indexer (sharing violation, HResult 0x20/0x21 or
+            // access denied). Nothing has moved when Move throws, so repeating the identical rename is safe.
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    File.Move(stagingPath, destinationPath, overwrite: false);
+                    break;
+                }
+                catch (Exception transient) when (attempt < MoveRetryAttempts && IsTransientSharing(transient)
+                    && File.Exists(stagingPath) && !File.Exists(destinationPath))
+                {
+                    Thread.Sleep(MoveRetryDelayMilliseconds * attempt);
+                }
+            }
         }
         catch (Exception exception)
             when (exception is FileNotFoundException or DirectoryNotFoundException)

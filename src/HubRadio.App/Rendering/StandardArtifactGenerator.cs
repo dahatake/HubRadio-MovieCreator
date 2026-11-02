@@ -953,9 +953,25 @@ public sealed class StandardArtifactGenerator
                 // Record BEFORE calling: rollback can fail after File.Move and before INSERT.
                 residual.Add(new StandardPromotionAttempt(item.Id, request.ProjectId, item.Path,
                     $"projects/{request.ProjectId}/renders/{item.RelativePath}", item.Digest, item.Size));
-                StoredArtifact artifact = await _promote(new ArtifactPromotionRequest(item.Id,
-                    request.ProjectId, ArtifactKind.Render, item.Path, item.RelativePath, item.Digest, item.Size,
-                    DateTimeOffset.UtcNow), cancellationToken).ConfigureAwait(false);
+                StoredArtifact artifact;
+                for (int promoteAttempt = 1; ; promoteAttempt++)
+                {
+                    try
+                    {
+                        artifact = await _promote(new ArtifactPromotionRequest(item.Id,
+                            request.ProjectId, ArtifactKind.Render, item.Path, item.RelativePath, item.Digest, item.Size,
+                            DateTimeOffset.UtcNow), cancellationToken).ConfigureAwait(false);
+                        break;
+                    }
+                    // A clean refusal (nothing moved, transaction rolled back, no reconciliation) from a transient
+                    // file-level cause (scanner holding the fresh file) is safe to repeat for the same item.
+                    catch (ArtifactStoreException refused) when (promoteAttempt < 4 && !refused.ReconciliationRequired &&
+                        refused.Reason is ArtifactStoreFailureReason.UnsafePath or ArtifactStoreFailureReason.NotRegularFile &&
+                        File.Exists(item.Path))
+                    {
+                        await Task.Delay(300 * promoteAttempt, cancellationToken).ConfigureAwait(false);
+                    }
+                }
                 StoredArtifact validated = await _store.ValidateRegisteredAsync(item.Id, cancellationToken).ConfigureAwait(false);
                 if (artifact.Id != item.Id || artifact.ContentDigest != item.Digest || artifact.ByteSize != item.Size
                     || validated.ContentDigest != item.Digest || validated.ByteSize != item.Size
