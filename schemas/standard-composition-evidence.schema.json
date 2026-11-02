@@ -210,7 +210,8 @@
         "PublicationCaution",
         "Keyword",
         "AnswerAfterExplicitQuestion",
-        "TopicTransitionSummary"
+        "TopicTransitionSummary",
+        "SpeechSegment"
       ]
     },
     "suggestionKind": {

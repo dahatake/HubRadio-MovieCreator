@@ -39,8 +39,12 @@ public sealed class EmphasisCandidateServiceTests
         Assert.AreEqual(7, result.InspectedTokenCount);
         Assert.AreEqual(0, result.SkippedMetadataWithoutSupportingContextCount);
         Assert.HasCount(7, result.Candidates);
+        // SpeechSegment (FR-010) needs a 15 s run of sentences; it is covered by
+        // SpeechSegmentShortCandidateTests, so this short fixture must not produce it.
         CollectionAssert.AreEquivalent(
-            Enum.GetValues<EmphasisReasonKind>(),
+            Enum.GetValues<EmphasisReasonKind>()
+                .Where(static reason => reason != EmphasisReasonKind.SpeechSegment)
+                .ToArray(),
             result.Candidates.SelectMany(static candidate => candidate.Reasons)
                 .Distinct()
                 .ToArray());

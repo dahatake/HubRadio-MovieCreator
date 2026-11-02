@@ -52,6 +52,13 @@ import { isPipelineLive, pipelineRegistrationRefreshKey, sameResultBinding, sour
 // Import the shell after feature components so its local layout rules win.
 import { WorkflowTabs } from './WorkflowTabs'
 import { ArrangeablePanels } from '../arrange/ArrangeablePanels'
+import type { ArrangePreset } from '../arrange/arrangeState'
+
+/**
+ * NFR-UX-003 (AC-128): the editor persona's default for the 仕上がり screen — preview first, and the content
+ * (timeline, compare table, text alternatives) given more room. The user can change it; 「既定に戻す」 returns here.
+ */
+const editorResultsPreset: ArrangePreset = Object.freeze({ order: ['preview', 'tools'], sizes: Object.freeze({ tools: 2 }) })
 import './workflow.css'
 
 const toolLabels: Readonly<Record<WorkflowTool, string>> = {
@@ -765,7 +772,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
               <button id={`workflow-tool-${tool}`} key={tool} type="button" aria-pressed={navigation.activeTool === tool} aria-controls={`workflow-tool-panel-${tool}`} onClick={() => selectTool(tool)}>{toolLabels[tool]}</button>
             ))}
           </div>
-          <ArrangeablePanels screenId="results" className={`workflow-results-content${comparing ? ' is-comparing' : ''}`} panels={[
+          <ArrangeablePanels screenId="results" preset={editorResultsPreset} className={`workflow-results-content${comparing ? ' is-comparing' : ''}`} panels={[
             { id: 'preview', label: 'プレビュー', suppressed: comparing, children: (
             <div className="workflow-preview" hidden={comparing}>
               {result !== null && selectedArtifact !== null && <>

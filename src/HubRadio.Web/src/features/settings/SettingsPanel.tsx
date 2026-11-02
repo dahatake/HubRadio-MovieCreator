@@ -333,6 +333,7 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, project
           {busy ? '設定を処理しています。' : state.needsRefresh ? '変更を続けるには設定を再読み込みしてください。未保存項目は保持しています。'
             : state.error === null && state.lastCompletedMethod !== null ? completionMessages[state.lastCompletedMethod] : ''}
         </p>
+        {snapshot !== null && <ShortTargetNote snapshot={snapshot} />}
         {state.error !== null && detailView !== 'file' && <div className="settings-error" role="alert"><p>{errorMessages[state.error]}</p><button type="button" disabled={!isActive || busy} onClick={workspace.clearError}>エラーを閉じる</button></div>}
         {snapshot === null ? <p className="settings-empty">{busy ? '設定を読み込んでいます。' : '設定は未取得です。再読み込みを利用できます。'}</p> : (
           <>
@@ -446,6 +447,23 @@ function canonicalProjectId(value: string | null): string | null {
   if (value === null) return null
   try { createSettingsReadRequest(value, value); return value } catch { return null }
 }
+/** FR-010 AC-002: the short target duration is shown as a product decision, read from the saved setting (never hard-coded). */
+export function ShortTargetNote({ snapshot }: { readonly snapshot: AnySettingsSnapshot }) {
+  const key = 'output.shortTargetDuration'
+  const value = snapshot.values.find(selection => selection.key === key)?.value
+  if (value === undefined || value.kind !== 'integer' || !/^(0|[1-9][0-9]*)(\.0+)?$/.test(value.integerValue)) return null
+  const seconds = value.integerValue.replace(/\.0+$/, '')
+  const definition = snapshot.definitions.find(item => item.key === key)
+  const num = (v: { kind: string; integerValue?: string } | null | undefined) => v?.kind === 'integer' && v.integerValue !== undefined ? v.integerValue.replace(/\.0+$/, '') : null
+  const min = num(definition?.minimum)
+  const max = num(definition?.maximum)
+  return (
+    <p className="settings-short-target" data-setting-key={key}>
+      短尺動画の目標時間：{seconds} 秒{min !== null && max !== null ? `（探索範囲 ${min}〜${max} 秒）` : ''}。配信先の必須値ではなく製品判断です。
+    </p>
+  )
+}
+
 function isRead(method: SettingsWorkspaceMethod): boolean { return method === 'settings.read' || method === 'settings.global.read' }
 function focusVisible(element: HTMLElement | null | undefined, preventScroll = true): boolean {
   if (element === null || element === undefined || !element.isConnected || element.closest('[hidden], [inert]') || element.matches(':disabled')) return false

@@ -1,6 +1,6 @@
 // NFR-UX-002: per user (the OS profile that owns the WebView2 data folder) and per screen persistence
 // of a screen's arrangement. Stored in the local profile; nothing is sent anywhere.
-import { defaultArrangeState, MAX_SIZE, MIN_SIZE, type ArrangeDirection, type ArrangeState } from './arrangeState'
+import { defaultArrangeState, MAX_SIZE, MIN_SIZE, type ArrangeDirection, type ArrangePreset, type ArrangeState } from './arrangeState'
 
 export const ARRANGE_STORAGE_PREFIX = 'hubradio.layout.v1.'
 
@@ -17,8 +17,8 @@ function defaultStorage(): ArrangeStorage | null {
 const directions: readonly ArrangeDirection[] = ['default', 'row', 'column']
 
 /** Accepts only a well-formed stored value; unknown panels are dropped and new panels appended. */
-export function sanitizeArrangeState(value: unknown, panelIds: readonly string[]): ArrangeState {
-  const base = defaultArrangeState(panelIds)
+export function sanitizeArrangeState(value: unknown, panelIds: readonly string[], preset?: ArrangePreset): ArrangeState {
+  const base = defaultArrangeState(panelIds, preset)
   if (typeof value !== 'object' || value === null) return base
   const raw = value as Record<string, unknown>
   const known = new Set(panelIds)
@@ -41,13 +41,13 @@ export function sanitizeArrangeState(value: unknown, panelIds: readonly string[]
   return { order, hidden, tabbed, activeTab, maximized, direction, sizes }
 }
 
-export function loadArrangeState(screenId: string, panelIds: readonly string[], storage: ArrangeStorage | null = defaultStorage()): ArrangeState {
-  if (storage === null) return defaultArrangeState(panelIds)
+export function loadArrangeState(screenId: string, panelIds: readonly string[], storage: ArrangeStorage | null = defaultStorage(), preset?: ArrangePreset): ArrangeState {
+  if (storage === null) return defaultArrangeState(panelIds, preset)
   try {
     const text = storage.getItem(ARRANGE_STORAGE_PREFIX + screenId)
-    return text === null ? defaultArrangeState(panelIds) : sanitizeArrangeState(JSON.parse(text), panelIds)
+    return text === null ? defaultArrangeState(panelIds, preset) : sanitizeArrangeState(JSON.parse(text), panelIds, preset)
   } catch {
-    return defaultArrangeState(panelIds)
+    return defaultArrangeState(panelIds, preset)
   }
 }
 

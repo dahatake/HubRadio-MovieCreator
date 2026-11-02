@@ -1354,6 +1354,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                             ? "source_only.audio_stream_absent"
                         : "source_only.execution_failed";
                     SourceOnlyResult? failedResult = classified?.Result;
+                    await TrySaveFailureDiagnosticsAsync(current, exception, phase, code, failedResult).ConfigureAwait(false);
                     if (failedResult is not null)
                     {
                         failedResult.ValidateBinding(current);
@@ -2648,6 +2649,58 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         }
     }
 
+    /// <summary>
+    /// FR-010: the recognizer's times are not on the source frame grid, so a 15-60 s speech
+    /// segment would never be "exactly representable". Align only SpeechSegment candidates to
+    /// source frame PTS values that are also on the audio sample grid (outward when the topic
+    /// range allows it, inward otherwise); everything else is returned unchanged.
+    /// </summary>
+    internal static EmphasisSuggestionCandidate[] SnapSpeechSegments(string seed,
+        IReadOnlyList<EmphasisSuggestionCandidate> candidates, IReadOnlyList<TopicMetadataRevision> topics,
+        PtsIndex index, int sampleRate)
+    {
+        RationalTime[] frames = index.Entries.Select(item => item.PresentationTime)
+            .Where(time => FfmpegCompiler.IsOnSampleGrid(time, sampleRate)).Distinct().Order().ToArray();
+        var result = new List<EmphasisSuggestionCandidate>(candidates.Count);
+        for (int position = 0; position < candidates.Count; position++)
+        {
+            EmphasisSuggestionCandidate candidate = candidates[position];
+            EmphasisCandidate payload = candidate.Payload;
+            TopicMetadataRevision? topic = topics.FirstOrDefault(item => item.Id == payload.TopicMetadataRevisionId);
+            if (!payload.Reasons.Contains(EmphasisReasonKind.SpeechSegment) || topic is null || frames.Length == 0)
+            {
+                result.Add(candidate);
+                continue;
+            }
+            TimeRange raw = payload.SourceSpan.Range;
+            RationalTime? start = frames.Where(time => time <= raw.Start && time >= topic.TopicRange.Start)
+                .Select(time => (RationalTime?)time).LastOrDefault()
+                ?? frames.Where(time => time >= raw.Start).Select(time => (RationalTime?)time).FirstOrDefault();
+            RationalTime? end = frames.Where(time => time >= raw.End && time <= topic.TopicRange.End)
+                .Select(time => (RationalTime?)time).FirstOrDefault()
+                ?? frames.Where(time => time <= raw.End).Select(time => (RationalTime?)time).LastOrDefault();
+            if (start is not RationalTime snappedStart || end is not RationalTime snappedEnd || snappedEnd <= snappedStart
+                || (snappedStart == raw.Start && snappedEnd == raw.End))
+            {
+                result.Add(candidate);
+                continue;
+            }
+            string label = position.ToString(CultureInfo.InvariantCulture);
+            SourceSpan old = payload.SourceSpan;
+            var span = new SourceSpan(StableId<SourceSpanIdTag>(seed, "speech-span:" + label), old.AssetId, old.StreamId,
+                new TimeRange(snappedStart, snappedEnd - snappedStart), old.SourceDigest, old.TranscriptRevisionId,
+                old.TranscriptTokenIds);
+            Suggestion source = payload.Suggestion;
+            var suggestion = new Suggestion(StableId<SuggestionIdTag>(seed, "speech-suggestion:" + label), source.ModelRunId,
+                source.Kind, source.Status, OriginRef.FromSourceSpan(span.Id), source.Reason, source.Confidence,
+                source.MissingContext, source.Warning);
+            result.Add(SuggestionService.Register(new EmphasisCandidate(suggestion, span, payload.SourceRevisionId,
+                payload.SourceRevisionDigest, payload.TopicMetadataRevisionId, payload.RuleVersion, payload.Text,
+                payload.TextSource, payload.Reasons, payload.TermEvidence), []));
+        }
+        return result.ToArray();
+    }
+
     private async Task<CompositionState> ComposeAsync(StoredSourceOnlyExecution execution,
         IngestWorkflowRunResult ingest, Project project, AnalysisState analysis, SourceOnlyAnalysisEvidence evidence,
         DefaultSettingsProfile profile, SourceDisplayGeometry geometry, CancellationToken token)
@@ -2707,7 +2760,9 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             .OrderBy(item => item.Index).FirstOrDefault()?.SampleRate;
         ValidateSourceTiming(ingest.Original.MediaInfo, ingest.SourcePtsIndex!, landscape.Profile, analysis.Import.AudioTimeline);
         bool Representable(TimeRange range) => IsExactSourceRange(range, ingest.SourcePtsIndex!, landscape.Profile, audioSampleRate!.Value);
-        EmphasisSuggestionCandidate[] representableCandidates = evidence.EmphasisCandidates
+        EmphasisSuggestionCandidate[] emphasisCandidates = SnapSpeechSegments(seed, evidence.EmphasisCandidates,
+            evidence.TopicMetadata, ingest.SourcePtsIndex!, audioSampleRate!.Value);
+        EmphasisSuggestionCandidate[] representableCandidates = emphasisCandidates
             .Where(item => Representable(item.Payload.SourceSpan.Range)).ToArray();
         _ = await SaveJsonAsync(execution, StableId<ArtifactIdTag>(seed, "render-preflight"),
             CanonicalJson.Canonicalize(JsonSerializer.Serialize(new
@@ -2716,13 +2771,13 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 executionId = seed,
                 settingsDigest = execution.Request.SettingsSnapshot.ContentDigest.Hex,
                 rule = "retain-exact-frame-and-audio-sample-boundaries-no-retiming",
-                excludedHighlightCandidateIds = evidence.EmphasisCandidates
+                excludedHighlightCandidateIds = emphasisCandidates
                     .Where(item => !Representable(item.Payload.SourceSpan.Range)).Select(item => item.Id.ToString()).ToArray(),
                 reason = "source_only.candidate_timing_requires_review",
             })), "render-preflight", token).ConfigureAwait(false);
         SourceSpan[] spans = analysis.Import.SourceSpans.Append(fullSource)
             .Concat(evidence.EditorialCandidates.Select(item => item.Payload.SourceSpan))
-            .Concat(evidence.EmphasisCandidates.Select(item => item.Payload.SourceSpan))
+            .Concat(emphasisCandidates.Select(item => item.Payload.SourceSpan))
             .DistinctBy(item => item.Id).ToArray();
         AutomaticEvidence measured = await MeasureAutomaticEvidenceAsync(execution, analysis, evidence,
             PauseCutPoints(ingest.SourcePtsIndex!, landscape.Profile, audioSampleRate!.Value), token).ConfigureAwait(false);
@@ -3455,7 +3510,64 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         return await SaveBytesAsync(execution, id, Utf8.GetBytes(CanonicalJson.Canonicalize(json)), role, token).ConfigureAwait(false);
     }
 
+    // Best-effort, no-secret failure evidence: exception type, ArtifactStore reason, IOException HResult,
+    // phase/code and result flags. Never paths, messages or personal data. Failure to save is ignored.
+    private async Task TrySaveFailureDiagnosticsAsync(StoredSourceOnlyExecution current, Exception exception,
+        SourceOnlyExecutionPhase phase, string? code, SourceOnlyResult? failedResult)
+    {
+        try
+        {
+            Exception? inner = exception is PipelineFailure ? exception.InnerException ?? exception : exception;
+            var entries = new List<object>();
+            for (Exception? e = inner; e is not null && entries.Count < 4; e = e.InnerException)
+            {
+                entries.Add(new
+                {
+                    type = e.GetType().FullName,
+                    reason = e is ArtifactStoreException a ? a.Reason.ToString() : null,
+                    reconciliationRequired = e is ArtifactStoreException b ? b.ReconciliationRequired : (bool?)null,
+                    hresult = e is IOException ? "0x" + e.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture) : null,
+                });
+            }
+            string json = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                schema = "source-only-failure-diagnostics/1",
+                phase = phase.ToString(),
+                code,
+                stage = current.Phase.ToString(),
+                resultReconciliationRequired = failedResult?.ReconciliationRequired,
+                resultStagingCleanupRequired = failedResult?.StagingCleanupRequired,
+                resultFailures = failedResult?.Failures.Select(item => item.Code.ToString()).ToArray(),
+                exceptions = entries,
+            });
+            _ = await SaveJsonAsync(current, StableId<ArtifactIdTag>(current.Request.ExecutionId.ToString(), "failure-diagnostics"),
+                json, "failure-diagnostics", CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // diagnostics must never change the failure outcome
+        }
+    }
+
     private async Task<StoredArtifact> SaveBytesAsync(StoredSourceOnlyExecution execution, EntityId<ArtifactIdTag> id,
+        byte[] bytes, string role, CancellationToken token)
+    {
+        // A promotion that failed cleanly (no reconciliation needed) is retried with a NEW staging file: on Windows a
+        // fresh file can be held for a moment by a scanner/indexer (sharing violation), which is not a data problem.
+        // The whole step re-checks the registered artifact first, so a retry never writes a second copy.
+        for (int attempt = 1; ; attempt++)
+        {
+            try { return await SaveBytesOnceAsync(execution, id, bytes, role, token).ConfigureAwait(false); }
+            catch (ArtifactStoreException exception) when (attempt < 3 && !exception.ReconciliationRequired &&
+                exception.Reason is ArtifactStoreFailureReason.UnsafePath or ArtifactStoreFailureReason.StagingMissing
+                    or ArtifactStoreFailureReason.DatabaseRejected)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(300 * attempt), token).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task<StoredArtifact> SaveBytesOnceAsync(StoredSourceOnlyExecution execution, EntityId<ArtifactIdTag> id,
         byte[] bytes, string role, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();

@@ -24,14 +24,33 @@ Invoke-Test -Label "CHK10 $Ac" -Sandbox $sb -Body {
             }
             'AC-127' {
                 # 配置の復元と既定に戻す。
+                # 起動直後（FR-061.1）の画面は Project 一覧（「Projectの操作」「Projectのカード」の 2 パネル）。
+                # 配置を変更 → 再起動で復元 → 既定に戻す（確認つき）で初期配置、を検査する。
+                $isOn = {
+                    param($el)
+                    try { $el.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -eq [System.Windows.Automation.ToggleState]::On }
+                    catch { $false }
+                }
                 $p = Start-App $sb; $root = Get-Root $p
-                Invoke-Element (Find-ByName $root '仕上がり')
+                $null = Find-ByName $root 'Projectの操作' 60
+                $null = Find-ByName $root 'Projectのカード' 10
                 Invoke-Element (Find-ByName $root '配置を変更')
+                Invoke-Element (Find-ByName $root '横に並べる')
+                if (-not (& $isOn (Find-ByName $root '横に並べる'))) { throw 'arrangement change not applied' }
                 Stop-App $p
                 $p = Start-App $sb; $root = Get-Root $p
-                Invoke-Element (Find-ByName $root '仕上がり')
-                $null = Find-ByName $root '配置を変更' 10
+                $null = Find-ByName $root 'Projectの操作' 60
+                Invoke-Element (Find-ByName $root '配置を変更')
+                if (-not (& $isOn (Find-ByName $root '横に並べる' 10))) { throw 'arrangement not restored after restart' }
+                # 異常系: 確認で「やめる」なら配置は保たれる
                 Invoke-Element (Find-ByName $root '既定に戻す')
+                Invoke-Element (Find-ByName $root 'やめる')
+                if (-not (& $isOn (Find-ByName $root '横に並べる' 10))) { throw 'arrangement lost after cancel' }
+                # 確認で確定すると初期配置（標準）
+                Invoke-Element (Find-ByName $root '既定に戻す')
+                Invoke-Element (Find-ByName $root '既定に戻す（確定）')
+                if (& $isOn (Find-ByName $root '横に並べる' 10)) { throw 'arrangement not reset' }
+                if (-not (& $isOn (Find-ByName $root '標準' 10))) { throw 'default arrangement not shown' }
             }
             'AC-129' {
                 # 移動・タブ化・非表示・最大化で入力中の内容が失われない。

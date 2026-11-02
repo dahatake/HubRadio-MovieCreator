@@ -2383,6 +2383,7 @@ internal static class AnalysisBridgeJson
                     "answerAfterExplicitQuestion",
                 EmphasisReasonKind.TopicTransitionSummary =>
                     "topicTransitionSummary",
+                EmphasisReasonKind.SpeechSegment => "speechSegment",
                 _ => throw new InvalidOperationException(
                     "The emphasis reason is invalid."),
             });

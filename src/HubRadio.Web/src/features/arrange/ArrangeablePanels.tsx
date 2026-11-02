@@ -7,8 +7,10 @@ import {
   MIN_SIZE,
   sizeOf,
   type ArrangeDirection,
+  type ArrangePreset,
   type ArrangeState,
 } from './arrangeState'
+import { buildArrangeCommands, filterArrangeCommands, type ArrangeCommand } from './arrangeCommands'
 import { clearArrangeState, loadArrangeState, saveArrangeState, type ArrangeStorage } from './arrangeStorage'
 import './arrange.css'
 
@@ -26,6 +28,8 @@ export interface ArrangeablePanelsProps {
   readonly panels: readonly ArrangePanel[]
   readonly className?: string
   readonly storage?: ArrangeStorage | null
+  /** NFR-UX-003: the persona's default arrangement; 「既定に戻す」 returns to this. */
+  readonly preset?: ArrangePreset
 }
 
 const directionLabels: Readonly<Record<ArrangeDirection, string>> = { default: '標準', row: '横に並べる', column: '縦に並べる' }
@@ -35,14 +39,18 @@ const directionLabels: Readonly<Record<ArrangeDirection, string>> = { default: '
  * operation reachable by keyboard (no drag). All panels stay mounted, so typed input, selection and filters survive.
  * NFR-UX-002: the arrangement is saved per screen and restored; 「既定に戻す」 asks first.
  */
-export function ArrangeablePanels({ screenId, panels, className, storage }: ArrangeablePanelsProps) {
+export function ArrangeablePanels({ screenId, panels, className, storage, preset }: ArrangeablePanelsProps) {
   const idKey = panels.map(panel => panel.id).join('\n')
   const ids = useMemo(() => idKey.split('\n'), [idKey])
+  const presetRef = useRef(preset)
+  presetRef.current = preset
   const [state, dispatch] = useReducer(
-    (current: ArrangeState, action: Parameters<typeof arrangeReducer>[1]) => arrangeReducer(current, action),
+    (current: ArrangeState, action: Parameters<typeof arrangeReducer>[1]) =>
+      arrangeReducer(current, action.type === 'reset' ? { ...action, preset: presetRef.current } : action),
     undefined,
-    () => loadArrangeState(screenId, ids, storage),
+    () => loadArrangeState(screenId, ids, storage, preset),
   )
+  const [query, setQuery] = useState('')
   const [editing, setEditing] = useState(false)
   const [moving, setMoving] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -51,7 +59,7 @@ export function ArrangeablePanels({ screenId, panels, className, storage }: Arra
 
   useEffect(() => {
     if (first.current) { first.current = false; return }
-    if (isDefaultArrangement(state, ids)) clearArrangeState(screenId, storage)
+    if (isDefaultArrangement(state, ids, presetRef.current)) clearArrangeState(screenId, storage)
     else saveArrangeState(screenId, state, storage)
   }, [state, screenId, idKey, ids, storage])
 
@@ -63,6 +71,16 @@ export function ArrangeablePanels({ screenId, panels, className, storage }: Arra
   const visibleCount = state.order.filter(id => !state.hidden.includes(id)).length
   const customized = state.direction !== 'default' || Object.keys(state.sizes).length > 0
   const tabOrder = tabsShown ? Math.min(...tabGroup.map(id => state.order.indexOf(id))) * 2 + 1 : 0
+
+  const matches = useMemo(
+    () => query.trim() === '' ? [] : filterArrangeCommands(buildArrangeCommands(panels, state), query),
+    [panels, state, query],
+  )
+  const runCommand = (command: ArrangeCommand) => {
+    if (command.action.type === 'requestReset') setConfirmReset(true)
+    else act(command.action, command.message)
+    setQuery('')
+  }
 
   const moveByKey = (event: KeyboardEvent, id: string) => {
     const delta = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : 0
@@ -138,6 +156,37 @@ export function ArrangeablePanels({ screenId, panels, className, storage }: Arra
         {state.hidden.map(id => (
           <button key={id} type="button" onClick={() => act({ type: 'show', id }, `${labelOf(id)}を表示しました`)}>{labelOf(id)}を表示</button>
         ))}
+        <div className="arrange-command" role="search" aria-label="配置のコマンド検索">
+          <label htmlFor={`arrange-command-${screenId}`}>配置のコマンド検索</label>
+          <input id={`arrange-command-${screenId}`} type="search" value={query} placeholder="例: プレビュー 最大化"
+            role="combobox" aria-expanded={query.trim() !== ''} aria-controls={`arrange-command-list-${screenId}`} aria-autocomplete="list"
+            onChange={event => setQuery(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Escape') { setQuery(''); return }
+              if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                event.currentTarget.parentElement?.querySelector<HTMLElement>('[role="option"]')?.focus()
+              }
+              if (event.key === 'Enter' && matches[0] !== undefined) { event.preventDefault(); runCommand(matches[0]) }
+            }} />
+          {query.trim() !== '' && (
+            <ul id={`arrange-command-list-${screenId}`} role="listbox" aria-label="配置のコマンドの候補">
+              {matches.length === 0 && <li role="status">一致するコマンドはありません</li>}
+              {matches.map(command => (
+                <li key={command.id} role="presentation">
+                  <button type="button" role="option" aria-selected="false" onClick={() => runCommand(command)}
+                    onKeyDown={event => {
+                      const items = Array.from(event.currentTarget.closest('ul')?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])
+                      const at = items.indexOf(event.currentTarget)
+                      if (event.key === 'ArrowDown') { event.preventDefault(); items[Math.min(items.length - 1, at + 1)]?.focus() }
+                      if (event.key === 'ArrowUp') { event.preventDefault(); (at <= 0 ? event.currentTarget.closest('[role="search"]')?.querySelector<HTMLElement>('input') : items[at - 1])?.focus() }
+                      if (event.key === 'Escape') { setQuery(''); event.currentTarget.closest('[role="search"]')?.querySelector<HTMLElement>('input')?.focus() }
+                    }}>{command.label}</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <span className="arrange-status" role="status">{announcement}</span>
       </div>
       {confirmReset && (
