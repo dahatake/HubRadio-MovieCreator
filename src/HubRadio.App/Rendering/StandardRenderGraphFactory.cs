@@ -497,10 +497,7 @@ public static class StandardRenderGraphFactory
             }
 
             StyleTemplates.StyleTemplateRenderRecord placed = renderRecord.WithPlacement(talkShow,
-                [.. graphicFiles.Select(static file => new StyleTemplates.RecordedTelop(file.Evidence.Role, file.Evidence.RenderedText,
-                    (double)file.Evidence.OutputRange.Start.Value / file.Evidence.OutputRange.Start.Rate,
-                    (double)file.Evidence.OutputRange.End.Value / file.Evidence.OutputRange.End.Rate,
-                    new(file.Evidence.Left, file.Evidence.Top, file.Evidence.Right - file.Evidence.Left, file.Evidence.Bottom - file.Evidence.Top)))],
+                [.. graphicFiles.Select(file => RecordedOverlay(file, styled, configuration.StyleTemplate?.Id, profile))],
                 subtitleBox, verticalOutput ? StyleTemplates.StyleTemplateMargins.Vertical : null, platformUiConfirmed: false,
                 hookSegmentId: shortForm?.Hook?.SourceSpan.Id.ToString(),
                 hookEnd: (double)timeline.Entries[0].OutputRange.Duration.Value / timeline.Entries[0].OutputRange.Duration.Rate);
@@ -600,6 +597,34 @@ public static class StandardRenderGraphFactory
     }
 
     /// <summary>FR-143 (c): the OutputQc form of the placement inspection the render record states.</summary>
+    /// <summary>
+    /// FR-139: an overlay as recorded, with the letter color, the color behind it, the weight, the size against the subtitle's and the
+    /// motion the render actually used (the values of <see cref="StandardMetadataGraphics.OverlayColors"/> and the drawn font size).
+    /// </summary>
+    private static StyleTemplates.RecordedTelop RecordedOverlay(StandardGraphicRenderFile file,
+        StyleTemplates.StyleTemplatePlan? styled, string? templateId, RenderProfile profile)
+    {
+        StandardTextOverlayEvidence evidence = file.Evidence;
+        bool emphasis = evidence.Role == "EmphasisTelop";
+        StyleTemplates.StyleTemplateTelop? styledTelop = emphasis
+            ? styled?.EmphasisTelops.FirstOrDefault(item => item.Telop.OutputRange.Equals(evidence.OutputRange) && item.Telop.Text == evidence.Text)
+            : null;
+        bool threeTierTitle = StandardMetadataGraphics.IsThreeTierTitle(evidence.Role, profile.Width, profile.Height, styled, templateId);
+        (string fill, string outline) = StandardMetadataGraphics.OverlayColors(emphasis, threeTierTitle, styledTelop, styled);
+        int subtitleSize = profile.Width >= 1920 ? 64 : 48;
+        return new StyleTemplates.RecordedTelop(evidence.Role, evidence.RenderedText,
+            (double)evidence.OutputRange.Start.Value / evidence.OutputRange.Start.Rate,
+            (double)evidence.OutputRange.End.Value / evidence.OutputRange.End.Rate,
+            new(evidence.Left, evidence.Top, evidence.Right - evidence.Left, evidence.Bottom - evidence.Top))
+        {
+            Color = fill,
+            Background = outline,
+            Bold = true,
+            Scale = Math.Round((double)evidence.FontSize / subtitleSize, 3),
+            Motion = styledTelop?.Motion is { } motion ? motion.Kind.ToString() : null,
+        };
+    }
+
     internal static OutputQcPlacementEvidence OutputQcPlacement(StyleTemplates.RecordedInspection inspection) => new(
         inspection.Rule, inspection.Width, inspection.Height,
         inspection.Margins is { } margins ? new OutputQcPlacementMargins(margins.Top, margins.Bottom, margins.Left, margins.Right) : null,

@@ -205,22 +205,13 @@ internal static class StandardMetadataGraphics
                 throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedPlanElement);
             var cue = new SubtitleFileCue(new Cue(EntityId<CueIdTag>.New(), CueKind.Subtitle, range, "metadata"),
                 rendered, SubtitleFileCueStyle.Normal);
-            var white = new AssColor(0, 255, 255, 255);
-            var black = new AssColor(0, 0, 0, 0);
             // FR-138 (5): the title / hook band of the vertical 3-tier template is its own look — bold lettering in the template's
             // emphasis color on an opaque band of the template's outline color (4.5:1), never the plain subtitle box.
             bool threeTierTitle = styled is not null && profile.Height > profile.Width && role == "EpisodeTitle"
                 && configuration?.StyleTemplate?.Id == StyleTemplates.StyleTemplateCatalog.Vertical3TierId;
-            string threeTierText = styled?.EmphasisColors.FirstOrDefault() ?? styled?.TextColor ?? "#FFFFFF";
-            // Emphasis captions: bold lettering with a thick outline, no box. Without a template: yellow on black.
-            string emphasisColor = styledTelop?.Color ?? "#FFDD00";
-            var fill = threeTierTitle ? Color(threeTierText) : emphasis ? Color(emphasisColor) : white;
-            // FR-139: the outline is the template's when the text reads on it at 4.5:1, else black or white.
-            var outline = threeTierTitle
-                ? Color(StyleTemplates.StyleTemplateColor.EnsureBackground(threeTierText, styled!.OutlineColor))
-                : emphasis && styledTelop is not null
-                ? Color(StyleTemplates.StyleTemplateColor.EnsureBackground(emphasisColor, styled?.OutlineColor ?? StyleTemplates.StyleTemplateColor.Black))
-                : black;
+            (string fillHex, string outlineHex) = OverlayColors(emphasis, threeTierTitle, styledTelop, styled);
+            var fill = Color(fillHex);
+            var outline = Color(outlineHex);
             var ass = new AssSubtitleProfile(profile.Width, profile.Height, Enum.GetValues<SubtitleFileCueStyle>()
                 .Select(style => new AssStyleDefinition(style, font.Name, size, fill, fill, outline, outline,
                     true, false, false, false, 100, 100, 0, 0, emphasis ? AssBorderStyle.OutlineAndShadow : AssBorderStyle.OpaqueBox,
@@ -236,6 +227,28 @@ internal static class StandardMetadataGraphics
                     plan.LongForm.PlanId, shortForm?.Id, settings, range, timing, left, top, right, bottom, size)));
         }
     }
+
+    /// <summary>
+    /// FR-139: the letter color and the color behind it (outline / box) an overlay is burned in with. The emphasis caption is bold
+    /// lettering in the template's emphasis color (yellow without a template); the outline is the template's when the text reads on
+    /// it at 4.5:1, else black or white. The render record states these same values.
+    /// </summary>
+    internal static (string Fill, string Outline) OverlayColors(
+        bool emphasis, bool threeTierTitle, StyleTemplates.StyleTemplateTelop? styledTelop, StyleTemplates.StyleTemplatePlan? styled)
+    {
+        string threeTierText = styled?.EmphasisColors.FirstOrDefault() ?? styled?.TextColor ?? StyleTemplates.StyleTemplateColor.White;
+        string emphasisColor = styledTelop?.Color ?? "#FFDD00";
+        string fill = threeTierTitle ? threeTierText : emphasis ? emphasisColor : StyleTemplates.StyleTemplateColor.White;
+        string outline = threeTierTitle
+            ? StyleTemplates.StyleTemplateColor.EnsureBackground(threeTierText, styled!.OutlineColor)
+            : emphasis && styledTelop is not null
+            ? StyleTemplates.StyleTemplateColor.EnsureBackground(emphasisColor, styled?.OutlineColor ?? StyleTemplates.StyleTemplateColor.Black)
+            : StyleTemplates.StyleTemplateColor.Black;
+        return (fill, outline);
+    }
+
+    internal static bool IsThreeTierTitle(string role, int width, int height, StyleTemplates.StyleTemplatePlan? styled, string? templateId) =>
+        styled is not null && height > width && role == "EpisodeTitle" && templateId == StyleTemplates.StyleTemplateCatalog.Vertical3TierId;
 
     private static AssColor Color(string hex)
     {

@@ -14,12 +14,37 @@ public sealed record RecordedCue(
     double Start, double End, string Text, string? Speaker, string? SpeakerName, string Color, string? PortraitProbeColor,
     IReadOnlyList<RecordedWord> Words)
 {
+    /// <summary>FR-139: the color the letters sit on (outline / box), chosen so the text reads on it at 4.5:1.</summary>
+    public string? Background { get; init; }
+
+    /// <summary>FR-139: true when the cue text is an automatic transcript no one has edited or confirmed (下書き).</summary>
+    public bool Draft { get; init; }
+
     /// <summary>FR-143: where the subtitle box lies in the output (pixels).</summary>
     public TalkShowBox? Box { get; init; }
 }
 
-/// <summary>FR-138 / FR-143: a telop other than the subtitle (emphasis telop, title, ...) with the box it was burned into.</summary>
-public sealed record RecordedTelop(string Role, string Text, double Start, double End, TalkShowBox Box);
+/// <summary>
+/// FR-138 / FR-143: a telop other than the subtitle (emphasis telop, title, ...) with the box it was burned into.
+/// FR-139: <c>color</c> and <c>background</c> are the letter color and the color behind it the render used; <c>bold</c> and
+/// <c>scale</c> (the letter size against the subtitle's) and <c>motion</c> (the template's motion kind, or null) state how it is
+/// told apart without color.
+/// </summary>
+public sealed record RecordedTelop(string Role, string Text, double Start, double End, TalkShowBox Box)
+{
+    public string? Color { get; init; }
+
+    public string? Background { get; init; }
+
+    public bool Bold { get; init; }
+
+    public double Scale { get; init; } = 1;
+
+    public string? Motion { get; init; }
+}
+
+/// <summary>FR-139: one cue of the source transcript, as the output's cue text was taken from it.</summary>
+public sealed record RecordedSourceText(string Text);
 
 /// <summary>FR-143: the size of the output.</summary>
 public sealed record RecordedOutput(int Width, int Height);
@@ -64,6 +89,12 @@ public sealed record StyleTemplateRenderRecord(
     IReadOnlyList<string> Warnings)
 {
     public const string FileName = "style-template-render.json";
+
+    /// <summary>FR-139: true when any displayed caption is an automatic transcript not yet confirmed by the user (shown as 下書き).</summary>
+    public bool CaptionsDraft { get; init; }
+
+    /// <summary>FR-139: the cue texts as taken from the transcript, so a dropped negation / condition word can be told.</summary>
+    public IReadOnlyList<RecordedSourceText> SourceTranscript { get; init; } = [];
 
     /// <summary>FR-141: the topics the user entered or confirmed (with the span each is shown for).</summary>
     public IReadOnlyList<TalkShowTopicRecord> Topics { get; init; } = [];
@@ -206,9 +237,22 @@ public sealed record StyleTemplateRenderRecord(
             StyleTemplatePortraitShot? shot = line is null ? null
                 : plan.Portraits.FirstOrDefault(item => item.Range.Equals(cue.Cue.OutputRange) && item.CharacterId == line.Input.Speaker);
             bool timed = CueWordTiming.IsValid(cue.Cue, cue.Words);
+            string color = line?.Color ?? plan.TextColor;
+            // FR-139: the same background the burned-in caption uses (StandardTemplateSubtitles): it reads 4.5:1 against every color shown.
+            string background = line is not null
+                ? StyleTemplateColor.EnsureBackground(line.Color, plan.OutlineColor)
+                : StyleTemplateColor.EnsureBackground(
+                    [plan.TextColor, .. plan.Captions
+                        .Where(item => item.Range.Start >= cue.Cue.OutputRange.Start && item.Range.End <= cue.Cue.OutputRange.End)
+                        .SelectMany(static item => item.Highlights.Select(static highlight => highlight.Color))],
+                    plan.OutlineColor);
             recorded.Add(new(Seconds(cue.Cue.OutputRange.Start), Seconds(cue.Cue.OutputRange.End), cue.Cue.Text,
-                line?.Input.Speaker, shot?.CharacterName, line?.Color ?? plan.TextColor, shot is null ? null : probeColor(shot),
-                timed ? cue.Words.Select(static word => new RecordedWord(word.Text, Seconds(word.Range.Start), Seconds(word.Range.End))).ToArray() : []));
+                line?.Input.Speaker, shot?.CharacterName, color, shot is null ? null : probeColor(shot),
+                timed ? cue.Words.Select(static word => new RecordedWord(word.Text, Seconds(word.Range.Start), Seconds(word.Range.End))).ToArray() : [])
+            {
+                Background = background,
+                Draft = cue.Cue.Origin.Kind == HubRadio.Core.Provenance.OriginKind.SourceSpan,
+            });
         }
 
         return new(template.Id, template.Version, width, height, plan.TextColor,
@@ -216,7 +260,11 @@ public sealed record StyleTemplateRenderRecord(
             plan.Portraits.Select(static shot => new RecordedPortrait(shot.CharacterId, shot.CharacterName,
                 Seconds(shot.Range.Start), Seconds(shot.Range.End), true, string.Empty)).ToArray(),
             plan.Warnings.Select(static warning => warning.Range is { } range
-                ? string.Create(CultureInfo.InvariantCulture, $"{warning.Code}@{Seconds(range.Start):F3}") : warning.Code).ToArray());
+                ? string.Create(CultureInfo.InvariantCulture, $"{warning.Code}@{Seconds(range.Start):F3}") : warning.Code).ToArray())
+        {
+            CaptionsDraft = recorded.Any(static item => item.Draft),
+            SourceTranscript = [.. cues.OrderBy(static item => item.Cue.OutputRange.Start).Select(static item => new RecordedSourceText(item.Cue.Text))],
+        };
     }
 
     public static void Save(string jobDirectory, StyleTemplateRenderRecord record)
