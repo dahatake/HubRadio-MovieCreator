@@ -657,9 +657,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-launch-layout.ps1 -Ac AC-127",
       "canary": false,
       "status": "pass",
-      "last_commit": "b83acb8",
-      "last_run_at": "2026-11-02T14:16:35+09:00",
-      "evidence": "work/runs/202611021249/logs/system-test/E2E-023-202611021414.log",
+      "last_commit": "2e33041",
+      "last_run_at": "2026-11-02T14:28:35+09:00",
+      "evidence": "work/runs/202611021249/logs/system-test/E2E-023-202611021427.log",
       "history": [
         {
           "at": "2026-10-13T07:45:52+09:00",
@@ -682,9 +682,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-launch-layout.ps1 -Ac AC-129",
       "canary": false,
       "status": "fail",
-      "last_commit": "b83acb8",
-      "last_run_at": "2026-11-02T14:16:35+09:00",
-      "evidence": "work/runs/202611021249/logs/system-test/E2E-024-202611021415.log",
+      "last_commit": "2e33041",
+      "last_run_at": "2026-11-02T14:31:00+09:00",
+      "evidence": "work/runs/202611021249/logs/system-test/E2E-024-202611021429.log",
       "history": [
         {
           "at": "2026-10-13T07:45:58+09:00",
