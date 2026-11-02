@@ -858,9 +858,10 @@ public static class StandardCompositionPlanner
             }
 
             SourceSpan span = candidate.Payload.SourceSpan;
+            bool speechSegment = candidate.Payload.Reasons.Contains(EmphasisReasonKind.SpeechSegment);
             SourceSpan[] groundingSpans = sourceEvidence.Where(evidence =>
                     IsGroundedBySource(span, evidence)
-                    && HasTimelineMapping(request.TimelineMap, evidence, span))
+                    && HasTimelineMapping(request.TimelineMap, evidence, span, speechSegment))
                 .ToArray();
             if (groundingSpans.Length != 1)
             {
@@ -1524,13 +1525,29 @@ public static class StandardCompositionPlanner
     private static bool HasTimelineMapping(
         TimelineMap timelineMap,
         SourceSpan evidence,
-        SourceSpan selected) =>
-        timelineMap.Entries.Count(entry =>
+        SourceSpan selected,
+        bool silenceOnlyCutsAllowed = false)
+    {
+        if (silenceOnlyCutsAllowed)
+        {
+            // FR-010 speech-segment short: the automatic edits (pause tightening, FR-057) remove only silence between
+            // utterances, so one short may span several retained pieces of the same evidence. Both boundaries must lie
+            // inside a retained piece, so no spoken part is ever outside the composition.
+            TimeRange[] pieces = timelineMap.Entries
+                .Where(entry => entry.Origin.Kind == OriginKind.SourceSpan
+                    && entry.Origin.SourceSpanId == evidence.Id && entry.SourceRange is not null)
+                .Select(static entry => entry.SourceRange!.Value).ToArray();
+            return pieces.Any(piece => selected.Range.Start >= piece.Start && selected.Range.Start < piece.End)
+                && pieces.Any(piece => selected.Range.End > piece.Start && selected.Range.End <= piece.End);
+        }
+
+        return timelineMap.Entries.Count(entry =>
             entry.Origin.Kind == OriginKind.SourceSpan
             && entry.Origin.SourceSpanId == evidence.Id
             && entry.SourceRange is TimeRange sourceRange
             && selected.Range.Start >= sourceRange.Start
             && selected.Range.End <= sourceRange.End) == 1;
+    }
 
     private static bool ContainsContiguousTokens<T>(
         IReadOnlyList<T> evidence,

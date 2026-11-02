@@ -3512,6 +3512,24 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
     private async Task<StoredArtifact> SaveBytesAsync(StoredSourceOnlyExecution execution, EntityId<ArtifactIdTag> id,
         byte[] bytes, string role, CancellationToken token)
     {
+        // A promotion that failed cleanly (no reconciliation needed) is retried with a NEW staging file: on Windows a
+        // fresh file can be held for a moment by a scanner/indexer (sharing violation), which is not a data problem.
+        // The whole step re-checks the registered artifact first, so a retry never writes a second copy.
+        for (int attempt = 1; ; attempt++)
+        {
+            try { return await SaveBytesOnceAsync(execution, id, bytes, role, token).ConfigureAwait(false); }
+            catch (ArtifactStoreException exception) when (attempt < 3 && !exception.ReconciliationRequired &&
+                exception.Reason is ArtifactStoreFailureReason.UnsafePath or ArtifactStoreFailureReason.StagingMissing
+                    or ArtifactStoreFailureReason.DatabaseRejected)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(300 * attempt), token).ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task<StoredArtifact> SaveBytesOnceAsync(StoredSourceOnlyExecution execution, EntityId<ArtifactIdTag> id,
+        byte[] bytes, string role, CancellationToken token)
+    {
         token.ThrowIfCancellationRequested();
         if (bytes.Length is <= 0 or > MaximumTranscriptBytes) { throw new InvalidOperationException("Native evidence exceeds its byte limit."); }
         ContentDigest digest = ContentDigest.Compute(bytes);

@@ -17,7 +17,7 @@
 | FR-007 | 見どころ候補抽出 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-008 | 長尺版生成 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-009 | YouTube横長版 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
-| FR-010 | 縦型ショート版 | 承認済み（依頼 2026-08-26） | src/HubRadio.App/Analysis/EmphasisCandidateService.cs, src/HubRadio.App/Projects/SourceOnlyPipeline.cs, src/HubRadio.App/Compositions/StandardCompositionPlanner.cs, src/HubRadio.App/Web/AnalysisBridge.cs, src/HubRadio.Web/src/features/analysis/analysisProtocol.ts | tests/HubRadio.App.Tests/SpeechSegmentShortCandidateTests.cs, tests/HubRadio.App.Tests/StandardCompositionPlannerTests.cs, tests/HubRadio.App.Tests/EmphasisCandidateServiceTests.cs | なし |
+| FR-010 | 縦型ショート版 | 承認済み（依頼 2026-08-26） | src/HubRadio.App/Analysis/EmphasisCandidateService.cs, src/HubRadio.App/Projects/SourceOnlyPipeline.cs, src/HubRadio.App/Compositions/StandardCompositionPlanner.cs, src/HubRadio.App/Web/AnalysisBridge.cs, src/HubRadio.Web/src/features/analysis/analysisProtocol.ts | tests/HubRadio.App.Tests/SpeechSegmentShortCandidateTests.cs, tests/HubRadio.App.Tests/SourceOnlyPipelineRealAsrTests.cs, tests/HubRadio.App.Tests/StandardCompositionPlannerTests.cs, tests/HubRadio.App.Tests/EmphasisCandidateServiceTests.cs | なし |
 | FR-011 | フック生成 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-012 | 字幕生成 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-013 | 強調テロップ | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
