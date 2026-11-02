@@ -429,6 +429,35 @@ public sealed class StandardArtifactGeneratorTests
         Assert.IsFalse(result.StagingCleanupRequired);
     }
 
+    // FR-132 AC-136 / AC-137 (E2E-006): a transient SQLITE_BUSY-class refusal on a later promotion (nothing moved, rolled back)
+    // must be repeated for that item instead of demoting the whole run to ReconciliationRequired.
+    [TestMethod]
+    public async Task TransientDatabaseRefusalOnLaterPromotionIsRetriedAndRunCompletes()
+    {
+        using StandardGenerationFixture fixture = await StandardGenerationFixture.CreateAsync();
+        int promotions = 0;
+        var generator = new StandardArtifactGenerator(fixture.Store, fixture.Versions, fixture.Root,
+            async (process, token) =>
+            {
+                if (IsLoudnessMeasurement(process))
+                    return new ProcessRunResult(0, "", StandardGenerationFixture.LoudnessReport, false, TimeSpan.Zero);
+                await File.WriteAllBytesAsync(process.ArgumentList[^1], [7, 8, 9], token);
+                return new ProcessRunResult(0, "", StandardGenerationFixture.LoudnessReport, false, TimeSpan.Zero);
+            }, StandardGenerationFixture.CompileAsync, fixture.ProbeGeometryAsync,
+            (promotion, token) =>
+            {
+                if (++promotions == 2)
+                {
+                    throw new ArtifactStoreException(ArtifactStoreFailureReason.DatabaseRejected, reconciliationRequired: false);
+                }
+                return fixture.Store.PromoteAsync(promotion, token);
+            });
+        StandardArtifactGenerationResult result = await generator.GenerateAsync(fixture.Request());
+        Assert.AreEqual(StandardArtifactGenerationDisposition.Completed, result.Disposition,
+            $"{result.FailureReason}/{result.CompilerFailureReason}");
+        Assert.IsEmpty(result.ReconciliationArtifactIds);
+    }
+
     // FR-047.1 AC-022.1: hubradio-sample.mp4 ends its AAC audio 23/750 s (30.67 ms) before
     // the last video frame. Up to 250 ms is padded with silence; anything longer is rejected.
     [TestMethod]
