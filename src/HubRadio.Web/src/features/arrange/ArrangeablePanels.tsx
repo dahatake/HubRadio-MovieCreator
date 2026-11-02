@@ -65,10 +65,16 @@ export function ArrangeablePanels({ screenId, panels, className, storage, preset
 
   const labelOf = (id: string) => panels.find(panel => panel.id === id)?.label ?? id
   const act = (action: Parameters<typeof arrangeReducer>[1], message: string) => { dispatch(action); setAnnouncement(message) }
-  const tabGroup = state.tabbed.filter(id => ids.includes(id))
+  const suppressedIds = new Set(panels.filter(panel => panel.suppressed === true).map(panel => panel.id))
+  const applicable = ids.filter(id => !suppressedIds.has(id))
+  // A restored state must never leave the screen without a panel (and its operation buttons): fall back to the first applicable one.
+  const forcedVisible = applicable.length > 0 && applicable.every(id => state.hidden.includes(id)) ? applicable[0] : null
+  const effHidden = (id: string) => state.hidden.includes(id) && id !== forcedVisible
+  const effMaximized = state.maximized !== null && applicable.includes(state.maximized) && !effHidden(state.maximized) ? state.maximized : null
+  const tabGroup = state.tabbed.filter(id => ids.includes(id) && !suppressedIds.has(id) && !effHidden(id))
   const tabsShown = tabGroup.length >= 2
   const activeTab = state.activeTab !== null && tabGroup.includes(state.activeTab) ? state.activeTab : tabGroup[0] ?? null
-  const visibleCount = state.order.filter(id => !state.hidden.includes(id)).length
+  const visibleCount = state.order.filter(id => !state.hidden.includes(id) && !suppressedIds.has(id)).length
   const customized = state.direction !== 'default' || Object.keys(state.sizes).length > 0
   const tabOrder = tabsShown ? Math.min(...tabGroup.map(id => state.order.indexOf(id))) * 2 + 1 : 0
 
@@ -92,7 +98,7 @@ export function ArrangeablePanels({ screenId, panels, className, storage, preset
   return (
     <div className="arrange">
       <div className={`arrange-container ${className ?? ''}`.trim()} data-direction={state.direction} data-customized={customized ? 'true' : undefined}
-        data-maximized={state.maximized ?? undefined}>
+        data-maximized={effMaximized ?? undefined}>
         {tabsShown && (
           <div className="arrange-tabs" role="tablist" aria-label="タブにまとめたコンポーネント" style={{ order: tabOrder }}>
             {tabGroup.map(id => (
@@ -110,9 +116,9 @@ export function ArrangeablePanels({ screenId, panels, className, storage, preset
         )}
         {panels.map(panel => {
           const id = panel.id
-          const hiddenNow = state.hidden.includes(id) || panel.suppressed === true ||
-            (state.maximized !== null && state.maximized !== id) || (tabsShown && tabGroup.includes(id) && activeTab !== id)
-          const maximized = state.maximized === id
+          const hiddenNow = effHidden(id) || panel.suppressed === true ||
+            (effMaximized !== null && effMaximized !== id) || (tabsShown && tabGroup.includes(id) && activeTab !== id)
+          const maximized = effMaximized === id
           const tabbed = state.tabbed.includes(id)
           const position = state.order.indexOf(id)
           return (
