@@ -3527,6 +3527,10 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                     reason = e is ArtifactStoreException a ? a.Reason.ToString() : null,
                     reconciliationRequired = e is ArtifactStoreException b ? b.ReconciliationRequired : (bool?)null,
                     hresult = e is IOException ? "0x" + e.HResult.ToString("X8", System.Globalization.CultureInfo.InvariantCulture) : null,
+                    sqliteErrorCode = e is Microsoft.Data.Sqlite.SqliteException s1 ? s1.SqliteErrorCode : (int?)null,
+                    sqliteExtendedErrorCode = e is Microsoft.Data.Sqlite.SqliteException s2 ? s2.SqliteExtendedErrorCode : (int?)null,
+                    sqliteMessageHead = e is Microsoft.Data.Sqlite.SqliteException s3 && s3.Message is { } m
+                        ? (m.Length > 80 ? m[..80] : m) : null,
                 });
             }
             string json = System.Text.Json.JsonSerializer.Serialize(new
