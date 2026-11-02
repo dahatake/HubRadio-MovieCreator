@@ -59,9 +59,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-workspace-browse.ps1",
       "canary": false,
       "status": "pass",
-      "last_commit": "9eccc29",
-      "last_run_at": "2026-11-02T15:37:33+09:00",
-      "evidence": "work/runs/202611021502/logs/system-test/E2E-001-202611021526.log",
+      "last_commit": "9aaaee7",
+      "last_run_at": "2026-11-02T16:21:55+09:00",
+      "evidence": "work/runs/202611021502/logs/system-test/E2E-001-202611021615.log",
       "history": [
         {
           "at": "2026-10-08T12:30:02+09:00",
@@ -90,9 +90,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-browse-cancel.ps1",
       "canary": false,
       "status": "pass",
-      "last_commit": "9eccc29",
-      "last_run_at": "2026-11-02T15:37:33+09:00",
-      "evidence": "work/runs/202611021502/logs/system-test/E2E-002-202611021526.log",
+      "last_commit": "9aaaee7",
+      "last_run_at": "2026-11-02T16:21:55+09:00",
+      "evidence": "work/runs/202611021502/logs/system-test/E2E-002-202611021619.log",
       "history": [
         {
           "at": "2026-10-13T05:43:34+09:00",
@@ -115,9 +115,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-browse-cancel.ps1",
       "canary": false,
       "status": "pass",
-      "last_commit": "9eccc29",
-      "last_run_at": "2026-11-02T15:37:33+09:00",
-      "evidence": "work/runs/202611021502/logs/system-test/E2E-002-202611021526.log",
+      "last_commit": "9aaaee7",
+      "last_run_at": "2026-11-02T16:21:55+09:00",
+      "evidence": "work/runs/202611021502/logs/system-test/E2E-002-202611021619.log",
       "history": [
         {
           "at": "2026-10-13T05:43:37+09:00",
@@ -306,10 +306,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-133-project-folder-name.ps1",
       "canary": true,
-      "status": "fail",
-      "last_commit": "9eccc29",
-      "last_run_at": "2026-11-02T15:37:33+09:00",
-      "evidence": "work/runs/202611021502/logs/system-test/E2E-009-202611021528.log",
+      "status": "pass",
+      "last_commit": "9aaaee7",
+      "last_run_at": "2026-11-02T16:21:55+09:00",
+      "evidence": "work/runs/202611021502/logs/system-test/E2E-009-202611021608.log",
       "history": [
         {
           "at": "2026-10-13T05:43:51+09:00",
@@ -818,9 +818,9 @@
       "command": "dotnet test tests/HubRadio.App.Tests/HubRadio.App.Tests.csproj --filter FullyQualifiedName~FR064_AC041 -p:Platform=x64",
       "canary": false,
       "status": "pass",
-      "last_commit": "9eccc29",
-      "last_run_at": "2026-11-02T15:37:33+09:00",
-      "evidence": "work/runs/202611021502/logs/system-test/IT-004-202611021535.log",
+      "last_commit": "9aaaee7",
+      "last_run_at": "2026-11-02T16:21:55+09:00",
+      "evidence": "work/runs/202611021502/logs/system-test/IT-004-202611021613.log",
       "history": [
         {
           "at": "2026-10-13T10:54:47+09:00",
