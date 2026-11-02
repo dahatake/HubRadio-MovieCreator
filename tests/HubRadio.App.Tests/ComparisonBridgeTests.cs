@@ -460,16 +460,43 @@ public sealed class ComparisonBridgeTests
             0,
             rightFeatures.GetProperty("transitions")
                 .GetProperty("cutCount").GetInt32());
-        // 版に記録のない項目は、案ごとに「未提供」として並ぶ（推測で埋めない）。
+        // 版と公開範囲から導出できる項目は「記録済み」、公開範囲が無ければ destination だけ未提供。
         foreach (string name in new[]
         {
-            "subtitleStyle", "telopCount", "callToAction",
-            "destination", "warnings",
+            "subtitleStyle", "telopCount", "effects", "callToAction", "warnings",
         })
         {
-            Assert.AreEqual("unavailable", leftFeatures.GetProperty(name).GetString());
-            Assert.AreEqual("unavailable", rightFeatures.GetProperty(name).GetString());
+            Assert.AreEqual(
+                "recorded",
+                leftFeatures.GetProperty(name).GetProperty("status").GetString());
+            Assert.AreEqual(
+                "recorded",
+                rightFeatures.GetProperty(name).GetProperty("status").GetString());
         }
+
+        Assert.AreEqual(
+            "字幕の対象 2 区間（既定の字幕設定）",
+            leftFeatures.GetProperty("subtitleStyle").GetProperty("summary").GetString());
+        Assert.AreEqual("unavailable", leftFeatures.GetProperty("destination").GetString());
+
+        // 公開範囲を渡すと、想定公開先と要確認事項が案ごとに埋まる。
+        var scoped = new ComparisonBridgeRequestHandler(
+            id => versions.GetValueOrDefault(id),
+            new RecordingAuthorization(),
+            _ => PublicationScope.ExternalCandidate);
+        using JsonDocument scopedResponse = JsonDocument.Parse(scoped.Handle(
+            ParseRequest(
+                planA.Id, planA.ContentDigest.Hex,
+                planB.Id, planB.ContentDigest.Hex)));
+        JsonElement scopedLeft = scopedResponse.RootElement
+            .GetProperty("result").GetProperty("comparison").GetProperty("left")
+            .GetProperty("features");
+        Assert.AreEqual(
+            "社外公開の候補（未承認）",
+            scopedLeft.GetProperty("destination").GetProperty("summary").GetString());
+        StringAssert.Contains(
+            scopedLeft.GetProperty("warnings").GetProperty("summary").GetString(),
+            "公開先が未承認");
     }
 
     [TestMethod]
@@ -718,10 +745,13 @@ public sealed class ComparisonBridgeTests
             "destination",
             "warnings");
         Assert.IsTrue(features.EnumerateObject()
-            .Where(static property =>
-                property.Name is not "openingHook" and not "transitions")
+            .Where(static property => property.Name != "destination")
             .All(static property =>
-                property.Value.GetString() == "unavailable"));
+                property.Value.ValueKind == JsonValueKind.Object &&
+                property.Value.GetProperty("status").GetString() == "recorded"));
+        Assert.AreEqual(
+            "unavailable",
+            features.GetProperty("destination").GetString());
         Assert.AreEqual(
             "recorded",
             features.GetProperty("openingHook").GetProperty("status").GetString());

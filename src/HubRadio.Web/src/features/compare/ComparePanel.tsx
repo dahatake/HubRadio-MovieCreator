@@ -681,6 +681,9 @@ function formatAvailability(
   if (availability === 'unavailable') {
     return 'データ未提供'
   }
+  if ('summary' in availability) {
+    return availability.summary
+  }
   if ('cutCount' in availability) {
     return `カット ${availability.cutCount} 箇所（効果の記録なし）`
   }

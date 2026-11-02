@@ -35,15 +35,20 @@ export interface ComparisonTransitions {
   readonly cutCount: number
 }
 
+export interface ComparisonDerivedSummary {
+  readonly status: 'recorded'
+  readonly summary: string
+}
+
 export interface ComparisonFeatureAvailability {
   readonly openingHook: 'unavailable' | ComparisonOpeningHook
-  readonly subtitleStyle: 'unavailable'
-  readonly telopCount: 'unavailable'
+  readonly subtitleStyle: 'unavailable' | ComparisonDerivedSummary
+  readonly telopCount: 'unavailable' | ComparisonDerivedSummary
   readonly transitions: 'unavailable' | ComparisonTransitions
-  readonly effects: 'unavailable'
-  readonly callToAction: 'unavailable'
-  readonly destination: 'unavailable'
-  readonly warnings: 'unavailable'
+  readonly effects: 'unavailable' | ComparisonDerivedSummary
+  readonly callToAction: 'unavailable' | ComparisonDerivedSummary
+  readonly destination: 'unavailable' | ComparisonDerivedSummary
+  readonly warnings: 'unavailable' | ComparisonDerivedSummary
 }
 
 export interface ComparisonVersionSnapshot {
@@ -379,8 +384,13 @@ function parseFeatureAvailability(
     'destination',
     'warnings',
   ] as const
-  if (plain.some((name) => value[name] !== 'unavailable')) {
-    return null
+  const summaries = {} as Record<(typeof plain)[number], ComparisonDerivedSummary | 'unavailable'>
+  for (const name of plain) {
+    const parsed = parseDerivedSummary(value[name])
+    if (parsed === null) {
+      return null
+    }
+    summaries[name] = parsed
   }
   let openingHook: ComparisonFeatureAvailability['openingHook'] = 'unavailable'
   if (value.openingHook !== 'unavailable') {
@@ -433,14 +443,32 @@ function parseFeatureAvailability(
   }
   return Object.freeze({
     openingHook,
-    subtitleStyle: 'unavailable',
-    telopCount: 'unavailable',
+    subtitleStyle: summaries.subtitleStyle,
+    telopCount: summaries.telopCount,
     transitions,
-    effects: 'unavailable',
-    callToAction: 'unavailable',
-    destination: 'unavailable',
-    warnings: 'unavailable',
+    effects: summaries.effects,
+    callToAction: summaries.callToAction,
+    destination: summaries.destination,
+    warnings: summaries.warnings,
   })
+}
+
+function parseDerivedSummary(
+  value: unknown,
+): ComparisonDerivedSummary | 'unavailable' | null {
+  if (value === 'unavailable') {
+    return 'unavailable'
+  }
+  if (
+    !isRecordWithExactKeys(value, ['status', 'summary']) ||
+    value.status !== 'recorded' ||
+    typeof value.summary !== 'string' ||
+    value.summary.length === 0 ||
+    value.summary.length > 512
+  ) {
+    return null
+  }
+  return Object.freeze({ status: 'recorded', summary: value.summary })
 }
 
 function parseElementChanges(

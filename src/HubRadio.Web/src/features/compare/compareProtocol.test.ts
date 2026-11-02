@@ -131,6 +131,24 @@ describe('comparison protocol', () => {
     expect(parseComparisonReadResponse(bad)).toBeNull()
   })
 
+  it('FR-028 AC-076: parses derived summaries for the remaining items', () => {
+    const value = createComparisonResponseValue()
+    const features = value.result.comparison.left.features as Record<string, unknown>
+    features.subtitleStyle = { status: 'recorded', summary: '字幕の対象 2 区間' }
+    features.destination = { status: 'recorded', summary: '社内限定' }
+    const response = parseComparisonReadResponse(value)
+    if (response?.result.status !== 'available') {
+      throw new Error('Expected an available comparison response.')
+    }
+    expect(response.result.comparison.left.features.destination)
+      .toEqual({ status: 'recorded', summary: '社内限定' })
+    features.warnings = { status: 'recorded', summary: '' }
+    expect(parseComparisonReadResponse(value)).toBeNull()
+    features.warnings = 'unavailable'
+    features.effects = { status: 'recorded', summary: 'x', extra: 1 }
+    expect(parseComparisonReadResponse(value)).toBeNull()
+  })
+
   it('accepts only closed private-safe failure statuses', () => {
     const statuses: ComparisonFailureStatus[] = [
       'forbidden',

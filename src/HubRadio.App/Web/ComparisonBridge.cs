@@ -5,6 +5,7 @@ using HubRadio.App.Security;
 using HubRadio.Core.Analysis;
 using HubRadio.Core.Compositions;
 using HubRadio.Core.Identity;
+using HubRadio.Core.Projects;
 using HubRadio.Core.Provenance;
 using HubRadio.Core.Security;
 using HubRadio.Core.Time;
@@ -72,23 +73,30 @@ internal sealed class ComparisonBridgeRequestHandler
         EntityId<CompositionVersionIdTag>,
         StoredCompositionVersion?> getCompositionVersion;
     private readonly IComparisonBridgeAuthorization authorization;
+    private readonly Func<EntityId<ProjectIdTag>, PublicationScope?>?
+        getPublicationScope;
 
     internal ComparisonBridgeRequestHandler(
         ProjectStore store,
         IComparisonBridgeAuthorization authorization)
-        : this(GetReader(store), authorization)
+        : this(
+            GetReader(store),
+            authorization,
+            projectId => store.GetProject(projectId)?.PublicationScope)
     {
     }
 
     internal ComparisonBridgeRequestHandler(
         Func<EntityId<CompositionVersionIdTag>, StoredCompositionVersion?>
             getCompositionVersion,
-        IComparisonBridgeAuthorization authorization)
+        IComparisonBridgeAuthorization authorization,
+        Func<EntityId<ProjectIdTag>, PublicationScope?>? getPublicationScope = null)
     {
         ArgumentNullException.ThrowIfNull(getCompositionVersion);
         ArgumentNullException.ThrowIfNull(authorization);
         this.getCompositionVersion = getCompositionVersion;
         this.authorization = authorization;
+        this.getPublicationScope = getPublicationScope;
     }
 
     internal string Handle(BridgeRequest request)
@@ -144,12 +152,14 @@ internal sealed class ComparisonBridgeRequestHandler
             }
 
             CompositionDiff diff = VersionService.Compare(left, right);
+            PublicationScope? scope = getPublicationScope?.Invoke(left.ProjectId);
             return ComparisonBridgeJson.WriteResponse(
                 request,
                 ComparisonBridgeStatus.Available,
                 left,
                 right,
-                diff);
+                diff,
+                scope);
         }
         catch (AuthorizationException)
         {
@@ -212,22 +222,13 @@ internal sealed class ComparisonBridgeRequestHandler
 
 internal static class ComparisonBridgeJson
 {
-    private static readonly string[] UnavailableFeatureNames =
-    [
-        "subtitleStyle",
-        "telopCount",
-        "effects",
-        "callToAction",
-        "destination",
-        "warnings",
-    ];
-
     internal static string WriteResponse(
         BridgeRequest request,
         ComparisonBridgeStatus status,
         CompositionVersion? left = null,
         CompositionVersion? right = null,
-        CompositionDiff? diff = null)
+        CompositionDiff? diff = null,
+        PublicationScope? publicationScope = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         bool hasComparison = left is not null && right is not null && diff is not null;
@@ -256,7 +257,7 @@ internal static class ComparisonBridgeJson
                 }
                 else
                 {
-                    WriteComparison(writer, left!, right!, diff!);
+                    WriteComparison(writer, left!, right!, diff!, publicationScope);
                 }
 
                 writer.WriteEndObject();
@@ -267,13 +268,14 @@ internal static class ComparisonBridgeJson
         Utf8JsonWriter writer,
         CompositionVersion left,
         CompositionVersion right,
-        CompositionDiff diff)
+        CompositionDiff diff,
+        PublicationScope? publicationScope)
     {
         writer.WriteStartObject();
         writer.WritePropertyName("left");
-        WriteVersion(writer, left);
+        WriteVersion(writer, left, publicationScope);
         writer.WritePropertyName("right");
-        WriteVersion(writer, right);
+        WriteVersion(writer, right, publicationScope);
         WriteElementChanges(writer, diff.Changes);
         WriteAdoptionChanges(writer, diff.Changes);
         writer.WriteEndObject();
@@ -281,7 +283,8 @@ internal static class ComparisonBridgeJson
 
     private static void WriteVersion(
         Utf8JsonWriter writer,
-        CompositionVersion version)
+        CompositionVersion version,
+        PublicationScope? publicationScope)
     {
         writer.WriteStartObject();
         writer.WriteString("versionId", version.Id.ToString());
@@ -310,12 +313,7 @@ internal static class ComparisonBridgeJson
 
         writer.WriteEndArray();
         writer.WriteStartObject("features");
-        foreach (string featureName in UnavailableFeatureNames)
-        {
-            writer.WriteString(featureName, "unavailable");
-        }
-
-        WriteDerivedFeatures(writer, version);
+        WriteDerivedFeatures(writer, version, publicationScope);
         writer.WriteEndObject();
         writer.WriteEndObject();
     }
@@ -324,7 +322,8 @@ internal static class ComparisonBridgeJson
     // 記録済みとして出し、版に記録のない項目だけを "unavailable" のままにする。
     private static void WriteDerivedFeatures(
         Utf8JsonWriter writer,
-        CompositionVersion version)
+        CompositionVersion version,
+        PublicationScope? publicationScope)
     {
         CompositionElement[] ordered = version.Elements
             .OrderBy(static element => element.OutputRange.Start)
@@ -332,8 +331,17 @@ internal static class ComparisonBridgeJson
 
         if (ordered.Length == 0)
         {
-            writer.WriteString("openingHook", "unavailable");
-            writer.WriteString("transitions", "unavailable");
+            foreach (string name in new[]
+            {
+                "openingHook", "subtitleStyle", "telopCount", "transitions",
+                "effects", "callToAction",
+            })
+            {
+                writer.WriteString(name, "unavailable");
+            }
+
+            WriteDestination(writer, publicationScope);
+            writer.WriteString("warnings", "unavailable");
             return;
         }
 
@@ -351,7 +359,107 @@ internal static class ComparisonBridgeJson
         writer.WriteString("status", "recorded");
         writer.WriteNumber("cutCount", ordered.Length - 1);
         writer.WriteEndObject();
+
+        WriteDerivedSummaries(writer, ordered, publicationScope);
     }
+
+    // FR-028 AC-076: 字幕スタイル・テロップ・効果・CTA・想定公開先・要確認事項を、
+    // 版の要素の出自・採用提案・終端要素と、プロジェクトの公開範囲から導く。
+    private static void WriteDerivedSummaries(
+        Utf8JsonWriter writer,
+        CompositionElement[] ordered,
+        PublicationScope? publicationScope)
+    {
+        int subtitled = ordered.Count(static e => e.Origin.Kind == OriginKind.SourceSpan);
+        int telops = ordered.Count(static e => e.Origin.Kind == OriginKind.EditorialRecord);
+        int assets = ordered.Count(static e => e.Origin.Kind == OriginKind.Asset);
+        int adopted = ordered.Count(static e => e.AdoptedSuggestion is not null);
+        CompositionElement last = ordered[^1];
+
+        WriteSummary(
+            writer,
+            "subtitleStyle",
+            subtitled == 0
+                ? "字幕の対象区間なし"
+                : $"字幕の対象 {Num(subtitled)} 区間（既定の字幕設定）");
+        WriteSummary(
+            writer,
+            "telopCount",
+            $"テロップ候補 {Num(telops)} 件（編集記録由来の要素）");
+        WriteSummary(
+            writer,
+            "effects",
+            $"提案の採用 {Num(adopted)} 件、カット {Num(ordered.Length - 1)} 箇所");
+        WriteSummary(
+            writer,
+            "callToAction",
+            last.Origin.Kind == OriginKind.SourceSpan
+                ? "終端は元動画の区間（CTA の記録なし）"
+                : $"終端に{(last.Origin.Kind == OriginKind.Asset ? "素材" : "編集記録")}の要素あり（CTA の候補）");
+        WriteDestination(writer, publicationScope);
+
+        var warnings = new List<string>();
+        if (assets > 0)
+        {
+            warnings.Add($"素材 {Num(assets)} 件の権利確認");
+        }
+
+        if (adopted > 0)
+        {
+            warnings.Add($"採用した提案 {Num(adopted)} 件の人による確認");
+        }
+
+        if (publicationScope is PublicationScope s &&
+            s is not (PublicationScope.InternalOnly or PublicationScope.ExternalPublicationApproved))
+        {
+            warnings.Add("公開先が未承認または未決定");
+        }
+
+        WriteSummary(
+            writer,
+            "warnings",
+            warnings.Count == 0 ? "要確認事項なし" : string.Join("、", warnings));
+    }
+
+    private static string Num(int value) =>
+        value.ToString(CultureInfo.InvariantCulture);
+
+    private static void WriteDestination(
+        Utf8JsonWriter writer,
+        PublicationScope? publicationScope)
+    {
+        if (publicationScope is PublicationScope scope)
+        {
+            WriteSummary(writer, "destination", FormatScope(scope));
+        }
+        else
+        {
+            writer.WriteString("destination", "unavailable");
+        }
+    }
+
+    private static void WriteSummary(
+        Utf8JsonWriter writer,
+        string name,
+        string summary)
+    {
+        writer.WriteStartObject(name);
+        writer.WriteString("status", "recorded");
+        writer.WriteString("summary", summary);
+        writer.WriteEndObject();
+    }
+
+    private static string FormatScope(PublicationScope scope) =>
+        scope switch
+        {
+            PublicationScope.InternalOnly => "社内限定",
+            PublicationScope.SpecificGroupOnly => "特定グループ限定",
+            PublicationScope.ExternalCandidate => "社外公開の候補（未承認）",
+            PublicationScope.ExternalPublicationApproved => "社外公開（承認済み）",
+            PublicationScope.PublicationForbidden => "公開禁止",
+            PublicationScope.PendingDecision => "公開範囲は未決定",
+            _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+        };
 
     private static string FormatOrigin(OriginKind kind) =>
         kind switch
