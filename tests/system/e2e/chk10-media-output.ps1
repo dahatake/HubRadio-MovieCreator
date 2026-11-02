@@ -4,12 +4,14 @@
 param([Parameter(Mandatory)][ValidateSet('AC-049','AC-001','AC-057','AC-002','AC-060','AC-079')][string]$Ac)
 $ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'HubRadioUia.ps1')
+. (Join-Path $PSScriptRoot 'OutputArtifacts.ps1')
 $sb = New-AppSandbox
 $p = $null
 function Get-Probe([string]$file) {
-    $ff = Get-Command ffprobe -ErrorAction SilentlyContinue
-    if (-not $ff) { throw 'ffprobe not available to verify output' }
-    (& $ff.Source -v error -print_format json -show_streams -show_format $file | ConvertFrom-Json)
+    $ff = Resolve-TestMediaTool -Name ffprobe -AppDir $sb.AppDir
+    $json = & $ff -v error -print_format json -show_streams -show_format $file
+    if ($LASTEXITCODE -ne 0) { throw "ffprobe failed to inspect '$file' (exit $LASTEXITCODE)" }
+    $json | ConvertFrom-Json -ErrorAction Stop
 }
 function Start-QuickStart($root, $video) {
     New-ProjectWithCompletedJobs $root $sb 'chk10-sample' 1 $video
@@ -53,7 +55,7 @@ Invoke-Test -Label "CHK10 $Ac" -Sandbox $sb -Body {
                 $outs = @(Get-OutputVideos $video)
                 $out = $outs | Where-Object { [math]::Abs($_.Video.width / $_.Video.height - 16 / 9) -le 0.01 } | Select-Object -First 1
                 if (-not $out) { throw 'no 16:9 long output' }
-                $manifest = Get-ChildItem $sb.Work -Recurse -Filter 'manifest*.json' | Select-Object -First 1
+                $manifest = Find-TestRenderManifests -Workspace (Get-WorkspaceDir $sb) | Select-Object -First 1
                 if ($manifest -and (Get-Content $manifest.FullName -Raw) -match 'https?://') { throw 'external URL guessed into output' }
                 # 異常系: 満たせない（実行基盤の欠落）ときは、原因と次の行動が出る
                 $tool = Get-ChildItem $sb.AppDir -Recurse -Filter 'ffmpeg.exe' | Select-Object -First 1
@@ -105,8 +107,14 @@ Invoke-Test -Label "CHK10 $Ac" -Sandbox $sb -Body {
             'AC-079' {
                 # FR-013 AC-079: 標準成果物一式。異常系: 不成立成果物は空の偽物なし・manifest に理由。
                 Start-QuickStart $root $video
-                $manifest = Get-ChildItem $sb.Work -Recurse -Filter 'manifest*.json' | Select-Object -First 1
-                if (-not $manifest) { throw 'no manifest' }
+                $manifests = @(Find-TestRenderManifests -Workspace (Get-WorkspaceDir $sb))
+                if ($manifests.Count -eq 0) { throw 'no manifest (including published Manifest/<artifact-id>.json evidence)' }
+                foreach ($manifest in $manifests) {
+                    $document = Get-Content -LiteralPath $manifest.FullName -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
+                    if (-not $document.PSObject.Properties['outputs'] -or @($document.outputs).Count -eq 0) {
+                        throw "manifest has no output evidence: $($manifest.FullName)"
+                    }
+                }
                 foreach ($f in Get-ChildItem $sb.Work -Recurse -Filter '*.mp4') {
                     if ($f.Length -eq 0) { throw "empty fake output: $($f.Name)" }
                 }

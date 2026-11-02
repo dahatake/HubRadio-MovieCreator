@@ -1,5 +1,5 @@
 ﻿#Requires -Version 7.0
-# FR-131 AC-132 (system): Job が複数ある Project で、Job を表示・選択する各画面に Job ごとのサムネイルが
+# FR-131 AC-132 (integration): Job が複数ある Project で、Job を表示・選択する各画面に Job ごとのサムネイルが
 # Job の名前または作成日時とともに表示され、どの Job か識別できる。
 $ErrorActionPreference = 'Stop'  # dot-source の ParserError/未定義関数を終了コード 0 で終わらせない
 . (Join-Path $PSScriptRoot 'HubRadioUia.ps1')
@@ -8,12 +8,8 @@ $p = $null
 Invoke-Test -Label 'FR-131 AC-132' -Sandbox $sb -Body {
     try {
         $video = New-SyntheticVideo $sb $sb.Work
-        # 動画処理ツール（Tools\ffmpeg.exe・ffprobe.exe）は配布物に同梱される。無い開発ビルドでは、PATH のものを一時コピーに置く
-        $tools = Join-Path $sb.AppDir 'Tools'
-        New-Item -ItemType Directory -Path $tools -Force | Out-Null
-        foreach ($n in 'ffmpeg', 'ffprobe') {
-            if (-not (Test-Path (Join-Path $tools "$n.exe"))) { $c = Get-Command $n -ErrorAction SilentlyContinue; if ($c) { Copy-Item $c.Source (Join-Path $tools "$n.exe") } }
-        }
+        # 元素材の合成に PATH を使っても、検証対象アプリの Tools は補充しない。
+        # 依存を欠く配布物がテスト基盤のコピーによって合格することを防ぐ。
         $p = Start-App $sb
         $root = Get-Root $p
         New-ProjectWithCompletedJobs $root $sb 'thumb-sample' 2 $video

@@ -11,6 +11,7 @@ Add-Type -AssemblyName System.Windows.Forms
 $script:UIA = [System.Windows.Automation.AutomationElement]
 $script:Desc = [System.Windows.Automation.TreeScope]::Descendants
 $script:RepoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+. (Join-Path $PSScriptRoot 'MediaTools.ps1')
 
 function New-AppSandbox {
     $appPath = $env:HUBRADIO_APP_PATH
@@ -434,13 +435,7 @@ function Invoke-Test([scriptblock]$Body, [string]$Label, $Sandbox) {
 
 # --- Job 成果物つき Project の作成（実際の操作で作る。合成した 2 秒の動画を元素材にする） ---
 function New-SyntheticVideo($sb, [string]$dir) {
-    $ff = Join-Path $sb.AppDir 'Tools\ffmpeg.exe'
-    if (-not (Test-Path $ff)) {
-        # 開発ビルドには同梱されない。テスト用の合成動画の作成だけに PATH 上の ffmpeg を使う（アプリの動作には使わない）
-        $cmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
-        if (-not $cmd) { throw 'ffmpeg not found (Tools\ffmpeg.exe in app folder or ffmpeg on PATH)' }
-        $ff = $cmd.Source
-    }
+    $ff = Get-TestFfmpeg $sb
     $out = Join-Path $dir 'source.mp4'
     & $ff -y -f lavfi -i 'testsrc=size=1920x1080:rate=30:duration=3' -f lavfi -i 'sine=frequency=440:duration=3' -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest $out 2>$null
     if ($LASTEXITCODE -ne 0) {
@@ -451,11 +446,7 @@ function New-SyntheticVideo($sb, [string]$dir) {
     $out
 }
 function Get-TestFfmpeg($sb) {
-    $ff = Join-Path $sb.AppDir 'Tools\ffmpeg.exe'
-    if (Test-Path $ff) { return $ff }
-    $cmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
-    if (-not $cmd) { throw 'ffmpeg not found (Tools\ffmpeg.exe in app folder or ffmpeg on PATH)' }
-    $cmd.Source
+    Resolve-TestMediaTool -Name ffmpeg -AppDir $sb.AppDir
 }
 # --- 合成画像（System.Drawing の PNG）。$Characters >= 2 なら、人物に見立てた色違いの楕円を横に並べた 1 枚画像にする ---
 function New-SyntheticImage([string]$Path, [int]$Width = 640, [int]$Height = 640, [int]$Characters = 1, [string]$Color1 = '#3366CC', [string]$Color2 = '#CC9933') {
@@ -725,6 +716,5 @@ function Wait-JobCompleted($root, [int]$jobNumber, [int]$timeoutSec = 900) {
     Write-JobWaitDiag "timeout waiting for Job $jobNumber"
     throw "Job $jobNumber did not complete within $timeoutSec s"
 }
-
 
 

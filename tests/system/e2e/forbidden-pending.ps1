@@ -1,6 +1,10 @@
 #Requires -Version 7.0
-# FR-064 AC-041 / FR-132 AC-139 (system): 権限がない利用者の forbidden。
-# 権限のない利用者を再現する方法が要求定義書にない（TBD）ため、台帳ではブロックしている。
-# 解決するまで、このスクリプトは意図的に失敗する（pass と誤判定しないため）。
-Write-Error 'permission-less user scenario is TBD in requirements (see ledger block reason)'
-exit 2
+# FR-064 AC-041 / FR-132 AC-139: historical entry point, now executable.
+# The current Windows actor has no assigned application roles in an isolated
+# temporary DB; the real authorization service handles the native requests.
+$ErrorActionPreference = 'Stop'
+Push-Location (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
+try {
+    & dotnet test --project tests/system/contract/HubRadio.System.Contracts.csproj -c Release --filter 'FullyQualifiedName~PermissionContracts'
+    exit $LASTEXITCODE
+} finally { Pop-Location }

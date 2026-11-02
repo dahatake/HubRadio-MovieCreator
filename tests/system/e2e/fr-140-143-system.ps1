@@ -24,8 +24,8 @@ function Save-FrameDiag($sb, [string]$case, [string]$mp4, [string]$png, [string]
         $dest = Join-Path $repo "work\runs\$rid\e2e-failure-$case"
         $null = New-Item -ItemType Directory -Force -Path $dest
         $lines = @("mp4: $mp4", "portraitProbeColor: $probe")
-        $fp = Get-Command ffprobe -ErrorAction SilentlyContinue
-        if ($fp -and $mp4) { $lines += (& $fp.Source -v error -show_entries stream=width,height,duration,r_frame_rate -show_entries format=duration -of default=nw=1 $mp4 2>&1) }
+        $fp = Resolve-TestMediaTool -Name ffprobe -AppDir $sb.AppDir
+        if ($mp4) { $lines += (& $fp -v error -show_entries stream=width,height,duration,r_frame_rate -show_entries format=duration -of default=nw=1 $mp4 2>&1) }
         if ($png -and (Test-Path -LiteralPath $png)) {
             Copy-Item -LiteralPath $png -Destination (Join-Path $dest 'frame.png') -Force
             if ($probe) { $r = Get-ColorPixels $png $probe; $lines += "ColorPixels: Count=$($r.Count) MinX=$($r.MinX) MaxX=$($r.MaxX) MinY=$($r.MinY) MaxY=$($r.MaxY) Size=$($r.Width)x$($r.Height)" }
@@ -37,10 +37,10 @@ function Save-FrameDiag($sb, [string]$case, [string]$mp4, [string]$png, [string]
     } catch { Write-Host "DIAG-FRAME: save failed: $_" }
 }
 function Save-Frame([string]$video, [double]$t, [string]$png) {
-    $ff = Get-Command ffmpeg -ErrorAction SilentlyContinue
-    if (-not $ff) { throw 'ffmpeg is required to inspect the deliverable video' }
-    & $ff.Source -y -loglevel error -ss ([string]::Format([cultureinfo]::InvariantCulture, '{0:F3}', $t)) -i $video -frames:v 1 $png
-    if (-not (Test-Path -LiteralPath $png)) { throw "frame at ${t}s could not be extracted" }
+    $ff = Resolve-TestMediaTool -Name ffmpeg -AppDir $sb.AppDir
+    if (Test-Path -LiteralPath $png) { Remove-Item -LiteralPath $png -Force }
+    & $ff -y -loglevel error -ss ([string]::Format([cultureinfo]::InvariantCulture, '{0:F3}', $t)) -i $video -frames:v 1 $png
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $png -PathType Leaf)) { throw "frame at ${t}s could not be extracted (exit $LASTEXITCODE)" }
 }
 function Get-ColorPixels([string]$png, [string]$hex, [int]$tol = 40) {
     # 指定色に近い画素の数と、その外接矩形を返す。
