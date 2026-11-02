@@ -32,6 +32,7 @@
       "tools/**",
       "users-guide/**",
       "EABK-Studio/**",
+      "EABK-docs/**",
       "tests/toolkit/**",
       "templates/**",
       "node_modules/**",
