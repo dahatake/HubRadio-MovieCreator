@@ -15,7 +15,7 @@
 | FR-005 | 不要区間検出 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-006 | トピック分割 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-007 | 見どころ候補抽出 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
-| FR-008 | 長尺版生成 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | tests/HubRadio.App.Tests/LongFormComposerTests.cs; tests/HubRadio.App.Tests/StandardCompositionOrchestratorTests.cs; tests/Acceptance/AC001_LongForm.cs | なし |
+| FR-008 | 長尺版生成 | 承認済み（依頼 2026-08-26） | src/HubRadio.App/Compositions/LongFormComposer.cs; src/HubRadio.App/Compositions/StandardCompositionOrchestrator.cs | tests/HubRadio.App.Tests/LongFormComposerTests.cs; tests/HubRadio.App.Tests/StandardCompositionOrchestratorTests.cs; tests/Acceptance/AC001_LongForm.cs | なし |
 | FR-009 | YouTube横長版 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
 | FR-010 | 縦型ショート版 | 承認済み（依頼 2026-08-26） | src/HubRadio.App/Analysis/EmphasisCandidateService.cs, src/HubRadio.App/Projects/SourceOnlyPipeline.cs, src/HubRadio.App/Rendering/StandardArtifactGenerator.cs, src/HubRadio.Infrastructure/Files/ArtifactStore.cs, src/HubRadio.App/Delivery/AncillaryArtifactExporter.cs, src/HubRadio.App/Compositions/StandardCompositionPlanner.cs, src/HubRadio.App/Web/AnalysisBridge.cs, src/HubRadio.Web/src/features/analysis/analysisProtocol.ts | tests/HubRadio.App.Tests/SpeechSegmentShortCandidateTests.cs, tests/HubRadio.App.Tests/SourceOnlyPipelineRealAsrTests.cs, tests/HubRadio.App.Tests/StandardArtifactGeneratorTests.cs, tests/HubRadio.App.Tests/StandardCompositionPlannerTests.cs, tests/HubRadio.App.Tests/EmphasisCandidateServiceTests.cs | なし |
 | FR-011 | フック生成 | 承認済み（依頼 2026-08-26） | 未確認（AU-002） | 未確認（AU-002） | なし |
