@@ -46,6 +46,17 @@ build・test・起動用のscriptは`scripts/`にまとめています。
 | `scripts/verify.ps1` | 要求IDの追跡性検査の後に`test.ps1`を実行（CI） |
 | `scripts/run.ps1` | Release buildの後に`HubRadio.App.exe`を起動 |
 
+### E2E 前の Release runtime 準備
+
+通常の `scripts/build.ps1 -Configuration Release` と `scripts/test.ps1` はソースの build/test 入口で、`Tools`、`Worker`、`Fonts`、`ModelCatalog` は通常の Release 出力へ含めません。E2E の前に Release build を済ませ、既存の runtime 準備入口を使います。
+
+```powershell
+pwsh.exe -NoLogo -NoProfile -File .\scripts\build.ps1 -Configuration Release
+pwsh.exe -NoLogo -NoProfile -File .\install.ps1 -Configuration Release -SkipBuild
+```
+
+`install.ps1 -SkipBuild` は Release 出力を対象に、FFmpeg/ffprobe の固定 SHA-256、Worker の runtime manifest、フォントの固定 SHA-256、モデル bundle の catalog 記載値を照合し、`ModelCatalog/catalog.json` を配置します。不足・不一致があれば固定入力から再取得または再構成するため、読み取り専用の検査コマンドではありません。準備済みの出力では照合済み資材を再利用します。これは runtime 資材の準備であり、E2E 自体は別途実行します。
+
 ## 前提条件
 
 | 用途 | 条件 |
