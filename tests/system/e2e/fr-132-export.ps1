@@ -37,15 +37,28 @@ Invoke-Test -Label 'FR-132 AC-136/AC-137' -Sandbox $sb -Body {
             }
             @(Get-ChildItem $dest -File).Count
         }
-        $null = Wait-ExportSettled 3
+        $null = Wait-ExportSettled 4
         $files = @(Get-ChildItem $dest -File)
-        if ($files.Count -lt 3) { throw "expected exported files (long, short, thumbnail at least), got $($files.Count)" }
+        if ($files.Count -lt 4) { throw "expected exported files (long, short clean, short burned-in, thumbnail at least), got $($files.Count)" }
         foreach ($f in $files) { if ($f.Name -notlike "*$projectName*") { throw "file name lacks project name: $($f.Name)" } }
         foreach ($f in $files) { if ($f.Name -notmatch 'Job|\d{8}') { throw "file name lacks the Job name or creation time: $($f.Name)" } }
         # FR-132 AC-136: 長尺クリーン・短尺クリーン（shortClean。UI 名「短尺（クリーン版）」、ファイル名は「短尺クリーン」）・サムネイルを含む
-        foreach ($kind in '長尺', '短尺クリーン', 'サムネイル') {
-            if (-not ($files | Where-Object { $_.Name -like "*$kind*" })) { throw "no exported file for kind '$kind'" }
+        # 短尺（焼き込み版）= ファイル名「短尺焼き込み」も必須（欠落したまま通過させない）。
+        # 種類ごとに、(a) 名前に Project 名、(b) 空でない、(c) 元の成果物（Workspace 内）と内容（ハッシュ）が一致、を確認する。
+        $origByHash = @(Get-ChildItem -LiteralPath $ws -Recurse -File -Include *.mp4, *.png, *.jpg |
+            Where-Object { $_.FullName -notlike "$dest*" } | ForEach-Object { (Get-FileHash $_.FullName).Hash })
+        foreach ($kind in '長尺', '短尺クリーン', '短尺焼き込み', 'サムネイル') {
+            $ofKind = @($files | Where-Object { $_.Name -like "*$kind*" })
+            if ($ofKind.Count -lt 1) { throw "no exported file for kind '$kind'" }
+            foreach ($f in $ofKind) {
+                if ($f.Length -le 0) { throw "exported $kind file is empty: $($f.Name)" }
+                if ($f.Name -notlike "*$projectName*") { throw "exported $kind file lacks project name: $($f.Name)" }
+                if ((Get-FileHash $f.FullName).Hash -notin $origByHash) { throw "exported $kind file content does not match any original deliverable: $($f.Name)" }
+            }
         }
+        # 長尺と短尺クリーンと短尺焼き込みは別の成果物（同じ内容を複数の種類名で書き出して通さない）
+        $vidHashes = foreach ($kind in '長尺', '短尺クリーン', '短尺焼き込み') { (Get-FileHash (@($files | Where-Object { $_.Name -like "*$kind*" })[0].FullName)).Hash }
+        if (@($vidHashes | Sort-Object -Unique).Count -ne 3) { throw 'long / short clean / short burned-in exports are not three distinct deliverables' }
         $originalsAfter = @(Get-ChildItem -LiteralPath $ws -Recurse -File -Include *.mp4, *.png, *.jpg |
             Where-Object { $_.FullName -notlike "$dest*" } | ForEach-Object { "$($_.FullName)|$((Get-FileHash $_.FullName).Hash)" } | Sort-Object)
         if (($originalsBefore -join "`n") -ne ($originalsAfter -join "`n")) { throw 'original deliverables changed by export' }

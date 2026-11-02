@@ -256,9 +256,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-132-export.ps1",
       "canary": false,
       "status": "pass",
-      "last_commit": "d1ca934",
-      "last_run_at": "2026-11-03T00:30:32+09:00",
-      "evidence": "work/runs/202611022237/logs/system-test/E2E-006-202611022309.log",
+      "last_commit": "d7c1a0a",
+      "last_run_at": "2026-11-03T05:44:15+09:00",
+      "evidence": "work/runs/202611030532/logs/system-test/E2E-006-202611030536.log",
       "history": [
         {
           "at": "2026-10-13T05:43:44+09:00",
@@ -1337,9 +1337,9 @@
       "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-159",
       "canary": false,
       "status": "blocked",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "last_commit": "05134d2",
+      "last_run_at": "2026-11-03T05:57:52+09:00",
+      "evidence": "work/runs/202611030532/logs/system-test/E2E-033-202611030544.log",
       "history": [
         {
           "at": "2026-10-30T16:46:25+09:00",
@@ -1364,6 +1364,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC-159 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-159 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
+        },
+        {
+          "at": "2026-11-03T05:57:52+09:00",
+          "by": "script",
+          "change": "status -> fail",
+          "reason": "7種に拡張して実行: 成果物の記録 style-template-render.json に background / 強調の bold・scale・motion / captionsDraft が無く、字幕・強調の contrast／非色依存強調／下書き表示を成果物から測れない。assertion は弱めない。実装側で記録を持つか実フレーム測定が必要"
+        },
+        {
+          "at": "2026-11-03T05:58:13+09:00",
+          "by": "script",
+          "change": "blocked",
+          "reason": "AC-159 は integration（CHK-10）。7種拡張の参考実行は fail: 成果物記録 style-template-render.json に background・強調の bold/scale/motion・captionsDraft が無く成果物から測れない（log: work/runs/202611030532/logs/system-test/E2E-033-202611030544.log）。assertion は弱めない。実装役が結合試験で担う"
         }
       ]
     },
