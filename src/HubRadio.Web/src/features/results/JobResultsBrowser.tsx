@@ -83,8 +83,10 @@ export function JobResultsBrowser({
   const [ownView, setOwnView] = useState<JobResultsView>('job')
   const view = controlledView ?? ownView
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [compareSelection, setCompareSelection] = useState<CompareSelection>(initialCompareSelection)
+  const timeRef = useRef(0)
   const list = versions ?? []
-  const selected = list.find(entry => entry.versionId === selectedId) ?? null
+  const selected =  list.find(entry => entry.versionId === selectedId) ?? null
   const shownPast = selected !== null && !selected.isCurrent ? selected : null
   const current = list.find(entry => entry.isCurrent) ?? null
 
@@ -131,6 +133,27 @@ export function JobResultsBrowser({
             })}
           </ol>
         )}
+        {list.length > 0 && (
+          <details className="job-rail-table">
+            <summary>Jobの一覧を表で見る</summary>
+            <table aria-label="Jobの一覧表">
+              <thead><tr><th scope="col">Job</th><th scope="col">状態</th><th scope="col">作成日時</th><th scope="col">選択</th></tr></thead>
+              <tbody>
+                {list.map(entry => {
+                  const shown = shownPast === null ? entry.isCurrent : entry === shownPast
+                  return (
+                    <tr key={entry.versionId} data-version-id={entry.versionId}>
+                      <th scope="row">{jobTitle(list, entry)}</th>
+                      <td>{pipelinePhaseLabels[entry.phase]}</td>
+                      <td>{formatJobCreatedAt(entry.createdAt ?? null)}</td>
+                      <td>{shown ? '表示中' : <button type="button" onClick={() => setSelectedId(entry.versionId)}>{jobTitle(list, entry)}を表示</button>}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </details>
+        )}
         {list.length > 0 && (() => {
           const shown = shownPast ?? current
           return shown === null ? null : (
@@ -149,7 +172,8 @@ export function JobResultsBrowser({
           <PastJobDetail key={shownPast.versionId} versions={list} entry={shownPast} current={current} projectId={projectId}
             pending={pending} disabledReason={disabledReason} onRestore={onRestore} />
         )}
-      </> : <JobComparison versions={list} projectId={projectId} />}
+      </> : <JobComparison versions={list} projectId={projectId} selection={compareSelection} timeRef={timeRef} seedId={selectedId}
+        onSelectionChange={patch => setCompareSelection(previous => ({ ...previous, ...patch }))} />}
     </section>
   )
 }
@@ -241,12 +265,32 @@ function startPlayback(media: HTMLVideoElement | null): void {
   }
 }
 
-function JobComparison({ versions, projectId }: Readonly<{ versions: readonly PipelineVersionEntry[], projectId: string | null }>) {
-  const [count, setCount] = useState(2)
-  const [slotIds, setSlotIds] = useState<readonly (string | undefined)[]>([])
-  const [outputKey, setOutputKey] = useState<string | null>(null)
-  const [linked, setLinked] = useState(true)
-  const [differencesOnly, setDifferencesOnly] = useState(true)
+/** NFR-UX-003: the comparison's selection, kept by the browser so switching the view back and forth loses nothing. */
+export interface CompareSelection {
+  readonly count: number
+  readonly slotIds: readonly (string | undefined)[]
+  readonly outputKey: string | null
+  readonly linked: boolean
+  readonly differencesOnly: boolean
+}
+export const initialCompareSelection: CompareSelection = { count: 2, slotIds: [], outputKey: null, linked: true, differencesOnly: true }
+
+function JobComparison({ versions, projectId, selection, onSelectionChange, timeRef, seedId }: Readonly<{
+  versions: readonly PipelineVersionEntry[]
+  projectId: string | null
+  selection: CompareSelection
+  onSelectionChange: (patch: Partial<CompareSelection>) => void
+  /** The playback position (seconds) shared across views. */
+  timeRef: { current: number }
+  /** The Job selected in the per-Job view; it fills the first slot until the user chooses otherwise. */
+  seedId: string | null
+}>) {
+  const { count, slotIds, outputKey, linked, differencesOnly } = selection
+  const setCount = (value: number) => onSelectionChange({ count: value })
+  const setSlotIds = (update: (previous: readonly (string | undefined)[]) => readonly (string | undefined)[]) => onSelectionChange({ slotIds: update(slotIds) })
+  const setOutputKey = (value: string | null) => onSelectionChange({ outputKey: value })
+  const setLinked = (value: boolean) => onSelectionChange({ linked: value })
+  const setDifferencesOnly = (value: boolean) => onSelectionChange({ differencesOnly: value })
   const medias = useRef<(HTMLVideoElement | null)[]>([])
   const countSelectId = useId()
   const outputSelectId = useId()
@@ -262,7 +306,9 @@ function JobComparison({ versions, projectId }: Readonly<{ versions: readonly Pi
   const pool = versions.filter(entry => isJobSelectable(entry.phase)).length >= shownCount
     ? versions.filter(entry => isJobSelectable(entry.phase)) : versions
   const defaults = pool.slice(0, shownCount).reverse()
-  const entries = Array.from({ length: shownCount }, (_, index) =>
+  const seed = seedId !== null && slotIds.every(id => id === undefined) ? versions.find(entry => entry.versionId === seedId) : undefined
+  if (seed !== undefined && !defaults.includes(seed)) defaults[0] = seed
+  const entries =  Array.from({ length: shownCount }, (_, index) =>
     versions.find(entry => entry.versionId === slotIds[index]) ?? defaults[index]!)
   const itemLists = entries.map(jobOutputItems)
   const keys = [...new Map(itemLists.flat().map(item => [item.key, item.label] as const))]
@@ -346,8 +392,12 @@ function JobComparison({ versions, projectId }: Readonly<{ versions: readonly Pi
               {item === undefined || projectId === null
                 ? <p className="result-gallery-note">{projectId === null ? 'Projectを確認できないため、プレビューを表示できません。' : 'このJobにはこの成果物がありません。'}</p>
                 : <JobMedia url={mediaUrl(projectId, entry, item.output)} output={item.output} label={`${jobTitle(versions, entry)}・${item.label}`}
-                  mediaRef={element => { medias.current[index] = element }}
-                  onPlay={() => follow(index, 'play')} onPause={() => follow(index, 'pause')} onSeeked={() => follow(index, 'seeked')} />}
+                  mediaRef={element => {
+                    medias.current[index] = element
+                    if (element !== null && timeRef.current > 0 && element.currentTime === 0) element.currentTime = timeRef.current
+                  }}
+                  onPlay={() => follow(index, 'play')} onPause={() => { timeRef.current = medias.current[index]?.currentTime ?? timeRef.current; follow(index, 'pause') }}
+                  onSeeked={() => { timeRef.current = medias.current[index]?.currentTime ?? timeRef.current; follow(index, 'seeked') }} />}
             </section>
           )
         })}

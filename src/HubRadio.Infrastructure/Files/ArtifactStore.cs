@@ -357,6 +357,12 @@ public sealed class ArtifactStore
 
         try
         {
+            // Directory creation is idempotent file I/O: do it BEFORE taking the database write lock so a slow
+            // file system (anti-virus scan) never holds BEGIN IMMEDIATE against heartbeats/progress (E2E-006).
+            EnsureDestinationDirectoryChain(
+                paths.DestinationDirectory,
+                createMissing: true,
+                cancellationToken);
             using SqliteConnection connection =
                 SqliteStoreSupport.OpenConnection(_databasePath);
             using SqliteTransaction transaction =
@@ -370,7 +376,7 @@ public sealed class ArtifactStore
                 paths.StorageReference);
             EnsureDestinationDirectoryChain(
                 paths.DestinationDirectory,
-                createMissing: true,
+                createMissing: false,
                 cancellationToken);
             EnsurePathAbsent(paths.DestinationPath);
             ValidateStagingPath(paths.StagingPath, paths.StagingRoot);
