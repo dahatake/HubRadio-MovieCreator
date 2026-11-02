@@ -36,7 +36,7 @@ using ProjectSnapshotJson = HubRadio.App.Policy.ProjectSnapshotJson;
 namespace HubRadio.App.Tests;
 
 [TestClass]
-public sealed class SourceOnlyPipelineTests
+public sealed partial class SourceOnlyPipelineTests
 {
     private const string ActorSid = "S-1-5-21-111-222-333-1001";
     private static readonly DateTimeOffset At = new(2026, 9, 8, 0, 0, 0, TimeSpan.Zero);
@@ -1240,9 +1240,10 @@ public sealed class SourceOnlyPipelineTests
 
     private sealed class AutomaticFixture
     {
-        internal AutomaticFixture(bool empty = false, bool repeated = false, bool untimed = false, bool offGrid = false, bool shortEligible = false)
+        internal AutomaticFixture(bool empty = false, bool repeated = false, bool untimed = false, bool offGrid = false, bool shortEligible = false,
+            RealAsrInput? real = null)
         {
-            var (audio, original) = CreateAnalysis(empty, allTimingValid: true, shortEligible);
+            var (audio, original) = real is null ? CreateAnalysis(empty, allTimingValid: true, shortEligible) : (real.Timeline, real.Worker);
             AsrWorkerResult worker = original;
             if (repeated)
             {
@@ -1258,13 +1259,37 @@ public sealed class SourceOnlyPipelineTests
             Import = SourceOnlyPipeline.RebindImportedIds(TranscriptImporter.Import(worker, audio,
                 EntityId<TranscriptRevisionIdTag>.New(), EntityId<TranscriptSpeakerIdTag>.New(), At));
             Index = new PtsIndex(audio.SourceAssetId, audio.ProjectId, EntityId<JobIdTag>.New(), "source.mov", audio.SourceContentDigest,
-                audio.SourceByteSize, 0, new RationalTime(1, 30), Enumerable.Range(0, 600)
+                audio.SourceByteSize, 0, new RationalTime(1, 30), Enumerable.Range(0, real?.Frames ?? 600)
                     .Select(i => new PtsIndexEntry(i, new RationalTime(i, 30), new RationalTime(1, 30), i == 0)).ToArray());
             Full = SourceOnlyPipeline.CreateFullSourceSpan(Index, Import);
             var element = new CompositionElement(EntityId<CompositionElementIdTag>.New(), new TimeRange(default, Full.Range.Duration),
                 OriginRef.FromSourceSpan(Full.Id), sourceRange: Full.Range);
+            CompositionElement[] parentElements = [element];
+            if (real?.CutPauses == true)
+            {
+                // FR-057 pause tightening as the pipeline applies it: the silence between utterances is cut (0.15 s kept each side).
+                var pieces = new List<TimeRange>();
+                RationalTime cursor = Full.Range.Start;
+                for (int i = 0; i + 1 < real.Worker.Segments.Count; i++)
+                {
+                    long cutStart = (long)Math.Ceiling((real.Worker.Segments[i].EndSeconds + 0.15) * 30);
+                    long cutEnd = (long)Math.Floor((real.Worker.Segments[i + 1].StartSeconds - 0.15) * 30);
+                    if (cutEnd <= cutStart) { continue; }
+                    pieces.Add(new TimeRange(cursor, new RationalTime(cutStart, 30) - cursor));
+                    cursor = new RationalTime(cutEnd, 30);
+                }
+                pieces.Add(new TimeRange(cursor, Full.Range.End - cursor));
+                RationalTime output = default;
+                parentElements = pieces.Select(piece =>
+                {
+                    var cut = new CompositionElement(EntityId<CompositionElementIdTag>.New(), new TimeRange(output, piece.Duration),
+                        OriginRef.FromSourceSpan(Full.Id), sourceRange: piece);
+                    output += piece.Duration;
+                    return cut;
+                }).ToArray();
+            }
             Parent = new CompositionVersion(EntityId<CompositionVersionIdTag>.New(), audio.ProjectId, null, ActorSid, At,
-                "Coordinator policy fixture, not media verification", RenderGraphCanonicalEvidence.ComputeCompositionDigest([element]), [element]);
+                "Coordinator policy fixture, not media verification", RenderGraphCanonicalEvidence.ComputeCompositionDigest(parentElements), parentElements);
             Copy = new WorkingCopy(EntityId<WorkingCopyIdTag>.New(), Parent.ProjectId, Parent.Id, At, At, Parent.Elements);
             Timeline = TimelineMapBuilder.Build(EntityId<TimelineMapIdTag>.New(), Parent);
             Profile = BundledDefaultSettingsProfileLoader.Load(File.ReadAllBytes(RepositoryPath("src/HubRadio.App/DefaultSettings/Profiles/1.0.0.json")));
@@ -1338,9 +1363,9 @@ public sealed class SourceOnlyPipelineTests
     private sealed class RuntimeCheckpointFixture : IAsyncDisposable
     {
         private readonly SourceFixture files = new();
-        private RuntimeCheckpointFixture(bool includeShort, bool empty)
+        private RuntimeCheckpointFixture(bool includeShort, bool empty, RealAsrInput? real)
         {
-            Inputs = new AutomaticFixture(empty: empty, shortEligible: includeShort);
+            Inputs = new AutomaticFixture(empty: empty, shortEligible: includeShort, real: real);
             DatabasePath = Path.Combine(files.Root, "runtime.db");
             _ = DatabaseMigrator.Migrate(DatabasePath, Path.Combine(files.Root, "backups"));
             Projects = new ProjectStore(DatabasePath);
@@ -1371,17 +1396,24 @@ public sealed class SourceOnlyPipelineTests
             Analysis = Pipeline.BuildAnalysis(Project, Inputs.Import, Execution, At.AddSeconds(1));
             var template = new BrandTemplateVersion(EntityId<SeriesIdTag>.New(), Inputs.Render.TemplateReference,
                 BrandTemplateKind.LongForm, []).ApplyEditorOverrides([]);
+            // Same candidate path as SourceOnlyPipeline.ComposeAsync: snap speech segments, keep representable ones.
+            EmphasisSuggestionCandidate[] realCandidates = real is null ? [] : SourceOnlyPipeline
+                .SnapSpeechSegments("real-asr-seed", Analysis.EmphasisCandidates, Analysis.TopicMetadata, Inputs.Index, 48000)
+                .Where(item => SourceOnlyPipeline.IsExactSourceRange(item.Payload.SourceSpan.Range, Inputs.Index, Inputs.Render.Profile, 48000))
+                .ToArray();
+            RealCandidates = realCandidates;
             LongFormElementInput Omitted(LongFormElementKind kind) => new(EntityId<LongFormElementIdTag>.New(), kind, false, null, null, [], []);
             var longForm = new LongFormCompositionRequest(EntityId<LongFormPlanIdTag>.New(), Project,
                 new LongFormProvenanceSnapshot(Project.Id, Inputs.Import.Revision.Id,
                     ContentDigest.Compute(Encoding.UTF8.GetBytes(TranscriptSnapshotJson.WriteRevision(Inputs.Import.Revision))),
-                    Inputs.Import.SourceSpans.Append(Inputs.Full).ToArray(), []), template, Inputs.Render,
+                    Inputs.Import.SourceSpans.Append(Inputs.Full).Concat(realCandidates.Select(item => item.Payload.SourceSpan))
+                        .DistinctBy(item => item.Id).ToArray(), []), template, Inputs.Render,
                 LongFormDestination.InternalDistribution, null, Omitted(LongFormElementKind.PreRollMargin), Omitted(LongFormElementKind.Opening),
                 Omitted(LongFormElementKind.ProgramName), Omitted(LongFormElementKind.EpisodeNumber), Omitted(LongFormElementKind.EpisodeTitle),
                 Omitted(LongFormElementKind.PerformerIntroduction), Omitted(LongFormElementKind.PublicationScopeIndicator), Omitted(LongFormElementKind.Body), [],
                 Omitted(LongFormElementKind.Summary), [new LongFormCallToActionInput(LongFormDestination.InternalDistribution, Omitted(LongFormElementKind.CallToAction))],
                 Omitted(LongFormElementKind.Ending), Omitted(LongFormElementKind.PostRollMargin));
-            EmphasisSuggestionCandidate[] candidates = [];
+            EmphasisSuggestionCandidate[] candidates = realCandidates;
             if (includeShort)
             {
                 SourceSpan span = Inputs.Import.SourceSpans.Single();
@@ -1399,6 +1431,7 @@ public sealed class SourceOnlyPipelineTests
                 new MusicPlanningService().Plan(MusicCatalog.CreateUnavailable(MusicLibraryState.Absent, MusicCatalogWarning.LibraryAbsent), [], MusicPlanningOptions.Default),
                 Analysis.TopicMetadata, candidates, [], ActorSid, At.AddSeconds(2), "Real planner replay on unapproved synthetic input"));
         }
+        internal EmphasisSuggestionCandidate[] RealCandidates { get; }
         internal string DatabasePath { get; }
         internal AutomaticFixture Inputs { get; }
         internal Project Project { get; }
@@ -1413,9 +1446,9 @@ public sealed class SourceOnlyPipelineTests
         internal SourceOnlyAnalysisEvidence Analysis { get; }
         internal int WorkCalls { get; private set; }
         internal static async Task<RuntimeCheckpointFixture> CreateAsync(bool includeShort = false, bool saveAnalysis = true,
-            bool saveComposition = true, bool empty = false)
+            bool saveComposition = true, bool empty = false, RealAsrInput? real = null)
         {
-            var fixture = new RuntimeCheckpointFixture(includeShort, empty);
+            var fixture = new RuntimeCheckpointFixture(includeShort, empty, real);
             if (saveAnalysis) { await fixture.SaveEvidenceAsync("analysis-evidence", JsonSerializer.Serialize(fixture.Analysis)); }
             if (saveComposition) { await fixture.Pipeline.SaveCompositionStageAsync(fixture.Execution, "composition-checkpoint", fixture.Composition.Checkpoint, CancellationToken.None); }
             return fixture;
