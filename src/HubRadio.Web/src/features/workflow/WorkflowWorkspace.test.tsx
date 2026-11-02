@@ -426,6 +426,21 @@ describe('WorkflowWorkspace UX-039A', () => {
     expectScreen(h, 'source')
   })
 
+  // NFR-UX-005 AC-129: the ジョブの状態の確認 screen's progress and Job list are separate arrangeable components
+  it('arranges the 進捗 and Jobの履歴 components on the ジョブの状態の確認 screen', async () => {
+    const h = await mount()
+    await h.reply(h.last('project.list'), listResult())
+    await h.click('新しいProjectを作成')
+    const draft = sourceOnlyDraft(false)
+    await h.reply(h.last('project.createDraft'), { draft })
+    await h.click('編集を開始')
+    await h.reply(h.last('project.finalizeDraft'), { draft: { ...draft, revision: draft.revision + 1, isFinalized: true, projectId } })
+    expectScreen(h, 'processing')
+    const panels = [...h.container.querySelectorAll('[data-panel-id="progress"], [data-panel-id="jobs"]')]
+    expect(panels.map(panel => panel.getAttribute('aria-label'))).toEqual(['処理の進捗', 'Jobの履歴'])
+    expect(within(h.container).getAllByRole('tab', { name: 'ジョブの状態の確認' })).toHaveLength(1)
+  })
+
   // FR-043 AC-018
   it('lets a created project switch settings to 次に作成するJob and read that project’s settings', async () => {
     const h = await mount()

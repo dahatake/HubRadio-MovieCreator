@@ -300,6 +300,38 @@ describe('JobResultsBrowser', () => {
     expect(within(container).getByRole('table', { name: '設定の比較' }).querySelectorAll('tbody tr')).toHaveLength(1)
   })
 
+  // NFR-UX-003 AC-128: switching the representation keeps the selection, the filter and the position
+  it('keeps the selected Job, the compare choices and the playback position across view switches', async () => {
+    render({ versions: [newer, older] })
+    const user = userEvent.setup({ document })
+    await act(async () => { railButton(/Job 1/).click() })
+    await act(async () => { within(container).getByRole('button', { name: 'Jobを比較' }).click() })
+    // The Job chosen in the per-Job view is the first slot of the comparison.
+    expect((within(container).getByLabelText('1つ目に表示するJob') as HTMLSelectElement).selectedOptions[0]!.textContent).toBe('Job 1')
+    await act(async () => { within(container).getByRole('checkbox', { name: '違う項目だけ表示' }).click() })
+    await act(async () => { await user.selectOptions(within(container).getByLabelText('比べる成果物'), 'LandscapeThumbnail#1') })
+    const video = within(container).getByRole('region', { name: /^1つ目/ }).querySelector('video')
+    if (video !== null) { Object.defineProperty(video, 'currentTime', { configurable: true, writable: true, value: 42 }); await act(async () => { video.dispatchEvent(new Event('seeked')) }) }
+
+    await act(async () => { within(container).getByRole('button', { name: 'Jobごとに見る' }).click() })
+    expect(within(rail()).getByRole('button', { name: /Job 1/ }).getAttribute('aria-pressed')).toBe('true')
+    await act(async () => { within(container).getByRole('button', { name: 'Jobを比較' }).click() })
+    expect((within(container).getByLabelText('比べる成果物') as HTMLSelectElement).value).toBe('LandscapeThumbnail#1')
+    expect((within(container).getByRole('checkbox', { name: '違う項目だけ表示' }) as HTMLInputElement).checked).toBe(false)
+  })
+
+  // NFR-UX-003 AC-128: every representation has a table alternative that is not colour-only
+  it('offers the Job list as a table with text state and selects from it', async () => {
+    render({ versions: [newer, older] })
+    const table = within(container).getByRole('table', { name: 'Jobの一覧表' })
+    const rows = [...table.querySelectorAll('tbody tr')]
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.textContent).toContain('表示中')
+    expect(rows[0]!.textContent).toMatch(/完了/)
+    await act(async () => { within(rows[1] as HTMLElement).getByRole('button', { name: /を表示/ }).click() })
+    expect(within(rail()).getByRole('button', { name: /Job 1/ }).getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('explains that a comparison needs two Jobs', () => {
     render({ versions: [newer], view: 'compare' })
     expect(container.textContent).toContain('比較するには、Jobが2つ以上必要です。')
