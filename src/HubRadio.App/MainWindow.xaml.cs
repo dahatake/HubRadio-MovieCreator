@@ -195,6 +195,7 @@ public sealed partial class MainWindow : Window
                     WorkspaceHandler = bridgeHandlers.Workspace,
                     ExportHandler = bridgeHandlers.Export,
                     PortraitHandler = bridgeHandlers.Portraits,
+                    DisclosureHandler = bridgeHandlers.Disclosure,
                 };
                 // Own the host before awaiting so Closed can detach it before closing the control.
                 webViewHost = host;

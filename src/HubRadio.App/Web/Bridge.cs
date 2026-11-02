@@ -87,6 +87,8 @@ internal enum BridgeMethod
     StitchPickClip,
     StitchRun,
     JobExport,
+    DisclosureList,
+    DisclosureAddLabel,
     PortraitsList,
     PortraitsRegister,
     PortraitsCrop,
@@ -292,6 +294,10 @@ internal static class BridgeProtocol
     internal const string JobExportMethod = "results.export";
     internal const int MaxJobExportRequestUtf8Bytes = 2048;
     internal const int MaxJobExportResponseUtf8Bytes = 16 * 1024;
+    internal const string DisclosureListMethod = "disclosure.list";
+    internal const string DisclosureAddLabelMethod = "disclosure.addLabel";
+    internal const int MaxDisclosureRequestUtf8Bytes = 2048;
+    internal const int MaxDisclosureResponseUtf8Bytes = 128 * 1024;
     internal const string PortraitsListMethod = "portraits.list";
     internal const string PortraitsRegisterMethod = "portraits.register";
     internal const string PortraitsCropMethod = "portraits.crop";
@@ -574,6 +580,8 @@ internal static class BridgeProtocol
             BridgeMethod.StitchPickClip => StitchPickClipMethod,
             BridgeMethod.StitchRun => StitchRunMethod,
             BridgeMethod.JobExport => JobExportMethod,
+            BridgeMethod.DisclosureList => DisclosureListMethod,
+            BridgeMethod.DisclosureAddLabel => DisclosureAddLabelMethod,
             BridgeMethod.PortraitsList => PortraitsListMethod,
             BridgeMethod.PortraitsRegister => PortraitsRegisterMethod,
             BridgeMethod.PortraitsCrop => PortraitsCropMethod,
@@ -601,6 +609,7 @@ internal static class BridgeProtocol
             _ when IsSourceOnlyMethod(method) => MaxSourceOnlyResponseUtf8Bytes,
             _ when IsStitchMethod(method) => MaxStitchResponseUtf8Bytes,
             BridgeMethod.JobExport => MaxJobExportResponseUtf8Bytes,
+            _ when IsDisclosureMethod(method) => MaxDisclosureResponseUtf8Bytes,
             _ when IsPortraitMethod(method) => MaxPortraitsResponseUtf8Bytes,
             _ when IsLargePayloadMethod(method) => MaxProjectResponseUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewResponseUtf8Bytes,
@@ -666,6 +675,10 @@ internal static class BridgeProtocol
     internal static bool IsStitchMethod(BridgeMethod method) =>
         method is BridgeMethod.StitchPickClip or BridgeMethod.StitchRun;
 
+    /// <summary>NFR-BR-005: listing AI-generated elements and the per-destination labels, and adding a label.</summary>
+    internal static bool IsDisclosureMethod(BridgeMethod method) =>
+        method is BridgeMethod.DisclosureList or BridgeMethod.DisclosureAddLabel;
+
     /// <summary>FR-137 (6): registering and listing the user's standing pictures.</summary>
     internal static bool IsPortraitMethod(BridgeMethod method) =>
         method is BridgeMethod.PortraitsList or BridgeMethod.PortraitsRegister or BridgeMethod.PortraitsCrop
@@ -702,6 +715,7 @@ internal static class BridgeProtocol
             _ when IsSourceOnlyMethod(method) => MaxSourceOnlyRequestUtf8Bytes,
             _ when IsStitchMethod(method) => MaxStitchRequestUtf8Bytes,
             BridgeMethod.JobExport => MaxJobExportRequestUtf8Bytes,
+            _ when IsDisclosureMethod(method) => MaxDisclosureRequestUtf8Bytes,
             _ when IsPortraitMethod(method) => MaxPortraitsRequestUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewRequestUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonRequestUtf8Bytes,
@@ -775,6 +789,8 @@ internal static class BridgeProtocol
             StitchPickClipMethod => BridgeMethod.StitchPickClip,
             StitchRunMethod => BridgeMethod.StitchRun,
             JobExportMethod => BridgeMethod.JobExport,
+            DisclosureListMethod => BridgeMethod.DisclosureList,
+            DisclosureAddLabelMethod => BridgeMethod.DisclosureAddLabel,
             PortraitsListMethod => BridgeMethod.PortraitsList,
             PortraitsRegisterMethod => BridgeMethod.PortraitsRegister,
             PortraitsCropMethod => BridgeMethod.PortraitsCrop,
@@ -944,6 +960,11 @@ internal static class BridgeProtocol
         if (method == BridgeMethod.JobExport)
         {
             return JobExportBridgeProtocol.HasValidParameters(parameters);
+        }
+
+        if (IsDisclosureMethod(method))
+        {
+            return DisclosureBridgeProtocol.HasValidParameters(method, parameters);
         }
 
         if (IsPortraitMethod(method))
@@ -1564,6 +1585,7 @@ internal static class BridgeProtocol
             IsSettingsMethod(method) ||
             IsSourceOnlyMethod(method) ||
             IsStitchMethod(method) ||
+            IsDisclosureMethod(method) ||
             IsPortraitMethod(method) ||
             method == BridgeMethod.JobExport)
         {
@@ -1931,6 +1953,9 @@ internal sealed class Bridge : IDisposable
     /// <summary>FR-137 (6): registers and lists the user's standing pictures.</summary>
     internal PortraitBridgeHandler? PortraitHandler { get; init; }
 
+    /// <summary>NFR-BR-005 handler for the AI-generated element list and destination labels.</summary>
+    internal DisclosureBridgeHandler? DisclosureHandler { get; init; }
+
     private readonly TaskCompletionSource firstPingResponsePosted = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
     private bool isStarted;
@@ -2242,6 +2267,13 @@ internal sealed class Bridge : IDisposable
                 : await StitchHandler.HandleAsync(request, cancellationToken);
         }
 
+        if (BridgeProtocol.IsDisclosureMethod(request.Method))
+        {
+            return DisclosureHandler is null
+                ? DisclosureBridgeJson.Unavailable(request)
+                : DisclosureHandler.Handle(request);
+        }
+
         if (BridgeProtocol.IsPortraitMethod(request.Method))
         {
             return PortraitHandler is null
@@ -2391,6 +2423,11 @@ internal sealed class Bridge : IDisposable
         if (BridgeProtocol.IsStitchMethod(request.Method))
         {
             return BookendStitchBridgeJson.Unavailable(request);
+        }
+
+        if (BridgeProtocol.IsDisclosureMethod(request.Method))
+        {
+            return DisclosureBridgeJson.Unavailable(request);
         }
 
         if (BridgeProtocol.IsPortraitMethod(request.Method))

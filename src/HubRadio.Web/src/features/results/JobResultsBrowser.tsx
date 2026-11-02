@@ -8,6 +8,8 @@ import { changedJobSettingKeys, editableJobSettings, settingLabel, settingValueT
 import { pipelineArtifactLabels } from './ResultGallery'
 import type { JobExportService } from './jobExportProtocol'
 import { JobExportPanel, jobExportMessages, type JobExportPanelProps } from './JobExportPanel'
+import type { DisclosureService } from './disclosureProtocol'
+import { DisclosurePanel } from './DisclosurePanel'
 import './results.css'
 
 export type JobResultsView = 'job' | 'compare'
@@ -30,6 +32,8 @@ export interface JobResultsBrowserProps {
   /** FR-132: injected services for the Job export panel. undefined uses the WebView2 host bridge; null is unavailable. */
   readonly exportService?: JobExportService | null
   readonly exportBrowseService?: JobExportPanelProps['browseService']
+  /** NFR-BR-005: injected service for the AI disclosure panel. undefined uses the WebView2 host bridge; null is unavailable. */
+  readonly disclosureService?: DisclosureService | null
 }
 
 /** FR-063.5: the most Jobs shown side by side (Q-011 B). */
@@ -77,7 +81,7 @@ function mediaUrl(projectId: string, entry: PipelineVersionEntry, output: Pipeli
  */
 export function JobResultsBrowser({
   versions, unavailableReason = null, projectId, pending = false, disabledReason = null, onRestore,
-  view: controlledView, onViewChange, currentResults, exportService, exportBrowseService,
+  view: controlledView, onViewChange, currentResults, exportService, exportBrowseService, disclosureService,
 }: JobResultsBrowserProps) {
   const headingId = useId()
   const [ownView, setOwnView] = useState<JobResultsView>('job')
@@ -163,6 +167,7 @@ export function JobResultsBrowser({
               service={exportService} browseService={exportBrowseService} />
           )
         })()}
+        {list.length > 0 && <DisclosurePanel projectId={projectId} service={disclosureService} />}
         {shownPast === null ? (
           <div className="job-results-current">
             {current !== null && <h3>{jobTitle(list, current)}の仕上がり</h3>}

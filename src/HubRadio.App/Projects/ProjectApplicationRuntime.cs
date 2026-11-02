@@ -37,7 +37,8 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
         BookendStitchBridgeHandler? stitch = null,
         WorkspaceLocationBridgeHandler? workspace = null,
         JobExportBridgeHandler? export = null,
-        PortraitBridgeHandler? portraits = null)
+        PortraitBridgeHandler? portraits = null,
+        DisclosureBridgeHandler? disclosure = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
@@ -70,10 +71,14 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
         Workspace = workspace;
         Export = export;
         Portraits = portraits;
+        Disclosure = disclosure;
     }
 
     /// <summary>FR-137 (6): registers and lists the user's standing pictures (none is bundled).</summary>
     internal PortraitBridgeHandler? Portraits { get; }
+
+    /// <summary>NFR-BR-005: lists AI-generated elements and adds destination labels.</summary>
+    internal DisclosureBridgeHandler? Disclosure { get; }
 
     /// <summary>FR-132 handler that saves a Job's videos and thumbnails to a user-chosen folder.</summary>
     internal JobExportBridgeHandler? Export { get; }
@@ -332,7 +337,11 @@ internal static class ProjectApplicationRuntime
                 new CharacterPortraitStore(Path.Combine(services.WorkspacePath, "character-portraits")),
                 () => authorization.CanPerform(actorProvider.GetCurrentSid(), AuthorizationOperation.ExportComposition),
                 TimeProvider.System,
-                Path.Combine(services.WorkspacePath, "project-speaker-assignments")));
+                Path.Combine(services.WorkspacePath, "project-speaker-assignments")),
+            new DisclosureBridgeHandler(
+                new HubRadio.App.Audit.AiGenerationDisclosureService(reviewStore),
+                authorization,
+                actorProvider.GetCurrentSid));
     }
 
     // FR-035: without both bundled tools the GUI reports unavailable instead of failing later.
