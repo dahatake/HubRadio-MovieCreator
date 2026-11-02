@@ -58,10 +58,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-workspace-browse.ps1",
       "canary": false,
-      "status": "fail",
-      "last_commit": "d1ca934",
-      "last_run_at": "2026-11-03T00:44:37+09:00",
-      "evidence": "work/runs/202611022237/logs/system-test/E2E-001-202611030031.log",
+      "status": "pass",
+      "last_commit": "71b02a5",
+      "last_run_at": "2026-11-03T05:23:48+09:00",
+      "evidence": "work/runs/adhoc-202611030510/logs/system-test/E2E-001-202611030510.log",
       "history": [
         {
           "at": "2026-10-08T12:30:02+09:00",
@@ -89,10 +89,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-browse-cancel.ps1",
       "canary": false,
-      "status": "fail",
-      "last_commit": "d1ca934",
-      "last_run_at": "2026-11-03T00:44:37+09:00",
-      "evidence": "work/runs/202611022237/logs/system-test/E2E-002-202611030034.log",
+      "status": "pass",
+      "last_commit": "71b02a5",
+      "last_run_at": "2026-11-03T05:23:48+09:00",
+      "evidence": "work/runs/adhoc-202611030510/logs/system-test/E2E-002-202611030514.log",
       "history": [
         {
           "at": "2026-10-13T05:43:34+09:00",
@@ -114,10 +114,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-browse-cancel.ps1",
       "canary": false,
-      "status": "fail",
-      "last_commit": "d1ca934",
-      "last_run_at": "2026-11-03T00:44:37+09:00",
-      "evidence": "work/runs/202611022237/logs/system-test/E2E-002-202611030034.log",
+      "status": "pass",
+      "last_commit": "71b02a5",
+      "last_run_at": "2026-11-03T05:23:48+09:00",
+      "evidence": "work/runs/adhoc-202611030510/logs/system-test/E2E-002-202611030514.log",
       "history": [
         {
           "at": "2026-10-13T05:43:37+09:00",
@@ -654,10 +654,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-038",
       "canary": false,
-      "status": "fail",
-      "last_commit": "d1ca934",
-      "last_run_at": "2026-11-03T00:44:37+09:00",
-      "evidence": "work/runs/202611022237/logs/system-test/E2E-021-202611030036.log",
+      "status": "pass",
+      "last_commit": "71b02a5",
+      "last_run_at": "2026-11-03T05:30:43+09:00",
+      "evidence": "work/runs/adhoc-202611030524/logs/system-test/E2E-021-202611030524.log",
       "history": [
         {
           "at": "2026-10-13T07:45:43+09:00",
