@@ -34,7 +34,9 @@ public sealed class StoreConcurrencyException : InvalidOperationException
 
 internal static class SqliteStoreSupport
 {
-    private const int DefaultTimeoutSeconds = 5;
+    // Also the SQLite busy timeout: concurrent writers (job heartbeat, ingest completion, UI polling) wait this long
+    // for the lock instead of failing with SQLITE_BUSY (E2E-006 intermittent Ingesting failure).
+    private const int DefaultTimeoutSeconds = 15;
     private const string TimestampFormat = "O";
 
     private static readonly UTF8Encoding StrictUtf8 = new(
