@@ -31,7 +31,13 @@ public sealed class TextSensitivityScannerTests
         Assert.AreEqual(revision.Id, result.RevisionId);
         Assert.AreEqual(TextSensitivityScanner.RuleSetVersion, result.RuleSetVersion);
         CollectionAssert.AreEquivalent(
-            Enum.GetValues<TextSensitivityFindingKind>(),
+            new[]
+            {
+                TextSensitivityFindingKind.EmailAddress,
+                TextSensitivityFindingKind.InternalNetworkLocation,
+                TextSensitivityFindingKind.CredentialPattern,
+                TextSensitivityFindingKind.DictionaryTerm,
+            },
             result.Findings.Select(static finding => finding.Kind).ToArray());
 
         Utterance utterance = revision.Utterances.Single();
@@ -331,6 +337,42 @@ public sealed class TextSensitivityScannerTests
     }
 
     [TestMethod]
+    // NFR-BR-003 AC-124: 10 種類（顧客名・未公開製品・内部 URL・メール・個人情報・認証情報・契約/価格/売上・社外秘・将来計画・トークン/秘密）の候補が warning として記録され、外部公開可とは判定されない。
+    public void Scan_FindsEveryOfTheTenSensitiveCategoriesAsWarnings()
+    {
+        (string Text, string Needle, TextSensitivityFindingKind Kind)[] cases =
+        [
+            ("担当は株式会社サンプル商事。", "株式会社サンプル商事", TextSensitivityFindingKind.CustomerName),
+            ("これは新製品の話です", "新製品", TextSensitivityFindingKind.UnreleasedProduct),
+            ("内部 http://intranet.corp/wiki を見て", "http://intranet.corp/wiki", TextSensitivityFindingKind.InternalNetworkLocation),
+            ("宛先は a.b@example.co.jp です", "a.b@example.co.jp", TextSensitivityFindingKind.EmailAddress),
+            ("電話は 03-1234-5678 です", "03-1234-5678", TextSensitivityFindingKind.PersonalInformation),
+            ("画面に password: hunter2 と出る", "hunter2", TextSensitivityFindingKind.CredentialPattern),
+            ("見積は 1,200万円 でした", "1,200万円", TextSensitivityFindingKind.FinancialInformation),
+            ("この資料は社外秘です", "社外秘", TextSensitivityFindingKind.ConfidentialMaterial),
+            ("今後の計画を話します", "今後の計画", TextSensitivityFindingKind.FuturePlan),
+            ("access token = abcDEF123456", "abcDEF123456", TextSensitivityFindingKind.CredentialPattern),
+        ];
+
+        foreach ((string text, string needle, TextSensitivityFindingKind kind) in cases)
+        {
+            TextSensitivityScanResult result = TextSensitivityScanner.Scan(
+                CreateRevision(text),
+                Array.Empty<TermEntry>());
+
+            Assert.IsTrue(result.IsComplete, text);
+            Assert.IsTrue(result.RequiresExternalOutputWarning, text);
+            TextSensitivityFinding finding = result.Findings.First(f => f.Kind == kind);
+            AssertRange(text, finding, needle);
+        }
+
+        CollectionAssert.AreEquivalent(
+            Enum.GetValues<TextSensitivityFindingKind>(),
+            cases.Select(static c => c.Kind).Distinct()
+                .Append(TextSensitivityFindingKind.DictionaryTerm).ToArray());
+    }
+
+    [TestMethod]
     public void Scan_EmptyOrOrdinaryTranscriptCompletesWithoutExternalWarning()
     {
         TranscriptRevision empty = new(
@@ -422,6 +464,12 @@ public sealed class TextSensitivityScannerTests
                 TextSensitivityFindingKind.InternalNetworkLocation,
                 TextSensitivityFindingKind.CredentialPattern,
                 TextSensitivityFindingKind.DictionaryTerm,
+               TextSensitivityFindingKind.CustomerName,
+               TextSensitivityFindingKind.UnreleasedProduct,
+               TextSensitivityFindingKind.PersonalInformation,
+               TextSensitivityFindingKind.FinancialInformation,
+               TextSensitivityFindingKind.ConfidentialMaterial,
+               TextSensitivityFindingKind.FuturePlan,
             },
             Enum.GetValues<TextSensitivityFindingKind>());
         AssertPublicGetOnlyProperties(

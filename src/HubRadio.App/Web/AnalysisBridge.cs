@@ -2464,6 +2464,15 @@ internal static class AnalysisBridgeJson
                     TextSensitivityFindingKind.CredentialPattern =>
                         "credentialPattern",
                     TextSensitivityFindingKind.DictionaryTerm => "dictionaryTerm",
+                    TextSensitivityFindingKind.CustomerName => "customerName",
+                    TextSensitivityFindingKind.UnreleasedProduct => "unreleasedProduct",
+                    TextSensitivityFindingKind.PersonalInformation =>
+                        "personalInformation",
+                    TextSensitivityFindingKind.FinancialInformation =>
+                        "financialInformation",
+                    TextSensitivityFindingKind.ConfidentialMaterial =>
+                        "confidentialMaterial",
+                    TextSensitivityFindingKind.FuturePlan => "futurePlan",
                     _ => throw new InvalidOperationException(
                         "The sensitivity kind is invalid."),
                 });
