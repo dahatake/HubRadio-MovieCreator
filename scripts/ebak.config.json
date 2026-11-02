@@ -23,6 +23,13 @@
       }
     ]
   },
+  "system_test": {
+    "jobs": "auto",
+    "serial_patterns": [
+      "default_port",
+      "tests/system/e2e/"
+    ]
+  },
   "checks": {
     "id_scan_exclude": [
       "docs/**",
