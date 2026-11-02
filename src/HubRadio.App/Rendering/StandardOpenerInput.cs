@@ -3,11 +3,24 @@ using HubRadio.Infrastructure.Integrity;
 
 namespace HubRadio.App.Rendering;
 
-/// <summary>FR-015: an asset (logo / jingle) the user supplied, with the explicit statement that it may be used.</summary>
-public sealed record StandardOpenerLogo(string Name, bool Permitted);
+/// <summary>
+/// FR-015 / AC-063: an asset (logo / jingle) the user supplied, with the explicit statement that it may be used. A logo with a
+/// verified local image <paramref name="File"/> (PNG / JPEG / WebP, digest-checked at render) is shown as an image overlay over the
+/// opening instead of its name as text; a logo without a file keeps showing only its name.
+/// </summary>
+public sealed record StandardOpenerLogo(string Name, bool Permitted, BinaryVerificationRequest? File = null);
 
 /// <summary>FR-015: a verified local MP3 jingle (digest-checked at render) and whether the user permitted its use.</summary>
 public sealed record StandardOpenerJingle(string Name, BinaryVerificationRequest File, bool Permitted);
+
+/// <summary>FR-015 / AC-063: the verified logo image and the opening range it is shown over; its box is fixed above the opening text.</summary>
+public sealed record StandardOpenerLogoOverlay(BinaryVerificationRequest File, HubRadio.Core.Time.TimeRange Range)
+{
+    public const double Left = 0.10;
+    public const double Top = 0.10;
+    public const double Width = 0.20;
+    public const double Height = 0.20;
+}
 
 /// <summary>
 /// FR-015: what the opening shows once the user enabled <c>editing.longOpenerEnabled</c> / <c>editing.shortOpenerEnabled</c>.
@@ -34,6 +47,12 @@ public sealed class StandardOpenerInput
         }
 
         Performers = Array.AsReadOnly(names);
+        if (logo?.File is { } logoFile
+            && Path.GetExtension(logoFile.FilePath).ToLowerInvariant() is not (".png" or ".jpg" or ".jpeg" or ".webp"))
+        {
+            throw new ArgumentException("An opener logo image must be a PNG, JPEG or WebP file.", nameof(logo));
+        }
+
         Logo = logo;
         Jingle = jingle;
     }
@@ -62,7 +81,7 @@ public sealed class StandardOpenerInput
             return lines;
         }
 
-        string head = string.Join(" ", new[] { Logo?.Name, ProgramName, EpisodeNumber }.Where(static item => item is not null));
+        string head = string.Join(" ", new[] { Logo?.File is null ? Logo?.Name : null, ProgramName, EpisodeNumber }.Where(static item => item is not null));
         if (head.Length > 0)
         {
             lines.Add(head);

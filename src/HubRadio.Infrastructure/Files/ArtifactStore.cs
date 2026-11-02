@@ -477,7 +477,7 @@ public sealed class ArtifactStore
         requests = requests.ToArray(); // Freeze the batch before any awaited file validation.
         if (!ReferenceEquals(transaction.Connection, connection) ||
             !string.Equals(Path.GetFullPath(connection.DataSource), _databasePath, PathComparison) ||
-            requests.Count is < 2 or > 17 || requests.Any(r => r is null) ||
+            requests.Count is < 2 or > 18 || requests.Any(r => r is null) ||
             requests.Select(r => r.Id).Distinct().Count() != requests.Count)
             throw Failure(ArtifactStoreFailureReason.DatabaseRejected);
 
@@ -493,12 +493,15 @@ public sealed class ArtifactStore
             ArtifactPromotionRequest request = requests[i];
             bool receipt = i == requests.Count - 1;
             string extension = Path.GetExtension(request.RelativePath);
-            string name = request.Id + extension;
+            // NFR-BR-005 / AC-126: the optional AI disclosure keeps its fixed, human-readable name.
+            bool disclosure = !receipt && extension == ".txt" && i == requests.Count - 2 &&
+                requests.Take(i).All(r => Path.GetExtension(r.RelativePath) != ".txt");
+            string name = disclosure ? "ai-disclosure.txt" : request.Id + extension;
             string expectedRelative = receipt ? $"source-only/{executionId}/{rootJobId}.delivery-receipt.json" : relativeRoot + "/" + name;
             string expectedStaging = receipt ? Path.Combine(stagingRoot, "receipt.json") : Path.Combine(stagingRoot, "files", name);
             if (request.ProjectId != projectId || request.CreatedAt != requests[0].CreatedAt ||
                 request.Kind != (receipt ? ArtifactKind.Evidence : ArtifactKind.Delivery) ||
-                (!receipt && extension is not (".mp4" or ".png" or ".srt" or ".vtt")) ||
+                (!receipt && extension is not (".mp4" or ".png" or ".srt" or ".vtt") && !disclosure) ||
                 request.RelativePath != expectedRelative || !string.Equals(request.StagingPath, expectedStaging, PathComparison))
                 throw Failure(ArtifactStoreFailureReason.UnsafePath);
             paths.Add(BuildPromotionPaths(request));

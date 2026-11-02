@@ -119,6 +119,9 @@
     { "$ref": "#/$defs/stitchRunResponse" },
     { "$ref": "#/$defs/jobExportRequest" },
     { "$ref": "#/$defs/jobExportResponse" },
+    { "$ref": "#/$defs/disclosureListRequest" },
+    { "$ref": "#/$defs/disclosureAddLabelRequest" },
+    { "$ref": "#/$defs/disclosureResponse" },
     { "$ref": "#/$defs/portraitsListRequest" },
     { "$ref": "#/$defs/portraitsRegisterRequest" },
     { "$ref": "#/$defs/portraitsCropRequest" },
@@ -129,6 +132,78 @@
     { "$ref": "#/$defs/speakersResponse" }
   ],
   "$defs": {
+    "disclosureProtocolLimits": {
+      "$comment": "NFR-BR-005 AC-126. disclosure.list returns the AI-generated or substantially edited elements recorded for a Project (speaker estimates, automatic subtitles, topic-summary drafts, substantial edits) and the labels added per publication destination. disclosure.addLabel adds one label for a destination; the label then travels with the delivery set as ai-disclosure.txt. Request ceiling 2 KiB (2048), response ceiling 128 KiB (131072); at most the 100 newest items of each list are returned. Listing needs ViewProject, adding needs the composition-export permission. The response carries no path, exception text or SID.",
+      "x-maxRequestUtf8Bytes": 2048,
+      "x-maxResponseUtf8Bytes": 131072
+    },
+    "disclosureListRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "disclosure.list" },
+        "params": {
+          "type": "object", "additionalProperties": false, "required": ["projectId"],
+          "properties": { "projectId": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\\s\\S])" } }
+        }
+      }
+    },
+    "disclosureAddLabelRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "disclosure.addLabel" },
+        "params": {
+          "type": "object", "additionalProperties": false, "required": ["projectId", "destination", "labelText"],
+          "properties": {
+            "projectId": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\\s\\S])" },
+            "destination": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "labelText": { "type": "string", "minLength": 1, "maxLength": 200 }
+          }
+        }
+      }
+    },
+    "disclosureResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "enum": ["disclosure.list", "disclosure.addLabel"] }, "result": { "$ref": "#/$defs/disclosureResult" }
+      }
+    },
+    "disclosureResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "elements", "labels"],
+      "properties": {
+        "status": { "enum": ["listed", "added", "forbidden", "invalid", "unavailable"] },
+        "elements": {
+          "type": "array", "maxItems": 100,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["kind", "elementRef", "provider", "modelIdentifier", "modelVersion", "recordedAt"],
+            "properties": {
+              "kind": { "enum": ["SpeakerEstimate", "AutoSubtitle", "TopicSummaryDraft", "SubstantialEdit"] },
+              "elementRef": { "type": "string" }, "provider": { "type": "string" },
+              "modelIdentifier": { "type": "string" }, "modelVersion": { "type": "string" },
+              "recordedAt": { "type": "string" }
+            }
+          }
+        },
+        "labels": {
+          "type": "array", "maxItems": 100,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["destination", "labelText", "addedAt"],
+            "properties": {
+              "destination": { "type": "string", "maxLength": 64 }, "labelText": { "type": "string", "maxLength": 200 },
+              "addedAt": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
     "portraitsProtocolLimits": {
       "$comment": "FR-137 (6). portraits.list and portraits.register use a 6 MiB (6291456) request ceiling (the image arrives as base64, at most 4 MiB of bytes) and a 16 KiB (16384) response ceiling, including envelopes. Responses always contain a closed result object, never an error envelope. The app bundles no picture: the user registers an image of their own, and the right to use it (confirmed or unconfirmed) is chosen explicitly and saved with the picture (NFR-BR-004). Registering needs the same permission as composition export; listing is read-only. A name must be unique and at most 40 characters; each character gets its own subtitle color. The response carries no path, exception text or SID.",
       "x-maxRequestUtf8Bytes": 6291456,
@@ -987,6 +1062,8 @@
         "stitch.pickClip",
         "stitch.run",
         "results.export",
+        "disclosure.list",
+        "disclosure.addLabel",
         "portraits.list",
         "portraits.register",
         "portraits.crop",

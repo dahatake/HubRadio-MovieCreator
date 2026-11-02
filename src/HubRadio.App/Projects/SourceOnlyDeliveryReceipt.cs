@@ -47,6 +47,12 @@ internal sealed record SourceOnlyDeliveryReceipt(string SchemaVersion, string De
     internal static EntityId<ArtifactIdTag> DeliveryId(SourceOnlyResultBinding binding, SourceOnlyResultArtifact artifact) =>
         SourceOnlyPipeline.StableId<ArtifactIdTag>(binding.ExecutionId.ToString(), "local-delivery:" + binding.RootJobId + ":" + artifact.ArtifactId);
 
+    /// <summary>NFR-BR-005 / AC-126: the destination whose labels are reflected into a local delivery set.</summary>
+    internal const string DisclosureDestination = "local-internal";
+
+    internal static EntityId<ArtifactIdTag> DisclosureId(SourceOnlyResultBinding binding) =>
+        SourceOnlyPipeline.StableId<ArtifactIdTag>(binding.ExecutionId.ToString(), "local-delivery-ai-disclosure:" + binding.RootJobId);
+
     internal static string FileName(SourceOnlyResultBinding binding, SourceOnlyResultArtifact artifact) =>
         DeliveryId(binding, artifact) + (artifact.IsVideo ? ".mp4" : artifact.IsImage ? ".png" :
             artifact.Role == SourceOnlyResultRole.SubRip ? ".srt" : ".vtt");
@@ -258,10 +264,26 @@ internal sealed record SourceOnlyDeliveryReceipt(string SchemaVersion, string De
             expectedPaths.Add(artifacts.GetValidatedRegisteredArtifactPath(delivery.ArtifactId));
         }
         Require(receiptStream.RegisteredArtifact.CreatedAt == ParseUtc(receipt.CreatedAt));
+        // NFR-BR-005 / AC-126: an optional, registered ai-disclosure.txt is part of the set; its bytes are digest-verified on open.
+        var disclosureId = DisclosureId(result.Binding);
+        string disclosureReference = $"projects/{result.Binding.ProjectId}/deliveries/{DeliveryRelativeRoot(result.Binding)}/{HubRadio.App.Audit.AiDisclosure.ArtifactFileName}";
+        StoredArtifact? registeredDisclosure = artifacts.GetArtifact(disclosureId);
+        if (registeredDisclosure is not null)
+        {
+            Require(registeredDisclosure.Kind == ArtifactKind.Delivery && registeredDisclosure.ProjectId == result.Binding.ProjectId &&
+                registeredDisclosure.StorageReference == disclosureReference && registeredDisclosure.CreatedAt == ParseUtc(receipt.CreatedAt));
+            ValidatedArtifactReadStream disclosureStream = await held.OpenAsync(artifacts,
+                new SourceOnlyResultArtifactReference(disclosureId, registeredDisclosure.ContentDigest, registeredDisclosure.ByteSize, ArtifactKind.Delivery),
+                result.Binding.ProjectId, ct).ConfigureAwait(false);
+            _ = disclosureStream;
+            expectedPaths.Add(artifacts.GetValidatedRegisteredArtifactPath(disclosureId));
+        }
         string directory = Path.GetDirectoryName(expectedPaths.First())!;
         Require(expectedPaths.SetEquals(Directory.EnumerateFileSystemEntries(directory)));
         string prefix = $"projects/{result.Binding.ProjectId}/deliveries/source-only/{result.Binding.ExecutionId}/";
-        Require(result.Artifacts.Select(a => a.Delivery!.Artifact.ArtifactId).ToHashSet().SetEquals(
+        var expectedIds = result.Artifacts.Select(a => a.Delivery!.Artifact.ArtifactId).ToHashSet();
+        if (registeredDisclosure is not null) _ = expectedIds.Add(disclosureId);
+        Require(expectedIds.SetEquals(
             artifacts.ListProjectArtifacts(result.Binding.ProjectId).Where(a => a.StorageReference.StartsWith(prefix, StringComparison.Ordinal)).Select(a => a.Id)) &&
             !WorkspacePathSafety.PathEntryExistsConservatively(Path.Combine(ProjectFolders.GetPath(artifacts.LocalWorkspacePath, result.Binding.ProjectId),
                 "staging", StagingName(result.Binding))));

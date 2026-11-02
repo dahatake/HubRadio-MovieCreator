@@ -770,14 +770,49 @@ public sealed class StandardArtifactGenerator
                 soundEffectFiles[kind] = verification;
                 return verification;
             }
+            // FR-015 / AC-063: the permitted opener logo image is digest-checked and copied once into the owned staging directory.
+            BinaryVerificationRequest? openerLogoFile = null;
+            async Task<BinaryVerificationRequest> OpenerLogoFileAsync(StandardOpenerLogoOverlay logo)
+            {
+                if (openerLogoFile is not null) return openerLogoFile;
+                byte[] bytes;
+                try
+                {
+                    bytes = await File.ReadAllBytesAsync(logo.File.FilePath, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.BindingMismatch);
+                }
+
+                ContentDigest logoDigest = ContentDigest.Compute(bytes);
+                if (logoDigest != logo.File.ExpectedDigest || bytes.LongLength != logo.File.ExpectedByteSize)
+                    throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.BindingMismatch);
+                string path = Path.Combine(staging, "opener-logo" + Path.GetExtension(logo.File.FilePath).ToLowerInvariant());
+                ownedFiles.Add(path);
+                await WriteNewAsync(path, bytes, cancellationToken).ConfigureAwait(false);
+                held.Add(OpenHeld(path));
+                openerLogoFile = new BinaryVerificationRequest("standard.opener-logo", path, logoDigest, bytes.LongLength);
+                return openerLogoFile;
+            }
             var outputs = new List<StandardRenderGraphOutput>();
             async Task<FfmpegImageOverlayBinding[]> BuildOverlaysAsync(StandardRenderGraphOutput target)
             {
                 var overlays = new List<FfmpegImageOverlayBinding>();
-                foreach (StyleTemplates.StyleTemplatePortraitShot shot in target.PortraitShots)
+                if (target.SubtitleFiles.Count > 0)
                 {
-                    BinaryVerificationRequest file = await PortraitFileAsync(shot).ConfigureAwait(false);
-                    overlays.Add(new FfmpegImageOverlayBinding(file, shot.Range, shot.Left, shot.Top, shot.Width, shot.Height));
+                    foreach (StyleTemplates.StyleTemplatePortraitShot shot in target.PortraitShots)
+                    {
+                        BinaryVerificationRequest file = await PortraitFileAsync(shot).ConfigureAwait(false);
+                        overlays.Add(new FfmpegImageOverlayBinding(file, shot.Range, shot.Left, shot.Top, shot.Width, shot.Height));
+                    }
+                }
+
+                if (target.OpenerLogo is { } logo)
+                {
+                    overlays.Add(new FfmpegImageOverlayBinding(await OpenerLogoFileAsync(logo).ConfigureAwait(false), logo.Range,
+                        StandardOpenerLogoOverlay.Left, StandardOpenerLogoOverlay.Top,
+                        StandardOpenerLogoOverlay.Width, StandardOpenerLogoOverlay.Height));
                 }
 
                 return overlays.ToArray();
@@ -858,7 +893,7 @@ public sealed class StandardArtifactGenerator
                 FfmpegSoundEffectBinding[] soundEffects = image ? [] : output.SoundEffectCues
                     .Select(cue => new FfmpegSoundEffectBinding(SoundEffectFile(cue.Kind), cue.OutputStart,
                         StandardEmphasisTelops.SoundEffectDuration, StandardSoundEffectSynthesizer.MixGainDecibels)).ToArray();
-                FfmpegImageOverlayBinding[] portraits = image || output.SubtitleFiles.Count == 0 ? [] : await BuildOverlaysAsync(output).ConfigureAwait(false);
+                FfmpegImageOverlayBinding[] portraits = image || (output.SubtitleFiles.Count == 0 && output.OpenerLogo is null) ? [] : await BuildOverlaysAsync(output).ConfigureAwait(false);
                 if (outputEncoder?.Loudness is FfmpegLoudnessTarget singlePass)
                 {
                     // Measurement pass for loudnorm's linear mode (DEC3-1 (f)).

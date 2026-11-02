@@ -71,6 +71,31 @@ public sealed class ShortFormOpenerAndProposalTests
         Assert.IsFalse(Create(fixture, request, shortForm: true).GraphicFiles.Any(static file => file.Evidence.Role == "Opening"));
     }
 
+    // FR-015 / AC-063: a permitted logo image is an overlay over the opening (digest-verified at render), not its name as text.
+    [TestMethod]
+    public async Task FR015_AC063_PermittedLogoImageIsAnOverlayInsteadOfNameText()
+    {
+        using StandardGenerationFixture fixture = await StandardGenerationFixture.CreateAsync(includeShort: true, settingsOverrides:
+            [new DefaultSettingSelection("editing.longOpenerEnabled", DefaultSettingValue.FromBoolean(true))]);
+        StandardArtifactGenerationRequest request = fixture.Request();
+        var logoFile = new HubRadio.Infrastructure.Integrity.BinaryVerificationRequest(
+            "standard.opener-logo", Path.Combine(Path.GetTempPath(), "Logos", "logo.png"), new ContentDigest(new string('b', 64)), 10);
+        request.UseOpener(new StandardOpenerInput("番組A", "第3回", "今日の話", [], null,
+            new StandardOpenerLogo("ロゴX", Permitted: true, logoFile), null));
+        StandardRenderGraphOutput graph = Create(fixture, request, shortForm: false);
+        string[] lines = graph.GraphicFiles.Where(static file => file.Evidence.Role == "Opening")
+            .Select(static file => file.Evidence.Text).ToArray();
+        CollectionAssert.AreEqual(new[] { "番組A 第3回", "今日の話" }, lines);
+        Assert.IsNotNull(graph.OpenerLogo);
+        Assert.AreSame(logoFile, graph.OpenerLogo.File);
+        Assert.AreEqual(graph.GraphicFiles.First(static file => file.Evidence.Role == "Opening").Evidence.OutputRange, graph.OpenerLogo.Range);
+        // Not permitted -> rejected; unsupported image type -> rejected; short form has no logo overlay.
+        Assert.ThrowsExactly<ArgumentException>(() => new StandardOpenerInput("番組A", null, "t", [], null,
+            new StandardOpenerLogo("ロゴX", true, new HubRadio.Infrastructure.Integrity.BinaryVerificationRequest(
+                "standard.opener-logo", Path.Combine(Path.GetTempPath(), "logo.exe"), new ContentDigest(new string('b', 64)), 10)), null));
+        Assert.IsNull(Create(fixture, request, shortForm: true).OpenerLogo);
+    }
+
     // FR-015 / AC-063: the short opener is a simplified template (program + title, no logo/performers/jingle).
     [TestMethod]
     public async Task FR015_AC063_EnabledShortOpenerIsSimplifiedAndUnpermittedAssetsAreRejected()
