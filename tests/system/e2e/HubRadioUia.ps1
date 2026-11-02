@@ -86,6 +86,35 @@ function Save-E2eFailureArtifacts([string]$case) {
         }
         $sl = Join-Path ([string]$script:AppSb.Work) 'logs'
         if (Test-Path -LiteralPath $sl) { Copy-Item -LiteralPath $sl -Destination (Join-Path $dest 'sandbox-logs') -Recurse -Force -ErrorAction SilentlyContinue }
+        # 追加の保全: failure-diagnostics.json / result-receipt.json / ログ・診断・staging を相対パスを保ってコピー（大きい mp4/png/wav は一覧のみ）
+        $work = [string]$script:AppSb.Work
+        $big = '\.(mp4|png|wav|mov|mkv|jpg|jpeg)$'
+        $listed = [System.Collections.Generic.List[string]]::new()
+        $roots = @($work)
+        $extra = @(Get-ChildItem -LiteralPath $work -Recurse -Force -File -ErrorAction SilentlyContinue)
+        foreach ($f in $extra) {
+            $rel = $f.FullName.Substring($work.Length).TrimStart('\', '/')
+            $isDiag = $f.Name -like '*.failure-diagnostics.json' -or $f.Name -like '*.result-receipt.json'
+            $isLogDir = $rel -match '(?i)(^|[\\/])(logs?|diagnostics?|diag|staging|artifact-staging|\.staging)[\\/]'
+            $isLogFile = $f.Extension -in '.log', '.jsonl' -and $f.Length -lt 20MB
+            if (-not ($isDiag -or $isLogDir -or $isLogFile)) { continue }
+            $copied = 'listed-only'
+            if ($f.Name -notmatch $big -and $f.Length -lt 50MB) {
+                try {
+                    $to = Join-Path (Join-Path $dest 'extra') $rel
+                    $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $to)
+                    Copy-Item -LiteralPath $f.FullName -Destination $to -Force -ErrorAction Stop
+                    $copied = 'copied'
+                } catch { $copied = 'copy-failed' }
+            }
+            $listed.Add("$rel`t$($f.Length)`t$($f.LastWriteTime.ToString('o'))`t$copied")
+            if ($f.Name -like '*.failure-diagnostics.json') {
+                Write-Host "DIAG-FAILURE-JSON: ---- $rel ----"
+                try { Get-Content -LiteralPath $f.FullName -Raw -ErrorAction Stop | Write-Host } catch { Write-Host "(read failed: $_)" }
+            }
+        }
+        $listed.Insert(0, "path`tsize`tmtime`tstatus")
+        Set-Content -LiteralPath (Join-Path $dest 'file-list.txt') -Value $listed -Encoding UTF8
         Write-Host "DIAG-JOBWAIT: saved failure artifacts to $dest"
     } catch { Write-Host "DIAG-JOBWAIT: save artifacts failed: $_" }
 }
