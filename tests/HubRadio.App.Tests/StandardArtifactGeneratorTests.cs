@@ -370,6 +370,27 @@ public sealed class StandardArtifactGeneratorTests
         Assert.IsEmpty(failed.Artifacts);
     }
 
+    // FR-132: a transient clean refusal (nothing moved) of the first promotion is repeated once; the set completes.
+    [TestMethod]
+    public async Task TransientCleanPromotionRefusalIsRepeatedAndGenerationCompletes()
+    {
+        using StandardGenerationFixture fixture = await StandardGenerationFixture.CreateAsync();
+        int calls = 0;
+        var generator = new StandardArtifactGenerator(fixture.Store, fixture.Versions, fixture.Root,
+            async (process, token) =>
+            {
+                await File.WriteAllBytesAsync(process.ArgumentList[^1], [7, 8, 9], token);
+                return new ProcessRunResult(0, "", StandardGenerationFixture.LoudnessReport, false, TimeSpan.Zero);
+            }, StandardGenerationFixture.CompileAsync, fixture.ProbeGeometryAsync,
+            (promotion, token) => ++calls == 1
+                ? throw new ArtifactStoreException(ArtifactStoreFailureReason.UnsafePath, reconciliationRequired: false)
+                : fixture.Store.PromoteAsync(promotion, token));
+        StandardArtifactGenerationResult result = await generator.GenerateAsync(fixture.Request());
+        Assert.AreEqual(StandardArtifactGenerationDisposition.Completed, result.Disposition, $"{result.FailureReason}");
+        Assert.IsGreaterThan(1, calls);
+        Assert.IsFalse(result.StagingCleanupRequired);
+    }
+
     [TestMethod]
     public async Task RollbackFailedKeepsUnregisteredMovedArtifactDescriptor()
     {
