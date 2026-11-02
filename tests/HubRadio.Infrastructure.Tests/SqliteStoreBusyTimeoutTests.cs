@@ -25,6 +25,41 @@ public sealed class SqliteStoreBusyTimeoutTests
         held.Dispose();
     }
 
+    // FR-063 / AC-038, FR-140 / AC-165: a Job's later writes failed with "attempt to write a readonly database"
+    // while another process briefly held hubradio.db without write sharing (SQLite silently opens read-only).
+    [TestMethod]
+    public void WriterWaitsForTransientSharingLockInsteadOfOpeningReadOnly()
+    {
+        using StoreTestDatabase database = new();
+        FileStream holder = new(database.DatabasePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var release = Task.Run(() => { Thread.Sleep(1000); holder.Dispose(); });
+
+        using SqliteConnection connection = SqliteStoreSupport.OpenConnection(database.DatabasePath);
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "CREATE TABLE sharing_probe (a INTEGER); INSERT INTO sharing_probe VALUES (1);";
+        _ = command.ExecuteNonQuery();
+        release.Wait();
+    }
+
+    [TestMethod]
+    public void WriterOnReadOnlyAttributeFileFailsPromptlyWithoutMaskingIt()
+    {
+        using StoreTestDatabase database = new();
+        File.SetAttributes(database.DatabasePath, FileAttributes.ReadOnly);
+        try
+        {
+            using SqliteConnection connection = SqliteStoreSupport.OpenConnection(database.DatabasePath);
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "CREATE TABLE sharing_probe (a INTEGER);";
+            SqliteException error = Assert.ThrowsExactly<SqliteException>(() => command.ExecuteNonQuery());
+            Assert.AreEqual(8, error.SqliteErrorCode);
+        }
+        finally
+        {
+            File.SetAttributes(database.DatabasePath, FileAttributes.Normal);
+        }
+    }
+
     [TestMethod]
     public void BusyWriterReportsSqliteErrorCodeBusy()
     {
