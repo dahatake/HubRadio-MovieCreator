@@ -201,6 +201,9 @@ public sealed class StandardRenderGraphOutput
     public IReadOnlyList<StandardMusicRenderEvidence> MusicEvidence { get; }
     internal SubtitleEditProjectionEvidence? SubtitleProjection { get; init; }
 
+    /// <summary>FR-015: the jingle of the enabled long opener (an MP3 over the opening); the simplified short opener has none.</summary>
+    public IReadOnlyList<FfmpegMusicBinding> JingleBindings { get; init; } = [];
+
     /// <summary>FR-060: the sound effects this output plays (empty when disabled or before profile 1.2.0).</summary>
     public IReadOnlyList<StandardSoundEffectCue> SoundEffectCues { get; init; } = [];
 
@@ -586,6 +589,7 @@ public static class StandardRenderGraphFactory
         {
             SubtitleProjection = subtitles.Projection,
             SoundEffectCues = soundEffects,
+            JingleBindings = OpenerJingle(configuration, shortForm is not null, graphicFiles),
             PortraitShots = styled?.Portraits ?? [],
             PlacementEvidence = placement,
         };
@@ -599,6 +603,15 @@ public static class StandardRenderGraphFactory
         [.. inspection.Items.Select(static item => new OutputQcPlacementItem(item.Id,
             new(item.Box.X, item.Box.Y, item.Box.Width, item.Box.Height), item.InsideMargins, item.InsideRegion, item.Ok))],
         inspection.Warnings);
+
+    private static IReadOnlyList<FfmpegMusicBinding> OpenerJingle(StandardRenderConfiguration? configuration, bool shortForm,
+        IReadOnlyList<StandardGraphicRenderFile> graphicFiles)
+    {
+        if (shortForm || configuration?.LongOpenerEnabled != true || configuration.Opener?.Jingle is not { Permitted: true } jingle)
+            return [];
+        StandardGraphicRenderFile? opening = graphicFiles.FirstOrDefault(static file => file.Evidence.Role == "Opening");
+        return opening is null ? [] : [new FfmpegMusicBinding(jingle.File, opening.Evidence.OutputRange)];
+    }
 
     internal static void ValidateSubtitleProjection(StandardCompositionPreparation preparation,
         StandardSubtitleInput subtitles, EntityId<StandardShortFormPlanIdTag>? shortFormId = null)

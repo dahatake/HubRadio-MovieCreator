@@ -297,6 +297,9 @@ public sealed class StandardCompositionPreparation
     public TimelineMap ParentTimelineMap { get; }
 
     public TimelineMap ChildTimelineMap { get; }
+
+    /// <summary>FR-023: the proposed short-form composition types, grounded in this plan's source spans (not digested).</summary>
+    public IReadOnlyList<ShortFormProposal> ShortFormProposals { get; init; } = [];
 }
 
 public sealed class StandardCompositionApplication
@@ -485,7 +488,15 @@ public static class StandardCompositionOrchestrator
             preparedWorkingCopy,
             request.ExpectedWorkingCopyRevision,
             parentTimelineMap,
-            childTimelineMap);
+            childTimelineMap)
+        {
+            // FR-023 / AC-071: the short-form composition types proposed from the spans this plan actually uses. No ranking evidence
+            // exists at this layer, so the Ranking type is never proposed here. Not part of any digest or stored evidence.
+            ShortFormProposals = ShortFormProposalPlanner.Propose(new ShortFormProposalInput(
+                plan.LongForm.Provenance.SourceSpans
+                    .Select(static span => OriginRef.FromSourceSpan(span.Id)).ToArray(),
+                [])),
+        };
     }
 
     public static StandardCompositionApplication Apply(

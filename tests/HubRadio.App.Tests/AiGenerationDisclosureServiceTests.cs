@@ -75,6 +75,32 @@ public sealed class AiGenerationDisclosureServiceTests
     }
 
     [TestMethod]
+    // NFR-BR-005 AC-126: 納品処理(DeliveryService)が公開先ラベルを description と ai-disclosure.txt に反映する。
+    public void DeliveryServiceReflectsDestinationLabelIntoDescriptionAndArtifact()
+    {
+        using Fixture f = new();
+        _ = f.Service.RecordAiElement(
+            EntityId<AuditEventIdTag>.New(), f.Project.Id,
+            AiGeneratedElementKind.TopicSummaryDraft, "summary-1",
+            CreateModelRun(), Actor, ReviewActorRole.Editor, At);
+        _ = f.Service.AddDestinationLabel(
+            EntityId<AuditEventIdTag>.New(), f.Project.Id, "YouTube",
+            "AI 生成の要約を含みます", Actor, ReviewActorRole.Editor, At.AddMinutes(1));
+
+        string directory = Path.Combine(f.Root, "delivery");
+        HubRadio.App.Delivery.DeliveryAiDisclosureResult result = HubRadio.App.Delivery.DeliveryService.ApplyAiDisclosure(
+            f.Service, f.Project.Id, "YouTube", "説明文", directory);
+        StringAssert.EndsWith(result.Description, "AI 生成の要約を含みます");
+        Assert.IsNotNull(result.ArtifactPath);
+        StringAssert.Contains(File.ReadAllText(result.ArtifactPath), "TopicSummaryDraft summary-1");
+
+        HubRadio.App.Delivery.DeliveryAiDisclosureResult none = HubRadio.App.Delivery.DeliveryService.ApplyAiDisclosure(
+            f.Service, f.Project.Id, "社内", "説明文", Path.Combine(f.Root, "none"));
+        Assert.AreEqual("説明文", none.Description);
+        Assert.IsNull(none.ArtifactPath);
+    }
+
+    [TestMethod]
     // NFR-BR-005 AC-126: 空の参照・改行入りの値は記録しない。
     public void InvalidReferencesAreRejected()
     {

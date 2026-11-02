@@ -36,13 +36,66 @@ public sealed class ShortFormOpenerAndProposalTests
     }
 
     [TestMethod]
-    [DataRow("editing.longOpenerEnabled")]
-    [DataRow("editing.shortOpenerEnabled")]
-    public async Task FR015_AC063_EnablingAnOpenerIsNotSilentlyIgnored(string key)
+    [DataRow("editing.longOpenerEnabled", false)]
+    [DataRow("editing.shortOpenerEnabled", true)]
+    public async Task FR015_AC063_EnablingAnOpenerWithoutContentIsNotSilentlyIgnored(string key, bool shortForm)
     {
-        using StandardGenerationFixture fixture = await StandardGenerationFixture.CreateAsync(settingsOverrides:
+        using StandardGenerationFixture fixture = await StandardGenerationFixture.CreateAsync(includeShort: true, settingsOverrides:
             [new DefaultSettingSelection(key, DefaultSettingValue.FromBoolean(true))]);
-        Assert.ThrowsExactly<StandardGenerationException>(() => fixture.Request());
+        StandardArtifactGenerationRequest request = fixture.Request();
+        Assert.IsTrue(shortForm ? request.Configuration.ShortOpenerEnabled : request.Configuration.LongOpenerEnabled);
+        Assert.ThrowsExactly<StandardGenerationException>(() => Create(fixture, request, shortForm));
+    }
+
+    // FR-015 / AC-063: once enabled, the long template shows program/episode/title/performers/scope/logo and plays the jingle.
+    [TestMethod]
+    public async Task FR015_AC063_EnabledLongOpenerShowsPermittedContent()
+    {
+        using StandardGenerationFixture fixture = await StandardGenerationFixture.CreateAsync(includeShort: true, settingsOverrides:
+            [new DefaultSettingSelection("editing.longOpenerEnabled", DefaultSettingValue.FromBoolean(true))]);
+        StandardArtifactGenerationRequest request = fixture.Request();
+        string jingle = Path.Combine(Path.GetTempPath(), "Music", "jingle.mp3");
+        request.UseOpener(new StandardOpenerInput("番組A", "第3回", "今日の話", ["山田", "佐藤"], "社内限定",
+            new StandardOpenerLogo("ロゴX", Permitted: true),
+            new StandardOpenerJingle("ジングル", new HubRadio.Infrastructure.Integrity.BinaryVerificationRequest(
+                "standard.jingle", jingle, new ContentDigest(new string('a', 64)), 10), Permitted: true)));
+        StandardRenderGraphOutput graph = Create(fixture, request, shortForm: false);
+        string[] lines = graph.GraphicFiles.Where(static file => file.Evidence.Role == "Opening")
+            .Select(static file => file.Evidence.Text).ToArray();
+        CollectionAssert.AreEqual(new[] { "ロゴX 番組A 第3回", "今日の話", "山田、佐藤", "社内限定" }, lines);
+        Assert.IsTrue(graph.GraphicFiles.Any(static file => file.Evidence.Role == "EpisodeTitle"));
+        Assert.HasCount(1, graph.JingleBindings);
+        Assert.AreEqual(graph.GraphicFiles.First(static file => file.Evidence.Role == "Opening").Evidence.OutputRange,
+            graph.JingleBindings[0].OutputRange);
+        // The shorts are not affected by the long opener setting.
+        Assert.IsFalse(Create(fixture, request, shortForm: true).GraphicFiles.Any(static file => file.Evidence.Role == "Opening"));
+    }
+
+    // FR-015 / AC-063: the short opener is a simplified template (program + title, no logo/performers/jingle).
+    [TestMethod]
+    public async Task FR015_AC063_EnabledShortOpenerIsSimplifiedAndUnpermittedAssetsAreRejected()
+    {
+        using StandardGenerationFixture fixture = await StandardGenerationFixture.CreateAsync(includeShort: true, settingsOverrides:
+            [new DefaultSettingSelection("editing.shortOpenerEnabled", DefaultSettingValue.FromBoolean(true))]);
+        StandardArtifactGenerationRequest request = fixture.Request();
+        request.UseOpener(new StandardOpenerInput("番組A", null, "今日の話", ["山田"], "社内限定",
+            new StandardOpenerLogo("ロゴX", Permitted: true), null));
+        StandardRenderGraphOutput graph = Create(fixture, request, shortForm: true);
+        string[] lines = graph.GraphicFiles.Where(static file => file.Evidence.Role == "Opening")
+            .Select(static file => file.Evidence.Text).ToArray();
+        CollectionAssert.AreEqual(new[] { "番組A", "今日の話" }, lines);
+        Assert.IsEmpty(graph.JingleBindings);
+        Assert.IsFalse(Create(fixture, request, shortForm: false).GraphicFiles.Any(static file => file.Evidence.Role == "Opening"));
+
+        request.UseOpener(new StandardOpenerInput("番組A", null, "今日の話", [], null, new StandardOpenerLogo("未許可", Permitted: false), null));
+        Assert.ThrowsExactly<StandardGenerationException>(() => Create(fixture, request, shortForm: true));
+    }
+
+    private static StandardRenderGraphOutput Create(StandardGenerationFixture fixture, StandardArtifactGenerationRequest request, bool shortForm)
+    {
+        StandardShortArtifactInput? input = shortForm ? fixture.Shorts.Single() : null;
+        return StandardRenderGraphFactory.Create(fixture.Preparation, fixture.Asset, fixture.Geometry, true,
+            input?.Subtitles ?? fixture.Subtitles, fixture.Font.Evidence, input?.ShortFormId, request.Configuration);
     }
 
     private static OriginRef Origin() => OriginRef.FromSourceSpan(EntityId<SourceSpanIdTag>.New());
@@ -77,6 +130,19 @@ public sealed class ShortFormOpenerAndProposalTests
         }
 
         Assert.IsEmpty(ShortFormProposalPlanner.Propose(new ShortFormProposalInput([], [])));
+    }
+
+    // FR-023 / AC-071: the orchestrator's preparation carries the proposals, grounded in the plan's own source spans (no invented ranking).
+    [TestMethod]
+    public async Task FR023_AC071_PreparationCarriesGroundedProposals()
+    {
+        using StandardGenerationFixture fixture = await StandardGenerationFixture.CreateAsync(includeShort: true);
+        IReadOnlyList<ShortFormProposal> proposals = fixture.Preparation.ShortFormProposals;
+        Assert.HasCount(9, proposals);
+        Assert.IsFalse(proposals.Any(static p => p.Type == ShortFormCompositionType.Ranking));
+        OriginRef[] spans = fixture.Preparation.Plan.LongForm.Provenance.SourceSpans
+            .Select(static span => OriginRef.FromSourceSpan(span.Id)).ToArray();
+        Assert.IsTrue(proposals.All(p => p.Origins.SequenceEqual(spans)));
     }
 
     [TestMethod]

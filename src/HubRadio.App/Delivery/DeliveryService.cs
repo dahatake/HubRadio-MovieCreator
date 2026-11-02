@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
+using HubRadio.App.Audit;
 using HubRadio.App.Reviews;
 using HubRadio.Core.Compositions;
 using HubRadio.Core.Identity;
@@ -105,6 +106,9 @@ public sealed class DeliveryCreationResult
     public ContentDigest EvidenceDigest { get; }
 }
 
+/// <summary>NFR-BR-005: the description with the destination labels, and the written ai-disclosure.txt (null when nothing must be shown).</summary>
+public sealed record DeliveryAiDisclosureResult(string Description, string? ArtifactPath);
+
 /// <summary>
 /// Creates one delivery inventory from already-rendered, quality-controlled,
 /// approved, and registered local evidence.
@@ -148,6 +152,26 @@ public sealed class DeliveryService
         _evaluateApprovals = evaluateApprovals;
         _getArtifact = getArtifact;
         _validateArtifactAsync = validateArtifactAsync;
+    }
+
+    /// <summary>
+    /// NFR-BR-005 / AC-126: reflects the AI-generation disclosure and the labels registered for <paramref name="destination"/>
+    /// into the deliverable text and next to the deliverable (<c>ai-disclosure.txt</c>). It changes no manifest or evidence digest.
+    /// </summary>
+    public static DeliveryAiDisclosureResult ApplyAiDisclosure(
+        AiGenerationDisclosureService disclosureService,
+        EntityId<ProjectIdTag> projectId,
+        string destination,
+        string description,
+        string deliveryDirectory)
+    {
+        ArgumentNullException.ThrowIfNull(disclosureService);
+        ArgumentNullException.ThrowIfNull(projectId);
+        ArgumentNullException.ThrowIfNull(description);
+        AiDisclosure disclosure = disclosureService.BuildDisclosure(projectId, destination);
+        return new DeliveryAiDisclosureResult(
+            disclosure.ApplyToDescription(description),
+            disclosure.WriteArtifact(deliveryDirectory));
     }
 
     public async Task<DeliveryCreationResult> CreateAsync(

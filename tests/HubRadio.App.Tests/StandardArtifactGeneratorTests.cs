@@ -769,8 +769,7 @@ public sealed class StandardArtifactGeneratorTests
     }
 
     [TestMethod]
-    [DataRow("editing.longOpenerEnabled")]
-    [DataRow("editing.shortOpenerEnabled")]
+    // FR-015: the openers are no longer unsupported; their opt-in is covered by ShortFormOpenerAndProposalTests.
     [DataRow("editing.crossfadeEnabled")]
     [DataRow("audio.noiseReductionEnabled")]
     [DataRow("audio.humReductionEnabled")]
