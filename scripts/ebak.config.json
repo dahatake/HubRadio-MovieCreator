@@ -90,7 +90,7 @@
   "limits": {
     "_note": "1 run の時間（時間単位）。max_hours_default は run_options に max_hours がないときの値、max_hours_cap は指定値を切り詰める上限。夜間に長く回すなら max_hours_cap を引き上げる。reserve_minutes は工程 6 のために残す時間で、残りがこれを切ると新しい項目を始めない。",
     "max_hours_default": 2.5,
-    "max_hours_cap": 3,
+    "max_hours_cap": 10,
     "reserve_minutes": 30
   },
   "worktree_share": {
