@@ -749,13 +749,19 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
             openDisabledReason={projectState.pending !== null ? 'Projectの操作を処理しています。完了後に開けます。' : null} />}
           <div hidden={!projectOpen}>
           {/* Visibility belongs to the surface; monitoring must not stop on tab changes. */}
-          <PipelineProgress active={screen === 'processing' && projectOpen} />
-          {projectOpen && snapshot === null && <p className="workflow-boundary-note" role="status">
-            {draft?.isFinalized
-              ? 'Projectは作成済みですが、編集処理の開始は確認できていません。ホストの状態を確認してください。'
-              : '元動画を選択して開始を確認すると、自動編集の状態を取得します。'}
-          </p>}
-          {draft?.isFinalized === true && <ProjectJobList versions={jobs} status={pipeline.state.versionsStatus} copy={jobSettingsCopy} projectId={activeProjectId} />}
+          {/* NFR-UX-005: progress and the Job list are separate, arrangeable components. */}
+          <ArrangeablePanels screenId="processing" panels={[
+            { id: 'progress', label: '処理の進捗', children: (<>
+              <PipelineProgress active={screen === 'processing' && projectOpen} />
+              {projectOpen && snapshot === null && <p className="workflow-boundary-note" role="status">
+                {draft?.isFinalized
+                  ? 'Projectは作成済みですが、編集処理の開始は確認できていません。ホストの状態を確認してください。'
+                  : '元動画を選択して開始を確認すると、自動編集の状態を取得します。'}
+              </p>}
+            </>) },
+            { id: 'jobs', label: 'Jobの履歴', children: draft?.isFinalized === true
+              ? <ProjectJobList versions={jobs} status={pipeline.state.versionsStatus} copy={jobSettingsCopy} projectId={activeProjectId} /> : null },
+          ]} />
           {projectOpen && <div className="workflow-return"><button type="button" onClick={() => selectStep('source')}>元動画へ戻る</button></div>}
           </div>
         </WorkflowSurface>
