@@ -14,6 +14,7 @@ namespace HubRadio.App.Tests;
 public sealed class TextSensitivityScannerTests
 {
     [TestMethod]
+    // NFR-BR-003 AC-124: 機密情報の候補（メール・内部 URL・認証情報など）が要確認として出典つきで記録される（検出する種類は 10 種のうち現行規則の範囲）。
     public void Scan_FindsFourSupportedCandidateKindsWithSourceProvenance()
     {
         const string text =
