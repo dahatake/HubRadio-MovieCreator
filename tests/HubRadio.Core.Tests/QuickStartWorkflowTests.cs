@@ -50,6 +50,7 @@ public sealed class QuickStartWorkflowTests
         QuickStartActor.System(QuickStartSystemActor.AutomatedEvaluation);
 
     [TestMethod]
+    // FR-029 AC-077: 自動代理評価の結果（PASS・WARNING・FAIL・未評価）が閉じた集合で区別される。
     public void EvaluationPolicyClosesPassWarningNotEvaluatedAndFailureOutcomes()
     {
         AutomatedEvaluationRun pass = CreateRun();
@@ -118,6 +119,7 @@ public sealed class QuickStartWorkflowTests
     }
 
     [TestMethod]
+    // FR-029 AC-077: 任意の注記を記録でき、出力の権限（承認）を生まない。
     public void LifecycleAllowsOptionalAnnotationsWithoutCreatingAnExportAuthority()
     {
         AutomatedEvaluationRun run = CreateRun(
@@ -154,6 +156,7 @@ public sealed class QuickStartWorkflowTests
     }
 
     [TestMethod]
+    // FR-029 AC-077: self-review と修正依頼は任意の注記であり、新しい承認状態ではない。
     public void SelfReviewAndPostEvaluationChangeRequestAreAnnotationsNotNewStates()
     {
         QuickStartWorkflow ready = Complete(CreateRun());

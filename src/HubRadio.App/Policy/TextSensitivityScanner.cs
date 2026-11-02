@@ -17,6 +17,12 @@ public enum TextSensitivityFindingKind
     InternalNetworkLocation,
     CredentialPattern,
     DictionaryTerm,
+    CustomerName,
+    UnreleasedProduct,
+    PersonalInformation,
+    FinancialInformation,
+    ConfidentialMaterial,
+    FuturePlan,
 }
 
 public sealed class TextSensitivityFinding
@@ -80,6 +86,18 @@ public sealed class TextSensitivityFinding
             "sensitivity.credential-pattern",
         TextSensitivityFindingKind.DictionaryTerm =>
             "sensitivity.dictionary-term",
+        TextSensitivityFindingKind.CustomerName =>
+            "sensitivity.customer-name",
+        TextSensitivityFindingKind.UnreleasedProduct =>
+            "sensitivity.unreleased-product",
+        TextSensitivityFindingKind.PersonalInformation =>
+            "sensitivity.personal-information",
+        TextSensitivityFindingKind.FinancialInformation =>
+            "sensitivity.financial-information",
+        TextSensitivityFindingKind.ConfidentialMaterial =>
+            "sensitivity.confidential-material",
+        TextSensitivityFindingKind.FuturePlan =>
+            "sensitivity.future-plan",
         _ => "sensitivity.unknown",
     };
 
@@ -153,6 +171,23 @@ public static class TextSensitivityScanner
         """(?:authorization|proxy-authorization|x-api-key|api[ \t_-]?(?:key|キー)|subscription[ \t_-]?key|account[ \t_-]?key|shared[ \t_-]?access[ \t_-]?(?:key|signature)|client[ \t_-]?(?:secret|シークレット)|password|pwd|access[ \t_-]?(?:token|トークン)|connection[ \t_-]?string|パスワード|アクセストークン|接続文字列)[ \t]*[:=][ \t]*(?:(?:bearer|basic)[ \t]+)?(?<value>"[^"\r\n]+"|'[^'\r\n]+'|[^\s,;。、，；！？「」『』（）【】]+)""");
     private static readonly Regex BearerPattern = CreateRegex(
         """bearer[ \t]+(?<value>"[^"\r\n]+"|'[^'\r\n]+'|[A-Z0-9._~+/=-]+)""");
+
+    // NFR-BR-003 AC-124: 10 種のうち語句・形式で候補にできる種類。いずれも「可能性」の候補で、外部公開可の判定には使わない。
+    private static readonly (Regex Pattern, TextSensitivityFindingKind Kind)[] PhraseRules =
+    [
+        (CreateRegex("""(?:株式会社|有限会社|合同会社)[\p{L}\p{N}ー・]{1,20}|[ァ-ヴA-Za-z0-9ー・]{1,20}(?:株式会社|有限会社|合同会社)|顧客名|お客様名|取引先名|クライアント名|[A-Z][A-Z0-9&.-]{1,30}[ ]?(?:Inc\.?|Corp\.?|Co\.,?[ ]?Ltd\.?|LLC|GmbH)"""),
+            TextSensitivityFindingKind.CustomerName),
+        (CreateRegex("""未公開|未発表|未発売|新製品|新商品|新サービス|コードネーム|unreleased|pre-?release|not[ ]yet[ ]announced"""),
+            TextSensitivityFindingKind.UnreleasedProduct),
+        (CreateRegex("""\b0[0-9]{1,4}-[0-9]{1,4}-[0-9]{3,4}\b|\+81[ -]?[0-9]{1,4}[ -]?[0-9]{1,4}[ -]?[0-9]{3,4}\b|〒[ ]?[0-9]{3}-[0-9]{4}|\b[0-9]{3}-[0-9]{4}\b|住所|生年月日|本籍|マイナンバー|個人番号|電話番号|パスポート番号|運転免許証番号"""),
+            TextSensitivityFindingKind.PersonalInformation),
+        (CreateRegex("""[0-9][0-9,]*(?:\.[0-9]+)?[ ]?(?:万円|億円|千円|円|ドル|USD|JPY)|契約書|契約金額|契約内容|見積書|見積金額|売上高|売上|売り上げ|粗利|原価|年商|受注額|請求額|価格表"""),
+            TextSensitivityFindingKind.FinancialInformation),
+        (CreateRegex("""社外秘|極秘|機密|秘密保持|confidential|NDA|取扱注意|関係者外秘|内部資料|社内資料|社内限定|internal[ ]use[ ]only|do[ ]not[ ]distribute"""),
+            TextSensitivityFindingKind.ConfidentialMaterial),
+        (CreateRegex("""今後の(?:計画|予定|戦略)|将来(?:計画|構想)|中期(?:経営)?計画|来期|来年度|ロードマップ|roadmap|発売予定|リリース予定|提供開始予定"""),
+            TextSensitivityFindingKind.FuturePlan),
+    ];
 
     public static TextSensitivityScanResult Scan(
         TranscriptRevision revision,
@@ -248,6 +283,20 @@ public static class TextSensitivityScanner
                 SelectCredentialValue,
                 candidates,
                 ref isComplete);
+            foreach ((Regex phrase, TextSensitivityFindingKind phraseKind) in PhraseRules)
+            {
+                AddRegexFindings(
+                    phrase,
+                    text,
+                    revision,
+                    utterance,
+                    utteranceIndex,
+                    phraseKind,
+                    SelectWhole,
+                    candidates,
+                    ref isComplete);
+            }
+
             AddDictionaryFindings(
                 text,
                 dictionaryTerms,
@@ -443,6 +492,9 @@ public static class TextSensitivityScanner
             }
         }
     }
+
+    private static NormalizedRange? SelectWhole(string text, Match match) =>
+        match.Length == 0 ? null : new NormalizedRange(match.Index, match.Length);
 
     private static NormalizedRange? SelectEmail(string text, Match match)
     {

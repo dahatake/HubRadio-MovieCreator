@@ -180,6 +180,7 @@ public sealed class ProjectCreationServiceTests
     }
 
     [TestMethod]
+    // FR-037 AC-010: Project 一覧からの新規作成（初期値の下書き）。キャンセルは副作用なし。
     public async Task SourceOnlyCreationDerivesCompletePrivateSafeDraftAndCancelHasNoSideEffect()
     {
         using ProjectCreationFixture fixture = new(AuthorizedSid);
@@ -635,6 +636,7 @@ public sealed class ProjectCreationServiceTests
     }
 
     [TestMethod]
+    // FR-037 AC-010: Project 一覧から対象の Project だけが削除される。
     public async Task DeleteProjectRemovesOnlyTheTargetFromTheListAndRejectsRepeatsAndUnknownIds()
     {
         using ProjectCreationFixture fixture = new(AuthorizedSid);
@@ -687,6 +689,7 @@ public sealed class ProjectCreationServiceTests
     }
 
     [TestMethod]
+    // FR-037 AC-010: Project の削除で関連する保存データ（workspace のファイル）も削除される。
     public void DeleteProjectRemovesWorkspaceFilesOnlyForAFinalizedProjectAndReportsFailure()
     {
         using ProjectCreationFixture fixture = new(AuthorizedSid);

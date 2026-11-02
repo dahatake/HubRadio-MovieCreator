@@ -244,6 +244,8 @@ public sealed class TimelineBridgeTests
     }
 
     [TestMethod]
+    // FR-027 AC-075: 画面操作（bridge）からの編集指示がまとめて適用される。
+    // FR-032 AC-005: 適用後も安定 ID と元動画区間への対応が保たれる。
     public void ApplyBatchIsAtomicPreservesStableIdsAndExactSourceMapping()
     {
         using TimelineTestDatabase database = new();

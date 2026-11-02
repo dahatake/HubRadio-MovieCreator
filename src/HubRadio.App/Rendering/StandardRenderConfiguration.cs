@@ -44,6 +44,22 @@ public sealed class StandardRenderConfiguration
     /// <summary>FR-060: true only when the accepted settings enable sound effects (profile 1.2.0 or later).</summary>
     public bool SoundEffectsEnabled { get; private init; }
 
+    /// <summary>FR-015: true only when the user enabled <c>editing.longOpenerEnabled</c> (default false).</summary>
+    public bool LongOpenerEnabled { get; private init; }
+
+    /// <summary>FR-015: true only when the user enabled <c>editing.shortOpenerEnabled</c> (default false).</summary>
+    public bool ShortOpenerEnabled { get; private init; }
+
+    /// <summary>FR-015: the permitted logo / title / performers / jingle the enabled opener uses; null when none was supplied.</summary>
+    public StandardOpenerInput? Opener { get; private set; }
+
+    internal StandardRenderConfiguration WithOpener(StandardOpenerInput? opener)
+    {
+        var copy = (StandardRenderConfiguration)MemberwiseClone();
+        copy.Opener = opener;
+        return copy;
+    }
+
     /// <summary>FR-136: the production template the Job applies; null keeps the FR-059/FR-060 default output unchanged.</summary>
     public StyleTemplates.StyleTemplateDefinition? StyleTemplate { get => styleTemplate; init => styleTemplate = value; }
 
@@ -131,7 +147,12 @@ public sealed class StandardRenderConfiguration
             if (Value(key).TextValue != expected)
                 throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedSetting);
         }
-        foreach (string key in new[] { "editing.longOpenerEnabled", "editing.shortOpenerEnabled", "editing.crossfadeEnabled",
+        // FR-015 / AC-063: the openers are off by default and only a user's explicit opt-in turns them on.
+        bool longOpener = Value("editing.longOpenerEnabled").BooleanValue
+            ?? throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedSetting);
+        bool shortOpener = Value("editing.shortOpenerEnabled").BooleanValue
+            ?? throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedSetting);
+        foreach (string key in new[] { "editing.crossfadeEnabled",
             "audio.noiseReductionEnabled", "audio.humReductionEnabled", "audio.dialogueBackgroundMusicEnabled", "assets.musicLoopEnabled" })
         {
             if (Value(key).BooleanValue != false)
@@ -200,6 +221,8 @@ public sealed class StandardRenderConfiguration
                 EmphasisTelopAmount = telops,
                 SoundEffectsEnabled = soundEffects,
                 StyleTemplate = styleTemplate,
+                LongOpenerEnabled = longOpener,
+                ShortOpenerEnabled = shortOpener,
             };
         }
         catch (Exception exception) when (exception is ArgumentException or OverflowException)

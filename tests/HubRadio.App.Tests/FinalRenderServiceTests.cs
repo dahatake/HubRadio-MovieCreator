@@ -33,6 +33,7 @@ public sealed class FinalRenderServiceTests
     private static readonly TimeSpan TestTimeout = TimeSpan.FromSeconds(10);
 
     [TestMethod]
+    // NFR-PERF-001 AC-114: 最終書き出しの処理中に進捗が報告される。
     public async Task SuccessfulRunUsesExactApprovalReportsBoundedProgressAndPromotesOnce()
     {
         using FinalRenderFixture fixture = new();

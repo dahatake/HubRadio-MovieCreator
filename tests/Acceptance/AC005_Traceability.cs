@@ -42,6 +42,7 @@ public sealed class AC005_Traceability
         throwOnInvalidBytes: true);
 
     [TestMethod]
+    // FR-032 AC-005: 出力の各シーンから元動画区間・出力区間・編集判断・設定・根拠へ逆引きできる。
     public async Task SourceBackedOutputHasClosedReverseTraceabilityAndRejectsBrokenEvidence()
     {
         using var fixture = new AcceptanceFixture();

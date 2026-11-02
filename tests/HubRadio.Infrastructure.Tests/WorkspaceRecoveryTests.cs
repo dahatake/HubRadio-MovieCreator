@@ -17,6 +17,7 @@ public sealed class WorkspaceRecoveryTests
         new(2034, 5, 6, 7, 8, 9, TimeSpan.Zero);
 
     [TestMethod]
+    // NFR-REL-001 AC-115: 中断後の workspace を検査して利用可能・無傷であることを確かめられる。
     public async Task CheckAsync_EmptyMigratedWorkspaceIsUsableAndIntact()
     {
         using RecoveryFixture fixture = new();

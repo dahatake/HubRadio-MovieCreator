@@ -1,0 +1,17 @@
+<Project Sdk="MSTest.Sdk/4.3.3">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <WindowsPackageType>None</WindowsPackageType>
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
+    <AppxGeneratePriEnabled>false</AppxGeneratePriEnabled>
+    <!-- Reuse the application's existing friend-test boundary, without
+         changing application internals or the regular test project. -->
+    <AssemblyName>HubRadio.App.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\HubRadio.App\HubRadio.App.csproj" />
+  </ItemGroup>
+</Project>

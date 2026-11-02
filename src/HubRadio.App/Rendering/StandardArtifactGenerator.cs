@@ -165,6 +165,9 @@ public sealed class StandardArtifactGenerationRequest
         Configuration = Configuration.WithCueDetails(assignments, tokens, recordSink);
     public StandardMusicRenderInput? Music { get; }
 
+    /// <summary>FR-015: hands the permitted opener content (logo, title, performers, jingle) of the enabled openers to the render.</summary>
+    public void UseOpener(StandardOpenerInput? opener) => Configuration = Configuration.WithOpener(opener);
+
     private static ImportedOriginal RequireCompletedOriginal(IngestWorkflowRunResult ingest)
     {
         ArgumentNullException.ThrowIfNull(ingest);
@@ -851,7 +854,7 @@ public sealed class StandardArtifactGenerator
                 ownedFiles.Add(scriptPath);
                 FfmpegEncoderSettings? outputEncoder = image ? null : encoder;
                 FfmpegAssGraphicBinding[] graphics = output.GraphicFiles.Select(static file => file.Binding).ToArray();
-                IReadOnlyList<FfmpegMusicBinding> music = renderMusic ? output.MusicBindings : [];
+                IReadOnlyList<FfmpegMusicBinding> music = [.. renderMusic ? output.MusicBindings : [], .. output.JingleBindings];
                 FfmpegSoundEffectBinding[] soundEffects = image ? [] : output.SoundEffectCues
                     .Select(cue => new FfmpegSoundEffectBinding(SoundEffectFile(cue.Kind), cue.OutputStart,
                         StandardEmphasisTelops.SoundEffectDuration, StandardSoundEffectSynthesizer.MixGainDecibels)).ToArray();

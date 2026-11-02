@@ -123,15 +123,29 @@ Invoke-Test -Label "CHK10 $Ac" -Sandbox $sb -Body {
                     if (-not $cb) { Start-Sleep -Milliseconds 300 }
                 } while (-not $cb -and $sw.Elapsed.TotalSeconds -lt 20)
                 if (-not $cb) { throw "combo box '比べるJobの数' not found" }
-                $c0 = Get-CompareColumnCount $root
-                if ($c0 -ne 2) { throw "expected 2 compared columns initially, got $c0" }
-                # 比べる数を 1 つずつ増やす（2 → 3 → 4）。さらに増やそうとしても 4 を超えない
-                Focus-ByClick $p $cb
-                foreach ($want in 3, 4, 4, 4, 4) {
-                    [System.Windows.Forms.SendKeys]::SendWait('{DOWN}'); Start-Sleep -Milliseconds 700
-                    $got = Get-CompareColumnCount $root
-                    if ($got -ne $want) { throw "expected $want compared columns, got $got" }
+                # HTML select のポップアップでは DOWN は候補の移動だけで、
+                # ENTER で確定するまで change が届かない場合がある。各回、
+                # HOME から絶対位置を選び直し、確定してから画面の列数を検証する。
+                foreach ($want in 2, 3, 4) {
+                    $cb = Find-AllByNameLike $root '^比べるJobの数$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox } | Select-Object -First 1
+                    Focus-ByClick $p $cb
+                    $keys = '{HOME}' + ('{DOWN}' * ($want - 2)) + '{ENTER}{TAB}'
+                    [System.Windows.Forms.SendKeys]::SendWait($keys)
+                    $wait = [Diagnostics.Stopwatch]::StartNew()
+                    do {
+                        $got = Get-CompareColumnCount $root
+                        if ($got -eq $want) { break }
+                        Start-Sleep -Milliseconds 200
+                    } while ($wait.Elapsed.TotalSeconds -lt 10)
+                    if ($got -ne $want) { throw "expected $want compared columns after committed selection, got $got" }
                 }
+                # 5つ目が存在する素材でも、4を超える選択候補はなく、
+                # DOWN を繰り返して確定しても比較列数は4のまま。
+                $cb = Find-AllByNameLike $root '^比べるJobの数$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox } | Select-Object -First 1
+                Focus-ByClick $p $cb
+                [System.Windows.Forms.SendKeys]::SendWait('{END}{DOWN}{DOWN}{ENTER}{TAB}')
+                Start-Sleep -Milliseconds 700
+                if ((Get-CompareColumnCount $root) -ne 4) { throw 'comparison did not retain the 4-Job limit' }
                 if (@(Find-AllByNameLike $root '^[5-9]つ目').Count -gt 0) { throw '5 or more jobs selectable' }
             }
         }

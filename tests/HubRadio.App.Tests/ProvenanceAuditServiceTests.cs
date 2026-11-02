@@ -34,6 +34,7 @@ public sealed class ProvenanceAuditServiceTests
         new(2033, 4, 5, 6, 7, 8, TimeSpan.FromHours(9));
 
     [TestMethod]
+    // NFR-AUD-001 AC-118: AI（tool・model）が生成した提案と利用者の決定が区別して記録される。
     public void SuggestionDecisionRecordsAllProducersAndOnlyTheirActualDetectionShape()
     {
         using AuditFixture fixture = new();
@@ -619,6 +620,7 @@ public sealed class ProvenanceAuditServiceTests
     }
 
     [TestMethod]
+    // NFR-AUD-001 AC-118: 出力の version・構成・digest が履歴として保持される。
     public void DeliveryRecordsCompositionSuggestionAndOutputDigestsWithoutStorageReferences()
     {
         using AuditFixture fixture = new();

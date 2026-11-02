@@ -7,6 +7,8 @@ export interface PreviewModeControlsProps {
   readonly selection: PlayerExactFrameSelection | null
   readonly context?: Readonly<{ jobId: string | null }>
   readonly active?: boolean
+  /** FR-026: プレビューから編集タイムライン上の該当箇所へ移動する。 */
+  readonly onOpenTimeline?: (position: PlayerExactFrameSelection) => void
 }
 
 const orientations: ReadonlyArray<
@@ -20,6 +22,7 @@ export function PreviewModeControls({
   selection,
   context,
   active = true,
+  onOpenTimeline,
 }: PreviewModeControlsProps) {
   const { state, dispatch } = usePreviewModes()
   const currentSelection = selection !== null && (
@@ -62,6 +65,19 @@ export function PreviewModeControls({
               : `代理フレーム ${currentSelection.frame.proxyFrameSequence + 1}・Source ${formatRationalTime(currentSelection.frame.sourcePresentationTime)}・Proxy ${formatRationalTime(currentSelection.frame.proxyPresentationTime)}`}
         </output>
       </div>
+
+      {onOpenTimeline !== undefined ? (
+        <button
+          type="button"
+          className="preview-open-timeline"
+          disabled={disabled}
+          onClick={() => {
+            if (currentSelection !== null) onOpenTimeline(currentSelection)
+          }}
+        >
+          タイムラインの該当箇所へ移動
+        </button>
+      ) : null}
 
       <div className="preview-mode-controls">
         <fieldset className="preview-orientation-options" disabled={disabled}>

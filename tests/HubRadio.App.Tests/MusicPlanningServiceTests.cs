@@ -31,6 +31,7 @@ public sealed class MusicPlanningServiceTests
     }
 
     [TestMethod]
+    // FR-019 AC-067: Music/ が無いときは BGM なしで完了し warning が記録される。
     public void AbsentCatalogCompletesWithoutAssignmentAndCarriesWarning()
     {
         MusicCatalog catalog = MusicCatalog.CreateUnavailable(
@@ -75,6 +76,7 @@ public sealed class MusicPlanningServiceTests
     }
 
     [TestMethod]
+    // FR-019 AC-067: 会話中の BGM は明示的に有効化したときだけで、duck gain が記録される。
     public void DialogueRequiresExplicitEnableAndOnlyThenRecordsDuckGain()
     {
         MusicCatalog catalog = MusicCatalog.CreateAvailable([Track('a', 2m)]);

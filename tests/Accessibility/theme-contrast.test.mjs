@@ -1,3 +1,4 @@
+// NFR-A11Y-001 AC-117: 通常文字 4.5:1 の contrast、keyboard focus indicator、320 CSS px での reflow を検証する。
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'

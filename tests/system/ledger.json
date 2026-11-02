@@ -59,9 +59,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-workspace-browse.ps1",
       "canary": false,
       "status": "pass",
-      "last_commit": "636d9b7",
-      "last_run_at": "2026-10-13T10:16:06+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-001-202610131015.log",
+      "last_commit": "71b02a5",
+      "last_run_at": "2026-11-03T05:23:48+09:00",
+      "evidence": "work/runs/adhoc-202611030510/logs/system-test/E2E-001-202611030510.log",
       "history": [
         {
           "at": "2026-10-08T12:30:02+09:00",
@@ -90,9 +90,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-browse-cancel.ps1",
       "canary": false,
       "status": "pass",
-      "last_commit": "697a420",
-      "last_run_at": "2026-10-13T10:12:10+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-002-202610131011.log",
+      "last_commit": "71b02a5",
+      "last_run_at": "2026-11-03T05:23:48+09:00",
+      "evidence": "work/runs/adhoc-202611030510/logs/system-test/E2E-002-202611030514.log",
       "history": [
         {
           "at": "2026-10-13T05:43:34+09:00",
@@ -115,9 +115,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-064-browse-cancel.ps1",
       "canary": false,
       "status": "pass",
-      "last_commit": "80d21ea",
-      "last_run_at": "2026-10-13T11:07:42+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/E2E-003-202610131106.log",
+      "last_commit": "71b02a5",
+      "last_run_at": "2026-11-03T05:23:48+09:00",
+      "evidence": "work/runs/adhoc-202611030510/logs/system-test/E2E-002-202611030514.log",
       "history": [
         {
           "at": "2026-10-13T05:43:37+09:00",
@@ -135,9 +135,9 @@
       "ac_ids": [
         "AC-041"
       ],
-      "title": "権限なし利用者の参照…は forbidden（例外文・SID なし）",
+      "title": "FR-064 AC-041: 実SIDと一時権限DBで参照拒否・非漏洩・ダイアログ未呼出し",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/forbidden-pending.ps1",
+      "command": "dotnet test --project tests/system/contract/HubRadio.System.Contracts.csproj -c Release --filter FullyQualifiedName~FR064_AC041",
       "canary": false,
       "status": "blocked",
       "last_commit": null,
@@ -155,6 +155,24 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "TBD: 権限なし利用者の再現方法が要求定義書にない（AC-041/AC-139）"
+        },
+        {
+          "at": "2026-11-02T18:01:58+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/forbidden-pending.ps1' -> 'dotnet test --project tests/system/contract/HubRadio.System.Contracts.csproj -c Release --filter FullyQualifiedName~FR064_AC041'; title: '権限なし利用者の参照…は forbidden（例外文・SID なし）' -> 'FR-064 AC-041: 実SIDと一時権限DBで参照拒否・非漏洩・ダイアログ未呼出し'",
+          "reason": "TBD解消: 現在Windows利用者の実SIDに一時DB内で役割未付与を再現。実AuthorizationServiceとnative request境界を通して拒否・設定不変を確認し、同一actorへの一時DB内付与を陽性対照とする。OSアカウント/ACL/利用者設定は変更しない"
+        },
+        {
+          "at": "2026-11-02T18:01:59+09:00",
+          "by": "test-designer",
+          "change": "status -> not_run",
+          "reason": "実行可能な独立契約へ置換。設計工程のため親conductorによる記録実行を待つ"
+        },
+        {
+          "at": "2026-11-02T18:18:28+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "IT-004 に統合（AC-041既存有効ケースを実権限DB/native契約で拡張。同一ACの重複を防ぐ。TBDではない）"
         }
       ]
     },
@@ -168,7 +186,7 @@
       ],
       "title": "複数 Job の各画面に Job ごとのサムネイルと名前/作成日時",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-131-job-thumbnails.ps1",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-132",
       "canary": false,
       "status": "blocked",
       "last_commit": "ed7a609",
@@ -210,6 +228,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC-132 は integration。配布パッケージ（ポータブル版）がなく Job が完了しないため system では実行不可。実機確認は MT-001"
+        },
+        {
+          "at": "2026-11-02T18:08:19+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-131-job-thumbnails.ps1' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-132'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:20+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-132 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-132 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -226,9 +256,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-132-export.ps1",
       "canary": false,
       "status": "pass",
-      "last_commit": "b83acb8",
-      "last_run_at": "2026-11-02T14:16:35+09:00",
-      "evidence": "work/runs/202611021249/logs/system-test/E2E-006-202611021401.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-006-202611022309.log",
       "history": [
         {
           "at": "2026-10-13T05:43:44+09:00",
@@ -251,9 +281,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-132-export.ps1",
       "canary": false,
       "status": "pass",
-      "last_commit": "b83acb8",
-      "last_run_at": "2026-11-02T14:16:35+09:00",
-      "evidence": "work/runs/202611021249/logs/system-test/E2E-006-202611021401.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-006-202611022309.log",
       "history": [
         {
           "at": "2026-10-13T05:43:46+09:00",
@@ -271,14 +301,14 @@
       "ac_ids": [
         "AC-139"
       ],
-      "title": "権限なし利用者の書き出しは forbidden・ファイル 0",
+      "title": "FR-132 AC-139: 実SIDと一時権限DBで書出拒否・書込みゼロ・非漏洩",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/forbidden-pending.ps1",
+      "command": "pwsh -NoProfile -File tests/system/e2e/permission-contract.ps1 -Ac AC-139",
       "canary": false,
-      "status": "blocked",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "status": "pass",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-008-202611022315.log",
       "history": [
         {
           "at": "2026-10-13T05:43:48+09:00",
@@ -291,6 +321,24 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "TBD: 権限なし利用者の再現方法が要求定義書にない（AC-041/AC-139）"
+        },
+        {
+          "at": "2026-11-02T18:02:00+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/forbidden-pending.ps1' -> 'dotnet test --project tests/system/contract/HubRadio.System.Contracts.csproj -c Release --filter FullyQualifiedName~FR132_AC139'; title: '権限なし利用者の書き出しは forbidden・ファイル 0' -> 'FR-132 AC-139: 実SIDと一時権限DBで書出拒否・書込みゼロ・非漏洩'",
+          "reason": "TBD解消: 現在Windows利用者の実SIDに一時DB内で役割未付与を再現。実AuthorizationService・request parser・native export・writer境界で拒否と陽性対照を検証。OS権限やユーザー設定を変更しない"
+        },
+        {
+          "at": "2026-11-02T18:02:00+09:00",
+          "by": "test-designer",
+          "change": "status -> not_run",
+          "reason": "実行可能な独立契約へ置換。設計工程のため親conductorによる記録実行を待つ"
+        },
+        {
+          "at": "2026-11-02T18:18:29+09:00",
+          "by": "test-designer",
+          "change": "command: 'dotnet test --project tests/system/contract/HubRadio.System.Contracts.csproj -c Release --filter FullyQualifiedName~FR132_AC139' -> 'pwsh -NoProfile -File tests/system/e2e/permission-contract.ps1 -Ac AC-139'",
+          "reason": "既存serial_patternsに適合する専用入口へ変更。複数dotnet testがWinUIの生成XAMLを同時更新するとCS0103で失敗することを記録実行前に発見したため、native buildを直列化"
         }
       ]
     },
@@ -307,9 +355,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-133-project-folder-name.ps1",
       "canary": true,
       "status": "pass",
-      "last_commit": "bdcee0b",
-      "last_run_at": "2026-10-30T22:46:44+09:00",
-      "evidence": "work/runs/202610302224/logs/system-test/E2E-009-202610302228.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-009-202611022259.log",
       "history": [
         {
           "at": "2026-10-13T05:43:51+09:00",
@@ -332,9 +380,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-media-output.ps1 -Ac AC-049",
       "canary": false,
       "status": "pass",
-      "last_commit": "b9407a1",
-      "last_run_at": "2026-11-02T00:10:08+09:00",
-      "evidence": "work/runs/202611012140/logs/system-test/E2E-010-202611020006.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-010-202611022315.log",
       "history": [
         {
           "at": "2026-10-13T07:45:13+09:00",
@@ -357,9 +405,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-media-output.ps1 -Ac AC-001",
       "canary": false,
       "status": "pass",
-      "last_commit": "45b096e",
-      "last_run_at": "2026-11-01T23:57:56+09:00",
-      "evidence": "work/runs/202611012140/logs/system-test/E2E-011-202611012316.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-011-202611022319.log",
       "history": [
         {
           "at": "2026-10-13T07:45:15+09:00",
@@ -382,9 +430,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-media-output.ps1 -Ac AC-057",
       "canary": false,
       "status": "pass",
-      "last_commit": "45b096e",
-      "last_run_at": "2026-11-01T23:57:56+09:00",
-      "evidence": "work/runs/202611012140/logs/system-test/E2E-012-202611012319.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-012-202611022322.log",
       "history": [
         {
           "at": "2026-10-13T07:45:18+09:00",
@@ -407,9 +455,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-media-output.ps1 -Ac AC-002",
       "canary": false,
       "status": "pass",
-      "last_commit": "b83acb8",
-      "last_run_at": "2026-11-02T14:16:35+09:00",
-      "evidence": "work/runs/202611021249/logs/system-test/E2E-013-202611021409.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-013-202611022325.log",
       "history": [
         {
           "at": "2026-10-13T07:45:21+09:00",
@@ -432,9 +480,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-media-output.ps1 -Ac AC-060",
       "canary": false,
       "status": "pass",
-      "last_commit": "3468f5d",
-      "last_run_at": "2026-11-01T22:53:43+09:00",
-      "evidence": "work/runs/202611012140/logs/system-test/E2E-014-202611012233.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-014-202611022330.log",
       "history": [
         {
           "at": "2026-10-13T07:45:24+09:00",
@@ -457,9 +505,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-media-output.ps1 -Ac AC-079",
       "canary": false,
       "status": "pass",
-      "last_commit": "45b096e",
-      "last_run_at": "2026-11-01T23:57:56+09:00",
-      "evidence": "work/runs/202611012140/logs/system-test/E2E-015-202611012327.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-015-202611022333.log",
       "history": [
         {
           "at": "2026-10-13T07:45:27+09:00",
@@ -482,9 +530,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-009",
       "canary": false,
       "status": "pass",
-      "last_commit": "45b096e",
-      "last_run_at": "2026-11-01T23:57:56+09:00",
-      "evidence": "work/runs/202611012140/logs/system-test/E2E-016-202611012330.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-016-202611022336.log",
       "history": [
         {
           "at": "2026-10-13T07:45:29+09:00",
@@ -507,9 +555,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-010",
       "canary": false,
       "status": "pass",
-      "last_commit": "45b096e",
-      "last_run_at": "2026-11-01T23:57:56+09:00",
-      "evidence": "work/runs/202611012140/logs/system-test/E2E-017-202611012332.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-017-202611022338.log",
       "history": [
         {
           "at": "2026-10-13T07:45:31+09:00",
@@ -532,9 +580,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-017",
       "canary": false,
       "status": "pass",
-      "last_commit": "45b096e",
-      "last_run_at": "2026-11-01T23:57:56+09:00",
-      "evidence": "work/runs/202611012140/logs/system-test/E2E-018-202611012334.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-018-202611022340.log",
       "history": [
         {
           "at": "2026-10-13T07:45:34+09:00",
@@ -557,9 +605,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-030",
       "canary": false,
       "status": "pass",
-      "last_commit": "45b096e",
-      "last_run_at": "2026-11-01T23:57:56+09:00",
-      "evidence": "work/runs/202611012140/logs/system-test/E2E-019-202611012337.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-019-202611022345.log",
       "history": [
         {
           "at": "2026-10-13T07:45:37+09:00",
@@ -582,9 +630,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-036",
       "canary": false,
       "status": "pass",
-      "last_commit": "3468f5d",
-      "last_run_at": "2026-11-01T22:53:43+09:00",
-      "evidence": "work/runs/202611012140/logs/system-test/E2E-020-202611012243.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-020-202611022349.log",
       "history": [
         {
           "at": "2026-10-13T07:45:40+09:00",
@@ -607,9 +655,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-038",
       "canary": false,
       "status": "pass",
-      "last_commit": "9dd9b13",
-      "last_run_at": "2026-11-02T07:30:30+09:00",
-      "evidence": "work/runs/202611020515/logs/system-test/E2E-021-202611020720.log",
+      "last_commit": "71b02a5",
+      "last_run_at": "2026-11-03T05:30:43+09:00",
+      "evidence": "work/runs/adhoc-202611030524/logs/system-test/E2E-021-202611030524.log",
       "history": [
         {
           "at": "2026-10-13T07:45:43+09:00",
@@ -632,9 +680,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-launch-layout.ps1 -Ac AC-007",
       "canary": false,
       "status": "pass",
-      "last_commit": "45b096e",
-      "last_run_at": "2026-11-01T23:57:56+09:00",
-      "evidence": "work/runs/202611012140/logs/system-test/E2E-022-202611012347.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-022-202611030000.log",
       "history": [
         {
           "at": "2026-10-13T07:45:47+09:00",
@@ -657,9 +705,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-launch-layout.ps1 -Ac AC-127",
       "canary": false,
       "status": "pass",
-      "last_commit": "694a1ba",
-      "last_run_at": "2026-11-02T14:43:16+09:00",
-      "evidence": "work/runs/202611021249/logs/system-test/E2E-023-202611021442.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-023-202611030004.log",
       "history": [
         {
           "at": "2026-10-13T07:45:52+09:00",
@@ -682,9 +730,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-launch-layout.ps1 -Ac AC-129",
       "canary": false,
       "status": "pass",
-      "last_commit": "694a1ba",
-      "last_run_at": "2026-11-02T14:43:16+09:00",
-      "evidence": "work/runs/202611021249/logs/system-test/E2E-024-202611021438.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-024-202611030006.log",
       "history": [
         {
           "at": "2026-10-13T07:45:58+09:00",
@@ -704,7 +752,7 @@
       ],
       "title": "サムネイルのない Job に代替表示・他 Job 継続",
       "layer": "api",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-131-thumbnails-integration.ps1 -Ac AC-133",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-133",
       "canary": false,
       "status": "blocked",
       "last_commit": null,
@@ -728,6 +776,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。結合テストで確認するため台帳では止める"
+        },
+        {
+          "at": "2026-11-02T18:08:21+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-131-thumbnails-integration.ps1 -Ac AC-133' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-133'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:21+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-133 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-133 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -741,7 +801,7 @@
       ],
       "title": "更新後に最新反映・取り違えなし",
       "layer": "api",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-131-thumbnails-integration.ps1 -Ac AC-134",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-134",
       "canary": false,
       "status": "blocked",
       "last_commit": null,
@@ -765,6 +825,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。結合テストで確認するため台帳では止める"
+        },
+        {
+          "at": "2026-11-02T18:08:22+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-131-thumbnails-integration.ps1 -Ac AC-134' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-134'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:22+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-134 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-134 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -778,7 +850,7 @@
       ],
       "title": "代替テキスト・色以外の状態識別・キーボード操作",
       "layer": "api",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-131-thumbnails-integration.ps1 -Ac AC-135",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-135",
       "canary": false,
       "status": "blocked",
       "last_commit": null,
@@ -802,6 +874,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。結合テストで確認するため台帳では止める"
+        },
+        {
+          "at": "2026-11-02T18:08:23+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-131-thumbnails-integration.ps1 -Ac AC-135' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-135'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:23+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-135 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-135 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -813,20 +897,32 @@
       "ac_ids": [
         "AC-041"
       ],
-      "title": "権限なし利用者の参照…は forbidden（ダイアログ未起動・例外文/SID/選択外情報なし）。既存の契約/統合テストで充足",
+      "title": "FR-064 AC-041: 実SID・実権限DBで参照拒否・非漏洩・設定不変",
       "layer": "contract",
-      "command": "dotnet test tests/HubRadio.App.Tests/HubRadio.App.Tests.csproj --filter FullyQualifiedName~FR064_AC041 -p:Platform=x64",
+      "command": "pwsh -NoProfile -File tests/system/e2e/permission-contract.ps1 -Ac AC-041",
       "canary": false,
       "status": "pass",
-      "last_commit": "bd922e2",
-      "last_run_at": "2026-10-13T10:59:52+09:00",
-      "evidence": "work/runs/202610130500/logs/system-test/IT-004-202610131055.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/IT-004-202611030009.log",
       "history": [
         {
           "at": "2026-10-13T10:54:47+09:00",
           "by": "test-designer",
           "change": "追加",
           "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-11-02T18:18:26+09:00",
+          "by": "test-designer",
+          "change": "command: 'dotnet test tests/HubRadio.App.Tests/HubRadio.App.Tests.csproj --filter FullyQualifiedName~FR064_AC041 -p:Platform=x64' -> 'pwsh -NoProfile -File tests/system/e2e/permission-contract.ps1 -Ac AC-041'; title: '権限なし利用者の参照…は forbidden（ダイアログ未起動・例外文/SID/選択外情報なし）。既存の契約/統合テストで充足' -> 'FR-064 AC-041: 実SID・実権限DBで参照拒否・非漏洩・設定不変'",
+          "reason": "既存AC-041の有効ケースを拡張する。E2E-004へ作った実権限DB/native契約をこちらへ統合し重複を回避。e2e/入口により既存serial_patternsでWinUI共通XAML生成の並列build競合も防止"
+        },
+        {
+          "at": "2026-11-02T18:18:27+09:00",
+          "by": "test-designer",
+          "change": "status -> not_run",
+          "reason": "権限DBを含む強化契約へ拡張。conductorの新しい記録実行を待つ"
         }
       ]
     },
@@ -840,7 +936,7 @@
       ],
       "title": "演出テンプレートを 1 つ選ぶだけで設定値入力なしに Job が完了し、一覧に名前・用途・縦横・例が出る",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-136-style-template.ps1 -Ac AC-150",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-150",
       "canary": false,
       "status": "blocked",
       "last_commit": null,
@@ -858,6 +954,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        },
+        {
+          "at": "2026-11-02T18:08:24+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-136-style-template.ps1 -Ac AC-150' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-150'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:25+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-150 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-150 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -871,7 +979,7 @@
       ],
       "title": "テンプレート未選択の Job は従来の既定の出力と同じ（テンプレート ID が付かない）",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-136-style-template.ps1 -Ac AC-151",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-151",
       "canary": false,
       "status": "blocked",
       "last_commit": null,
@@ -889,6 +997,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        },
+        {
+          "at": "2026-11-02T18:08:25+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-136-style-template.ps1 -Ac AC-151' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-151'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:25+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-151 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-151 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -902,7 +1022,7 @@
       ],
       "title": "テンプレート ID・版を保存し同じ設定で同じ演出。調整後は「テンプレート＋変更あり」と識別",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-136-style-template.ps1 -Ac AC-152",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-152",
       "canary": false,
       "status": "blocked",
       "last_commit": null,
@@ -920,6 +1040,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        },
+        {
+          "at": "2026-11-02T18:08:26+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-136-style-template.ps1 -Ac AC-152' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-152'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:26+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-152 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-152 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -933,7 +1065,7 @@
       ],
       "title": "各テンプレートの強調色・書体の数、強調が字幕の一部、FR-051 上限内",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-137-template-kinds.ps1 -Ac AC-153",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-153",
       "canary": false,
       "status": "blocked",
       "last_commit": null,
@@ -951,6 +1083,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        },
+        {
+          "at": "2026-11-02T18:08:27+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-137-template-kinds.ps1 -Ac AC-153' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-153'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:27+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-153 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-153 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -964,7 +1108,7 @@
       ],
       "title": "ショート飛び出しは 1〜3 語・話す語のみ強調、バラエティは効果音と約 0.5 秒の動き、強調数は上限内",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-137-template-kinds.ps1 -Ac AC-154",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-154",
       "canary": false,
       "status": "blocked",
       "last_commit": null,
@@ -982,6 +1126,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        },
+        {
+          "at": "2026-11-02T18:08:28+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-137-template-kinds.ps1 -Ac AC-154' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-154'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:28+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-154 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-154 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -995,7 +1151,7 @@
       ],
       "title": "縦型の字幕・テロップが余白（上250・下480・右160）と字幕領域の内側に収まる",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-156",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-156",
       "canary": false,
       "status": "blocked",
       "last_commit": "3468f5d",
@@ -1037,6 +1193,18 @@
           "by": "conductor",
           "change": "blocked",
           "reason": "AC は integration のため System Test 対象外。手動の E2E 実行は pass（work/runs/202611012140/logs/system-test/E2E-030-202611012216.log）"
+        },
+        {
+          "at": "2026-11-02T18:08:28+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-156' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-156'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:29+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-156 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-156 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -1050,7 +1218,7 @@
       ],
       "title": "対談番組: 話題が続く間だけサイドテロップ、名前・肩書き帯は入力のある話者だけ（異常系: 入力なしは出さない）",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-157",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-157",
       "canary": false,
       "status": "blocked",
       "last_commit": "3468f5d",
@@ -1086,6 +1254,18 @@
           "by": "conductor",
           "change": "blocked",
           "reason": "AC は integration のため System Test 対象外。手動の E2E 実行は pass（work/runs/202611012140/logs/system-test/E2E-031-202611012208.log）"
+        },
+        {
+          "at": "2026-11-02T18:08:29+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-157' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-157'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:30+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-157 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-157 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -1099,7 +1279,7 @@
       ],
       "title": "縦型3段: 1080×1920、上段タイトル・フック／中段元映像／下段字幕（20字以内）、冒頭にフック",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-158",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-158",
       "canary": false,
       "status": "blocked",
       "last_commit": "c0e5da2",
@@ -1129,6 +1309,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "対応する AC の検証レベルは integration で System Test の対象外（CHK-10）。スクリプトは保持し、integration 側の確認に使う"
+        },
+        {
+          "at": "2026-11-02T18:08:30+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-138-layouts.ps1 -Ac AC-158' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-158'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:31+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-158 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-158 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -1142,7 +1334,7 @@
       ],
       "title": "各テンプレートで contrast 4.5:1 以上、色以外の強調、否定語を削らない、自動字幕は下書きで確認・修正可能",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-139-quality.ps1 -Ac AC-159",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-159",
       "canary": false,
       "status": "blocked",
       "last_commit": null,
@@ -1160,6 +1352,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        },
+        {
+          "at": "2026-11-02T18:08:32+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-139-quality.ps1 -Ac AC-159' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-159'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:33+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-159 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-159 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -1173,7 +1377,7 @@
       ],
       "title": "テンプレートの一覧・説明・users-guide に効果の保証・断定や特定チャンネル・人物の模倣の表現がない（文面の走査）",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-139-quality.ps1 -Ac AC-161",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-161",
       "canary": false,
       "status": "blocked",
       "last_commit": null,
@@ -1191,6 +1395,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC の検証レベルが integration/manual で System Test の対象外（実装役の結合試験が担当）。スクリプトは参考として保持"
+        },
+        {
+          "at": "2026-11-02T18:08:33+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-139-quality.ps1 -Ac AC-161' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-161'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:34+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-161 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-161 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -1204,7 +1420,7 @@
       ],
       "title": "キャラクター対話: 立ち絵 0 件では選べず、使用権確認つき登録で選べる・確認状態を記録・キャラ別字幕色・標準立ち絵の同梱なし",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-137-139-character-fonts.ps1 -Ac AC-155",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-155",
       "canary": false,
       "status": "blocked",
       "last_commit": null,
@@ -1222,6 +1438,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。実装役の結合試験が担当。スクリプトは参考として保持"
+        },
+        {
+          "at": "2026-11-02T18:08:34+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-137-139-character-fonts.ps1 -Ac AC-155' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-155'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:35+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-155 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-155 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -1235,7 +1463,7 @@
       ],
       "title": "効果音は合成 2 種のみ・書体は同梱 OFL 3 種のみ・書体の名前/版/ライセンスを記録（異常系: 他書体・許諾なしは不可）",
       "layer": "e2e",
-      "command": "pwsh -NoProfile -File tests/system/e2e/fr-137-139-character-fonts.ps1 -Ac AC-160",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-160",
       "canary": false,
       "status": "blocked",
       "last_commit": null,
@@ -1253,6 +1481,18 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。実装役の結合試験が担当。スクリプトは参考として保持"
+        },
+        {
+          "at": "2026-11-02T18:08:36+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-137-139-character-fonts.ps1 -Ac AC-160' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-160'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:36+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-160 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-160 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
         }
       ]
     },
@@ -1269,9 +1509,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-140-143-system.ps1 -Ac AC-165",
       "canary": false,
       "status": "pass",
-      "last_commit": "94b9ded",
-      "last_run_at": "2026-11-01T20:44:23+09:00",
-      "evidence": "work/runs/202611011838/logs/system-test/E2E-037-202611012038.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-037-202611030009.log",
       "history": [
         {
           "at": "2026-10-30T22:49:08+09:00",
@@ -1294,9 +1534,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-140-143-system.ps1 -Ac AC-169",
       "canary": false,
       "status": "pass",
-      "last_commit": "04cd0ff",
-      "last_run_at": "2026-11-01T15:34:39+09:00",
-      "evidence": "work/runs/202610310559/logs/system-test/E2E-038-202610310932.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-038-202611030015.log",
       "history": [
         {
           "at": "2026-10-30T22:49:10+09:00",
@@ -1319,9 +1559,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-140-143-system.ps1 -Ac AC-172",
       "canary": false,
       "status": "pass",
-      "last_commit": "46d5a3b",
-      "last_run_at": "2026-11-01T20:22:41+09:00",
-      "evidence": "work/runs/202611011838/logs/system-test/E2E-039-202611012019.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-039-202611030020.log",
       "history": [
         {
           "at": "2026-10-30T22:49:12+09:00",
@@ -1350,9 +1590,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-140-143-system.ps1 -Ac AC-174",
       "canary": false,
       "status": "pass",
-      "last_commit": "04cd0ff",
-      "last_run_at": "2026-11-01T15:34:39+09:00",
-      "evidence": "work/runs/202610310559/logs/system-test/E2E-040-202610310938.log",
+      "last_commit": "d1ca934",
+      "last_run_at": "2026-11-03T00:30:32+09:00",
+      "evidence": "work/runs/202611022237/logs/system-test/E2E-040-202611030024.log",
       "history": [
         {
           "at": "2026-10-30T22:49:13+09:00",

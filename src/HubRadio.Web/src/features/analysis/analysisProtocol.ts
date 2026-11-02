@@ -379,6 +379,12 @@ export interface AnalysisSensitivity {
       | 'internalNetworkLocation'
       | 'credentialPattern'
       | 'dictionaryTerm'
+      | 'customerName'
+      | 'unreleasedProduct'
+      | 'personalInformation'
+      | 'financialInformation'
+      | 'confidentialMaterial'
+      | 'futurePlan'
     reasonCode: string
     sourceRange: AnalysisTimeRange
   }>[]
@@ -1585,12 +1591,20 @@ const emphasisReasons: readonly AnalysisEmphasisPayload['reasons'][number][] = [
 ]
 const sensitivityKinds: readonly AnalysisSensitivity['findings'][number]['kind'][] = [
   'emailAddress', 'internalNetworkLocation', 'credentialPattern', 'dictionaryTerm',
+  'customerName', 'unreleasedProduct', 'personalInformation',
+  'financialInformation', 'confidentialMaterial', 'futurePlan',
 ]
 const sensitivityReasonCodes: Readonly<Record<AnalysisSensitivity['findings'][number]['kind'], string>> = {
   emailAddress: 'sensitivity.email-address',
   internalNetworkLocation: 'sensitivity.internal-network-location',
   credentialPattern: 'sensitivity.credential-pattern',
   dictionaryTerm: 'sensitivity.dictionary-term',
+  customerName: 'sensitivity.customer-name',
+  unreleasedProduct: 'sensitivity.unreleased-product',
+  personalInformation: 'sensitivity.personal-information',
+  financialInformation: 'sensitivity.financial-information',
+  confidentialMaterial: 'sensitivity.confidential-material',
+  futurePlan: 'sensitivity.future-plan',
 }
 
 const snapshotKeys = [

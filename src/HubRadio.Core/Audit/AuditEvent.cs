@@ -21,6 +21,8 @@ public enum AuditEventKind
     PublicationRecorded,
     SuggestionDecisionRecorded,
     RightsDecisionRecorded,
+    AiGeneratedElementRecorded,
+    AiDisclosureLabelAdded,
 }
 
 public sealed class AuditEvent

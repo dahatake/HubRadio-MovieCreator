@@ -16,6 +16,7 @@ public sealed class SettingsBridgeTests
         new(2026, 9, 3, 0, 0, 0, TimeSpan.Zero);
 
     [TestMethod]
+    // FR-033 AC-081: 設定画面の bridge が profile の項目・現在値・初期値を射影する。
     public void ReadProjectsActualProfileInventoryWithoutHardCodedCount()
     {
         using Fixture fixture = new();
@@ -36,6 +37,7 @@ public sealed class SettingsBridgeTests
     }
 
     [TestMethod]
+    // FR-033 AC-081: 設定値が Project に対応付けて保存され、初期値へ戻せる。
     public void UpdatePersistsAcrossRestartAndResetReturnsToProjectInitialValue()
     {
         using Fixture fixture = new();

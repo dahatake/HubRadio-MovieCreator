@@ -142,6 +142,7 @@ public sealed class EditOperationTests
     }
 
     [TestMethod]
+    // FR-027 AC-075: 「この部分を残す」指示が適用され、適用前後の snapshot が得られる。
     public void KeepReplacesReadonlySnapshotWithEqualNewElementsAndTimestamp()
     {
         CompositionElement source = SourceElement(
@@ -171,6 +172,7 @@ public sealed class EditOperationTests
     }
 
     [TestMethod]
+    // FR-027 AC-075: 「この部分を削除する」指示が適用される。
     public void DeleteClosesGapAndAllowsEmptyComposition()
     {
         CompositionElement first = SourceElement(Time(0), Time(2), Time(10));

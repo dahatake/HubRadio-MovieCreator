@@ -20,6 +20,7 @@ public sealed class AC004_Security_UnauthorizedView
         "S-1-5-21-4004-1000-2000-3999";
 
     [TestMethod]
+    // NFR-SEC-001 AC-004: 未割り当ての利用者・権限のない役割はデータの読み取り前に拒否される。
     public async Task UnassignedActorAndUnauthorizedRoleAreForbiddenBeforeDataRead()
     {
         using var fixture = new AuthorizationFixture();

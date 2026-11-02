@@ -12,6 +12,7 @@ public sealed class BrandTemplateTests
         "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     [TestMethod]
+    // NFR-BR-001 AC-122: ブランドテンプレートは版付きの契約に限られ、種別（オープニング・テロップ・サムネイル・エンディング等）が固定される。
     public void ContractEnumsAndMarkerHaveOnlyTheRequiredKinds()
     {
         CollectionAssert.AreEqual(

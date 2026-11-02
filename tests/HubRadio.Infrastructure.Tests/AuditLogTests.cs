@@ -54,6 +54,7 @@ public sealed class AuditLogTests
     }
 
     [TestMethod]
+    // NFR-AUD-001 AC-118: 操作履歴（監査イベント）が改ざん検知つきで追記・取得できる。
     public void MultipleAppendsRoundTripTypedFieldsAndReturnDefensiveCollection()
     {
         using StoreTestDatabase database = new();

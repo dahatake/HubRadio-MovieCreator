@@ -18,6 +18,8 @@ public enum StandardTextProvenanceKind
     SettingsCallToAction,
     /// <summary>FR-059: verbatim text of a displayed subtitle cue (emphasis caption).</summary>
     OriginalTranscript,
+    /// <summary>FR-015: user-entered opener text (program, episode, title, performers, public scope) the user enabled.</summary>
+    UserOpener,
 }
 
 public sealed record StandardTextOverlayEvidence(
@@ -109,6 +111,28 @@ internal static class StandardMetadataGraphics
             {
                 Add("TalkShowNameBand", band.Text, [userInputOrigin], null, SecondsRange(band.Start, band.End, duration),
                     "user-speaker-introduction", StandardTextProvenanceKind.PlannedMetadata, tail: false, fixedRect: band.Box.ToRect());
+            }
+        }
+
+        // FR-015 / AC-063: only when the user enabled the opener for this kind of output. The default (disabled) adds nothing.
+        if (configuration is not null && (shortForm is null ? configuration.LongOpenerEnabled : configuration.ShortOpenerEnabled))
+        {
+            StandardOpenerInput opener = configuration.Opener
+                ?? throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedSetting);
+            if (opener.Logo is { Permitted: false } || opener.Jingle is { Permitted: false } || userInputOrigin is null)
+                throw StandardRenderGraphFactory.Failure(StandardGenerationFailureReason.UnsupportedSetting);
+            RationalTime openerLength = StandardOpenerInput.Duration(shortForm is not null, titleMaximum);
+            if (firstCutDuration < openerLength) openerLength = firstCutDuration;
+            if (duration < openerLength) openerLength = duration;
+            IReadOnlyList<string> openerLines = opener.Lines(shortForm is not null);
+            int rowHeight = profile.Height * 65 / 1000;
+            for (int row = 0; row < openerLines.Count; row++)
+            {
+                int top = profile.Height * 34 / 100 + row * rowHeight;
+                Add("Opening", openerLines[row], [userInputOrigin], null, new TimeRange(default, openerLength),
+                    shortForm is null ? "long-opener-template" : "short-opener-template",
+                    StandardTextProvenanceKind.UserOpener, tail: false,
+                    fixedRect: new StyleTemplates.StyleTemplateRect(profile.Width / 10, top, profile.Width * 9 / 10, top + rowHeight));
             }
         }
 

@@ -794,7 +794,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
               <PlayerPanel createClient={createPlayerClient} context={ingestContext} active={resultsActive && !showGenerated && !comparing} previewModes={previewModes} onPositionChange={setPlayerPosition} onSelectionChange={setPlayerSelection} />
               <details className="workflow-preview-options" hidden={showGenerated} inert={showGenerated}>
                 <summary>表示モード</summary>
-                <PreviewModeControls context={ingestContext} active={resultsActive && !showGenerated && !comparing} selection={selection} />
+                <PreviewModeControls context={ingestContext} onOpenTimeline={() => selectTool('timeline')} active={resultsActive && !showGenerated && !comparing} selection={selection} />
               </details>
             </div>) },
             { id: 'tools', label: '仕上がりの内容', children: (

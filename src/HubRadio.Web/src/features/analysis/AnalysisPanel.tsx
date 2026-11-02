@@ -104,6 +104,12 @@ const sensitivityLabels = Object.freeze({
   internalNetworkLocation: '内部ネットワーク位置の可能性',
   credentialPattern: '認証情報形式の可能性',
   dictionaryTerm: '機微語辞書との一致',
+  customerName: '顧客名・取引先名の可能性',
+  unreleasedProduct: '未公開製品の可能性',
+  personalInformation: '個人情報の可能性',
+  financialInformation: '契約・価格・売上情報の可能性',
+  confidentialMaterial: '社外秘の資料の可能性',
+  futurePlan: '将来計画の可能性',
 } as const)
 
 /** analysis.read needs only the selected project's ID; revisions come from its snapshot. */

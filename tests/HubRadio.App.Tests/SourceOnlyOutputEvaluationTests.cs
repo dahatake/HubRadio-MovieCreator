@@ -150,6 +150,7 @@ public sealed class SourceOnlyOutputEvaluationTests
     }
 
     [TestMethod]
+    // NFR-FACT-001 AC-120: 不成立・中断した成果物を成功や捏造した内容で埋めず、そのまま記録する。
     public async Task CancellationRetainsGeneratedDescriptorsWithoutSynthesizingSuccess()
     {
         using SourceOnlyEvaluationFixture f = await SourceOnlyEvaluationFixture.CreateAsync();
