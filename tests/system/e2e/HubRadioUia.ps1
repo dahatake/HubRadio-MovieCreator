@@ -445,7 +445,13 @@ function New-SyntheticVideo($sb, [string]$dir) {
     if ($LASTEXITCODE -ne 0) { throw 'ffmpeg failed to create synthetic video' }
     $out
 }
+# 同梱資産がない build では、アプリが「編集を開始できません」で止まり、画面の待ち（60〜120 秒）を使い切ってから失敗する。先に即時失敗させる
+function Assert-AppJobAssets($sb) {
+    $missing = @('Tools\ffmpeg.exe', 'Fonts', 'ModelCatalog') | Where-Object { -not (Test-Path -LiteralPath (Join-Path $sb.AppDir $_)) }
+    if ($missing) { throw "app build lacks bundled assets ($($missing -join ', ')); build Release with bundled tools before running job scenarios" }
+}
 function Get-TestFfmpeg($sb) {
+    Assert-AppJobAssets $sb
     Resolve-TestMediaTool -Name ffmpeg -AppDir $sb.AppDir
 }
 # --- 合成画像（System.Drawing の PNG）。$Characters >= 2 なら、人物に見立てた色違いの楕円を横に並べた 1 枚画像にする ---
