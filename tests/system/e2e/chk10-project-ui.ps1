@@ -142,7 +142,7 @@ Invoke-Test -Label "CHK10 $Ac" -Sandbox $sb -Body {
                             if (-not $done -or (Get-CompareColumnCount $root) -ne $want) {
                                 $ec = $c.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
                                 $ec.Expand(); Start-Sleep -Milliseconds 400
-                                $cond = New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::NameProperty), $keys
+                                $cond = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, [string]$keys)
                                 $item = $c.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond) | Select-Object -First 1
                                 if (-not $item) { $item = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond) | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ListItem } | Select-Object -First 1 }
                                 if (-not $item) { try { $ec.Collapse() } catch {}; throw "option '$keys' not found" }
@@ -169,7 +169,7 @@ Invoke-Test -Label "CHK10 $Ac" -Sandbox $sb -Body {
                 $cbNow = Find-AllByNameLike $root '^比べるJobの数$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox } | Select-Object -First 1
                 $ecNow = $cbNow.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
                 $ecNow.Expand(); Start-Sleep -Milliseconds 400
-                $over = @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, (New-Object System.Windows.Automation.PropertyCondition ([System.Windows.Automation.AutomationElement]::ControlTypeProperty), [System.Windows.Automation.ControlType]::ListItem)) | Where-Object { $_.Current.Name -match '^([5-9]|\d{2,})つ$' })
+                $over = @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, ([System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem))) | Where-Object { $_.Current.Name -match '^([5-9]|\d{2,})つ$' })
                 try { $ecNow.Collapse() } catch {}
                 if ($over.Count -gt 0) { throw '5 or more jobs selectable' }
                 Send-CompareSelection '4つ' 4

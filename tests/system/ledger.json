@@ -654,10 +654,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-038",
       "canary": false,
-      "status": "fail",
-      "last_commit": "f549929",
-      "last_run_at": "2026-11-03T14:41:07+09:00",
-      "evidence": "work/runs/202611031223/logs/system-test/E2E-021-202611031433.log",
+      "status": "pass",
+      "last_commit": "a148594",
+      "last_run_at": "2026-11-03T17:31:28+09:00",
+      "evidence": "work/runs/adhoc-202611031723/logs/system-test/E2E-021-202611031723.log",
       "history": [
         {
           "at": "2026-10-13T07:45:43+09:00",
