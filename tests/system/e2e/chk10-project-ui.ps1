@@ -126,24 +126,35 @@ Invoke-Test -Label "CHK10 $Ac" -Sandbox $sb -Body {
                 # HTML select のポップアップでは DOWN は候補の移動だけで、
                 # ENTER で確定するまで change が届かない場合がある。各回、
                 # HOME から絶対位置を選び直し、確定してから画面の列数を検証する。
+                # SendKeys は UI スレッド・フォーカス競合で例外（"この操作を正しく終了しました。" など）になることがある。
+                # 各回でウィンドウを前面にして要素をクリックし直し、例外時は最大 3 回（間隔 500ms）再試行する。
+                # 例外でもキーが届いていることがあるため、成否は例外の有無ではなく画面の列数を読み戻して判定する（成功偽装なし）。
+                function Send-CompareSelection([string]$keys, [int]$want) {
+                    $got = -1; $lastErr = $null
+                    for ($try = 1; $try -le 3; $try++) {
+                        $lastErr = $null
+                        try {
+                            $c = Find-AllByNameLike $root '^比べるJobの数$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox } | Select-Object -First 1
+                            if (-not $c) { throw "combo box '比べるJobの数' not found" }
+                            Focus-ByClick $p $c
+                            [System.Windows.Forms.SendKeys]::SendWait($keys)
+                        } catch { $lastErr = $_.Exception.Message }
+                        $wait = [Diagnostics.Stopwatch]::StartNew()
+                        do {
+                            $got = Get-CompareColumnCount $root
+                            if ($got -eq $want) { return }
+                            Start-Sleep -Milliseconds 200
+                        } while ($wait.Elapsed.TotalSeconds -lt 10)
+                        Start-Sleep -Milliseconds 500
+                    }
+                    throw "expected $want compared columns after committed selection (3 attempts), got $got; last SendKeys error: $lastErr"
+                }
                 foreach ($want in 2, 3, 4) {
-                    $cb = Find-AllByNameLike $root '^比べるJobの数$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox } | Select-Object -First 1
-                    Focus-ByClick $p $cb
-                    $keys = '{HOME}' + ('{DOWN}' * ($want - 2)) + '{ENTER}{TAB}'
-                    [System.Windows.Forms.SendKeys]::SendWait($keys)
-                    $wait = [Diagnostics.Stopwatch]::StartNew()
-                    do {
-                        $got = Get-CompareColumnCount $root
-                        if ($got -eq $want) { break }
-                        Start-Sleep -Milliseconds 200
-                    } while ($wait.Elapsed.TotalSeconds -lt 10)
-                    if ($got -ne $want) { throw "expected $want compared columns after committed selection, got $got" }
+                    Send-CompareSelection ('{HOME}' + ('{DOWN}' * ($want - 2)) + '{ENTER}{TAB}') $want
                 }
                 # 5つ目が存在する素材でも、4を超える選択候補はなく、
                 # DOWN を繰り返して確定しても比較列数は4のまま。
-                $cb = Find-AllByNameLike $root '^比べるJobの数$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox } | Select-Object -First 1
-                Focus-ByClick $p $cb
-                [System.Windows.Forms.SendKeys]::SendWait('{END}{DOWN}{DOWN}{ENTER}{TAB}')
+                Send-CompareSelection '{END}{DOWN}{DOWN}{ENTER}{TAB}' 4
                 Start-Sleep -Milliseconds 700
                 if ((Get-CompareColumnCount $root) -ne 4) { throw 'comparison did not retain the 4-Job limit' }
                 if (@(Find-AllByNameLike $root '^[5-9]つ目').Count -gt 0) { throw '5 or more jobs selectable' }
