@@ -1,1 +1,0 @@
-{"ts": "2026-10-05T09:30:41+00:00", "command": "index", "args": {"roots": ["docs", "users-guide"], "tabular": [], "rebuild": false, "no_prune": false, "max_chunk_chars": 0, "overlap_paragraphs": null, "strategy": "heading"}, "elapsed_ms": 2055, "result": {"files_indexed": 70, "files_skipped": 0, "chunks_written": 1111, "pruned_files": 0, "pruned_chunks": 0}, "exit_code": 0}

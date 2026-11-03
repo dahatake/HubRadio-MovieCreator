@@ -1,1 +1,0 @@
-{"ts": "2026-10-05T09:30:41+00:00", "command": "index", "args": {"profile": "hve", "repo_root": ".", "db": null, "rebuild": false, "embed": false}, "elapsed_ms": 0, "result": {"error": "ConfigError"}, "exit_code": 2}
