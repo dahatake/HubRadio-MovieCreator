@@ -64,6 +64,16 @@ function Start-App($sb) {
     $script:AppSb = $sb
     $p
 }
+# 稼働中アプリの DB を読むためのコピー: FileShare.ReadWrite|Delete で開く（Copy-Item は書込み共有なしで開き、アプリの SQLite 書込みを
+# 『attempt to write a readonly database』で失敗させるため使わない）。コピー元は読み取りのみ。
+function Copy-SharedRead([string]$Path, [string]$Destination) {
+    $in = $null; $out = $null
+    try {
+        $in = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+        $out = [IO.File]::Open($Destination, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        $in.CopyTo($out)
+    } finally { if ($out) { $out.Dispose() }; if ($in) { $in.Dispose() } }
+}
 # 失敗時の保全: sandbox の workspace の job/ と hubradio.db（-wal/-shm）と logs を work/runs/<run-id>/e2e-failure-<case>/ にコピーする（後片付けで消えないように）
 function Save-E2eFailureArtifacts([string]$case) {
     try {
@@ -79,7 +89,7 @@ function Save-E2eFailureArtifacts([string]$case) {
         $null = New-Item -ItemType Directory -Force -Path $dest
         foreach ($n in 'hubradio.db', 'hubradio.db-wal', 'hubradio.db-shm') {
             $f = Join-Path $ws $n
-            if (Test-Path -LiteralPath $f) { Copy-Item -LiteralPath $f -Destination (Join-Path $dest $n) -Force -ErrorAction SilentlyContinue }
+            if (Test-Path -LiteralPath $f) { try { Copy-SharedRead $f (Join-Path $dest $n) } catch {} }
         }
         foreach ($d in 'job', 'logs') {
             $s = Join-Path $ws $d
@@ -126,8 +136,8 @@ function Get-FailedJobFromDb {
         $db = Join-Path (Join-Path ([string]$script:AppSb.Work) 'workspace') 'hubradio.db'
         if (-not (Test-Path -LiteralPath $db)) { return $null }
         $tmp = Join-Path ([IO.Path]::GetTempPath()) ('hr-fail-' + [guid]::NewGuid().ToString('N') + '.db')
-        Copy-Item -LiteralPath $db -Destination $tmp -Force
-        foreach ($x in "$db-wal", "$db-shm") { if (Test-Path -LiteralPath $x) { Copy-Item -LiteralPath $x -Destination ($tmp + $x.Substring($db.Length)) -Force } }
+        Copy-SharedRead $db $tmp
+        foreach ($x in "$db-wal", "$db-shm") { if (Test-Path -LiteralPath $x) { try { Copy-SharedRead $x ($tmp + $x.Substring($db.Length)) } catch {} } }
         $py = "import sqlite3,sys`ncon=sqlite3.connect(sys.argv[1])`nfor r in con.execute(`"SELECT id, state FROM jobs WHERE lower(state)='failed' ORDER BY created_at LIMIT 1`"): print('|'.join(str(c) for c in r))"
         $out = (& python -c $py $tmp 2>$null | Select-Object -First 1)
         Remove-Item "$tmp*" -Force -ErrorAction SilentlyContinue
@@ -165,8 +175,8 @@ function Write-JobWaitDiag([string]$reason) {
                 $q = "SELECT j.id, j.state, j.kind, j.current_attempt_number, j.created_at, j.updated_at, a.state, a.started_at, a.completed_at, a.error_code, (SELECT phase FROM job_progress p WHERE p.job_attempt_id = a.id ORDER BY p.sequence_number DESC LIMIT 1) AS phase FROM jobs j LEFT JOIN job_attempts a ON a.job_id = j.id AND a.sequence_number = j.current_attempt_number ORDER BY j.created_at;"
                 $q2 = "SELECT p.recorded_at, p.job_id, p.sequence_number, p.phase, p.completed_units, p.total_units, p.message FROM job_progress p ORDER BY p.recorded_at DESC LIMIT 20;"
                 $tmp = Join-Path ([IO.Path]::GetTempPath()) ('hr-diag-' + [guid]::NewGuid().ToString('N') + '.db')
-                Copy-Item -LiteralPath $db -Destination $tmp -Force
-                foreach ($x in "$db-wal", "$db-shm") { if (Test-Path -LiteralPath $x) { Copy-Item -LiteralPath $x -Destination ($tmp + $x.Substring($db.Length)) -Force } }
+                Copy-SharedRead $db $tmp
+                foreach ($x in "$db-wal", "$db-shm") { if (Test-Path -LiteralPath $x) { try { Copy-SharedRead $x ($tmp + $x.Substring($db.Length)) } catch {} } }
                 $sqlite = Get-Command sqlite3 -ErrorAction SilentlyContinue
                 $lines.Add('DIAG-JOBWAIT: jobs (id|state|kind|attempt|created|updated|attemptState|started|completed|errorCode|phase)')
                 if ($sqlite) {
