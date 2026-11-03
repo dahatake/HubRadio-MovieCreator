@@ -13,6 +13,26 @@ $script:Desc = [System.Windows.Automation.TreeScope]::Descendants
 $script:RepoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 . (Join-Path $PSScriptRoot 'MediaTools.ps1')
 
+# ハードリンク化する（実体をコピーしない）フォルダー名。ここ 1 か所で管理する。
+$script:JunctionNames = @('Worker', 'ModelCatalog')
+# ディレクトリは作り、ファイルは同一ボリュームのハードリンクにする（削除してもリンク元の実体は残る）。
+function New-HardLinkTree([string]$Src, [string]$Dst) {
+    New-Item -ItemType Directory -Path $Dst -Force | Out-Null
+    foreach ($x in Get-ChildItem -LiteralPath $Src -Recurse -Force) {
+        $t = Join-Path $Dst $x.FullName.Substring($Src.Length).TrimStart('\')
+        if ($x.PSIsContainer) { New-Item -ItemType Directory -Path $t -Force | Out-Null }
+        else { New-Item -ItemType HardLink -Path $t -Target $x.FullName | Out-Null }
+    }
+}
+# 直下のジャンクションを非再帰で外す（リンク先の中身は消えない）。Remove-Item -Recurse の前に必ず呼ぶ。
+function Remove-JunctionsIn([string]$Dir) {
+    if (-not (Test-Path -LiteralPath $Dir)) { return }
+    foreach ($d in Get-ChildItem -LiteralPath $Dir -Force -Directory -ErrorAction SilentlyContinue) {
+        if ($d.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            try { [IO.Directory]::Delete($d.FullName) } catch { }
+        }
+    }
+}
 function New-AppSandbox {
     $appPath = $env:HUBRADIO_APP_PATH
     if ([string]::IsNullOrWhiteSpace($appPath)) {
@@ -22,7 +42,28 @@ function New-AppSandbox {
     $work = Join-Path $env:TEMP ('hubradio-st-' + [guid]::NewGuid().ToString('N'))
     $appCopy = Join-Path $work 'app'
     New-Item -ItemType Directory -Path $appCopy | Out-Null
-    Copy-Item -Path (Join-Path (Split-Path -Parent $appPath) '*') -Destination $appCopy -Recurse -Force
+    $srcDir = Split-Path -Parent $appPath
+    $linked = $false
+    if ($env:HUBRADIO_ST_COPY_ALL -ne '1') {
+        # 巨大な Worker・ModelCatalog は実体コピーせずハードリンクで複製する（コピー約110秒＋起動70〜150秒を短縮）。元は読み取り専用。
+        # ジャンクションはアプリの BinaryVerifier が ReparsePoint として拒否する（Worker 検証失敗）ため使わない。
+        try {
+            foreach ($item in Get-ChildItem -LiteralPath $srcDir -Force) {
+                if ($script:JunctionNames -contains $item.Name -and $item.PSIsContainer) {
+                    New-HardLinkTree $item.FullName (Join-Path $appCopy $item.Name)
+                } else {
+                    Copy-Item -LiteralPath $item.FullName -Destination $appCopy -Recurse -Force
+                }
+            }
+            $linked = $true
+        } catch {
+            # ジャンクションが使えない環境: 外してから全コピーへ切り替える
+            Remove-JunctionsIn $appCopy
+            Remove-Item -LiteralPath $appCopy -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Path $appCopy -Force | Out-Null
+        }
+    }
+    if (-not $linked) { Copy-Item -Path (Join-Path $srcDir '*') -Destination $appCopy -Recurse -Force }
     # 配布形（portable）は設定をアプリのフォルダーに、通常ビルドは利用者の %LOCALAPPDATA%\HubRadio.MovieCreator に置く。
     # 後者は実利用者の設定なので、実行前の内容を退避して終了時に必ず戻す（Remove-AppSandbox）。
     # アプリは常に %LOCALAPPDATA%\HubRadio.MovieCreator の workspace-location.json を読む（MainWindow.xaml.cs: applicationDataDirectory）。
@@ -44,6 +85,8 @@ function New-AppSandbox {
 function Get-WorkspaceDir($sb) { Join-Path $sb.Work 'workspace' }   # New-AppSandbox が workspace-location.json で向ける場所
 function Remove-AppSandbox($sb) {
     if (-not $sb) { return }
+    # 先にジャンクションを外す（元の Worker・ModelCatalog を消さないため。例外時も Remove の前に実行）
+    try { Remove-JunctionsIn $sb.AppDir } catch { }
     if (-not $sb.Portable) {
         if ($null -ne $sb.SavedConfig) { [IO.File]::WriteAllBytes($sb.Config, $sb.SavedConfig) }
         elseif (Test-Path -LiteralPath $sb.Config) { Remove-Item -LiteralPath $sb.Config -Force -ErrorAction SilentlyContinue }
