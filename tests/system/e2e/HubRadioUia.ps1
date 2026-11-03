@@ -447,8 +447,8 @@ function New-SyntheticVideo($sb, [string]$dir) {
 }
 # 同梱資産がない build では、アプリが「編集を開始できません」で止まり、画面の待ち（60〜120 秒）を使い切ってから失敗する。先に即時失敗させる
 function Assert-AppJobAssets($sb) {
-    $missing = @('Tools\ffmpeg.exe', 'Fonts', 'ModelCatalog') | Where-Object { -not (Test-Path -LiteralPath (Join-Path $sb.AppDir $_)) }
-    if ($missing) { throw "app build lacks bundled assets ($($missing -join ', ')); build Release with bundled tools before running job scenarios" }
+    $missing =     @('Tools\ffmpeg.exe', 'Fonts', 'ModelCatalog', 'Worker') | Where-Object { -not (Test-Path -LiteralPath (Join-Path $sb.AppDir $_)) }
+        if ($missing) { throw "app build lacks bundled assets ($($missing -join ', ')) in $($sb.AppDir); supply them with: pwsh -NoProfile -File .\install.ps1 -AppDirectory <app folder> -SkipBuild" }
 }
 function Get-TestFfmpeg($sb) {
     Assert-AppJobAssets $sb
