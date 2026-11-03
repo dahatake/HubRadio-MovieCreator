@@ -186,7 +186,7 @@ function Stop-RunningApp {
 
 function Resolve-BuildPython {
     $candidates = [Collections.Generic.List[string]]::new()
-    $launcher = Get-Command -Name 'py.exe' -CommandType Application -ErrorAction SilentlyContinue
+    $launcher = Get-Command -Name 'py.exe'     -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1 # PATH に py.exe が複数あっても先頭 1 件だけ使う
     if ($null -ne $launcher) {
         $resolved = & $launcher.Source -3.12 -c 'import sys; print(sys.executable)' 2>$null
         if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($resolved)) { $candidates.Add($resolved.Trim()) }
