@@ -74,14 +74,72 @@ internal static class SqliteStoreSupport
             ForeignKeys = true,
             DefaultTimeout = DefaultTimeoutSeconds,
         };
-        var connection = new SqliteConnection(connectionString.ToString())
-        {
-            DefaultTimeout = DefaultTimeoutSeconds,
-        };
 
+        // On Windows SQLite silently downgrades a ReadWrite open to read-only when another process transiently
+        // holds the file without write sharing (a copy/backup/scanner reading hubradio.db). The first write then fails
+        // with "attempt to write a readonly database" (SQLITE_READONLY) although the store is fine. That is a lock
+        // condition, not a data condition: wait for the sharing lock to clear within the same budget as the busy
+        // timeout instead of letting the write fail. A file that is read-only by attribute fails immediately.
+        DateTime deadline = DateTime.UtcNow.AddSeconds(DefaultTimeoutSeconds);
+        while (true)
+        {
+            SqliteConnection connection = new(connectionString.ToString())
+            {
+                DefaultTimeout = DefaultTimeoutSeconds,
+            };
+            if (mode == SqliteOpenMode.ReadWrite && !TryOpenWritable(connection, databasePath, deadline))
+            {
+                connection.Dispose();
+                Thread.Sleep(25);
+                continue;
+            }
+
+            return FinishOpen(connection);
+        }
+    }
+
+    // True when the connection is open and writable, or its read-only state cannot be a transient sharing lock.
+    private static bool TryOpenWritable(SqliteConnection connection, string databasePath, DateTime deadline)
+    {
         try
         {
             connection.Open();
+        }
+        catch (SqliteException)
+        {
+            return true; // let FinishOpen report it uniformly
+        }
+
+        bool readOnly = connection.Handle is { } handle &&
+            SQLitePCL.raw.sqlite3_db_readonly(handle, "main") == 1;
+        if (!readOnly || DateTime.UtcNow >= deadline)
+        {
+            return true;
+        }
+
+        try
+        {
+            if (File.GetAttributes(databasePath).HasFlag(FileAttributes.ReadOnly))
+            {
+                return true;
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static SqliteConnection FinishOpen(SqliteConnection connection)
+    {
+        try
+        {
+            if (connection.State != System.Data.ConnectionState.Open)
+            {
+                connection.Open();
+            }
 
             using (SqliteCommand enableForeignKeys = connection.CreateCommand())
             {

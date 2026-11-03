@@ -126,24 +126,53 @@ Invoke-Test -Label "CHK10 $Ac" -Sandbox $sb -Body {
                 # HTML select のポップアップでは DOWN は候補の移動だけで、
                 # ENTER で確定するまで change が届かない場合がある。各回、
                 # HOME から絶対位置を選び直し、確定してから画面の列数を検証する。
+                # SendKeys は UI スレッド・フォーカス競合で例外（"この操作を正しく終了しました。" など）になることがある。
+                # 各回でウィンドウを前面にして要素をクリックし直し、例外時は最大 3 回（間隔 500ms）再試行する。
+                # 例外でもキーが届いていることがあるため、成否は例外の有無ではなく画面の列数を読み戻して判定する（成功偽装なし）。
+                function Send-CompareSelection([string]$keys, [int]$want) {
+                    $got = -1; $lastErr = $null
+                    for ($try = 1; $try -le 3; $try++) {
+                        $lastErr = $null
+                        try {
+                            $c = Find-AllByNameLike $root '^比べるJobの数$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox } | Select-Object -First 1
+                            if (-not $c) { throw "combo box '比べるJobの数' not found" }
+                            # UI Automation で選ぶ（SendKeys は使わない）。$keys は候補名（例: '3つ'）。
+                            $done = $false
+                            try { $c.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).SetValue($keys); $done = $true } catch { $lastErr = "ValuePattern: $($_.Exception.Message)" }
+                            if (-not $done -or (Get-CompareColumnCount $root) -ne $want) {
+                                $ec = $c.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+                                $ec.Expand(); Start-Sleep -Milliseconds 400
+                                $cond = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, [string]$keys)
+                                $item = $c.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond) | Select-Object -First 1
+                                if (-not $item) { $item = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $cond) | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ListItem } | Select-Object -First 1 }
+                                if (-not $item) { try { $ec.Collapse() } catch {}; throw "option '$keys' not found" }
+                                $item.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Select()
+                                try { $ec.Collapse() } catch {}
+                            }
+                        } catch { $lastErr = $_.Exception.Message }
+                        $wait = [Diagnostics.Stopwatch]::StartNew()
+                        do {
+                            $got = Get-CompareColumnCount $root
+                            if ($got -eq $want) { return }
+                            Start-Sleep -Milliseconds 200
+                        } while ($wait.Elapsed.TotalSeconds -lt 10)
+                        Start-Sleep -Milliseconds 500
+                    }
+                    throw "expected $want compared columns after committed selection (3 attempts), got $got; last SendKeys error: $lastErr"
+                }
                 foreach ($want in 2, 3, 4) {
-                    $cb = Find-AllByNameLike $root '^比べるJobの数$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox } | Select-Object -First 1
-                    Focus-ByClick $p $cb
-                    $keys = '{HOME}' + ('{DOWN}' * ($want - 2)) + '{ENTER}{TAB}'
-                    [System.Windows.Forms.SendKeys]::SendWait($keys)
-                    $wait = [Diagnostics.Stopwatch]::StartNew()
-                    do {
-                        $got = Get-CompareColumnCount $root
-                        if ($got -eq $want) { break }
-                        Start-Sleep -Milliseconds 200
-                    } while ($wait.Elapsed.TotalSeconds -lt 10)
-                    if ($got -ne $want) { throw "expected $want compared columns after committed selection, got $got" }
+                    Send-CompareSelection "${want}つ" $want
                 }
                 # 5つ目が存在する素材でも、4を超える選択候補はなく、
                 # DOWN を繰り返して確定しても比較列数は4のまま。
-                $cb = Find-AllByNameLike $root '^比べるJobの数$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox } | Select-Object -First 1
-                Focus-ByClick $p $cb
-                [System.Windows.Forms.SendKeys]::SendWait('{END}{DOWN}{DOWN}{ENTER}{TAB}')
+                # 4 を超える候補は選べない: 候補に「5つ」以上が無いことを確認し、選び直しても 4 のまま。
+                $cbNow = Find-AllByNameLike $root '^比べるJobの数$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox } | Select-Object -First 1
+                $ecNow = $cbNow.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)
+                $ecNow.Expand(); Start-Sleep -Milliseconds 400
+                $over = @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, ([System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::ListItem))) | Where-Object { $_.Current.Name -match '^([5-9]|\d{2,})つ$' })
+                try { $ecNow.Collapse() } catch {}
+                if ($over.Count -gt 0) { throw '5 or more jobs selectable' }
+                Send-CompareSelection '4つ' 4
                 Start-Sleep -Milliseconds 700
                 if ((Get-CompareColumnCount $root) -ne 4) { throw 'comparison did not retain the 4-Job limit' }
                 if (@(Find-AllByNameLike $root '^[5-9]つ目').Count -gt 0) { throw '5 or more jobs selectable' }

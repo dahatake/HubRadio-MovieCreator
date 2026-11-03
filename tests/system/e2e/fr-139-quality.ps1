@@ -49,7 +49,8 @@ Invoke-Test -Label "FR-139 $Ac" -Sandbox $sb -Body {
         foreach ($n in $script:TemplateNames) {
             $i++; Select-Template $root $n; New-TemplateJob $root $i
         }
-        $recs = @(Get-WorkspaceText $sb | Where-Object { $_.Text -match '(?i)templateId|template_id' })
+        # StyleTemplateRenderRecord（style-template-render.json）だけを読む。templateId を含むだけの別 JSON は対象外。
+        $recs = @(Get-WorkspaceText $sb 'style-template-render.json' | Where-Object { $_.Text -match '(?i)templateId|template_id' })
         if ($recs.Count -lt 7) { throw "expected 7 template job records (one per template), got $($recs.Count)" }
         # 条項別の証拠: テンプレートごとに contrast / 非色依存強調 / 否定・条件語 / 下書き表示 を測った件数を残す。
         $evidence = @{}
