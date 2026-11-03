@@ -655,9 +655,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/chk10-project-ui.ps1 -Ac AC-038",
       "canary": false,
       "status": "fail",
-      "last_commit": "70b4b89",
-      "last_run_at": "2026-11-03T11:41:40+09:00",
-      "evidence": "work/runs/202611030833/logs/system-test/E2E-021-202611031109.log",
+      "last_commit": "f549929",
+      "last_run_at": "2026-11-03T14:41:07+09:00",
+      "evidence": "work/runs/202611031223/logs/system-test/E2E-021-202611031433.log",
       "history": [
         {
           "at": "2026-10-13T07:45:43+09:00",
