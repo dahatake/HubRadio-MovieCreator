@@ -1,4 +1,4 @@
-﻿#Requires -Version 7.0
+#Requires -Version 7.0
 
 <#
 .SYNOPSIS
@@ -23,7 +23,7 @@ byte size と SHA-256 を照合してから、アプリの実行フォルダー�
 これは開発ビルドをローカルで動かすための手順です。配布・再配布の承認を意味しません。
 
 .PARAMETER Configuration
-配置先とするビルド構成。既定は Release（scripts/run.ps1 と同じ出力）。
+配置先とするビルド構成。既定は Release（run.ps1 と同じ出力）。
 
 .PARAMETER AppDirectory
 HubRadio.App.exe があるフォルダーを直接指定します。省略時は Configuration から決まります。
@@ -430,4 +430,4 @@ if (-not (Test-Path -LiteralPath (Join-Path $target 'Evidence\application-build.
 
 Write-Information '' -InformationAction Continue
 Write-Information 'インストールが完了しました。アプリを起動（または「もう一度試す」を押）して「編集を開始」を実行してください。' -InformationAction Continue
-Write-Information "  起動: pwsh -NoLogo -NoProfile -File .\scripts\run.ps1 -SkipBuild" -InformationAction Continue
+Write-Information "  起動: pwsh -NoLogo -NoProfile -File .\run.ps1 -SkipBuild" -InformationAction Continue

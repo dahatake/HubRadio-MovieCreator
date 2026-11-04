@@ -31,20 +31,20 @@ Foundation全体の依存復元、静的解析、build、testはrepository root�
 pwsh.exe -NoLogo -NoProfile -File .\scripts\test.ps1 -Configuration Release
 ```
 
-最新の作業treeをRelease buildしてAppを起動する場合は次を実行します。既に同じRelease出力から起動中の`HubRadio.App`は、build前に終了します。`-SkipBuild`で既存のRelease出力をそのまま起動し、`-Wait`でApp終了まで待ってその終了コードを返します。
+最新ソースからbuildし、環境を整えてAppを起動する場合は、repository rootの`run.ps1`を実行します。前提ツール（git・npm・py・`global.json`のSDK）の確認、Release build、資源の導入（ffmpeg・Worker・model・font）、起動までを1回で行います。既に同じRelease出力から起動中の`HubRadio.App`は、build前に終了します。`-Pull`で`git pull --ff-only`を先に実行し、`-SkipBuild`で前提確認とbuildを省いて既存のRelease出力を起動し、`-SkipInstall`で資源の導入を省き、`-RuntimePayloadPath`（導入を省略）を`build.ps1`へ渡し、`-Wait`でApp終了まで待ってその終了コードを返します。
 
 ```powershell
-pwsh.exe -NoLogo -NoProfile -File .\scripts\run.ps1
+pwsh.exe -NoLogo -NoProfile -File .\run.ps1
 ```
 
-build・test・起動用のscriptは`scripts/`にまとめています。
+build・testのscriptは`scripts/`にまとめています。起動用の`run.ps1`はrepository rootにあります。
 
 | script | 用途 |
 |---|---|
 | `scripts/build.ps1` | 依存復元、Web build、.NET build、静的解析 |
 | `scripts/test.ps1` | `build.ps1`の後に.NET・Web・Python workerの全testを実行 |
 | `scripts/verify.ps1` | 要求IDの追跡性検査の後に`test.ps1`を実行（CI） |
-| `scripts/run.ps1` | Release buildの後に`HubRadio.App.exe`を起動 |
+| `run.ps1`（root） | 前提確認・Release build・資源導入の後に`HubRadio.App.exe`を起動 |
 
 ### E2E 前の Release runtime 準備
 

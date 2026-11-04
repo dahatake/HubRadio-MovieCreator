@@ -12,7 +12,7 @@
 | パソコン | Windows 11（64ビット） |
 | 元動画 | 編集してよい動画 1 本（`.mp4` `.mov` など）。元動画は上書きされません |
 | 空き容量 | 動画の 2〜3 倍程度 |
-| 起動方法 | 受け取った `HubRadio.App.exe`、またはソースから `pwsh scripts\run.ps1`（.NET SDK と PowerShell 7 が必要）。ビルド済みなら `pwsh scripts\run.ps1 -SkipBuild` |
+| 起動方法 | 受け取った `HubRadio.App.exe`、またはソースから `pwsh run.ps1`（.NET SDK と PowerShell 7 が必要）。ビルド済みなら `pwsh run.ps1 -SkipBuild` |
 
 ## 1. 起動する
 

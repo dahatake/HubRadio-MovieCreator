@@ -107,7 +107,7 @@ function Test-PowerShellSource {
     $lintPaths = @(
         Join-Path $PSScriptRoot 'build.ps1'
         Join-Path $PSScriptRoot 'test.ps1'
-        Join-Path $PSScriptRoot 'run.ps1'
+        Join-Path $repoRoot 'run.ps1'
     )
 
     $trackedPaths = @(
