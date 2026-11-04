@@ -29,7 +29,7 @@
     "AC-134": "sha256:c0bf5c4a36f6d4a1",
     "AC-135": "sha256:57ee96af9edaa7ba",
     "AC-150": "sha256:b27bf4cb59291704",
-    "AC-151": "sha256:405383872bd0d467",
+    "AC-151": "sha256:48a445d8ffecfbb6",
     "AC-152": "sha256:c93bc97bccf60d47",
     "AC-153": "sha256:eca00b1c7537bbfe",
     "AC-154": "sha256:0f7879dc839dcd3b",
@@ -43,7 +43,8 @@
     "AC-165": "sha256:d45a36499959dd2b",
     "AC-169": "sha256:f00da269ff6903f2",
     "AC-172": "sha256:8c1e5c8f0571af58",
-    "AC-174": "sha256:7fc8975df9e117fe"
+    "AC-174": "sha256:7fc8975df9e117fe",
+    "AC-181": "sha256:c00afda9b3ca3f25"
   },
   "cases": [
     {
@@ -1617,6 +1618,31 @@
           "by": "test-designer",
           "change": "追加",
           "reason": "system AC のケースを作成"
+        }
+      ]
+    },
+    {
+      "id": "E2E-044",
+      "requirement_ids": [
+        "FR-145"
+      ],
+      "ac_ids": [
+        "AC-181"
+      ],
+      "title": "FR-145 AC-181: 自動選択後に別テンプレートへ変えて Job 実行・解析中の画面操作が待たされない",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-145-auto-template.ps1 -Ac AC-181",
+      "canary": false,
+      "status": "not_run",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-11-05T00:33:59+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
         }
       ]
     }
