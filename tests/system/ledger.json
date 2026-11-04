@@ -356,9 +356,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-133-project-folder-name.ps1",
       "canary": true,
       "status": "pass",
-      "last_commit": "a3848a9",
-      "last_run_at": "2026-11-03T20:26:05+09:00",
-      "evidence": "work/runs/202611031942/logs/system-test/E2E-009-202611032011.log",
+      "last_commit": "0450661",
+      "last_run_at": "2026-11-05T01:44:13+09:00",
+      "evidence": "work/runs/202611050023/logs/system-test/E2E-009-202611050141.log",
       "history": [
         {
           "at": "2026-10-13T05:43:51+09:00",
