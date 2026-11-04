@@ -16,6 +16,7 @@ public static class BundledDefaultSettingsProfileLoader
             ["1.0.0"] = "5ffedbd56f43f9142b92c16e36abfd289da45cd34feea897da82101164a7414c",
             ["1.1.0"] = "6f0bde7c863572d9e41b6b18e9f2a223a9864f80255334d35fa10f9d1fa3ee31",
             ["1.2.0"] = "b96e40f3954a12f667d60040a77c3132b05b6b5e92bb40207a5de2c327ca602d",
+            ["1.3.0"] = "0cee5f5ae994c2f7f4aac7a50ceb8dac9214a42714cdb223d54394f31f521a05",
         };
 
     /// <summary>Keys added by profile 1.2.0 (FR-057〜FR-060). Older profiles do not define them.</summary>
@@ -25,6 +26,11 @@ public static class BundledDefaultSettingsProfileLoader
         "editing.pauseTightening",
         "output.longFormOrientation",
         "subtitles.emphasisTelopAmount",
+    ];
+    /// <summary>Keys added by profile 1.3.0 (FR-146: テンプレート自動選択の使う／使わない). Older profiles do not define them.</summary>
+    internal static readonly IReadOnlyList<string> KeysAddedIn130 =
+    [
+        "project.templateAutoSelectEnabled",
     ];
     private const string CallToActionDescription =
         "A short uses the single text 本編を見る only when a corresponding long-form version exists; otherwise it has no call to action. No URL or other action is inferred.";
@@ -254,7 +260,7 @@ public static class BundledDefaultSettingsProfileLoader
         RequireGroupCount(profile, DefaultSettingGroup.AudioAndAssets, 20 + added);
         RequireGroupCount(profile, DefaultSettingGroup.Editing, 22 + added);
         RequireGroupCount(profile, DefaultSettingGroup.PrivacyAndStorage, 13);
-        RequireGroupCount(profile, DefaultSettingGroup.ProjectAndOutput, 30 + added);
+        RequireGroupCount(profile, DefaultSettingGroup.ProjectAndOutput, 30 + added + (has130Keys ? 1 : 0));
         RequireGroupCount(profile, DefaultSettingGroup.SubtitlesAndGraphics, 38 + added);
     }
 

@@ -130,8 +130,11 @@
     { "$ref": "#/$defs/speakersGetRequest" },
     { "$ref": "#/$defs/speakersAssignRequest" },
     { "$ref": "#/$defs/speakersConfirmRequest" },
+    { "$ref": "#/$defs/templateAutoGetRequest" },
+    { "$ref": "#/$defs/templateAutoTouchRequest" },
     { "$ref": "#/$defs/portraitsResponse" },
-    { "$ref": "#/$defs/speakersResponse" }
+    { "$ref": "#/$defs/speakersResponse" },
+    { "$ref": "#/$defs/templateAutoResponse" }
   ],
   "$defs": {
     "disclosureProtocolLimits": {
@@ -351,7 +354,43 @@
         "method": { "enum": ["speakers.get", "speakers.assign", "speakers.confirm"] }, "result": { "$ref": "#/$defs/speakersResult" }
       }
     },
-    "speakersResult": {
+    "templateAutoGetRequest": {
+      "$comment": "FR-145. Reads the automatic template selection of a Project (read-only): its state, the chosen template and the Japanese reason.",
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "templateAuto.get" }, "params": { "$ref": "#/$defs/speakersProjectParams" }
+      }
+    },
+    "templateAutoTouchRequest": {
+      "$comment": "FR-145. The user chose a template themself: an open (waiting or analyzing) selection becomes cancelled and a later analysis never overwrites the manual choice. Needs the same permission as registering a portrait.",
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "const": "templateAuto.touch" }, "params": { "$ref": "#/$defs/speakersProjectParams" }
+      }
+    },
+    "templateAutoResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "enum": ["templateAuto.get", "templateAuto.touch"] }, "result": { "$ref": "#/$defs/templateAutoResult" }
+      }
+    },
+    "templateAutoResult": {
+      "$comment": "state is none (the Project has no selection), waiting, analyzing, selected, cancelled (the user chose first) or skipped (disabled, timed out after PARAM-013 seconds, failed, or no template fits). templateId is one of the seven FR-137 templates only when selected. reason is a short Japanese sentence. No path, exception text or SID.",
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "state", "templateId", "reason"],
+      "properties": {
+        "status": { "enum": ["ok", "forbidden", "invalid", "unavailable"] },
+        "state": { "enum": ["none", "waiting", "analyzing", "selected", "cancelled", "skipped"] },
+        "templateId": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$(?![\\s\\S])", "maxLength": 64 }] },
+        "reason": { "type": "string", "maxLength": 400 }
+      }
+    },    "speakersResult": {
       "$comment": "state is none (nothing assigned), draft (下書き（未確認）) or confirmed (確定済み). A draft is never reported as confirmed. At most 200 assignments are returned. No path, exception text or SID.",
       "type": "object", "additionalProperties": false,
       "required": ["status", "state", "label", "estimated", "assignments"],
@@ -1107,7 +1146,9 @@
         "portraits.crop",
         "speakers.get",
         "speakers.assign",
-        "speakers.confirm"
+        "speakers.confirm",
+        "templateAuto.get",
+        "templateAuto.touch"
       ]
     },
     "projectMethod": {

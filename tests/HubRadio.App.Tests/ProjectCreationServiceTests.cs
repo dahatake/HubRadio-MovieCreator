@@ -1051,7 +1051,7 @@ public sealed class ProjectCreationServiceTests
             JsonElement draft = created.RootElement.GetProperty("result").GetProperty("draft");
             Assert.AreEqual("picked-source", draft.GetProperty("contentName").GetString());
             Assert.AreEqual("internalOnly", draft.GetProperty("publicationScope").GetString());
-            Assert.AreEqual("1.2.0", draft.GetProperty("sourceOnly")
+            Assert.AreEqual("1.3.0", draft.GetProperty("sourceOnly")
                 .GetProperty("profileVersion").GetString());
             Assert.IsGreaterThan(0, draft.GetProperty("sourceOnly")
                 .GetProperty("artifactSet").GetArrayLength());
