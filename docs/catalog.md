@@ -102,7 +102,7 @@
 | FR-141 | 対談番組の話題サイドテロップと名前・肩書き帯の入力・確認 | 承認済み | src/HubRadio.App/StyleTemplates/TalkShowInput.cs、src/HubRadio.App/StyleTemplates/TalkShowRendering.cs、src/HubRadio.App/StyleTemplates/StyleTemplateRenderRecord.cs、src/HubRadio.App/Rendering/StandardMetadataGraphics.cs、src/HubRadio.App/Rendering/StandardRenderGraphFactory.cs、src/HubRadio.App/Rendering/StandardRenderConfiguration.cs、src/HubRadio.App/Rendering/StandardTemplateSubtitleBytes.cs、src/HubRadio.App/Projects/SourceOnlyPipeline.cs、src/HubRadio.App/Projects/SourceOnlyResultInputValidation.cs、src/HubRadio.App/Web/SourceOnlyBridge.cs、src/HubRadio.Web/src/features/jobs/talkShowInput.ts、src/HubRadio.Web/src/features/jobs/TalkShowInputPanel.tsx、src/HubRadio.Web/src/features/jobs/JobCreationAction.tsx、src/HubRadio.Web/src/features/workflow/pipelineProtocol.ts、src/HubRadio.Web/src/features/workflow/pipelineSession.ts、src/HubRadio.Web/src/features/workflow/PipelineProvider.tsx、schemas/web-bridge.schema.json | tests/HubRadio.App.Tests/TalkShowAndVerticalPlacementTests.cs、tests/HubRadio.App.Tests/TalkShowRenderingTests.cs、tests/HubRadio.App.Tests/WebBridgeSchemaTests.cs、src/HubRadio.Web/src/features/jobs/TalkShowInputPanel.test.tsx、src/HubRadio.Web/src/features/jobs/JobCreationActionLayout.test.tsx、src/HubRadio.Web/src/features/workflow/pipelineProtocol.test.ts | 演出テンプレートの配置と色 |
 | FR-142 | ショート飛び出しの単語ごとのタイミング | 承認済み | src/HubRadio.App/StyleTemplates/CueWordTiming.cs、src/HubRadio.App/StyleTemplates/StyleTemplateRenderRecord.cs、src/HubRadio.App/Rendering/StandardRenderGraphFactory.cs、src/HubRadio.App/Rendering/StandardRenderConfiguration.cs、src/HubRadio.App/Projects/SourceOnlyPipeline.cs | tests/HubRadio.App.Tests/CueSpeakerAndWordTimingTests.cs | 演出テンプレート定義 |
 | FR-143 | 縦型の既定字幕位置と余白・字幕領域・出力検査の整合 | 承認済み | src/HubRadio.App/StyleTemplates/VerticalPlacementInspector.cs、src/HubRadio.App/StyleTemplates/StyleTemplateRenderRecord.cs、src/HubRadio.App/StyleTemplates/JobStyleTemplateRecord.cs、src/HubRadio.App/Rendering/StandardTemplateSubtitles.cs、src/HubRadio.App/Rendering/StandardRenderGraphFactory.cs、src/HubRadio.App/Rendering/StandardArtifactGenerator.cs、src/HubRadio.Infrastructure/Rendering/OutputQc.cs、src/HubRadio.Infrastructure/Rendering/OutputQcPlacementEvidence.cs、src/HubRadio.App/Projects/SourceOnlyPipeline.cs、src/HubRadio.Web/src/features/jobs/JobCreationAction.tsx、schemas/web-bridge.schema.json | tests/HubRadio.App.Tests/TalkShowAndVerticalPlacementTests.cs、tests/HubRadio.App.Tests/TalkShowRenderingTests.cs、src/HubRadio.Web/src/features/jobs/JobCreationActionLayout.test.tsx | 演出テンプレートの配置と色 |
-| FR-144 | 設定画面での元動画のプロキシプレビュー | 承認済み（依頼 2026-11-04） | 未実装 | 未作成 | なし |
+| FR-144 | 設定画面での元動画のプロキシプレビュー | 承認済み（依頼 2026-11-04） | src/HubRadio.App/Projects/ProjectProxyService.cs、src/HubRadio.App/Projects/ProjectCreationService.cs、src/HubRadio.App/Projects/SourceOnlyPipeline.cs、src/HubRadio.App/Projects/ProjectApplicationRuntime.cs、src/HubRadio.App/Web/ProjectProxyBridge.cs、src/HubRadio.App/Web/ProxyRangeStream.cs、src/HubRadio.App/Web/SourceOnlyMedia.cs、src/HubRadio.App/Web/Bridge.cs、src/HubRadio.Web/src/features/settings/ProxyPreview.tsx、src/HubRadio.Web/src/features/settings/proxyProtocol.ts、src/HubRadio.Web/src/features/settings/SettingsPanel.tsx、schemas/web-bridge.schema.json | tests/HubRadio.App.Tests/ProjectProxyServiceTests.cs、src/HubRadio.Web/src/features/settings/ProxyPreview.test.tsx、tests/system/e2e/fr-144-proxy-preview.ps1 | Web Bridge プロトコル、デザイン基盤、元動画のプロキシ |
 
 ## API・イベント
 
@@ -112,6 +112,7 @@
 | Bridge `results.export` | schemas/web-bridge.schema.json | FR-132 |
 | Bridge `portraits.list`・`portraits.register` | schemas/web-bridge.schema.json | FR-137 |
 | Bridge `portraits.crop`・`speakers.get`・`speakers.assign`・`speakers.confirm` | schemas/web-bridge.schema.json | FR-140 |
+| Bridge `proxy.get`・`proxy.regenerate` | schemas/web-bridge.schema.json | FR-144 |
 | Bridge `pipeline.regenerate`（任意の `styleTemplateId`・`talkShowInput`・`subtitleIntoMargin`） | schemas/web-bridge.schema.json | FR-061, FR-136, FR-141, FR-143 |
 
 ## テーブル
@@ -123,7 +124,8 @@
 
 | 部品名 | ファイル | 用途 | 使っている要求 ID |
 |---|---|---|---|
-| Web Bridge プロトコル | schemas/web-bridge.schema.json | WebView と本体の間の要求・応答の契約 | FR-064, FR-132 |
+| Web Bridge プロトコル | schemas/web-bridge.schema.json | WebView と本体の間の要求・応答の契約 | FR-064, FR-132, FR-144 |
+| 元動画のプロキシ | src/HubRadio.App/Projects/ProjectProxyService.cs | 元動画から高さ 360 px（PARAM-011。定数 `ProjectProxyService.ProxyHeight` に一元化）の確認用プロキシ動画を作り、Project フォルダー配下（作成前は workspace の proxies）に保存する。状態（未生成・生成中・失敗＋理由）と再生成、範囲つきの配信（SourceOnlyMedia の `proxy/` 経路）を持ち、失敗は Project の作成・設定の保存・Job を止めない | FR-144 |
 | Job 書き出し | src/HubRadio.App/Web/JobExportBridge.cs | Job の動画・サムネイルを選んだフォルダーへ上書きなしで保存（連番・件数・失敗理由）。フォルダー選択は FR-064 の `settings.workspace.browse` を再利用 | FR-132 |
 | Job サムネイル | src/HubRadio.Web/src/features/jobs/JobThumbnail.tsx | Job 単位のサムネイル・代替表示・代替テキスト・選択可否（Project 単位の FR-045/053 の画像参照を再利用） | FR-131 |
 | UI スレッド実行 | src/HubRadio.App/Media/UiThreadInvoker.cs | OS のファイル・フォルダー選択ダイアログを必ず UI スレッドで開く（初回起動の新規 Workspace で別スレッドから開いて異常終了する不具合の修正） | FR-061, FR-064 |
@@ -131,5 +133,5 @@
 | 同梱書体 | src/HubRadio.App/StyleTemplates/StyleTemplateFonts.cs、packaging/template-fonts/ | 太ゴシック（Noto Sans JP Black）・丸ゴシック（M PLUS Rounded 1c）・ポップ体（Potta One）を SIL OFL 1.1 のライセンスつきで同梱し（ビルドで TemplateFonts へコピー）、ファイルの digest を確かめて版を読み取り、Job の style-template.json に名前・版・ライセンスを記録する。利用者の PC の書体は使わない | FR-137, FR-139 |
 | キャラクター立ち絵ストア | src/HubRadio.App/StyleTemplates/CharacterPortraitStore.cs | 利用者が登録した立ち絵（使用権の確認状態＝確認済み・未確認、キャラごとの字幕色）を保持し、1 つも登録がなければキャラクター対話のテンプレートを選べなくする。標準の立ち絵は同梱しない（NFR-BR-004） | FR-137, FR-140 |
 | 演出テンプレートの配置と色 | src/HubRadio.App/StyleTemplates/StyleTemplateLayout.cs | 縦型 3 段の枠・余白（PARAM-005）・対談番組の話題サイドテロップと名前の帯・字幕 1 画面 20 字、文字色と背景の contrast（4.5:1）、効果保証・模倣表現の検査 | FR-138, FR-139, FR-141, FR-143 |
-| デザイン基盤 | src/HubRadio.Web/src/styles.css | `--cp-*` デザイントークンとテーマ（ライト・ダーク）。新しい画面は値を直書きせずこれを使う | FR-136, NFR-UX-005 |
+| デザイン基盤 | src/HubRadio.Web/src/styles.css | `--cp-*` デザイントークンとテーマ（ライト・ダーク）。新しい画面は値を直書きせずこれを使う | FR-136, FR-144, NFR-UX-005 |
 | コンポーネントの配置 | src/HubRadio.Web/src/features/arrange/ArrangeablePanels.tsx | 画面のコンポーネント（パネル）の移動・タブ化・非表示・最大化・方向・大きさの変更（キーボード可）、画面ごとの保存・復元（WebView2 のローカルプロファイルの localStorage）、確認つきの既定に戻す、コマンド検索での配置操作、ペルソナ別の既定（preset） | NFR-UX-002, NFR-UX-003, NFR-UX-005, FR-063 |

@@ -105,6 +105,14 @@ internal sealed class SourceOnlyMediaResponseFactory
 
     internal const string PosterPrefix = SourceOnlyMediaAssetReference.Prefix + "poster/";
 
+    /// <summary>FR-144: the source-video proxies of listed Projects. Null serves no proxy (404).</summary>
+    internal ProjectProxyService? Proxies { get; init; }
+
+    internal const string ProxyPrefix = SourceOnlyMediaAssetReference.Prefix + "proxy/";
+
+    internal static string ProxyUri(EntityId<ProjectCreationDraftIdTag> draftId, string version) =>
+        $"{ProxyPrefix}{draftId}/{version}";
+
     internal static string PosterUri(EntityId<ProjectCreationDraftIdTag> draftId, ContentDigest digest) =>
         $"{PosterPrefix}{draftId}/{digest.Hex}";
 
@@ -125,6 +133,11 @@ internal sealed class SourceOnlyMediaResponseFactory
             if (uri?.StartsWith(PosterPrefix, StringComparison.Ordinal) == true)
             {
                 return CreatePosterResponse(uri, Posters, Drafts is null ? null : id => Drafts.GetDraft(id) is not null);
+            }
+
+            if (uri?.StartsWith(ProxyPrefix, StringComparison.Ordinal) == true)
+            {
+                return CreateProxyResponse(uri, rangeHeader, Proxies, Drafts is null ? null : id => Drafts.GetDraft(id) is not null);
             }
 
             if (!SourceOnlyMediaAssetReference.TryParse(uri, out SourceOnlyMediaAssetReference? reference))
@@ -222,8 +235,50 @@ internal sealed class SourceOnlyMediaResponseFactory
                 new MemoryStream(bytes, writable: false));
     }
 
-    internal static PlayerMediaResponse Unavailable() => Empty(503, "Service Unavailable");
+    /// <summary>FR-144: ranged GET of a Project's proxy video; the caller has already authorized PreviewProject.</summary>
+    internal static PlayerMediaResponse CreateProxyResponse(string uri, string? rangeHeader, ProjectProxyService? proxies,
+        Func<EntityId<ProjectCreationDraftIdTag>, bool>? isListed)
+    {
+        string[] parts = uri.StartsWith(ProxyPrefix, StringComparison.Ordinal) ? uri[ProxyPrefix.Length..].Split('/') : [];
+        if (proxies is null || isListed is null || parts.Length != 2 ||
+            !EntityId<ProjectCreationDraftIdTag>.TryParse(parts[0], out EntityId<ProjectCreationDraftIdTag>? draftId) ||
+            draftId.ToString() != parts[0] ||
+            parts[1].Length != 32 || !parts[1].All(static c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f')) ||
+            !isListed(draftId))
+        {
+            return Empty(404, "Not Found");
+        }
 
+        ProxyReadHandle? handle = proxies.OpenRead(draftId, parts[1]);
+        if (handle is null)
+        {
+            return Empty(404, "Not Found");
+        }
+
+        try
+        {
+            if (rangeHeader?.Length > MaximumRangeHeaderCharacters ||
+                handle.Length <= 0 ||
+                !PlayerMediaByteRange.TryResolve(rangeHeader, handle.Length, out PlayerMediaByteRange range))
+            {
+                return new PlayerMediaResponse(416, "Range Not Satisfiable",
+                    Headers(null, 0, string.Create(CultureInfo.InvariantCulture, $"bytes */{handle.Length}"), acceptRanges: true), null);
+            }
+
+            string headers = Headers("video/mp4", range.Length, range.IsPartial
+                ? string.Create(CultureInfo.InvariantCulture, $"bytes {range.Start}-{range.End}/{range.TotalLength}") : null,
+                acceptRanges: true);
+            var content = new ProxyRangeStream(handle, range.Start, range.Length);
+            handle = null;
+            return new PlayerMediaResponse(range.IsPartial ? 206 : 200, range.IsPartial ? "Partial Content" : "OK", headers, content);
+        }
+        finally
+        {
+            handle?.Dispose();
+        }
+    }
+
+    internal static PlayerMediaResponse Unavailable() => Empty(503, "Service Unavailable");
     private static PlayerMediaResponse Empty(int status, string reason, bool allowGet = false) =>
         new(status, reason, Headers(null, 0, null, acceptRanges: false, allowGet), null);
 
