@@ -324,7 +324,7 @@ public static class TemplateAutoSelectionRunner
 }
 
 /// <summary>FR-145 / FR-136: how a Job's template was decided. 自動選択 and 手動 are recorded with the template's ID and version; なし is the default output.</summary>
-public sealed record JobTemplateOrigin(string Origin, string Label, string? TemplateId, int? Version)
+public sealed record JobTemplateOrigin(string Origin, string Label, string? TemplateId, int? Version, string? TemplateName = null)
 {
     public const string Auto = "auto";
     public const string Manual = "manual";
@@ -339,7 +339,7 @@ public sealed record JobTemplateOrigin(string Origin, string Label, string? Temp
         if (template is not null)
         {
             bool isAuto = auto is { State: TemplateAutoSelectionState.Selected, ManualTouched: false } && auto.TemplateId == template.Id;
-            return new(isAuto ? Auto : Manual, isAuto ? "自動選択" : "手動", template.Id, template.Version);
+            return new(isAuto ? Auto : Manual, isAuto ? "自動選択" : "手動", template.Id, template.Version, template.Name);
         }
 
         return auto is { ManualTouched: true }
@@ -353,7 +353,12 @@ public static class JobTemplateOriginStore
 {
     public const string FileName = "template-origin.json";
 
-    private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        WriteIndented = true,
+        // The record is read by people: the Japanese label and template name stay readable instead of \uXXXX escapes.
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     public static void Save(string jobDirectory, JobTemplateOrigin origin)
     {
