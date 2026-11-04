@@ -39,7 +39,7 @@ public sealed class GlobalSettingsBridgeTests
 
         JsonElement snapshot = fixture.ReadSnapshot();
 
-        Assert.AreEqual(127, fixture.Profile.Definitions.Count);
+        Assert.AreEqual(128, fixture.Profile.Definitions.Count);
         Assert.AreEqual(JsonValueKind.Null, snapshot.GetProperty("projectId").ValueKind);
         Assert.AreEqual(fixture.Profile.Definitions.Count, snapshot.GetProperty("definitionCount").GetInt32());
         Assert.AreEqual(fixture.Profile.Definitions.Count, snapshot.GetProperty("definitions").GetArrayLength());
@@ -756,7 +756,7 @@ public sealed class GlobalSettingsBridgeTests
             _ = DatabaseMigrator.Migrate(DatabasePath, Path.Combine(root, "backups"));
             Store = new DefaultSettingsStore(DatabasePath);
             byte[] profileBytes = profile is null
-                ? File.ReadAllBytes(ResolveRepositoryPath("src/HubRadio.App/DefaultSettings/Profiles/1.2.0.json"))
+                ? File.ReadAllBytes(ResolveRepositoryPath("src/HubRadio.App/DefaultSettings/Profiles/1.3.0.json"))
                 : Encoding.UTF8.GetBytes(profile.CanonicalJson);
             Profile = Store.RegisterProfile(profileBytes);
             if (initializeGlobal)

@@ -18,6 +18,8 @@ public sealed class BundledDefaultSettingsProfileTests
         "src/HubRadio.App/DefaultSettings/Profiles/1.0.0.json";
     private const string CurrentRelativeProfilePath =
         "src/HubRadio.App/DefaultSettings/Profiles/1.1.0.json";
+    private const string Profile130RelativeProfilePath =
+        "src/HubRadio.App/DefaultSettings/Profiles/1.3.0.json";
     private const string LatestRelativeProfilePath =
         "src/HubRadio.App/DefaultSettings/Profiles/1.2.0.json";
     private const string ExpectedId = "8d75a1fe-d10e-4aa7-87c5-3ac2d06d1f9b";
@@ -314,11 +316,11 @@ public sealed class BundledDefaultSettingsProfileTests
         BundledDefaultSettingsProfileCatalog catalog =
             BundledDefaultSettingsProfileCatalog.Load(sourceDirectory);
 
-        Assert.AreEqual(3, catalog.Profiles.Count);
+        Assert.AreEqual(4, catalog.Profiles.Count);
         CollectionAssert.AreEqual(
-            new[] { "1.0.0", "1.1.0", "1.2.0" },
+            new[] { "1.0.0", "1.1.0", "1.2.0", "1.3.0" },
             catalog.Profiles.Select(static profile => profile.Version.ToString()).ToArray());
-        Assert.AreSame(catalog.Current, catalog.Profiles[2]);
+        Assert.AreSame(catalog.Current, catalog.Profiles[3]);
         Assert.AreSame(
             catalog.Profiles[0],
             catalog.Resolve(
@@ -361,6 +363,11 @@ public sealed class BundledDefaultSettingsProfileTests
         File.WriteAllBytes(
             Path.Combine(temporary.Path, "1.2.0.json"),
             File.ReadAllBytes(ResolveRepositoryPath(LatestRelativeProfilePath)));
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            BundledDefaultSettingsProfileCatalog.Load(temporary.Path));
+        File.WriteAllBytes(
+            Path.Combine(temporary.Path, "1.3.0.json"),
+            File.ReadAllBytes(ResolveRepositoryPath(Profile130RelativeProfilePath)));
         _ = BundledDefaultSettingsProfileCatalog.Load(temporary.Path);
 
         File.WriteAllBytes(
@@ -448,6 +455,37 @@ public sealed class BundledDefaultSettingsProfileTests
         Assert.AreEqual(DefaultSettingValue.FromText("standard"), latest.GetDefinition("subtitles.emphasisTelopAmount").DefaultValue);
         CollectionAssert.AreEquivalent(new[] { "few", "standard", "many" },
             latest.GetDefinition("subtitles.emphasisTelopAmount").AllowedTextValues.ToArray());
+        Assert.IsTrue(BundledDefaultSettingsProfileLoader.IsApprovedProfile(latest));
+    }
+
+    // FR-146 AC-183: プロファイル 1.3.0 は、1.2.0 のすべての定義を変えずに、テンプレート自動選択の項目（既定: 使う = PARAM-012）だけを足す。
+    [TestMethod]
+    [TestCategory("FR-146")]
+    public void Profile130KeepsEveryPreviousDefinitionAndAddsOnlyTheTemplateAutoSelectionSetting()
+    {
+        DefaultSettingsProfile previous = BundledDefaultSettingsProfileLoader.Load(
+            File.ReadAllBytes(ResolveRepositoryPath(LatestRelativeProfilePath)));
+        DefaultSettingsProfile latest = BundledDefaultSettingsProfileLoader.Load(
+            File.ReadAllBytes(ResolveRepositoryPath(Profile130RelativeProfilePath)));
+
+        Assert.AreEqual("1.3.0", latest.Version.ToString());
+        Assert.AreEqual(previous.Id, latest.Id);
+        foreach (DefaultSettingDefinition definition in previous.Definitions)
+        {
+            DefaultSettingDefinition after = latest.GetDefinition(definition.Key);
+            Assert.AreEqual(definition.DefaultValue, after.DefaultValue, definition.Key);
+            Assert.AreEqual(definition.Description, after.Description, definition.Key);
+            Assert.AreEqual(definition.Minimum, after.Minimum, definition.Key);
+            Assert.AreEqual(definition.Maximum, after.Maximum, definition.Key);
+        }
+
+        CollectionAssert.AreEqual(
+            new[] { "project.templateAutoSelectEnabled" },
+            latest.Definitions.Select(static item => item.Key)
+                .Except(previous.Definitions.Select(static item => item.Key)).ToArray());
+        DefaultSettingDefinition added = latest.GetDefinition("project.templateAutoSelectEnabled");
+        Assert.AreEqual(DefaultSettingValue.FromBoolean(true), added.DefaultValue);
+        Assert.AreEqual(DefaultSettingGroup.ProjectAndOutput, added.Group);
         Assert.IsTrue(BundledDefaultSettingsProfileLoader.IsApprovedProfile(latest));
     }
 

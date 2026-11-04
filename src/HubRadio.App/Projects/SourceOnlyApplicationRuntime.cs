@@ -86,7 +86,7 @@ internal sealed record SourceOnlyApplicationResources(
             Path.Combine(root, "ModelCatalog", "catalog.json"),
             Path.Combine(root, "ModelCatalog"),
             profilesDirectory,
-            Path.Combine(defaultSettingsProfilesDirectory, "1.2.0.json"),
+            Path.Combine(defaultSettingsProfilesDirectory, "1.3.0.json"),
             Path.Combine(root, "Music"),
             typeof(SourceOnlyApplicationRuntime).Assembly.GetName().Version!.ToString(), PackageRoot: root);
         // Deliberately path-only: read Fonts/font-manifest.json and build evidence

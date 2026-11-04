@@ -28,7 +28,7 @@ export const maximumDerivedRangeChoices = 31
 
 type CatalogEditor =
   | Readonly<{ control: 'range' }>
-  | Readonly<{ control: 'boolean' }>
+  | Readonly<{ control: 'boolean'; labels?: readonly [string, string] }>
   | Readonly<{ control: 'choices'; values: readonly string[] }>
   | Readonly<{ control: 'multiple'; options: readonly SettingMultipleOption[] }>
   | Readonly<{ control: 'text'; options: readonly SettingMultipleOption[] }>
@@ -51,7 +51,10 @@ function parseCatalog(source: unknown): SettingEditorCatalog {
   const editors = new Map<string, CatalogEditor>()
   for (const [key, entry] of Object.entries(source.editors)) {
     if (fixed.has(key) || !isRecord(entry)) throw invalid()
-    if (entry.control === 'range' || entry.control === 'boolean') editors.set(key, { control: entry.control })
+    if (entry.control === 'boolean') {
+      const labels = Array.isArray(entry.labels) && entry.labels.length === 2 && entry.labels.every(item => typeof item === 'string' && item !== '') ? [entry.labels[0], entry.labels[1]] as [string, string] : undefined
+      editors.set(key, labels === undefined ? { control: 'boolean' } : { control: 'boolean', labels })
+    } else if (entry.control === 'range') editors.set(key, { control: entry.control })
     else if (entry.control === 'choices' && Array.isArray(entry.values) && entry.values.every(item => typeof item === 'string')) editors.set(key, { control: 'choices', values: [...entry.values] as string[] })
     else if ((entry.control === 'multiple' || entry.control === 'text') && Array.isArray(entry.options) && entry.options.every(item => isRecord(item) && typeof item.value === 'string' && typeof item.label === 'string')) {
       editors.set(key, { control: entry.control, options: (entry.options as { value: string; label: string }[]).map(item => ({ value: item.value, label: item.label })) })
@@ -73,7 +76,7 @@ export function getSettingEditor(definition: SettingDefinition): SettingEditor |
   const entry = settingEditorCatalog.editors.get(definition.key)
   const kind = definition.defaultValue.kind
   if (entry !== undefined) {
-    if (entry.control === 'boolean' && kind === 'boolean') return booleanEditor()
+    if (entry.control === 'boolean' && kind === 'boolean') return booleanEditor(entry.labels)
     if (entry.control === 'range' && kind === 'integer') return atLeastTwo(rangeChoices(definition, Number.POSITIVE_INFINITY))
     if (entry.control === 'choices' && (kind === 'integer' || kind === 'rational')) return atLeastTwo(listedChoices(definition, entry.values))
     if (entry.control === 'multiple' && kind === 'textList') return { kind: 'multiple', options: entry.options }
@@ -86,7 +89,7 @@ export function getSettingEditor(definition: SettingDefinition): SettingEditor |
 export function getAnySettingEditor(definition: SettingDefinition): SettingEditor {
   const editor = getSettingEditor(definition)
   if (editor !== null) return editor
-  if (definition.defaultValue.kind === 'boolean') return booleanEditor()
+  if (definition.defaultValue.kind === 'boolean') return booleanEditor(booleanLabelsFor(definition.key))
   if (definition.defaultValue.kind === 'text' && definition.allowedTextValues.length > 0) return textEditor(definition)
   return { kind: 'input' }
 }
@@ -97,7 +100,7 @@ export function isSettingEditable(definition: SettingDefinition): boolean {
 
 function derivedEditor(definition: SettingDefinition): SettingEditor | null {
   const value = definition.defaultValue
-  if (value.kind === 'boolean') return booleanEditor()
+  if (value.kind === 'boolean') return booleanEditor(booleanLabelsFor(definition.key))
   if (value.kind === 'text') {
     if (definition.allowedTextValues.length === 1) return null
     return definition.allowedTextValues.length > 1 ? textEditor(definition) : { kind: 'input' }
@@ -114,10 +117,22 @@ function atLeastTwo(choices: readonly SettingChoice[]): SettingEditor | null {
   return choices.length < 2 ? null : { kind: 'choices', choices }
 }
 
-function booleanEditor(): SettingEditor {
+/** FR-146: a catalog boolean can word its two choices (for example 使う／使わない); the default is 有効／無効. */
+export function booleanLabelsFor(key: string): readonly [string, string] | undefined {
+  const entry = settingEditorCatalog.editors.get(key)
+  return entry?.control === 'boolean' ? entry.labels : undefined
+}
+
+/** Wording of a boolean value for the given setting key (current value, initial value). */
+export function formatBooleanSetting(key: string, value: boolean): string {
+  const [on, off] = booleanLabelsFor(key) ?? ['有効', '無効']
+  return value ? on : off
+}
+
+function booleanEditor(labels: readonly [string, string] = ['有効', '無効']): SettingEditor {
   return { kind: 'choices', choices: [
-    { id: 'true', value: { kind: 'boolean', booleanValue: true }, label: '有効' },
-    { id: 'false', value: { kind: 'boolean', booleanValue: false }, label: '無効' },
+    { id: 'true', value: { kind: 'boolean', booleanValue: true }, label: labels[0] },
+    { id: 'false', value: { kind: 'boolean', booleanValue: false }, label: labels[1] },
   ] }
 }
 

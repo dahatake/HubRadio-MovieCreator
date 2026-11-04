@@ -12,13 +12,13 @@ interface ProfileSetting {
 
 const profilePath = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  '../../../../HubRadio.App/DefaultSettings/Profiles/1.2.0.json',
+  '../../../../HubRadio.App/DefaultSettings/Profiles/1.3.0.json',
 )
 const settings = (JSON.parse(readFileSync(profilePath, 'utf8')) as { settings: ProfileSetting[] }).settings
 
 describe('setting help', () => {
   it('has a written explanation for every setting in the bundled profile and for nothing else', () => {
-    expect(settings).toHaveLength(127)
+    expect(settings).toHaveLength(128)
     expect(Object.keys(settingHelpEntries).sort()).toEqual(settings.map((setting) => setting.key).sort())
   })
 
@@ -54,7 +54,7 @@ describe('setting help', () => {
   // FR-050.9 AC-025.7
   it('never asks to type values for settings that are picked from choices', () => {
     const editable = Object.keys((JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'settingEditorCatalog.json'), 'utf8')) as { editors: Record<string, unknown> }).editors)
-    expect(editable).toHaveLength(26)
+    expect(editable).toHaveLength(27)
     for (const key of editable) {
       const help = getSettingHelp({ key, displayName: key })
       expect(help.generic).toBe(false)
