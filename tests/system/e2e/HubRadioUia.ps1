@@ -487,13 +487,13 @@ function Invoke-Test([scriptblock]$Body, [string]$Label, $Sandbox) {
 }
 
 # --- Job 成果物つき Project の作成（実際の操作で作る。合成した 2 秒の動画を元素材にする） ---
-function New-SyntheticVideo($sb, [string]$dir) {
+function New-SyntheticVideo($sb, [string]$dir, [int]$Seconds = 3) {
     $ff = Get-TestFfmpeg $sb
     $out = Join-Path $dir 'source.mp4'
-    & $ff -y -f lavfi -i 'testsrc=size=1920x1080:rate=30:duration=3' -f lavfi -i 'sine=frequency=440:duration=3' -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest $out 2>$null
+    & $ff -y -f lavfi -i "testsrc=size=1920x1080:rate=30:duration=$Seconds" -f lavfi -i "sine=frequency=440:duration=$Seconds" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest $out 2>$null
     if ($LASTEXITCODE -ne 0) {
         # libx264 の無い ffmpeg 向け（合成動画の作成だけの代替）
-        & $ff -y -f lavfi -i 'testsrc=size=1920x1080:rate=30:duration=3' -f lavfi -i 'sine=frequency=440:duration=3' -c:v mpeg4 -pix_fmt yuv420p -c:a aac -shortest $out 2>$null
+        & $ff -y -f lavfi -i "testsrc=size=1920x1080:rate=30:duration=$Seconds" -f lavfi -i "sine=frequency=440:duration=$Seconds" -c:v mpeg4 -pix_fmt yuv420p -c:a aac -shortest $out 2>$null
     }
     if ($LASTEXITCODE -ne 0) { throw 'ffmpeg failed to create synthetic video' }
     $out

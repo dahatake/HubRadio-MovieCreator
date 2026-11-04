@@ -43,7 +43,8 @@ function Get-PlayerPosition($root) {
 
 Invoke-Test -Label "FR-144 $Ac" -Sandbox $sb -Body {
     try {
-        $video = New-SyntheticVideo $sb $sb.Work
+        # AC-177 は再生・一時停止・シークを続けるので、再生が終わらない長さ（約 30 秒）の動画にする
+        $video = if ($Ac -eq 'AC-177') { New-SyntheticVideo $sb $sb.Work 30 } else { New-SyntheticVideo $sb $sb.Work }
         $srcHash = (Get-FileHash -LiteralPath $video).Hash
         $name = 'proxy-preview'
         $p = Start-App $sb; $root = Get-Root $p
