@@ -514,10 +514,43 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 }
             }
 
+            RecordTemplateOrigin(latest.Request.DraftId, accepted.Request.RootJobId, template);
             _ = Start(accepted.Request.ExecutionId);
             return accepted;
         }
     }
+
+    /// <summary>
+    /// FR-145 / FR-136: records how the Job's template was decided (自動選択 / 手動 / なし) and cancels an automatic selection that is
+    /// still running when the user chose their own. Never stops the Job: a failure here only leaves the origin unrecorded (NFR-REL-002).
+    /// </summary>
+    internal void RecordTemplateOrigin(EntityId<ProjectCreationDraftIdTag> draftId, EntityId<JobIdTag> rootJobId,
+        StyleTemplates.StyleTemplateDefinition? template)
+    {
+        try
+        {
+            if (!Guid.TryParse(draftId.ToString(), out Guid key))
+            {
+                return;
+            }
+
+            StyleTemplates.TemplateAutoSelectionStore store = TemplateAutoSelections;
+            StyleTemplates.JobTemplateOrigin origin = StyleTemplates.JobTemplateOrigin.Decide(template, store.Load(key));
+            if (origin.Origin == StyleTemplates.JobTemplateOrigin.Manual)
+            {
+                _ = store.Touch(key);
+            }
+
+            StyleTemplates.JobTemplateOriginStore.Save(StyleTemplateDirectory(rootJobId), origin);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    /// <summary>FR-145: where the automatic template selection of each Project is kept (keyed by the Project creation draft id).</summary>
+    internal StyleTemplates.TemplateAutoSelectionStore TemplateAutoSelections =>
+        new(Path.Combine(workspace, "template-auto-selection"));
 
     /// <summary>FR-136: the template recorded for the Job, or null (no template: the default output is unchanged).</summary>
     private StyleTemplates.StyleTemplateDefinition? LoadStyleTemplate(EntityId<JobIdTag> rootJobId)
