@@ -20,7 +20,7 @@ public sealed class SettingsBridgeTests
     public void ReadProjectsActualProfileInventoryWithoutHardCodedCount()
     {
         using Fixture fixture = new();
-        Assert.AreEqual(127, fixture.Profile.Definitions.Count);
+        Assert.AreEqual(128, fixture.Profile.Definitions.Count);
         CollectionAssert.AreEquivalent(
             Enum.GetValues<DefaultSettingValueKind>(),
             fixture.Profile.Definitions
@@ -223,7 +223,7 @@ public sealed class SettingsBridgeTests
             DatabasePath = Path.Combine(root, "settings.db");
             _ = DatabaseMigrator.Migrate(DatabasePath, Path.Combine(root, "backups"));
             Store = new DefaultSettingsStore(DatabasePath);
-            byte[] profileBytes = File.ReadAllBytes(ResolveRepositoryPath("src/HubRadio.App/DefaultSettings/Profiles/1.2.0.json"));
+            byte[] profileBytes = File.ReadAllBytes(ResolveRepositoryPath("src/HubRadio.App/DefaultSettings/Profiles/1.3.0.json"));
             Profile = BundledDefaultSettingsProfileLoader.Load(profileBytes);
             _ = Store.RegisterProfile(profileBytes);
             _ = Store.InitializeGlobalSettings(Profile.CreateSnapshot(), InitialTime);

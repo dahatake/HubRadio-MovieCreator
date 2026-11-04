@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { findSettingChoice, formatSettingChoice, getSettingEditor, isSettingEditable, maximumDerivedRangeChoices, settingEditorCatalog } from './settingEditors'
+import { findSettingChoice, formatBooleanSetting, formatSettingChoice, getSettingEditor, isSettingEditable, maximumDerivedRangeChoices, settingEditorCatalog } from './settingEditors'
 import type { SettingDefinition, SettingValue, SettingsGroup, SettingsUnit } from './settingsProtocol'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -40,6 +40,8 @@ const changeable = [
 ]
 // FR-057〜FR-060: settings that only profile 1.2.0 defines.
 const addedIn120 = ['editing.pauseTightening', 'output.longFormOrientation', 'subtitles.emphasisTelopAmount', 'audio.soundEffectsEnabled']
+// FR-146: the setting that only profile 1.3.0 defines.
+const addedIn130 = ['project.templateAutoSelectEnabled']
 
 function unknown(defaultValue: SettingValue, overrides: Partial<SettingDefinition> = {}): SettingDefinition {
   return { key: 'future.setting', group: 'editing', isAdvanced: false, displayName: 'Future', description: 'Future setting.', unit: 'none',
@@ -49,7 +51,7 @@ const integer = (integerValue: string): SettingValue => ({ kind: 'integer', inte
 
 describe('FR-050 setting editors', () => {
   // FR-050.1 AC-025.1
-  it.each([['1.1.0', 123, changeable], ['1.2.0', 127, [...changeable, ...addedIn120]]] as const)('shows exactly the changeable settings of profile %s', (version, count, keys) => {
+  it.each([['1.1.0', 123, changeable], ['1.2.0', 127, [...changeable, ...addedIn120]], ['1.3.0', 128, [...changeable, ...addedIn120, ...addedIn130]]] as const)('shows exactly the changeable settings of profile %s', (version, count, keys) => {
     const profile = loadProfile(version)
     expect(profile).toHaveLength(count)
     expect(profile.filter(isSettingEditable).map(item => item.key).sort()).toEqual([...keys].sort())
@@ -82,11 +84,22 @@ describe('FR-050 setting editors', () => {
     expect(labels('audio.soundEffectsEnabled')).toEqual([['true', '有効'], ['false', '無効']])
   })
 
+  // FR-146 AC-183: the auto-selection setting is picked from 使う／使わない, not 有効／無効.
+  it('offers the template auto-selection setting as 使う／使わない', () => {
+    const definition = loadProfile('1.3.0').find(item => item.key === 'project.templateAutoSelectEnabled')!
+    expect(definition.defaultValue).toEqual({ kind: 'boolean', booleanValue: true })
+    const editor = getSettingEditor(definition)
+    expect(editor?.kind === 'choices' ? editor.choices.map(choice => [choice.id, choice.label]) : null).toEqual([['true', '使う'], ['false', '使わない']])
+    expect(formatBooleanSetting('project.templateAutoSelectEnabled', true)).toBe('使う')
+    expect(formatBooleanSetting('audio.soundEffectsEnabled', false)).toBe('無効')
+  })
+
   // FR-050.7
   it('classifies every shipped key exactly once', () => {
-    const keys = loadProfile('1.2.0').map(item => item.key).sort()
-    expect([...loadProfile('1.0.0').map(item => item.key), ...addedIn120].sort()).toEqual(keys)
-    expect([...loadProfile('1.1.0').map(item => item.key), ...addedIn120].sort()).toEqual(keys)
+    const keys = loadProfile('1.3.0').map(item => item.key).sort()
+    expect([...loadProfile('1.0.0').map(item => item.key), ...addedIn120, ...addedIn130].sort()).toEqual(keys)
+    expect([...loadProfile('1.1.0').map(item => item.key), ...addedIn120, ...addedIn130].sort()).toEqual(keys)
+    expect([...loadProfile('1.2.0').map(item => item.key), ...addedIn130].sort()).toEqual(keys)
     const fixed = [...settingEditorCatalog.fixed.keys()]
     const editors = [...settingEditorCatalog.editors.keys()]
     expect([...fixed, ...editors].sort()).toEqual(keys)

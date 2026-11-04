@@ -156,6 +156,7 @@
         { "value": "many", "label": "多め" }
       ]
     },
-    "audio.soundEffectsEnabled": { "control": "boolean" }
+    "audio.soundEffectsEnabled": { "control": "boolean" },
+    "project.templateAutoSelectEnabled": { "control": "boolean", "labels": ["使う", "使わない"] }
   }
 }

@@ -23,23 +23,27 @@ public sealed class SettingEditorCatalogTests
     [DataRow("1.0.0")]
     [DataRow("1.1.0")]
     [DataRow("1.2.0")]
+    [DataRow("1.3.0")]
     public void SettingEditorCatalogClassifiesEveryShippedKeyExactlyOnce(string version)
     {
         DefaultSettingsProfile profile = LoadProfile(version);
         string[] fixedKeys = Fixed().Select(static item => item.Key).ToArray();
         string[] editorKeys = Editors().Select(static item => item.Key).ToArray();
 
-        bool latest = version == "1.2.0";
-        Assert.HasCount(latest ? 127 : 123, profile.Definitions);
+        // FR-146: profile 1.3.0 adds project.templateAutoSelectEnabled on top of the four 1.2.0 keys.
+        Assert.HasCount(version switch { "1.3.0" => 128, "1.2.0" => 127, _ => 123 }, profile.Definitions);
         Assert.IsEmpty(fixedKeys.Intersect(editorKeys, StringComparer.Ordinal).ToArray());
         // FR-057〜FR-060: the catalog also classifies the keys that only profile 1.2.0 defines.
         string[] classified = fixedKeys.Concat(editorKeys).ToArray();
         CollectionAssert.AreEquivalent(
-            profile.Definitions.Select(static item => item.Key).Concat(latest ? [] : BundledDefaultSettingsProfileLoader.KeysAddedIn120).ToArray(),
+            profile.Definitions.Select(static item => item.Key)
+                .Concat(version is "1.0.0" or "1.1.0" ? BundledDefaultSettingsProfileLoader.KeysAddedIn120 : [])
+                .Concat(version is "1.3.0" ? [] : BundledDefaultSettingsProfileLoader.KeysAddedIn130)
+                .ToArray(),
             classified);
         foreach ((string key, string reason) in Fixed())
             CollectionAssert.Contains(FixedReasons, reason, key);
-        Assert.HasCount(26, editorKeys);
+        Assert.HasCount(27, editorKeys);
     }
 
     // FR-050.1 AC-025.5
