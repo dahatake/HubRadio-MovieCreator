@@ -129,7 +129,7 @@
 | Job 書き出し | src/HubRadio.App/Web/JobExportBridge.cs | Job の動画・サムネイルを選んだフォルダーへ上書きなしで保存（連番・件数・失敗理由）。フォルダー選択は FR-064 の `settings.workspace.browse` を再利用 | FR-132 |
 | Job サムネイル | src/HubRadio.Web/src/features/jobs/JobThumbnail.tsx | Job 単位のサムネイル・代替表示・代替テキスト・選択可否（Project 単位の FR-045/053 の画像参照を再利用） | FR-131 |
 | UI スレッド実行 | src/HubRadio.App/Media/UiThreadInvoker.cs | OS のファイル・フォルダー選択ダイアログを必ず UI スレッドで開く（初回起動の新規 Workspace で別スレッドから開いて異常終了する不具合の修正） | FR-061, FR-064 |
-| 演出テンプレート定義 | src/HubRadio.App/StyleTemplates/StyleTemplateCatalog.cs | 演出テンプレート（ID・版・用途・縦横・見た目の例・色・書体・動き・効果音・配置）を宣言的な定義として持ち、FR-059/FR-060 の規則の上に適用する（PARAM-006/007 の上限つき） | FR-136, FR-137, FR-138, FR-139, FR-140, FR-142, FR-145 |
+| 演出テンプレート定義 | src/HubRadio.App/StyleTemplates/StyleTemplateCatalog.cs | 演出テンプレート（ID・版・用途・縦横・見た目の例・色・書体・動き・効果音・配置）を宣言的な定義として持ち、FR-059/FR-060 の規則の上に適用する（PARAM-006/007 の上限つき） | FR-136、FR-137、FR-138、FR-139、FR-140、FR-142 |
 | 同梱書体 | src/HubRadio.App/StyleTemplates/StyleTemplateFonts.cs、packaging/template-fonts/ | 太ゴシック（Noto Sans JP Black）・丸ゴシック（M PLUS Rounded 1c）・ポップ体（Potta One）を SIL OFL 1.1 のライセンスつきで同梱し（ビルドで TemplateFonts へコピー）、ファイルの digest を確かめて版を読み取り、Job の style-template.json に名前・版・ライセンスを記録する。利用者の PC の書体は使わない | FR-137, FR-139 |
 | キャラクター立ち絵ストア | src/HubRadio.App/StyleTemplates/CharacterPortraitStore.cs | 利用者が登録した立ち絵（使用権の確認状態＝確認済み・未確認、キャラごとの字幕色）を保持し、1 つも登録がなければキャラクター対話のテンプレートを選べなくする。標準の立ち絵は同梱しない（NFR-BR-004） | FR-137, FR-140 |
 | 演出テンプレートの配置と色 | src/HubRadio.App/StyleTemplates/StyleTemplateLayout.cs | 縦型 3 段の枠・余白（PARAM-005）・対談番組の話題サイドテロップと名前の帯・字幕 1 画面 20 字、文字色と背景の contrast（4.5:1）、効果保証・模倣表現の検査 | FR-138, FR-139, FR-141, FR-143 |
