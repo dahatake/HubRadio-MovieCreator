@@ -413,6 +413,11 @@ internal sealed class SourceOnlyApplicationRuntime : ISourceOnlyProjectCoordinat
         // FR-053: without a ready pipeline there is no verified ffmpeg; the list then shows "サムネイルなし".
         RunTracked(coordinator => coordinator.EnsurePosterAsync(draftId, cancellationToken), false);
 
+    Task<ProxySourceInfo?> ISourceOnlyProjectCoordinator.ResolveProxySourceAsync(EntityId<ProjectCreationDraftIdTag> draftId,
+        CancellationToken cancellationToken) =>
+        // FR-144: without a ready pipeline there is no verified ffmpeg; the settings screen then shows the reason.
+        RunTracked<ProxySourceInfo?>(coordinator => coordinator.ResolveProxySourceAsync(draftId, cancellationToken), null);
+
     Task<SourceMediaFacts?> ISourceOnlyProjectCoordinator.ProbeSourceAsync(string sourcePath, CancellationToken cancellationToken) =>
         RunTracked(coordinator => coordinator.ProbeSourceAsync(sourcePath, cancellationToken), null);
 

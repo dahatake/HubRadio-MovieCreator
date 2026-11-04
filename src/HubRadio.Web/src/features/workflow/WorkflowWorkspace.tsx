@@ -870,7 +870,7 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
         </WorkflowSurface>
 
         <WorkflowSurface id="workflow-settings" className="workflow-screen workflow-settings-screen" active={settingsOpen}>
-          <SettingsPanel isActive={settingsOpen} activeProjectId={activeProjectId} projectOpen={projectOpen} onClose={closeSettings} onDirtyChange={reportDirty.settings}
+          <SettingsPanel isActive={settingsOpen} activeProjectId={activeProjectId} activeDraftId={draft?.draftId ?? null} projectOpen={projectOpen} onClose={closeSettings} onDirtyChange={reportDirty.settings}
             initialSettingKey={warningIsCurrent && warningOrigin?.target.kind === 'settings' && !warningOrigin.waitingForSettings ? warningOrigin.target.key : null} />
         </WorkflowSurface>
       </div>

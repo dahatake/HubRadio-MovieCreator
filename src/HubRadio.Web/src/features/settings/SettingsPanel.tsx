@@ -5,6 +5,7 @@ import { SettingsFileActions } from './SettingsFileActions'
 import { SettingsList } from './SettingsList'
 import { SettingsOutcomePreview } from './SettingsOutcomePreview'
 import { WorkspaceLocationSection } from './WorkspaceLocationSection'
+import { ProxyPreview, type ProxyPreviewProps } from './ProxyPreview'
 import { isSettingEditable } from './settingEditors'
 import { useSettingsWorkspace } from './SettingsStateProvider'
 import { createSettingsReadRequest, type AnySettingsSnapshot, type SettingsGroup, type SettingsWorkspaceMethod } from './settingsProtocol'
@@ -22,6 +23,9 @@ export interface SettingsPanelProps {
   readonly onClose?: () => void
   readonly initialSettingKey?: string | null
   readonly onDirtyChange?: (dirty: boolean) => void
+  /** FR-144: the draft (Project) whose source-video proxy is previewed; none hides the preview. */
+  readonly activeDraftId?: string | null
+  readonly proxyService?: ProxyPreviewProps['service']
 }
 
 const groupNames: Readonly<Record<SettingsGroup, string>> = {
@@ -68,7 +72,7 @@ interface Confirmation {
 }
 
 /** Keep one SettingsWorkspaceStateProvider mounted above this page; legacy consumers remain separate. */
-export function SettingsPanel({ isActive = true, activeProjectId = null, projectOpen: projectOpenProp, onClose, initialSettingKey = null, onDirtyChange }: SettingsPanelProps) {
+export function SettingsPanel({ isActive = true, activeProjectId = null, projectOpen: projectOpenProp, onClose, initialSettingKey = null, onDirtyChange, activeDraftId = null, proxyService }: SettingsPanelProps) {
   const workspace = useSettingsWorkspace()
   const { state, isDirty, setScope, load } = workspace
   const { snapshot, draftValues, pendingRequest } = state
@@ -316,6 +320,7 @@ export function SettingsPanel({ isActive = true, activeProjectId = null, project
         <p className="settings-scope-note">編集中：{scopeName}。{activeTarget === null && projectOpen && (activeProjectId === null ? '「次に作成するJob」は、「編集を開始」でProjectを作成すると選べます。作成前は全体の初期値を編集できます。' : 'このProjectの設定先を確認できません。')}{state.scope === 'project' && !oldProject && '保存した設定は、このProjectで次に作成するJobに使います。作成済みのJobの設定は変わりません。'}設定の保存だけでは動画・既存の成果物を更新しません。</p>
         {oldProject && <div className="settings-context-warning" role="status">切替前のProjectの設定を保持しています。個別に保存するか、対象を切り替えてください。</div>}
         <WorkspaceLocationSection isActive={isActive} />
+        {projectOpen && activeDraftId !== null && <ProxyPreview draftId={activeDraftId} isActive={isActive} service={proxyService} />}
         <div className="settings-toolbar">
           <div className="settings-view-switch" role="group" aria-label="設定の表示">
             {([['setting', '項目を編集'], ['outcome', '予定を確認'], ['file', '設定ファイル']] as const).map(([view, label]) => (

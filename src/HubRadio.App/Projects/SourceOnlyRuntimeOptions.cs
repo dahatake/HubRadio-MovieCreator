@@ -221,6 +221,9 @@ internal interface ISourceOnlyProjectCoordinator
     // FR-053: makes a poster frame for the Project list. Optional; never fails the caller.
     public Task<bool> EnsurePosterAsync(EntityId<ProjectCreationDraftIdTag> draftId,
         CancellationToken cancellationToken) => Task.FromResult(false);
+    // FR-144: the source video and the verified ffmpeg for the proxy; null when either is not available.
+    public Task<ProxySourceInfo?> ResolveProxySourceAsync(EntityId<ProjectCreationDraftIdTag> draftId,
+        CancellationToken cancellationToken) => Task.FromResult<ProxySourceInfo?>(null);
     // FR-054: duration and displayed size of the selected source; null when it cannot be read.
     public Task<SourceMediaFacts?> ProbeSourceAsync(string sourcePath, CancellationToken cancellationToken) =>
         Task.FromResult<SourceMediaFacts?>(null);

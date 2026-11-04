@@ -191,3 +191,16 @@
 @media (max-height: 40rem) {
   .settings-detail-pane { max-block-size: none; overflow: visible; }
 }
+/* FR-144: the source-video proxy preview in the settings screen. */
+.proxy-preview { display: grid; gap: 0.5rem; min-width: 0; padding: 0.5rem 0.75rem; border: 1px solid var(--cp-border); border-radius: 0.5rem; }
+.proxy-preview h3 { margin: 0; }
+.proxy-preview p { margin: 0; font-size: 0.875rem; line-height: 1.4; color: var(--cp-text-muted); }
+.proxy-preview-player { display: grid; gap: 0.5rem; justify-items: start; min-width: 0; }
+.proxy-preview-player video { max-width: 100%; max-height: 22.5rem; background: var(--cp-surface-soft); border-radius: 0.375rem; }
+.proxy-preview-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; width: 100%; min-width: 0; }
+.proxy-preview-controls input[type='range'] { flex: 1 1 12rem; min-width: 8rem; }
+.proxy-preview-time { color: var(--cp-text-muted); font-variant-numeric: tabular-nums; }
+.proxy-preview-state { display: grid; gap: 0.25rem; padding: 0.5rem; border-radius: 0.375rem; background: var(--cp-surface-soft); }
+.proxy-preview[data-proxy-status='failed'] .proxy-preview-state { border-inline-start: 0.25rem solid var(--cp-danger); }
+.proxy-preview-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.proxy-preview-hint { font-size: 0.875rem; color: var(--cp-text-muted); }
