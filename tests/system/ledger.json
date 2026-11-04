@@ -43,7 +43,10 @@
     "AC-165": "sha256:d45a36499959dd2b",
     "AC-169": "sha256:f00da269ff6903f2",
     "AC-172": "sha256:8c1e5c8f0571af58",
-    "AC-174": "sha256:7fc8975df9e117fe"
+    "AC-174": "sha256:7fc8975df9e117fe",
+    "AC-176": "sha256:08cd805d95b857f4",
+    "AC-177": "sha256:9e07e6580f7a5bc2",
+    "AC-178": "sha256:39f19d1b5977ba36"
   },
   "cases": [
     {
@@ -355,9 +358,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-133-project-folder-name.ps1",
       "canary": true,
       "status": "pass",
-      "last_commit": "a3848a9",
-      "last_run_at": "2026-11-03T20:26:05+09:00",
-      "evidence": "work/runs/202611031942/logs/system-test/E2E-009-202611032011.log",
+      "last_commit": "c035e10",
+      "last_run_at": "2026-11-05T00:39:17+09:00",
+      "evidence": "work/runs/202611042340/logs/system-test/E2E-009-202611050034.log",
       "history": [
         {
           "at": "2026-10-13T05:43:51+09:00",
@@ -1617,6 +1620,93 @@
           "by": "test-designer",
           "change": "追加",
           "reason": "system AC のケースを作成"
+        }
+      ]
+    },
+    {
+      "id": "E2E-041",
+      "requirement_ids": [
+        "FR-144"
+      ],
+      "ac_ids": [
+        "AC-176"
+      ],
+      "title": "FR-144 元動画のプロキシ生成（高さ360・Project 配下・元動画不変）",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-144-proxy-preview.ps1 -Ac AC-176",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-11-04T23:47:37+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-11-04T23:47:55+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "検証レベルが integration の AC は System Test 台帳の対象外（CHK-10）。結合試験は implementer の領域。スクリプトは tests/system/e2e/fr-144-proxy-preview.ps1 -Ac に保持（補助）"
+        }
+      ]
+    },
+    {
+      "id": "E2E-042",
+      "requirement_ids": [
+        "FR-144"
+      ],
+      "ac_ids": [
+        "AC-177"
+      ],
+      "title": "FR-144 設定画面のプロキシプレイヤーで再生・一時停止・シーク",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-144-proxy-preview.ps1 -Ac AC-177",
+      "canary": false,
+      "status": "pass",
+      "last_commit": "c035e10",
+      "last_run_at": "2026-11-05T00:44:11+09:00",
+      "evidence": "work/runs/202611042340/logs/system-test/E2E-042-202611050041.log",
+      "history": [
+        {
+          "at": "2026-11-04T23:47:39+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        }
+      ]
+    },
+    {
+      "id": "E2E-043",
+      "requirement_ids": [
+        "FR-144"
+      ],
+      "ac_ids": [
+        "AC-178"
+      ],
+      "title": "FR-144 プロキシの生成中/未生成/失敗の状態表示と再生成（失敗でも作成・保存・Job は止まらない）",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-144-proxy-preview.ps1 -Ac AC-178",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-11-04T23:47:41+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-11-04T23:47:56+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "検証レベルが integration の AC は System Test 台帳の対象外（CHK-10）。結合試験は implementer の領域。スクリプトは tests/system/e2e/fr-144-proxy-preview.ps1 -Ac に保持（補助）"
         }
       ]
     }
