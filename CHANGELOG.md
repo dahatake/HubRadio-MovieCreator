@@ -14,6 +14,8 @@
 
 ### Added
 
+- 起動用scriptをrepository rootの`run.ps1`1本に統合しました（前提確認・`-Pull`による`git pull --ff-only`・Release build・資源導入・起動）。`scripts/run.ps1`は削除しました。
+
 - FR-062: Workspaceフォルダーの初期値を`<ドライブ>\workspace`にし（従来の場所に`hubradio.db`がある環境は、次回の起動でフォルダーごと同じドライブ内の名前の変更で移します。移せない場合は従来の場所のまま）、設定画面の「Workspaceフォルダー」欄から変更できるようにしました（bridge `settings.workspace.read`／`settings.workspace.update`、設定ファイル`workspace-location.json`。次回の起動から有効で、データは移動しません）。質問票Q-013（回答B）を反映しました。
 
 - **仕上がり画面を、Jobごとに見て、複数のJobを映像と設定で比べる構成にしました**（要求FR-063、受入AC-038）。道具の「成果物一覧」は「Jobの仕上がり」になり、上部のJobの一覧で見るJobを選べます（最初はいまの版）。過去のJobでは、そのJobの動画・画像と設定の違いを表示します。「Jobを比較」では、2〜4つのJobの同じ成果物を2×2の格子に並べて同時に再生・一時停止・位置合わせができ、「設定の比較」の表にJobごとの列で値の違う設定が出ます。従来の「作成した動画」の一覧はJobの一覧に置き換えました。bridgeとhostは変更していません。
