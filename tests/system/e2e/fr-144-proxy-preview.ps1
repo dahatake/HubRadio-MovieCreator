@@ -51,6 +51,9 @@ Invoke-Test -Label "FR-144 $Ac" -Sandbox $sb -Body {
             'AC-176' {
                 # 正常系: 動画を選んで Project を作成 → 設定の保存・Job の実行まで通る
                 New-ProjectDraft $root $sb $name $video | Out-Null
+                # 作成前のプロキシは workspace/proxies/<draftId>/ にあり、作成時に Project フォルダー配下へ移る
+                Invoke-Element (Find-ByName $root '編集を開始')
+                Wait-JobCompleted $root 1
                 $proxy = Wait-ProxyFile $sb $name
                 $projDir = Join-Path (Join-Path (Get-WorkspaceDir $sb) 'projects') $name
                 if (-not $proxy.FullName.StartsWith($projDir, [StringComparison]::OrdinalIgnoreCase)) { throw "proxy is outside the project folder: $($proxy.FullName)" }
@@ -58,12 +61,12 @@ Invoke-Test -Label "FR-144 $Ac" -Sandbox $sb -Body {
                 if ($h -ne $ProxyHeight) { throw "proxy height is $h, expected $ProxyHeight (PARAM-011)" }
                 # 異常系の対照: 元動画は変更されない（内容のハッシュと更新日時）
                 if ((Get-FileHash -LiteralPath $video).Hash -ne $srcHash) { throw 'source video was modified' }
-                Invoke-Element (Find-ByName $root '編集を開始')
-                Wait-JobCompleted $root 1
                 if ((Get-FileHash -LiteralPath $video).Hash -ne $srcHash) { throw 'source video was modified after the Job' }
             }
             'AC-177' {
                 New-ProjectDraft $root $sb $name $video | Out-Null
+                Invoke-Element (Find-ByName $root '編集を開始')
+                Wait-JobCompleted $root 1
                 $null = Wait-ProxyFile $sb $name
                 Open-ProjectSettings $root
                 $null = Find-ByName $root '元動画のプロキシプレビュー' 60   # プレイヤーの領域
@@ -93,6 +96,8 @@ Invoke-Test -Label "FR-144 $Ac" -Sandbox $sb -Body {
             'AC-178' {
                 # 生成中・未生成: 作成直後に設定画面を開くと、プレイヤーの場所に 状態（生成中/未生成）と理由が出る。プロキシ完成後はプレイヤー。
                 New-ProjectDraft $root $sb $name $video | Out-Null
+                Invoke-Element (Find-ByName $root '編集を開始')
+                Wait-JobCompleted $root 1   # 設定を開くボタンは Project 作成後にだけ出る
                 Open-ProjectSettings $root
                 if (-not (Test-ByName $root '元動画のプロキシプレビュー' 60)) { throw 'proxy preview area not shown' }
                 $proxy = Wait-ProxyFile $sb $name
@@ -115,8 +120,7 @@ Invoke-Test -Label "FR-144 $Ac" -Sandbox $sb -Body {
                 if (@(Find-AllByNameLike $root '(理由|原因)').Count -lt 1) { throw 'failure reason (原因の要約) not shown' }
                 # 失敗でも設定の保存と Job の実行は止まらない
                 Invoke-Element (Find-ByName $root '設定を閉じて戻る' 60)
-                Invoke-Element (Find-ByName $root '編集を開始')
-                Wait-JobCompleted $root 1
+                Wait-JobCompleted $root 1   # 閉じて戻れて、Job の完了表示が保たれている
                 # 再生成: 塞いだ出力先を戻して再生成の操作 → プロキシが作り直される（高さ 360）
                 Remove-Item -LiteralPath $proxyPath -Recurse -Force
                 Open-ProjectSettings $root
