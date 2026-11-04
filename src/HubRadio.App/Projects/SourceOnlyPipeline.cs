@@ -514,10 +514,85 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 }
             }
 
+            RecordTemplateOrigin(latest.Request.DraftId, accepted.Request.RootJobId, template);
             _ = Start(accepted.Request.ExecutionId);
             return accepted;
         }
     }
+
+    /// <summary>
+    /// FR-145 / FR-136: records how the Job's template was decided (自動選択 / 手動 / なし) and cancels an automatic selection that is
+    /// still running when the user chose their own. Never stops the Job: a failure here only leaves the origin unrecorded (NFR-REL-002).
+    /// </summary>
+    internal void RecordTemplateOrigin(EntityId<ProjectCreationDraftIdTag> draftId, EntityId<JobIdTag> rootJobId,
+        StyleTemplates.StyleTemplateDefinition? template)
+    {
+        try
+        {
+            if (!Guid.TryParse(draftId.ToString(), out Guid key))
+            {
+                return;
+            }
+
+            StyleTemplates.TemplateAutoSelectionStore store = TemplateAutoSelections;
+            StyleTemplates.JobTemplateOrigin origin = StyleTemplates.JobTemplateOrigin.Decide(template, store.Load(key));
+            if (origin.Origin == StyleTemplates.JobTemplateOrigin.Manual)
+            {
+                _ = store.Touch(key);
+            }
+
+            StyleTemplates.JobTemplateOriginStore.Save(StyleTemplateDirectory(rootJobId), origin);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// FR-145 (AC-179): the first Job (made by 編集を開始, which has no template choice) takes the Project's automatic selection when it is
+    /// already 選択済み and the user has not touched the choice. A Job that already has an origin (every regenerated Job) is left alone;
+    /// a selection that is not ready (解析中・取消・スキップ) or any failure leaves the default output (NFR-REL-002).
+    /// </summary>
+    internal void ApplyAutoSelectionToFirstJob(StoredSourceOnlyExecution execution) =>
+        ApplyAutoSelectionToFirstJob(execution.Request.DraftId, execution.Request.RootJobId);
+
+    internal void ApplyAutoSelectionToFirstJob(EntityId<ProjectCreationDraftIdTag> draftId, EntityId<JobIdTag> rootJobId)
+    {
+        try
+        {
+            string directory = StyleTemplateDirectory(rootJobId);
+            if (StyleTemplates.JobTemplateOriginStore.Load(directory) is not null ||
+                StyleTemplates.JobStyleTemplateStore.Load(directory) is not null ||
+                !Guid.TryParse(draftId.ToString(), out Guid key))
+            {
+                return;
+            }
+
+            StyleTemplates.TemplateAutoSelectionRecord? auto = TemplateAutoSelections.Load(key);
+            if (auto is not { State: StyleTemplates.TemplateAutoSelectionState.Selected, ManualTouched: false, TemplateId: { } id })
+            {
+                return;
+            }
+
+            StyleTemplates.StyleTemplateDefinition? template = StyleTemplates.StyleTemplateCatalog.All
+                .Where(item => item.Id == id).OrderByDescending(static item => item.Version).FirstOrDefault();
+            if (template is null || !CharacterPortraits.IsSelectable(template))
+            {
+                return;
+            }
+
+            StyleTemplates.JobStyleTemplateStore.Save(directory, StyleTemplates.JobStyleTemplateRecord.For(template)
+                .WithFonts(StyleTemplates.StyleTemplateFonts.RecordsFor(template)));
+            StyleTemplates.JobTemplateOriginStore.Save(directory, StyleTemplates.JobTemplateOrigin.Decide(template, auto));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    /// <summary>FR-145: where the automatic template selection of each Project is kept (keyed by the Project creation draft id).</summary>
+    internal StyleTemplates.TemplateAutoSelectionStore TemplateAutoSelections =>
+        new(Path.Combine(workspace, "template-auto-selection"));
 
     /// <summary>FR-136: the template recorded for the Job, or null (no template: the default output is unchanged).</summary>
     private StyleTemplates.StyleTemplateDefinition? LoadStyleTemplate(EntityId<JobIdTag> rootJobId)
@@ -1316,6 +1391,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 await executeForTesting(execution, token).ConfigureAwait(false);
                 throw new PipelineFailure(SourceOnlyExecutionPhase.Failed, "source_only.no_production_result");
             }
+            ApplyAutoSelectionToFirstJob(execution);
             await RunProductionAsync(execution, token).ConfigureAwait(false);
             return new(executionId, RequireExecution(executionId), null);
         }

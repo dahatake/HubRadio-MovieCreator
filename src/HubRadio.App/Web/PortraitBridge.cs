@@ -27,7 +27,7 @@ internal static class PortraitBridgeProtocol
             return HasValidCrop(parameters);
         }
 
-        if (method is BridgeMethod.SpeakersGet or BridgeMethod.SpeakersConfirm)
+        if (method is BridgeMethod.SpeakersGet or BridgeMethod.SpeakersConfirm or BridgeMethod.TemplateAutoGet or BridgeMethod.TemplateAutoTouch)
         {
             return SettingsBridgeProtocol.HasExactProperties(parameters, ["projectId"]) && IsProjectId(parameters.GetProperty("projectId"));
         }
@@ -178,6 +178,34 @@ internal static class PortraitBridgeJson
         });
 }
 
+/// <summary>FR-145: reads (and, on a manual choice, touches) the automatic template selection of a Project (null when it has none).</summary>
+internal sealed record TemplateAutoSelectionAccess(
+    Func<Guid, TemplateAutoSelectionRecord?> Read,
+    Func<Guid, TemplateAutoSelectionRecord?> Touch);
+
+/// <summary>FR-145: the closed result of templateAuto.get / templateAuto.touch (state, template, the Japanese reason; no path or SID).</summary>
+internal static class TemplateAutoBridgeJson
+{
+    internal static string Write(BridgeRequest request, string status, TemplateAutoSelectionRecord? record) =>
+        BridgeProtocol.CreateResultResponse(request, writer =>
+        {
+            writer.WriteStartObject();
+            writer.WriteString("status", status);
+            writer.WriteString("state", record is null ? "none" : record.StateName);
+            if (record?.TemplateId is { } id && record.State == TemplateAutoSelectionState.Selected)
+            {
+                writer.WriteString("templateId", id);
+            }
+            else
+            {
+                writer.WriteNull("templateId");
+            }
+
+            writer.WriteString("reason", record?.Reason ?? "");
+            writer.WriteEndObject();
+        });
+}
+
 /// <summary>FR-140: the closed result of the speaker-assignment methods (state label, draft/confirmed, assignments; no path or SID).</summary>
 internal static class SpeakerBridgeJson
 {
@@ -214,26 +242,36 @@ internal sealed class PortraitBridgeHandler
     private readonly Func<bool> isAuthorized;
     private readonly TimeProvider timeProvider;
     private readonly string? speakerAssignmentRoot;
+    private readonly TemplateAutoSelectionAccess? templateAuto;
 
     internal PortraitBridgeHandler(CharacterPortraitStore store, Func<bool> isAuthorized, TimeProvider timeProvider,
-        string? speakerAssignmentRoot = null)
+        string? speakerAssignmentRoot = null, TemplateAutoSelectionAccess? templateAuto = null)
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
         this.isAuthorized = isAuthorized ?? throw new ArgumentNullException(nameof(isAuthorized));
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         this.speakerAssignmentRoot = speakerAssignmentRoot;
+        this.templateAuto = templateAuto;
     }
 
     internal string Handle(BridgeRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        bool isTemplateAuto = request.Method is BridgeMethod.TemplateAutoGet or BridgeMethod.TemplateAutoTouch;
         try
         {
             if (!PortraitBridgeProtocol.HasValidParameters(request.Method, request.Parameters))
             {
-                return request.Method is BridgeMethod.SpeakersGet or BridgeMethod.SpeakersAssign or BridgeMethod.SpeakersConfirm
+                return isTemplateAuto
+                    ? TemplateAutoBridgeJson.Write(request, "invalid", null)
+                    : request.Method is BridgeMethod.SpeakersGet or BridgeMethod.SpeakersAssign or BridgeMethod.SpeakersConfirm
                     ? SpeakerBridgeJson.Write(request, "invalid", null)
                     : PortraitBridgeJson.Status(request, "invalid", Safe());
+            }
+
+            if (isTemplateAuto)
+            {
+                return HandleTemplateAuto(request);
             }
 
             if (request.Method is BridgeMethod.SpeakersGet or BridgeMethod.SpeakersAssign or BridgeMethod.SpeakersConfirm)
@@ -260,10 +298,35 @@ internal sealed class PortraitBridgeHandler
         }
         catch (Exception exception) when (exception is not OperationCanceledException and not ArgumentException)
         {
-            return request.Method is BridgeMethod.SpeakersGet or BridgeMethod.SpeakersAssign or BridgeMethod.SpeakersConfirm
+            return isTemplateAuto
+                ? TemplateAutoBridgeJson.Write(request, "unavailable", null)
+                : request.Method is BridgeMethod.SpeakersGet or BridgeMethod.SpeakersAssign or BridgeMethod.SpeakersConfirm
                 ? SpeakerBridgeJson.Write(request, "unavailable", null)
                 : PortraitBridgeJson.Unavailable(request);
         }
+    }
+
+    /// <summary>
+    /// FR-145: <c>templateAuto.get</c> reads the automatic template selection of a Project (read-only; the user sees 解析中, the chosen
+    /// template and the reason, or the reason none was chosen). <c>templateAuto.touch</c> tells the host the user chose a template themself:
+    /// an open selection becomes 取消 and is never written over a manual choice. Touching needs the same permission as creating a Job.
+    /// </summary>
+    private string HandleTemplateAuto(BridgeRequest request)
+    {
+        if (templateAuto is null)
+        {
+            return TemplateAutoBridgeJson.Write(request, "unavailable", null);
+        }
+
+        var projectId = Guid.ParseExact(request.Parameters.GetProperty("projectId").GetString()!, "D");
+        if (request.Method == BridgeMethod.TemplateAutoGet)
+        {
+            return TemplateAutoBridgeJson.Write(request, "ok", templateAuto.Read(projectId));
+        }
+
+        return IsAuthorized()
+            ? TemplateAutoBridgeJson.Write(request, "ok", templateAuto.Touch(projectId))
+            : TemplateAutoBridgeJson.Write(request, "forbidden", templateAuto.Read(projectId));
     }
 
     /// <summary>FR-140: cuts one character out of a registered image; the cut-out inherits the rights confirmation of the source.</summary>
