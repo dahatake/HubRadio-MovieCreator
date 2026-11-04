@@ -95,6 +95,8 @@ internal enum BridgeMethod
     SpeakersGet,
     SpeakersAssign,
     SpeakersConfirm,
+    TemplateAutoGet,
+    TemplateAutoTouch,
 }
 
 internal sealed class BridgeRequest
@@ -304,6 +306,8 @@ internal static class BridgeProtocol
     internal const string SpeakersGetMethod = "speakers.get";
     internal const string SpeakersAssignMethod = "speakers.assign";
     internal const string SpeakersConfirmMethod = "speakers.confirm";
+    internal const string TemplateAutoGetMethod = "templateAuto.get";
+    internal const string TemplateAutoTouchMethod = "templateAuto.touch";
     internal const int MaxPortraitsRequestUtf8Bytes = 6 * 1024 * 1024;
     internal const int MaxPortraitsResponseUtf8Bytes = 16 * 1024;
 
@@ -588,6 +592,8 @@ internal static class BridgeProtocol
             BridgeMethod.SpeakersGet => SpeakersGetMethod,
             BridgeMethod.SpeakersAssign => SpeakersAssignMethod,
             BridgeMethod.SpeakersConfirm => SpeakersConfirmMethod,
+            BridgeMethod.TemplateAutoGet => TemplateAutoGetMethod,
+            BridgeMethod.TemplateAutoTouch => TemplateAutoTouchMethod,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(method),
                 method,
@@ -682,7 +688,8 @@ internal static class BridgeProtocol
     /// <summary>FR-137 (6): registering and listing the user's standing pictures.</summary>
     internal static bool IsPortraitMethod(BridgeMethod method) =>
         method is BridgeMethod.PortraitsList or BridgeMethod.PortraitsRegister or BridgeMethod.PortraitsCrop
-            or BridgeMethod.SpeakersGet or BridgeMethod.SpeakersAssign or BridgeMethod.SpeakersConfirm;
+            or BridgeMethod.SpeakersGet or BridgeMethod.SpeakersAssign or BridgeMethod.SpeakersConfirm
+            or BridgeMethod.TemplateAutoGet or BridgeMethod.TemplateAutoTouch;
 
     internal static bool IsSettingsMethod(BridgeMethod method) =>
         method is
@@ -797,6 +804,8 @@ internal static class BridgeProtocol
             SpeakersGetMethod => BridgeMethod.SpeakersGet,
             SpeakersAssignMethod => BridgeMethod.SpeakersAssign,
             SpeakersConfirmMethod => BridgeMethod.SpeakersConfirm,
+            TemplateAutoGetMethod => BridgeMethod.TemplateAutoGet,
+            TemplateAutoTouchMethod => BridgeMethod.TemplateAutoTouch,
             _ => (BridgeMethod)(-1),
         };
         return Enum.IsDefined(parsedMethod);

@@ -8,6 +8,8 @@ import { createHostPortraitService, portraitFileToParams, type PortraitCropParam
 import { PortraitCropForm } from './PortraitCropForm'
 import { SpeakerAssignmentPanel } from './SpeakerAssignmentPanel'
 import { createHostSpeakerService, type SpeakerService } from './speakerProtocol'
+import { createHostTemplateAutoService, type TemplateAutoResult, type TemplateAutoService } from './templateAutoProtocol'
+import { styleTemplateOptions } from './styleTemplates'
 
 const portraitMessages = Object.freeze({
   registered: '立ち絵を登録しました。使用権の確認状態も保存しました。',
@@ -24,7 +26,7 @@ function toRegistered(outcome: PortraitOutcome): readonly RegisteredPortrait[] |
 }
 
 /** FR-061: creates a new Job from the saved "next Job" settings after an explicit confirmation. */
-export function JobCreationAction({ nextJobNumber, params, disabledReason, pending, active, onOpenSettings, openSettingsDisabled = false, onConfirm, styleTemplateId = null, onStyleTemplateChange, portraitService: injectedPortraits, speakerService: injectedSpeakers, projectId = null }: Readonly<{
+export function JobCreationAction({ nextJobNumber, params, disabledReason, pending, active, onOpenSettings, openSettingsDisabled = false, onConfirm, styleTemplateId = null, onStyleTemplateChange, portraitService: injectedPortraits, speakerService: injectedSpeakers, templateAutoService: injectedAuto, projectId = null }: Readonly<{
   nextJobNumber: number | null
   params: PipelineRegenerationParams | null
   disabledReason: string | null
@@ -40,9 +42,54 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
   portraitService?: PortraitService | null
   /** FR-140: the speaker-assignment service (the WebView2 host one is used when omitted; null hides it) and the Project it applies to. */
   speakerService?: SpeakerService | null
+  /** FR-145: the automatic template selection service (the WebView2 host one is used when omitted; null turns the automatic selection off). */
+  templateAutoService?: TemplateAutoService | null
   projectId?: string | null
 }>) {
   const headingId = useId()
+  const [templateAutoService] = useState<TemplateAutoService | null>(() => injectedAuto === undefined ? createHostTemplateAutoService() : injectedAuto)
+  const [auto, setAuto] = useState<TemplateAutoResult | null>(null)
+  const manualChoice = useRef(false)
+  const [manualShown, setManualShown] = useState(false)
+  const changeTemplate = useRef(onStyleTemplateChange)
+  changeTemplate.current = onStyleTemplateChange
+  // FR-145: reads the automatic selection of the Project without making the screen wait. While it analyzes, the screen stays usable;
+  // when it selects a template (and the user has not chosen one themself) that template becomes the initial selection.
+  useEffect(() => {
+    manualChoice.current = false
+    setManualShown(false)
+    setAuto(null)
+    if (templateAutoService === null || projectId === null || changeTemplate.current === undefined) return
+    let alive = true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let attempts = 0
+    const poll = async () => {
+      const outcome = await templateAutoService.get(projectId)
+      if (!alive) return
+      if ('state' in outcome) {
+        setAuto(outcome)
+        if (outcome.state === 'selected' && outcome.templateId !== null && !manualChoice.current) changeTemplate.current?.(outcome.templateId)
+        if ((outcome.state === 'waiting' || outcome.state === 'analyzing') && attempts++ < 90) timer = setTimeout(() => { void poll() }, 1000)
+      } else if (attempts++ < 3) timer = setTimeout(() => { void poll() }, 2000)
+    }
+    void poll()
+    return () => { alive = false; if (timer !== undefined) clearTimeout(timer) }
+  }, [templateAutoService, projectId])
+  // FR-145: a template the user chooses themself cancels an automatic selection that is still running and is never overwritten by it.
+  function chooseTemplate(id: string | null) {
+    manualChoice.current = true
+    setManualShown(true)
+    if (templateAutoService !== null && projectId !== null) {
+      void templateAutoService.touch(projectId).then(outcome => { if ('state' in outcome) setAuto(outcome) })
+    }
+    onStyleTemplateChange?.(id)
+  }
+  const autoName = auto?.templateId == null ? null : styleTemplateOptions.find(option => option.id === auto.templateId)?.name ?? null
+  const autoNote = auto === null ? null
+    : auto.state === 'waiting' || auto.state === 'analyzing' ? '元動画を解析して、最適な演出テンプレートを選んでいます。解析の完了を待たずに、他の操作やテンプレートの選択ができます。'
+    : auto.state === 'selected' && autoName !== null ? `自動選択: ${autoName}。理由: ${auto.reason}${manualShown ? '（今は手動で選んだテンプレートを使います）' : '（別のテンプレートや「テンプレートを使わない」にいつでも変えられます）'}`
+    : auto.state === 'cancelled' || auto.state === 'skipped' ? auto.reason
+    : null
   const [speakerService] = useState<SpeakerService | null>(() => injectedSpeakers === undefined ? createHostSpeakerService() : injectedSpeakers)
   const [confirmation, setConfirmation] = useState<PipelineRegenerationParams | null>(null)
   const [rejected, setRejected] = useState(false)
@@ -103,7 +150,8 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
     <h2 id={headingId}>新しいJobを作成</h2>
     <p>1つの元動画から、設定を変えた複数のJobを作れます。「次に作成するJobの設定を開く」で設定を変えて保存し、「新しいJobを作成」を押してください。今までのJobと仕上がりは消えません。Jobは1つずつ順番に実行します。</p>
     <button type="button" disabled={!active || openSettingsDisabled} onClick={onOpenSettings}>次に作成するJobの設定を開く</button>
-    {onStyleTemplateChange !== undefined && <StyleTemplatePicker selectedId={styleTemplateId} onSelect={onStyleTemplateChange} disabled={!active || pending} portraitCount={portraits.length} />}
+    {onStyleTemplateChange !== undefined && <StyleTemplatePicker selectedId={styleTemplateId} onSelect={chooseTemplate} disabled={!active || pending} portraitCount={portraits.length} />}
+    {onStyleTemplateChange !== undefined && autoNote !== null && <p role="status" className="style-template-auto">{autoNote}</p>}
     {onStyleTemplateChange !== undefined && styleTemplateId === 'talk-show' && <TalkShowInputPanel value={talkShow} onChange={setTalkShow} disabled={!active || pending} />}
     {onStyleTemplateChange !== undefined && portraitService !== null && <>
       <CharacterPortraitRegistration portraits={portraits} onRegister={registration => { void registerPortrait(registration) }} disabled={!active || pending || portraitBusy} />
