@@ -91,9 +91,10 @@ public static class TemplateAutoSelector
 
     /// <summary>
     /// A-008 規則版: the version of the "最適" decision rules below. Raise it whenever Select's rules (thresholds, order, templates) change,
-    /// so a Job's template-origin.json says which rules chose its template (FR-145, AC-188). 規則版 1 = the A-008 initial rules.
+    /// so a Job's template-origin.json says which rules chose its template (FR-145, AC-188). 規則版 1 = the A-008 initial rules; 規則版 2 = the
+    /// same order and thresholds applied in two steps (a provisional selection without the speech facts, then a re-decision with them).
     /// </summary>
-    public const int RuleVersion = 1;
+    public const int RuleVersion = 2;
 
     public const string NoFitReason = "この動画に適した演出テンプレートがないため、テンプレートなし（いつもの仕上がり）にしました。";
 
@@ -245,6 +246,44 @@ public sealed class TemplateAutoSelectionStore
     }
 
     /// <summary>
+    /// FR-145 / AC-187 (d): true while the Project's selection can still be re-decided — it carries a template (選択済み / スキップ→選択済み)
+    /// and the user has not chosen a template themself. A re-decision wait stops when this turns false.
+    /// </summary>
+    public bool IsRefinable(Guid key)
+    {
+        lock (Gate)
+        {
+            return LoadUnlocked(key) is { HasSelection: true, ManualTouched: false };
+        }
+    }
+
+    /// <summary>
+    /// FR-145 (再判定): replaces the template and the reason of a selection the analysis already made, only while it carries a template and the
+    /// user has not chosen one themself (取消 is never updated). The state stays 選択済み (or スキップ→選択済み). Jobs already run keep their
+    /// own origin; only the initial selection of the next Job changes. Returns false when dropped.
+    /// </summary>
+    public bool TryRefine(Guid key, Func<TemplateAutoSelectionRecord, TemplateAutoSelectionRecord> refine)
+    {
+        ArgumentNullException.ThrowIfNull(refine);
+        lock (Gate)
+        {
+            TemplateAutoSelectionRecord? current = LoadUnlocked(key);
+            if (current is not { HasSelection: true, ManualTouched: false })
+            {
+                return false;
+            }
+
+            TemplateAutoSelectionRecord next = refine(current) with { State = current.State, ManualTouched = false, TimedOut = false };
+            if (next != current)
+            {
+                SaveUnlocked(key, next);
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>
     /// The user chose a template themself (or ran a Job with one): an open selection becomes 取消, a decided one only remembers the touch.
     /// Returns the record after the change, or null when the Project has none.
     /// </summary>
@@ -303,10 +342,14 @@ public static class TemplateAutoSelectionRunner
 
     /// <summary>
     /// Records the start (解析中, or スキップ when the setting is off) and returns the background analysis task, which never throws.
-    /// <paramref name="analyze"/> returns the facts (null when the video could not be read).
+    /// <paramref name="analyze"/> returns the facts of the provisional selection (null when the video could not be read); it ends within PARAM-013 seconds.
+    /// <paramref name="speechFactsWait"/> (optional) is the re-decision of FR-145 (2): it is started once a provisional selection exists, is never
+    /// awaited by the returned task (nothing waits for the transcription), and returns the speakers and the speech speed when the Job's
+    /// transcription gives them in time (不明 otherwise). Its argument is the record check that turns false once the user chose a template.
     /// </summary>
     public static Task Start(TemplateAutoSelectionStore store, Guid key, bool enabled,
-        Func<CancellationToken, Task<TemplateAnalysisInput?>> analyze, Func<int> registeredPortraitCount, TimeSpan? timeout = null, TimeSpan? lateGrace = null)
+        Func<CancellationToken, Task<TemplateAnalysisInput?>> analyze, Func<int> registeredPortraitCount, TimeSpan? timeout = null, TimeSpan? lateGrace = null,
+        Func<TemplateAnalysisInput, Func<bool>, CancellationToken, Task<TemplateSpeechFacts>>? speechFactsWait = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(analyze);
@@ -320,14 +363,16 @@ public static class TemplateAutoSelectionRunner
             return Task.CompletedTask;
         }
 
-        return enabled ? Task.Run(() => RunAsync(store, key, analyze, registeredPortraitCount,         timeout ?? TemplateAnalysisTimings.MaximumAnalysis,
-                    lateGrace ?? TemplateAnalysisTimings.LateGrace)) : Task.CompletedTask;
+        return enabled ? Task.Run(() => RunAsync(store, key, analyze, registeredPortraitCount, timeout ?? TemplateAnalysisTimings.MaximumAnalysis,
+                    lateGrace ?? TemplateAnalysisTimings.LateGrace, speechFactsWait)) : Task.CompletedTask;
     }
 
     private static async Task RunAsync(TemplateAutoSelectionStore store, Guid key,
-        Func<CancellationToken, Task<TemplateAnalysisInput?>> analyze, Func<int> registeredPortraitCount, TimeSpan timeout, TimeSpan lateGrace)
+        Func<CancellationToken, Task<TemplateAnalysisInput?>> analyze, Func<int> registeredPortraitCount, TimeSpan timeout, TimeSpan lateGrace,
+        Func<TemplateAnalysisInput, Func<bool>, CancellationToken, Task<TemplateSpeechFacts>>? speechFactsWait)
     {
         TemplateAutoSelectionRecord result;
+        TemplateAnalysisInput? input = null;
         var cancellation = new CancellationTokenSource();
         Task<TemplateAnalysisInput?>? lateWork = null;
         try
@@ -342,7 +387,8 @@ public static class TemplateAutoSelectionRunner
             }
             else
             {
-                result = Decide(await work.ConfigureAwait(false), registeredPortraitCount);
+                input = await work.ConfigureAwait(false);
+                result = Decide(input, registeredPortraitCount, speechFactsWait is not null);
             }
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -362,15 +408,60 @@ public static class TemplateAutoSelectionRunner
         if (lateWork is not null)
         {
             // Not awaited: the Start task ends with the PARAM-013 timeout; the late result is picked up in the background (bounded by the grace).
-            _ = CompleteLateAsync(store, key, lateWork, registeredPortraitCount, lateGrace, cancellation);
+            _ = CompleteLateAsync(store, key, lateWork, registeredPortraitCount, lateGrace, cancellation, speechFactsWait);
         }
         else
         {
             cancellation.Dispose();
+            if (input is not null && speechFactsWait is not null)
+            {
+                // FR-145 (2): the re-decision runs in the background; the provisional selection above is already shown and nothing waits for it.
+                _ = RefineAsync(store, key, input, registeredPortraitCount, speechFactsWait);
+            }
         }
     }
 
-    private static TemplateAutoSelectionRecord Decide(TemplateAnalysisInput? input, Func<int> registeredPortraitCount)
+    /// <summary>
+    /// FR-145 (2) / AC-187 (d): once the speakers and the speech speed are known (from the Job's transcription, within the PARAM-014/015 limit),
+    /// the same A-008 rules are applied again with them; the initial selection and the reason are updated for the next Job only. A selection
+    /// the user already chose themself is never touched. When the speech facts stay 不明, or no template fits, the provisional selection stands.
+    /// </summary>
+    private static async Task RefineAsync(TemplateAutoSelectionStore store, Guid key, TemplateAnalysisInput input, Func<int> registeredPortraitCount,
+        Func<TemplateAnalysisInput, Func<bool>, CancellationToken, Task<TemplateSpeechFacts>> speechFactsWait)
+    {
+        try
+        {
+            if (input.HasAudio == false)
+            {
+                return;
+            }
+
+            TemplateSpeechFacts facts = await speechFactsWait(input, () => store.IsRefinable(key), CancellationToken.None).ConfigureAwait(false);
+            if (facts.SpeakerCount is null && facts.WordsPerMinute is null)
+            {
+                return;
+            }
+
+            TemplateAnalysisInput refined = input with { SpeakerCount = facts.SpeakerCount, WordsPerMinute = facts.WordsPerMinute };
+            TemplateChoice? choice = TemplateAutoSelector.Select(refined, registeredPortraitCount());
+            StyleTemplateDefinition? template = choice is null ? null : StyleTemplateCatalog.Find(choice.TemplateId);
+            string values = TemplateSpeechFactsStore.Describe(facts);
+            _ = store.TryRefine(key, current => choice is null || template is null
+                // No template fits after the re-decision (e.g. a quick talk but no standing picture): the provisional selection stands, with a note.
+                ? current with { Reason = current.Reason + RefinedNoFitNote + values }
+                : current with { TemplateId = template.Id, Version = template.Version, Reason = choice.Reason + values + RefinedNote });
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // A failed re-decision leaves the provisional selection as it is (NFR-REL-002).
+        }
+    }
+
+    public const string ProvisionalNote = "（暫定の選択です。Job の文字起こしが終わり次第、話者数・話の速さを加えて選び直します。）";
+    public const string RefinedNote = "（文字起こしの完了後に、話者数・話の速さを加えて選び直しました。）";
+    public const string RefinedNoFitNote = "（文字起こしの完了後に選び直しましたが、適するテンプレートがないため、暫定の選択のままにしました。）";
+
+    private static TemplateAutoSelectionRecord Decide(TemplateAnalysisInput? input, Func<int> registeredPortraitCount, bool provisional = false)
     {
         if (input is null)
         {
@@ -379,16 +470,19 @@ public static class TemplateAutoSelectionRunner
 
         TemplateChoice? choice = TemplateAutoSelector.Select(input, registeredPortraitCount());
         StyleTemplateDefinition? template = choice is null ? null : StyleTemplateCatalog.Find(choice.TemplateId);
+        bool speechUnknown = input.SpeakerCount is null && input.WordsPerMinute is null;
         return choice is null || template is null
             ? TemplateAutoSelectionRecord.Skipped(TemplateAutoSelector.NoFitReason)
             : new TemplateAutoSelectionRecord(TemplateAutoSelectionState.Selected, template.Id, template.Version,
                 // AC-186: the values the decision used (or that they were 不明) are shown with the reason.
-                choice.Reason + TemplateSpeechFactsStore.Describe(new TemplateSpeechFacts(input.SpeakerCount, input.WordsPerMinute)));
+                choice.Reason + TemplateSpeechFactsStore.Describe(new TemplateSpeechFacts(input.SpeakerCount, input.WordsPerMinute))
+                + (provisional && speechUnknown && input.HasAudio != false ? ProvisionalNote : string.Empty));
     }
 
     /// <summary>FR-145: waits (bounded) for an analysis that passed the timeout; only a found template becomes スキップ→選択済み, never a failure or "no fit".</summary>
     private static async Task CompleteLateAsync(TemplateAutoSelectionStore store, Guid key, Task<TemplateAnalysisInput?> work,
-        Func<int> registeredPortraitCount, TimeSpan grace, CancellationTokenSource cancellation)
+        Func<int> registeredPortraitCount, TimeSpan grace, CancellationTokenSource cancellation,
+        Func<TemplateAnalysisInput, Func<bool>, CancellationToken, Task<TemplateSpeechFacts>>? speechFactsWait)
     {
         try
         {
@@ -400,10 +494,11 @@ public static class TemplateAutoSelectionRunner
                 return;
             }
 
-            TemplateAutoSelectionRecord late = Decide(await work.ConfigureAwait(false), registeredPortraitCount);
-            if (late.State == TemplateAutoSelectionState.Selected)
+            TemplateAnalysisInput? input = await work.ConfigureAwait(false);
+            TemplateAutoSelectionRecord late = Decide(input, registeredPortraitCount, speechFactsWait is not null);
+            if (late.State == TemplateAutoSelectionState.Selected && store.TryCompleteLate(key, late) && input is not null && speechFactsWait is not null)
             {
-                _ = store.TryCompleteLate(key, late);
+                _ = RefineAsync(store, key, input, registeredPortraitCount, speechFactsWait);
             }
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)

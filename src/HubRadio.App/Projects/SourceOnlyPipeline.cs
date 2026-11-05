@@ -2056,6 +2056,8 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 "source-only-asr-" + execution.Request.RootJobId);
             CreateDirectory(workspace, resultDirectory);
             var worker = new LocalAnalysisWorker(runner, options!.PythonExecutable, workspace);
+            // FR-145: the wait for the speakers and the speech speed counts from here (the start of the Job's transcription).
+            RecordTranscriptionStarted(execution.Request.DraftId);
             raw = await worker.TranscribeAsync(artifacts.GetValidatedRegisteredArtifactPath(audioArtifact.Id),
                 options.ModelDirectory, resultDirectory, timeline, options.OperationTimeout, token).ConfigureAwait(false);
             // Keep raw worker bytes EXACT, not canonicalized/re-encoded doubles.
@@ -2463,6 +2465,15 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
     {
         RecordSpeechFacts(execution.Request.DraftId, import.Revision);
         return RegisterTranscriptCallbackAsync(execution, project, import, token);
+    }
+
+    /// <summary>FR-145 / AC-186: marks the start of the Job's transcription, the point the re-decision's wait counts from. Never stops the Job (NFR-REL-002).</summary>
+    internal void RecordTranscriptionStarted(EntityId<ProjectCreationDraftIdTag> draftId)
+    {
+        if (Guid.TryParse(draftId.ToString(), out Guid key))
+        {
+            new StyleTemplates.TemplateSpeechFactsStore(Path.Combine(workspace, "template-auto-selection")).MarkTranscriptionStarted(key);
+        }
     }
 
     /// <summary>FR-145 / AC-186: keeps the speaker count and speech speed of the local transcript for the template analysis. Never stops the Job (NFR-REL-002).</summary>

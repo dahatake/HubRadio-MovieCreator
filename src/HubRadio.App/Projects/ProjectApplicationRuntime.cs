@@ -253,23 +253,15 @@ internal static class ProjectApplicationRuntime
             },
             TemplateAutoSelectionStarter = (draftId, enabled, facts) => _ = TemplateAutoSelectionRunner.Start(
                 templateAutoSelections, Guid.Parse(draftId.ToString()), enabled,
-                async cancellationToken =>
-                {
-                    if (facts is null)
-                    {
-                        return null;
-                    }
-
-                    // AC-186: speakers (FR-003) and speech speed (FR-002) come from the transcript the Project already has, on this machine;
-                    // when it does not arrive in time they are 不明 and only length / aspect ratio decide. No new heavy processing is started.
-                    TemplateSpeechFacts speech = facts.HasAudio == false ? TemplateSpeechFacts.Unknown
-                        : await new TemplateSpeechFactsStore(Path.Combine(services.WorkspacePath, "template-auto-selection"))
-                            .WaitAsync(Guid.Parse(draftId.ToString()), TemplateAnalysisTimings.SpeechFactsWait, cancellationToken)
-                            .ConfigureAwait(false);
-                    return new TemplateAnalysisInput(facts.DurationSeconds, facts.DisplayWidth, facts.DisplayHeight, facts.HasAudio,
-                        speech.SpeakerCount, speech.WordsPerMinute);
-                },
-                () => characterPortraits.Count),
+                // FR-145 (1) / AC-186: the provisional selection uses length, aspect ratio and audio only and never waits for the transcript.
+                cancellationToken => Task.FromResult<TemplateAnalysisInput?>(facts is null ? null
+                    : new TemplateAnalysisInput(facts.DurationSeconds, facts.DisplayWidth, facts.DisplayHeight, facts.HasAudio)),
+                () => characterPortraits.Count,
+                speechFactsWait: (input, keepWaiting, cancellationToken) =>
+                    // FR-145 (2) / AC-186: speakers (FR-003) and speech speed (FR-002) come from the transcript the Job produces, on this machine, once it
+                    // is done; the wait counts from the start of the transcription and ends at "source length × PARAM-014 + PARAM-015" (then 不明).
+                    new TemplateSpeechFactsStore(Path.Combine(services.WorkspacePath, "template-auto-selection"))
+                        .WaitAfterTranscriptionStartAsync(Guid.Parse(draftId.ToString()), input.DurationSeconds, cancellationToken, keepWaiting)),
             ProxyRequester = proxies.Request,
             ProxyFinalizer = proxies.OnFinalized,
             ProxyRemover = proxies.Delete,

@@ -155,7 +155,7 @@ public sealed class TemplateAutoSelectionTests
 
         string directory = Path.Combine(_temp, "job");
         JobTemplateOriginStore.Save(directory, JobTemplateOrigin.Decide(explainer, selected));
-        Assert.AreEqual(new JobTemplateOrigin("auto", "自動選択", "explainer", 1, "解説", "1"), JobTemplateOriginStore.Load(directory));
+        Assert.AreEqual(new JobTemplateOrigin("auto", "自動選択", "explainer", 1, "解説", "2"), JobTemplateOriginStore.Load(directory));
         Assert.IsNull(JobTemplateOriginStore.Load(Path.Combine(_temp, "missing")));
     }
 
@@ -179,8 +179,9 @@ public sealed class TemplateAutoSelectionTests
 
         internal Guid Key => _key;
 
-        internal Task Start(bool enabled, Func<CancellationToken, Task<TemplateAnalysisInput?>> analyzer, TimeSpan? timeout = null, TimeSpan? lateGrace = null) =>
-            TemplateAutoSelectionRunner.Start(Store, _key, enabled, analyzer, () => 0, timeout, lateGrace);
+        internal Task Start(bool enabled, Func<CancellationToken, Task<TemplateAnalysisInput?>> analyzer, TimeSpan? timeout = null, TimeSpan? lateGrace = null,
+            Func<TemplateAnalysisInput, Func<bool>, CancellationToken, Task<TemplateSpeechFacts>>? speechFactsWait = null, int portraits = 0) =>
+            TemplateAutoSelectionRunner.Start(Store, _key, enabled, analyzer, () => portraits, timeout, lateGrace, speechFactsWait);
 
         internal string? JobDirectoryOfLastRun { get; private set; }
 
@@ -208,7 +209,7 @@ public sealed class TemplateAutoSelectionTests
         TemplateAutoSelectionRecord record = project.Store.Load(project.Key)!;
         Assert.AreEqual((TemplateAutoSelectionState.Selected, "explainer"), (record.State, record.TemplateId));
         Assert.IsFalse(string.IsNullOrWhiteSpace(record.Reason));
-        Assert.AreEqual(new JobTemplateOrigin("auto", "自動選択", "explainer", 1, StyleTemplateCatalog.Find("explainer")!.Name, "1"), project.RunJob("explainer"));
+        Assert.AreEqual(new JobTemplateOrigin("auto", "自動選択", "explainer", 1, StyleTemplateCatalog.Find("explainer")!.Name, "2"), project.RunJob("explainer"));
     }
 
     // FR-145 AC-181: changing the automatic choice to another template applies the other template; the origin is 手動.
@@ -273,7 +274,7 @@ public sealed class TemplateAutoSelectionTests
         }
     }
 
-    // FR-145 AC-188 (A-008 規則版 1): the rule version is recorded only with the origin 自動選択; 手動 and なし record "なし" in template-origin.json.
+    // FR-145 AC-188 (A-008 規則版 2): the rule version is recorded only with the origin 自動選択; 手動 and なし record "なし" in template-origin.json.
     [TestMethod]
     [TestCategory("FR-145")]
     public async Task OnlyAnAutoSelectedJobRecordsTheRuleVersionInTemplateOriginJson()
@@ -281,7 +282,7 @@ public sealed class TemplateAutoSelectionTests
         await using var project = new Project(_temp);
         await project.Start(true, _ => Task.FromResult<TemplateAnalysisInput?>(Landscape));
         Assert.AreEqual(TemplateAutoSelector.RuleVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), ReadRuleVersion(project.RunJob("explainer"), JobTemplateOrigin.Auto, project));
-        Assert.AreEqual("1", TemplateAutoSelector.RuleVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Assert.AreEqual("2", TemplateAutoSelector.RuleVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
         Assert.AreEqual(JobTemplateOrigin.NoRuleVersion, ReadRuleVersion(project.RunJob("handmade"), JobTemplateOrigin.Manual, project));
         Assert.AreEqual(JobTemplateOrigin.NoRuleVersion, ReadRuleVersion(project.RunJob(null), JobTemplateOrigin.Manual, project));
 
@@ -337,7 +338,7 @@ public sealed class TemplateAutoSelectionTests
         Assert.IsFalse(late.ManualTouched);
 
         Assert.AreEqual(first, JobTemplateOriginStore.Load(firstDirectory));
-        Assert.AreEqual(new JobTemplateOrigin("auto", "自動選択", "explainer", 1, StyleTemplateCatalog.Find("explainer")!.Name, "1"), project.RunJob("explainer"));
+        Assert.AreEqual(new JobTemplateOrigin("auto", "自動選択", "explainer", 1, StyleTemplateCatalog.Find("explainer")!.Name, "2"), project.RunJob("explainer"));
     }
 
     // FR-145 AC-187: a template the user chose after the timeout skip cancels it (スキップ→取消); the late result is neither shown nor overwrites it.
@@ -458,6 +459,169 @@ public sealed class TemplateAutoSelectionTests
             Assert.IsFalse(Parse(method, $$"""{"projectId":"{{ProjectId}}","extra":1}"""), method);
             Assert.IsFalse(Parse(method, """{"projectId":"../x"}"""), method);
         }
+    }
+
+    // FR-145 (2) AC-186 AC-187 (d) AC-188: the provisional selection (length, aspect ratio, audio only) is shown without waiting for the transcription; when the
+    // speakers and the speed arrive, the same rules are applied again and the initial selection and the reason are updated for the next Job only; a Job already run
+    // keeps its origin; the rule version recorded is the current one (2) for the provisional and the re-decided selection alike.
+    [TestMethod]
+    [TestCategory("FR-145")]
+    public async Task TheProvisionalSelectionDoesNotWaitAndTheRedecisionUpdatesTheNextJobOnly()
+    {
+        var facts = new TaskCompletionSource<TemplateSpeechFacts>();
+        await using var project = new Project(_temp);
+        // The transcription never arrives within the provisional limit: the provisional selection is still made at once (no wait for the facts).
+        await project.Start(true, _ => Task.FromResult<TemplateAnalysisInput?>(Landscape), TimeSpan.FromSeconds(30), null,
+            (_, _, _) => facts.Task).WaitAsync(TimeSpan.FromSeconds(10));
+        TemplateAutoSelectionRecord provisional = project.Store.Load(project.Key)!;
+        Assert.AreEqual((TemplateAutoSelectionState.Selected, "explainer"), (provisional.State, provisional.TemplateId));
+        StringAssert.Contains(provisional.Reason, "話者数は不明");
+        StringAssert.Contains(provisional.Reason, TemplateAutoSelectionRunner.ProvisionalNote);
+        JobTemplateOrigin ran = project.RunJob("explainer");
+        Assert.AreEqual(("auto", "2"), (ran.Origin, ran.RuleVersion));
+        string ranDirectory = project.JobDirectoryOfLastRun!;
+
+        facts.SetResult(new TemplateSpeechFacts(2, 180));
+        TemplateAutoSelectionRecord refined = await WaitForAsync(project.Store, project.Key, r => r.TemplateId == "talk-show");
+        Assert.AreEqual(TemplateAutoSelectionState.Selected, refined.State);
+        StringAssert.Contains(refined.Reason, "話者 2 人");
+        StringAssert.Contains(refined.Reason, "毎分約 180");
+        StringAssert.Contains(refined.Reason, TemplateAutoSelectionRunner.RefinedNote);
+        Assert.AreEqual(ran, JobTemplateOriginStore.Load(ranDirectory)); // the Job already run is not changed
+        JobTemplateOrigin next = project.RunJob("talk-show");
+        Assert.AreEqual(("auto", "2", "talk-show"), (next.Origin, next.RuleVersion, next.TemplateId));
+    }
+
+    // FR-145 (2) AC-187 (d): once the user chose a template themself the re-decision is neither applied nor shown (取消 stays); the wait is told to stop.
+    [TestMethod]
+    [TestCategory("FR-145")]
+    public async Task ARedecisionNeverUpdatesASelectionTheUserChose()
+    {
+        var facts = new TaskCompletionSource<TemplateSpeechFacts>();
+        Func<bool>? keepWaiting = null;
+        await using var project = new Project(_temp);
+        await project.Start(true, _ => Task.FromResult<TemplateAnalysisInput?>(Landscape), null, null, (_, keep, _) => { keepWaiting = keep; return facts.Task; })
+            .WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.AreEqual("explainer", project.Store.Load(project.Key)!.TemplateId);
+        Assert.IsTrue(keepWaiting!());
+        Assert.AreEqual(JobTemplateOrigin.Manual, project.RunJob("handmade").Origin);
+        Assert.IsFalse(keepWaiting());
+        TemplateAutoSelectionRecord touched = project.Store.Load(project.Key)!;
+
+        facts.SetResult(new TemplateSpeechFacts(2, 180));
+        await Task.Delay(300);
+        Assert.AreEqual(touched, project.Store.Load(project.Key));
+        Assert.IsFalse(project.Store.TryRefine(project.Key, r => r with { TemplateId = "talk-show" }));
+        Assert.AreEqual(JobTemplateOrigin.Manual, project.RunJob("talk-show").Origin);
+    }
+
+    // FR-145 (2) AC-186: facts that stay 不明 (a failed or empty transcription, or the wait limit passed) keep the provisional selection as it is.
+    [TestMethod]
+    [TestCategory("FR-145")]
+    public async Task UnknownSpeechFactsKeepTheProvisionalSelection()
+    {
+        await using var project = new Project(_temp);
+        await project.Start(true, _ => Task.FromResult<TemplateAnalysisInput?>(Landscape), null, null,
+            (_, _, _) => Task.FromResult(TemplateSpeechFacts.Unknown)).WaitAsync(TimeSpan.FromSeconds(10));
+        TemplateAutoSelectionRecord provisional = project.Store.Load(project.Key)!;
+        await Task.Delay(300);
+        Assert.AreEqual(provisional, project.Store.Load(project.Key));
+        Assert.AreEqual("explainer", provisional.TemplateId);
+    }
+
+    // FR-145 (2) A-008: when the re-decision finds no template that fits (a quick talk of several speakers and no standing picture), the provisional
+    // selection stays and the reason says so.
+    [TestMethod]
+    [TestCategory("FR-145")]
+    public async Task ARedecisionWithNoFittingTemplateKeepsTheProvisionalSelectionWithANote()
+    {
+        await using var project = new Project(_temp);
+        await project.Start(true, _ => Task.FromResult<TemplateAnalysisInput?>(Landscape), null, null,
+            (_, _, _) => Task.FromResult(new TemplateSpeechFacts(2, 330)), portraits: 0);
+        TemplateAutoSelectionRecord kept = await WaitForAsync(project.Store, project.Key, r => r.Reason.Contains(TemplateAutoSelectionRunner.RefinedNoFitNote, StringComparison.Ordinal));
+        Assert.AreEqual((TemplateAutoSelectionState.Selected, "explainer"), (kept.State, kept.TemplateId));
+        StringAssert.Contains(kept.Reason, "話者 2 人");
+    }
+
+    // FR-145 (2) AC-187 (b2)+(d): a selection shown late (スキップ→選択済み) is re-decided the same way, and keeps its state.
+    [TestMethod]
+    [TestCategory("FR-145")]
+    public async Task ALateSelectionIsRedecidedToo()
+    {
+        var gate = new TaskCompletionSource<TemplateAnalysisInput?>();
+        var facts = new TaskCompletionSource<TemplateSpeechFacts>();
+        await using var project = new Project(_temp);
+        await project.Start(true, _ => gate.Task, TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(30), (_, _, _) => facts.Task);
+        gate.SetResult(Landscape);
+        _ = await WaitForAsync(project.Store, project.Key, r => r.State == TemplateAutoSelectionState.SkippedSelected);
+        facts.SetResult(new TemplateSpeechFacts(1, 100));
+        TemplateAutoSelectionRecord refined = await WaitForAsync(project.Store, project.Key, r => r.TemplateId == "handmade");
+        Assert.AreEqual(TemplateAutoSelectionState.SkippedSelected, refined.State);
+    }
+
+    // FR-145 (2) AC-186 / AC-188: the wait for the speech facts counts from the start of the Job's transcription; before it starts nothing is waited
+    // for and the facts are 不明 only when the wait ends; the limit is "length × PARAM-014 + PARAM-015" (150 / 660 / 1260 seconds for 90 / 600 / 1200).
+    [TestMethod]
+    [TestCategory("FR-145")]
+    public async Task TheWaitCountsFromTheStartOfTheTranscription()
+    {
+        Assert.AreEqual(TimeSpan.FromSeconds(150), TemplateAnalysisTimings.SpeechFactsWaitFor(90));
+        Assert.AreEqual(TimeSpan.FromSeconds(660), TemplateAnalysisTimings.SpeechFactsWaitFor(600));
+        Assert.AreEqual(TimeSpan.FromSeconds(1260), TemplateAnalysisTimings.SpeechFactsWaitFor(1200));
+        var store = new TemplateSpeechFactsStore(Path.Combine(_temp, "speech"));
+        var key = Guid.NewGuid();
+        TimeSpan poll = TimeSpan.FromMilliseconds(20);
+        // Not started: still waiting (the facts do not come, and nothing times out); the caller's check ends it.
+        bool keep = true;
+        Task<TemplateSpeechFacts> waiting = store.WaitAfterTranscriptionStartAsync(key, 600, CancellationToken.None, () => keep, poll);
+        await Task.Delay(200);
+        Assert.IsFalse(waiting.IsCompleted);
+        keep = false;
+        Assert.AreEqual(TemplateSpeechFacts.Unknown, await waiting.WaitAsync(TimeSpan.FromSeconds(5)));
+        // Started long ago (more than 90 × 1 + 60 seconds): the limit has passed, so the answer is 不明 at once.
+        store.MarkTranscriptionStarted(key, DateTime.UtcNow.AddSeconds(-151));
+        Assert.AreEqual(TemplateSpeechFacts.Unknown, await store.WaitAfterTranscriptionStartAsync(key, 90, CancellationToken.None, null, poll).WaitAsync(TimeSpan.FromSeconds(5)));
+        // The same start still leaves time for a 600-second video, and the facts that arrive in that time are returned.
+        Task<TemplateSpeechFacts> within = store.WaitAfterTranscriptionStartAsync(key, 600, CancellationToken.None, null, poll);
+        await Task.Delay(100);
+        store.Save(key, new TemplateSpeechFacts(2, 250));
+        Assert.AreEqual(new TemplateSpeechFacts(2, 250), await within.WaitAsync(TimeSpan.FromSeconds(5)));
+        // Only the first start is kept.
+        store.MarkTranscriptionStarted(key, DateTime.UtcNow);
+        Assert.IsTrue(store.LoadTranscriptionStarted(key) < DateTime.UtcNow.AddSeconds(-100));
+        store.Delete(key);
+        Assert.IsNull(store.LoadTranscriptionStarted(key));
+    }
+
+    // FR-145 AC-188: the version the rules are recorded with matches the rules themselves. The decisions of A-008 over a fixed grid of facts are pinned
+    // to the rule version: changing the rules changes this fingerprint and fails here until RuleVersion is raised (and the pin below updated with it).
+    [TestMethod]
+    [TestCategory("FR-145")]
+    public void TheRuleVersionMatchesTheRules()
+    {
+        var decisions = new System.Text.StringBuilder();
+        foreach (double seconds in new[] { 60.0, 90, 91, 300, 600, 601, 1200 })
+        {
+            foreach ((int width, int height) in new[] { (1920, 1080), (1080, 1920) })
+            {
+                foreach (int? speakers in new int?[] { null, 1, 2, 3 })
+                {
+                    foreach (double? pace in new double?[] { null, 100, 140, 141, 299, 300, 400 })
+                    {
+                        foreach (int portraits in new[] { 0, 1 })
+                        {
+                            TemplateChoice? choice = TemplateAutoSelector.Select(new TemplateAnalysisInput(seconds, width, height, true, speakers, pace), portraits);
+                            _ = decisions.Append(choice?.TemplateId ?? "-").Append(';');
+                        }
+                    }
+                }
+            }
+        }
+
+        string fingerprint = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(decisions.ToString())))[..16];
+        var pinned = new Dictionary<int, string> { [2] = "15DFF7B4C188C88C" };
+        Assert.IsTrue(pinned.ContainsKey(TemplateAutoSelector.RuleVersion), "RuleVersion has no pinned fingerprint: add it with the rules' fingerprint " + fingerprint);
+        Assert.AreEqual(pinned[TemplateAutoSelector.RuleVersion], fingerprint, "The A-008 rules changed: raise TemplateAutoSelector.RuleVersion and pin the new fingerprint.");
     }
 
     private static bool Parse(string method, string parameters)

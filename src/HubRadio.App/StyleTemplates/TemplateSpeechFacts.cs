@@ -101,17 +101,62 @@ public sealed class TemplateSpeechFactsStore
         try
         {
             File.Delete(PathFor(key));
+            File.Delete(StartPathFor(key));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
         }
     }
 
+    private string StartPathFor(Guid key) => Path.Combine(directory, key.ToString("D") + ".transcription-started");
+
     /// <summary>
-    /// Waits for the local transcript's facts for at most <paramref name="maximumWait"/> (a share of the PARAM-013 whole, the ffprobe 20 seconds
-    /// being a separate inner limit). Returns 不明 when they do not arrive in time, so the choice rests on length and aspect ratio alone.
+    /// FR-145: records that the Project's Job started its transcription (FR-002); the wait for the speech facts counts from this moment.
+    /// Only the first start is kept (later Jobs of the Project do not move it). Never throws.
     /// </summary>
-    public async Task<TemplateSpeechFacts> WaitAsync(Guid key, TimeSpan maximumWait, CancellationToken cancellationToken)
+    public void MarkTranscriptionStarted(Guid key, DateTime? startedUtc = null)
+    {
+        try
+        {
+            string path = StartPathFor(key);
+            if (File.Exists(path))
+            {
+                return;
+            }
+
+            _ = Directory.CreateDirectory(directory);
+            string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            File.WriteAllText(temporary, (startedUtc ?? DateTime.UtcNow).ToString("O", CultureInfo.InvariantCulture));
+            File.Move(temporary, path, overwrite: false);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    /// <summary>The moment the first Job of the Project started its transcription, or null while no Job has started it.</summary>
+    public DateTime? LoadTranscriptionStarted(Guid key)
+    {
+        try
+        {
+            string path = StartPathFor(key);
+            return File.Exists(path)
+                && DateTime.TryParse(File.ReadAllText(path), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTime started)
+                ? started.ToUniversalTime()
+                : null;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Waits for the local transcript's facts for at most <paramref name="maximumWait"/>. Returns 不明 when they do not arrive in time (or
+    /// <paramref name="keepWaiting"/> turns false, e.g. the user chose a template themself), so the provisional selection stands.
+    /// </summary>
+    public async Task<TemplateSpeechFacts> WaitAsync(Guid key, TimeSpan maximumWait, CancellationToken cancellationToken,
+        Func<bool>? keepWaiting = null, TimeSpan? pollInterval = null)
     {
         DateTime deadline = DateTime.UtcNow + maximumWait;
         while (true)
@@ -121,20 +166,55 @@ public sealed class TemplateSpeechFactsStore
                 return facts;
             }
 
-            if (DateTime.UtcNow >= deadline || cancellationToken.IsCancellationRequested)
+            if (DateTime.UtcNow >= deadline || cancellationToken.IsCancellationRequested || (keepWaiting is not null && !keepWaiting()))
             {
                 return TemplateSpeechFacts.Unknown;
             }
 
             try
             {
-                await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(pollInterval ?? TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
                 return TemplateSpeechFacts.Unknown;
             }
         }
+    }
+
+    /// <summary>
+    /// FR-145 / AC-186: the re-decision's wait. No wait starts while the Job's transcription has not started (the provisional selection stands
+    /// and nothing blocks); from its start the facts are waited for at most "source length × PARAM-014 + PARAM-015" seconds.
+    /// </summary>
+    public async Task<TemplateSpeechFacts> WaitAfterTranscriptionStartAsync(Guid key, double sourceDurationSeconds, CancellationToken cancellationToken,
+        Func<bool>? keepWaiting = null, TimeSpan? pollInterval = null)
+    {
+        TimeSpan poll = pollInterval ?? TimeSpan.FromSeconds(1);
+        DateTime? started;
+        while ((started = LoadTranscriptionStarted(key)) is null)
+        {
+            if (Load(key) is { } early)
+            {
+                return early;
+            }
+
+            if (cancellationToken.IsCancellationRequested || (keepWaiting is not null && !keepWaiting()))
+            {
+                return TemplateSpeechFacts.Unknown;
+            }
+
+            try
+            {
+                await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return TemplateSpeechFacts.Unknown;
+            }
+        }
+
+        TimeSpan remaining = started.Value + TemplateAnalysisTimings.SpeechFactsWaitFor(sourceDurationSeconds) - DateTime.UtcNow;
+        return await WaitAsync(key, remaining < TimeSpan.Zero ? TimeSpan.Zero : remaining, cancellationToken, keepWaiting, pollInterval).ConfigureAwait(false);
     }
 
     internal static string Describe(TemplateSpeechFacts? facts)
