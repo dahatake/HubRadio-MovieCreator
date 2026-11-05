@@ -63,13 +63,16 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
     let alive = true
     let timer: ReturnType<typeof setTimeout> | undefined
     let attempts = 0
+    let applied = false
     const poll = async () => {
       const outcome = await templateAutoService.get(projectId)
       if (!alive) return
       if ('state' in outcome) {
-        setAuto(outcome)
-        if (outcome.state === 'selected' && outcome.templateId !== null && !manualChoice.current) changeTemplate.current?.(outcome.templateId)
-        if ((outcome.state === 'waiting' || outcome.state === 'analyzing') && attempts++ < 90) timer = setTimeout(() => { void poll() }, 1000)
+        setAuto(previous => previous !== null && JSON.stringify(previous) === JSON.stringify(outcome) ? previous : outcome)
+        if (outcome.state === 'selected' && outcome.templateId !== null && !manualChoice.current && !applied) { applied = true; changeTemplate.current?.(outcome.templateId) }
+        // The origin recorded for the latest Job changes when a Job is created, so the (local, cheap) read repeats while the screen is open.
+        const open = outcome.state === 'waiting' || outcome.state === 'analyzing'
+        if (!open || attempts++ < 90) timer = setTimeout(() => { void poll() }, open ? 1000 : 1500)
       } else if (attempts++ < 3) timer = setTimeout(() => { void poll() }, 2000)
     }
     void poll()
@@ -90,6 +93,8 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
     : auto.state === 'selected' && autoName !== null ? `自動選択: ${autoName}。理由: ${auto.reason}${manualShown ? '（今は手動で選んだテンプレートを使います）' : '（別のテンプレートや「テンプレートを使わない」にいつでも変えられます）'}`
     : auto.state === 'cancelled' || auto.state === 'skipped' ? auto.reason
     : null
+  // FR-145 / AC-181: the origin (自動選択 / 手動 / なし) recorded for the Project's latest Job, as the host stores it (3 values only).
+  const originLabel = auto?.jobOrigin === 'auto' ? '自動選択' : auto?.jobOrigin === 'manual' ? '手動' : auto?.jobOrigin === 'none' ? 'なし' : null
   const [speakerService] = useState<SpeakerService | null>(() => injectedSpeakers === undefined ? createHostSpeakerService() : injectedSpeakers)
   const [confirmation, setConfirmation] = useState<PipelineRegenerationParams | null>(null)
   const [rejected, setRejected] = useState(false)
@@ -152,6 +157,7 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
     <button type="button" disabled={!active || openSettingsDisabled} onClick={onOpenSettings}>次に作成するJobの設定を開く</button>
     {onStyleTemplateChange !== undefined && <StyleTemplatePicker selectedId={styleTemplateId} onSelect={chooseTemplate} disabled={!active || pending} portraitCount={portraits.length} />}
     {onStyleTemplateChange !== undefined && autoNote !== null && <p role="status" className="style-template-auto">{autoNote}</p>}
+    {onStyleTemplateChange !== undefined && originLabel !== null && <p className="style-template-origin">{`直近の Job のテンプレートの出自: ${originLabel}`}</p>}
     {onStyleTemplateChange !== undefined && styleTemplateId === 'talk-show' && <TalkShowInputPanel value={talkShow} onChange={setTalkShow} disabled={!active || pending} />}
     {onStyleTemplateChange !== undefined && portraitService !== null && <>
       <CharacterPortraitRegistration portraits={portraits} onRegister={registration => { void registerPortrait(registration) }} disabled={!active || pending || portraitBusy} />

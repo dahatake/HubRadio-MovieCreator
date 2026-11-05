@@ -11,7 +11,9 @@ export type TemplateAutoStatus = typeof TEMPLATE_AUTO_STATUSES[number]
 export type TemplateAutoState = typeof TEMPLATE_AUTO_STATES[number]
 export type TemplateAutoMethod = typeof TEMPLATE_AUTO_GET_METHOD | typeof TEMPLATE_AUTO_TOUCH_METHOD
 
-export type TemplateAutoResult = Readonly<{ status: TemplateAutoStatus; state: TemplateAutoState; templateId: string | null; reason: string }>
+export type TemplateAutoJobOrigin = 'auto' | 'manual' | 'none'
+export const TEMPLATE_AUTO_JOB_ORIGINS = ['auto', 'manual', 'none'] as const
+export type TemplateAutoResult = Readonly<{ status: TemplateAutoStatus; state: TemplateAutoState; templateId: string | null; reason: string; jobOrigin: TemplateAutoJobOrigin | null }>
 export type TemplateAutoRequest = Readonly<{ version: 1; requestId: string; method: TemplateAutoMethod; params: Readonly<{ projectId: string }> }>
 export type TemplateAutoResponse = Readonly<{ version: 1; requestId: string; method: TemplateAutoMethod; result: TemplateAutoResult }>
 export type TemplateAutoOutcome = TemplateAutoResult | Readonly<{ status: 'timeout' }> | Readonly<{ status: 'disconnected' }>
@@ -33,12 +35,13 @@ export function createTemplateAutoRequest(requestId: string, method: TemplateAut
 }
 
 function parseResult(value: unknown): TemplateAutoResult | null {
-  if (!exactKeys(value, ['status', 'state', 'templateId', 'reason'])) return null
-  const { status, state, templateId, reason } = value
+  if (!exactKeys(value, ['status', 'state', 'templateId', 'reason', 'jobOrigin'])) return null
+  const { status, state, templateId, reason, jobOrigin } = value
   if (!oneOf(TEMPLATE_AUTO_STATUSES, status) || !oneOf(TEMPLATE_AUTO_STATES, state)) return null
+  if (jobOrigin !== null && !oneOf(TEMPLATE_AUTO_JOB_ORIGINS, jobOrigin)) return null
   if (templateId !== null && (typeof templateId !== 'string' || templateId.length > 64 || !templateIdPattern.test(templateId))) return null
   if (typeof reason !== 'string' || reason.length > 400) return null
-  return Object.freeze({ status, state, templateId, reason })
+  return Object.freeze({ status, state, templateId, reason, jobOrigin })
 }
 
 export function parseTemplateAutoResponse(value: unknown): TemplateAutoResponse | null {
