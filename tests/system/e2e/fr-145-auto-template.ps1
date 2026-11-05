@@ -15,8 +15,16 @@ function Assert-JobOrigin($root, $sb, [string]$case, [string]$label, [string]$la
     $f = @(Get-ChildItem -LiteralPath $ws -Recurse -File -Filter 'template-origin.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime)
     if ($f.Count -eq 0) { throw "($case) no origin record found under workspace" }
     $text = Get-Content -LiteralPath $f[-1].FullName -Raw -Encoding UTF8
-    $hits = @('(自動選択|auto)', '(手動|manual)', '((?<!テンプレート)なし|\bnone\b)') | Where-Object { $text -match $_ }
-    if (@($hits).Count -ne 1 -or $text -notmatch $labelRx) { throw "($case) origin must be exactly one of 自動選択/手動/なし and be '$label': $text" }
+    # 出自の値は Label（なければ Origin）の欄だけで判定する（RuleVersion 等ほかの欄の「なし」を混ぜない。AC-181）
+    $rec = $text | ConvertFrom-Json
+    $originVal = if ($rec.Label) { [string]$rec.Label } else { [string]$rec.Origin }
+    $kinds = @{ '自動選択' = '^(自動選択|auto)$'; '手動' = '^(手動|manual)$'; 'なし' = '^(なし|none)$' }
+    $hits = @($kinds.Keys | Where-Object { $originVal -match $kinds[$_] })
+    if ($hits.Count -ne 1 -or $hits[0] -ne $label) { throw "($case) origin must be exactly one of 自動選択/手動/なし and be '$label': $text" }
+    # AC-188: 規則版は自動選択のときだけ版番号、それ以外は「なし」
+    $rv = [string]$rec.RuleVersion
+    if ($label -eq '自動選択') { if (-not $rv -or $rv -match '^(なし|none)$') { throw "($case) RuleVersion must be a version when origin is 自動選択: $text" } }
+    elseif ($rv -notmatch '^(なし|none)$') { throw "($case) RuleVersion must be 'なし' when origin is not 自動選択: $text" }
     if ($expectedTemplate) {
         if ($text -notmatch [regex]::Escape($expectedTemplate)) { throw "($case) applied template is not the final selection '$expectedTemplate': $text" }
     } else {
@@ -85,12 +93,17 @@ Invoke-Test -Label "FR-145 $Ac" -Sandbox $sb -Body {
         Invoke-Element (Find-ByName $root 'Projectと出力' 30)
         # 設定の一覧パネルが非表示（画面の配置）のときは「設定の一覧を表示」で出す
         if (Test-ByName $root '設定の一覧を表示' 5) { Invoke-Element (Find-ByName $root '設定の一覧を表示') }
+        # 「設定の詳細」が最大化されていると一覧が隠れるため、最大化を戻して一覧を出す
+        if (-not (Find-AllByNameLike $root '^設定の一覧$' | Select-Object -First 1)) {
+            $mx = Find-AllByNameLike $root '^最大化$' | Where-Object { try { $_.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -eq 'On' } catch { $false } } | Select-Object -First 1
+            if ($mx) { Invoke-Element $mx }
+        }
         $item = $null; $sw3 = [Diagnostics.Stopwatch]::StartNew()
         do {
             $item = Find-AllByNameLike $root 'テンプレートの自動選択|テンプレート自動選択|Template auto-selection' | Where-Object { $_.Current.ControlType -ne [System.Windows.Automation.ControlType]::Text } | Select-Object -First 1
             if (-not $item) { Start-Sleep -Milliseconds 300 }
         } while (-not $item -and $sw3.Elapsed.TotalSeconds -lt 30)
-        if (-not $item) { throw 'settings item for template auto-selection not found in the Projectと出力 tab' }
+        if (-not $item) { Find-AllByNameLike $root '.' | Out-Null; throw 'settings item for template auto-selection not found in the Projectと出力 tab' }
         Invoke-Element $item
         Invoke-Element (Find-ByName $root '使わない' 30)
         # 項目の「保存」は名前が「 保存」（先頭に空白）。Workspaceフォルダー欄の「保存」とは別のボタン
