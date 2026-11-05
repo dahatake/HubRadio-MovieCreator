@@ -356,9 +356,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-133-project-folder-name.ps1",
       "canary": true,
       "status": "pass",
-      "last_commit": "c1868fc",
-      "last_run_at": "2026-11-05T06:21:32+09:00",
-      "evidence": "work/runs/202611050519/logs/system-test/E2E-009-202611050617.log",
+      "last_commit": "a81dab9",
+      "last_run_at": "2026-11-05T22:30:29+09:00",
+      "evidence": "work/runs/202611050519/logs/system-test/E2E-009-202611052221.log",
       "history": [
         {
           "at": "2026-10-13T05:43:51+09:00",
@@ -1528,9 +1528,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-140-143-system.ps1 -Ac AC-165",
       "canary": false,
       "status": "pass",
-      "last_commit": "a3848a9",
-      "last_run_at": "2026-11-03T20:26:05+09:00",
-      "evidence": "work/runs/202611031942/logs/system-test/E2E-037-202611032023.log",
+      "last_commit": "a81dab9",
+      "last_run_at": "2026-11-05T22:30:29+09:00",
+      "evidence": "work/runs/202611050519/logs/system-test/E2E-037-202611052222.log",
       "history": [
         {
           "at": "2026-10-30T22:49:08+09:00",
@@ -1609,9 +1609,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-140-143-system.ps1 -Ac AC-174",
       "canary": false,
       "status": "pass",
-      "last_commit": "70b4b89",
-      "last_run_at": "2026-11-03T11:41:40+09:00",
-      "evidence": "work/runs/202611030833/logs/system-test/E2E-040-202611031133.log",
+      "last_commit": "a81dab9",
+      "last_run_at": "2026-11-05T22:30:29+09:00",
+      "evidence": "work/runs/202611050519/logs/system-test/E2E-040-202611052225.log",
       "history": [
         {
           "at": "2026-10-30T22:49:13+09:00",
@@ -1634,9 +1634,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-145-auto-template.ps1 -Ac AC-181",
       "canary": false,
       "status": "pass",
-      "last_commit": "c1868fc",
-      "last_run_at": "2026-11-05T06:21:32+09:00",
-      "evidence": "work/runs/202611050519/logs/system-test/E2E-044-202611050618.log",
+      "last_commit": "a81dab9",
+      "last_run_at": "2026-11-05T22:30:29+09:00",
+      "evidence": "work/runs/202611050519/logs/system-test/E2E-044-202611052228.log",
       "history": [
         {
           "at": "2026-11-05T00:33:59+09:00",
