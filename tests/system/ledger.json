@@ -47,7 +47,8 @@
     "AC-176": "sha256:08cd805d95b857f4",
     "AC-177": "sha256:9e07e6580f7a5bc2",
     "AC-178": "sha256:39f19d1b5977ba36",
-    "AC-181": "sha256:f2e1bebeb760c4af"
+    "AC-181": "sha256:f2e1bebeb760c4af",
+    "AC-189": "sha256:0c537f09025c203b"
   },
   "cases": [
     {
@@ -1753,6 +1754,38 @@
           "reason": "権限DBを含む強化契約へ拡張。conductorの新しい記録実行を待つ"
         }
       ]
+    },
+    {
+      "id": "E2E-045",
+      "requirement_ids": [
+        "FR-145"
+      ],
+      "ac_ids": [
+        "AC-189"
+      ],
+      "title": "FR-145 AC-189: 話し声のある 10 分の元動画で、暫定選択（60 秒以内）→最初の Job の文字起こし後の再判定が次の Job の初期選択・理由に反映（実行済み Job 不変）。異常系: 手動選択後は更新されない（非常に遅い）",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-145-auto-template-10min.ps1 -Ac AC-189",
+      "canary": false,
+      "status": "not_run",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-11-06T05:56:34+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "AC-189 の新ケース"
+        },
+        {
+          "at": "2026-11-06T05:56:34+09:00",
+          "by": "test-designer",
+          "change": "同じ要求・同じ層の既存ケースと別に追加",
+          "reason": "10 分の動画の実文字起こしを CPU で実行する非常に遅いケース。AC-181 の既存ケース（3 秒の動画）と独立して実行・時間管理する必要がある"
+        }
+      ],
+      "serial": true
     }
   ]
 }
