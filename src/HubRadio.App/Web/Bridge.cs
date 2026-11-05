@@ -89,6 +89,8 @@ internal enum BridgeMethod
     JobExport,
     DisclosureList,
     DisclosureAddLabel,
+    ProxyGet,
+    ProxyRegenerate,
     PortraitsList,
     PortraitsRegister,
     PortraitsCrop,
@@ -300,6 +302,10 @@ internal static class BridgeProtocol
     internal const string DisclosureAddLabelMethod = "disclosure.addLabel";
     internal const int MaxDisclosureRequestUtf8Bytes = 2048;
     internal const int MaxDisclosureResponseUtf8Bytes = 128 * 1024;
+    internal const string ProxyGetMethod = "proxy.get";
+    internal const string ProxyRegenerateMethod = "proxy.regenerate";
+    internal const int MaxProxyRequestUtf8Bytes = 1024;
+    internal const int MaxProxyResponseUtf8Bytes = 4096;
     internal const string PortraitsListMethod = "portraits.list";
     internal const string PortraitsRegisterMethod = "portraits.register";
     internal const string PortraitsCropMethod = "portraits.crop";
@@ -586,6 +592,8 @@ internal static class BridgeProtocol
             BridgeMethod.JobExport => JobExportMethod,
             BridgeMethod.DisclosureList => DisclosureListMethod,
             BridgeMethod.DisclosureAddLabel => DisclosureAddLabelMethod,
+            BridgeMethod.ProxyGet => ProxyGetMethod,
+            BridgeMethod.ProxyRegenerate => ProxyRegenerateMethod,
             BridgeMethod.PortraitsList => PortraitsListMethod,
             BridgeMethod.PortraitsRegister => PortraitsRegisterMethod,
             BridgeMethod.PortraitsCrop => PortraitsCropMethod,
@@ -616,6 +624,7 @@ internal static class BridgeProtocol
             _ when IsStitchMethod(method) => MaxStitchResponseUtf8Bytes,
             BridgeMethod.JobExport => MaxJobExportResponseUtf8Bytes,
             _ when IsDisclosureMethod(method) => MaxDisclosureResponseUtf8Bytes,
+            _ when IsProxyMethod(method) => MaxProxyResponseUtf8Bytes,
             _ when IsPortraitMethod(method) => MaxPortraitsResponseUtf8Bytes,
             _ when IsLargePayloadMethod(method) => MaxProjectResponseUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewResponseUtf8Bytes,
@@ -685,6 +694,10 @@ internal static class BridgeProtocol
     internal static bool IsDisclosureMethod(BridgeMethod method) =>
         method is BridgeMethod.DisclosureList or BridgeMethod.DisclosureAddLabel;
 
+    /// <summary>FR-144: the settings screen's proxy preview (state, and make it again).</summary>
+    internal static bool IsProxyMethod(BridgeMethod method) =>
+        method is BridgeMethod.ProxyGet or BridgeMethod.ProxyRegenerate;
+
     /// <summary>FR-137 (6): registering and listing the user's standing pictures.</summary>
     internal static bool IsPortraitMethod(BridgeMethod method) =>
         method is BridgeMethod.PortraitsList or BridgeMethod.PortraitsRegister or BridgeMethod.PortraitsCrop
@@ -723,6 +736,7 @@ internal static class BridgeProtocol
             _ when IsStitchMethod(method) => MaxStitchRequestUtf8Bytes,
             BridgeMethod.JobExport => MaxJobExportRequestUtf8Bytes,
             _ when IsDisclosureMethod(method) => MaxDisclosureRequestUtf8Bytes,
+            _ when IsProxyMethod(method) => MaxProxyRequestUtf8Bytes,
             _ when IsPortraitMethod(method) => MaxPortraitsRequestUtf8Bytes,
             _ when IsReviewMethod(method) => MaxReviewRequestUtf8Bytes,
             BridgeMethod.ComparisonRead => MaxComparisonRequestUtf8Bytes,
@@ -798,6 +812,8 @@ internal static class BridgeProtocol
             JobExportMethod => BridgeMethod.JobExport,
             DisclosureListMethod => BridgeMethod.DisclosureList,
             DisclosureAddLabelMethod => BridgeMethod.DisclosureAddLabel,
+            ProxyGetMethod => BridgeMethod.ProxyGet,
+            ProxyRegenerateMethod => BridgeMethod.ProxyRegenerate,
             PortraitsListMethod => BridgeMethod.PortraitsList,
             PortraitsRegisterMethod => BridgeMethod.PortraitsRegister,
             PortraitsCropMethod => BridgeMethod.PortraitsCrop,
@@ -974,6 +990,11 @@ internal static class BridgeProtocol
         if (IsDisclosureMethod(method))
         {
             return DisclosureBridgeProtocol.HasValidParameters(method, parameters);
+        }
+
+        if (IsProxyMethod(method))
+        {
+            return ProxyBridgeProtocol.HasValidParameters(method, parameters);
         }
 
         if (IsPortraitMethod(method))
@@ -1595,6 +1616,7 @@ internal static class BridgeProtocol
             IsSourceOnlyMethod(method) ||
             IsStitchMethod(method) ||
             IsDisclosureMethod(method) ||
+            IsProxyMethod(method) ||
             IsPortraitMethod(method) ||
             method == BridgeMethod.JobExport)
         {
@@ -1965,6 +1987,9 @@ internal sealed class Bridge : IDisposable
     /// <summary>NFR-BR-005 handler for the AI-generated element list and destination labels.</summary>
     internal DisclosureBridgeHandler? DisclosureHandler { get; init; }
 
+    /// <summary>FR-144 handler for the settings screen's proxy preview.</summary>
+    internal ProxyBridgeHandler? ProxyHandler { get; init; }
+
     private readonly TaskCompletionSource firstPingResponsePosted = new(
         TaskCreationOptions.RunContinuationsAsynchronously);
     private bool isStarted;
@@ -2283,6 +2308,13 @@ internal sealed class Bridge : IDisposable
                 : DisclosureHandler.Handle(request);
         }
 
+        if (BridgeProtocol.IsProxyMethod(request.Method))
+        {
+            return ProxyHandler is null
+                ? ProxyBridgeJson.Status(request, "unavailable")
+                : ProxyHandler.Handle(request);
+        }
+
         if (BridgeProtocol.IsPortraitMethod(request.Method))
         {
             return PortraitHandler is null
@@ -2437,6 +2469,11 @@ internal sealed class Bridge : IDisposable
         if (BridgeProtocol.IsDisclosureMethod(request.Method))
         {
             return DisclosureBridgeJson.Unavailable(request);
+        }
+
+        if (BridgeProtocol.IsProxyMethod(request.Method))
+        {
+            return ProxyBridgeJson.Status(request, "unavailable");
         }
 
         if (BridgeProtocol.IsPortraitMethod(request.Method))

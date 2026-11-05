@@ -266,31 +266,44 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
         ThrowIfDisposed();
         if (options is null) { return false; }
         if (posters.TryGetDigest(draftId) is not null) { return true; }
-        string sourcePath;
+        string? sourcePath = TryResolveSourcePath(draftId);
+        if (sourcePath is null) { return false; }
+        return await posters.CreateAsync(draftId, sourcePath, options.FfmpegPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    Task<ProxySourceInfo?> ISourceOnlyProjectCoordinator.ResolveProxySourceAsync(EntityId<ProjectCreationDraftIdTag> draftId,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        string? sourcePath = options is null ? null : TryResolveSourcePath(draftId);
+        return Task.FromResult<ProxySourceInfo?>(sourcePath is null ? null : new ProxySourceInfo(sourcePath, options!.FfmpegPath));
+    }
+
+    /// <summary>The selected (draft) or accepted (Project) source video's path; null when it cannot be resolved.</summary>
+    private string? TryResolveSourcePath(EntityId<ProjectCreationDraftIdTag> draftId)
+    {
         try
         {
             StoredSourceOnlyExecution? accepted = executions.GetByDraft(draftId);
             if (accepted is not null)
             {
-                sourcePath = ReadAcceptedSource(accepted).Path;
+                return ReadAcceptedSource(accepted).Path;
             }
-            else
+
+            StoredProjectCreationDraft? draft = drafts.GetDraft(draftId);
+            if (draft is null || draft.IsFinalized || !SourceOnlyProjectCreationContract.IsSourceOnlyPayload(draft.CanonicalJson))
             {
-                StoredProjectCreationDraft? draft = drafts.GetDraft(draftId);
-                if (draft is null || draft.IsFinalized || !SourceOnlyProjectCreationContract.IsSourceOnlyPayload(draft.CanonicalJson))
-                {
-                    return false;
-                }
-                using JsonDocument payload = JsonDocument.Parse(draft.CanonicalJson);
-                var candidateId = EntityId<AssetIdTag>.Parse(Text(payload.RootElement, "sourceCandidateId"));
-                sourcePath = locator.ReadSelection(draftId, candidateId).Path;
+                return null;
             }
+
+            using JsonDocument payload = JsonDocument.Parse(draft.CanonicalJson);
+            var candidateId = EntityId<AssetIdTag>.Parse(Text(payload.RootElement, "sourceCandidateId"));
+            return locator.ReadSelection(draftId, candidateId).Path;
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return false;
+            return null;
         }
-        return await posters.CreateAsync(draftId, sourcePath, options.FfmpegPath, cancellationToken).ConfigureAwait(false);
     }
 
     bool ISourceOnlyProjectCoordinator.RestoreSelection(EntityId<ProjectCreationDraftIdTag> draftId,

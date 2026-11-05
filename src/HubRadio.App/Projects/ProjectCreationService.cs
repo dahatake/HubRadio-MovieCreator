@@ -326,6 +326,14 @@ internal sealed class ProjectCreationService
         {
             // FR-053: best effort in the background; a missing poster never blocks or fails Project creation.
             _ = EnsurePosterInBackgroundAsync(sourceOnlyCoordinator, draftId);
+            try
+            {
+                // FR-144: the low-resolution proxy for the settings screen; a failure here never blocks creation.
+                ProxyRequester?.Invoke(draftId);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+            }
         }
 
         if (probedPath is not null)
@@ -424,6 +432,7 @@ internal sealed class ProjectCreationService
         }
 
         PosterRemover?.Invoke(draftId);
+        ProxyRemover?.Invoke(draftId);
         return projectId is null || ProjectFilesRemover is null || ProjectFilesRemover(projectId);
     }
 
@@ -564,7 +573,7 @@ internal sealed class ProjectCreationService
         current.DisplayName is { Length: > 0 } display ? display : draft.ContentName;
 
     /// <summary>FR-133: after a Project is created, its folder is the Project name (a leftover GUID folder is renamed, not copied).</summary>
-    private void BindProjectFolder(EntityId<ProjectIdTag>? projectId, string? name)
+    private void BindProjectFolder(EntityId<ProjectCreationDraftIdTag> draftId, EntityId<ProjectIdTag>? projectId, string? name)
     {
         if (WorkspacePath is null || projectId is null || name is null)
         {
@@ -580,7 +589,25 @@ internal sealed class ProjectCreationService
         {
             // The Project keeps working from its GUID folder; the next start migrates it.
         }
+
+        try
+        {
+            // FR-144: the proxy moves into (or is made in) the Project folder; it never fails the creation.
+            ProxyFinalizer?.Invoke(draftId);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+        }
     }
+
+    /// <summary>FR-144: asks the host to make the source video's proxy in the background after the source is chosen.</summary>
+    internal Action<EntityId<ProjectCreationDraftIdTag>>? ProxyRequester { get; set; }
+
+    /// <summary>FR-144: the Project was created; its proxy now belongs in the Project folder.</summary>
+    internal Action<EntityId<ProjectCreationDraftIdTag>>? ProxyFinalizer { get; set; }
+
+    /// <summary>FR-144: removes the proxy kept outside the Project folder of a deleted Project.</summary>
+    internal Action<EntityId<ProjectCreationDraftIdTag>>? ProxyRemover { get; set; }
 
     /// <summary>FR-134: at start, renames GUID-named Project folders to the Project name (same-volume move; idempotent).</summary>
     internal IReadOnlyList<ProjectFolderMigrationEntry> MigrateProjectFolders()
@@ -747,7 +774,7 @@ internal sealed class ProjectCreationService
                 expectedRevision,
                 GetUtcNow());
             reservation.Commit();
-            BindProjectFolder(stored.FinalizedProjectId, projectName);
+            BindProjectFolder(stored.Id, stored.FinalizedProjectId, projectName);
             return BuildView(stored, draft, sourceOnly: null);
         }
     }
@@ -974,7 +1001,7 @@ internal sealed class ProjectCreationService
                 draft, sourceOnly.SettingsSnapshot,
                 SourceOnlyProjectCreationContract.Serialize(acceptedSourceOnly),
                 expectedRevision, actorSid, GetUtcNow());
-            BindProjectFolder(accepted.FinalizedProjectId, sourceOnlyProjectName);
+            BindProjectFolder(accepted.Id, accepted.FinalizedProjectId, sourceOnlyProjectName);
             return BuildView(accepted, draft, acceptedSourceOnly);
         }
 
@@ -1024,7 +1051,7 @@ internal sealed class ProjectCreationService
                 GetUtcNow(),
                 sourceOnly.SettingsSnapshot);
             reservation.Commit();
-            BindProjectFolder(finalized.FinalizedProjectId, sourceOnlyProjectName);
+            BindProjectFolder(finalized.Id, finalized.FinalizedProjectId, sourceOnlyProjectName);
             return BuildView(finalized, draft, finalizedSourceOnly);
         }
     }

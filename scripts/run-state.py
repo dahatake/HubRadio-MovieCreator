@@ -214,23 +214,35 @@ def require_own_worktree(root: Path, cfg: dict, args) -> Optional[int]:
     return 0
 
 
-def primary_tree(root: Path) -> Path:
+def worktree_paths(root: Path) -> list:
+    """Paths of the repository's worktrees (primary first), read from the git directory without starting git
+    (`git worktree list` costs 60-100 ms per call on Windows). Falls back to git when the layout is unexpected."""
+    try:
+        primary = h.primary_tree_of(root)
+        common = primary / ".git"
+        if common.is_dir():
+            paths = [primary]
+            wt = common / "worktrees"
+            for d in sorted(wt.iterdir()) if wt.is_dir() else []:
+                gd = (d / "gitdir").read_text(encoding="utf-8").strip()  # <worktree>/.git
+                paths.append(Path(gd).parent)
+            return paths
+    except (OSError, ValueError):
+        pass
     rc, out = h.git(["worktree", "list", "--porcelain"], root)
-    for line in out.splitlines():
-        if line.startswith("worktree "):
-            return Path(line.split(" ", 1)[1].strip())
-    return root
+    return [Path(line.split(" ", 1)[1].strip()) for line in out.splitlines() if line.startswith("worktree ")]
+
+
+def primary_tree(root: Path) -> Path:
+    paths = worktree_paths(root)
+    return paths[0] if paths else root
 
 
 def other_active_runs(root: Path) -> int:
     """Active runs in other worktrees of this repository (they share the machine's CPU and memory)."""
     n = 0
     here = os.path.normcase(str(root.resolve()))
-    rc, out = h.git(["worktree", "list", "--porcelain"], root)
-    for line in out.splitlines():
-        if not line.startswith("worktree "):
-            continue
-        p = Path(line.split(" ", 1)[1].strip())
+    for p in worktree_paths(root):
         if os.path.normcase(str(p.resolve())) == here or not p.exists():
             continue
         try:
@@ -383,7 +395,46 @@ def landed(root: Path, branch: str, base: str) -> bool:
     return rc == 0
 
 
-def cmd_land(args) -> int:
+def _fail_signature(out: str) -> set:
+    """Failure lines of a verify run, without volatile parts (log paths, timings, hashes)."""
+    sig = set()
+    in_fail = False
+    for line in out.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if not line[0].isspace():
+            in_fail = line.startswith("FAIL")
+            if not in_fail:
+                continue
+        elif not in_fail:
+            continue
+        s = re.sub(r"log=\S+", "", s)
+        s = re.sub(r"\(\d+s\)|\b[0-9a-f]{7,40}\b", "", s)
+        sig.add(re.sub(r"\s+", " ", s).strip())
+    return sig
+
+
+def foreign_only_failure(primary: Path, tmp: Path, old: str, vout: str, vtimeout: int):
+    """True when every verify failure on the merged tree already fails on the base commit,
+    i.e. it comes from other runs' or earlier work, not from this run's changes."""
+    base_tmp = tmp.with_name(tmp.name + "-base")
+    remove_land_tmp(primary, base_tmp)
+    try:
+        rc, _ = h.git(["worktree", "add", "--detach", str(base_tmp), old], primary)
+        if rc != 0:
+            return False, []
+        brc, bout = h.run([sys.executable, str(base_tmp / "scripts" / "verify.py"), "--quick", "--no-cache"],
+                          cwd=base_tmp, timeout=vtimeout + 120)
+        if brc == 0:
+            return False, []
+        mine = sorted(_fail_signature(vout) - _fail_signature(bout))
+        return (not mine), sorted(_fail_signature(vout) & _fail_signature(bout))
+    finally:
+        remove_land_tmp(primary, base_tmp)
+
+
+def land_core(args) -> int:
     """Merge this run's integration branch into the base branch in the primary tree, one run at a time."""
     root, cfg = ctx(args)
     rid = h.current_run(root, cfg)
@@ -440,8 +491,14 @@ def cmd_land(args) -> int:
                 vrc, vout = h.run([sys.executable, str(tmp / "scripts" / "verify.py"), "--quick"], cwd=tmp,
                                   timeout=vtimeout + 120)
                 if vrc != 0:
-                    print(f"LAND-VERIFY-FAIL {rid}: 統合後の verify が失敗したので取り込みません\n" + "\n".join(vout.splitlines()[-12:]))
-                    return 1
+                    foreign, notes = foreign_only_failure(primary, tmp, old, vout, vtimeout)
+                    if not foreign:
+                        print(f"LAND-VERIFY-FAIL {rid}: 統合後の verify が、この run の変更によって失敗したので取り込みません\n"
+                              + "\n".join(vout.splitlines()[-12:]))
+                        return 1
+                    print(f"LAND-FOREIGN-FAIL {rid}: verify の失敗はすべて {base} の時点で既に存在する（他の run・以前の作業）ため、"
+                          "この run の取り込みは続けます。次の失敗は利用者に通知します（この run では対応しません）:\n  "
+                          + "\n  ".join(notes[:15]))
                 rc, new = h.git(["rev-parse", "HEAD"], tmp)
                 new = new.strip()
                 restart = False
@@ -475,6 +532,71 @@ def cmd_land(args) -> int:
     h.save_meta(root, cfg, rid, meta)
     print(f"LANDED {rid}: {base} @ {sha}")
     return 0
+
+
+CONTRACT_FIELDS = (
+    ("main 統合", "pass"),
+    ("main 統合 commit", None),
+    ("完了条件", "pass"),
+    ("最終 verify", "pass"),
+    ("対象テスト", "pass"),
+    ("main 上の統合後 verify", "pass"),
+    ("清掃許可判定", "pass"),
+    ("清掃前版 run-report 確定", "pass"),
+)
+
+
+def finalize_report_for_cleanup(report: Path, sha: str) -> None:
+    """Append the pre-cleanup contract that clean-work.py requires; land has just verified the merged tree."""
+    text = report.read_text(encoding="utf-8")
+    lines = []
+    for name, value in CONTRACT_FIELDS:
+        if re.search(rf"(?m)^-\s*{re.escape(name)}\s*:", text):
+            continue
+        lines.append(f"- {name}: {sha if value is None else value}")
+    for name, tail in (("清掃候補", "work/runs の一時ファイル・統合済みの作業ブランチと統合ブランチ・run worktree"),
+                       ("保護・保持する資産と理由", "main の統合 commit と run-report（run 記録は主の work/runs へ退避）"),
+                       ("候補別結果", "not_run")):
+        if not re.search(rf"(?m)^-\s*{re.escape(name)}\s*:", text):
+            lines.append(f"- {name}: {tail}")
+    if not re.search(r"(?m)^-\s*run 最終状態\s*:", text):
+        lines.append("- run 最終状態: 清掃待ち")
+    if lines:
+        report.write_text(text.rstrip() + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
+
+
+def cleanup_after_land(root: Path, cfg: dict, rid: str) -> int:
+    """After a successful land, finalize the report and delete the run worktree and merged branches."""
+    primary = primary_tree(root)
+    cc = subprocess.run([sys.executable, str(Path(__file__).resolve()), "complete-check"],
+                        cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if cc.returncode != 0:
+        print(f"CLEAN-SKIP {rid}: complete-check が通らないため worktree を保持します\n"
+              + "\n".join((cc.stdout or cc.stderr).splitlines()[-5:]))
+        return 0
+    meta = h.load_meta(root, cfg, rid)
+    report = h.run_dir(root, cfg, rid) / "run-report.md"
+    finalize_report_for_cleanup(report, str(meta.get("landed_commit") or "landed"))
+    os.chdir(primary)  # the run worktree is about to be deleted; this process must not sit inside it
+    proc = subprocess.run([sys.executable, str(Path(__file__).resolve().with_name("clean-work.py")), "--root", str(root)],
+                          cwd=primary, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    print("\n".join((proc.stdout or "").splitlines()[-12:]))
+    if proc.returncode != 0:
+        print(f"CLEAN-FAIL {rid}: 清掃が完了しませんでした（保持した資産は run-report の候補別結果を参照）\n"
+              + "\n".join((proc.stderr or "").splitlines()[-5:]))
+    return proc.returncode
+
+
+def cmd_land(args) -> int:
+    rc = land_core(args)
+    if rc != 0 or args.no_cleanup:
+        return rc
+    root, cfg = ctx(args)
+    rid = h.current_run(root, cfg)
+    if not rid:
+        runs = sorted(p.name for p in (h.work_dir(root, cfg) / "runs").glob("*") if (p / "meta.json").exists())
+        rid = runs[-1] if runs else None
+    return 0 if rid is None else cleanup_after_land(root, cfg, rid)
 
 
 def cmd_start(args) -> int:
@@ -1002,6 +1124,7 @@ def main(argv=None) -> int:
     sub.add_parser("complete-check")
     la = sub.add_parser("land", help="全件完了した run を、共通ロックの下で main へ取り込む")
     la.add_argument("--wait", type=float, default=1800, help="ロックと主の作業ツリーを待つ秒数")
+    la.add_argument("--no-cleanup", action="store_true", help="取り込み後の run worktree・統合ブランチの清掃をしない")
     ln = sub.add_parser("lane")
     ls = ln.add_subparsers(dest="lcmd", required=True)
     for name in ("decide", "confirm"):

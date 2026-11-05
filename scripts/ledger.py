@@ -94,15 +94,28 @@ def cmd_add(args, root, cfg) -> int:
             f"ERROR ledger: 同じ受入基準を保証する有効なケースがあります（{hits}）。新しいケースを足さず、"
             f"`python scripts/ledger.py update {first} --command ... --ac ... --reason \"...\"` で既存のケースを拡張します。"
             "層（e2e と api など）が違い、別のケースが本当に必要なときだけ --new-case-reason \"理由\" を付けます")
+    # 同じ要求・同じ層のケースも増やさない（要求 1 件につき層ごとに 1 ケース。AC は ac_ids に足す）
+    same_fr = [c["id"] for c in data["cases"] if c.get("status") != "blocked" and c.get("layer") == args.layer
+               and set(reqs) & set(c.get("requirement_ids", []))]
+    if same_fr and not args.new_case_reason:
+        raise SystemExit(
+            f"ERROR ledger: 同じ要求・同じ層（{args.layer}）の有効なケースがあります（{'、'.join(same_fr)}）。System Test の数を増やさず、"
+            f"`python scripts/ledger.py update {same_fr[0]} --ac <既存の AC>,{','.join(acs)} --command ... --reason \"...\"` で、"
+            "既存のケースにこの AC と検証を足します（同じテストファイルに関数を足し、command の -k を広げる）。"
+            "既存のケースと独立に実行する必要があるときだけ --new-case-reason \"理由\" を付けます")
     cid = h.load_script("next-id").allocate(root, cfg, kind, 1, args.title[:40], False)[0]
     case = {
         "id": cid, "requirement_ids": reqs, "ac_ids": acs, "title": args.title, "layer": args.layer,
         "command": args.command, "canary": bool(args.canary), "status": "not_run",
         "last_commit": None, "last_run_at": None, "evidence": None, "history": [],
     }
+    if args.serial:
+        case["serial"] = True
     history(case, "追加", args.reason or "受入基準からケースを作成", args.by)
     if covering:
         history(case, "同じ AC の既存ケースと別に追加", args.new_case_reason, args.by)
+    elif same_fr:
+        history(case, "同じ要求・同じ層の既存ケースと別に追加", args.new_case_reason, args.by)
     data["cases"].append(case)
     for a in acs:
         data["ac_digests"][a] = h.ac_digest(doc.acs[a], doc.params)
@@ -136,6 +149,11 @@ def cmd_update(args, root, cfg) -> int:
         if val != c.get("canary"):
             changes.append(f"canary: {c.get('canary')} -> {val}")
             c["canary"] = val
+    if args.serial is not None:
+        val = args.serial.lower() in ("true", "1", "yes")
+        if val != bool(c.get("serial")):
+            changes.append(f"serial: {bool(c.get('serial'))} -> {val}")
+            c["serial"] = val
     if not changes:
         print("変更はありません")
         return 0
@@ -160,6 +178,133 @@ def cmd_block(args, root, cfg) -> int:
     h.save_ledger(root, cfg, data)
     print(f"{args.id}: blocked")
     return 0
+
+
+def case_file(c: dict) -> Optional[str]:
+    p = parse_pytest(c.get("command") or "")
+    return re.sub(r"^\./", "", p[0]) if p else None
+
+
+def merge_plan(data: dict) -> List[List[dict]]:
+    """Groups of active cases that can be one case: same test file, same layer, same requirements.
+    canary and serial cases stay as they are (a merged canary would slow the fail-fast stage)."""
+    groups: Dict[tuple, List[dict]] = {}
+    for c in data.get("cases", []):
+        if c.get("status") == "blocked" or c.get("canary") or c.get("serial"):
+            continue
+        f = case_file(c)
+        if f:
+            groups.setdefault((f, c.get("layer"), tuple(sorted(c.get("requirement_ids", [])))), []).append(c)
+    return [g for g in groups.values() if len(g) > 1]
+
+
+def merged_command(members: List[dict]) -> str:
+    """One pytest command that selects what every member command selected (a whole-file member selects the whole file)."""
+    parsed = [parse_pytest(m["command"]) for m in members]
+    f = re.sub(r"^\./", "", parsed[0][0])
+    if any(not node and not k for _, node, k in parsed):
+        return f"python -m pytest {f} -q"
+    exprs: List[str] = []
+    for _, node, k in parsed:
+        e = f"({k})" if k else node.split("::")[-1].split("[")[0]
+        if e not in exprs:
+            exprs.append(e)
+    return f'python -m pytest {f} -k "{" or ".join(exprs)}" -q'
+
+
+def cmd_consolidate(args, root, cfg) -> int:
+    """Merge same-file/same-layer/same-requirement cases into one (the first), block the rest with the reason in history.
+    ac_ids are unioned, so no acceptance criterion loses its case. Merged cases are reset to not_run (status comes only from a run)."""
+    data = h.load_ledger(root, cfg)
+    plan = merge_plan(data)
+    total = sum(len(g) - 1 for g in plan)
+    for g in plan:
+        keep = g[0]
+        print(f"{keep['id']} <- {', '.join(c['id'] for c in g[1:])}  [{case_file(keep)}, {keep.get('layer')}, {','.join(keep.get('requirement_ids', []))}]")
+    print(f"consolidate: {len(plan)} groups, {total} cases can be merged ({len([c for c in data['cases'] if c.get('status') != 'blocked'])} active now)"
+          + ("" if args.apply else " -- --apply で書き込む"))
+    if not args.apply or not plan:
+        return 0
+    why = args.reason or "同じテストファイル・層・要求のケースを統合（System Test の数の最小化）"
+    for g in plan:
+        keep = g[0]
+        acs = list(dict.fromkeys(a for c in g for a in c.get("ac_ids", [])))
+        cmd = merged_command(g)
+        titles = keep.get("title", "")
+        keep["ac_ids"], keep["command"] = acs, cmd
+        keep["title"] = f"{titles}（ほか {len(g) - 1} 件を統合）" if "ほか" not in titles else titles
+        keep["status"] = "not_run"
+        history(keep, f"command, ac_ids: {', '.join(c['id'] for c in g[1:])} を統合", why, args.by)
+        for c in g[1:]:
+            c["status"] = "blocked"
+            c["merged_into"] = keep["id"]
+            history(c, "blocked", f"{keep['id']} に統合（{why}）", args.by)
+    doc = h.parse_requirements(root, cfg)
+    for c in data["cases"]:
+        for a in c.get("ac_ids", []):
+            if a in doc.acs:
+                data["ac_digests"][a] = h.ac_digest(doc.acs[a], doc.params)
+    h.save_ledger(root, cfg, data)
+    print(f"consolidate: {total} cases blocked, {len(plan)} cases extended (not_run until the next `ledger.py run`)")
+    return 0
+
+
+def cmd_cost(args, root, cfg) -> int:
+    """Where the System Test time and count go: active cases, distinct test files (= process starts when batched),
+    cases that could merge, known durations, and the system_test.budget limits (exit 1 with --check when exceeded)."""
+    data = h.load_ledger(root, cfg)
+    cases = data["cases"]
+    active = [c for c in cases if c.get("status") != "blocked"]
+    files = {case_file(c) or c.get("command") for c in active}
+    plan = merge_plan(data)
+    mergeable = sum(len(g) - 1 for g in plan)
+    try:
+        durs = json.loads((h.work_dir(h.conductor_root(root, cfg), cfg) / ".ebak" / "durations.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        durs = {}
+    by_cmd: Dict[str, List[str]] = {}
+    for c in active:
+        by_cmd.setdefault(c.get("command") or "", []).append(c["id"])
+    known = {k: float(v) for k, v in durs.items() if k in by_cmd and isinstance(v, (int, float))}
+    per_req: Dict[str, int] = {}
+    for c in active:
+        for r in c.get("requirement_ids", []):
+            per_req[r] = per_req.get(r, 0) + 1
+    layers: Dict[str, int] = {}
+    for c in active:
+        layers[c.get("layer", "?")] = layers.get(c.get("layer", "?"), 0) + 1
+    print(f"cases: active {len(active)} / total {len(cases)} (blocked {len(cases) - len(active)}) | layers: "
+          + ", ".join(f"{k}={v}" for k, v in sorted(layers.items())))
+    print(f"test files: {len(files)} (process starts when batched) | mergeable: {mergeable} cases in {len(plan)} groups"
+          + (" -> `ledger.py consolidate --apply`" if mergeable else ""))
+    # 別ファイルにまたがる同じ要求・層のケースは統合しない: ledger run が 1 つの pytest プロセス（ブラウザーも 1 回）にまとめて実行するため、統合しても起動の費用は減らない
+    cross: Dict[tuple, set] = {}
+    for c in active:
+        f = case_file(c)
+        if f and not c.get("canary") and not c.get("serial"):
+            cross.setdefault((c.get("layer"), tuple(sorted(c.get("requirement_ids", [])))), set()).add(f)
+    print(f"cross-file: {sum(1 for v in cross.values() if len(v) > 1)} groups share requirement+layer across files (run batches them into one process; no merge needed)")
+    print(f"known duration: {sum(known.values()):.0f}s over {len(known)}/{len(by_cmd)} commands")
+    for k, v in sorted(known.items(), key=lambda kv: -kv[1])[:args.top]:
+        print(f"  {v:7.1f}s  {','.join(by_cmd[k][:3])}  {k[:100]}")
+    b = (cfg.get("system_test") or {}).get("budget") or {}
+    over = []
+    if b.get("max_active_cases") is not None and len(active) > int(b["max_active_cases"]):
+        over.append(f"有効なケース {len(active)} > max_active_cases {b['max_active_cases']}")
+    if b.get("max_cases_per_requirement") is not None:
+        for r, n in sorted(per_req.items()):
+            if n > int(b["max_cases_per_requirement"]):
+                over.append(f"{r} のケース {n} > max_cases_per_requirement {b['max_cases_per_requirement']}")
+    if b.get("max_case_seconds") is not None:
+        for k, v in sorted(known.items(), key=lambda kv: -kv[1]):
+            if v > float(b["max_case_seconds"]):
+                over.append(f"{','.join(by_cmd[k][:3])} が {v:.0f}s > max_case_seconds {b['max_case_seconds']}")
+    if b.get("max_total_seconds") is not None and sum(known.values()) > float(b["max_total_seconds"]):
+        over.append(f"既知の実行時間の合計 {sum(known.values()):.0f}s > max_total_seconds {b['max_total_seconds']}")
+    for o in over:
+        print(f"BUDGET: {o}")
+    print("budget: " + ("超過 %d 件" % len(over) if over else ("OK" if b else "未設定（system_test.budget）")))
+    return 1 if (args.check and over) else 0
 
 
 def cmd_set(args, root, cfg) -> int:
@@ -512,6 +657,57 @@ def parse_pytest(cmd: str):
     return f, node, k
 
 
+def parse_nodetest(cmd: str):
+    """`node --test --test-name-pattern[=| ]<AC-001> <file>` -> (file, pattern). Anything else (other options, shell syntax) -> None."""
+    if any(ch in cmd for ch in "\\&|;<>%^`$"):
+        return None
+    try:
+        t = shlex.split(cmd)
+    except ValueError:
+        return None
+    if t[:2] != ["node", "--test"]:
+        return None
+    pat, target, i = None, None, 2
+    while i < len(t):
+        a = t[i]
+        if a.startswith("--test-name-pattern=") and pat is None:
+            pat = a.split("=", 1)[1]
+        elif a == "--test-name-pattern" and pat is None and i + 1 < len(t):
+            pat = t[i + 1]
+            i += 1
+        elif not a.startswith("-") and target is None and re.search(r"\.(c|m)?js$", a):
+            target = a
+        else:
+            return None
+        i += 1
+    if not pat or not target or not re.fullmatch(r"[A-Za-z0-9_ .:-]+", pat):
+        return None
+    return re.sub(r"^\./", "", target), pat
+
+
+def plan_node_batches(reps, is_serial, is_canary):
+    """Group `node --test --test-name-pattern=<id> <file>` commands that name the same file (>= 2) into one node process
+    each: the process start (about 0.4 s of a typical 0.5 s case) is paid once. Returns (units, used command set)."""
+    byfile: dict = {}
+    for c in reps:
+        if is_serial(c) or is_canary(c):
+            continue
+        p = parse_nodetest(c["command"])
+        if p:
+            byfile.setdefault(p[0], []).append((c, p))
+    units, used = [], set()
+    for f, ms in byfile.items():
+        if len(ms) < 2:
+            continue
+        pats = list(dict.fromkeys(p[1] for _, p in ms))
+        sel = " ".join(f'--test-name-pattern="{x}"' for x in pats)
+        units.append({"id": "BATCH:" + f, "command": f"BATCH {f} {sel}",
+                      "_batch": {"kind": "node", "file": f, "target": f'"{f}"', "sel": sel,
+                                 "members": [(c, (f, None, p[1])) for c, p in ms]}})
+        used.update(c["command"] for c, _ in ms)
+    return units, used
+
+
 def _kmatcher(names):
     low = [n.lower() for n in names]
     return lambda ident, **kw: any(ident.lower() in n for n in low)
@@ -640,8 +836,10 @@ def run_batch(unit, root, logs_dir, timeout, execute_single):
     A member whose tests failed (or that matched no test) is re-run alone, so a failure is always judged and logged
     exactly as before and interference between tests cannot create a false fail. Returns {command: (rc, seconds, log)}."""
     import xml.etree.ElementTree as ET
-    from _pytest.mark.expression import Expression
     b = unit["_batch"]
+    if b.get("kind") == "node":
+        return run_node_batch(unit, root, logs_dir, timeout, execute_single)
+    from _pytest.mark.expression import Expression
     stamp = h.new_run_id()
     junit = logs_dir / f"BATCH-{re.sub(r'[^A-Za-z0-9]+', '_', b['file'])}-{stamp}.xml"
     cmd = f'python -m pytest {b["target"]} {b["sel"]} -q --junitxml="{junit}"'
@@ -689,6 +887,44 @@ def run_batch(unit, root, logs_dir, timeout, execute_single):
     return res
 
 
+def run_node_batch(unit, root, logs_dir, timeout, execute_single):
+    """One node:test process for several name patterns of one file; each member's result comes from the JUnit report.
+    A member with a failed test, with no matching test, or any batch with a failure no member claims, is re-run alone."""
+    import xml.etree.ElementTree as ET
+    b = unit["_batch"]
+    stamp = h.new_run_id()
+    safe = re.sub(r"[^A-Za-z0-9]+", "_", b["file"])
+    junit = logs_dir / f"BATCH-{safe}-{stamp}.xml"
+    cmd = (f'node --test {b["sel"]} --test-reporter=spec --test-reporter-destination=stdout '
+           f'--test-reporter=junit --test-reporter-destination="{junit}" {b["target"]}')
+    _rc, out = run_shell(cmd, str(root), timeout * max(1, len(b["members"])) if timeout else timeout)
+    mlog = logs_dir / f"BATCH-{safe}-{stamp}.log"
+    mlog.write_text(out, encoding="utf-8")
+    tcs = []
+    try:
+        for tc in ET.parse(junit).getroot().iter("testcase"):
+            bad = tc.find("failure") is not None or tc.find("error") is not None
+            tcs.append((tc.get("name") or "", float(tc.get("time") or 0), bad))
+    except (OSError, ET.ParseError, ValueError):
+        tcs = []
+    hits = {}
+    for c, (_f, _n, pat) in b["members"]:
+        hits[c["command"]] = [t for t in tcs if re.search(pat, t[0])]
+    claimed = {id(t) for v in hits.values() for t in v}
+    unclaimed_bad = any(t[2] and id(t) not in claimed for t in tcs)
+    res: dict = {}
+    for c, _ in b["members"]:
+        hit = hits[c["command"]]
+        if not tcs or unclaimed_bad or not hit or any(t[2] for t in hit):
+            res[c["command"]] = execute_single(c)[1]
+            continue
+        log = logs_dir / f"{c['id']}-{stamp}.log"
+        log.write_text(f"BATCH {b['file']}: {len(hit)} tests passed (merged run log: {mlog.name})\n"
+                       + "\n".join(f"PASSED {t[0]}" for t in hit), encoding="utf-8")
+        res[c["command"]] = (0, round(sum(t[1] for t in hit), 1), log)
+    return res
+
+
 def tree_is_clean(root: Path) -> bool:
     """True when nothing but work/ (logs, run data) differs from HEAD, so "same commit" means "same code"."""
     rc, out = h.git(["status", "--porcelain", "--untracked-files=normal"], root)
@@ -715,6 +951,21 @@ def split_repeat_failures(todo, runs, head, clean):
     for c in todo:
         (held if c["id"] in prev else keep).append((c, prev[c["id"]]) if c["id"] in prev else c)
     return keep, held
+
+
+def split_repeat_passes(todo, runs, head, clean):
+    """(to run, [reused case ids]). A case whose latest result in `runs` (results.json of this run) is a pass at `head`,
+    on a clean tree, with the ledger still saying pass, is not executed again: same code, same command."""
+    if not clean:
+        return todo, []
+    last = {}
+    for r in runs:
+        if r.get("commit") == head:
+            last[r.get("case")] = r.get("status")
+    keep, reused = [], []
+    for c in todo:
+        (reused if last.get(c["id"]) == "pass" and c.get("status") == "pass" and c.get("last_commit") == head else keep).append(c)
+    return keep, [c["id"] for c in reused]
 
 
 def cmd_run(args, root, cfg) -> int:
@@ -761,10 +1012,16 @@ def cmd_run(args, root, cfg) -> int:
     todo = [c for c in sel if c.get("command")]
     # a case that already failed (not timed out) at this same clean commit in this run fails again: do not pay for it twice
     repeat_fail: list = []
+    clean = bool(head) and not args.cases and not (args.rerun_failed and args.rerun_passed) and tree_is_clean(root)
     if not args.cases and not args.rerun_failed and head:
-        todo, repeat_fail = split_repeat_failures(todo, results.get("runs", []), head, tree_is_clean(root))
+        todo, repeat_fail = split_repeat_failures(todo, results.get("runs", []), head, clean)
         for c, prev in repeat_fail:
             print(f"skip {c['id']}: 同じ commit {head[:7]} で fail 済み（{prev.get('at', '')}, {prev.get('log', '')}）。直して commit してから、または --rerun-failed で再実行")
+    reused_pass: list = []
+    if not args.cases and not args.rerun_passed and head:
+        todo, reused_pass = split_repeat_passes(todo, results.get("runs", []), head, clean)
+        if reused_pass:
+            print(f"reuse {len(reused_pass)} case(s): 同じ clean commit {head[:7]} で、この run がすでに pass 済み（--rerun-passed で再実行）")
     done: dict = {}
     pats = [p for p in ((cfg.get("system_test") or {}).get("serial_patterns") or []) if p]
     dur_path = h.work_dir(cerr, cfg) / ".ebak" / "durations.json"
@@ -812,6 +1069,11 @@ def cmd_run(args, root, cfg) -> int:
             groups[u["command"]] = [x for m, _ in u["_batch"]["members"] for x in groups[m["command"]]]
         rest = [c for c in rest if c["command"] not in used] + units
         batched = sum(len(u["_batch"]["members"]) for u in units)
+        nunits, nused = plan_node_batches(rest, is_serial, is_canary)
+        for u in nunits:
+            groups[u["command"]] = [x for m, _ in u["_batch"]["members"] for x in groups[m["command"]]]
+        rest = [c for c in rest if c["command"] not in nused] + nunits
+        batched += sum(len(u["_batch"]["members"]) for u in nunits)
 
     def dur_key(c):
         if c.get("_batch"):
@@ -882,7 +1144,7 @@ def cmd_run(args, root, cfg) -> int:
         h.save_ledger(root, cfg, data)
     print("\n".join(lines_out))
     result = stop_reason or ("全件 pass" if summary["fail"] == 0 and not repeat_fail else "fail あり")
-    print(f"ledger run: pass={summary['pass']} fail={summary['fail']} skipped={summary['skipped']} repeat_fail_skipped={len(repeat_fail)} results={results_path} 結果: {result}"
+    print(f"ledger run: pass={summary['pass']} fail={summary['fail']} skipped={summary['skipped']} repeat_fail_skipped={len(repeat_fail)} reused_pass={len(reused_pass)} results={results_path} 結果: {result}"
           f" unique_commands={len(reps)} dedup_omitted={omitted} batched_commands={batched} jobs={jobs} elapsed={time.time() - t_start:.1f}s")
     return 0 if summary["fail"] == 0 and not stop_reason and not repeat_fail else 1
 
@@ -941,6 +1203,7 @@ def main(argv=None) -> int:
     a.add_argument("--layer", required=True)
     a.add_argument("--command", required=True)
     a.add_argument("--canary", action="store_true")
+    a.add_argument("--serial", action="store_true", help="単独で実行する（固定ポート・共有データを使うケース。system_test.jobs の並列から外す）")
     a.add_argument("--reason", default="")
     a.add_argument("--new-case-reason", default="",
                    help="同じ AC の有効なケースがあっても別のケースにする理由（既定では拒否し、update での拡張を促す）")
@@ -951,6 +1214,7 @@ def main(argv=None) -> int:
     u.add_argument("--ac")
     u.add_argument("--req")
     u.add_argument("--canary")
+    u.add_argument("--serial", help="true|false: 単独で実行する（並列から外す）")
     u.add_argument("--reason", required=False)
     b = sub.add_parser("block")
     b.add_argument("id")
@@ -964,6 +1228,12 @@ def main(argv=None) -> int:
     d.add_argument("--update", action="store_true")
     rp = sub.add_parser("repair")
     rp.add_argument("--apply", action="store_true", help="修正を書き込む（既定は確認だけ）")
+    cs = sub.add_parser("consolidate", help="同じテストファイル・層・要求のケースを 1 つに統合する（既定は計画だけ）")
+    cs.add_argument("--apply", action="store_true")
+    cs.add_argument("--reason", default="")
+    ct = sub.add_parser("cost", help="ケース数・テストファイル数・統合できる数・遅いコマンド・予算（system_test.budget）")
+    ct.add_argument("--top", type=int, default=10)
+    ct.add_argument("--check", action="store_true", help="予算を超えていれば exit 1")
     pf = sub.add_parser("preflight")
     pf.add_argument("--cases")
     pf.add_argument("--all", action="store_true", help="pass 済みも含める（既定は not_run・fail のケース）")
@@ -981,14 +1251,15 @@ def main(argv=None) -> int:
     r.add_argument("--no-record", action="store_true", help="台帳を書き換えない（作業役の worktree で使う）")
     r.add_argument("--no-batch", action="store_true", help="同じ pytest ファイルのケースを 1 プロセスにまとめない（既定はまとめる。system_test.batch_pytest: false でも止められる）")
     r.add_argument("--results")
+    r.add_argument("--rerun-passed", action="store_true", help="この run で同じ clean commit ですでに pass したケースも再実行する（既定は省く）")
     r.add_argument("--rerun-failed", action="store_true", help="この run で同じ commit ですでに fail したケースも再実行する（既定は省く）")
     args = ap.parse_args(argv)
     root = Path(args.root).resolve() if args.root else h.repo_root()
     cfg = h.load_config(root)
     fn = {"summary": cmd_summary, "add": cmd_add, "update": cmd_update, "block": cmd_block,
           "set": cmd_set, "digests": cmd_digests, "run": cmd_run, "repair": cmd_repair,
-          "preflight": cmd_preflight}[args.cmd]
-    if args.cmd in ("add", "update", "block", "set", "digests"):
+          "preflight": cmd_preflight, "consolidate": cmd_consolidate, "cost": cmd_cost}[args.cmd]
+    if args.cmd in ("add", "update", "block", "set", "digests", "consolidate"):
         with ledger_lock(root, cfg):
             return fn(args, root, cfg)
     return fn(args, root, cfg)

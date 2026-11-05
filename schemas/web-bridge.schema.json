@@ -122,6 +122,8 @@
     { "$ref": "#/$defs/disclosureListRequest" },
     { "$ref": "#/$defs/disclosureAddLabelRequest" },
     { "$ref": "#/$defs/disclosureResponse" },
+    { "$ref": "#/$defs/proxyRequest" },
+    { "$ref": "#/$defs/proxyResponse" },
     { "$ref": "#/$defs/portraitsListRequest" },
     { "$ref": "#/$defs/portraitsRegisterRequest" },
     { "$ref": "#/$defs/portraitsCropRequest" },
@@ -140,7 +142,41 @@
       "x-maxRequestUtf8Bytes": 2048,
       "x-maxResponseUtf8Bytes": 131072
     },
-    "disclosureListRequest": {
+    "proxyProtocolLimits": {
+      "$comment": "FR-144 AC-176/177/178. proxy.get returns the state of a Project's source-video proxy (a 360 px high H.264/AAC MP4, PARAM-011, kept in the Project folder; the source video is never changed): ready (with the media URI to play), missing, generating or failed, with a short reason. proxy.regenerate starts the proxy again and returns the state right after (normally generating). Both need PreviewProject. Request ceiling 1 KiB (1024), response ceiling 4 KiB (4096). The response carries no path, exception text or SID.",
+      "x-maxRequestUtf8Bytes": 1024,
+      "x-maxResponseUtf8Bytes": 4096
+    },
+    "proxyRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "params"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "enum": ["proxy.get", "proxy.regenerate"] },
+        "params": {
+          "type": "object", "additionalProperties": false, "required": ["draftId"],
+          "properties": { "draftId": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$(?![\\s\\S])" } }
+        }
+      }
+    },
+    "proxyResponse": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "requestId", "method", "result"],
+      "properties": {
+        "version": { "$ref": "#/$defs/protocolVersion" }, "requestId": { "$ref": "#/$defs/requestId" },
+        "method": { "enum": ["proxy.get", "proxy.regenerate"] },
+        "result": {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "reason", "uri", "height"],
+          "properties": {
+            "status": { "enum": ["ready", "missing", "generating", "failed", "forbidden", "unavailable"] },
+            "reason": { "type": ["string", "null"], "maxLength": 300 },
+            "uri": { "type": ["string", "null"], "pattern": "^https://player-media\\.appassets\\.example/source-only/proxy/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{32}$(?![\\s\\S])" },
+            "height": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },    "disclosureListRequest": {
       "type": "object", "additionalProperties": false,
       "required": ["version", "requestId", "method", "params"],
       "properties": {
@@ -1104,6 +1140,8 @@
         "results.export",
         "disclosure.list",
         "disclosure.addLabel",
+        "proxy.get",
+        "proxy.regenerate",
         "portraits.list",
         "portraits.register",
         "portraits.crop",

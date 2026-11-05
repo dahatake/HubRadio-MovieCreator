@@ -9,6 +9,7 @@ import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { SettingsPanel, type SettingsPanelProps } from './SettingsPanel'
+import type { ProxyPreviewProps } from './ProxyPreview'
 import { SettingsWorkspaceStateProvider, useSettingsWorkspace, type SettingsWorkspaceContextValue } from './SettingsStateProvider'
 import type { SettingsWorkspaceBridgeClient } from './settingsBridgeSession'
 import { parseSettingsWorkspaceResponse, type AnySettingsSnapshot, type GlobalSettingsSnapshot, type SettingDefinition, type SettingValue, type SettingsFileStatus, type SettingsSnapshot, type SettingsWorkspaceRequest, type SettingsWorkspaceResponse } from './settingsProtocol'
@@ -69,6 +70,8 @@ describe('SettingsPanel UX-025', () => {
       readonly onClose?: () => void
       readonly initialSettingKey?: string | null
       readonly onDirtyChange?: (dirty: boolean) => void
+      readonly activeDraftId?: string | null
+      readonly proxyService?: ProxyPreviewProps['service']
     }>()
     const h = workspaceClient()
     const markup = renderToStaticMarkup(<SettingsWorkspaceStateProvider createClient={h.createClient}><SettingsPanel /></SettingsWorkspaceStateProvider>)

@@ -38,7 +38,8 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
         WorkspaceLocationBridgeHandler? workspace = null,
         JobExportBridgeHandler? export = null,
         PortraitBridgeHandler? portraits = null,
-        DisclosureBridgeHandler? disclosure = null)
+        DisclosureBridgeHandler? disclosure = null,
+        ProxyBridgeHandler? proxy = null)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(jobs);
@@ -72,6 +73,7 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
         Export = export;
         Portraits = portraits;
         Disclosure = disclosure;
+        Proxy = proxy;
     }
 
     /// <summary>FR-137 (6): registers and lists the user's standing pictures (none is bundled).</summary>
@@ -79,6 +81,9 @@ internal sealed class ApplicationBridgeHandlers : IAsyncDisposable
 
     /// <summary>NFR-BR-005: lists AI-generated elements and adds destination labels.</summary>
     internal DisclosureBridgeHandler? Disclosure { get; }
+
+    /// <summary>FR-144: the settings screen's source-video proxy preview.</summary>
+    internal ProxyBridgeHandler? Proxy { get; }
 
     /// <summary>FR-132 handler that saves a Job's videos and thumbnails to a user-chosen folder.</summary>
     internal JobExportBridgeHandler? Export { get; }
@@ -205,6 +210,10 @@ internal static class ProjectApplicationRuntime
         var autoSettings = new ProjectAutoSettingsStore(services.WorkspacePath);
         var templateAutoSelections = new TemplateAutoSelectionStore(Path.Combine(services.WorkspacePath, "template-auto-selection"));
         var characterPortraits = new CharacterPortraitStore(Path.Combine(services.WorkspacePath, "character-portraits"));
+        // FR-144: the low-resolution proxy of the source video for the settings screen (Project folder once created).
+        var proxies = new ProjectProxyService(services.WorkspacePath,
+            (draftId, cancellationToken) => ((ISourceOnlyProjectCoordinator)native).ResolveProxySourceAsync(draftId, cancellationToken),
+            draftId => services.Drafts.GetDraft(draftId)?.FinalizedProjectId);
         var posterAttempts = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
         var service = new ProjectCreationService(
             services.Drafts,
@@ -246,6 +255,9 @@ internal static class ProjectApplicationRuntime
                 _ => Task.FromResult(facts is null ? null
                     : new TemplateAnalysisInput(facts.DurationSeconds, facts.DisplayWidth, facts.DisplayHeight, facts.HasAudio)),
                 () => characterPortraits.Count),
+            ProxyRequester = proxies.Request,
+            ProxyFinalizer = proxies.OnFinalized,
+            ProxyRemover = proxies.Delete,
             AutoSettingsRecorder = autoSettings.Save,
             AutoSettingsReader = autoSettings.Read,
             SourceMediaRecorder = (id, path, facts) => autoSettings.SaveSource(id, SourceMediaNote.Create(path, facts, Environment.UserName)),
@@ -314,8 +326,12 @@ internal static class ProjectApplicationRuntime
             authorization)
         {
             Posters = posters,
+            Proxies = proxies,
             Drafts = new ProjectCreationDraftStore(services.DatabasePath),
         };
+        var proxyHandler = new ProxyBridgeHandler(proxies,
+            () => authorization.CanPerform(actorProvider.GetCurrentSid(), AuthorizationOperation.PreviewProject),
+            draftId => services.Drafts.GetDraft(draftId) is not null);
         return new ApplicationBridgeHandlers(
             projectHandler,
             jobHandler,
@@ -352,7 +368,8 @@ internal static class ProjectApplicationRuntime
             new DisclosureBridgeHandler(
                 new HubRadio.App.Audit.AiGenerationDisclosureService(reviewStore),
                 authorization,
-                actorProvider.GetCurrentSid));
+                actorProvider.GetCurrentSid),
+            proxyHandler);
     }
 
     /// <summary>FR-145: the automatic selection of a Project (resolved through the Project's first execution to its creation draft).</summary>
