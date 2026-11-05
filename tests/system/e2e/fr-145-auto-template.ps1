@@ -79,7 +79,19 @@ Invoke-Test -Label "FR-145 $Ac" -Sandbox $sb -Body {
         Assert-JobOrigin $root $sb 'c' '手動' '(手動|manual)' $null
         # (d) スキップ: [設定] で自動選択を「使わない」にして新しい Project を作り、テンプレートを選ばずに Job を実行する → 出自は「なし」
         Open-Settings $root
+        # 導線: タブ「Projectと出力」→ 項目「テンプレートの自動選択」→ 選択肢「使わない」→「保存」（変更は保存して初めて有効。保存後に作る Project から有効）
+        Invoke-Element (Find-ByName $root 'Projectと出力' 30)
+        $item = $null; $sw3 = [Diagnostics.Stopwatch]::StartNew()
+        do {
+            $item = Find-AllByNameLike $root 'テンプレートの自動選択|テンプレート自動選択|Template auto-selection' | Where-Object { $_.Current.ControlType -ne [System.Windows.Automation.ControlType]::Text } | Select-Object -First 1
+            if (-not $item) { Start-Sleep -Milliseconds 300 }
+        } while (-not $item -and $sw3.Elapsed.TotalSeconds -lt 30)
+        if (-not $item) { throw 'settings item for template auto-selection not found in the Projectと出力 tab' }
+        Invoke-Element $item
         Invoke-Element (Find-ByName $root '使わない' 30)
+        Invoke-Element (Find-ByName $root '保存')
+        $null = Find-ByName $root '未保存の変更はありません。' 30
+        if (Test-ByName $root '設定を閉じて戻る' 3) { Invoke-Element (Find-ByName $root '設定を閉じて戻る') }
         $null = New-ProjectWithCompletedJobs $root $sb 'auto-skip' 0 $video
         New-TemplateJob $root 1
         Assert-JobOrigin $root $sb 'd' 'なし' '((?<!テンプレート)なし|\bnone\b)' $null
