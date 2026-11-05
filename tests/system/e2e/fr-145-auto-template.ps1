@@ -78,9 +78,13 @@ Invoke-Test -Label "FR-145 $Ac" -Sandbox $sb -Body {
         New-TemplateJob $root 3
         Assert-JobOrigin $root $sb 'c' '手動' '(手動|manual)' $null
         # (d) スキップ: [設定] で自動選択を「使わない」にして新しい Project を作り、テンプレートを選ばずに Job を実行する → 出自は「なし」
+        # 保存した設定は「次に作成するJob」（開いている Project）にだけ効くため、Project 一覧へ戻ってから全体の設定を変える
+        Invoke-Element (Find-ByName $root 'Project一覧へ戻る' 30)
         Open-Settings $root
         # 導線: タブ「Projectと出力」→ 項目「テンプレートの自動選択」→ 選択肢「使わない」→「保存」（変更は保存して初めて有効。保存後に作る Project から有効）
         Invoke-Element (Find-ByName $root 'Projectと出力' 30)
+        # 設定の一覧パネルが非表示（画面の配置）のときは「設定の一覧を表示」で出す
+        if (Test-ByName $root '設定の一覧を表示' 5) { Invoke-Element (Find-ByName $root '設定の一覧を表示') }
         $item = $null; $sw3 = [Diagnostics.Stopwatch]::StartNew()
         do {
             $item = Find-AllByNameLike $root 'テンプレートの自動選択|テンプレート自動選択|Template auto-selection' | Where-Object { $_.Current.ControlType -ne [System.Windows.Automation.ControlType]::Text } | Select-Object -First 1
@@ -89,7 +93,10 @@ Invoke-Test -Label "FR-145 $Ac" -Sandbox $sb -Body {
         if (-not $item) { throw 'settings item for template auto-selection not found in the Projectと出力 tab' }
         Invoke-Element $item
         Invoke-Element (Find-ByName $root '使わない' 30)
-        Invoke-Element (Find-ByName $root '保存')
+        # 項目の「保存」は名前が「 保存」（先頭に空白）。Workspaceフォルダー欄の「保存」とは別のボタン
+        $saveBtn = Find-AllByNameLike $root '^\s+保存$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button } | Select-Object -First 1
+        if (-not $saveBtn) { throw 'settings item save button not found' }
+        Invoke-Element $saveBtn
         $null = Find-ByName $root '未保存の変更はありません。' 30
         if (Test-ByName $root '設定を閉じて戻る' 3) { Invoke-Element (Find-ByName $root '設定を閉じて戻る') }
         $null = New-ProjectWithCompletedJobs $root $sb 'auto-skip' 0 $video
