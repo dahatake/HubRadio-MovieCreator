@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-145 AC-189（system）。期待値は受入基準だけから決める。実際の文字起こしを CPU で実行するため非常に遅い（10 分の動画。1 Project あたり数分、2 Project）。
 # 話し声のある 10 分の元動画（端末内の音声合成と ffmpeg で合成。外部送信・有料サービスなし）で、自動選択が有効な設定のとき:
 #  (a) Project 作成から 60 秒（PARAM-013）以内に暫定選択が表示され、Project の作成・元動画の確認・Job の実行が待たされない。
@@ -15,7 +15,9 @@ $script:ProvisionalLimitSec = 60                    # PARAM-013
 $script:RejudgeLimitSec = $script:LengthSec * 1 + 60 # 元動画の長さ × PARAM-014 ＋ PARAM-015 = 660
 
 function New-SpeechVideo10Min($sb, [string]$dir) {
-    # 端末内の音声合成（System.Speech）で話し声の WAV を作り、10 分に繰り返す。音声合成が使えないときは、話し声に近い振幅変調の音（代替）にする。
+    # 端末内の音声合成（System.Speech）で、2 話者（別の声）が交互に話す約 40 秒の WAV を作り、10 分に繰り返す。
+    # 音声合成が使えないときは、話し声に近い振幅変調の音（代替）にする。
+    # ffmpeg の H.264 エンコーダーは版により異なる（libx264 が無い LGPL 版がある）。使えるものを選ぶ。標準エラーはログに出す。
     $ff = Get-TestFfmpeg $sb
     $wav = Join-Path $dir 'speech.wav'
     $made = $false
@@ -23,24 +25,44 @@ function New-SpeechVideo10Min($sb, [string]$dir) {
         Add-Type -AssemblyName System.Speech
         $syn = New-Object System.Speech.Synthesis.SpeechSynthesizer
         try {
-            $ja = @($syn.GetInstalledVoices() | Where-Object { $_.Enabled -and $_.VoiceInfo.Culture.Name -like 'ja*' }) | Select-Object -First 1
-            if ($ja) { $syn.SelectVoice($ja.VoiceInfo.Name); $text = '今日は新しい動画編集の使い方について説明します。まず元動画を取り込み、次に演出のテンプレートを選びます。そのあと字幕を確認して、書き出しの設定を整えます。' }
-            else { $text = 'Today I will explain how to edit a video. First, import the source video. Next, choose a style template. Then check the captions and prepare the export settings.' }
-            $syn.SetOutputToWaveFile($wav); $syn.Speak($text); $made = $true
+            $ja = @($syn.GetInstalledVoices() | Where-Object { $_.Enabled -and $_.VoiceInfo.Culture.Name -like 'ja*' })
+            if ($ja.Count -gt 0) {
+                $lines = @('今日は新しい動画編集の使い方について説明します。', 'まず元動画を取り込み、次に演出のテンプレートを選びます。', 'なるほど、そのあと字幕はどのように確認すればよいですか。', '字幕の画面で文字を確認して、必要なら直してください。書き出しの設定は最後に整えます。')
+                $voices = @($ja | ForEach-Object { $_.VoiceInfo.Name })
+                $female = $voices | Where-Object { $_ -match 'Haruka|Ayumi|Sayaka' } | Select-Object -First 1
+                $male = $voices | Where-Object { $_ -match 'Ichiro' } | Select-Object -First 1
+                $pair = @(@($female, $male) | Where-Object { $_ })
+                if ($pair.Count -eq 0) { $pair = @($voices[0]) }
+            } else {
+                $lines = @('Today I will explain how to edit a video. First, import the source video.', 'Next, choose a style template. Then check the captions and prepare the export settings.')
+                $pair = @($syn.GetInstalledVoices() | Where-Object { $_.Enabled } | ForEach-Object { $_.VoiceInfo.Name } | Select-Object -First 2)
+            }
+            $syn.SetOutputToWaveFile($wav)
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+                if ($pair.Count -gt 0) { $syn.SelectVoice($pair[$i % $pair.Count]) }
+                $syn.Speak($lines[$i])
+            }
+            $made = $true
         } finally { $syn.Dispose() }
-    } catch { $made = $false }
+    } catch { Write-Host "DIAG-SPEECH: System.Speech failed: $($_.Exception.Message)"; $made = $false }
     $video = Join-Path $dir 'source-10min.mp4'
+    $encoders = (& $ff -hide_banner -encoders 2>&1 | Out-String)
+    $vc = 'mpeg4'
+    foreach ($c in 'libx264', 'libopenh264', 'h264_mf') { if ($encoders -match "(?m)^\s*V\S*\s+$c\s") { $vc = $c; break } }
+    $vopt = if ($vc -eq 'libx264') { @('-c:v', 'libx264', '-preset', 'ultrafast') } elseif ($vc -eq 'mpeg4') { @('-c:v', 'mpeg4', '-q:v', '5') } else { @('-c:v', $vc) }
     $v = @('-f', 'lavfi', '-i', "testsrc=size=1280x720:rate=15:duration=$($script:LengthSec)")
-    if ($made -and (Test-Path -LiteralPath $wav)) {
+    if ($made -and (Test-Path -LiteralPath $wav) -and (Get-Item -LiteralPath $wav).Length -gt 1000) {
         $a = @('-stream_loop', '-1', '-i', $wav)
     } else {
         $a = @('-f', 'lavfi', '-i', "aevalsrc='0.4*sin(2*PI*140*t)*(0.6+0.4*sin(2*PI*4*t))+0.1*sin(2*PI*900*t)*sin(2*PI*2*t)':s=16000:d=$($script:LengthSec)")
     }
-    & $ff -y @v @a -t $script:LengthSec -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -shortest $video 2>$null
-    if ($LASTEXITCODE -ne 0) { throw 'ffmpeg failed to create the 10-minute synthetic speech video' }
+    $log = & $ff -y @v @a -t $script:LengthSec @vopt -pix_fmt yuv420p -c:a aac -ar 16000 -ac 1 -shortest $video 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $video)) {
+        Write-Host "DIAG-FFMPEG: $ff (video encoder $vc) exit=$LASTEXITCODE`n$log"
+        throw 'ffmpeg failed to create the 10-minute synthetic speech video'
+    }
     $video
 }
-
 function Get-SelectedTemplate($root) {
     foreach ($n in $script:TemplateNames) {
         $e = Find-AllByNameLike $root ("^" + [regex]::Escape($n) + "$") | Select-Object -First 1
