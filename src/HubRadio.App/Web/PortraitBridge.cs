@@ -193,7 +193,7 @@ internal static class TemplateAutoBridgeJson
             writer.WriteStartObject();
             writer.WriteString("status", status);
             writer.WriteString("state", record is null ? "none" : record.StateName);
-            if (record?.TemplateId is { } id && record.State == TemplateAutoSelectionState.Selected)
+            if (record?.TemplateId is { } id && record.HasSelection)
             {
                 writer.WriteString("templateId", id);
             }
