@@ -249,11 +249,26 @@ internal static class ProjectApplicationRuntime
                 posters.Delete(draftId);
                 autoSettings.Delete(draftId);
                 templateAutoSelections.Delete(Guid.Parse(draftId.ToString()));
+                new TemplateSpeechFactsStore(Path.Combine(services.WorkspacePath, "template-auto-selection")).Delete(Guid.Parse(draftId.ToString()));
             },
             TemplateAutoSelectionStarter = (draftId, enabled, facts) => _ = TemplateAutoSelectionRunner.Start(
                 templateAutoSelections, Guid.Parse(draftId.ToString()), enabled,
-                _ => Task.FromResult(facts is null ? null
-                    : new TemplateAnalysisInput(facts.DurationSeconds, facts.DisplayWidth, facts.DisplayHeight, facts.HasAudio)),
+                async cancellationToken =>
+                {
+                    if (facts is null)
+                    {
+                        return null;
+                    }
+
+                    // AC-186: speakers (FR-003) and speech speed (FR-002) come from the transcript the Project already has, on this machine;
+                    // when it does not arrive in time they are 不明 and only length / aspect ratio decide. No new heavy processing is started.
+                    TemplateSpeechFacts speech = facts.HasAudio == false ? TemplateSpeechFacts.Unknown
+                        : await new TemplateSpeechFactsStore(Path.Combine(services.WorkspacePath, "template-auto-selection"))
+                            .WaitAsync(Guid.Parse(draftId.ToString()), TimeSpan.FromSeconds(TemplateAutoSelectionRunner.SpeechFactsWaitSeconds), cancellationToken)
+                            .ConfigureAwait(false);
+                    return new TemplateAnalysisInput(facts.DurationSeconds, facts.DisplayWidth, facts.DisplayHeight, facts.HasAudio,
+                        speech.SpeakerCount, speech.WordsPerMinute);
+                },
                 () => characterPortraits.Count),
             ProxyRequester = proxies.Request,
             ProxyFinalizer = proxies.OnFinalized,
@@ -364,12 +379,22 @@ internal static class ProjectApplicationRuntime
                 Path.Combine(services.WorkspacePath, "project-speaker-assignments"),
                 new TemplateAutoSelectionAccess(
                     projectId => ReadAutoSelection(services, templateAutoSelections, projectId, touch: false),
-                    projectId => ReadAutoSelection(services, templateAutoSelections, projectId, touch: true))),
+                    projectId => ReadAutoSelection(services, templateAutoSelections, projectId, touch: true),
+                    projectId => ReadLatestJobOrigin(services, projectId))),
             new DisclosureBridgeHandler(
                 new HubRadio.App.Audit.AiGenerationDisclosureService(reviewStore),
                 authorization,
                 actorProvider.GetCurrentSid),
             proxyHandler);
+    }
+
+    /// <summary>FR-145: the origin (auto / manual / none) recorded for the Project's latest Job, or null when none is recorded yet.</summary>
+    private static string? ReadLatestJobOrigin(SourceOnlyApplicationServices services, Guid projectId)
+    {
+        StoredSourceOnlyExecution? latest = services.Executions.GetLatestForProject(EntityId<HubRadio.Core.Projects.ProjectIdTag>.Parse(projectId.ToString("D")));
+        return latest is null
+            ? null
+            : JobTemplateOriginStore.Load(Path.Combine(services.WorkspacePath, "job-style-templates", latest.Request.RootJobId.ToString()))?.Origin;
     }
 
     /// <summary>FR-145: the automatic selection of a Project (resolved through the Project's first execution to its creation draft).</summary>

@@ -277,7 +277,7 @@ public sealed class TemplateAutoSelectionTests
     {
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement result = document.RootElement.GetProperty("result").Clone();
-        CollectionAssert.AreEqual(new[] { "status", "state", "templateId", "reason" }, result.EnumerateObject().Select(static p => p.Name).ToArray());
+        CollectionAssert.AreEqual(new[] { "status", "state", "templateId", "reason", "jobOrigin" }, result.EnumerateObject().Select(static p => p.Name).ToArray());
         Assert.AreEqual(status, result.GetProperty("status").GetString(), json);
         return result;
     }
@@ -298,6 +298,16 @@ public sealed class TemplateAutoSelectionTests
         JsonElement analyzing = Result(handler.Handle(Request(BridgeMethod.TemplateAutoGet, parameters)), "ok");
         Assert.AreEqual("analyzing", analyzing.GetProperty("state").GetString());
         Assert.AreEqual(JsonValueKind.Null, analyzing.GetProperty("templateId").ValueKind);
+        Assert.AreEqual(JsonValueKind.Null, analyzing.GetProperty("jobOrigin").ValueKind);
+
+        // AC-181 / AC-184: the origin recorded for the latest Job (自動選択 / 手動 / なし) is returned as one of the three values only.
+        foreach ((string? recorded, string? expected) in new (string?, string?)[] { ("auto", "auto"), ("manual", "manual"), ("none", "none"), ("other", null), (null, null) })
+        {
+            var withOrigin = new TemplateAutoSelectionAccess(_ => store.Load(key), _ => store.Touch(key), _ => recorded);
+            JsonElement origin = Result(new PortraitBridgeHandler(new CharacterPortraitStore(Path.Combine(_temp, "p")), () => true, TimeProvider.System, null, withOrigin)
+                .Handle(Request(BridgeMethod.TemplateAutoGet, parameters)), "ok").GetProperty("jobOrigin");
+            Assert.AreEqual(expected, origin.ValueKind == JsonValueKind.Null ? null : origin.GetString());
+        }
 
         _ = store.TryComplete(key, new TemplateAutoSelectionRecord(TemplateAutoSelectionState.Selected, "short-pop", 1, "縦型ショート向けです。"));
         JsonElement selected = Result(handler.Handle(Request(BridgeMethod.TemplateAutoGet, parameters)), "ok");

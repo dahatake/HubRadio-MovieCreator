@@ -248,6 +248,9 @@ public static class TemplateAutoSelectionRunner
     /// <summary>PARAM-013: the longest wait for the analysis, in seconds.</summary>
     public const int MaximumAnalysisSeconds = 60;
 
+    /// <summary>The longest wait for the local transcript's speech facts inside the whole (ffprobe's 20 seconds is a separate inner limit of FR-054).</summary>
+    public const int SpeechFactsWaitSeconds = 40;
+
     public const string DisabledReason = "設定でテンプレートの自動選択を使わないため、テンプレートは選びませんでした。";
     public const string TimeoutReason = "解析が時間内に終わらなかったため、テンプレートは選びませんでした。";
     public const string FailedReason = "解析に失敗したため、テンプレートは選びませんでした。";
@@ -303,7 +306,9 @@ public static class TemplateAutoSelectionRunner
                     StyleTemplateDefinition? template = choice is null ? null : StyleTemplateCatalog.Find(choice.TemplateId);
                     result = choice is null || template is null
                         ? TemplateAutoSelectionRecord.Skipped(TemplateAutoSelector.NoFitReason)
-                        : new TemplateAutoSelectionRecord(TemplateAutoSelectionState.Selected, template.Id, template.Version, choice.Reason);
+                        : new TemplateAutoSelectionRecord(TemplateAutoSelectionState.Selected, template.Id, template.Version,
+                            // AC-186: the values the decision used (or that they were 不明) are shown with the reason.
+                            choice.Reason + TemplateSpeechFactsStore.Describe(new TemplateSpeechFacts(input.SpeakerCount, input.WordsPerMinute)));
                 }
             }
         }
