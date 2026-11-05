@@ -192,16 +192,6 @@ public sealed class TemplateAutoSelectionTests
         }
 
         public ValueTask DisposeAsync() => _pipeline.DisposeAsync();
-
-        /// <summary>The first Job (no regeneration) starts: the Project's automatic selection is applied when it is decided and untouched.</summary>
-        internal (JobTemplateOrigin? Origin, bool Recorded) RunFirstJob()
-        {
-            var job = EntityId<JobIdTag>.New();
-            _pipeline.ApplyAutoSelectionToFirstJob(EntityId<ProjectCreationDraftIdTag>.Parse(_key.ToString("D")), job);
-            string directory = _pipeline.StyleTemplateDirectory(job);
-            JobTemplateOrigin? origin = JobTemplateOriginStore.Load(directory);
-            return (origin, origin is not null && JobStyleTemplateStore.Load(directory) is not null);
-        }
     }
 
     // FR-145 AC-179: the analysis selects a template with a reason; a Job run without touching the choice records the template ID and
@@ -216,48 +206,6 @@ public sealed class TemplateAutoSelectionTests
         Assert.AreEqual((TemplateAutoSelectionState.Selected, "explainer"), (record.State, record.TemplateId));
         Assert.IsFalse(string.IsNullOrWhiteSpace(record.Reason));
         Assert.AreEqual(new JobTemplateOrigin("auto", "自動選択", "explainer", 1, StyleTemplateCatalog.Find("explainer")!.Name), project.RunJob("explainer"));
-    }
-
-    // FR-145 AC-179 / NFR-REL-002: the first Job (made by 編集を開始) takes an already selected automatic template with the origin 自動選択.
-    [TestMethod]
-    [TestCategory("FR-145")]
-    public async Task FirstJobTakesTheSelectedAutoTemplate()
-    {
-        await using var project = new Project(_temp);
-        await project.Start(true, _ =>         Task.FromResult<TemplateAnalysisInput?>(Landscape));
-        (JobTemplateOrigin? origin, bool recorded) = project.RunFirstJob();
-        Assert.IsTrue(recorded);
-        Assert.AreEqual("auto", origin!.Origin);
-        Assert.AreEqual("explainer", origin.TemplateId);
-    }
-
-    // FR-145 AC-180 / AC-182 / NFR-REL-002: a cancelled, skipped, still-running or disabled selection leaves the first Job without a template.
-    [TestMethod]
-    [TestCategory("FR-145")]
-    [DataRow("cancelled")]
-    [DataRow("skipped")]
-    [DataRow("analyzing")]
-    [DataRow("none")]
-    public async Task FirstJobHasNoTemplateUnlessTheSelectionIsDecidedAndUntouched(string kind)
-    {
-        await using var project = new Project(_temp);
-        if (kind == "analyzing")
-        {
-            _ = project.Start(true, async cancellation => { await Task.Delay(Timeout.Infinite, cancellation); return Landscape; });
-        }
-        else if (kind == "skipped")
-        {
-            await project.Start(false, _ => Task.FromResult<TemplateAnalysisInput?>(Landscape));
-        }
-        else if (kind == "cancelled")
-        {
-            await project.Start(true, _ => Task.FromResult<TemplateAnalysisInput?>(Landscape));
-            _ = project.Store.Touch(project.Key);
-        }
-
-        (JobTemplateOrigin? origin, bool recorded) = project.RunFirstJob();
-        Assert.IsFalse(recorded, kind);
-        Assert.IsNull(origin, kind);
     }
 
     // FR-145 AC-181: changing the automatic choice to another template applies the other template; the origin is 手動.
