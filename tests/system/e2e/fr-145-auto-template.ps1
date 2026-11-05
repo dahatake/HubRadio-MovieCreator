@@ -1,7 +1,7 @@
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 # FR-145 AC-181（system）。期待値は受入基準だけから決める。
 # 自動選択が有効な Project で、(1) 解析中でも Project 作成直後の画面移動・元動画の確認ができ、
-# (2) (a) そのまま使う＝自動選択、(b) 別のテンプレートへ変える＝手動、(c) テンプレートなし＝なし の 3 値のどれか 1 つが記録・表示され、
+# (2) 最初の Job（編集を開始）は自動選択を適用せず出自「なし」。(a) 2 つ目以降でそのまま使う＝自動選択、(b) 別のテンプレートへ変える＝手動、(c) 「テンプレートなし」を明示選択＝手動、(d) 自動選択を使わない設定の Project でテンプレートを選ばず実行＝なし。3 値のどれか 1 つが記録・表示され、
 #     適用されるテンプレートが利用者の最終の選択と一致する。
 # 注: 「解析がスキップされた Project」（自動選択を使わない設定）は integration（AC-182/183 側）で検証する。
 param([ValidateSet('AC-181')][string]$Ac = 'AC-181')
@@ -15,7 +15,7 @@ function Assert-JobOrigin($root, $sb, [string]$case, [string]$label, [string]$la
     $f = @(Get-ChildItem -LiteralPath $ws -Recurse -File -Filter 'template-origin.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime)
     if ($f.Count -eq 0) { throw "($case) no origin record found under workspace" }
     $text = Get-Content -LiteralPath $f[-1].FullName -Raw -Encoding UTF8
-    $hits = @('(自動選択|auto)', '(手動|manual)', '(なし|none)') | Where-Object { $text -match $_ }
+    $hits = @('(自動選択|auto)', '(手動|manual)', '((?<!テンプレート)なし|\bnone\b)') | Where-Object { $text -match $_ }
     if (@($hits).Count -ne 1 -or $text -notmatch $labelRx) { throw "($case) origin must be exactly one of 自動選択/手動/なし and be '$label': $text" }
     if ($expectedTemplate) {
         if ($text -notmatch [regex]::Escape($expectedTemplate)) { throw "($case) applied template is not the final selection '$expectedTemplate': $text" }
@@ -39,6 +39,8 @@ Invoke-Test -Label "FR-145 $Ac" -Sandbox $sb -Body {
         # 解析中の画面操作: 元動画の画面へ移動でき、元動画の確認ができる（解析の完了を待たない。作成後 30 秒以内に操作できる）
         Invoke-Element (Find-ByName $root '元動画' 30)
         if ($sw.Elapsed.TotalSeconds -gt 120) { throw 'screen navigation after project creation waited for the analysis' }
+        # 最初の Job（「編集を開始」）は自動選択を適用せず、出自は「なし」でテンプレートは適用されない（解析の完了前後を問わない）
+        Assert-JobOrigin $root $sb 'first' 'なし' '((?<!テンプレート)なし|\bnone\b)' $null
         # 自動選択の候補が初期選択として現れるまで待つ（FR-137 の 7 種のいずれか）
         $auto = $null; $wait = [Diagnostics.Stopwatch]::StartNew()
         do {
@@ -70,10 +72,16 @@ Invoke-Test -Label "FR-145 $Ac" -Sandbox $sb -Body {
             $sel2 = $null; try { $sel2 = $e2.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern).Current.IsSelected } catch {}
             if ($sel2 -eq $false) { throw 'manual selection was overwritten after the analysis finished' }
         }
-        # (c) 「テンプレートなし」を選んで Job を実行する → どのテンプレートも適用されず、出自は「なし」（3 値以外・空欄は記録されない）
+        # (c) 「テンプレートなし」を明示的に選んで Job を実行する → どのテンプレートも適用されず、出自は「手動」（「なし」ではない）
         Invoke-Element (Find-ByName $root '元動画')
         Invoke-Element (Find-ByName $root 'テンプレートを使わない')
         New-TemplateJob $root 3
-        Assert-JobOrigin $root $sb 'c' 'なし' '(なし|none)' $null
+        Assert-JobOrigin $root $sb 'c' '手動' '(手動|manual)' $null
+        # (d) スキップ: [設定] で自動選択を「使わない」にして新しい Project を作り、テンプレートを選ばずに Job を実行する → 出自は「なし」
+        Open-Settings $root
+        Invoke-Element (Find-ByName $root '使わない' 30)
+        $null = New-ProjectWithCompletedJobs $root $sb 'auto-skip' 0 $video
+        New-TemplateJob $root 1
+        Assert-JobOrigin $root $sb 'd' 'なし' '((?<!テンプレート)なし|\bnone\b)' $null
     } finally { Stop-App $p }
 }

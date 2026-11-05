@@ -29,7 +29,7 @@
     "AC-139": "sha256:9f9ae722fdb59645",
     "AC-142": "sha256:59d6f99ccdc163fa",
     "AC-150": "sha256:b27bf4cb59291704",
-    "AC-151": "sha256:48a445d8ffecfbb6",
+    "AC-151": "sha256:91282f835e3ad938",
     "AC-152": "sha256:c93bc97bccf60d47",
     "AC-153": "sha256:eca00b1c7537bbfe",
     "AC-154": "sha256:0f7879dc839dcd3b",
@@ -43,11 +43,11 @@
     "AC-165": "sha256:d45a36499959dd2b",
     "AC-169": "sha256:f00da269ff6903f2",
     "AC-172": "sha256:8c1e5c8f0571af58",
-    "AC-174": "sha256:7fc8975df9e117fe",
+    "AC-174": "sha256:ef9940baad18a74a",
     "AC-176": "sha256:08cd805d95b857f4",
     "AC-177": "sha256:9e07e6580f7a5bc2",
     "AC-178": "sha256:39f19d1b5977ba36",
-    "AC-181": "sha256:219a9ba581cbf228"
+    "AC-181": "sha256:f2e1bebeb760c4af"
   },
   "cases": [
     {
@@ -1535,7 +1535,7 @@
       "ac_ids": [
         "AC-181"
       ],
-      "title": "FR-145 AC-181: 自動選択のまま／手動／テンプレートなしの 3 値の出自と適用テンプレートの一致・解析中の画面操作",
+      "title": "FR-145 AC-181: 最初の Job は出自なし・自動選択／手動／テンプレートなし明示=手動／スキップ=なし の 3 値と適用テンプレートの一致",
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-145-auto-template.ps1 -Ac AC-181",
       "canary": false,
@@ -1561,6 +1561,12 @@
           "by": "test-designer",
           "change": "status -> not_run",
           "reason": "テストを AC-181 の拡張に合わせて更新"
+        },
+        {
+          "at": "2026-11-05T23:21:03+09:00",
+          "by": "test-designer",
+          "change": "title: 'FR-145 AC-181: 自動選択のまま／手動／テンプレートなしの 3 値の出自と適用テンプレートの一致・解析中の画面操作' -> 'FR-145 AC-181: 最初の Job は出自なし・自動選択／手動／テンプレートなし明示=手動／スキップ=なし の 3 値と適用テンプレートの一致'",
+          "reason": "AC-181 の改訂（最初の Job 出自なし・(c) は手動・(d) スキップ）に合わせ拡張"
         }
       ]
     },
