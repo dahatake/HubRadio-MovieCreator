@@ -120,8 +120,6 @@ public sealed class SettingEditorCatalogTests
 
     // FR-050.1 AC-025.5: booleans the render configuration pins are classified fixed and really reject a change.
     [TestMethod]
-    [DataRow("editing.longOpenerEnabled")]
-    [DataRow("editing.shortOpenerEnabled")]
     [DataRow("editing.crossfadeEnabled")]
     [DataRow("audio.noiseReductionEnabled")]
     [DataRow("audio.humReductionEnabled")]
@@ -138,6 +136,19 @@ public sealed class SettingEditorCatalogTests
         DefaultSettingsSnapshot settings = WithValue(profile, key, DefaultSettingValue.FromBoolean(!initial));
         Assert.AreEqual(StandardGenerationFailureReason.UnsupportedSetting, Assert.ThrowsExactly<StandardGenerationException>(
             () => StandardRenderConfiguration.FromSettings(profile, settings, new RationalNumber(30, 1), 2)).Reason);
+    }
+
+    // FR-015 AC-063: the openers are user opt-ins, so the render configuration accepts them switched on (no longer pinned off).
+    [TestMethod]
+    [DataRow("editing.longOpenerEnabled")]
+    [DataRow("editing.shortOpenerEnabled")]
+    public void SettingEditorCatalogOpenerBooleansAreAcceptedWhenEnabled(string key)
+    {
+        DefaultSettingsProfile profile = LoadProfile("1.2.0");
+        DefaultSettingsSnapshot settings = WithValue(profile, key, DefaultSettingValue.FromBoolean(true));
+        StandardRenderConfiguration configuration = StandardRenderConfiguration.FromSettings(profile, settings, new RationalNumber(30, 1), 2);
+        Assert.AreEqual(key == "editing.longOpenerEnabled", configuration.LongOpenerEnabled);
+        Assert.AreEqual(key == "editing.shortOpenerEnabled", configuration.ShortOpenerEnabled);
     }
 
     /// <summary>Every value the settings screen offers for <paramref name="profile"/> (FR-050.4), validated by the profile.</summary>
