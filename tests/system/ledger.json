@@ -1371,10 +1371,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-140-143-system.ps1 -Ac AC-169",
       "canary": false,
-      "status": "fail",
-      "last_commit": "3b67bae",
-      "last_run_at": "2026-11-06T02:46:04+09:00",
-      "evidence": "work/runs/202611052304/logs/system-test/E2E-038-202611060230.log",
+      "status": "pass",
+      "last_commit": "458afd8",
+      "last_run_at": "2026-11-06T03:38:27+09:00",
+      "evidence": "work/runs/202611052304/logs/system-test/E2E-038-202611060330.log",
       "history": [
         {
           "at": "2026-10-30T22:49:10+09:00",
@@ -1539,10 +1539,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-145-auto-template.ps1 -Ac AC-181",
       "canary": false,
-      "status": "fail",
-      "last_commit": "3b67bae",
-      "last_run_at": "2026-11-06T02:46:04+09:00",
-      "evidence": "work/runs/202611052304/logs/system-test/E2E-044-202611060241.log",
+      "status": "pass",
+      "last_commit": "458afd8",
+      "last_run_at": "2026-11-06T03:38:27+09:00",
+      "evidence": "work/runs/202611052304/logs/system-test/E2E-044-202611060332.log",
       "history": [
         {
           "at": "2026-11-05T00:33:59+09:00",
