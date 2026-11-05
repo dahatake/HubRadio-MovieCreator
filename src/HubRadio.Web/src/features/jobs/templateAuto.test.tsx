@@ -100,6 +100,31 @@ describe('JobCreationAction automatic template selection', () => {
     expect(checked()).toBe('解説')
   })
 
+  // AC-187: after a time-out skip the screen keeps reading; a late selection is set as the initial selection with its reason, without a
+  // rebuild; a template the user chose meanwhile is never overwritten.
+  it('shows a late selection after a skip as the initial selection with the reason', async () => {
+    const fake = service([result({ state: 'skipped', reason: '解析が時間内に終わらなかったため、テンプレートは選びませんでした。' }),
+      result({ state: 'selected', templateId: 'short-pop', reason: '縦型ショート向けです。' })])
+    act(() => root.render(<Host service={fake} />))
+    await flush()
+    expect(checked()).toBe('none')
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+    expect(checked()).toBe('ショート飛び出し')
+    expect(container.textContent).toContain('自動選択: ショート飛び出し。理由: 縦型ショート向けです。')
+  })
+
+  it('does not show a late selection over a template chosen after the skip', async () => {
+    const fake = service([result({ state: 'skipped', reason: '解析が時間内に終わらなかったため、テンプレートは選びませんでした。' }),
+      result({ state: 'selected', templateId: 'short-pop', reason: '縦型ショート向けです。' })])
+    act(() => root.render(<Host service={fake} />))
+    await flush()
+    const other = container.querySelector(`input[aria-label="${styleTemplateOptions[0]!.name.replace(/\s+/gu, '')}"]`) as HTMLInputElement
+    act(() => { other.click() })
+    await flush()
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    expect(checked()).toBe('解説')
+  })
+
   // AC-182: no template is chosen (skipped) and the reason is shown; nothing blocks the screen.
   it('shows the reason when no template was chosen', async () => {
     act(() => root.render(<Host service={service([result({ state: 'skipped', reason: '解析が時間内に終わらなかったため、テンプレートは選びませんでした。' })])} />))

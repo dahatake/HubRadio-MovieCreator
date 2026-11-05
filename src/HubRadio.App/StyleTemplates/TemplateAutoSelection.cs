@@ -11,6 +11,9 @@ public enum TemplateAutoSelectionState
     Selected,
     Cancelled,
     Skipped,
+
+    /// <summary>FR-145 (スキップ→選択済み): the analysis ended after the PARAM-013 timeout and found a template; shown late as an initial selection.</summary>
+    SkippedSelected,
 }
 
 /// <summary>
@@ -23,7 +26,8 @@ public sealed record TemplateAutoSelectionRecord(
     string? TemplateId,
     int? Version,
     string Reason,
-    bool ManualTouched = false)
+    bool ManualTouched = false,
+    bool TimedOut = false)
 {
     public static TemplateAutoSelectionRecord Waiting() => new(TemplateAutoSelectionState.Waiting, null, null, "解析を待っています。");
 
@@ -31,13 +35,31 @@ public sealed record TemplateAutoSelectionRecord(
 
     public static TemplateAutoSelectionRecord Skipped(string reason) => new(TemplateAutoSelectionState.Skipped, null, null, reason);
 
+    /// <summary>The skip caused by the PARAM-013 timeout; only this skip can still become スキップ→選択済み (a failure, the setting off and "no fit" never do).</summary>
+    public static TemplateAutoSelectionRecord TimedOutSkip(string reason) => Skipped(reason) with { TimedOut = true };
+
     public bool IsOpen => State is TemplateAutoSelectionState.Waiting or TemplateAutoSelectionState.Analyzing;
 
+    /// <summary>True when the record carries a template to show as the initial selection (選択済み, or スキップ→選択済み).</summary>
+    public bool HasSelection => State is TemplateAutoSelectionState.Selected or TemplateAutoSelectionState.SkippedSelected;
+
+    /// <summary>The state in Japanese as the requirement names it (FR-145 状態表).</summary>
+    public string Label => State switch
+    {
+        TemplateAutoSelectionState.Waiting => "解析待ち",
+        TemplateAutoSelectionState.Analyzing => "解析中",
+        TemplateAutoSelectionState.Selected => "選択済み",
+        TemplateAutoSelectionState.Cancelled => "取消",
+        TemplateAutoSelectionState.SkippedSelected => "スキップ→選択済み",
+        _ => "スキップ",
+    };
+
+    /// <summary>The bridge state (closed set). スキップ→選択済み is shown as selected: the screen only needs the template and the reason.</summary>
     public string StateName => State switch
     {
         TemplateAutoSelectionState.Waiting => "waiting",
         TemplateAutoSelectionState.Analyzing => "analyzing",
-        TemplateAutoSelectionState.Selected => "selected",
+        TemplateAutoSelectionState.Selected or TemplateAutoSelectionState.SkippedSelected => "selected",
         TemplateAutoSelectionState.Cancelled => "cancelled",
         _ => "skipped",
     };
@@ -66,6 +88,12 @@ public static class TemplateAutoSelector
 {
     /// <summary>A vertical video up to this many seconds is a short (ショート飛び出し).</summary>
     public const double ShortSeconds = 90;
+
+    /// <summary>
+    /// A-008 規則版: the version of the "最適" decision rules below. Raise it whenever Select's rules (thresholds, order, templates) change,
+    /// so a Job's template-origin.json says which rules chose its template (FR-145, AC-188). 規則版 1 = the A-008 initial rules.
+    /// </summary>
+    public const int RuleVersion = 1;
 
     public const string NoFitReason = "この動画に適した演出テンプレートがないため、テンプレートなし（いつもの仕上がり）にしました。";
 
@@ -197,6 +225,26 @@ public sealed class TemplateAutoSelectionStore
     }
 
     /// <summary>
+    /// FR-145 (スキップ→選択済み): a template found after the timeout is kept only while the Project still shows the timed-out skip and the user
+    /// has not chosen a template themself. A failure, the setting off, "no fit" and 取消 never become 選択済み. Returns false when dropped.
+    /// </summary>
+    public bool TryCompleteLate(Guid key, TemplateAutoSelectionRecord selected)
+    {
+        ArgumentNullException.ThrowIfNull(selected);
+        lock (Gate)
+        {
+            TemplateAutoSelectionRecord? current = LoadUnlocked(key);
+            if (current is not { State: TemplateAutoSelectionState.Skipped, TimedOut: true, ManualTouched: false })
+            {
+                return false;
+            }
+
+            SaveUnlocked(key, selected with { State = TemplateAutoSelectionState.SkippedSelected, ManualTouched = false, TimedOut = false });
+            return true;
+        }
+    }
+
+    /// <summary>
     /// The user chose a template themself (or ran a Job with one): an open selection becomes 取消, a decided one only remembers the touch.
     /// Returns the record after the change, or null when the Project has none.
     /// </summary>
@@ -210,7 +258,8 @@ public sealed class TemplateAutoSelectionStore
                 return null;
             }
 
-            TemplateAutoSelectionRecord next = current.IsOpen
+            bool cancellable = current.IsOpen || current is { State: TemplateAutoSelectionState.Skipped, TimedOut: true, ManualTouched: false };
+            TemplateAutoSelectionRecord next = cancellable
                 ? new TemplateAutoSelectionRecord(TemplateAutoSelectionState.Cancelled, null, null,
                     "テンプレートを手動で選んだため、自動選択を取り消しました。", ManualTouched: true)
                 : current with { ManualTouched = true };
@@ -248,6 +297,9 @@ public static class TemplateAutoSelectionRunner
     /// <summary>PARAM-013: the longest wait for the analysis, in seconds.</summary>
     public const int MaximumAnalysisSeconds = 60;
 
+    /// <summary>FR-145: how long an analysis that passed the timeout may still finish and be shown late (スキップ→選択済み), in seconds.</summary>
+    public const int LateGraceSeconds = 300;
+
     /// <summary>The longest wait for the local transcript's speech facts inside the whole (ffprobe's 20 seconds is a separate inner limit of FR-054).</summary>
     public const int SpeechFactsWaitSeconds = 40;
 
@@ -261,7 +313,7 @@ public static class TemplateAutoSelectionRunner
     /// <paramref name="analyze"/> returns the facts (null when the video could not be read).
     /// </summary>
     public static Task Start(TemplateAutoSelectionStore store, Guid key, bool enabled,
-        Func<CancellationToken, Task<TemplateAnalysisInput?>> analyze, Func<int> registeredPortraitCount, TimeSpan? timeout = null)
+        Func<CancellationToken, Task<TemplateAnalysisInput?>> analyze, Func<int> registeredPortraitCount, TimeSpan? timeout = null, TimeSpan? lateGrace = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(analyze);
@@ -275,41 +327,29 @@ public static class TemplateAutoSelectionRunner
             return Task.CompletedTask;
         }
 
-        return enabled ? Task.Run(() => RunAsync(store, key, analyze, registeredPortraitCount, timeout ?? TimeSpan.FromSeconds(MaximumAnalysisSeconds))) : Task.CompletedTask;
+        return enabled ? Task.Run(() => RunAsync(store, key, analyze, registeredPortraitCount, timeout ?? TimeSpan.FromSeconds(MaximumAnalysisSeconds),
+            lateGrace ?? TimeSpan.FromSeconds(LateGraceSeconds))) : Task.CompletedTask;
     }
 
     private static async Task RunAsync(TemplateAutoSelectionStore store, Guid key,
-        Func<CancellationToken, Task<TemplateAnalysisInput?>> analyze, Func<int> registeredPortraitCount, TimeSpan timeout)
+        Func<CancellationToken, Task<TemplateAnalysisInput?>> analyze, Func<int> registeredPortraitCount, TimeSpan timeout, TimeSpan lateGrace)
     {
         TemplateAutoSelectionRecord result;
-        using var cancellation = new CancellationTokenSource();
+        var cancellation = new CancellationTokenSource();
+        Task<TemplateAnalysisInput?>? lateWork = null;
         try
         {
             Task<TemplateAnalysisInput?> work = Task.Run(() => analyze(cancellation.Token), CancellationToken.None);
             Task finished = await Task.WhenAny(work, Task.Delay(timeout)).ConfigureAwait(false);
             if (finished != work)
             {
-                await cancellation.CancelAsync().ConfigureAwait(false);
-                _ = work.ContinueWith(static task => _ = task.Exception, TaskScheduler.Default);
-                result = TemplateAutoSelectionRecord.Skipped(TimeoutReason);
+                // The analysis keeps running for a bounded grace: if it ends with a template, it is shown late (スキップ→選択済み).
+                lateWork = work;
+                result = TemplateAutoSelectionRecord.TimedOutSkip(TimeoutReason);
             }
             else
             {
-                TemplateAnalysisInput? input = await work.ConfigureAwait(false);
-                if (input is null)
-                {
-                    result = TemplateAutoSelectionRecord.Skipped(UnreadableReason);
-                }
-                else
-                {
-                    TemplateChoice? choice = TemplateAutoSelector.Select(input, registeredPortraitCount());
-                    StyleTemplateDefinition? template = choice is null ? null : StyleTemplateCatalog.Find(choice.TemplateId);
-                    result = choice is null || template is null
-                        ? TemplateAutoSelectionRecord.Skipped(TemplateAutoSelector.NoFitReason)
-                        : new TemplateAutoSelectionRecord(TemplateAutoSelectionState.Selected, template.Id, template.Version,
-                            // AC-186: the values the decision used (or that they were 不明) are shown with the reason.
-                            choice.Reason + TemplateSpeechFactsStore.Describe(new TemplateSpeechFacts(input.SpeakerCount, input.WordsPerMinute)));
-                }
+                result = Decide(await work.ConfigureAwait(false), registeredPortraitCount);
             }
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -325,26 +365,86 @@ public static class TemplateAutoSelectionRunner
         {
             // The record stays 解析中 on disk only when the disk fails; the user can still choose a template themself.
         }
+
+        if (lateWork is not null)
+        {
+            // Not awaited: the Start task ends with the PARAM-013 timeout; the late result is picked up in the background (bounded by the grace).
+            _ = CompleteLateAsync(store, key, lateWork, registeredPortraitCount, lateGrace, cancellation);
+        }
+        else
+        {
+            cancellation.Dispose();
+        }
+    }
+
+    private static TemplateAutoSelectionRecord Decide(TemplateAnalysisInput? input, Func<int> registeredPortraitCount)
+    {
+        if (input is null)
+        {
+            return TemplateAutoSelectionRecord.Skipped(UnreadableReason);
+        }
+
+        TemplateChoice? choice = TemplateAutoSelector.Select(input, registeredPortraitCount());
+        StyleTemplateDefinition? template = choice is null ? null : StyleTemplateCatalog.Find(choice.TemplateId);
+        return choice is null || template is null
+            ? TemplateAutoSelectionRecord.Skipped(TemplateAutoSelector.NoFitReason)
+            : new TemplateAutoSelectionRecord(TemplateAutoSelectionState.Selected, template.Id, template.Version,
+                // AC-186: the values the decision used (or that they were 不明) are shown with the reason.
+                choice.Reason + TemplateSpeechFactsStore.Describe(new TemplateSpeechFacts(input.SpeakerCount, input.WordsPerMinute)));
+    }
+
+    /// <summary>FR-145: waits (bounded) for an analysis that passed the timeout; only a found template becomes スキップ→選択済み, never a failure or "no fit".</summary>
+    private static async Task CompleteLateAsync(TemplateAutoSelectionStore store, Guid key, Task<TemplateAnalysisInput?> work,
+        Func<int> registeredPortraitCount, TimeSpan grace, CancellationTokenSource cancellation)
+    {
+        try
+        {
+            Task finished = await Task.WhenAny(work, Task.Delay(grace)).ConfigureAwait(false);
+            if (finished != work)
+            {
+                await cancellation.CancelAsync().ConfigureAwait(false);
+                _ = work.ContinueWith(static task => _ = task.Exception, TaskScheduler.Default);
+                return;
+            }
+
+            TemplateAutoSelectionRecord late = Decide(await work.ConfigureAwait(false), registeredPortraitCount);
+            if (late.State == TemplateAutoSelectionState.Selected)
+            {
+                _ = store.TryCompleteLate(key, late);
+            }
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // A late failure leaves the timed-out skip as it is (never shown late).
+        }
+        finally
+        {
+            cancellation.Dispose();
+        }
     }
 }
 
 /// <summary>FR-145 / FR-136: how a Job's template was decided. 自動選択 and 手動 are recorded with the template's ID and version; なし is the default output.</summary>
-public sealed record JobTemplateOrigin(string Origin, string Label, string? TemplateId, int? Version, string? TemplateName = null)
+public sealed record JobTemplateOrigin(string Origin, string Label, string? TemplateId, int? Version, string? TemplateName = null, string RuleVersion = JobTemplateOrigin.NoRuleVersion)
 {
     public const string Auto = "auto";
     public const string Manual = "manual";
     public const string None = "none";
 
+    /// <summary>AC-188: recorded as the rule version unless the origin is 自動選択 (手動 and なし apply no A-008 rule).</summary>
+    public const string NoRuleVersion = "なし";
+
     /// <summary>
     /// <paramref name="auto"/> is the Project's selection (null when it has none). A template equal to an untouched automatic selection is
-    /// 自動選択; any other template, or none after the user touched the choice, is 手動; the rest is なし.
+    /// 自動選択 (and records the A-008 rule version that chose it); any other template, or none after the user touched the choice, is 手動; the rest is なし.
     /// </summary>
     public static JobTemplateOrigin Decide(StyleTemplateDefinition? template, TemplateAutoSelectionRecord? auto)
     {
         if (template is not null)
         {
-            bool isAuto = auto is { State: TemplateAutoSelectionState.Selected, ManualTouched: false } && auto.TemplateId == template.Id;
-            return new(isAuto ? Auto : Manual, isAuto ? "自動選択" : "手動", template.Id, template.Version, template.Name);
+            bool isAuto = auto is { HasSelection: true, ManualTouched: false } && auto.TemplateId == template.Id;
+            return new(isAuto ? Auto : Manual, isAuto ? "自動選択" : "手動", template.Id, template.Version, template.Name,
+                isAuto ? TemplateAutoSelector.RuleVersion.ToString(System.Globalization.CultureInfo.InvariantCulture) : NoRuleVersion);
         }
 
         return auto is { ManualTouched: true }
