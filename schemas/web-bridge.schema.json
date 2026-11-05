@@ -383,12 +383,13 @@
     "templateAutoResult": {
       "$comment": "state is none (the Project has no selection), waiting, analyzing, selected, cancelled (the user chose first) or skipped (disabled, timed out after PARAM-013 seconds, failed, or no template fits). templateId is one of the seven FR-137 templates only when selected. reason is a short Japanese sentence. No path, exception text or SID.",
       "type": "object", "additionalProperties": false,
-      "required": ["status", "state", "templateId", "reason"],
+      "required": ["status", "state", "templateId", "reason", "jobOrigin"],
       "properties": {
         "status": { "enum": ["ok", "forbidden", "invalid", "unavailable"] },
         "state": { "enum": ["none", "waiting", "analyzing", "selected", "cancelled", "skipped"] },
         "templateId": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$(?![\\s\\S])", "maxLength": 64 }] },
-        "reason": { "type": "string", "maxLength": 400 }
+        "reason": { "type": "string", "maxLength": 400 },
+        "jobOrigin": { "$comment": "The origin recorded for the Project's latest Job: auto (自動選択), manual (手動), none (なし); null when no Job has a record yet. No other value.", "oneOf": [{ "type": "null" }, { "enum": ["auto", "manual", "none"] }] }
       }
     },
     "speakersResult": {

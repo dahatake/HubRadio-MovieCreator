@@ -181,18 +181,19 @@ internal static class PortraitBridgeJson
 /// <summary>FR-145: reads (and, on a manual choice, touches) the automatic template selection of a Project (null when it has none).</summary>
 internal sealed record TemplateAutoSelectionAccess(
     Func<Guid, TemplateAutoSelectionRecord?> Read,
-    Func<Guid, TemplateAutoSelectionRecord?> Touch);
+    Func<Guid, TemplateAutoSelectionRecord?> Touch,
+    Func<Guid, string?>? ReadOrigin = null);
 
-/// <summary>FR-145: the closed result of templateAuto.get / templateAuto.touch (state, template, the Japanese reason; no path or SID).</summary>
+/// <summary>FR-145: the closed result of templateAuto.get / templateAuto.touch (state, template, the Japanese reason, the origin of the Project's latest Job; no path or SID).</summary>
 internal static class TemplateAutoBridgeJson
 {
-    internal static string Write(BridgeRequest request, string status, TemplateAutoSelectionRecord? record) =>
+    internal static string Write(BridgeRequest request, string status, TemplateAutoSelectionRecord? record, string? jobOrigin = null) =>
         BridgeProtocol.CreateResultResponse(request, writer =>
         {
             writer.WriteStartObject();
             writer.WriteString("status", status);
             writer.WriteString("state", record is null ? "none" : record.StateName);
-            if (record?.TemplateId is { } id && record.State == TemplateAutoSelectionState.Selected)
+            if (record?.TemplateId is { } id && record.HasSelection)
             {
                 writer.WriteString("templateId", id);
             }
@@ -202,6 +203,16 @@ internal static class TemplateAutoBridgeJson
             }
 
             writer.WriteString("reason", record?.Reason ?? "");
+            // FR-145: the origin recorded for the latest Job: auto / manual / none (never any other value), or null when no Job has one yet.
+            if (jobOrigin is JobTemplateOrigin.Auto or JobTemplateOrigin.Manual or JobTemplateOrigin.None)
+            {
+                writer.WriteString("jobOrigin", jobOrigin);
+            }
+            else
+            {
+                writer.WriteNull("jobOrigin");
+            }
+
             writer.WriteEndObject();
         });
 }
@@ -321,12 +332,12 @@ internal sealed class PortraitBridgeHandler
         var projectId = Guid.ParseExact(request.Parameters.GetProperty("projectId").GetString()!, "D");
         if (request.Method == BridgeMethod.TemplateAutoGet)
         {
-            return TemplateAutoBridgeJson.Write(request, "ok", templateAuto.Read(projectId));
+            return TemplateAutoBridgeJson.Write(request, "ok", templateAuto.Read(projectId), templateAuto.ReadOrigin?.Invoke(projectId));
         }
 
         return IsAuthorized()
-            ? TemplateAutoBridgeJson.Write(request, "ok", templateAuto.Touch(projectId))
-            : TemplateAutoBridgeJson.Write(request, "forbidden", templateAuto.Read(projectId));
+            ? TemplateAutoBridgeJson.Write(request, "ok", templateAuto.Touch(projectId), templateAuto.ReadOrigin?.Invoke(projectId))
+            : TemplateAutoBridgeJson.Write(request, "forbidden", templateAuto.Read(projectId), templateAuto.ReadOrigin?.Invoke(projectId));
     }
 
     /// <summary>FR-140: cuts one character out of a registered image; the cut-out inherits the rights confirmation of the source.</summary>

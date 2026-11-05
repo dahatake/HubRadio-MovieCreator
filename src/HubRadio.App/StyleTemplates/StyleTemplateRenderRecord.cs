@@ -90,6 +90,9 @@ public sealed record StyleTemplateRenderRecord(
 {
     public const string FileName = "style-template-render.json";
 
+    /// <summary>FR-145: the Japanese name of the applied template (the Job's applied template, as the user chose or was given it).</summary>
+    public string? TemplateName { get; init; }
+
     /// <summary>FR-139: true when any displayed caption is an automatic transcript not yet confirmed by the user (shown as 下書き).</summary>
     public bool CaptionsDraft { get; init; }
 
@@ -262,6 +265,8 @@ public sealed record StyleTemplateRenderRecord(
             plan.Warnings.Select(static warning => warning.Range is { } range
                 ? string.Create(CultureInfo.InvariantCulture, $"{warning.Code}@{Seconds(range.Start):F3}") : warning.Code).ToArray())
         {
+            // The Japanese name of the template the Job applied, so the record can be read without the ID table.
+            TemplateName = template.Name,
             CaptionsDraft = recorded.Any(static item => item.Draft),
             SourceTranscript = [.. cues.OrderBy(static item => item.Cue.OutputRange.Start).Select(static item => new RecordedSourceText(item.Cue.Text))],
         };

@@ -24,7 +24,7 @@ export function StyleTemplatePicker({ selectedId, onSelect, options = styleTempl
     <ul className="style-template-list" ref={list}>
       <li>
         <label className="style-template-card">
-          <input type="radio" name={name} checked={selectedId === null} onChange={() => onSelect(null)} />
+          <input type="radio" name={name} aria-label="テンプレートを使わない" checked={selectedId === null} onChange={() => onSelect(null)} />
           <span className="style-template-name">テンプレートを使わない</span>
           <span className="style-template-purpose">いつもの既定の仕上がりにします。</span>
         </label>

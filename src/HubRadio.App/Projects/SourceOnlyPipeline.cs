@@ -426,6 +426,20 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                     throw new InvalidOperationException("Recover the native execution before restarting its jobs.");
                 }
             }
+            // FR-145: the first Job (「編集を開始」) never has an automatic selection applied: no template, origin なし (3 values, never blank).
+            // A Job created by Regenerate has its origin recorded already.
+            string styleDirectory = StyleTemplateDirectory(execution.Request.RootJobId);
+            if (!IsTerminal(execution.Phase) && StyleTemplates.JobTemplateOriginStore.Load(styleDirectory) is null)
+            {
+                try
+                {
+                    StyleTemplates.JobTemplateOriginStore.Save(styleDirectory, StyleTemplates.JobTemplateOrigin.Decide(LoadStyleTemplate(execution.Request.RootJobId), null));
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+
             return taskOwner.Start(executionId, execution.Request.ProjectId,
                 token => ExecuteOwnedAsync(executionId, token));
         }
@@ -2445,6 +2459,29 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             cancellation => callbacks.IngestReady(ingest, cancellation), token);
 
     private Task RegisterTranscriptAsync(StoredSourceOnlyExecution execution, Project project,
+        TranscriptImportResult import, CancellationToken token)
+    {
+        RecordSpeechFacts(execution.Request.DraftId, import.Revision);
+        return RegisterTranscriptCallbackAsync(execution, project, import, token);
+    }
+
+    /// <summary>FR-145 / AC-186: keeps the speaker count and speech speed of the local transcript for the template analysis. Never stops the Job (NFR-REL-002).</summary>
+    internal void RecordSpeechFacts(EntityId<ProjectCreationDraftIdTag> draftId, TranscriptRevision revision)
+    {
+        try
+        {
+            if (Guid.TryParse(draftId.ToString(), out Guid key))
+            {
+                new StyleTemplates.TemplateSpeechFactsStore(Path.Combine(workspace, "template-auto-selection"))
+                    .Save(key, StyleTemplates.TemplateSpeechFacts.From(revision));
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private Task RegisterTranscriptCallbackAsync(StoredSourceOnlyExecution execution, Project project,
         TranscriptImportResult import, CancellationToken token) =>
         callbacks.TranscriptReady is null ? Task.CompletedTask : RegisterRuntimeAsync(execution, "transcript",
             StandardRenderGraphFactory.Digest(new

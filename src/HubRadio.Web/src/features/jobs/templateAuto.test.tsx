@@ -11,7 +11,7 @@ import { styleTemplateOptions } from './styleTemplates'
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const project = id(9)
-const result = (over: Partial<TemplateAutoResult> = {}): TemplateAutoResult => ({ status: 'ok', state: 'none', templateId: null, reason: '', ...over })
+const result = (over: Partial<TemplateAutoResult> = {}): TemplateAutoResult => ({ status: 'ok', state: 'none', templateId: null, reason: '', jobOrigin: null, ...over })
 const envelope = (r: unknown, method = 'templateAuto.get', requestId = id(1)) => ({ version: 1, requestId, method, result: r })
 
 // FR-145 / NFR-REL-002: the templateAuto.get / templateAuto.touch bridge protocol.
@@ -63,7 +63,7 @@ describe('JobCreationAction automatic template selection', () => {
       onConfirm={() => true} styleTemplateId={selected} onStyleTemplateChange={setSelected} portraitService={null} speakerService={null}
       templateAutoService={service} projectId={project} />
   }
-  const checked = () => (container.querySelector('input[type="radio"]:checked') as HTMLInputElement | null)?.getAttribute('aria-label') ?? 'none'
+  const checked = () => { const label = (container.querySelector('input[type="radio"]:checked') as HTMLInputElement | null)?.getAttribute('aria-label'); return label === null || label === undefined || label === 'テンプレートを使わない' ? 'none' : label }
   const service = (queue: TemplateAutoResult[]) => {
     const fake: TemplateAutoService = {
       get: vi.fn(async () => (queue.length > 1 ? queue.shift()! : queue[0]!) as TemplateAutoOutcome),
@@ -100,11 +100,50 @@ describe('JobCreationAction automatic template selection', () => {
     expect(checked()).toBe('解説')
   })
 
+  // AC-187: after a time-out skip the screen keeps reading; a late selection is set as the initial selection with its reason, without a
+  // rebuild; a template the user chose meanwhile is never overwritten.
+  it('shows a late selection after a skip as the initial selection with the reason', async () => {
+    const fake = service([result({ state: 'skipped', reason: '解析が時間内に終わらなかったため、テンプレートは選びませんでした。' }),
+      result({ state: 'selected', templateId: 'short-pop', reason: '縦型ショート向けです。' })])
+    act(() => root.render(<Host service={fake} />))
+    await flush()
+    expect(checked()).toBe('none')
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+    expect(checked()).toBe('ショート飛び出し')
+    expect(container.textContent).toContain('自動選択: ショート飛び出し。理由: 縦型ショート向けです。')
+  })
+
+  it('does not show a late selection over a template chosen after the skip', async () => {
+    const fake = service([result({ state: 'skipped', reason: '解析が時間内に終わらなかったため、テンプレートは選びませんでした。' }),
+      result({ state: 'selected', templateId: 'short-pop', reason: '縦型ショート向けです。' })])
+    act(() => root.render(<Host service={fake} />))
+    await flush()
+    const other = container.querySelector(`input[aria-label="${styleTemplateOptions[0]!.name.replace(/\s+/gu, '')}"]`) as HTMLInputElement
+    act(() => { other.click() })
+    await flush()
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
+    expect(checked()).toBe('解説')
+  })
+
   // AC-182: no template is chosen (skipped) and the reason is shown; nothing blocks the screen.
   it('shows the reason when no template was chosen', async () => {
     act(() => root.render(<Host service={service([result({ state: 'skipped', reason: '解析が時間内に終わらなかったため、テンプレートは選びませんでした。' })])} />))
     await flush()
     expect(checked()).toBe('none')
     expect(container.textContent).toContain('解析が時間内に終わらなかった')
+    expect(container.querySelector('.style-template-origin')).toBeNull()
+  })
+
+  // AC-181 AC-180 AC-182: the origin shown is the one the host recorded for the latest Job: 自動選択, 手動 or なし (never another value).
+  it.each([['auto', '自動選択'], ['manual', '手動'], ['none', 'なし']] as const)('shows the recorded origin %s as %s', async (recorded, label) => {
+    const fake = service([result({ state: 'selected', templateId: 'short-pop', reason: '縦型ショート向けです。', jobOrigin: recorded })])
+    act(() => root.render(<Host service={fake} />))
+    await flush()
+    expect(container.querySelector('.style-template-origin')?.textContent).toBe(`直近の Job のテンプレートの出自: ${label}`)
+  })
+
+  it('rejects an origin that is not one of the three values', () => {
+    expect(parseTemplateAutoResponse(envelope(result({ jobOrigin: '自動選択' as never })))).toBeNull()
+    expect(parseTemplateAutoResponse(envelope(result({ jobOrigin: '' as never })))).toBeNull()
   })
 })

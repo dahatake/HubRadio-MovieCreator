@@ -155,7 +155,7 @@ public sealed class TemplateAutoSelectionTests
 
         string directory = Path.Combine(_temp, "job");
         JobTemplateOriginStore.Save(directory, JobTemplateOrigin.Decide(explainer, selected));
-        Assert.AreEqual(new JobTemplateOrigin("auto", "自動選択", "explainer", 1, "解説"), JobTemplateOriginStore.Load(directory));
+        Assert.AreEqual(new JobTemplateOrigin("auto", "自動選択", "explainer", 1, "解説", "1"), JobTemplateOriginStore.Load(directory));
         Assert.IsNull(JobTemplateOriginStore.Load(Path.Combine(_temp, "missing")));
     }
 
@@ -179,8 +179,10 @@ public sealed class TemplateAutoSelectionTests
 
         internal Guid Key => _key;
 
-        internal Task Start(bool enabled, Func<CancellationToken, Task<TemplateAnalysisInput?>> analyzer, TimeSpan? timeout = null) =>
-            TemplateAutoSelectionRunner.Start(Store, _key, enabled, analyzer, () => 0, timeout);
+        internal Task Start(bool enabled, Func<CancellationToken, Task<TemplateAnalysisInput?>> analyzer, TimeSpan? timeout = null, TimeSpan? lateGrace = null) =>
+            TemplateAutoSelectionRunner.Start(Store, _key, enabled, analyzer, () => 0, timeout, lateGrace);
+
+        internal string? JobDirectoryOfLastRun { get; private set; }
 
         /// <summary>The Job's origin after the user ran a Job with the template (or none).</summary>
         internal JobTemplateOrigin RunJob(string? templateId)
@@ -188,7 +190,8 @@ public sealed class TemplateAutoSelectionTests
             var job = EntityId<JobIdTag>.New();
             _pipeline.RecordTemplateOrigin(EntityId<ProjectCreationDraftIdTag>.Parse(_key.ToString("D")),
                 job, templateId is null ? null : StyleTemplateCatalog.Find(templateId));
-            return JobTemplateOriginStore.Load(_pipeline.StyleTemplateDirectory(job))!;
+            JobDirectoryOfLastRun = _pipeline.StyleTemplateDirectory(job);
+            return JobTemplateOriginStore.Load(JobDirectoryOfLastRun)!;
         }
 
         public ValueTask DisposeAsync() => _pipeline.DisposeAsync();
@@ -205,7 +208,7 @@ public sealed class TemplateAutoSelectionTests
         TemplateAutoSelectionRecord record = project.Store.Load(project.Key)!;
         Assert.AreEqual((TemplateAutoSelectionState.Selected, "explainer"), (record.State, record.TemplateId));
         Assert.IsFalse(string.IsNullOrWhiteSpace(record.Reason));
-        Assert.AreEqual(new JobTemplateOrigin("auto", "自動選択", "explainer", 1, StyleTemplateCatalog.Find("explainer")!.Name), project.RunJob("explainer"));
+        Assert.AreEqual(new JobTemplateOrigin("auto", "自動選択", "explainer", 1, StyleTemplateCatalog.Find("explainer")!.Name, "1"), project.RunJob("explainer"));
     }
 
     // FR-145 AC-181: changing the automatic choice to another template applies the other template; the origin is 手動.
@@ -270,6 +273,121 @@ public sealed class TemplateAutoSelectionTests
         }
     }
 
+    // FR-145 AC-188 (A-008 規則版 1): the rule version is recorded only with the origin 自動選択; 手動 and なし record "なし" in template-origin.json.
+    [TestMethod]
+    [TestCategory("FR-145")]
+    public async Task OnlyAnAutoSelectedJobRecordsTheRuleVersionInTemplateOriginJson()
+    {
+        await using var project = new Project(_temp);
+        await project.Start(true, _ => Task.FromResult<TemplateAnalysisInput?>(Landscape));
+        Assert.AreEqual(TemplateAutoSelector.RuleVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), ReadRuleVersion(project.RunJob("explainer"), JobTemplateOrigin.Auto, project));
+        Assert.AreEqual("1", TemplateAutoSelector.RuleVersion.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Assert.AreEqual(JobTemplateOrigin.NoRuleVersion, ReadRuleVersion(project.RunJob("handmade"), JobTemplateOrigin.Manual, project));
+        Assert.AreEqual(JobTemplateOrigin.NoRuleVersion, ReadRuleVersion(project.RunJob(null), JobTemplateOrigin.Manual, project));
+
+        await using var skipped = new Project(Directory.CreateDirectory(Path.Combine(_temp, "skipped")).FullName);
+        await skipped.Start(false, _ => Task.FromResult<TemplateAnalysisInput?>(Landscape));
+        Assert.AreEqual(JobTemplateOrigin.NoRuleVersion, ReadRuleVersion(skipped.RunJob(null), JobTemplateOrigin.None, skipped));
+    }
+
+    // The value is read back from the template-origin.json the Job keeps (not only from the in-memory record).
+    private static string ReadRuleVersion(JobTemplateOrigin origin, string expectedOrigin, Project project)
+    {
+        Assert.AreEqual(expectedOrigin, origin.Origin);
+        using JsonDocument json = JsonDocument.Parse(File.ReadAllText(Path.Combine(project.JobDirectoryOfLastRun!, JobTemplateOriginStore.FileName)));
+        return json.RootElement.GetProperty("RuleVersion").GetString()!;
+    }
+
+    private static async Task<TemplateAutoSelectionRecord> WaitForAsync(TemplateAutoSelectionStore store, Guid key, Func<TemplateAutoSelectionRecord, bool> done)
+    {
+        for (int i = 0; i < 200; i++)
+        {
+            TemplateAutoSelectionRecord? record = store.Load(key);
+            if (record is not null && done(record))
+            {
+                return record;
+            }
+
+            await Task.Delay(25);
+        }
+
+        Assert.Fail("The selection did not reach the expected state.");
+        return null!;
+    }
+
+    // FR-145 AC-187: after the timeout skip the analysis ends with a template: it is shown late (スキップ→選択済み) with the reason; the Job
+    // already run stays 出自「なし」, and the next Job takes it as the initial selection (出自「自動選択」, 規則版 1).
+    [TestMethod]
+    [TestCategory("FR-145")]
+    public async Task ALateSelectionIsShownAfterTheTimeoutAndLeavesTheRunJobUnchanged()
+    {
+        var gate = new TaskCompletionSource<TemplateAnalysisInput?>();
+        await using var project = new Project(_temp);
+        await project.Start(true, _ => gate.Task, TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(30));
+        TemplateAutoSelectionRecord skipped = project.Store.Load(project.Key)!;
+        Assert.AreEqual(("スキップ", TemplateAutoSelectionRunner.TimeoutReason), (skipped.Label, skipped.Reason));
+        JobTemplateOrigin first = project.RunJob(null);
+        string firstDirectory = project.JobDirectoryOfLastRun!;
+        Assert.AreEqual((JobTemplateOrigin.None, JobTemplateOrigin.NoRuleVersion), (first.Origin, first.RuleVersion));
+
+        gate.SetResult(Landscape);
+        TemplateAutoSelectionRecord late = await WaitForAsync(project.Store, project.Key, r => r.State == TemplateAutoSelectionState.SkippedSelected);
+        Assert.AreEqual(("スキップ→選択済み", "selected", "explainer"), (late.Label, late.StateName, late.TemplateId));
+        Assert.IsFalse(string.IsNullOrWhiteSpace(late.Reason));
+        Assert.IsFalse(late.ManualTouched);
+
+        Assert.AreEqual(first, JobTemplateOriginStore.Load(firstDirectory));
+        Assert.AreEqual(new JobTemplateOrigin("auto", "自動選択", "explainer", 1, StyleTemplateCatalog.Find("explainer")!.Name, "1"), project.RunJob("explainer"));
+    }
+
+    // FR-145 AC-187: a template the user chose after the timeout skip cancels it (スキップ→取消); the late result is neither shown nor overwrites it.
+    [TestMethod]
+    [TestCategory("FR-145")]
+    public async Task ALateResultNeverOverwritesATemplateChosenAfterTheTimeout()
+    {
+        var gate = new TaskCompletionSource<TemplateAnalysisInput?>();
+        await using var project = new Project(_temp);
+        await project.Start(true, _ => gate.Task, TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(30));
+        Assert.AreEqual(JobTemplateOrigin.Manual, project.RunJob("handmade").Origin);
+        TemplateAutoSelectionRecord cancelled = project.Store.Load(project.Key)!;
+        Assert.AreEqual((TemplateAutoSelectionState.Cancelled, true), (cancelled.State, cancelled.ManualTouched));
+
+        gate.SetResult(Landscape);
+        await Task.Delay(300);
+        Assert.AreEqual(TemplateAutoSelectionState.Cancelled, project.Store.Load(project.Key)!.State);
+        Assert.IsFalse(project.Store.TryCompleteLate(project.Key, new TemplateAutoSelectionRecord(TemplateAutoSelectionState.Selected, "explainer", 1, "解説")));
+    }
+
+    // FR-145 AC-187: a failure, "no template fits" and an analysis that stays over the grace are never shown late; skips that did not time out are final.
+    [TestMethod]
+    [TestCategory("FR-145")]
+    [DataRow("failure")]
+    [DataRow("nofit")]
+    [DataRow("grace")]
+    public async Task OnlyATimedOutAnalysisThatFindsATemplateIsShownLate(string kind)
+    {
+        var gate = new TaskCompletionSource<TemplateAnalysisInput?>();
+        await using var project = new Project(_temp);
+        await project.Start(true, _ => gate.Task, TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(kind == "grace" ? 200 : 30000));
+        Assert.IsTrue(project.Store.Load(project.Key)!.TimedOut);
+        switch (kind)
+        {
+            case "failure": gate.SetException(new IOException("ffprobe failed")); break;
+            case "nofit": gate.SetResult(new TemplateAnalysisInput(300, 1920, 1080, false)); break;
+            default: await Task.Delay(500); gate.SetResult(Landscape); break;
+        }
+
+        await Task.Delay(400);
+        Assert.AreEqual(TemplateAutoSelectionState.Skipped, project.Store.Load(project.Key)!.State, kind);
+
+        TemplateAutoSelectionStore store = Store();
+        var key = Guid.NewGuid();
+        store.Save(key, TemplateAutoSelectionRecord.Skipped(TemplateAutoSelectionRunner.FailedReason));
+        Assert.IsFalse(store.TryCompleteLate(key, new TemplateAutoSelectionRecord(TemplateAutoSelectionState.Selected, "explainer", 1, "解説")));
+        store.Save(key, TemplateAutoSelectionRecord.Skipped(TemplateAutoSelectionRunner.DisabledReason));
+        Assert.IsFalse(store.TryCompleteLate(key, new TemplateAutoSelectionRecord(TemplateAutoSelectionState.Selected, "explainer", 1, "解説")));
+    }
+
     private static BridgeRequest Request(BridgeMethod method, string parameters) =>
         BridgeRequest.Create(Guid.NewGuid(), method, JsonDocument.Parse(parameters).RootElement.Clone());
 
@@ -277,7 +395,7 @@ public sealed class TemplateAutoSelectionTests
     {
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement result = document.RootElement.GetProperty("result").Clone();
-        CollectionAssert.AreEqual(new[] { "status", "state", "templateId", "reason" }, result.EnumerateObject().Select(static p => p.Name).ToArray());
+        CollectionAssert.AreEqual(new[] { "status", "state", "templateId", "reason", "jobOrigin" }, result.EnumerateObject().Select(static p => p.Name).ToArray());
         Assert.AreEqual(status, result.GetProperty("status").GetString(), json);
         return result;
     }
@@ -298,6 +416,16 @@ public sealed class TemplateAutoSelectionTests
         JsonElement analyzing = Result(handler.Handle(Request(BridgeMethod.TemplateAutoGet, parameters)), "ok");
         Assert.AreEqual("analyzing", analyzing.GetProperty("state").GetString());
         Assert.AreEqual(JsonValueKind.Null, analyzing.GetProperty("templateId").ValueKind);
+        Assert.AreEqual(JsonValueKind.Null, analyzing.GetProperty("jobOrigin").ValueKind);
+
+        // AC-181 / AC-184: the origin recorded for the latest Job (自動選択 / 手動 / なし) is returned as one of the three values only.
+        foreach ((string? recorded, string? expected) in new (string?, string?)[] { ("auto", "auto"), ("manual", "manual"), ("none", "none"), ("other", null), (null, null) })
+        {
+            var withOrigin = new TemplateAutoSelectionAccess(_ => store.Load(key), _ => store.Touch(key), _ => recorded);
+            JsonElement origin = Result(new PortraitBridgeHandler(new CharacterPortraitStore(Path.Combine(_temp, "p")), () => true, TimeProvider.System, null, withOrigin)
+                .Handle(Request(BridgeMethod.TemplateAutoGet, parameters)), "ok").GetProperty("jobOrigin");
+            Assert.AreEqual(expected, origin.ValueKind == JsonValueKind.Null ? null : origin.GetString());
+        }
 
         _ = store.TryComplete(key, new TemplateAutoSelectionRecord(TemplateAutoSelectionState.Selected, "short-pop", 1, "縦型ショート向けです。"));
         JsonElement selected = Result(handler.Handle(Request(BridgeMethod.TemplateAutoGet, parameters)), "ok");
