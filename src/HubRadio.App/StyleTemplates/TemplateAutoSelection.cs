@@ -294,14 +294,7 @@ public sealed class TemplateAutoSelectionStore
 /// </summary>
 public static class TemplateAutoSelectionRunner
 {
-    /// <summary>PARAM-013: the longest wait for the analysis, in seconds.</summary>
-    public const int MaximumAnalysisSeconds = 60;
-
-    /// <summary>FR-145: how long an analysis that passed the timeout may still finish and be shown late (スキップ→選択済み), in seconds.</summary>
-    public const int LateGraceSeconds = 300;
-
-    /// <summary>The longest wait for the local transcript's speech facts inside the whole (ffprobe's 20 seconds is a separate inner limit of FR-054).</summary>
-    public const int SpeechFactsWaitSeconds = 40;
+    // The time limits (PARAM-013 and the shares inside it) live only in TemplateAnalysisTimings.
 
     public const string DisabledReason = "設定でテンプレートの自動選択を使わないため、テンプレートは選びませんでした。";
     public const string TimeoutReason = "解析が時間内に終わらなかったため、テンプレートは選びませんでした。";
@@ -327,8 +320,8 @@ public static class TemplateAutoSelectionRunner
             return Task.CompletedTask;
         }
 
-        return enabled ? Task.Run(() => RunAsync(store, key, analyze, registeredPortraitCount, timeout ?? TimeSpan.FromSeconds(MaximumAnalysisSeconds),
-            lateGrace ?? TimeSpan.FromSeconds(LateGraceSeconds))) : Task.CompletedTask;
+        return enabled ? Task.Run(() => RunAsync(store, key, analyze, registeredPortraitCount,         timeout ?? TemplateAnalysisTimings.MaximumAnalysis,
+                    lateGrace ?? TemplateAnalysisTimings.LateGrace)) : Task.CompletedTask;
     }
 
     private static async Task RunAsync(TemplateAutoSelectionStore store, Guid key,

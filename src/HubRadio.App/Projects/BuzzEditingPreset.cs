@@ -129,7 +129,8 @@ internal static class BuzzEditingPreset
 /// <summary>FR-054: duration and displayed size (rotation applied) of the selected source video.</summary>
 internal static class SourceMediaProbe
 {
-    internal static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
+    // FR-054 / AC-186: 20 seconds, an inner share of PARAM-013 (written once in TemplateAnalysisTimings).
+    internal static readonly TimeSpan Timeout = HubRadio.App.StyleTemplates.TemplateAnalysisTimings.Probe;
 
     internal static IReadOnlyList<string> BuildArguments(string sourcePath) =>
     [

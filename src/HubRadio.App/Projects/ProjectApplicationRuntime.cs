@@ -264,7 +264,7 @@ internal static class ProjectApplicationRuntime
                     // when it does not arrive in time they are 不明 and only length / aspect ratio decide. No new heavy processing is started.
                     TemplateSpeechFacts speech = facts.HasAudio == false ? TemplateSpeechFacts.Unknown
                         : await new TemplateSpeechFactsStore(Path.Combine(services.WorkspacePath, "template-auto-selection"))
-                            .WaitAsync(Guid.Parse(draftId.ToString()), TimeSpan.FromSeconds(TemplateAutoSelectionRunner.SpeechFactsWaitSeconds), cancellationToken)
+                            .WaitAsync(Guid.Parse(draftId.ToString()), TemplateAnalysisTimings.SpeechFactsWait, cancellationToken)
                             .ConfigureAwait(false);
                     return new TemplateAnalysisInput(facts.DurationSeconds, facts.DisplayWidth, facts.DisplayHeight, facts.HasAudio,
                         speech.SpeakerCount, speech.WordsPerMinute);
