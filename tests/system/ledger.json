@@ -1,52 +1,53 @@
 {
   "version": 1,
   "ac_digests": {
-    "AC-039": "sha256:ed8a8115c6067fe7",
-    "AC-040": "sha256:12f152e1304c0dd0",
-    "AC-042": "sha256:843138252d88fb15",
-    "AC-041": "sha256:e11565590197475f",
-    "AC-132": "sha256:a0064d809e8f8eda",
-    "AC-136": "sha256:399341ba9b7218ab",
-    "AC-137": "sha256:3e38d76c28c8e8dd",
-    "AC-139": "sha256:9f9ae722fdb59645",
-    "AC-142": "sha256:59d6f99ccdc163fa",
-    "AC-049": "sha256:5fcb0265ea53d8da",
     "AC-001": "sha256:1ae24dcc5005c0fb",
-    "AC-057": "sha256:f3c31d4d087dfd42",
     "AC-002": "sha256:421dedbdc3c38616",
-    "AC-060": "sha256:2b5c4c18596fe649",
-    "AC-079": "sha256:aefa71d77c168b74",
+    "AC-007": "sha256:e22de15606a02ea8",
     "AC-009": "sha256:d0466150afc90178",
     "AC-010": "sha256:0e3708700e854c57",
     "AC-017": "sha256:6c185dcb0421da0d",
     "AC-030": "sha256:3665cd6a454d2172",
     "AC-036": "sha256:2ea58370006ce728",
     "AC-038": "sha256:3fe425010251d63b",
-    "AC-007": "sha256:e22de15606a02ea8",
+    "AC-039": "sha256:ed8a8115c6067fe7",
+    "AC-040": "sha256:12f152e1304c0dd0",
+    "AC-041": "sha256:e11565590197475f",
+    "AC-042": "sha256:843138252d88fb15",
+    "AC-049": "sha256:5fcb0265ea53d8da",
+    "AC-057": "sha256:f3c31d4d087dfd42",
+    "AC-060": "sha256:2b5c4c18596fe649",
+    "AC-079": "sha256:aefa71d77c168b74",
     "AC-127": "sha256:93015e5799090451",
     "AC-129": "sha256:41f4cfb04982d841",
+    "AC-132": "sha256:a0064d809e8f8eda",
     "AC-133": "sha256:67de5e9e52870e61",
     "AC-134": "sha256:c0bf5c4a36f6d4a1",
     "AC-135": "sha256:57ee96af9edaa7ba",
+    "AC-136": "sha256:399341ba9b7218ab",
+    "AC-137": "sha256:3e38d76c28c8e8dd",
+    "AC-139": "sha256:9f9ae722fdb59645",
+    "AC-142": "sha256:59d6f99ccdc163fa",
     "AC-150": "sha256:b27bf4cb59291704",
-    "AC-151": "sha256:405383872bd0d467",
+    "AC-151": "sha256:48a445d8ffecfbb6",
     "AC-152": "sha256:c93bc97bccf60d47",
     "AC-153": "sha256:eca00b1c7537bbfe",
     "AC-154": "sha256:0f7879dc839dcd3b",
+    "AC-155": "sha256:3f2ee8f84ef35a49",
     "AC-156": "sha256:6041c868c9b49763",
     "AC-157": "sha256:080d5e80e08f533a",
     "AC-158": "sha256:8e2186e112f366f8",
     "AC-159": "sha256:a8b576d551ca0912",
-    "AC-161": "sha256:53e96432b190b2a6",
-    "AC-155": "sha256:3f2ee8f84ef35a49",
     "AC-160": "sha256:8e6b6c7f0750b23e",
+    "AC-161": "sha256:53e96432b190b2a6",
     "AC-165": "sha256:d45a36499959dd2b",
     "AC-169": "sha256:f00da269ff6903f2",
     "AC-172": "sha256:8c1e5c8f0571af58",
     "AC-174": "sha256:7fc8975df9e117fe",
     "AC-176": "sha256:08cd805d95b857f4",
     "AC-177": "sha256:9e07e6580f7a5bc2",
-    "AC-178": "sha256:39f19d1b5977ba36"
+    "AC-178": "sha256:39f19d1b5977ba36",
+    "AC-181": "sha256:c00afda9b3ca3f25"
   },
   "cases": [
     {
@@ -358,9 +359,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-133-project-folder-name.ps1",
       "canary": true,
       "status": "pass",
-      "last_commit": "c035e10",
-      "last_run_at": "2026-11-05T00:39:17+09:00",
-      "evidence": "work/runs/202611042340/logs/system-test/E2E-009-202611050034.log",
+      "last_commit": "a81dab9",
+      "last_run_at": "2026-11-05T22:30:29+09:00",
+      "evidence": "work/runs/202611050519/logs/system-test/E2E-009-202611052221.log",
       "history": [
         {
           "at": "2026-10-13T05:43:51+09:00",
@@ -742,190 +743,6 @@
           "by": "test-designer",
           "change": "追加",
           "reason": "受入基準からケースを作成"
-        }
-      ]
-    },
-    {
-      "id": "IT-001",
-      "requirement_ids": [
-        "FR-131"
-      ],
-      "ac_ids": [
-        "AC-133"
-      ],
-      "title": "サムネイルのない Job に代替表示・他 Job 継続",
-      "layer": "api",
-      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-133",
-      "canary": false,
-      "status": "blocked",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
-      "history": [
-        {
-          "at": "2026-10-13T07:46:02+09:00",
-          "by": "test-designer",
-          "change": "追加",
-          "reason": "受入基準からケースを作成"
-        },
-        {
-          "at": "2026-10-13T07:47:10+09:00",
-          "by": "test-designer",
-          "change": "blocked",
-          "reason": "検証レベル=integration の AC は System Test の対象外（CHK-10）。implementer の結合テストで確認する"
-        },
-        {
-          "at": "2026-10-13T07:47:24+09:00",
-          "by": "test-designer",
-          "change": "blocked",
-          "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。結合テストで確認するため台帳では止める"
-        },
-        {
-          "at": "2026-11-02T18:08:21+09:00",
-          "by": "test-designer",
-          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-131-thumbnails-integration.ps1 -Ac AC-133' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-133'",
-          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
-        },
-        {
-          "at": "2026-11-02T18:08:21+09:00",
-          "by": "test-designer",
-          "change": "blocked",
-          "reason": "AC-133 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-133 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
-        }
-      ]
-    },
-    {
-      "id": "IT-002",
-      "requirement_ids": [
-        "FR-131"
-      ],
-      "ac_ids": [
-        "AC-134"
-      ],
-      "title": "更新後に最新反映・取り違えなし",
-      "layer": "api",
-      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-134",
-      "canary": false,
-      "status": "blocked",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
-      "history": [
-        {
-          "at": "2026-10-13T07:46:05+09:00",
-          "by": "test-designer",
-          "change": "追加",
-          "reason": "受入基準からケースを作成"
-        },
-        {
-          "at": "2026-10-13T07:47:10+09:00",
-          "by": "test-designer",
-          "change": "blocked",
-          "reason": "検証レベル=integration の AC は System Test の対象外（CHK-10）。implementer の結合テストで確認する"
-        },
-        {
-          "at": "2026-10-13T07:47:26+09:00",
-          "by": "test-designer",
-          "change": "blocked",
-          "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。結合テストで確認するため台帳では止める"
-        },
-        {
-          "at": "2026-11-02T18:08:22+09:00",
-          "by": "test-designer",
-          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-131-thumbnails-integration.ps1 -Ac AC-134' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-134'",
-          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
-        },
-        {
-          "at": "2026-11-02T18:08:22+09:00",
-          "by": "test-designer",
-          "change": "blocked",
-          "reason": "AC-134 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-134 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
-        }
-      ]
-    },
-    {
-      "id": "IT-003",
-      "requirement_ids": [
-        "FR-131"
-      ],
-      "ac_ids": [
-        "AC-135"
-      ],
-      "title": "代替テキスト・色以外の状態識別・キーボード操作",
-      "layer": "api",
-      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-135",
-      "canary": false,
-      "status": "blocked",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
-      "history": [
-        {
-          "at": "2026-10-13T07:46:08+09:00",
-          "by": "test-designer",
-          "change": "追加",
-          "reason": "受入基準からケースを作成"
-        },
-        {
-          "at": "2026-10-13T07:47:11+09:00",
-          "by": "test-designer",
-          "change": "blocked",
-          "reason": "検証レベル=integration の AC は System Test の対象外（CHK-10）。implementer の結合テストで確認する"
-        },
-        {
-          "at": "2026-10-13T07:47:27+09:00",
-          "by": "test-designer",
-          "change": "blocked",
-          "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。結合テストで確認するため台帳では止める"
-        },
-        {
-          "at": "2026-11-02T18:08:23+09:00",
-          "by": "test-designer",
-          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-131-thumbnails-integration.ps1 -Ac AC-135' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-135'",
-          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
-        },
-        {
-          "at": "2026-11-02T18:08:23+09:00",
-          "by": "test-designer",
-          "change": "blocked",
-          "reason": "AC-135 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-135 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
-        }
-      ]
-    },
-    {
-      "id": "IT-004",
-      "requirement_ids": [
-        "FR-064"
-      ],
-      "ac_ids": [
-        "AC-041"
-      ],
-      "title": "FR-064 AC-041: 実SID・実権限DBで参照拒否・非漏洩・設定不変",
-      "layer": "contract",
-      "command": "pwsh -NoProfile -File tests/system/e2e/permission-contract.ps1 -Ac AC-041",
-      "canary": false,
-      "status": "pass",
-      "last_commit": "70b4b89",
-      "last_run_at": "2026-11-03T11:41:40+09:00",
-      "evidence": "work/runs/202611030833/logs/system-test/IT-004-202611031121.log",
-      "history": [
-        {
-          "at": "2026-10-13T10:54:47+09:00",
-          "by": "test-designer",
-          "change": "追加",
-          "reason": "受入基準からケースを作成"
-        },
-        {
-          "at": "2026-11-02T18:18:26+09:00",
-          "by": "test-designer",
-          "change": "command: 'dotnet test tests/HubRadio.App.Tests/HubRadio.App.Tests.csproj --filter FullyQualifiedName~FR064_AC041 -p:Platform=x64' -> 'pwsh -NoProfile -File tests/system/e2e/permission-contract.ps1 -Ac AC-041'; title: '権限なし利用者の参照…は forbidden（ダイアログ未起動・例外文/SID/選択外情報なし）。既存の契約/統合テストで充足' -> 'FR-064 AC-041: 実SID・実権限DBで参照拒否・非漏洩・設定不変'",
-          "reason": "既存AC-041の有効ケースを拡張する。E2E-004へ作った実権限DB/native契約をこちらへ統合し重複を回避。e2e/入口により既存serial_patternsでWinUI共通XAML生成の並列build競合も防止"
-        },
-        {
-          "at": "2026-11-02T18:18:27+09:00",
-          "by": "test-designer",
-          "change": "status -> not_run",
-          "reason": "権限DBを含む強化契約へ拡張。conductorの新しい記録実行を待つ"
         }
       ]
     },
@@ -1530,9 +1347,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-140-143-system.ps1 -Ac AC-165",
       "canary": false,
       "status": "pass",
-      "last_commit": "a3848a9",
-      "last_run_at": "2026-11-03T20:26:05+09:00",
-      "evidence": "work/runs/202611031942/logs/system-test/E2E-037-202611032023.log",
+      "last_commit": "a81dab9",
+      "last_run_at": "2026-11-05T22:30:29+09:00",
+      "evidence": "work/runs/202611050519/logs/system-test/E2E-037-202611052222.log",
       "history": [
         {
           "at": "2026-10-30T22:49:08+09:00",
@@ -1611,9 +1428,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-140-143-system.ps1 -Ac AC-174",
       "canary": false,
       "status": "pass",
-      "last_commit": "70b4b89",
-      "last_run_at": "2026-11-03T11:41:40+09:00",
-      "evidence": "work/runs/202611030833/logs/system-test/E2E-040-202611031133.log",
+      "last_commit": "a81dab9",
+      "last_run_at": "2026-11-05T22:30:29+09:00",
+      "evidence": "work/runs/202611050519/logs/system-test/E2E-040-202611052225.log",
       "history": [
         {
           "at": "2026-10-30T22:49:13+09:00",
@@ -1707,6 +1524,215 @@
           "by": "test-designer",
           "change": "blocked",
           "reason": "検証レベルが integration の AC は System Test 台帳の対象外（CHK-10）。結合試験は implementer の領域。スクリプトは tests/system/e2e/fr-144-proxy-preview.ps1 -Ac に保持（補助）"
+        }
+      ]
+    },
+    {
+      "id": "E2E-044",
+      "requirement_ids": [
+        "FR-145"
+      ],
+      "ac_ids": [
+        "AC-181"
+      ],
+      "title": "FR-145 AC-181: 自動選択後に別テンプレートへ変えて Job 実行・解析中の画面操作が待たされない",
+      "layer": "e2e",
+      "command": "pwsh -NoProfile -File tests/system/e2e/fr-145-auto-template.ps1 -Ac AC-181",
+      "canary": false,
+      "status": "pass",
+      "last_commit": "a81dab9",
+      "last_run_at": "2026-11-05T22:30:29+09:00",
+      "evidence": "work/runs/202611050519/logs/system-test/E2E-044-202611052228.log",
+      "history": [
+        {
+          "at": "2026-11-05T00:33:59+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        }
+      ]
+    },
+    {
+      "id": "IT-001",
+      "requirement_ids": [
+        "FR-131"
+      ],
+      "ac_ids": [
+        "AC-133"
+      ],
+      "title": "サムネイルのない Job に代替表示・他 Job 継続",
+      "layer": "api",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-133",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-13T07:46:02+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-13T07:47:10+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "検証レベル=integration の AC は System Test の対象外（CHK-10）。implementer の結合テストで確認する"
+        },
+        {
+          "at": "2026-10-13T07:47:24+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。結合テストで確認するため台帳では止める"
+        },
+        {
+          "at": "2026-11-02T18:08:21+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-131-thumbnails-integration.ps1 -Ac AC-133' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-133'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:21+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-133 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-133 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
+        }
+      ]
+    },
+    {
+      "id": "IT-002",
+      "requirement_ids": [
+        "FR-131"
+      ],
+      "ac_ids": [
+        "AC-134"
+      ],
+      "title": "更新後に最新反映・取り違えなし",
+      "layer": "api",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-134",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-13T07:46:05+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-13T07:47:10+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "検証レベル=integration の AC は System Test の対象外（CHK-10）。implementer の結合テストで確認する"
+        },
+        {
+          "at": "2026-10-13T07:47:26+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。結合テストで確認するため台帳では止める"
+        },
+        {
+          "at": "2026-11-02T18:08:22+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-131-thumbnails-integration.ps1 -Ac AC-134' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-134'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:22+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-134 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-134 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
+        }
+      ]
+    },
+    {
+      "id": "IT-003",
+      "requirement_ids": [
+        "FR-131"
+      ],
+      "ac_ids": [
+        "AC-135"
+      ],
+      "title": "代替テキスト・色以外の状態識別・キーボード操作",
+      "layer": "api",
+      "command": "pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-135",
+      "canary": false,
+      "status": "blocked",
+      "last_commit": null,
+      "last_run_at": null,
+      "evidence": null,
+      "history": [
+        {
+          "at": "2026-10-13T07:46:08+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-10-13T07:47:11+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "検証レベル=integration の AC は System Test の対象外（CHK-10）。implementer の結合テストで確認する"
+        },
+        {
+          "at": "2026-10-13T07:47:27+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC は検証レベル integration で System Test の対象外（CHK-10）。結合テストで確認するため台帳では止める"
+        },
+        {
+          "at": "2026-11-02T18:08:23+09:00",
+          "by": "test-designer",
+          "change": "command: 'pwsh -NoProfile -File tests/system/e2e/fr-131-thumbnails-integration.ps1 -Ac AC-135' -> 'pwsh -NoProfile -File tests/system/acceptance/run-integration.ps1 -Ac AC-135'",
+          "reason": "承認済みACの期待値は維持。既存React/native結合runnerを再利用しdesktop試験と併用（SupportingChecksOnlyは補助検証のみでAC PASSではない）。旧い配布不足/TBD理由を解消し、現行の検証レベルとCHK-10によりSystem Test登録は停止したまま。"
+        },
+        {
+          "at": "2026-11-02T18:08:23+09:00",
+          "by": "test-designer",
+          "change": "blocked",
+          "reason": "AC-135 は検証レベル integration/manual のためCHK-10により有効System Test登録不可。run-integration.ps1 -Ac AC-135 -SupportingChecksOnly で非UI結合試験は実行可能。desktop統合/手動レビューを省略してPASSにしない。要求の検証レベル/台帳スコープの判断はconductor/rd-authorへ。"
+        }
+      ]
+    },
+    {
+      "id": "IT-004",
+      "requirement_ids": [
+        "FR-064"
+      ],
+      "ac_ids": [
+        "AC-041"
+      ],
+      "title": "FR-064 AC-041: 実SID・実権限DBで参照拒否・非漏洩・設定不変",
+      "layer": "contract",
+      "command": "pwsh -NoProfile -File tests/system/e2e/permission-contract.ps1 -Ac AC-041",
+      "canary": false,
+      "status": "pass",
+      "last_commit": "70b4b89",
+      "last_run_at": "2026-11-03T11:41:40+09:00",
+      "evidence": "work/runs/202611030833/logs/system-test/IT-004-202611031121.log",
+      "history": [
+        {
+          "at": "2026-10-13T10:54:47+09:00",
+          "by": "test-designer",
+          "change": "追加",
+          "reason": "受入基準からケースを作成"
+        },
+        {
+          "at": "2026-11-02T18:18:26+09:00",
+          "by": "test-designer",
+          "change": "command: 'dotnet test tests/HubRadio.App.Tests/HubRadio.App.Tests.csproj --filter FullyQualifiedName~FR064_AC041 -p:Platform=x64' -> 'pwsh -NoProfile -File tests/system/e2e/permission-contract.ps1 -Ac AC-041'; title: '権限なし利用者の参照…は forbidden（ダイアログ未起動・例外文/SID/選択外情報なし）。既存の契約/統合テストで充足' -> 'FR-064 AC-041: 実SID・実権限DBで参照拒否・非漏洩・設定不変'",
+          "reason": "既存AC-041の有効ケースを拡張する。E2E-004へ作った実権限DB/native契約をこちらへ統合し重複を回避。e2e/入口により既存serial_patternsでWinUI共通XAML生成の並列build競合も防止"
+        },
+        {
+          "at": "2026-11-02T18:18:27+09:00",
+          "by": "test-designer",
+          "change": "status -> not_run",
+          "reason": "権限DBを含む強化契約へ拡張。conductorの新しい記録実行を待つ"
         }
       ]
     }

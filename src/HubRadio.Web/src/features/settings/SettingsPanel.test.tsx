@@ -204,7 +204,7 @@ describe('SettingsPanel UX-025', () => {
   // FR-050 AC-025.1, AC-025.2: only the changeable shipped keys are reachable; fixed keys and empty groups are not shown.
   it('reaches every changeable shipped key once and no fixed key through the visible groups', async () => {
     type InventoryEntry = Pick<SettingDefinition, 'key' | 'group' | 'displayName' | 'description' | 'isAdvanced'>
-    const profile = JSON.parse(readFileSync(resolve(process.cwd(), '../HubRadio.App/DefaultSettings/Profiles/1.2.0.json'), 'utf8')) as { settings: readonly InventoryEntry[] }
+    const profile = JSON.parse(readFileSync(resolve(process.cwd(), '../HubRadio.App/DefaultSettings/Profiles/1.3.0.json'), 'utf8')) as { settings: readonly InventoryEntry[] }
     const catalog = JSON.parse(readFileSync(resolve(process.cwd(), 'src/features/settings/settingEditorCatalog.json'), 'utf8')) as { fixed: Record<string, string>; editors: Record<string, unknown> }
     // Real shipped key inventory; deliberately synthetic values are not render evidence.
     const inventory = profile.settings.map(item => definition(item.key, {
@@ -213,7 +213,7 @@ describe('SettingsPanel UX-025', () => {
     const fixture: GlobalSettingsSnapshot = { ...globalSnapshot, definitionCount: inventory.length, definitions: inventory,
       initialValues: inventory.map(item => ({ key: item.key, value: item.defaultValue })),
       values: inventory.map(item => ({ key: item.key, value: item.defaultValue })) }
-    expect(inventory).toHaveLength(127)
+    expect(inventory).toHaveLength(128)
     const h = await mount()
     await respond(h, fixture)
     expect(within(h.container).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Projectと出力', '編集', '字幕とグラフィック', '音声と素材'])
@@ -233,7 +233,7 @@ describe('SettingsPanel UX-025', () => {
         await click(h, '次のページ')
       } while (visited.length <= inventory.length)
     }
-    expect(visited).toHaveLength(26)
+    expect(visited).toHaveLength(27)
     expect([...visited].sort()).toEqual(Object.keys(catalog.editors).sort())
     expect(visited.filter(key => Object.hasOwn(catalog.fixed, key))).toEqual([])
     expect(h.client.sendSettingsWorkspace).toHaveBeenCalledOnce()

@@ -1,6 +1,6 @@
 import { useId, type FormEvent } from 'react'
 import { AppIcon } from '../../components/AppIcons'
-import { findSettingChoice, formatSettingChoice, getAnySettingEditor, settingChoiceId, type SettingEditor, type SettingMultipleOption } from './settingEditors'
+import { findSettingChoice, formatBooleanSetting, formatSettingChoice, getAnySettingEditor, settingChoiceId, type SettingEditor, type SettingMultipleOption } from './settingEditors'
 import { getSettingHelp, settingHelpAdvice } from './settingHelp'
 import { parseValue, type SettingDefinition, type SettingValue } from './settingsProtocol'
 
@@ -50,7 +50,7 @@ export function SettingInspector({ definition, value, initialValue, draft, scope
         </dl>
         <p className="setting-help-advice">{settingHelpAdvice}</p>
       </section>
-      <dl className="setting-value-summary setting-current-value" tabIndex={0} aria-label="保存済みの現在値"><div><dt>現在値</dt><dd>{formatValue(value)}{unit}</dd></div></dl>
+      <dl className="setting-value-summary setting-current-value" tabIndex={0} aria-label="保存済みの現在値"><div><dt>現在値</dt><dd>{formatValue(value, definition.key)}{unit}</dd></div></dl>
       <div className="field-group">
         {usesGroupLabel(editor, draft)
           ? <span id={`${id}-label`}>{definition.displayName}{unit}：未保存の値</span>
@@ -72,8 +72,8 @@ export function SettingInspector({ definition, value, initialValue, draft, scope
       }}>
         <summary tabIndex={0}>初期値・用途</summary>
         <dl className="setting-value-summary">
-          <div><dt>{restoreLabel}</dt><dd>{formatValue(initialValue)}{unit}</dd></div>
-          <div><dt>プロファイル既定値</dt><dd>{formatValue(definition.defaultValue)}{unit}</dd></div>
+          <div><dt>{restoreLabel}</dt><dd>{formatValue(initialValue, definition.key)}{unit}</dd></div>
+          <div><dt>プロファイル既定値</dt><dd>{formatValue(definition.defaultValue, definition.key)}{unit}</dd></div>
           {profileVersion !== undefined && <div><dt>プロファイル版</dt><dd>v{profileVersion}</dd></div>}
           {definition.minimum !== null && <div><dt>最小値</dt><dd>{formatValue(definition.minimum)}{unit}</dd></div>}
           {definition.maximum !== null && <div><dt>最大値</dt><dd>{formatValue(definition.maximum)}{unit}</dd></div>}
@@ -87,8 +87,8 @@ export function SettingInspector({ definition, value, initialValue, draft, scope
 
 function unitSuffix(definition: SettingDefinition): string { return definition.unit === 'none' ? '' : ` (${definition.unit})` }
 
-function formatValue(value: SettingValue): string {
-  if (value.kind === 'boolean') return value.booleanValue ? '有効' : '無効'
+function formatValue(value: SettingValue, key?: string): string {
+  if (value.kind === 'boolean') return key === undefined ? (value.booleanValue ? '有効' : '無効') : formatBooleanSetting(key, value.booleanValue)
   if (value.kind === 'integer') return value.integerValue
   if (value.kind === 'rational') return `${value.numerator}/${value.denominator}`
   if (value.kind === 'text') return value.textValue

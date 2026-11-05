@@ -262,6 +262,7 @@ internal sealed class ProjectCreationService
         SourceMediaFacts? facts = null;
         string? probedPath = null;
         IReadOnlyList<AutoSettingRecommendation> autoApplied = [];
+        bool templateAutoSelectEnabled = true;
         using (reservation)
         {
             try
@@ -278,6 +279,8 @@ internal sealed class ProjectCreationService
                 {
                     // FR-054: tune the new Project to its own video with the built-in preset (no network).
                     probedPath = reservation.SelectedPath;
+                    // FR-146: the Project's own settings decide whether the template is chosen automatically (FR-145).
+                    templateAutoSelectEnabled = HubRadio.App.DefaultSettings.TemplateAutoSelectionSetting.IsEnabled(global);
                     facts = await ProbeSourceQuietlyAsync(sourceOnlyCoordinator, reservation.SelectedPath, cancellationToken)
                         .ConfigureAwait(true);
                     HubRadio.Core.Settings.DefaultSettingsSnapshot snapshot = global.Snapshot;
@@ -357,8 +360,23 @@ internal sealed class ProjectCreationService
             }
         }
 
+        if (sourceOnlyCoordinator is not null)
+        {
+            try
+            {
+                // FR-145 / NFR-REL-002: the analysis runs in the background; a failure here never stops Project creation.
+                TemplateAutoSelectionStarter?.Invoke(draftId, templateAutoSelectEnabled, facts);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
+            {
+            }
+        }
+
         return BuildView(stored, resolution.Draft, resolution);
     }
+
+    /// <summary>FR-145: starts the automatic template selection of a new Project (the flag is the FR-146 setting; the facts are null when the video could not be read).</summary>
+    internal Action<EntityId<ProjectCreationDraftIdTag>, bool, SourceMediaFacts?>? TemplateAutoSelectionStarter { get; set; }
 
     internal ProjectCreationDraftView LoadDraft(
         EntityId<ProjectCreationDraftIdTag> draftId)

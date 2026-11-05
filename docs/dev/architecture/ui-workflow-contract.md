@@ -124,6 +124,8 @@ Appの2,410ケースには環境依存4件とopt-in実統合4件の計8 skipを�
 | `speakers.get` | `projectId` | **読取のみ。** FR-140。Project の話者の割り当て（`state`: `none`／`draft`＝「下書き（未確認）」／`confirmed`＝「確定済み」、`label`、`estimated`、`assignments`＝`cueIndex` と `speakerId`）を返す。下書きを確定済みとは返さない |
 | `speakers.assign` | `projectId`、`cueIndex`（null か 0〜9999）、`speakerId`（null か立ち絵の id） | FR-140。`cueIndex` が null のときシステムの推定（キャラクターが順番に話す）を**下書き**として保存する（「話者を割り当てる」）。`cueIndex` があるときはその cue の話者を変更・解除し、結果は再び下書きになる。登録のない `speakerId` は `invalid`。`portraits.register` と同じ権限が要る |
 | `speakers.confirm` | `projectId` | FR-140。利用者の確認（「確認して確定」）で下書きを確定済みにする。確定した割り当てだけが成果物に反映される。割り当ての保存がなければ `invalid` |
+| `templateAuto.get` | `projectId` | **読取のみ。** FR-145。Project のテンプレート自動選択（`state`: `none`／`waiting`／`analyzing`＝解析中／`selected`＝選択済み／`cancelled`＝取消／`skipped`＝スキップ、`templateId`＝選択済みのときだけ 7 種のいずれか、`reason`＝日本語の短い文）を返す。解析は背景で行い、最大 PARAM-013 秒で終わらなければ `skipped`（NFR-REL-002） |
+| `templateAuto.touch` | `projectId` | FR-145。利用者が自分でテンプレートを選んだことを伝える。解析待ち・解析中なら `cancelled` にし、後から終わる解析は手動の選択を上書きしない。`portraits.register` と同じ権限が要る |
 > [!IMPORTANT]
 > 本契約における「復元」は上表 `pipeline.restore` の定義に**一義に**従う。タブや警告の「戻る」、および `pipeline.read` が返す前回親版の結果表示は、**復元ではない**。過去版で現在版を置き換える操作は提供しない。
 

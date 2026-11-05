@@ -14,7 +14,7 @@ namespace HubRadio.App.Tests;
 public sealed class BundledDefaultSettingsBootstrapTests
 {
     private const string RelativeProfilePath =
-        "src/HubRadio.App/DefaultSettings/Profiles/1.2.0.json";
+        "src/HubRadio.App/DefaultSettings/Profiles/1.3.0.json";
     private const string RelativePreviousProfilePath =
         "src/HubRadio.App/DefaultSettings/Profiles/1.0.0.json";
     private const string RelativeProfilesDirectory =
@@ -37,7 +37,7 @@ public sealed class BundledDefaultSettingsBootstrapTests
             InitialTime);
 
         Assert.AreEqual(DefaultSettingsBootstrapState.Initialized, result.State);
-        Assert.AreEqual("1.2.0", result.Profile.Version.ToString());
+        Assert.AreEqual("1.3.0", result.Profile.Version.ToString());
         Assert.AreEqual(0, result.GlobalSettings.Revision);
         Assert.AreEqual(InitialTime, result.GlobalSettings.UpdatedAt);
         AssertSnapshotEqual(
@@ -119,7 +119,7 @@ public sealed class BundledDefaultSettingsBootstrapTests
                 InitialTime.AddMinutes(1));
 
         Assert.AreEqual(DefaultSettingsBootstrapState.Existing, result.State);
-        Assert.AreEqual("1.2.0", result.GlobalSettings.Snapshot.ProfileVersion.ToString());
+        Assert.AreEqual("1.3.0", result.GlobalSettings.Snapshot.ProfileVersion.ToString());
         Assert.AreEqual(1, result.GlobalSettings.Revision);
         Assert.AreEqual(
             true,
@@ -534,7 +534,10 @@ public sealed class BundledDefaultSettingsBootstrapTests
             File.WriteAllBytes(
                 Path.Combine(path, "1.1.0.json"),
                 File.ReadAllBytes(ResolveRepositoryPath("src/HubRadio.App/DefaultSettings/Profiles/1.1.0.json")));
-            File.WriteAllBytes(Path.Combine(path, "1.2.0.json"), profileBytes);
+            File.WriteAllBytes(
+                Path.Combine(path, "1.2.0.json"),
+                File.ReadAllBytes(ResolveRepositoryPath("src/HubRadio.App/DefaultSettings/Profiles/1.2.0.json")));
+            File.WriteAllBytes(Path.Combine(path, "1.3.0.json"), profileBytes);
             return path;
         }
 

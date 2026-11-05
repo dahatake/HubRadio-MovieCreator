@@ -701,7 +701,8 @@ internal static class BridgeProtocol
     /// <summary>FR-137 (6): registering and listing the user's standing pictures.</summary>
     internal static bool IsPortraitMethod(BridgeMethod method) =>
         method is BridgeMethod.PortraitsList or BridgeMethod.PortraitsRegister or BridgeMethod.PortraitsCrop
-            or BridgeMethod.SpeakersGet or BridgeMethod.SpeakersAssign or BridgeMethod.SpeakersConfirm\r\n            or BridgeMethod.TemplateAutoGet or BridgeMethod.TemplateAutoTouch;
+            or BridgeMethod.SpeakersGet or BridgeMethod.SpeakersAssign or BridgeMethod.SpeakersConfirm
+            or BridgeMethod.TemplateAutoGet or BridgeMethod.TemplateAutoTouch;
 
     internal static bool IsSettingsMethod(BridgeMethod method) =>
         method is

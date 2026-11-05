@@ -116,6 +116,8 @@ public sealed class WebBridgeSchemaTests
                 "speakers.get",
                 "speakers.assign",
                 "speakers.confirm",
+                "templateAuto.get",
+                "templateAuto.touch",
             },
             definitions.GetProperty("method").GetProperty("enum")
                 .EnumerateArray()
@@ -252,8 +254,11 @@ public sealed class WebBridgeSchemaTests
                 "#/$defs/speakersGetRequest",
                 "#/$defs/speakersAssignRequest",
                 "#/$defs/speakersConfirmRequest",
+                "#/$defs/templateAutoGetRequest",
+                "#/$defs/templateAutoTouchRequest",
                 "#/$defs/portraitsResponse",
                 "#/$defs/speakersResponse",
+                "#/$defs/templateAutoResponse",
             },
             root.GetProperty("oneOf")
                 .EnumerateArray()

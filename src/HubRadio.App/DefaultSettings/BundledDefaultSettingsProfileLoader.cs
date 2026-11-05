@@ -247,8 +247,9 @@ public static class BundledDefaultSettingsProfileLoader
             .Select(static definition => definition.Key)
             .ToArray();
         bool has120Keys = profile.Version.ToString() is not ("1.0.0" or "1.1.0");
+        bool has130Keys = profile.Version.ToString() is not ("1.0.0" or "1.1.0" or "1.2.0");
         string[] expectedKeys = has120Keys
-            ? ExpectedKeys.Concat(KeysAddedIn120).Order(StringComparer.Ordinal).ToArray()
+            ? ExpectedKeys.Concat(KeysAddedIn120).Concat(has130Keys ? KeysAddedIn130 : []).Order(StringComparer.Ordinal).ToArray()
             : ExpectedKeys;
         if (!actualKeys.SequenceEqual(expectedKeys, StringComparer.Ordinal))
         {

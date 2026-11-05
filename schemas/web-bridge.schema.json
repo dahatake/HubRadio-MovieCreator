@@ -390,7 +390,8 @@
         "templateId": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$(?![\\s\\S])", "maxLength": 64 }] },
         "reason": { "type": "string", "maxLength": 400 }
       }
-    },    "speakersResult": {
+    },
+    "speakersResult": {
       "$comment": "state is none (nothing assigned), draft (下書き（未確認）) or confirmed (確定済み). A draft is never reported as confirmed. At most 200 assignments are returned. No path, exception text or SID.",
       "type": "object", "additionalProperties": false,
       "required": ["status", "state", "label", "estimated", "assignments"],

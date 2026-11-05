@@ -671,4 +671,18 @@ describe('SettingInspector', () => {
       expect(view.queries.queryByRole('alert')).toBeNull()
     })
   })
+
+  // FR-146 AC-183: the template auto-selection setting is chosen from 使う／使わない and shows the current value, the initial value and what it is for.
+  it('shows the template auto-selection setting as 使う／使わない with its current value, initial value and purpose', async () => {
+    const definition = makeDefinition(boolean(true), { key: 'project.templateAutoSelectEnabled', group: 'projectAndOutput', displayName: 'Template auto-selection', description: 'Auto-selects a template after a Project is created.' })
+    const view = await renderInspector({ definition, value: boolean(true), initialValue: boolean(true), draft: boolean(true), scope: 'global' })
+    expect(summaryValue(view.container, '現在値')).toBe('使う')
+    expect(summaryValue(view.container, '復元先（プロファイル初期値）')).toBe('使う')
+    expect(summaryValue(view.container, 'プロファイル既定値')).toBe('使う')
+    expect(summaryValue(view.container, '用途')).toBe(definition.description)
+    expect(view.queries.getByRole('radio', { name: '使う' })).toBeTruthy()
+    expect(view.queries.getByRole('radio', { name: '使わない' })).toBeTruthy()
+    await act(async () => { await view.user.click(view.queries.getByRole('radio', { name: '使わない' })) })
+    expect(view.onChange).toHaveBeenLastCalledWith(boolean(false))
+  })
 })

@@ -208,6 +208,8 @@ internal static class ProjectApplicationRuntime
         SourceOnlyApplicationServices services = native.Services;
         var posters = new ProjectPosterStore(services.WorkspacePath);
         var autoSettings = new ProjectAutoSettingsStore(services.WorkspacePath);
+        var templateAutoSelections = new TemplateAutoSelectionStore(Path.Combine(services.WorkspacePath, "template-auto-selection"));
+        var characterPortraits = new CharacterPortraitStore(Path.Combine(services.WorkspacePath, "character-portraits"));
         // FR-144: the low-resolution proxy of the source video for the settings screen (Project folder once created).
         var proxies = new ProjectProxyService(services.WorkspacePath,
             (draftId, cancellationToken) => ((ISourceOnlyProjectCoordinator)native).ResolveProxySourceAsync(draftId, cancellationToken),
@@ -246,7 +248,13 @@ internal static class ProjectApplicationRuntime
             {
                 posters.Delete(draftId);
                 autoSettings.Delete(draftId);
+                templateAutoSelections.Delete(Guid.Parse(draftId.ToString()));
             },
+            TemplateAutoSelectionStarter = (draftId, enabled, facts) => _ = TemplateAutoSelectionRunner.Start(
+                templateAutoSelections, Guid.Parse(draftId.ToString()), enabled,
+                _ => Task.FromResult(facts is null ? null
+                    : new TemplateAnalysisInput(facts.DurationSeconds, facts.DisplayWidth, facts.DisplayHeight, facts.HasAudio)),
+                () => characterPortraits.Count),
             ProxyRequester = proxies.Request,
             ProxyFinalizer = proxies.OnFinalized,
             ProxyRemover = proxies.Delete,
@@ -353,12 +361,28 @@ internal static class ProjectApplicationRuntime
                 new CharacterPortraitStore(Path.Combine(services.WorkspacePath, "character-portraits")),
                 () => authorization.CanPerform(actorProvider.GetCurrentSid(), AuthorizationOperation.ExportComposition),
                 TimeProvider.System,
-                Path.Combine(services.WorkspacePath, "project-speaker-assignments")),
+                Path.Combine(services.WorkspacePath, "project-speaker-assignments"),
+                new TemplateAutoSelectionAccess(
+                    projectId => ReadAutoSelection(services, templateAutoSelections, projectId, touch: false),
+                    projectId => ReadAutoSelection(services, templateAutoSelections, projectId, touch: true))),
             new DisclosureBridgeHandler(
                 new HubRadio.App.Audit.AiGenerationDisclosureService(reviewStore),
                 authorization,
                 actorProvider.GetCurrentSid),
             proxyHandler);
+    }
+
+    /// <summary>FR-145: the automatic selection of a Project (resolved through the Project's first execution to its creation draft).</summary>
+    private static TemplateAutoSelectionRecord? ReadAutoSelection(SourceOnlyApplicationServices services,
+        TemplateAutoSelectionStore store, Guid projectId, bool touch)
+    {
+        StoredSourceOnlyExecution? latest = services.Executions.GetLatestForProject(EntityId<HubRadio.Core.Projects.ProjectIdTag>.Parse(projectId.ToString("D")));
+        if (latest is null || !Guid.TryParse(latest.Request.DraftId.ToString(), out Guid key))
+        {
+            return null;
+        }
+
+        return touch ? store.Touch(key) : store.Load(key);
     }
 
     // FR-035: without both bundled tools the GUI reports unavailable instead of failing later.
