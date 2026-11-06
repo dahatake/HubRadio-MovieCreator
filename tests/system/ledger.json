@@ -1767,7 +1767,7 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-145-auto-template-10min.ps1 -Ac AC-189",
       "canary": false,
-      "status": "not_run",
+      "status": "blocked",
       "last_commit": null,
       "last_run_at": null,
       "evidence": null,
@@ -1783,6 +1783,12 @@
           "by": "test-designer",
           "change": "同じ要求・同じ層の既存ケースと別に追加",
           "reason": "10 分の動画の実文字起こしを CPU で実行する非常に遅いケース。AC-181 の既存ケース（3 秒の動画）と独立して実行・時間管理する必要がある"
+        },
+        {
+          "at": "2026-11-06T22:25:03+09:00",
+          "by": "conductor",
+          "change": "blocked",
+          "reason": "AC-189（10 分動画の通し）未検証: 実装（暫定選択・再判定）の動作は E2E-044・単体/結合テストで確認済み。E2E-045 は UI 操作の誤り（元動画への戻り・Job 完了待ち・Job 作成ボタン）が残り、実行も約 15 分かかる。次の run でテストを実機で直して blocked を外す"
         }
       ],
       "serial": true
