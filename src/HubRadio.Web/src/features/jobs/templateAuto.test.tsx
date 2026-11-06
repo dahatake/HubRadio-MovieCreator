@@ -125,6 +125,32 @@ describe('JobCreationAction automatic template selection', () => {
     expect(checked()).toBe('解説')
   })
 
+  // AC-187 (d) / AC-186: after the provisional selection, the re-decision (話者数・話の速さ) updates the initial selection and the reason in place; a
+  // template the user chose meanwhile is never overwritten by it.
+  it('follows a re-decision that changes the initial selection and its reason', async () => {
+    const fake = service([result({ state: 'selected', templateId: 'explainer', reason: '解説を選びました。（暫定）' }),
+      result({ state: 'selected', templateId: 'talk-show', reason: '対談番組を選びました。（再判定）' })])
+    act(() => root.render(<Host service={fake} />))
+    await flush()
+    expect(checked()).toBe('解説')
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    expect(checked()).toBe('対談番組')
+    expect(container.textContent).toContain('自動選択: 対談番組。理由: 対談番組を選びました。（再判定）')
+  })
+
+  it('does not apply a re-decision over a template chosen after the provisional selection', async () => {
+    const fake = service([result({ state: 'selected', templateId: 'explainer', reason: '解説を選びました。（暫定）' }),
+      result({ state: 'selected', templateId: 'talk-show', reason: '対談番組を選びました。（再判定）' })])
+    act(() => root.render(<Host service={fake} />))
+    await flush()
+    const picked = styleTemplateOptions.find(option => option.id !== 'explainer' && option.id !== 'talk-show')!.name.replace(/\s+/gu, '')
+    const other = container.querySelector(`input[aria-label="${picked}"]`) as HTMLInputElement
+    act(() => { other.click() })
+    await flush()
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+    expect(checked()).toBe(picked)
+  })
+
   // AC-182: no template is chosen (skipped) and the reason is shown; nothing blocks the screen.
   it('shows the reason when no template was chosen', async () => {
     act(() => root.render(<Host service={service([result({ state: 'skipped', reason: '解析が時間内に終わらなかったため、テンプレートは選びませんでした。' })])} />))
