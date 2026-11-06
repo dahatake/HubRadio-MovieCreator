@@ -108,13 +108,15 @@ Invoke-Test -Label "FR-145 $Ac" -Sandbox $sb -Body {
         $created = [Diagnostics.Stopwatch]::StartNew()
         # (a) 元動画の確認ができる（待たされない）
         Invoke-Element (Find-ByName $root '元動画' 30)
-        # (a) 暫定選択が 60 秒以内に表示される
-        $prov = Wait-Selected $root $script:ProvisionalLimitSec
-        if (-not $prov) { throw "(a) provisional selection was not displayed within $($script:ProvisionalLimitSec) s of project creation" }
-        Write-Host "AC-189 (a): provisional '$($prov.Template)' after $([int]$created.Elapsed.TotalSeconds) s"
-        # (a) Job の実行が待たされない: 最初の Job をすぐ開始できる
+        # (a) Job の実行が待たされない: 最初の Job をすぐ開始できる。
+        #     テンプレート選択の画面は「編集を開始」の後にしか出ない（draft.isFinalized）ので、先に押す。
         Start-FirstJob $root
         $jobStart = [Diagnostics.Stopwatch]::StartNew()    # 起点＝Job の文字起こしの開始（Job 開始の直後）
+        # (a) 暫定選択が Project 作成から 60 秒以内に表示される（残り時間で待つ。最低 5 秒は待つ）
+        $remain = [Math]::Max(5, [int]($script:ProvisionalLimitSec - $created.Elapsed.TotalSeconds))
+        $prov = Wait-Selected $root $remain
+        if (-not $prov) { throw "(a) provisional selection was not displayed within $($script:ProvisionalLimitSec) s of project creation" }
+        Write-Host "AC-189 (a): provisional '$($prov.Template)' after $([int]$created.Elapsed.TotalSeconds) s"
         # (b) 最初の Job の文字起こしが終わり次第、再判定の結果が初期選択と理由に反映される（待ちの上限 660 秒）
         $re = Wait-Selected $root $script:RejudgeLimitSec {
             [bool](Find-AllByNameLike $root '再判定' | Select-Object -First 1)
@@ -138,10 +140,10 @@ Invoke-Test -Label "FR-145 $Ac" -Sandbox $sb -Body {
         # ---- Project 2（異常系 (c)）: 手動でテンプレートを選んだ後は更新されない ----
         Invoke-Element (Find-ByName $root 'Project一覧へ戻る' 30)
         New-ProjectDraft $root $sb 'manual-10min' $video | Out-Null
+        Start-FirstJob $root    # 選択の画面は「編集を開始」の後にだけ出る
         $null = Wait-Selected $root $script:ProvisionalLimitSec
         $manual = '手作り感'
-        Select-Template $root $manual
-        Start-FirstJob $root
+        Select-Template $root $manual    # 手動選択（「編集を開始」の後）
         $j2 = [Diagnostics.Stopwatch]::StartNew()
         Wait-JobCompleted $root 1
         # 文字起こしが終わった後、再判定が更新するはずの時間（上限の残り 30 秒まで）を待っても、手動の選択のまま・再判定の表示なし
