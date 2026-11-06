@@ -94,7 +94,58 @@ function Get-LatestOrigin($sb, [string]$case) {
     @{ Text = $text; Value = $val; RuleVersion = [string]$rec.RuleVersion }
 }
 
-function Start-FirstJob($root) { Invoke-Element (Find-ByName $root '編集を開始') }
+# 「編集を開始」を押すと画面が処理中の画面へ自動で移る。テンプレート選択は「元動画」の画面にしか無いので、押して戻る（E2E-044 と同じ）。
+function Start-FirstJob($root) { Invoke-Element (Find-ByName $root '編集を開始'); Invoke-Element (Find-ByName $root '元動画' 30) }
+
+# hubradio.db の完了した Job の数（画面の「サムネイル: Job n、…完了」が出ない場合の代替判定）
+function Get-CompletedJobCountFromDb {
+    try {
+        if (-not $script:AppSb) { return 0 }
+        $db = Join-Path (Join-Path ([string]$script:AppSb.Work) 'workspace') 'hubradio.db'
+        if (-not (Test-Path -LiteralPath $db)) { return 0 }
+        $tmp = Join-Path ([IO.Path]::GetTempPath()) ('hr-done-' + [guid]::NewGuid().ToString('N') + '.db')
+        Copy-SharedRead $db $tmp
+        foreach ($x in "$db-wal", "$db-shm") { if (Test-Path -LiteralPath $x) { try { Copy-SharedRead $x ($tmp + $x.Substring($db.Length)) } catch {} } }
+        $py = "import sqlite3,sys`ncon=sqlite3.connect(sys.argv[1])`nprint(con.execute(`"SELECT count(*) FROM jobs WHERE lower(state) IN ('completed','complete','succeeded','done')`").fetchone()[0])"
+        $out = (& python -c $py $tmp 2>$null | Select-Object -First 1)
+        Remove-Item "$tmp*" -Force -ErrorAction SilentlyContinue
+        if ($out) { return [int]$out } else { return 0 }
+    } catch { return 0 }
+}
+# Job の完了待ち: 画面の「サムネイル: Job n、…完了」か、DB の完了数が $baseline を超えたら完了（画面表示だけに依存しない）。失敗・アプリ終了・上限超過は例外。
+function Wait-JobDone($root, [int]$jobNumber, [int]$baseline, [int]$timeoutSec = 900) {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        if ($script:AppProc -and $script:AppProc.HasExited) { throw "Job $jobNumber did not complete (app exited: $($script:AppProc.ExitCode))" }
+        if (@(Find-AllByNameLike $root "^サムネイル: Job $jobNumber、.*完了$").Count -gt 0) { return }
+        if ((Get-CompletedJobCountFromDb) -gt $baseline) { return }
+        $dbFailed = Get-FailedJobFromDb
+        if ($dbFailed) { throw "Job $jobNumber did not complete: db failed ($dbFailed)" }
+        Start-Sleep -Seconds 2
+    } while ($sw.Elapsed.TotalSeconds -lt $timeoutSec)
+    throw "Job $jobNumber did not complete within $timeoutSec s"
+}
+# 次の Job を作成して完了まで待つ（New-TemplateJob と同じ手順。完了の待ちだけ Wait-JobDone）。
+function New-TemplateJobDb($root, [int]$ordinal) {
+    $baseline = Get-CompletedJobCountFromDb
+    Invoke-Element (Find-ByName $root '元動画' 30)
+    Invoke-Element (Find-ByName $root '次に作成するJobの設定を開く' 60)
+    Invoke-Element (Find-ByName $root '設定を閉じて戻る' 60)
+    Start-Sleep -Seconds 2
+    $sw = [Diagnostics.Stopwatch]::StartNew(); $nb = $null
+    do {
+        $nb = Find-AllByNameLike $root '^新しいJobを作成$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $_.Current.IsEnabled } | Select-Object -First 1
+        if (-not $nb) { Start-Sleep -Milliseconds 500 }
+    } while (-not $nb -and $sw.Elapsed.TotalSeconds -lt 60)
+    if (-not $nb) { throw "button '新しいJobを作成' not found or disabled" }
+    Invoke-Element $nb
+    Start-Sleep -Seconds 1
+    $ok = Find-AllByNameLike $root '^作成する$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button } | Select-Object -First 1
+    if (-not $ok) { Start-Sleep -Seconds 3; $ok = Find-AllByNameLike $root '^作成する$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button } | Select-Object -First 1 }
+    if (-not $ok) { throw "button '作成する' not found after pressing 新しいJobを作成" }
+    Invoke-Element $ok
+    Wait-JobDone $root ($ordinal + 1) $baseline
+}
 
 $sb = New-AppSandbox
 $p = $null
@@ -126,12 +177,13 @@ Invoke-Test -Label "FR-145 $Ac" -Sandbox $sb -Body {
         if ($reason -notmatch '話者' -and $reason -notmatch '話の速さ|語数|文字数') { throw "(b) re-judgement reason lacks the speaker count / speech rate used: $reason" }
         Write-Host "AC-189 (b): re-judged '$($re.Template)' after $([int]$jobStart.Elapsed.TotalSeconds) s: $reason"
         # (b) 実行済みの Job（最初の Job）は変わらない: 出自「なし」・テンプレートなし
-        Wait-JobCompleted $root 1
+        Wait-JobDone $root 1 0
+        Invoke-Element (Find-ByName $root '元動画' 30)   # 実行後は処理中の画面。選択画面へ戻る
         $first = Get-LatestOrigin $sb 'first'
         if ($first.Value -notmatch '^(なし|none)$') { throw "(b) executed first Job changed (origin must stay なし): $($first.Text)" }
         foreach ($n in $script:TemplateNames) { if ($first.Text -match [regex]::Escape($n)) { throw "(b) executed first Job got template '$n': $($first.Text)" } }
         # (b) 次に作成する Job の初期選択に反映: そのまま実行すると、再判定のテンプレート・出自「自動選択」・規則の版 2
-        New-TemplateJob $root 1
+        New-TemplateJobDb $root 1
         $second = Get-LatestOrigin $sb 'second'
         if ($second.Value -notmatch '^(自動選択|auto)$') { throw "(b) next Job origin must be 自動選択: $($second.Text)" }
         if ($second.Text -notmatch [regex]::Escape($re.Template)) { throw "(b) next Job did not use the re-judged template '$($re.Template)': $($second.Text)" }
@@ -140,19 +192,20 @@ Invoke-Test -Label "FR-145 $Ac" -Sandbox $sb -Body {
         # ---- Project 2（異常系 (c)）: 手動でテンプレートを選んだ後は更新されない ----
         Invoke-Element (Find-ByName $root 'Project一覧へ戻る' 30)
         New-ProjectDraft $root $sb 'manual-10min' $video | Out-Null
-        Start-FirstJob $root    # 選択の画面は「編集を開始」の後にだけ出る
+        Start-FirstJob $root    # 「編集を開始」の後に「元動画」へ戻って選択画面を出す
         $null = Wait-Selected $root $script:ProvisionalLimitSec
         $manual = '手作り感'
         Select-Template $root $manual    # 手動選択（「編集を開始」の後）
         $j2 = [Diagnostics.Stopwatch]::StartNew()
-        Wait-JobCompleted $root 1
+        Wait-JobDone $root 1 (Get-CompletedJobCountFromDb)
+        Invoke-Element (Find-ByName $root '元動画' 30)
         # 文字起こしが終わった後、再判定が更新するはずの時間（上限の残り 30 秒まで）を待っても、手動の選択のまま・再判定の表示なし
         $rest = [Math]::Max(0, [Math]::Min($script:RejudgeLimitSec - [int]$j2.Elapsed.TotalSeconds, 90))
         Start-Sleep -Seconds $rest
         $now = Get-SelectedTemplate $root
         if ($now -ne $manual) { throw "(c) manual selection '$manual' was overwritten after the re-judgement window (now '$now')" }
         if (Find-AllByNameLike $root '再判定' | Select-Object -First 1) { throw '(c) re-judgement reason was displayed after a manual selection' }
-        New-TemplateJob $root 1
+        New-TemplateJobDb $root 1
         $m = Get-LatestOrigin $sb 'manual'
         if ($m.Value -notmatch '^(手動|manual)$') { throw "(c) origin must be 手動: $($m.Text)" }
         if ($m.Text -notmatch [regex]::Escape($manual)) { throw "(c) applied template is not the manual selection '$manual': $($m.Text)" }
