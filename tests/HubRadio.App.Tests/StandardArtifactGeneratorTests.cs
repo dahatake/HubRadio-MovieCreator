@@ -700,7 +700,7 @@ public sealed class StandardArtifactGeneratorTests
                 Assert.AreEqual("30/1", args[Array.IndexOf(args, "-r") + 1]);
                 string script = args[Array.IndexOf(args, "-/filter_complex") + 1];
                 string text = await File.ReadAllTextAsync(script, token);
-                StringAssert.Contains(text, "loudnorm=I=-16:TP=-1.1:LRA=11:measured_I=-22.00:");
+                StringAssert.Contains(text, "loudnorm=I=-16:TP=-1.2:LRA=11:measured_I=-22.00:");
                 StringAssert.Contains(text, "ass=filename=");
                 CollectionAssert.DoesNotContain(args, "-filter_complex");
                 await File.WriteAllBytesAsync(process.ArgumentList[^1], [1, 2, (byte)++calls], token);
@@ -731,15 +731,15 @@ public sealed class StandardArtifactGeneratorTests
         Assert.HasCount(4, scripts); // measurement + final pass for each of the two videos
         for (int i = 0; i < scripts.Count; i += 2)
         {
-            StringAssert.Contains(scripts[i], "loudnorm=I=-16:TP=-1.1:LRA=11:linear=false:print_format=json");
+            StringAssert.Contains(scripts[i], "loudnorm=I=-16:TP=-1.2:LRA=11:linear=false:print_format=json");
             Assert.IsFalse(scripts[i].Contains("yadif", StringComparison.Ordinal));
-            StringAssert.Contains(scripts[i + 1], "loudnorm=I=-16:TP=-1.1:LRA=11:measured_I=-22.00:measured_TP=-5.00"
+            StringAssert.Contains(scripts[i + 1], "loudnorm=I=-16:TP=-1.2:LRA=11:measured_I=-22.00:measured_TP=-5.00"
                 + ":measured_LRA=4.00:measured_thresh=-32.00:offset=0.00:linear=true:print_format=json");
         }
         foreach (StandardGeneratedArtifact video in result.Artifacts.Where(static item => item.TypedArtifact.IsVideo))
         {
             FfmpegLoudnessTarget target = video.BindingEvidence.Execution!.Loudness!.Target;
-            Assert.AreEqual(-1.1m, target.TruePeakDbtp);
+            Assert.AreEqual(-1.2m, target.TruePeakDbtp);
             Assert.AreEqual(-22m, target.MeasuredIntegratedLufs);
             Assert.AreSame(target, video.BindingEvidence.Execution.EncoderSettings!.Loudness);
         }
