@@ -1266,7 +1266,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             StandardGenerationOmission[] omissions = payload.GetProperty("Omissions").EnumerateArray()
                 .Select(item => new StandardGenerationOmission(Text(item, "Role"), Text(item, "Reason"))).ToArray();
             SourceOnlyResultGenerationWarning[] warnings = payload.GetProperty("Warnings").EnumerateArray()
-                .Select(item => new SourceOnlyResultGenerationWarning(Text(item, "Role"), Text(item, "Code"))).ToArray();
+                .Select(item => new SourceOnlyResultGenerationWarning(Text(item, "Role"), Text(item, "Code"))).Distinct().ToArray();
             return new(checkpoint.Artifact, disposition, outputs.AsReadOnly(), Array.AsReadOnly(omissions),
                 Array.AsReadOnly(warnings), payload.GetProperty("StagingCleanupRequired").GetBoolean());
         }
@@ -1655,7 +1655,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                             generated.Artifacts.Select(item => new SourceOnlyResultArtifactReference(item.Artifact.Id,
                                 item.Artifact.ContentDigest, item.Artifact.ByteSize, item.Artifact.Kind)).ToArray(), [], null,
                             generated.StagingCleanupRequired,
-                            generated.Warnings.Select(item => new SourceOnlyResultGenerationWarning(item.Role, item.Code)).ToArray());
+                            SourceOnlyResultGenerationWarning.FromGenerated(generated.Warnings));
                         _ = await SaveJsonAsync(execution, StableId<ArtifactIdTag>(execution.Request.ExecutionId.ToString(), "result-receipt"),
                             result.CanonicalJson, "result-receipt", CancellationToken.None).ConfigureAwait(false);
                         throw new PipelineFailure(SourceOnlyExecutionPhase.ReconciliationRequired,
@@ -2440,7 +2440,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             _ => SourceOnlyResultFailureCode.GenerationFailed,
         })], generated.ReconciliationArtifacts.Select(item => new SourceOnlyResultArtifactReference(item.ArtifactId,
             item.ContentDigest, item.ByteSize, ArtifactKind.Render)).ToArray(), [], null, generated.StagingCleanupRequired,
-            generated.Warnings.Select(item => new SourceOnlyResultGenerationWarning(item.Role, item.Code)).ToArray());
+            SourceOnlyResultGenerationWarning.FromGenerated(generated.Warnings));
 
     private Task RegisterRuntimeAsync(StoredSourceOnlyExecution execution, string stage, ContentDigest digest,
         Func<CancellationToken, Task> register, CancellationToken token) =>

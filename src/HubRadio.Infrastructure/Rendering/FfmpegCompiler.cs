@@ -1077,6 +1077,9 @@ public static class FfmpegCompiler
             context.LayoutSpec.SafeZones);
         ResolvedLayout resolved = LayoutResolver.Resolve(pixelLayout, context.Profile.Width, context.Profile.Height);
         int nextInputIndex = 0;
+        // An input opened for one stream kind waits here until a node of the other kind with the same file, seek and length takes it.
+        var waitingForAudio = new Dictionary<string, Queue<int>>(StringComparer.Ordinal);
+        var waitingForVideo = new Dictionary<string, Queue<int>>(StringComparer.Ordinal);
         string[] fontDirectories = fonts.Select(font =>
             Path.GetDirectoryName(font.VerificationRequest.FilePath)!).Distinct(StringComparer.Ordinal).ToArray();
         if (fontDirectories.Length > 1)
@@ -1092,11 +1095,27 @@ public static class FfmpegCompiler
             {
                 case RenderNodeKind.Video:
                     {
-                        int inputIndex = nextInputIndex++;
+                        int inputIndex;
                         if (frameExtraction is null)
-                            AddTimedInput(arguments, node, bindings[node.ArtifactInputId!]);
+                        {
+                            // The audio of the same cut reuses this input (same file, same seek and length): the command line carries
+                            // one "-ss -t -i" per cut instead of two, which keeps a long edit under the Windows limit (FR-145 AC-189, 10 min).
+                            string shareKey = SharedInputKey(node, bindings[node.ArtifactInputId!]);
+                            if (waitingForVideo.TryGetValue(shareKey, out Queue<int>? open) && open.Count > 0)
+                            {
+                                inputIndex = open.Dequeue();
+                            }
+                            else
+                            {
+                                inputIndex = nextInputIndex++;
+                                AddTimedInput(arguments, node, bindings[node.ArtifactInputId!]);
+                                if (!waitingForAudio.TryGetValue(shareKey, out Queue<int>? waiting)) waitingForAudio[shareKey] = waiting = new Queue<int>();
+                                waiting.Enqueue(inputIndex);
+                            }
+                        }
                         else
                         {
+                            inputIndex = nextInputIndex++;
                             // Decode from the beginning: n is the actual source frame sequence,
                             // not a seek approximation or a frame of an already edited output.
                             arguments.Add("-i");
@@ -1115,8 +1134,19 @@ public static class FfmpegCompiler
 
                 case RenderNodeKind.Audio:
                     {
-                        int inputIndex = nextInputIndex++;
-                        AddTimedInput(arguments, node, bindings[node.ArtifactInputId!]);
+                        string audioShareKey = SharedInputKey(node, bindings[node.ArtifactInputId!]);
+                        int inputIndex;
+                        if (waitingForAudio.TryGetValue(audioShareKey, out Queue<int>? open) && open.Count > 0)
+                        {
+                            inputIndex = open.Dequeue();
+                        }
+                        else
+                        {
+                            inputIndex = nextInputIndex++;
+                            AddTimedInput(arguments, node, bindings[node.ArtifactInputId!]);
+                            if (!waitingForVideo.TryGetValue(audioShareKey, out Queue<int>? waiting)) waitingForVideo[audioShareKey] = waiting = new Queue<int>();
+                            waiting.Enqueue(inputIndex);
+                        }
                         string label = string.Concat("a", ordinal.ToString(CultureInfo.InvariantCulture));
                         AddAudioFilter(string.Concat(
                             "[", inputIndex.ToString(CultureInfo.InvariantCulture), ":a:0]",
@@ -1461,6 +1491,11 @@ public static class FfmpegCompiler
         arguments.Add(outputPath);
         return arguments;
     }
+
+    private static string SharedInputKey(RenderNode node, FfmpegInputBinding binding) => string.Join('|',
+        binding.VerificationRequest.FilePath,
+        node.SourceRange is TimeRange sourceRange ? FormatTime(sourceRange.Start) : string.Empty,
+        FormatTime(node.OutputRange.Duration));
 
     private static void AddTimedInput(
         List<string> arguments,

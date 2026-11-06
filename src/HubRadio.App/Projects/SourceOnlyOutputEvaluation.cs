@@ -83,7 +83,7 @@ public sealed class SourceOnlyOutputEvaluation
                 throw new SourceOnlyResultException(SourceOnlyResultFailureCode.BindingMismatch);
             StandardCompositionPreparation replayPreparation = new VersionService(_projects).GetStandardComposition(prior.Result.VersionId)
                 ?? throw new SourceOnlyResultException(SourceOnlyResultFailureCode.StoredEvidenceInvalid);
-            SourceOnlyResultCodec.Require(generated.Warnings.Select(w => new SourceOnlyResultGenerationWarning(w.Role, w.Code))
+            SourceOnlyResultCodec.Require(SourceOnlyResultGenerationWarning.FromGenerated(generated.Warnings)
                 .SequenceEqual(prior.Result.GenerationWarnings) && generated.Omissions.Select(MapOmission).SequenceEqual(prior.Result.Omissions));
             foreach (StandardGeneratedArtifact item in generated.Artifacts)
             {
@@ -102,7 +102,7 @@ public sealed class SourceOnlyOutputEvaluation
         }
         SourceOnlyResultCodec.Require(generated.Artifacts.Count <= SourceOnlyResult.MaximumArtifactCount &&
             generated.Omissions.Count <= SourceOnlyResult.MaximumOmissionCount &&
-            generated.Warnings.Count <= SourceOnlyResult.MaximumGenerationWarningCount &&
+            SourceOnlyResultGenerationWarning.FromGenerated(generated.Warnings).Length <= SourceOnlyResult.MaximumGenerationWarningCount &&
             generated.ReconciliationArtifacts.Count <= SourceOnlyResult.MaximumArtifactCount &&
             generated.Artifacts.Select(a => a.Artifact.Id).Distinct().Count() == generated.Artifacts.Count);
         var roles = generated.Artifacts.Select(a => ParseRole(a.BindingEvidence.Role)).ToArray();
@@ -356,7 +356,7 @@ public sealed class SourceOnlyOutputEvaluation
             generated.Omissions.Select(MapOmission).ToArray(), failures.Distinct().ToArray(),
             nativeAttempts.Select(a => a.Artifact).ToArray(),
             transcripts, primaryWorkflow, generated.StagingCleanupRequired || evidenceStore.CleanupRequired,
-            generated.Warnings.Select(w => new SourceOnlyResultGenerationWarning(w.Role, w.Code)).ToArray(), nativeAttempts);
+            SourceOnlyResultGenerationWarning.FromGenerated(generated.Warnings), nativeAttempts);
     }
 
     private SourceOnlyResultBinding ResolveBinding(StoredSourceOnlyExecution execution, StandardArtifactGenerationResult generated)

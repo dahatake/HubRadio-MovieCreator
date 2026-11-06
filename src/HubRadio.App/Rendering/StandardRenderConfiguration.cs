@@ -10,8 +10,9 @@ namespace HubRadio.App.Rendering;
 public sealed class StandardRenderConfiguration
 {
     // QC still enforces audio.truePeakMaximum. AAC encoding measured slightly above the
-    // loudnorm true-peak target, so the filter aims lower (benchmarks/results/initial-pilot.md §5.3.3).
-    private const decimal LoudnormTruePeakHeadroomDb = 0.1m;
+    // loudnorm true-peak target, so the filter aims lower (benchmarks/results/initial-pilot.md §5.3.3: 0.1 dB covered the pilot material).
+    // Speech of a 10-minute video (FR-145 AC-189) measured 0.12 dB above the target after AAC, which 0.1 dB does not cover, so 0.2 dB.
+    private const decimal LoudnormTruePeakHeadroomDb = 0.2m;
 
     private StandardRenderConfiguration(ContentDigest settingsDigest, FfmpegEncoderSettings encoder,
         RationalTime titleDuration, RationalTime endDuration, string callToAction,

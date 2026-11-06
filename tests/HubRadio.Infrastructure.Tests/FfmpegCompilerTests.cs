@@ -189,6 +189,27 @@ public sealed class FfmpegCompilerTests
     }
 
     [TestMethod]
+    // FR-145 AC-189: a 10-minute edit has hundreds of cuts; the audio of a cut reuses the input opened for its video (same file, seek and length),
+    // so the command line carries one "-ss -t -i" per cut and a long edit stays under the Windows command-line limit.
+    public async Task AudioOfACutSharesTheInputOpenedForItsVideo()
+    {
+        using Fixture fixture = Fixture.Create();
+        RenderNode audioNode = fixture.Graph.Nodes.Single(static node => node.Kind == RenderNodeKind.Audio);
+        RenderGraphInput audioInput = fixture.Graph.Inputs.Single(input => input.Id == audioNode.ArtifactInputId);
+        FfmpegInputBinding sameFile = fixture.Binding(audioInput.Id, "video.mp4", audioInput.ContentDigest, audioInput.ByteSize);
+        FfmpegInputBinding[] bindings = [.. fixture.Bindings.Select(binding => binding.InputId == audioInput.Id ? sameFile : binding)];
+
+        FfmpegCompilation shared = await CompileAsync(fixture, fixture.Request(bindings: bindings));
+        FfmpegCompilation separate = await CompileAsync(fixture, fixture.Request());
+
+        Assert.AreEqual(InputPathTokens(separate.ProcessRequest.ArgumentList).Length - 1,
+            InputPathTokens(shared.ProcessRequest.ArgumentList).Length);
+        Assert.AreEqual(1, InputPathTokens(shared.ProcessRequest.ArgumentList).Count(path => path == fixture.VideoPath));
+        StringAssert.Contains(shared.FilterScript, "[0:v:0]");
+        StringAssert.Contains(shared.FilterScript, "[0:a:0]");
+    }
+
+    [TestMethod]
     public async Task LargeSubtitleChainUsesGeneratedFileRatherThanExceedingWindowsArgumentLimit()
     {
         using Fixture fixture = Fixture.Create();
