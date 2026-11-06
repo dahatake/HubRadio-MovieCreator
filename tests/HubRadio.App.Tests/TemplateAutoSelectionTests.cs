@@ -487,6 +487,7 @@ public sealed class TemplateAutoSelectionTests
         StringAssert.Contains(refined.Reason, "話者 2 人");
         StringAssert.Contains(refined.Reason, "毎分約 180");
         StringAssert.Contains(refined.Reason, TemplateAutoSelectionRunner.RefinedNote);
+        StringAssert.Contains(refined.Reason, "再判定"); // wording: the refined reason says it was re-judged
         Assert.AreEqual(ran, JobTemplateOriginStore.Load(ranDirectory)); // the Job already run is not changed
         JobTemplateOrigin next = project.RunJob("talk-show");
         Assert.AreEqual(("auto", "2", "talk-show"), (next.Origin, next.RuleVersion, next.TemplateId));
@@ -541,6 +542,7 @@ public sealed class TemplateAutoSelectionTests
         TemplateAutoSelectionRecord kept = await WaitForAsync(project.Store, project.Key, r => r.Reason.Contains(TemplateAutoSelectionRunner.RefinedNoFitNote, StringComparison.Ordinal));
         Assert.AreEqual((TemplateAutoSelectionState.Selected, "explainer"), (kept.State, kept.TemplateId));
         StringAssert.Contains(kept.Reason, "話者 2 人");
+        StringAssert.Contains(kept.Reason, "再判定しましたが");
     }
 
     // FR-145 (2) AC-187 (b2)+(d): a selection shown late (スキップ→選択済み) is re-decided the same way, and keeps its state.

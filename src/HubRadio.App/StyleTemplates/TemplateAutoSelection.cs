@@ -458,8 +458,8 @@ public static class TemplateAutoSelectionRunner
     }
 
     public const string ProvisionalNote = "（暫定の選択です。Job の文字起こしが終わり次第、話者数・話の速さを加えて選び直します。）";
-    public const string RefinedNote = "（文字起こしの完了後に、話者数・話の速さを加えて選び直しました。）";
-    public const string RefinedNoFitNote = "（文字起こしの完了後に選び直しましたが、適するテンプレートがないため、暫定の選択のままにしました。）";
+    public const string RefinedNote = "（文字起こしの完了後に、話者数・話の速さを加えて再判定しました。）";
+    public const string RefinedNoFitNote = "（文字起こしの完了後に再判定しましたが、適するテンプレートがないため、暫定の選択のままにしました。）";
 
     private static TemplateAutoSelectionRecord Decide(TemplateAnalysisInput? input, Func<int> registeredPortraitCount, bool provisional = false)
     {
