@@ -89,7 +89,9 @@ Invoke-Test -Label "FR-145 $Ac" -Sandbox $sb -Body {
         # 保存した設定は「次に作成するJob」（開いている Project）にだけ効くため、Project 一覧へ戻ってから全体の設定を変える
         Invoke-Element (Find-ByName $root 'Project一覧へ戻る' 30)
         Open-Settings $root
-        # 導線: タブ「Projectと出力」→ 項目「テンプレートの自動選択」→ 選択肢「使わない」→「保存」（変更は保存して初めて有効。保存後に作る Project から有効）
+        # 詳細ペインが画面外に出ないよう、先にウィンドウを最大化する
+        try { [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr][int]$p.MainWindowHandle).GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern).SetWindowVisualState([System.Windows.Automation.WindowVisualState]::Maximized); Start-Sleep -Seconds 1 } catch {}
+        # 導線:  タブ「Projectと出力」→ 項目「テンプレートの自動選択」→ 選択肢「使わない」→「保存」（変更は保存して初めて有効。保存後に作る Project から有効）
         Invoke-Element (Find-ByName $root 'Projectと出力' 30)
         # 設定の一覧パネルが非表示（画面の配置）のときは「設定の一覧を表示」で出す
         if (Test-ByName $root '設定の一覧を表示' 5) { Invoke-Element (Find-ByName $root '設定の一覧を表示') }
@@ -100,12 +102,21 @@ Invoke-Test -Label "FR-145 $Ac" -Sandbox $sb -Body {
         }
         $item = $null; $sw3 = [Diagnostics.Stopwatch]::StartNew()
         do {
-            $item = Find-AllByNameLike $root 'テンプレートの自動選択|テンプレート自動選択|Template auto-selection' | Where-Object { $_.Current.ControlType -ne [System.Windows.Automation.ControlType]::Text } | Select-Object -First 1
+            # 項目の実体は Toggle を持つ Button（ListItem は選択操作を持たず、押しても詳細が切り替わらない）
+            $item = Find-AllByNameLike $root '^(テンプレートの自動選択|テンプレート自動選択|Template auto-selection)$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button } | Select-Object -First 1
             if (-not $item) { Start-Sleep -Milliseconds 300 }
         } while (-not $item -and $sw3.Elapsed.TotalSeconds -lt 30)
         if (-not $item) { Find-AllByNameLike $root '.' | Out-Null; throw 'settings item for template auto-selection not found in the Projectと出力 tab' }
-        Invoke-Element $item
-        Invoke-Element (Find-ByName $root '使わない' 30)
+        # 項目を選ぶ（Toggle が Off なら On にして詳細を切り替える）。詳細の選択肢が現れるまで、押し直す
+        $opt = $null
+        for ($try = 0; $try -lt 4 -and -not $opt; $try++) {
+            $on = $false; try { $on = $item.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -eq 'On' } catch {}
+            if (-not $on) { Invoke-Element $item }
+            $opt = if (Test-ByName $root '使わない' 8) { Find-ByName $root '使わない' 5 } else { $null }
+            if (-not $opt) { try { $item.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern).Toggle() } catch {} }
+        }
+        if (-not $opt) { throw "radio '使わない' not shown after selecting the template auto-selection item" }
+        Invoke-Element $opt
         # 項目の「保存」は名前が「 保存」（先頭に空白）。Workspaceフォルダー欄の「保存」とは別のボタン
         $saveBtn = Find-AllByNameLike $root '^\s+保存$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button } | Select-Object -First 1
         if (-not $saveBtn) { throw 'settings item save button not found' }
