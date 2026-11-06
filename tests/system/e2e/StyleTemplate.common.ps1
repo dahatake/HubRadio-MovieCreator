@@ -108,7 +108,16 @@ function Get-WorkspaceText($sb, [string]$filter = '*.json') {
 
 function Get-TemplateJobRecord($sb) {
     # 演出テンプレートの ID・版を持つ Job の記録を返す。
-    $r = Get-WorkspaceText $sb | Where-Object { $_.Text -match '(?i)(templateId|template_id|演出テンプレート)' }
+    $r = Get-WorkspaceText $sb | Where-Object { $_.Text -match     '(?i)(templateId|template_id|演出テンプレート)' } |
+        Where-Object {
+            # テンプレートなしの Job の出自記録（TemplateId null・Origin none）と、output を持たない描画記録は除く。
+            $leaf = Split-Path -Leaf $_.Path
+            try { $o = $_.Text | ConvertFrom-Json -Depth 32 } catch { return $true }
+            if ($leaf -eq 'template-origin.json') { return ($null -ne $o.TemplateId -and "$($o.TemplateId)" -ne '') }
+            if ($leaf -eq 'style-template-render.json') { return ($null -ne $o.output -and "$($o.output)" -ne '') }
+            return $true
+        } |
+        Sort-Object { if ((Split-Path -Leaf $_.Path) -eq 'style-template-render.json') { 0 } else { 1 } }
     if (-not $r) { throw 'no job record with template id found under workspace' }
     return $r
 }
