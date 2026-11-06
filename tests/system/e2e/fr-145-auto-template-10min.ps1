@@ -106,7 +106,7 @@ function Get-CompletedJobCountFromDb {
         $tmp = Join-Path ([IO.Path]::GetTempPath()) ('hr-done-' + [guid]::NewGuid().ToString('N') + '.db')
         Copy-SharedRead $db $tmp
         foreach ($x in "$db-wal", "$db-shm") { if (Test-Path -LiteralPath $x) { try { Copy-SharedRead $x ($tmp + $x.Substring($db.Length)) } catch {} } }
-        $py = "import sqlite3,sys`ncon=sqlite3.connect(sys.argv[1])`nprint(con.execute(`"SELECT count(*) FROM jobs WHERE lower(state) IN ('completed','complete','succeeded','done')`").fetchone()[0])"
+        $py = "import sqlite3,sys`ncon=sqlite3.connect(sys.argv[1])`nprint(con.execute(`"SELECT count(*) FROM jobs WHERE kind LIKE 'source-only.pipeline%' AND lower(state) IN ('completed','complete','succeeded','done')`").fetchone()[0])"
         $out = (& python -c $py $tmp 2>$null | Select-Object -First 1)
         Remove-Item "$tmp*" -Force -ErrorAction SilentlyContinue
         if ($out) { return [int]$out } else { return 0 }
@@ -175,6 +175,14 @@ Invoke-Test -Label "FR-145 $Ac" -Sandbox $sb -Body {
         if (-not $re) { throw "(b) re-judgement (話者数・話の速さを加えた再判定) was not shown within $($script:RejudgeLimitSec) s of the transcription start" }
         $reason = (Find-AllByNameLike $root '再判定' | Select-Object -First 1).Current.Name
         if ($reason -notmatch '話者' -and $reason -notmatch '話の速さ|語数|文字数') { throw "(b) re-judgement reason lacks the speaker count / speech rate used: $reason" }
+        # 理由の表示と初期選択は同時に更新されるとは限らない（UIA の反映の遅れ）。理由が示すテンプレートに選択が揃うのを短く待ち、揃わなければ失敗。
+        $reasonTpl = $null
+        foreach ($n in $script:TemplateNames) { if ($reason -match ('自動選択: ' + [regex]::Escape($n))) { $reasonTpl = $n } }
+        if ($reasonTpl) {
+            $sync = Wait-Selected $root 20 { (Get-SelectedTemplate $root) -eq $reasonTpl }
+            if (-not $sync) { throw "(b) initial selection ('$(Get-SelectedTemplate $root)') does not match the re-judged template in the reason ('$reasonTpl'): $reason" }
+            $re = $sync
+        }
         Write-Host "AC-189 (b): re-judged '$($re.Template)' after $([int]$jobStart.Elapsed.TotalSeconds) s: $reason"
         # (b) 実行済みの Job（最初の Job）は変わらない: 出自「なし」・テンプレートなし
         Wait-JobDone $root 1 0
