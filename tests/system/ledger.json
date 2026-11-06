@@ -360,9 +360,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-133-project-folder-name.ps1",
       "canary": true,
       "status": "pass",
-      "last_commit": "62958d6",
-      "last_run_at": "2026-11-06T06:07:03+09:00",
-      "evidence": "work/runs/202611060522/logs/system-test/E2E-009-202611060605.log",
+      "last_commit": "9907c65",
+      "last_run_at": "2026-11-06T22:33:53+09:00",
+      "evidence": "work/runs/202611061704/logs/system-test/E2E-009-202611062225.log",
       "history": [
         {
           "at": "2026-10-13T05:43:51+09:00",
@@ -1541,9 +1541,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-145-auto-template.ps1 -Ac AC-181",
       "canary": false,
       "status": "pass",
-      "last_commit": "458afd8",
-      "last_run_at": "2026-11-06T03:38:27+09:00",
-      "evidence": "work/runs/202611052304/logs/system-test/E2E-044-202611060332.log",
+      "last_commit": "9907c65",
+      "last_run_at": "2026-11-06T22:33:53+09:00",
+      "evidence": "work/runs/202611061704/logs/system-test/E2E-044-202611062226.log",
       "history": [
         {
           "at": "2026-11-05T00:33:59+09:00",
