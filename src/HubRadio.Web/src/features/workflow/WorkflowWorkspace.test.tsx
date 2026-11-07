@@ -1946,6 +1946,77 @@ describe('WorkflowWorkspace FR-061 project list and Jobs', () => {
     expect(within(h.element('#workflow-panel-processing')).getByRole('heading', { name: /このProjectのジョブ/ })).toBeTruthy()
   })
 
+  // NFR-REL-002 / FR-145 / FR-146 / AC-036.4: after a long Job the host can be too busy to answer the settings read within the 5 s limit.
+  // The timed-out read must not leave 「新しいJobを作成」 disabled until the user presses 設定を再読み込み: the workspace reads again by itself.
+  it('recovers the settings confirmation by itself after the read timed out, so 新しいJobを作成 becomes available without 設定を再読み込み', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const h = await mount()
+    const completed = createCompletedPipeline(projectId)
+    await openFinalizedProject(h, completed)
+    const listed = { status: 'available', workingCopyRevision: 1, versions: [versionEntry(completed)] }
+    await h.reply(h.last('pipeline.versions'), listed)
+    await h.reply(h.last('pipeline.versions'), listed)
+    const source = h.element('#workflow-panel-source')
+    await h.click('次に作成するJobの設定を開く')
+    expect(h.requests.filter(request => request.method === 'settings.read')).toHaveLength(1)
+    // The host does not answer in time (reply never sent): the 5 s limit of the settings session fires.
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+    expect(h.settings().state).toMatchObject({ error: 'timeout', pendingRequest: null, snapshot: null })
+    await h.click('設定を閉じて戻る')
+    await h.reply(h.last('pipeline.versions'), listed)
+    const create = () => within(source).getByRole('button', { name: '新しいJobを作成' }) as HTMLButtonElement
+    expect(create().disabled).toBe(true)
+    // No user action: a later read is sent by the workspace (retry with a growing delay) and the confirmation completes.
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000) })
+    expect(h.requests.filter(request => request.method === 'settings.read')).toHaveLength(2)
+    await h.reply(h.last('settings.read'), { status: 'available', snapshot: { ...globalSnapshot, projectId, revision: 7 } })
+    expect(create().disabled).toBe(false)
+    expect(source.textContent).not.toContain('設定の確認を完了してください。')
+    // Recovered: no further settings read is sent.
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+    expect(h.requests.filter(request => request.method === 'settings.read')).toHaveLength(2)
+  })
+
+  // NFR-REL-002: a settings write whose result was not received leaves 設定の確認 incomplete (needsRefresh); the host may be busy for a long time,
+  // so the workspace keeps reading with a growing delay until one read is answered, and a timed-out retry does not stop the recovery.
+  it('keeps re-reading with a growing delay while the host stays busy and recovers a pending refresh once it answers', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const h = await mount()
+    const completed = createCompletedPipeline(projectId)
+    await openFinalizedProject(h, completed)
+    const listed = { status: 'available', workingCopyRevision: 1, versions: [versionEntry(completed)] }
+    await h.reply(h.last('pipeline.versions'), listed)
+    await h.reply(h.last('pipeline.versions'), listed)
+    await h.click('次に作成するJobの設定を開く')
+    await h.reply(h.last('settings.read'), { status: 'available', snapshot: { ...globalSnapshot, projectId, revision: 7 } })
+    await h.click('設定を閉じて戻る')
+    await h.reply(h.last('pipeline.versions'), listed)
+    const source = h.element('#workflow-panel-source')
+    const reads = () => h.requests.filter(request => request.method === 'settings.read').length
+    // A write that is not answered in time: the saved state is uncertain (needsRefresh).
+    await act(async () => { expect(h.settings().reset(countKey)).toBe(true) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+    expect(h.settings().state).toMatchObject({ needsRefresh: true, pendingRequest: null, error: 'timeout' })
+    expect((within(source).getByRole('button', { name: '新しいJobを作成' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(source.textContent).toContain('設定の確認を完了してください。')
+    const before = reads()
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000) })
+    expect(reads()).toBe(before + 1)
+    // The retry is not answered either (host still busy): it times out and the next retry comes later than the previous one.
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+    expect(h.settings().state).toMatchObject({ needsRefresh: true, pendingRequest: null, error: 'timeout' })
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_999) })
+    expect(reads()).toBe(before + 1)
+    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+    expect(reads()).toBe(before + 2)
+    await h.reply(h.last('settings.read'), { status: 'available', snapshot: { ...globalSnapshot, projectId, revision: 8, snapshotDigest: 'd'.repeat(64) } })
+    expect(h.settings().state).toMatchObject({ needsRefresh: false, pendingRequest: null, error: null })
+    expect(source.textContent).not.toContain('設定の確認を完了してください。')
+    expect((within(source).getByRole('button', { name: '新しいJobを作成' }) as HTMLButtonElement).disabled).toBe(false)
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+    expect(reads()).toBe(before + 2)
+  })
+
   // FR-061 AC-036.9
   it('copies a Job’s varying settings into 次に作成するJob by saving them one by one', async () => {
     const h = await mount()
