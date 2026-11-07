@@ -113,7 +113,7 @@ function Get-CompletedJobCountFromDb {
     } catch { return 0 }
 }
 # Job の完了待ち: 画面の「サムネイル: Job n、…完了」か、DB の完了数が $baseline を超えたら完了（画面表示だけに依存しない）。失敗・アプリ終了・上限超過は例外。
-function Wait-JobDone($root, [int]$jobNumber, [int]$baseline, [int]$timeoutSec = 900) {
+function Wait-JobDone($root, [int]$jobNumber, [int]$baseline, [int]$timeoutSec = 1500) {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     do {
         if ($script:AppProc -and $script:AppProc.HasExited) { throw "Job $jobNumber did not complete (app exited: $($script:AppProc.ExitCode))" }
@@ -137,6 +137,25 @@ function New-TemplateJobDb($root, [int]$ordinal) {
         $nb = Find-AllByNameLike $root '^新しいJobを作成$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $_.Current.IsEnabled } | Select-Object -First 1
         if (-not $nb) { Start-Sleep -Milliseconds 500 }
     } while (-not $nb -and $sw.Elapsed.TotalSeconds -lt 60)
+    # Job の完了後、設定の確認が完了せず「新しいJobを作成」が無効のまま残ることがある（画面は「設定の確認を完了してください。」）。
+    # 実測: 「設定を再読み込み」で有効になる。有効になるまで最大 900 秒・5 秒間隔で待ち、60 秒ごとに設定を開いて再読み込みして閉じる。
+    if (-not $nb) {
+        $sw2 = [Diagnostics.Stopwatch]::StartNew(); $lastRecover = -60
+        do {
+            $nb = Find-AllByNameLike $root '^新しいJobを作成$' | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $_.Current.IsEnabled } | Select-Object -First 1
+            if (-not $nb -and ($sw2.Elapsed.TotalSeconds - $lastRecover) -ge 60) {
+                $lastRecover = $sw2.Elapsed.TotalSeconds
+                try {
+                    Invoke-Element (Find-ByName $root '次に作成するJobの設定を開く' 30)
+                    $rl = Find-AllByNameLike $root '^設定を再読み込み$' | Where-Object { $_.Current.IsEnabled } | Select-Object -First 1
+                    if ($rl) { Invoke-Element $rl; Start-Sleep -Seconds 3 }
+                    Invoke-Element (Find-ByName $root '設定を閉じて戻る' 30)
+                    Start-Sleep -Seconds 2
+                } catch { Write-Host "retry-settings failed: $($_.Exception.Message)" }
+            }
+            if (-not $nb) { Start-Sleep -Seconds 5 }
+        } while (-not $nb -and $sw2.Elapsed.TotalSeconds -lt 900)
+    }
     if (-not $nb) { throw "button '新しいJobを作成' not found or disabled" }
     Invoke-Element $nb
     Start-Sleep -Seconds 1
