@@ -1767,10 +1767,10 @@
       "layer": "e2e",
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-145-auto-template-10min.ps1 -Ac AC-189",
       "canary": false,
-      "status": "blocked",
-      "last_commit": "5ecc02c",
-      "last_run_at": "2026-11-07T04:51:28+09:00",
-      "evidence": "work/runs/202611070057/logs/system-test/E2E-045-202611070421.log",
+      "status": "pass",
+      "last_commit": "4a7f998",
+      "last_run_at": "2026-11-07T14:28:24+09:00",
+      "evidence": "work/runs/202611070951/logs/system-test/E2E-045-202611071402.log",
       "history": [
         {
           "at": "2026-11-06T05:56:34+09:00",
@@ -1801,6 +1801,12 @@
           "by": "conductor",
           "change": "blocked",
           "reason": "AC-189（10 分動画の通し）は自動化が不安定: 1 回 15〜54 分（台帳の 1800 秒を超える）、直接実行 5 回中 3 回 pass。失敗時は Job 完了後に「設定の確認を完了してください。」が残り「新しいJobを作成」が無効のまま（設定を再読み込みで復帰）。実装側の疑いあり（needsRefresh/pendingRequest）。次の run で調査"
+        },
+        {
+          "at": "2026-11-07T14:02:57+09:00",
+          "by": "conductor",
+          "change": "status -> not_run",
+          "reason": "E2E-045 を安定化（4a7f998。直接実行 3 回連続 pass）。ledger run --case-timeout 2700 で確認"
         }
       ],
       "serial": true
