@@ -1266,7 +1266,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             StandardGenerationOmission[] omissions = payload.GetProperty("Omissions").EnumerateArray()
                 .Select(item => new StandardGenerationOmission(Text(item, "Role"), Text(item, "Reason"))).ToArray();
             SourceOnlyResultGenerationWarning[] warnings = payload.GetProperty("Warnings").EnumerateArray()
-                .Select(item => new SourceOnlyResultGenerationWarning(Text(item, "Role"), Text(item, "Code"))).ToArray();
+                .Select(item => new SourceOnlyResultGenerationWarning(Text(item, "Role"), Text(item, "Code"))).Distinct().ToArray();
             return new(checkpoint.Artifact, disposition, outputs.AsReadOnly(), Array.AsReadOnly(omissions),
                 Array.AsReadOnly(warnings), payload.GetProperty("StagingCleanupRequired").GetBoolean());
         }
@@ -1655,7 +1655,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                             generated.Artifacts.Select(item => new SourceOnlyResultArtifactReference(item.Artifact.Id,
                                 item.Artifact.ContentDigest, item.Artifact.ByteSize, item.Artifact.Kind)).ToArray(), [], null,
                             generated.StagingCleanupRequired,
-                            generated.Warnings.Select(item => new SourceOnlyResultGenerationWarning(item.Role, item.Code)).ToArray());
+                            SourceOnlyResultGenerationWarning.FromGenerated(generated.Warnings));
                         _ = await SaveJsonAsync(execution, StableId<ArtifactIdTag>(execution.Request.ExecutionId.ToString(), "result-receipt"),
                             result.CanonicalJson, "result-receipt", CancellationToken.None).ConfigureAwait(false);
                         throw new PipelineFailure(SourceOnlyExecutionPhase.ReconciliationRequired,
@@ -2056,6 +2056,8 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
                 "source-only-asr-" + execution.Request.RootJobId);
             CreateDirectory(workspace, resultDirectory);
             var worker = new LocalAnalysisWorker(runner, options!.PythonExecutable, workspace);
+            // FR-145: the wait for the speakers and the speech speed counts from here (the start of the Job's transcription).
+            RecordTranscriptionStarted(execution.Request.DraftId);
             raw = await worker.TranscribeAsync(artifacts.GetValidatedRegisteredArtifactPath(audioArtifact.Id),
                 options.ModelDirectory, resultDirectory, timeline, options.OperationTimeout, token).ConfigureAwait(false);
             // Keep raw worker bytes EXACT, not canonicalized/re-encoded doubles.
@@ -2438,7 +2440,7 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
             _ => SourceOnlyResultFailureCode.GenerationFailed,
         })], generated.ReconciliationArtifacts.Select(item => new SourceOnlyResultArtifactReference(item.ArtifactId,
             item.ContentDigest, item.ByteSize, ArtifactKind.Render)).ToArray(), [], null, generated.StagingCleanupRequired,
-            generated.Warnings.Select(item => new SourceOnlyResultGenerationWarning(item.Role, item.Code)).ToArray());
+            SourceOnlyResultGenerationWarning.FromGenerated(generated.Warnings));
 
     private Task RegisterRuntimeAsync(StoredSourceOnlyExecution execution, string stage, ContentDigest digest,
         Func<CancellationToken, Task> register, CancellationToken token) =>
@@ -2463,6 +2465,15 @@ public sealed partial class SourceOnlyPipeline : IAsyncDisposable, ISourceOnlyPr
     {
         RecordSpeechFacts(execution.Request.DraftId, import.Revision);
         return RegisterTranscriptCallbackAsync(execution, project, import, token);
+    }
+
+    /// <summary>FR-145 / AC-186: marks the start of the Job's transcription, the point the re-decision's wait counts from. Never stops the Job (NFR-REL-002).</summary>
+    internal void RecordTranscriptionStarted(EntityId<ProjectCreationDraftIdTag> draftId)
+    {
+        if (Guid.TryParse(draftId.ToString(), out Guid key))
+        {
+            new StyleTemplates.TemplateSpeechFactsStore(Path.Combine(workspace, "template-auto-selection")).MarkTranscriptionStarted(key);
+        }
     }
 
     /// <summary>FR-145 / AC-186: keeps the speaker count and speech speed of the local transcript for the template analysis. Never stops the Job (NFR-REL-002).</summary>

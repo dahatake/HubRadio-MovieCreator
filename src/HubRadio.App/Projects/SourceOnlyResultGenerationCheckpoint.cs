@@ -52,7 +52,7 @@ internal sealed record SourceOnlyResultGenerationCheckpoint(SourceOnlyResultArti
             (Payload.GetProperty("disposition").GetString() == result.GenerationDisposition.ToString() ||
                 result.GenerationDisposition == HubRadio.App.Rendering.StandardArtifactGenerationDisposition.ReconciliationRequired));
         var expected = Payload.GetProperty("Warnings").EnumerateArray().Select(w => new SourceOnlyResultGenerationWarning(
-            w.GetProperty("Role").GetString()!, w.GetProperty("Code").GetString()!)).ToArray();
+            w.GetProperty("Role").GetString()!, w.GetProperty("Code").GetString()!)).Distinct().ToArray();
         SourceOnlyResultCodec.Require(expected.SequenceEqual(result.GenerationWarnings));
     }
 

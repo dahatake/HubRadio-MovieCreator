@@ -78,7 +78,16 @@ public sealed record SourceOnlyResultPromotionAttempt(
     SourceOnlyResultArtifactReference Artifact, EntityId<ProjectIdTag> ProjectId,
     string StagingPath, string StorageReference, SourceOnlyResultEvidenceKind? EvidenceKind = null);
 
-public sealed record SourceOnlyResultGenerationWarning(string Role, string Code);
+public sealed record SourceOnlyResultGenerationWarning(string Role, string Code)
+{
+    /// <summary>
+    /// The (role, code) pairs of the generator's warnings, each once. The generator keeps one warning per affected cue (a 10-minute video has
+    /// thousands, FR-145 AC-189), while the result records which warning kinds occurred; repeating them would exceed
+    /// <see cref="SourceOnlyResult.MaximumGenerationWarningCount"/> and turn a finished or failed generation into a malformed result.
+    /// </summary>
+    internal static SourceOnlyResultGenerationWarning[] FromGenerated(IEnumerable<StandardGenerationWarning> warnings) =>
+        [.. warnings.Select(static item => new SourceOnlyResultGenerationWarning(item.Role, item.Code)).Distinct()];
+}
 
 /// <summary>Exact planned original-frame selection, not a claim of visual quality.</summary>
 public sealed record SourceOnlyResultFrameEvidence(

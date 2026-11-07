@@ -63,16 +63,19 @@ export function JobCreationAction({ nextJobNumber, params, disabledReason, pendi
     let alive = true
     let timer: ReturnType<typeof setTimeout> | undefined
     let attempts = 0
-    let applied = false
+    let applied: string | null = null
     const poll = async () => {
       const outcome = await templateAutoService.get(projectId)
       if (!alive) return
       if ('state' in outcome) {
         setAuto(previous => previous !== null && JSON.stringify(previous) === JSON.stringify(outcome) ? previous : outcome)
-        if (outcome.state === 'selected' && outcome.templateId !== null && !manualChoice.current && !applied) { applied = true; changeTemplate.current?.(outcome.templateId) }
-        // The origin recorded for the latest Job changes when a Job is created, so the (local, cheap) read repeats while the screen is open.
+        // FR-145 (2): the initial selection follows the re-decision too (the template can change once the transcript gives the speakers and the speed),
+        // but never after the user chose a template themself.
+        if (outcome.state === 'selected' && outcome.templateId !== null && !manualChoice.current && applied !== outcome.templateId) { applied = outcome.templateId; changeTemplate.current?.(outcome.templateId) }
+        // The origin recorded for the latest Job changes when a Job is created, and the re-decision arrives after the transcription (minutes for a
+        // long video), so the (local, cheap) read repeats while the screen is open; it stops once the user chose a template themself.
         const open = outcome.state === 'waiting' || outcome.state === 'analyzing'
-        if (!open || attempts++ < 90) timer = setTimeout(() => { void poll() }, open ? 1000 : 1500)
+        if (!open || attempts++ < 1200) timer = setTimeout(() => { void poll() }, open ? 1000 : 2000)
       } else if (attempts++ < 3) timer = setTimeout(() => { void poll() }, 2000)
     }
     void poll()

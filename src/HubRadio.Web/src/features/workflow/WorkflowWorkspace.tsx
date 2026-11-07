@@ -560,6 +560,23 @@ function WorkflowWorkspaceView({ connectionStatus }: Readonly<{ connectionStatus
     }
     setSettingsCopy({ ...run, sentKey: key })
   }, [settingsCopy, settings])
+  // NFR-REL-002 / FR-145 / FR-146: the confirmation of the saved settings stays incomplete when a settings read or write result did not arrive in time
+  // (the host answers late while it is busy, for example right after a long Job) or a write result is uncertain (needsRefresh). The user must not have to press
+  // 設定を再読み込み: the workspace reads again by itself, with a growing delay (2 s, 4 s, 8 s, then every 15 s, at most 40 times). A read keeps unsaved drafts
+  // and never writes. It is not started while the settings screen is open (that screen owns its own reload), for another scope, or while a request is pending.
+  const settingsRecoveryAttempts = useRef(0)
+  const settingsIncomplete = activeProjectId !== null && settings.state.projectId === activeProjectId &&
+    (settings.state.needsRefresh || (settings.state.snapshot === null && (settings.state.error === 'timeout' || settings.state.error === 'unavailable')))
+  const settingsRecoverable = settingsIncomplete && !settingsOpen && settings.state.pendingRequest === null
+  const settingsRefresh = useRef(settings.refresh)
+  settingsRefresh.current = settings.refresh
+  useEffect(() => { if (!settingsIncomplete && settings.state.pendingRequest === null) settingsRecoveryAttempts.current = 0 }, [settingsIncomplete, settings.state.pendingRequest])
+  useEffect(() => {
+    if (!settingsRecoverable || settingsRecoveryAttempts.current >= 40) return
+    const timer = setTimeout(() => { settingsRecoveryAttempts.current += 1; settingsRefresh.current() },
+      Math.min(2_000 * 2 ** settingsRecoveryAttempts.current, 15_000))
+    return () => clearTimeout(timer)
+  }, [settingsRecoverable, settings.state])
   useEffect(() => { setSettingsCopyStatus(null) }, [activeProjectId])
   const jobSettingsCopy = draft?.isFinalized === true ? {
     disabledReason: settingsCopy !== null ? null : settingsCopyReason,
