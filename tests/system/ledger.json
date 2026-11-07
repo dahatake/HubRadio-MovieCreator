@@ -1541,9 +1541,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-145-auto-template.ps1 -Ac AC-181",
       "canary": false,
       "status": "pass",
-      "last_commit": "7b0919b",
-      "last_run_at": "2026-11-06T23:33:27+09:00",
-      "evidence": "work/runs/202611061704/logs/system-test/E2E-044-202611062325.log",
+      "last_commit": "5ecc02c",
+      "last_run_at": "2026-11-07T04:51:28+09:00",
+      "evidence": "work/runs/202611070057/logs/system-test/E2E-044-202611070409.log",
       "history": [
         {
           "at": "2026-11-05T00:33:59+09:00",
@@ -1768,9 +1768,9 @@
       "command": "pwsh -NoProfile -File tests/system/e2e/fr-145-auto-template-10min.ps1 -Ac AC-189",
       "canary": false,
       "status": "blocked",
-      "last_commit": null,
-      "last_run_at": null,
-      "evidence": null,
+      "last_commit": "5ecc02c",
+      "last_run_at": "2026-11-07T04:51:28+09:00",
+      "evidence": "work/runs/202611070057/logs/system-test/E2E-045-202611070421.log",
       "history": [
         {
           "at": "2026-11-06T05:56:34+09:00",
@@ -1789,6 +1789,18 @@
           "by": "conductor",
           "change": "blocked",
           "reason": "AC-189（10 分動画の通し）未検証: 実装（暫定選択・再判定）の動作は E2E-044・単体/結合テストで確認済み。E2E-045 は UI 操作の誤り（元動画への戻り・Job 完了待ち・Job 作成ボタン）が残り、実行も約 15 分かかる。次の run でテストを実機で直して blocked を外す"
+        },
+        {
+          "at": "2026-11-07T02:37:04+09:00",
+          "by": "conductor",
+          "change": "status -> not_run",
+          "reason": "E2E-045 のテスト修正済み（a0d8207）。ledger run で再実行"
+        },
+        {
+          "at": "2026-11-07T09:35:39+09:00",
+          "by": "conductor",
+          "change": "blocked",
+          "reason": "AC-189（10 分動画の通し）は自動化が不安定: 1 回 15〜54 分（台帳の 1800 秒を超える）、直接実行 5 回中 3 回 pass。失敗時は Job 完了後に「設定の確認を完了してください。」が残り「新しいJobを作成」が無効のまま（設定を再読み込みで復帰）。実装側の疑いあり（needsRefresh/pendingRequest）。次の run で調査"
         }
       ],
       "serial": true
